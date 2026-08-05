@@ -2,14 +2,26 @@ name: CI
 
 # Every branch and every PR. Deploy waits on this job, so a red build here
 # means nothing reaches the VPS.
+#
+# `main` is excluded on purpose: deploy.yml already runs this file via
+# workflow_call, so a `branches: ["**"]` trigger ran it twice for one push. Worse
+# than wasteful — both runs landed in the same concurrency group (a called
+# workflow evaluates `github.ref` in the caller's context, so both resolved to
+# refs/heads/main), and cancel-in-progress had them killing each other. Whichever
+# lost the race was decided by timing: we saw the standalone run cancelled after
+# 1s, but the opposite order kills the CI job *inside* Deploy and takes the whole
+# deploy down with it. The cancelled check also marked the commit ✗ in the UI even
+# though the deploy had fully succeeded.
 on:
   push:
-    branches: ["**"]
+    branches-ignore: [main]
   pull_request:
   workflow_call:
 
+# Scoped by workflow as well as ref, so a standalone run and a called one can
+# never share a group even if the trigger rules change again.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
