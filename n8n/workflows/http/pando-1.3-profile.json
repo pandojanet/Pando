@@ -1,0 +1,335 @@
+{
+  "name": "Pando · 1.3 profile → affinity derivation (HTTP)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "profile-affinity-derivation-http",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        300
+      ],
+      "id": "pando-webhook",
+      "name": "Webhook",
+      "webhookId": "pando-webhook",
+      "notes": "POST from /api/seed/profile. The app has already verified the phone —\nnothing reaches here before the OTP is confirmed.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SUPABASE_URL }}/rest/v1/rpc/write_person",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ payload: $json.body }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        300
+      ],
+      "id": "pando-save-contributor",
+      "name": "Save contributor",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase RPC"
+        }
+      },
+      "notes": "Upsert on phone + replace children / affinities / relevance / school\nstatuses. Does NOT touch founding — that is decided in 1.7 / review.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-any-other-answers-c0",
+              "leftValue": "={{ ($('Webhook').item.json.body.pending_options || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        60,
+        300
+      ],
+      "id": "pando-any-other-answers",
+      "name": "Any other answers?",
+      "notes": "Free-text \"other\" answers go to the review queue. They are not\nmatchable until an admin promotes them.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.pending_options",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        280,
+        180
+      ],
+      "id": "pando-split-pending-options",
+      "name": "Split pending options"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One pending option per item, with the contributor who typed it.\nconst personId = $('Save contributor').first().json;\nconst body = $('Webhook').first().json.body;\nreturn $input.all().map(item => ({\n  json: {\n    payload: {\n      market_id: body.market_id || 'pasadena',\n      category: item.json.category,\n      submitted_value: item.json.submitted_value,\n      person_id: personId,\n    },\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        180
+      ],
+      "id": "pando-build-option-payload",
+      "name": "Build option payload",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.SUPABASE_URL }}/rest/v1/rpc/write_pending_option",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ payload: $json.payload }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        180
+      ],
+      "id": "pando-save-pending-option",
+      "name": "Save pending option",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase RPC"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        280,
+        420
+      ],
+      "id": "pando-nothing-to-queue",
+      "name": "Nothing to queue"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The route reports what we say about ourselves, so say it accurately.\nconst written = $('Save contributor').first().json;\nreturn [{ json: {\n  persisted: true,\n  person_id: written,\n  pending_options: $('Webhook').first().json.body.pending_options?.length ?? 0,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ],
+      "id": "pando-compose-response",
+      "name": "Compose response",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1160,
+        300
+      ],
+      "id": "pando-respond",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Save contributor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save contributor": {
+      "main": [
+        [
+          {
+            "node": "Any other answers?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any other answers?": {
+      "main": [
+        [
+          {
+            "node": "Split pending options",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing to queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split pending options": {
+      "main": [
+        [
+          {
+            "node": "Build option payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build option payload": {
+      "main": [
+        [
+          {
+            "node": "Save pending option",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save pending option": {
+      "main": [
+        [
+          {
+            "node": "Compose response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nothing to queue": {
+      "main": [
+        [
+          {
+            "node": "Compose response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "pando"
+  },
+  "tags": [
+    {
+      "name": "pando"
+    }
+  ]
+}

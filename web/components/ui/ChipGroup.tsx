@@ -1,0 +1,126 @@
+"use client";
+
+import { useState } from "react";
+import { cn } from "@/lib/cn";
+import type { Option } from "@/lib/types";
+import { AddOtherChip, Chip, CustomChip } from "./Chip";
+import { OtherSheet } from "./OtherSheet";
+
+interface Props {
+  /** Shown when a screen carries more than one question. */
+  label?: string;
+  options: Option[];
+  mode: "single" | "multi";
+  selected: string[];
+  onChange: (next: string[], changed: { id: string; on: boolean }) => void;
+  layout?: "wrap" | "grid";
+  /** Free-text answers already added for this question. */
+  custom?: string[];
+  otherLabel?: string;
+  onAddCustom?: (value: string) => void;
+  onRemoveCustom?: (value: string) => void;
+  groupLabel: string;
+}
+
+export function ChipGroup({
+  label,
+  options,
+  mode,
+  selected,
+  onChange,
+  layout = "wrap",
+  custom = [],
+  otherLabel,
+  onAddCustom,
+  onRemoveCustom,
+  groupLabel,
+}: Props) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const exclusiveIds = options.filter((o) => o.exclusive).map((o) => o.id);
+
+  function toggle(option: Option) {
+    const on = !selected.includes(option.id);
+
+    if (mode === "single") {
+      /* Radio semantics: tapping the chosen one keeps it chosen. Allowing a
+         deselect meant the pre-set answer (the monthly allowance defaults to 3)
+         was cleared by the first tap, which is the opposite of what tapping it
+         means. */
+      onChange([option.id], { id: option.id, on: true });
+      return;
+    }
+
+    let next: string[];
+    if (option.exclusive) {
+      // "None / prefer not to say" clears everything else.
+      next = on ? [option.id] : [];
+    } else {
+      next = on
+        ? [...selected.filter((id) => !exclusiveIds.includes(id)), option.id]
+        : selected.filter((id) => id !== option.id);
+    }
+    onChange(next, { id: option.id, on });
+  }
+
+  return (
+    <div>
+      {label && (
+        <h2 className="mb-2.5 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
+          {label}
+        </h2>
+      )}
+
+      <div
+        role={mode === "single" ? "radiogroup" : "group"}
+        aria-label={groupLabel}
+        className={cn(
+          layout === "grid"
+            ? "grid grid-cols-4 gap-2 xs:grid-cols-5 md:grid-cols-7"
+            : "flex flex-wrap gap-2",
+        )}
+      >
+        {options.map((option) => (
+          <Chip
+            key={option.id}
+            label={option.label}
+            hint={option.hint}
+            mode={mode}
+            compact={layout === "grid"}
+            className={
+              layout === "grid" && option.wide ? "col-span-2" : undefined
+            }
+            selected={selected.includes(option.id)}
+            onToggle={() => toggle(option)}
+          />
+        ))}
+
+        {custom.map((value) => (
+          <CustomChip
+            key={value}
+            label={value}
+            onRemove={() => onRemoveCustom?.(value)}
+          />
+        ))}
+
+        {onAddCustom && (
+          <AddOtherChip
+            label={otherLabel ?? "Other"}
+            onClick={() => setSheetOpen(true)}
+          />
+        )}
+      </div>
+
+      {onAddCustom && (
+        <OtherSheet
+          open={sheetOpen}
+          title={otherLabel ?? "Add your own"}
+          onClose={() => setSheetOpen(false)}
+          onSubmit={(value) => {
+            onAddCustom(value);
+            setSheetOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,380 @@
+{
+  "name": "Pando · 1.8 extraction engine",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -700,
+        300
+      ],
+      "id": "pando-every-5-minutes",
+      "name": "Every 5 minutes",
+      "notes": "A cron, not a database trigger: Supabase never calls out, and a poll\ncannot lose a row the way a webhook that was down would.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select contributions_needing_extraction($1::jsonb) as rows",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ limit: 20 }) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -460,
+        300
+      ],
+      "id": "pando-find-un-scored-contributions",
+      "name": "Find un-scored contributions",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "Restricted notes are NOT selected here. Free text about a named\nperson never reaches a model (invariant 8).",
+      "notesInFlow": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-anything-to-do-c0",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        300
+      ],
+      "id": "pando-anything-to-do",
+      "name": "Anything to do?",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* What extraction may add, and only this: an age band where the tap is missing, a\n   neighborhood mention, a category, and a normalised name. It may never rewrite the\n   parent's words, never write a trust label, and never invent a taxonomy value — an\n   unmatched name becomes a pending_option for an admin to promote (invariant 9). */\nreturn $input.all().map(item => ({ json: {\n  contribution_id: item.json.id,\n  prompt: [\n    'Extract only these fields as JSON. Do not rephrase anything.',\n    'age_band: one of baby, toddler, preschool, grade, tween, teen, or null',\n    'neighborhood_mentions: array of place names mentioned, or []',\n    'category: one short slug, or null',\n    'normalised_name: the subject name, tidied, or null',\n    'confidence: 0..1 for how clear the text was',\n    '---',\n    JSON.stringify({\n      name: item.json.name,\n      what_makes_it_great: item.json.what_makes_it_great,\n      caveat: item.json.caveat,\n      who_for: item.json.who_for,\n      who_not_for: item.json.who_not_for,\n    }),\n  ].join('\\n'),\n} }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        300
+      ],
+      "id": "pando-prompt",
+      "name": "Prompt",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ],
+      "id": "pando-ai-node-goes-here",
+      "name": "AI node goes here"
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Whatever the model returned, only these keys survive, and only with values we\n   recognise. A model that hallucinates a school does not get to create one. */\nconst BANDS = ['baby','toddler','preschool','grade','tween','teen'];\nreturn $input.all().map(item => {\n  const out = item.json.output ?? {};\n  const band = BANDS.includes(out.age_band) ? out.age_band : null;\n  const confidence = typeof out.confidence === 'number'\n    ? Math.max(0, Math.min(1, out.confidence)) : 0;\n  return { json: { payload: {\n    contribution_id: item.json.contribution_id,\n    age_band: band,\n    confidence,\n  } } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ],
+      "id": "pando-validate-against-the-allow-list",
+      "name": "Validate against the allow-list",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select set_contribution_confidence($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        740,
+        300
+      ],
+      "id": "pando-save-the-score",
+      "name": "Save the score",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-low-confidence-c0",
+              "leftValue": "={{ $json.payload.confidence }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        300
+      ],
+      "id": "pando-low-confidence",
+      "name": "Low confidence?",
+      "notes": "This queue is what improves the prompt, so it is a flag rather than a\nsilent number.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { payload: {\n  severity: 'review',\n  reason: 'low_confidence_extraction',\n  subject_kind: 'place_contribution',\n  subject_id: $json.payload.contribution_id,\n  confidence: $json.payload.confidence,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        200
+      ],
+      "id": "pando-build-low-confidence-flag",
+      "name": "Build low-confidence flag",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_flag($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1460,
+        200
+      ],
+      "id": "pando-save-flag",
+      "name": "Save flag",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        480
+      ],
+      "id": "pando-nothing-pending",
+      "name": "Nothing pending"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1220,
+        420
+      ],
+      "id": "pando-good-enough",
+      "name": "Good enough"
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Find un-scored contributions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find un-scored contributions": {
+      "main": [
+        [
+          {
+            "node": "Anything to do?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to do?": {
+      "main": [
+        [
+          {
+            "node": "Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nothing pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI node goes here",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI node goes here": {
+      "main": [
+        [
+          {
+            "node": "Validate against the allow-list",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate against the allow-list": {
+      "main": [
+        [
+          {
+            "node": "Save the score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save the score": {
+      "main": [
+        [
+          {
+            "node": "Low confidence?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low confidence?": {
+      "main": [
+        [
+          {
+            "node": "Build low-confidence flag",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Good enough",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build low-confidence flag": {
+      "main": [
+        [
+          {
+            "node": "Save flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "pando"
+  },
+  "tags": [
+    {
+      "name": "pando"
+    }
+  ]
+}

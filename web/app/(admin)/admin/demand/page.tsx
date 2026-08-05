@@ -1,0 +1,313 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Badge,
+  Button,
+  Card,
+  Empty,
+  ErrorNote,
+  Field,
+  NotConfigured,
+  PageHead,
+  SampleBanner,
+  TableWrap,
+  Td,
+  Th,
+  inputClass,
+  slugLabel,
+  useEdgeFade,
+  when,
+} from "@/components/admin/ui";
+import { adminAction, useAdminRows } from "@/lib/admin/client";
+import type { DemandRow } from "@/lib/admin/types";
+
+/**
+ * Estimate 2.7 — what parents asked for (D1).
+ *
+ * Every parent gets one question at the end of the flow, and what Pando said back
+ * already depended on what they asked. This page is the other half of that promise:
+ *
+ *  - **high-stakes questions come first, and are not answerable here.** The parent was
+ *    given professional resources in the flow. What is owed now is a human following
+ *    up, not a recommendation.
+ *  - **peer support is not a queue of tickets.** These were only stored because the
+ *    parent said yes to keeping them, and the answer is a matched cohort at launch —
+ *    so the useful action is marking them matched, never replying in a database.
+ *  - **ordinary questions are the launch inventory.** They are the reason to know
+ *    which neighborhood needs which answer first.
+ *
+ * Nothing here is ever published. The text is a parent's own words about their own
+ * family, and it stays on this screen.
+ */
+export default function DemandPage() {
+  const { rows, configured, sample, demo, setDemo, loading, error, reload } =
+    useAdminRows<DemandRow[]>("demand");
+
+  const [filter, setFilter] = useState<"urgent" | "open" | "all">("urgent");
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const { ref: filterRef, maskStyle: filterMask } = useEdgeFade<HTMLDivElement>();
+
+  const all = rows ?? [];
+  const visible = useMemo(() => {
+    const list = all.filter((r) => !r.is_test);
+    if (filter === "urgent")
+      return list.filter((r) => r.requires_human_review && r.status === "open");
+    if (filter === "open") return list.filter((r) => r.status === "open");
+    return list;
+  }, [all, filter]);
+
+  const counts = useMemo(() => {
+    const open = all.filter((r) => !r.is_test && r.status === "open");
+    return {
+      high: open.filter((r) => r.sensitivity === "high_stakes").length,
+      peer: open.filter((r) => r.sensitivity === "peer_support").length,
+      ordinary: open.filter((r) => r.sensitivity === "ordinary").length,
+    };
+  }, [all]);
+
+  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await fn();
+      setMessage(
+        result.persisted
+          ? `${label} — done.`
+          : `${label} — not stored (no admin_write hook).`,
+      );
+      setNoteFor(null);
+      setNote("");
+      await reload();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "That didn't go through");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <PageHead
+        title="What parents asked for"
+        intro="The closing question, in their own words. Health, legal and safety questions need a person today — everything else is the launch inventory."
+        right={
+          <div
+            ref={filterRef}
+            style={filterMask}
+            className="flex gap-1 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible"
+          >
+            {(["urgent", "open", "all"] as const).map((key) => (
+              <Button
+                key={key}
+                className="shrink-0"
+                tone={filter === key ? "primary" : "secondary"}
+                onClick={() => setFilter(key)}
+              >
+                {key === "urgent"
+                  ? `Needs a person${counts.high + counts.peer > 0 ? ` · ${counts.high + counts.peer}` : ""}`
+                  : key === "open"
+                    ? "All open"
+                    : "Everything"}
+              </Button>
+            ))}
+          </div>
+        }
+      />
+
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {sample && <SampleBanner />}
+      {message && (
+        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
+          {message}
+        </div>
+      )}
+
+      {counts.high > 0 && (
+        <div className="mb-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
+          <p className="text-[14.5px] font-semibold text-gold-ink">
+            {counts.high === 1
+              ? "One parent asked about health, legal or safety."
+              : `${counts.high} parents asked about health, legal or safety.`}
+          </p>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-gold-ink/90">
+            They were shown professional resources in the flow. This queue exists so
+            somebody follows up properly — Pando does not answer these.
+          </p>
+        </div>
+      )}
+
+      <Card>
+        {loading && all.length === 0 ? (
+          <div className="px-4 py-10 text-center text-[13.5px] text-muted">
+            Loading…
+          </div>
+        ) : !configured && all.length === 0 ? (
+          <NotConfigured demo={demo} onDemo={setDemo} />
+        ) : visible.length === 0 ? (
+          <Empty
+            title="Nothing in this view"
+            body={
+              filter === "urgent"
+                ? "Nothing is waiting on a person. That is the state you want."
+                : "Switch the filter, or wait for new sessions."
+            }
+          />
+        ) : (
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>What they asked</Th>
+                <Th>About</Th>
+                <Th>Routing</Th>
+                <Th>Status</Th>
+                <Th>From</Th>
+                <Th>When</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row) => (
+                <tr
+                  key={row.id}
+                  className={
+                    row.sensitivity === "high_stakes" ? "bg-gold-wash/40" : undefined
+                  }
+                >
+                  <Td className="max-w-[26rem]">
+                    <span className="block text-[14px] leading-snug">
+                      {row.question_text}
+                    </span>
+                  </Td>
+                  <Td>{row.category ? slugLabel(row.category) : "—"}</Td>
+                  <Td>
+                    <Badge
+                      tone={
+                        row.sensitivity === "high_stakes"
+                          ? "red"
+                          : row.sensitivity === "peer_support"
+                            ? "gold"
+                            : "neutral"
+                      }
+                      title={
+                        row.sensitivity === "high_stakes"
+                          ? "Professional resources were shown in the flow"
+                          : row.sensitivity === "peer_support"
+                            ? "Stored only because the parent agreed to keep it"
+                            : "Ordinary local question"
+                      }
+                    >
+                      {slugLabel(row.sensitivity)}
+                    </Badge>
+                    {row.requires_human_review && (
+                      <span className="mt-1 block text-[12px] text-muted">
+                        not usable until read
+                      </span>
+                    )}
+                  </Td>
+                  <Td>
+                    <Badge tone={row.status === "open" ? "gold" : "green"}>
+                      {slugLabel(row.status)}
+                    </Badge>
+                  </Td>
+                  <Td className="text-[13px]">{row.contributor?.name ?? "—"}</Td>
+                  <Td className="text-[13px] text-muted">{when(row.created_at)}</Td>
+                  <Td>
+                    <div className="flex flex-col gap-1.5">
+                      {row.status === "open" && (
+                        <Button
+                          tone="primary"
+                          disabled={busy}
+                          onClick={() => setNoteFor(row.id)}
+                        >
+                          {row.sensitivity === "high_stakes"
+                            ? "Record follow-up…"
+                            : "Mark matched…"}
+                        </Button>
+                      )}
+                      {row.status !== "closed" && (
+                        <Button
+                          tone="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void run("Closed", async () =>
+                              adminAction({
+                                action: "demand.status",
+                                id: row.id,
+                                to: "closed",
+                                note: null,
+                              }),
+                            )
+                          }
+                        >
+                          Close
+                        </Button>
+                      )}
+                    </div>
+
+                    {noteFor === row.id && (
+                      <div className="mt-2 rounded-xl border border-bark bg-paper p-2.5">
+                        <Field
+                          label={
+                            row.sensitivity === "high_stakes"
+                              ? "What was done"
+                              : "What matched it"
+                          }
+                          hint="Stored with your name. Never sent to the parent from here."
+                        >
+                          <input
+                            className={inputClass}
+                            value={note}
+                            onChange={(e) => setNote(e.target.value.slice(0, 300))}
+                          />
+                        </Field>
+                        <div className="mt-2 flex gap-2">
+                          <Button
+                            tone="primary"
+                            disabled={busy || note.trim().length < 3}
+                            onClick={() =>
+                              void run("Recorded", async () =>
+                                adminAction({
+                                  action: "demand.status",
+                                  id: row.id,
+                                  to:
+                                    row.sensitivity === "high_stakes"
+                                      ? "answered"
+                                      : "matched",
+                                  note: note.trim(),
+                                }),
+                              )
+                            }
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            tone="secondary"
+                            onClick={() => {
+                              setNoteFor(null);
+                              setNote("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        )}
+      </Card>
+
+      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
+        These are a parent&apos;s own words about their own family. Nothing on this page
+        is ever published, quoted in an answer, or sent to a model.
+      </p>
+    </>
+  );
+}

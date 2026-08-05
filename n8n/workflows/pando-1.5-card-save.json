@@ -1,0 +1,1371 @@
+{
+  "name": "Pando · 1.5/1.6 card save",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seed-card-save",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        400
+      ],
+      "id": "pando-webhook",
+      "name": "Webhook",
+      "webhookId": "pando-webhook",
+      "notes": "POST from /api/seed/save, once per finished card.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// A named contributor is keyed by phone; an anonymous one has none, and its\n// cards are stored without a person. Both are legitimate.\nconst body = $('Webhook').first().json.body;\nreturn [{ json: { body, phone: body.contributor_phone || null } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        400
+      ],
+      "id": "pando-resolve-contributor",
+      "name": "Resolve contributor",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select person_by_phone($1) as person_id",
+        "options": {
+          "queryReplacement": "={{ $json.phone }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -200,
+        400
+      ],
+      "id": "pando-find-person",
+      "name": "Find person",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// The card exactly as captured. Upsert key is client_id, so a correction\n// (the parent tapping \"Fix\" on a saved card) overwrites instead of duplicating.\nconst body = $('Webhook').first().json.body;\nconst personId = $('Find person').first().json?.person_id ?? null;\nreturn [{ json: { body, person_id: personId, payload: {\n  client_id: body.client_id,\n  person_id: personId,\n  kind: body.kind,\n  fields: body.fields,\n  is_test: body.is_test === true,\n  received_at: body.received_at,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        400
+      ],
+      "id": "pando-build-submission",
+      "name": "Build submission",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_submission($1::jsonb) as submission_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        240,
+        400
+      ],
+      "id": "pando-save-submission",
+      "name": "Save submission",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-caregiver-card-c0",
+              "leftValue": "={{ $('Webhook').item.json.body.kind }}",
+              "rightValue": "caregiver",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        400
+      ],
+      "id": "pando-caregiver-card",
+      "name": "Caregiver card?",
+      "notes": "Caregivers follow different rules to everything else: a hard gate, a\nreview hold, restricted notes, and no contact details anywhere.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Activities and places have a name; a tip is filed under its topic.\nconst f = $('Webhook').first().json.body.fields;\nconst body = $('Webhook').first().json.body;\nreturn [{ json: {\n  market_id: body.market_id || 'pasadena',\n  kind: body.kind,\n  name: f.name || f.topic || 'Untitled',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        700
+      ],
+      "id": "pando-name-the-place",
+      "name": "Name the place",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from place_candidates($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        920,
+        700
+      ],
+      "id": "pando-find-matching-place",
+      "name": "Find matching place",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "Exact match first, then near-matches with a similarity score.",
+      "notesInFlow": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-exact-match-c0",
+              "leftValue": "={{ $json.exact_match }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        700
+      ],
+      "id": "pando-exact-match",
+      "name": "Exact match?",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Creating a place, and noting whether something similar was already there.\n   A near-match is never merged silently — a wrong merge is invisible and\n   permanent, a duplicate is neither — so we create, then flag it for a human. */\nconst body = $('Webhook').first().json.body;\nconst f = body.fields;\nconst candidate = $('Find matching place').first().json;\nconst nearDupe = !candidate.exact_match && (candidate.score ?? 0) > 0.6;\n\nreturn [{ json: { near_dupe: nearDupe, candidate_id: candidate.id ?? null, payload: {\n  market_id: body.market_id || 'pasadena',\n  kind: body.kind,\n  name: f.name || f.topic || 'Untitled',\n  venue: f.venue || null,\n  neighborhoods: f.location || [],\n  age_bands: f.best_for || [],\n  place_type: f.type || null,\n  topic: f.topic || null,\n  is_test: body.is_test === true,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        840
+      ],
+      "id": "pando-build-place",
+      "name": "Build place",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_place($1::jsonb) as place_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1580,
+        840
+      ],
+      "id": "pando-create-place",
+      "name": "Create place",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-similar-one-already-there-c0",
+              "leftValue": "={{ $('Build place').first().json.near_dupe }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1800,
+        840
+      ],
+      "id": "pando-similar-one-already-there",
+      "name": "Similar one already there?",
+      "notes": "Only a near-match is flagged — not every new place.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Its own node, so the admin queue's contents stay traceable to a rule.\nreturn [{ json: { payload: {\n  severity: 'review',\n  reason: 'possible_duplicate_place',\n  subject_kind: 'place',\n  subject_id: $('Create place').first().json.place_id,\n  excerpt: $('Name the place').first().json.name\n    + ' — similar to ' + ($('Build place').first().json.candidate_id ?? 'an existing row'),\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        980
+      ],
+      "id": "pando-flag-possible-duplicate",
+      "name": "Flag possible duplicate",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_flag($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2240,
+        980
+      ],
+      "id": "pando-save-duplicate-flag",
+      "name": "Save duplicate flag",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* Every judgement about this card is made here, in the open:\n     - firsthand vs a friend's experience (R2) decides the label and whether it\n       can ever count toward Founding;\n     - caveat_answered is true when the step was ANSWERED, including \"nothing\n       comes to mind\" — the client counts that, so an empty string still counts;\n     - the place id comes from whichever branch ran. */\nconst body = $('Webhook').first().json.body;\nconst f = body.fields;\n\nlet placeId;\ntry { placeId = $('Create place').first().json.place_id; } catch (e) { placeId = null; }\nif (!placeId) placeId = $('Find matching place').first().json.id;\n\nreturn [{ json: { payload: {\n  place_id: placeId,\n  person_id: $('Find person').first().json?.person_id ?? null,\n  submission_id: $('Save submission').first().json.submission_id,\n  firsthand: f.firsthand === 'yes',\n  child_age_at_time: f.child_age || [],\n  last_there: f.freshness || null,\n  how_much: f.how_much || null,\n  recommendation: f.recommendation || null,\n  what_makes_it_great: f.what_makes_it_great || null,\n  caveat: f.caveat || null,\n  caveat_answered: Object.prototype.hasOwnProperty.call(f, 'caveat'),\n  who_for: f.who_for || null,\n  who_not_for: f.who_not_for || null,\n  price_band: f.price_band || null,\n  price_unit: f.price_unit || null,\n  worth_it: f.worth_it || null,\n  follow_up_ok: f.follow_up_ok === 'yes',\n  tip_text: f.tip || null,\n  is_test: body.is_test === true,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        700
+      ],
+      "id": "pando-build-contribution",
+      "name": "Build contribution",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_place_contribution($1::jsonb) as record_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2680,
+        700
+      ],
+      "id": "pando-save-contribution",
+      "name": "Save contribution",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-negative-recommendation-c0",
+              "leftValue": "={{ ['probably_not','no'].includes($('Webhook').item.json.body.fields.recommendation) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2900,
+        700
+      ],
+      "id": "pando-negative-recommendation",
+      "name": "Negative recommendation?",
+      "notes": "Kept, and read by a person. \"Probably not\" is useful data, not a\nreason to drop the card.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { payload: {\n  severity: 'review',\n  reason: 'negative_recommendation',\n  subject_kind: 'place_contribution',\n  subject_id: $('Save contribution').first().json.record_id,\n  person_id: $('Find person').first().json?.person_id ?? null,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        840
+      ],
+      "id": "pando-flag-negative",
+      "name": "Flag negative",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_flag($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3340,
+        840
+      ],
+      "id": "pando-save-negative-flag",
+      "name": "Save negative flag",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  persisted: true,\n  record_id: $('Save contribution').first().json.record_id,\n  kind: $('Webhook').first().json.body.kind,\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        620
+      ],
+      "id": "pando-respond-place",
+      "name": "Respond place",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3560,
+        700
+      ],
+      "id": "pando-respond--card",
+      "name": "Respond (card)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-18--and-firsthand-c0",
+              "leftValue": "={{ $('Webhook').item.json.body.fields.age_gate }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "pando-18--and-firsthand-c1",
+              "leftValue": "={{ $('Webhook').item.json.body.fields.worked_for_you }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        140
+      ],
+      "id": "pando-18--and-firsthand",
+      "name": "18+ and firsthand?",
+      "notes": "C1 + the no-minors gate. Both are also CHECK constraints, so a mistake\nhere fails the write instead of storing something unsafe.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Say which gate refused it, so the app can explain rather than just fail.\nconst f = $('Webhook').first().json.body.fields;\nreturn [{ json: {\n  persisted: false,\n  error: 'refused',\n  reason: f.age_gate !== 'yes' ? 'age_gate' : 'not_firsthand',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        -60
+      ],
+      "id": "pando-refusal-reason",
+      "name": "Refusal reason",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        -60
+      ],
+      "id": "pando-respond--refused",
+      "name": "Respond (refused)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\nreturn [{ json: {\n  market_id: body.market_id || 'pasadena',\n  first_name: body.first_name || body.fields.first_name,\n  last_initial: body.last_initial || '',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        140
+      ],
+      "id": "pando-name-the-caregiver",
+      "name": "Name the caregiver",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from caregiver_candidates($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1140,
+        140
+      ],
+      "id": "pando-find-matching-caregiver",
+      "name": "Find matching caregiver",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-same-caregiver-c0",
+              "leftValue": "={{ $json.exact_match }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        140
+      ],
+      "id": "pando-same-caregiver",
+      "name": "Same caregiver?",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const n = $('Name the caregiver').first().json;\nreturn [{ json: { payload: {\n  market_id: n.market_id,\n  first_name: n.first_name,\n  last_initial: n.last_initial,\n  is_adult: true,                    // the gate above already refused anything else\n  is_test: $('Webhook').first().json.body.is_test === true,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        260
+      ],
+      "id": "pando-build-caregiver",
+      "name": "Build caregiver",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_caregiver($1::jsonb) as caregiver_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1800,
+        260
+      ],
+      "id": "pando-create-caregiver",
+      "name": "Create caregiver",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "/* The rule the client asked for, in one readable place.\n   Anything other than a clear \"yes\" to \"would you hire them again\", and any\n   restricted note, keeps the card but holds it for a human — and the parent was\n   already told so on the screen. A hold can be added later; it is never cleared. */\nconst body = $('Webhook').first().json.body;\nconst f = body.fields;\n\nconst hold = [];\nif (f.hire_again && f.hire_again !== 'yes') hold.push('hire_again_' + f.hire_again);\nif (body.private_note)       hold.push('private_note');\nif (body.hesitation_reason)  hold.push('hesitation_reason');\n\nconst notes = [];\nif (body.private_note)      notes.push({ kind: 'private_note', body: body.private_note });\nif (body.hesitation_reason) notes.push({ kind: 'hesitation_reason', body: body.hesitation_reason });\n\nlet caregiverId;\ntry { caregiverId = $('Create caregiver').first().json.caregiver_id; } catch (e) { caregiverId = null; }\nif (!caregiverId) caregiverId = $('Find matching caregiver').first().json.id;\n\nreturn [{ json: {\n  hold,\n  held: hold.length > 0,\n  caregiver_id: caregiverId,\n  payload: {\n    caregiver_id: caregiverId,\n    person_id: $('Find person').first().json?.person_id ?? null,\n    submission_id: $('Save submission').first().json.submission_id,\n    worked_for_family: true,\n    care_type: f.type || null,\n    how_known: f.how_known || null,\n    how_long: f.how_long || null,\n    last_worked: f.last_worked || null,\n    cared_for_ages: f.cared_for_ages || [],\n    strengths: f.strengths || [],\n    in_their_words: f.what_makes_special || null,\n    good_fit_for: f.good_fit_for || [],\n    caveat: f.caveat || null,\n    hire_again: f.hire_again || null,\n    needs_horizon: f.needs_horizon || null,\n    needs_change_type: f.needs_change_type || null,\n    recontact_ok: f.recontact_ok === 'yes',\n    pay_band: f.pay_band || null,\n    pay_benchmark_consent: f.pay_benchmark_ok === 'yes',\n    reference_willing: f.reference_willing || null,\n    invite_sent_by_parent: f.send_invite === 'yes',\n    review_hold: hold.length > 0,\n    hold_reasons: hold,\n    restricted_notes: notes,\n    is_test: body.is_test === true,\n  },\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        140
+      ],
+      "id": "pando-decide-the-hold",
+      "name": "Decide the hold",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_caregiver_nomination($1::jsonb) as record_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2240,
+        140
+      ],
+      "id": "pando-save-nomination",
+      "name": "Save nomination",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "Nomination + its restricted notes, in one transaction. The only\nbundled write in the schema.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-parent-sent-the-invite-c0",
+              "leftValue": "={{ $('Webhook').item.json.body.fields.send_invite }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "pando-parent-sent-the-invite-c1",
+              "leftValue": "={{ $('Decide the hold').first().json.held }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2460,
+        140
+      ],
+      "id": "pando-parent-sent-the-invite",
+      "name": "Parent sent the invite?",
+      "notes": "A held card is not offered the invite step — offering it would undo\nthe hold. 'invited' is as far as a parent's action can move the ladder.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { payload: {\n  caregiver_id: $('Decide the hold').first().json.caregiver_id,\n  consent_status: 'invited',\n  actor: 'parent',\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2680,
+        20
+      ],
+      "id": "pando-build-ladder-step",
+      "name": "Build ladder step",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select set_caregiver_consent($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2900,
+        20
+      ],
+      "id": "pando-mark-invited",
+      "name": "Mark invited",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-held-for-review-c0",
+              "leftValue": "={{ $('Decide the hold').first().json.held }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2680,
+        260
+      ],
+      "id": "pando-held-for-review",
+      "name": "Held for review?",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Decide the hold').first().json;\nreturn [{ json: { payload: {\n  severity: 'review',\n  reason: 'caregiver_review_hold',\n  subject_kind: 'caregiver_nomination',\n  subject_id: $('Save nomination').first().json.record_id,\n  person_id: $('Find person').first().json?.person_id ?? null,\n  excerpt: d.hold.join(', '),\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        380
+      ],
+      "id": "pando-flag-the-hold",
+      "name": "Flag the hold",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_flag($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3120,
+        380
+      ],
+      "id": "pando-save-hold-flag",
+      "name": "Save hold flag",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Decide the hold').first().json;\nreturn [{ json: {\n  persisted: true,\n  record_id: $('Save nomination').first().json.record_id,\n  review_queued: d.held ? 1 : 0,\n  invariants: {\n    adults_only: true,\n    firsthand_only: true,\n    consent_pending: true,\n    no_contact_stored: true,\n  },\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        200
+      ],
+      "id": "pando-respond-caregiver",
+      "name": "Respond caregiver",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3560,
+        200
+      ],
+      "id": "pando-respond--caregiver",
+      "name": "Respond (caregiver)"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve contributor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve contributor": {
+      "main": [
+        [
+          {
+            "node": "Find person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find person": {
+      "main": [
+        [
+          {
+            "node": "Build submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build submission": {
+      "main": [
+        [
+          {
+            "node": "Save submission",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save submission": {
+      "main": [
+        [
+          {
+            "node": "Caregiver card?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Caregiver card?": {
+      "main": [
+        [
+          {
+            "node": "18+ and firsthand?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Name the place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Name the place": {
+      "main": [
+        [
+          {
+            "node": "Find matching place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find matching place": {
+      "main": [
+        [
+          {
+            "node": "Exact match?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exact match?": {
+      "main": [
+        [
+          {
+            "node": "Build contribution",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build place": {
+      "main": [
+        [
+          {
+            "node": "Create place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create place": {
+      "main": [
+        [
+          {
+            "node": "Similar one already there?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Similar one already there?": {
+      "main": [
+        [
+          {
+            "node": "Flag possible duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build contribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag possible duplicate": {
+      "main": [
+        [
+          {
+            "node": "Save duplicate flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save duplicate flag": {
+      "main": [
+        [
+          {
+            "node": "Build contribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build contribution": {
+      "main": [
+        [
+          {
+            "node": "Save contribution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save contribution": {
+      "main": [
+        [
+          {
+            "node": "Negative recommendation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Negative recommendation?": {
+      "main": [
+        [
+          {
+            "node": "Flag negative",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag negative": {
+      "main": [
+        [
+          {
+            "node": "Save negative flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save negative flag": {
+      "main": [
+        [
+          {
+            "node": "Respond place",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond place": {
+      "main": [
+        [
+          {
+            "node": "Respond (card)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "18+ and firsthand?": {
+      "main": [
+        [
+          {
+            "node": "Name the caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refusal reason",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refusal reason": {
+      "main": [
+        [
+          {
+            "node": "Respond (refused)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Name the caregiver": {
+      "main": [
+        [
+          {
+            "node": "Find matching caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find matching caregiver": {
+      "main": [
+        [
+          {
+            "node": "Same caregiver?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Same caregiver?": {
+      "main": [
+        [
+          {
+            "node": "Decide the hold",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build caregiver": {
+      "main": [
+        [
+          {
+            "node": "Create caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create caregiver": {
+      "main": [
+        [
+          {
+            "node": "Decide the hold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide the hold": {
+      "main": [
+        [
+          {
+            "node": "Save nomination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save nomination": {
+      "main": [
+        [
+          {
+            "node": "Parent sent the invite?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parent sent the invite?": {
+      "main": [
+        [
+          {
+            "node": "Build ladder step",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Held for review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build ladder step": {
+      "main": [
+        [
+          {
+            "node": "Mark invited",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark invited": {
+      "main": [
+        [
+          {
+            "node": "Held for review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Held for review?": {
+      "main": [
+        [
+          {
+            "node": "Flag the hold",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag the hold": {
+      "main": [
+        [
+          {
+            "node": "Save hold flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save hold flag": {
+      "main": [
+        [
+          {
+            "node": "Respond caregiver",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond caregiver": {
+      "main": [
+        [
+          {
+            "node": "Respond (caregiver)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "pando"
+  },
+  "tags": [
+    {
+      "name": "pando"
+    }
+  ]
+}

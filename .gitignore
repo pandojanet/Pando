@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+build/
+
+# env files — never commit; see web/.env.example and deploy/.env.example
+.env
+.env.*
+!.env.example
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# misc
+.DS_Store
+Thumbs.db
+*.pem
+
+# claude code — skills and launch config are shared, local settings are not
+.claude/settings.local.json

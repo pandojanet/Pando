@@ -1,0 +1,617 @@
+{
+  "name": "Pando · 1.7 completion",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "seed-complete",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        300
+      ],
+      "id": "pando-webhook",
+      "name": "Webhook",
+      "webhookId": "pando-webhook",
+      "notes": "POST from /api/seed/complete, once, after the OTP is confirmed.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select person_by_phone($1) as person_id",
+        "options": {
+          "queryReplacement": "={{ $json.body.phone }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -420,
+        300
+      ],
+      "id": "pando-find-person",
+      "name": "Find person",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-known-contributor-c0",
+              "leftValue": "={{ $json.person_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -200,
+        300
+      ],
+      "id": "pando-known-contributor",
+      "name": "Known contributor?",
+      "notes": "The anonymous path has no phone and therefore no person row. Its\ncompletion is still worth recording as a funnel event, but there is\nnobody to attach consent or an allowance to.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\nconst personId = $('Find person').first().json.person_id;\nreturn [{ json: {\n  person_id: personId,\n  allowance: {\n    person_id: personId,\n    monthly_contact_allowance: body.monthly_contact_allowance ?? 3,\n    allowance_mode: body.allowance_mode || 'fixed',\n  },\n  consent: {\n    person_id: personId,\n    scope: 'follow_up',\n    status: body.consent?.status || (body.follow_up_opt_in ? 'opted_in' : 'declined'),\n    source: body.consent?.source || 'seed_completion_screen',\n    text_version: body.consent?.text_version,\n    captured_at: body.consent?.captured_at,\n  },\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        220
+      ],
+      "id": "pando-build-consent---allowance",
+      "name": "Build consent + allowance",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select set_allowance($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.allowance) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        240,
+        220
+      ],
+      "id": "pando-set-allowance",
+      "name": "Set allowance",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_consent($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($('Build consent + allowance').first().json.consent) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        460,
+        220
+      ],
+      "id": "pando-save-follow-up-consent",
+      "name": "Save follow-up consent",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Never 'founding' here. That is decided when the second qualifying\n// contribution is approved (see the founding-check workflow).\nreturn [{ json: { payload: {\n  person_id: $('Build consent + allowance').first().json.person_id,\n  status: 'pending_founding',\n  actor: 'workflow',\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        220
+      ],
+      "id": "pando-mark-pending-founding",
+      "name": "Mark pending founding",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select set_founding($1::jsonb)",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        900,
+        220
+      ],
+      "id": "pando-set-pending-founding",
+      "name": "Set pending founding",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        20,
+        460
+      ],
+      "id": "pando-anonymous---nothing-to-attach",
+      "name": "Anonymous — nothing to attach"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-did-they-ask-something-c0",
+              "leftValue": "={{ ($('Webhook').item.json.body.demand && $('Webhook').item.json.body.demand.question_text) ? 1 : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ],
+      "id": "pando-did-they-ask-something",
+      "name": "Did they ask something?",
+      "notes": "D1. A peer-support question only reaches here when the parent said it\ncould be kept — the app drops it otherwise.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body;\nconst d = body.demand;\nlet personId = null;\ntry { personId = $('Find person').first().json.person_id ?? null; } catch (e) {}\nreturn [{ json: {\n  sensitivity: d.sensitivity || 'ordinary',\n  payload: {\n    person_id: personId,\n    question_text: d.question_text,\n    category: d.category || null,\n    sensitivity: d.sensitivity || 'ordinary',\n    // Anything not ordinary waits for a person before it can be used.\n    requires_human_review: (d.sensitivity || 'ordinary') !== 'ordinary',\n    is_test: body.is_test === true,\n  },\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        180
+      ],
+      "id": "pando-build-demand-signal",
+      "name": "Build demand signal",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_demand_signal($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1560,
+        180
+      ],
+      "id": "pando-save-demand-signal",
+      "name": "Save demand signal",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "pando-health--legal-or-safety-c0",
+              "leftValue": "={{ $('Build demand signal').first().json.sensitivity }}",
+              "rightValue": "high_stakes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1780,
+        180
+      ],
+      "id": "pando-health--legal-or-safety",
+      "name": "Health, legal or safety?",
+      "notes": "The parent already saw professional resources in the flow. This is so\na person follows up.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { payload: {\n  severity: 'escalation',\n  reason: 'high_stakes_demand',\n  subject_kind: 'demand_signal',\n  subject_id: $('Save demand signal').first().json.id,\n  excerpt: $('Webhook').first().json.body.demand.question_text,\n} } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        80
+      ],
+      "id": "pando-build-escalation",
+      "name": "Build escalation",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select write_flag($1::jsonb) as id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2220,
+        80
+      ],
+      "id": "pando-save-escalation",
+      "name": "Save escalation",
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Pando Supabase"
+        }
+      },
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        420
+      ],
+      "id": "pando-no-question",
+      "name": "No question"
+    },
+    {
+      "parameters": {
+        "jsCode": "let personId = null;\ntry { personId = $('Find person').first().json.person_id ?? null; } catch (e) {}\nreturn [{ json: {\n  persisted: true,\n  contributor_id: personId,\n  contributor_status: 'pending_founding',\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        300
+      ],
+      "id": "pando-compose-response",
+      "name": "Compose response",
+      "notes": "",
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2660,
+        300
+      ],
+      "id": "pando-respond",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Find person",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find person": {
+      "main": [
+        [
+          {
+            "node": "Known contributor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Known contributor?": {
+      "main": [
+        [
+          {
+            "node": "Build consent + allowance",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Anonymous — nothing to attach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build consent + allowance": {
+      "main": [
+        [
+          {
+            "node": "Set allowance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set allowance": {
+      "main": [
+        [
+          {
+            "node": "Save follow-up consent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save follow-up consent": {
+      "main": [
+        [
+          {
+            "node": "Mark pending founding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark pending founding": {
+      "main": [
+        [
+          {
+            "node": "Set pending founding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set pending founding": {
+      "main": [
+        [
+          {
+            "node": "Did they ask something?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anonymous — nothing to attach": {
+      "main": [
+        [
+          {
+            "node": "Did they ask something?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Did they ask something?": {
+      "main": [
+        [
+          {
+            "node": "Build demand signal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build demand signal": {
+      "main": [
+        [
+          {
+            "node": "Save demand signal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save demand signal": {
+      "main": [
+        [
+          {
+            "node": "Health, legal or safety?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health, legal or safety?": {
+      "main": [
+        [
+          {
+            "node": "Build escalation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Compose response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build escalation": {
+      "main": [
+        [
+          {
+            "node": "Save escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save escalation": {
+      "main": [
+        [
+          {
+            "node": "Compose response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No question": {
+      "main": [
+        [
+          {
+            "node": "Compose response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose response": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "pando"
+  },
+  "tags": [
+    {
+      "name": "pando"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+# Pando web — what runs on the VPS.
+#
+# Copy this file and `.env.example` (as `.env`) into the deploy directory on the
+# server: /docker/pando. The deploy workflow only ever exports PANDO_IMAGE and
+# runs `docker compose pull && docker compose up -d` — the file itself is not
+# rewritten by CI, so anything you change here survives a deploy.
+#
+# Ingress on this box is Traefik, not nginx: it already holds 80/443 and issues
+# the Let's Encrypt certificate. Traefik finds this container by reading the
+# labels below off the Docker socket, so the app is reached over the compose
+# network and does not need a published port. The labels are the ones the
+# previous static-site container carried, with one change — the upstream port is
+# 3000 (Next.js) instead of 80 (nginx).
+#
+# The project name comes from the directory (/docker/pando -> "pando"), which is
+# what puts this container back on the existing `pando_default` network that
+# Traefik already reaches. Renaming or moving the directory changes the network
+# name and silently takes the site off Traefik — don't.
+
+services:
+  web:
+    # Overridden per deploy with the exact commit SHA. The :latest fallback is
+    # for a manual `docker compose up` on the box.
+    image: ${PANDO_IMAGE:-ghcr.io/OWNER/REPO/web:latest}
+    container_name: pando-web
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    # Loopback only, and optional: Traefik does not use it. It is here so that
+    # `curl 127.0.0.1:3000/api/health` on the box answers the one question logs
+    # cannot — whether a bad response is the app or the proxy in front of it.
+    ports:
+      - "127.0.0.1:3000:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pando.entrypoints=websecure"
+      - "traefik.http.routers.pando.rule=Host(`pando.is`) || Host(`www.pando.is`)"
+      - "traefik.http.routers.pando.tls.certresolver=letsencrypt"
+      # The one line that differs from the static site it replaced.
+      - "traefik.http.services.pando.loadbalancer.server.port=3000"
+    # Give in-flight requests and after() callbacks time to drain on redeploy.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

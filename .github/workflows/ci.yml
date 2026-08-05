@@ -1,0 +1,48 @@
+name: CI
+
+# Every branch and every PR. Deploy waits on this job, so a red build here
+# means nothing reaches the VPS.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: typecheck + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # next build shares a cache in .next/cache between runs.
+      - uses: actions/cache@v4
+        with:
+          path: web/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.ts', 'web/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('web/package-lock.json') }}-
+
+      # next build type-checks too, but tsc first fails in seconds and covers
+      # files outside the build graph.
+      - run: npm run typecheck
+
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"

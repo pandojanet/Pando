@@ -1,0 +1,322 @@
+@import "tailwindcss";
+
+/* ───────────────────────────────────────────────────────────────
+   Pando design tokens
+   Palette is carried over from the marketing site (pando.is) so the
+   Seed Tool feels like the same product. Do not introduce new hues
+   without adding them here first.
+   ─────────────────────────────────────────────────────────────── */
+@theme {
+  /* Surfaces */
+  --color-paper: #f7f6f0;
+  --color-card: #ffffff;
+  --color-bark: #e6e2d4;
+  --color-bark-soft: #f0ede3;
+  --color-moss: #26331d;
+  /* Only used on moss: the lit corner, the deep corner, and text on top of it */
+  --color-moss-lift: #35461f;
+  --color-moss-deep: #1a2314;
+  --color-paper-soft: #c9cbbb;
+  --color-paper-faint: #8e9382;
+
+  /* Ink */
+  --color-ink: #223018;
+  --color-ink-soft: #3d4636;
+  --color-muted: #6b7261;
+
+  /* Brand */
+  --color-green: #587a4a;
+  --color-green-deep: #3c5733;
+  --color-green-wash: #eef2e8;
+  --color-gold: #d9a31c;
+  --color-gold-deep: #c4920f;
+  --color-gold-ink: #8a6510;
+  --color-gold-wash: #fbf4de;
+  --color-gold-line: #ebdcae;
+
+  /* Extra breakpoint: the gap between a small iPhone SE and a 390px iPhone */
+  --breakpoint-xs: 25rem;
+
+  /* Type */
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-instrument), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+
+  /* Motion — one easing for everything, so the app moves as one thing */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-step-in: step-in 0.34s var(--ease-soft) both;
+  --animate-step-in-back: step-in-back 0.34s var(--ease-soft) both;
+  --animate-rise: rise 0.4s var(--ease-soft) both;
+  --animate-sheet-up: sheet-up 0.26s var(--ease-soft) both;
+  --animate-fade: fade 0.2s linear both;
+  --animate-pop: pop 0.4s var(--ease-soft) both;
+
+  /* Elevation — low and warm, never a grey drop shadow */
+  --shadow-card: 0 1px 2px rgba(34, 48, 24, 0.04),
+    0 8px 24px -16px rgba(34, 48, 24, 0.18);
+  --shadow-dock: 0 -1px 0 var(--color-bark), 0 -12px 24px -20px rgba(34, 48, 24, 0.25);
+  /* The framed app column on desktop, lifted off the moss background */
+  --shadow-float: 0 2px 6px rgba(10, 18, 8, 0.18),
+    0 40px 90px -35px rgba(8, 14, 6, 0.65);
+
+  @keyframes step-in {
+    from {
+      opacity: 0;
+      transform: translate3d(14px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes step-in-back {
+    from {
+      opacity: 0;
+      transform: translate3d(-14px, 0, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes sheet-up {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+    to {
+      transform: none;
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    60% {
+      transform: scale(1.03);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+}
+
+/* Top-level (not in @theme) so it survives tree-shaking: the typing indicator
+   drives it from an inline style rather than an animate-* utility. */
+@keyframes dot-tick {
+  0%,
+  45%,
+  100% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0.25;
+  }
+}
+
+@layer base {
+  html {
+    /* Phone-first: never let iOS reflow our type on rotate */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--color-paper);
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    /* No accidental horizontal scroll on small screens */
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  /* Kill the grey flash on tap; we hand-roll press states instead */
+  button,
+  a,
+  [role="button"],
+  label {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* 16px minimum or iOS Safari zooms the whole page on focus */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+    font-family: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.022em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Legal prose (/privacy, /terms)
+   Styled here rather than with per-element utilities so those pages
+   stay close to plain HTML — they are documents the client edits,
+   not components. Nothing else should use `.legal`.
+   ─────────────────────────────────────────────────────────────── */
+@layer components {
+  .legal h3 {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1.75rem 0 0.5rem;
+    /* Clear of the sticky site header when reached from the section index */
+    scroll-margin-top: 6rem;
+  }
+  .legal p,
+  .legal li {
+    font-size: 0.97rem;
+    line-height: 1.65;
+    color: var(--color-ink-soft);
+  }
+  .legal p {
+    margin-bottom: 0.75rem;
+  }
+  .legal ul {
+    list-style: disc;
+    margin: 0.5rem 0 0.75rem 1.375rem;
+  }
+  .legal li {
+    margin-bottom: 0.35rem;
+  }
+  .legal a {
+    color: var(--color-green-deep);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .legal strong {
+    color: var(--color-green-deep);
+  }
+}
+
+@layer utilities {
+  /* Ambient warmth behind the marketing hero. Desktop only — on a phone the
+     hero fills the screen and a gradient behind it just muddies the type. */
+  @media (min-width: 48rem) {
+    .hero-wash {
+      background-image:
+        radial-gradient(
+          55% 55% at 82% 10%,
+          color-mix(in oklab, var(--color-gold) 13%, transparent),
+          transparent 70%
+        ),
+        radial-gradient(
+          50% 60% at 2% 95%,
+          color-mix(in oklab, var(--color-green) 10%, transparent),
+          transparent 72%
+        );
+    }
+  }
+
+  /* The highlighter stroke under a phrase. Painted as an inline background so it
+     follows the text when it wraps — an absolutely positioned bar only works on
+     a single line, which forced `white-space: nowrap` and broke narrow columns. */
+  .highlight-gold {
+    background-image: linear-gradient(
+      to top,
+      transparent 0.07em,
+      color-mix(in oklab, var(--color-gold) 35%, transparent) 0.07em,
+      color-mix(in oklab, var(--color-gold) 35%, transparent) 0.37em,
+      transparent 0.37em
+    );
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  /* For panes that scroll inside the layout (the desktop context sidebar). A
+     native Windows scrollbar with arrow buttons inside our own UI reads as a
+     mistake; this one is a thin bark-coloured thumb on no track. */
+  .frame-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-bark) transparent;
+  }
+  .frame-scroll::-webkit-scrollbar {
+    width: 11px;
+  }
+  .frame-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .frame-scroll::-webkit-scrollbar-thumb {
+    background: var(--color-bark);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 999px;
+  }
+  .frame-scroll::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--color-bark) 65%, var(--color-ink));
+    background-clip: content-box;
+  }
+
+  /* Safe areas: the dock sits above the iOS home indicator, always */
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .pt-safe {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Fades the top of a scroll area so cut-off content reads as scrollable */
+  .scroll-mask {
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 12px,
+      #000 calc(100% - 20px),
+      transparent 100%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
