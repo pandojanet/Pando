@@ -13,7 +13,11 @@ import {
 } from "@/components/site/Shell";
 
 export const metadata: Metadata = {
-  title: { absolute: "Pando — AI knows things. Pando knows someone." },
+  /* `absolute` bypasses the root layout's "%s — Pando" template, which would
+     otherwise render "Pando — Pando". A browser tab shows ~15 characters, so the
+     tagline only ever appeared as "Pando — AI kno…"; it still reaches people in
+     full through `description` and the OG tags. */
+  title: { absolute: "Pando" },
   description:
     "Pando is a text line for San Gabriel Valley parents. Ask about local classes, camps, and caregivers — get answers backed by real parents in your community, labeled by who shared them and when.",
 };

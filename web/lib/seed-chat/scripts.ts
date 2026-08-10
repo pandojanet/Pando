@@ -10,8 +10,8 @@ import type { Script, ShareKind } from "./types";
  * inactive until the caregiver personally consents. "Place" and "tip" are the two
  * lighter share types from the estimate's menu.
  *
- * The AI side of these cards — extraction, confidence scoring, confirm-back on
- * vague answers (estimate 1.5/1.6/1.8) — belongs to the n8n workflows. What lives
+ * The AI side of these cards — extraction and confidence scoring (estimate 1.8) —
+ * runs server-side in `lib/server/extract.ts`, after the save response. What lives
  * here is the structured capture: every answer already arrives as a field.
  */
 

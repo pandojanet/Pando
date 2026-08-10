@@ -27,7 +27,7 @@ export function ShareMenu({
             key={kind}
             type="button"
             onClick={() => onPick(kind)}
-            className="flex min-h-[72px] flex-col items-start gap-1.5 rounded-2xl border border-bark bg-card p-3 text-left transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.98]"
+            className="flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-bark bg-card p-3 text-center transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.98]"
           >
             <span className="text-green">{ICONS[kind]}</span>
             <span className="text-[14px] font-semibold leading-tight">

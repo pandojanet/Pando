@@ -143,7 +143,7 @@ export default function FlagsPage() {
       <div className="space-y-5">
         <Card
           title={`Escalations (${escalations.length})`}
-          className={escalations.length > 0 ? "border-[#d8b4b4]" : undefined}
+          className={escalations.length > 0 ? "border-alert-line" : undefined}
           right={
             <span className="text-[12px] text-muted">
               safety claims about a named person — handle first

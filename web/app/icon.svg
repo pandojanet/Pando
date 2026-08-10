@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Pando">
+  <title>Pando</title>
+  <!--
+    The Pando mark as the browser-tab icon: an aspen leaf over three dots — a
+    message, and a root system. The leaf path is copied verbatim from
+    components/ui/Logo.tsx and placed with a transform rather than redrawn, so the
+    silhouette cannot drift away from the one in the app.
+
+    Three deliberate differences from the component, all because this renders at
+    16px:
+      · the canvas is square (the component's viewBox is 26x29) and the mark is
+        centred in it with ~7% padding;
+      · the stem is 2.6 wide instead of 1.8 and the dots are r=2.2 instead of
+        r=1.55 — at tab size the original weights disappear entirely;
+      · the colours are literal hex rather than the theme's CSS custom properties,
+        because a favicon is fetched as its own document and never sees
+        globals.css. This is the one place in the repo where hard-coded brand hex
+        is correct; if the theme changes, this file has to change with it.
+
+    Careful editing this comment: a standalone SVG is parsed as XML, which forbids a
+    double hyphen inside a comment. Naming a CSS custom property here the way you
+    would in TypeScript is enough to make the whole file fail to load as an image —
+    and it fails silently, because injecting the same markup into a page uses the
+    lenient HTML parser and works fine.
+  -->
+  <style>
+    /* The leaf is green in both themes. It was gold on dark chrome, copied from
+       PandoMark's tone="light" treatment — but that treatment exists for the moss
+       brand panel, and the palette rule is that gold marks *specialness* (founding
+       status, a warning, a highlighted phrase). A tab icon signals none of those;
+       it is just the mark, and the mark is green.
+
+       Only the dots switch. At #223018 they would vanish against a dark tab strip,
+       and they are half the mark — a leaf over three dots, a message and a root
+       system. Green #587a4a holds roughly 3.6:1 against typical dark chrome, above
+       the 3:1 floor for a graphical object. */
+    :root {
+      --leaf: #587a4a;
+      --dots: #223018;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --dots: #f7f6f0;
+      }
+    }
+  </style>
+  <g transform="translate(16 16) scale(1.05) translate(-13 -14.95)">
+    <path
+      d="M13 2C9 6.5 7.5 9.5 7.5 12.5C7.5 16 10 18.5 13 18.5C16 18.5 18.5 16 18.5 12.5C18.5 9.5 17 6.5 13 2Z"
+      fill="var(--leaf)"
+    />
+    <path
+      d="M13 17V21.4"
+      stroke="var(--leaf)"
+      stroke-width="2.6"
+      stroke-linecap="round"
+    />
+    <circle cx="6.9" cy="25.7" r="2.2" fill="var(--dots)" />
+    <circle cx="13" cy="25.7" r="2.2" fill="var(--dots)" />
+    <circle cx="19.1" cy="25.7" r="2.2" fill="var(--dots)" />
+  </g>
+</svg>

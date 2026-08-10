@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import {
   ADMIN_COOKIE,
   adminConfigured,
-  adminUsers,
   clearFailures,
   issueToken,
   loginLocked,
-  passwordMatches,
   recordFailure,
+  verifyCredentials,
 } from "@/lib/admin/auth";
 
 /** POST /api/admin/session — sign in. DELETE — sign out. (Estimate 2.1.) */
@@ -43,11 +42,13 @@ export async function POST(request: Request) {
   } | null;
 
   const user = typeof body?.user === "string" ? body.user.trim() : "";
-  const known = adminUsers().includes(user);
 
-  if (!known || !passwordMatches(body?.password)) {
+  /**
+   * One call decides it, and it costs the same whether the name exists or not —
+   * so neither the answer nor the response time says which half was wrong.
+   */
+  if (!(await verifyCredentials(user, body?.password))) {
     recordFailure(key);
-    // Never say which half was wrong.
     console.warn("[admin:login] failed attempt");
     return NextResponse.json({ error: "That didn't match." }, { status: 401 });
   }

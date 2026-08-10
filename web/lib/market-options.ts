@@ -7,8 +7,8 @@ import type { AgeBand, MarketCategory, MarketId, Option } from "./types";
  *
  * These are stand-ins so the flow can be built, demoed and QA'd. Every entry
  * here maps 1:1 to a `market_options` row (market_id, category, option_value),
- * so replacing this file with the real lists — or fetching them from n8n at
- * runtime via GET /api/market/options — changes no component code.
+ * so replacing this file with the real lists — or serving them from the database
+ * at runtime via GET /api/market/options — changes no component code.
  *
  * Spec §8.5: "the questionnaire localizes itself as data, not code."
  */

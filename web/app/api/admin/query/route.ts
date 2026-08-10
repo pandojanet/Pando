@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { sql } from "drizzle-orm";
 import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
 import * as sample from "@/lib/admin/sample";
 import type { AdminResource } from "@/lib/admin/types";
-import { forwardToN8n, isHookConfigured } from "@/lib/server/n8n";
+import { getDb } from "@/lib/server/db";
+import { readResource } from "@/lib/server/repo/admin-read";
 
 /**
  * POST /api/admin/query — one read endpoint for every admin page (estimate 2.2–2.8).
  *
- * `{ resource, params }` in, rows out. One endpoint means one place that checks the
- * session and one workflow with a Switch, instead of a dozen webhooks each able to
- * forget the auth check.
+ * `{ resource, params }` in, rows out. One endpoint means one place that checks
+ * the session, instead of a dozen routes each able to forget it.
  *
- * With the hook unconfigured it answers `configured: false` and empty rows, so pages
- * show an honest empty state. `demo: true` swaps in clearly-labelled sample rows for
- * reviewing the layout — never mixed with real data, because it is only reachable
- * when there is no backend at all.
+ * With no database configured it answers `configured: false` and empty rows, so
+ * pages show an honest empty state. `demo: true` swaps in clearly-labelled
+ * sample rows for reviewing the layout — never mixed with real data, because it
+ * is only reachable when there is no backend at all.
  */
 
 const EMPTY: Record<AdminResource, unknown> = {
@@ -65,7 +66,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
   }
 
-  if (!isHookConfigured("admin_read")) {
+  const db = getDb();
+  if (!db) {
     return NextResponse.json({
       configured: false,
       rows: body?.demo === true ? SAMPLE[resource] : EMPTY[resource],
@@ -73,20 +75,34 @@ export async function POST(request: Request) {
     });
   }
 
-  const result = await forwardToN8n<{ rows?: unknown; total?: number }>("admin_read", {
-    resource,
-    params: body?.params ?? {},
-    requested_by: session.user,
-  });
+  try {
+    const params = (body?.params ?? {}) as Record<string, unknown>;
+    const data = await readResource(db, resource, params);
 
-  if (!result.forwarded) {
-    console.error("[admin:query] n8n forward failed", result.error ?? result.reason);
-    return NextResponse.json({ error: "Could not load that right now" }, { status: 502 });
+    /**
+     * Reading a restricted note is itself an event worth recording: these are
+     * the bodies invariant 12 keeps off every list, and "who opened it" is the
+     * only control left once someone has access to the admin at all.
+     */
+    if (resource === "restricted_note") {
+      await db.execute(
+        sql`insert into audit_log (actor, action, resource, resource_id)
+            values (${session.user}, 'read', 'restricted_note',
+                    ${String(params.nomination_id ?? params.id ?? "")})`,
+      );
+    }
+
+    return NextResponse.json({ configured: true, rows: data ?? EMPTY[resource] });
+  } catch (err) {
+    // No arguments logged: these queries carry names and phone numbers.
+    console.error(
+      "[admin:query] failed",
+      resource,
+      err instanceof Error ? err.message : "unknown error",
+    );
+    return NextResponse.json(
+      { error: "Could not load that right now" },
+      { status: 502 },
+    );
   }
-
-  return NextResponse.json({
-    configured: true,
-    rows: result.data.rows ?? EMPTY[resource],
-    total: result.data.total,
-  });
 }

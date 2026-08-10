@@ -170,7 +170,7 @@ export function Badge({
     neutral: "border-bark bg-paper text-ink-soft",
     green: "border-green/30 bg-green-wash text-green-deep",
     gold: "border-gold-line bg-gold-wash text-gold-ink",
-    red: "border-[#d8b4b4] bg-[#fbeeee] text-[#8a2f2f]",
+    red: "border-alert-line bg-alert-wash text-alert",
     muted: "border-bark bg-transparent text-muted",
   };
   return (
@@ -259,7 +259,7 @@ export function Button({
   const tones = {
     primary: "bg-green-deep text-white hover:bg-ink",
     secondary: "border border-bark bg-card text-ink hover:border-green/60",
-    danger: "border border-[#d8b4b4] bg-[#fbeeee] text-[#8a2f2f] hover:border-[#b98a8a]",
+    danger: "border border-alert-line bg-alert-wash text-alert hover:border-alert/45",
     ghost: "text-muted hover:text-green-deep",
   };
   return (
@@ -345,12 +345,12 @@ export function NotConfigured({
 }) {
   return (
     <Empty
-      title="No backend connected yet"
+      title="No database connected yet"
       body={
         <>
-          This page reads through the <code>admin_read</code> n8n hook, which isn&apos;t
-          set (<code>N8N_WEBHOOK_ADMIN_READ</code>). Until then there is nothing to
-          show — you can switch on sample rows to review the layout.
+          This page reads from the database, and <code>DATABASE_URL</code> isn&apos;t
+          set. Until then there is nothing to show — you can switch on sample rows
+          to review the layout.
         </>
       }
       action={
@@ -364,7 +364,7 @@ export function NotConfigured({
 
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-4 rounded-xl border border-[#d8b4b4] bg-[#fbeeee] px-4 py-2.5 text-[13.5px] font-medium text-[#8a2f2f]">
+    <div className="mb-4 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert">
       {children}
     </div>
   );

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
 import { cleanText } from "@/lib/sanitize";
-import { forwardToN8n, isHookConfigured } from "@/lib/server/n8n";
+import { withDb } from "@/lib/server/db";
+import { applyAction } from "@/lib/server/repo/admin-write";
 
 /**
  * POST /api/admin/action — one write endpoint for every sensitive admin action
@@ -47,6 +48,8 @@ const ACTIONS = new Set([
   "founding.approve",
   "founding.request_invite",
   "contributor.note",
+  "referral.link",
+  "referral.void",
 ]);
 
 /** The ladder, as the only transitions this endpoint will forward. */
@@ -162,6 +165,28 @@ export async function POST(request: Request) {
     }
   }
 
+  /**
+   * A referral needs two different people. Self-referral is the one shape that
+   * would quietly corrupt the count Janet reads, so it is refused in words here
+   * rather than left to look like a successful link.
+   */
+  if (action === "referral.link") {
+    const referrer = typeof body?.referrer === "string" ? body.referrer : "";
+    const referred = typeof body?.referred === "string" ? body.referred : "";
+    if (!referrer || !referred) {
+      return NextResponse.json(
+        { error: "A referral needs both the parent who invited and the one who came" },
+        { status: 422 },
+      );
+    }
+    if (referrer === referred) {
+      return NextResponse.json(
+        { error: "A parent cannot have invited themselves" },
+        { status: 422 },
+      );
+    }
+  }
+
   if (action === "demand.status" && !DEMAND_STATES.has(String(body?.to))) {
     return NextResponse.json({ error: "Unknown demand state" }, { status: 422 });
   }
@@ -177,13 +202,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const payload = {
-    ...body,
-    /** Who acted. The audit row is written from this, not from the client. */
-    actor: session.user,
-    requested_at: new Date().toISOString(),
-  };
-
   // Enums and ids only — never the free text an admin typed about a person.
   console.info("[admin:action]", {
     action,
@@ -191,23 +209,33 @@ export async function POST(request: Request) {
     resource_id: typeof body?.id === "string" ? body.id : null,
   });
 
-  if (!isHookConfigured("admin_write")) {
-    return NextResponse.json({ ok: true, persisted: false, actor: session.user });
-  }
-
-  const result = await forwardToN8n<{ ok?: boolean; persisted?: boolean }>(
-    "admin_write",
-    payload,
+  const result = await withDb((db) =>
+    applyAction(db, {
+      /** Who acted. The audit row is written from this, never from the client. */
+      actor: session.user,
+      action,
+      body: body ?? {},
+    }),
   );
 
-  if (!result.forwarded) {
-    console.error("[admin:action] n8n forward failed", result.error ?? result.reason);
+  if (!result.persisted) {
+    if (result.reason === "unconfigured") {
+      return NextResponse.json({ ok: true, persisted: false, actor: session.user });
+    }
     return NextResponse.json({ error: "That didn't go through" }, { status: 502 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    persisted: result.data.persisted !== false,
-    actor: session.user,
-  });
+  /**
+   * An action the endpoint accepts but cannot yet carry out answers 501 rather
+   * than a cheerful `persisted: true`. An admin who clicked something must never
+   * be told it worked when nothing happened.
+   */
+  if (!result.data.applied) {
+    return NextResponse.json(
+      { error: "That action isn't implemented yet", reason: "not_implemented" },
+      { status: 501 },
+    );
+  }
+
+  return NextResponse.json({ ok: true, persisted: true, actor: session.user });
 }

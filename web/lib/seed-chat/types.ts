@@ -6,8 +6,8 @@ import type { Option } from "../types";
  * The conversation is data, not code: each share type is a `Script` of `Step`s,
  * and each step declares the widget that captures it and the field it writes.
  * That is what keeps "feels like a text chat" and "lands in structured fields"
- * from fighting each other — and it's the shape n8n can later drive turn by turn
- * (spec §16.1, POST /api/seed/chat) without the UI changing.
+ * from fighting each other — and it's the shape the server could later drive turn
+ * by turn (spec §16.1, POST /api/seed/chat) without the UI changing.
  */
 
 export type ShareKind = "activity" | "caregiver" | "place" | "tip";

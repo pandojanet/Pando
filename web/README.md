@@ -9,12 +9,10 @@ for activities, caregivers, places and tips) and **1.7** (completion screen with
 versioned follow-up consent), plus the four marketing pages ported from the static
 HTML that used to live at the repo root.
 
-Two reference documents sit in [`../docs`](../docs): a line-by-line
-[spec compliance review](../docs/spec-compliance-review.md) of this build against
-every client document, and the [n8n build plan](../docs/n8n-build-plan.md) for the
-remaining estimate rows. All frontend logic
-is complete and exercised end to end; the write path is a single seam waiting on
-n8n.
+A line-by-line [spec compliance review](../docs/spec-compliance-review.md) of
+this build against every client document sits in [`../docs`](../docs). All
+frontend logic is complete and exercised end to end; the backend runs in this
+same app (`lib/server/repo/*`) and waits only on a `DATABASE_URL`.
 
 ```bash
 npm --prefix web install
@@ -38,10 +36,12 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/join?i=<code>&src=qr`  | Invite landing. Validates the shared code server-side; optional name/phone. |
 | `/profile`               | The 8-screen tap-first profile + review.                                    |
 | `/share`                 | Chat-seeding: share menu, capture cards, add-another loop.                  |
-| `/done`                  | Completion + what they shared. Stands in for the full 1.7 screen.           |
+| `/done`                  | 1.7 screen 1 of 3 — badge, thank-you, what they shared. Tells only.          |
+| `/done/ask`              | 1.7 screen 2 of 3 — D1, follow-up consent, OTP gate. The only one that writes. |
+| `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
 | `POST /api/seed/invite`  | Validates a hand-typed code.                                                |
-| `POST /api/seed/profile` | Sanitizes and forwards the profile to n8n.                                  |
-| `POST /api/seed/save`    | Sanitizes and forwards one finished capture card to n8n.                     |
+| `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools in one transaction. |
+| `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
@@ -54,8 +54,9 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |
 | `/admin/flags`           | Escalations first, then review queue.                                       |
 | `/admin/audit`           | Who changed what, with a before → after diff.                               |
-| `POST /api/admin/query`  | One read endpoint for every admin page → n8n `admin_read`.                   |
-| `POST /api/admin/action` | One write endpoint → n8n `admin_write`; the only path that writes audit rows.|
+| `POST /api/admin/query`  | One read endpoint for every admin page → `lib/server/repo/admin-read.ts`.    |
+| `POST /api/admin/action` | One write endpoint → `admin-write.ts`; the audit row is written in the same transaction as the change. |
+| `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
 
 Flow: `/join` → profile → review → **chat** → done. A parent can leave at any
 point and pick up where they left off on the same phone.
@@ -77,7 +78,10 @@ forwarded around parent group chats still land in the right place.
 | `lib/storage.ts`        | Autosave + resume (localStorage, versioned key).                         |
 | `lib/analytics.ts`      | Funnel events, PostHog-shaped, provider not yet attached.                |
 | `lib/server/invite.ts`  | Shared invite codes → market.                                            |
-| `lib/server/n8n.ts`     | **The only place a webhook URL exists.**                                 |
+| `lib/server/db.ts`      | **The only place a connection string exists.**                           |
+| `lib/db/schema.ts`      | The data model, and every CHECK that encodes an invariant.               |
+| `lib/server/repo/*`     | The backend: profile, cards, completion, flags, admin read/write.        |
+| `lib/server/extract.ts` | 1.8 — the only file that talks to an AI provider.                        |
 | `lib/seed-chat/scripts.ts` | The capture conversations: steps, widgets, fields, recap order.        |
 | `lib/seed-chat/engine.ts`  | Pure turn logic: next step, answer formatting, recap, submission.      |
 | `components/ui/*`       | Chips, dock, sheet, progress, desktop frame — the primitives.             |
@@ -90,6 +94,36 @@ adding or reordering a capture question is a change to `lib/seed-chat/scripts.ts
 alone. Nothing in the components knows what the questions are.
 
 ## Presentation
+
+**Icons.** Three files, because no single format covers every place an icon is asked
+for. All of them draw the `PandoMark` leaf path verbatim (`components/ui/Logo.tsx`),
+with a heavier stem and dots than the component uses — at 16px the original weights
+disappear.
+
+| File | For | Notes |
+| --- | --- | --- |
+| `app/icon.svg` | the browser tab | Hand-written. Has its own `prefers-color-scheme` branch (green/ink → gold/paper, the mark's `tone="light"` treatment). Declared `sizes="any"`, so modern browsers prefer it. |
+| `app/favicon.ico` | legacy clients, crawlers, link unfurlers | 16/32/48 PNG-in-ICO. Exists because some clients request `/favicon.ico` directly without reading `<link>`. Next declares it at a concrete size, which is what keeps it *behind* the SVG. |
+| `app/apple-icon.png` | iOS "Add to Home Screen" | 180×180. Safari ignores SVG icons here. |
+
+The two raster files are generated: `node scripts/make-icons.mjs`. Run it after any
+change to the mark or the palette.
+
+Two traps worth knowing before editing these, both of which fail loudly but not
+obviously:
+
+- **The ICO's embedded PNGs must be RGBA.** Turbopack reads the file to get its
+  dimensions and its decoder rejects RGB with *"The PNG is not in RGBA format!"*,
+  which takes the dev server down. The script keeps the alpha channel for the ICO and
+  drops it for the touch icon (a transparent apple-icon renders as a black square on
+  the home screen).
+- **`icon.svg` is parsed as XML.** A double hyphen inside an XML comment is illegal,
+  so writing a CSS custom property name in the comment the way you would in
+  TypeScript stops the file loading as an image. It looks fine when injected into a
+  page — that path uses the lenient HTML parser.
+
+Literal brand hex in these files is correct, not an oversight: an icon is fetched as
+its own document and never sees `globals.css`.
 
 **Seed Tool.** Phone is the design target, and the phone layout is the one in
 `components/ui/Screen.tsx` by default: sticky header, window scroll, sticky dock
@@ -137,85 +171,46 @@ Docker image → GHCR → our VPS, on every push to `main`. See
 secrets it needs. `next.config.ts` sets `output: "standalone"` for that image;
 `GET /api/health` is the liveness probe.
 
-## n8n integration (next step)
+## Analytics
 
-Set either `N8N_BASE_URL` (hooks resolve to `<base>/webhook/pando-<hook>`) or a
-per-hook URL — see `.env.example`. Until then the profile route answers
-`{ ok: true, persisted: false }` so the UI can be demoed without pretending
-anything was stored.
+`lib/posthog-provider.tsx` wraps the app in `app/layout.tsx` and, once
+`NEXT_PUBLIC_POSTHOG_KEY` is set, sets `window.posthog` and fires `$pageview` on
+every route change (App Router navigation doesn't reload the page, so PostHog's
+own on-load capture would only ever see the first screen a parent lands on).
+Unset the key and the provider is a no-op — `lib/analytics.ts`'s `track()` calls
+already guard on `window.posthog?.capture`, same honesty rule as `persisted: false`
+without a `DATABASE_URL`.
 
-`POST` body received by the `profile` hook (already sanitized, capped, E.164):
+**Autocapture and session recording are off, deliberately** — see the comment in
+`posthog-provider.tsx` and the Decisions table below. Every event the app sends
+is a named `track()` call in `lib/analytics.ts` with structured props; nothing
+here should be "improved" by turning either back on.
 
-```jsonc
-{
-  "invite_code": "sgv-founding",
-  "market_id": "pasadena",
-  "source": "qr",                  // qr | link | direct
-  "name": "Janet",                 // nullable
-  "phone": "+16265550143",         // nullable, E.164
-  "neighborhood": "south-pasadena",
-  "child_ages": [0, 8],            // -1 = expecting
-  "answers": { /* every tapped id, plus `other` free text and `skipped` */ },
-  "social_affinities": [           // spec §7.1 weights, ready to insert
-    { "affinity_type": "neighborhood", "affinity_value": "south-pasadena", "score_weight": 3 },
-    { "affinity_type": "school", "affinity_value": "field-elementary", "score_weight": 5 },
-    { "affinity_type": "activity", "affinity_value": "ayso-soccer", "score_weight": 4 },
-    { "affinity_type": "age_range", "affinity_value": "baby", "score_weight": 2 }
-  ],
-  "life_relevance": [
-    { "dimension": "budget", "value": "value_matters" }
-  ],
-  "pending_options": [
-    { "market_id": "pasadena", "category": "schools", "submitted_value": "Sierra Vista Co-op" }
-  ],
-  "profile_completeness": 50,
-  "client_started_at": "2026-07-30T12:33:52.954Z",
-  "client_submitted_at": "2026-07-30T12:36:53.331Z"
-}
-```
+## Database
 
-Expected response: `{ "contributor_id": "<uuid>" }` (any JSON is accepted).
+Set `DATABASE_URL` to the Supabase **pooler** connection string — see
+`.env.example` for why the pooler and not the direct host. Until it is set every
+write route answers `{ ok: true, persisted: false }`, so the UI can be walked end
+to end without pretending anything was stored.
 
-Body received by the `save` hook, once per finished capture card:
+Migrations live in `drizzle/` and are applied with `npm run migrate` (use port
+**5432** for that command — session mode; the app itself wants 6543).
+`lib/db/schema.ts` is the source of truth for the schema; `supabase/README.md`
+has the setup walkthrough.
 
-```jsonc
-{
-  "kind": "caregiver",                  // activity | caregiver | place | tip
-  "market_id": "pasadena",
-  "invite_code": "sgv-founding",
-  "source": "qr",
-  "contributor_name": "Janet",
-  "contributor_phone": "+16265550143",
-  "client_id": "caregiver-ms7jr5lz",    // dedupe key if a retry arrives
-  "fields": {
-    "type": "nanny",
-    "age_gate": "yes",
-    "age_range": ["toddler", "preschool"],
-    "how_known": "watched_my_kids",
-    "how_long": "1_3y",
-    "what_makes_special": "Calm with a shy kid, and she actually plays with them.",
-    "caveat": "",
-    "reference_willing": "yes"
-  },
-  "first_name": "Angie",                // caregiver only, split server-side
-  "last_initial": "R",                  // one character, never a surname
-  "caregiver_phone": "+16265550143",
-  "consent_status": "pending",          // forced server-side, always
-  "active": false,                      // forced server-side, always
-  "received_at": "2026-07-30T13:26:10.542Z"
-}
-```
+The write paths, and what each guarantees atomically:
 
-Expected response: `{ "record_id": "<uuid>" }`.
+| Route | Transaction |
+| --- | --- |
+| `seed/profile` | person + children + affinities + relevance + schools + pending options |
+| `seed/save` (place-like) | submission + place + contribution, upserted on `client_id` |
+| `seed/save` (caregiver) | submission + caregiver + nomination + **its restricted notes** |
+| `seed/complete` | founding status + follow-up consent + demand signal + escalation flag |
+| `admin/action` | the change **and its audit row** |
 
-Activity fields follow spec §3.4 (`name`, `location`, `child_age`,
-`recommendation`, `what_makes_it_great`, `caveat`, `freshness`); caregiver fields
-follow §3.5. Skipped optional answers arrive as `""` or `[]` rather than being
-omitted, so "asked and declined" stays distinguishable from "never asked".
-
-The derived rows are a convenience — `answers` is authoritative, and the workflow
-should feel free to re-derive weights, since spec §18.1 requires them to be
-config rather than code.
+The last one is the reason this is not a set of independent calls: an admin write
+whose audit row failed separately would be an unattributed change to a record
+about a real family.
 
 ## Decisions taken while building
 
@@ -235,9 +230,9 @@ config rather than code.
 - **Logs carry counts, never people** (spec §19).
 - **The chat is scripted, not generative.** Turn-taking runs off
   `lib/seed-chat/scripts.ts`, so answers land in fields with no extraction step
-  and no way for a model to invent a question. When the n8n conversation
-  workflows exist (1.5/1.6/1.8) they can drive the same widgets turn by turn via
-  `POST /api/seed/chat` — the UI doesn't change.
+  and no way for a model to invent a question. If a server-driven conversation
+  ever replaces the script, it can drive the same widgets turn by turn — the UI
+  doesn't change.
 - **Caregiver safety is enforced on the server, not in the chat.** The save route
   rejects a nomination whose 18+ gate isn't `yes`, forces
   `consent_status: "pending"` and `active: false` whatever the client sends, and
@@ -258,8 +253,8 @@ config rather than code.
 
 1. The Pasadena lists in `lib/market-options.ts` are placeholders (spec §23.2 Q10).
    Who supplies neighborhoods / schools / faith / clubs / parent groups / classes,
-   and in what format? Should they be fetched from n8n at runtime instead of
-   shipped in the bundle?
+   and in what format? Should they be read from `market_options` at runtime
+   instead of shipped in the bundle?
 2. Confirmed invite code(s) for the shared link, and the domain it lives on (Q2/Q3).
 3. Return visits: right now a saved profile on the same phone offers "start a
    fresh one". Once OTP exists (estimate 5.1) this should re-verify instead (Q4).
@@ -275,7 +270,9 @@ config rather than code.
 
 ## Not built yet (by design)
 
-The n8n side of the capture cards (1.5/1.6 — conversation conducting, confirm-back
-on vague answers), the full completion screen (1.7), extraction + confidence
-scoring (1.8), the annotation and flagging layer (1.9), admin (M2), and the
+The caregiver's own flow (2C), the freshness-ping and matching crons, and the
 PostHog provider (M3).
+
+There are no automated tests. The eight invariant assertions in
+`drizzle/0002_rls.sql` run at migration time and are the only thing standing in
+for them.

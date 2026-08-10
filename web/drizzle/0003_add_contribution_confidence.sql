@@ -1,0 +1,2 @@
+ALTER TABLE "place_contributions" ADD COLUMN "confidence" numeric(3, 2);--> statement-breakpoint
+ALTER TABLE "place_contributions" ADD CONSTRAINT "place_contributions_confidence_check" CHECK ("place_contributions"."confidence" is null or ("place_contributions"."confidence" >= 0 and "place_contributions"."confidence" <= 1));

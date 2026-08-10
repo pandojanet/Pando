@@ -34,8 +34,24 @@
   --color-gold-wash: #fbf4de;
   --color-gold-line: #ebdcae;
 
+  /* Alert — the only red in the product, and it is not a brand colour.
+     Gold already means "pending, not finished"; this is reserved for the smaller
+     set of things that are owed a person *today*: a high-stakes D1 question, an
+     escalated flag, a rejected record. Muted to sit on warm paper rather than
+     shout, because on the admin surface everything red is real.
+     Lived in components/admin/ui.tsx as three literal hex values until 10 Aug,
+     which the design system forbids for exactly the reason it happened: nothing
+     else could reuse them. */
+  --color-alert: #8a2f2f;
+  --color-alert-wash: #fbeeee;
+  --color-alert-line: #d8b4b4;
+
   /* Extra breakpoint: the gap between a small iPhone SE and a 390px iPhone */
   --breakpoint-xs: 25rem;
+  /* And the other end: Tailwind stops at 2xl (1536px), but a 1920px monitor is
+     ordinary now, and without a step here the measure stops growing while the
+     window doesn't — measured at 68% of the window used, against 81% at 1600. */
+  --breakpoint-3xl: 120rem;
 
   /* Type */
   --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
@@ -160,6 +176,18 @@
   label {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+  }
+
+  /* Tailwind v4's preflight resets buttons to `cursor: default`. A phone doesn't
+     care, but on a laptop that leaves chips, cards and the dock with nothing
+     signalling they're tappable — so put the pointer back on everything that is.
+     Disabled controls keep the default arrow on purpose: the cursor is the only
+     hint that pressing won't do anything. */
+  button:not(:disabled),
+  a[href],
+  [role="button"]:not([aria-disabled="true"]),
+  summary {
+    cursor: pointer;
   }
 
   /* 16px minimum or iOS Safari zooms the whole page on focus */

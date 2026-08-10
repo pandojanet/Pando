@@ -1,9 +1,13 @@
-import { adminConfigured, adminUsers } from "@/lib/admin/auth";
+import { adminAuthMode, adminUsers } from "@/lib/admin/auth";
 import { LoginForm } from "@/components/admin/LoginForm";
 
 /**
- * Admin sign-in (estimate 2.1). One shared password, plus which of the configured
- * people you are — so every audit row has a name against it.
+ * Admin sign-in (estimate 2.1). Each person has their own password, so the name
+ * on every audit row is one they proved rather than one they picked.
+ *
+ * The mode is passed down and shown, because "which authentication is this
+ * deployment actually running" should not be something you have to read the env
+ * to find out.
  */
 export default async function AdminLoginPage({
   searchParams,
@@ -16,7 +20,7 @@ export default async function AdminLoginPage({
   return (
     <LoginForm
       users={adminUsers()}
-      configured={adminConfigured()}
+      mode={adminAuthMode()}
       next={next.startsWith("/admin") ? next : "/admin"}
     />
   );

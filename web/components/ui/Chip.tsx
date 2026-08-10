@@ -35,7 +35,8 @@ export function Chip({
         "text-[15px] font-medium leading-snug",
         "transition-[transform,background-color,border-color,color,box-shadow] duration-150",
         "active:scale-[0.97]",
-        compact ? "justify-center px-3 py-2" : "px-4 py-2.5",
+        // Uniform width so a wrapped, centred row of ages still reads as a grid.
+        compact ? "min-w-12 justify-center px-3 py-2" : "px-4 py-2.5",
         selected
           ? "border-green-deep bg-green-deep text-white"
           : "border-bark bg-card text-ink hover:border-green/50",

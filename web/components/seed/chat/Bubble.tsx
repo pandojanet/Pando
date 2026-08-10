@@ -37,7 +37,10 @@ export function Bubble({
     >
       <div
         className={cn(
-          "max-w-[86%] rounded-3xl px-4 py-2.5 text-[15.5px] leading-snug",
+          // 86% is the phone rule. From md the column is wide enough that a
+          // percentage would stretch one sentence across the whole window, so the
+          // bubble takes a fixed reading measure instead.
+          "max-w-[86%] md:max-w-[34rem] rounded-3xl px-4 py-2.5 text-[15.5px] leading-snug",
           role === "parent"
             ? "rounded-br-lg bg-green-deep text-white"
             : "rounded-bl-lg border border-bark bg-card text-ink",
@@ -126,10 +129,10 @@ export function CardRecap({
               <button
                 type="button"
                 onClick={() => onEditField(row.field)}
-                aria-label={`Fix ${row.label.toLowerCase()}`}
+                aria-label={`Edit ${row.label.toLowerCase()}`}
                 className="-my-1 -mr-1 h-11 shrink-0 rounded-full px-2 text-[13px] font-semibold text-muted transition-colors hover:text-green-deep"
               >
-                Fix
+                Edit
               </button>
             )}
           </div>

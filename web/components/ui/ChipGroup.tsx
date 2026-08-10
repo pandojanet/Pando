@@ -74,8 +74,12 @@ export function ChipGroup({
         role={mode === "single" ? "radiogroup" : "group"}
         aria-label={groupLabel}
         className={cn(
+          /* The age picker used to be a real grid, which left its last row
+             ragged against the right edge — 17 options never divide evenly into
+             4/5/7 columns. Wrapping flex centres every row instead, and the
+             uniform `min-w` on a compact chip keeps the tidy grid rhythm. */
           layout === "grid"
-            ? "grid grid-cols-4 gap-2 xs:grid-cols-5 md:grid-cols-7"
+            ? "flex flex-wrap justify-center gap-2"
             : "flex flex-wrap gap-2",
         )}
       >
@@ -86,9 +90,6 @@ export function ChipGroup({
             hint={option.hint}
             mode={mode}
             compact={layout === "grid"}
-            className={
-              layout === "grid" && option.wide ? "col-span-2" : undefined
-            }
             selected={selected.includes(option.id)}
             onToggle={() => toggle(option)}
           />

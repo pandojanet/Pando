@@ -19,7 +19,7 @@ import type { AuditRow } from "@/lib/admin/types";
 /**
  * Estimate 2.8 — the audit log, read side.
  *
- * The rows are written by the admin_write workflow as the last step of every action,
+ * The rows are written inside the same transaction as every action,
  * not by this page. It exists so the trail is *visible*: consent decisions, trust
  * changes, promotions and profile edits are exactly the actions that need a name and
  * a timestamp against them, and a log nobody can read isn't accountability.
@@ -112,7 +112,7 @@ function Diff({
       {keys.map((key) => (
         <li key={key}>
           <span className="text-muted">{key}: </span>
-          <span className="line-through decoration-[#8a2f2f]/40">
+          <span className="line-through decoration-alert/40">
             {format(before?.[key])}
           </span>
           <span className="mx-1 text-muted">→</span>

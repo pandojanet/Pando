@@ -1,7 +1,7 @@
 /**
- * Shapes the admin pages read and write. These are the contract for the two n8n
- * hooks (`admin_read` / `admin_write`) — one Switch on `resource`, one on `action`,
- * rather than a dozen webhooks.
+ * Shapes the admin pages read and write. These are the contract for the two
+ * endpoints (`/api/admin/query` and `/api/admin/action`) — one switch on
+ * `resource`, one on `action`, rather than a dozen routes.
  *
  * Every field here mirrors a column in `supabase/migrations/0001_schema.sql` or one
  * of the views in `0002_views.sql`, so a page never reshapes data it was given and a
@@ -67,8 +67,31 @@ export interface Overview {
     pending_options: number;
     /** Caregiver cards a human has to read before they can be used at all. */
     review_holds: number;
+    /**
+     * Contributions still waiting on a first decision. Distinct from
+     * `low_confidence`, which is about *which* of them to read first — this is the
+     * size of the queue, and it is what the sidebar counts.
+     */
+    pending_contributions: number;
+    /**
+     * Open flags at `escalation` severity — the subset owed a person today, as
+     * opposed to the `note`-severity ones that are simply a reading order.
+     *
+     * Separate from `open_flags` because the sidebar paints one badge red, and a
+     * low-confidence note turning the section red would make red mean "there are
+     * flags", which is what the count already says.
+     */
+    escalations: number;
   };
   founding: { pending: number; approved: number };
+  /**
+   * The client's reward gate, which is deliberately *not* the Founding one. On the
+   * kickoff call: "I'm only going to pay them if they give me seed information…
+   * the minimum should be one activity or one caregiver." Founding needs two
+   * approved contributions; this needs one. `none` is the number that call asked
+   * for by name — parents who arrived and left nothing.
+   */
+  reward: { eligible: number; started: number; none: number };
   /** Open D1 questions, split by what Pando said back. */
   demand: { ordinary: number; peer_support: number; high_stakes: number };
   drop_off: Array<{ step: string; reached: number }>;
@@ -86,6 +109,17 @@ export interface ContributorRow {
   submissions: number;
   /** Approved contributions that meet every Founding criterion. */
   qualifying_approved: number;
+  /** Approved caregiver nominations that are not on hold. */
+  caregiver_approved: number;
+  /**
+   * Whether this parent has earned the client's seed reward. One qualifying
+   * contribution *or* one approved caregiver is the whole bar — the call set it at
+   * "one activity or one caregiver", against Founding's two. Kept as its own field
+   * so raising one threshold can never silently raise the other.
+   *
+   * `none` is the case the client asked to be able to see: arrived, left nothing.
+   */
+  reward_status: "none" | "started" | "eligible";
   founding_status: FoundingStatus;
   follow_up_opt_in: boolean | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
@@ -137,6 +171,25 @@ export interface ContributorDetail extends ContributorRow {
   /** seed_conversations.messages — empty until sending transcripts is a decision. */
   transcript: Array<{ role: "pando" | "parent"; text: string; at: string | null }>;
   notes: Array<{ id: string; author: string; body: string; at: string }>;
+  /**
+   * D2 — who brought this parent in, and who they brought.
+   *
+   * Recorded by an admin, not derived: with **one shared invite link** (31 Jul)
+   * there is no code in the URL to attribute, and `invited_via_group` names a
+   * group rather than a person. So the link is a human judgement — the same one
+   * the founding queue already asks for — and this is where it is written down.
+   * If the client ever flips to unique links, this becomes automatic and the
+   * shape does not change.
+   */
+  referral: {
+    referred_by: { id: string; name: string | null } | null;
+    referred: Array<{
+      referral_id: string;
+      id: string;
+      name: string | null;
+      status: "pending" | "profile_complete" | "credited" | "void";
+    }>;
+  };
 }
 
 /**
@@ -384,10 +437,15 @@ export type AdminAction =
   | { action: "founding.approve"; ids: string[]; override_reason?: string }
   | { action: "founding.request_invite"; ids: string[] }
   /* Contributors — 2.3 */
-  | { action: "contributor.note"; id: string; body: string };
+  | { action: "contributor.note"; id: string; body: string }
+  /* Referrals — D2 */
+  /** Records that `referrer` brought `referred` in. Admin judgement, not a URL. */
+  | { action: "referral.link"; referrer: string; referred: string }
+  /** Withdraws a link that turned out to be wrong. The row stays, marked void. */
+  | { action: "referral.void"; id: string };
 
 export interface AdminQueryResult<T> {
-  /** False when the n8n hook isn't set yet — pages say so instead of faking rows. */
+  /** False when DATABASE_URL isn't set — pages say so instead of faking rows. */
   configured: boolean;
   rows: T;
   total?: number;

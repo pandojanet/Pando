@@ -86,6 +86,32 @@ export default function AdminOverviewPage() {
             <Stat label="Tips" value={o.submissions.tips} />
           </div>
 
+          {/*
+            The seed reward, which is not the Founding bar: one qualifying
+            activity *or* one approved caregiver earns it, where Founding needs
+            two. "Gave nothing" is its own number because that is the one the
+            client asked for by name — it is who does not get paid.
+          */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat
+              label="Reward earned"
+              value={o.reward.eligible}
+              hint="One approved activity or caregiver"
+              tone={o.reward.eligible > 0 ? "good" : "plain"}
+            />
+            <Stat
+              label="Waiting on review"
+              value={o.reward.started}
+              hint="Gave something, nothing approved yet"
+              tone={o.reward.started > 0 ? "warn" : "plain"}
+            />
+            <Stat
+              label="Gave nothing"
+              value={o.reward.none}
+              hint="Arrived, left no contribution"
+            />
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Card title="Where people stop">
               <ul className="divide-y divide-bark/50">

@@ -1,13 +1,13 @@
-import { ProfileSaved } from "@/components/seed/ProfileSaved";
+import { Thanks } from "@/components/seed/done/Thanks";
 
 /**
- * Handoff screen after the profile saves.
+ * Estimate 1.7, screen 1 of 3 — the immediate thank-you and the founding badge.
  *
- * The real completion screen with the founding badge and the return link is
- * estimate 1.7, and what comes after it is the chat-seeding interface (1.4).
- * This is the seam between them — deliberately small, and honest about the fact
- * that recommendation capture is the next build step.
+ * The completion screen used to be one page carrying the badge, the shared list,
+ * the demand question, the follow-up consent, the OTP gate, five next-steps, the
+ * referral card and a come-back note. It is now three: this one tells, /done/ask
+ * asks, /done/next explains. See CLAUDE.md for the trade that buys.
  */
 export default function DonePage() {
-  return <ProfileSaved />;
+  return <Thanks />;
 }

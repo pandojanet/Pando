@@ -44,9 +44,9 @@ import { StepWidget } from "./StepWidget";
  * written to its own field, and played back as a structured card. After each card
  * the share menu returns — that's the "add another" loop.
  *
- * The turn-taking lives here for now; when the n8n conversation workflows exist
- * (estimate 1.5/1.6/1.8, POST /api/seed/chat) they decide the next step and this
- * component keeps rendering exactly the same widgets.
+ * The turn-taking lives here for now; if a server-driven conversation arrives
+ * (spec §16.1, POST /api/seed/chat) it decides the next step and this component
+ * keeps rendering exactly the same widgets.
  */
 export function ChatSeeding() {
   const router = useRouter();
@@ -270,7 +270,7 @@ export function ChatSeeding() {
         {
           id: uid(),
           role: "parent",
-          text: `Fix: ${editScript.recap.find((r) => r.field === field)?.label ?? field}`,
+          text: `Edit: ${editScript.recap.find((r) => r.field === field)?.label ?? field}`,
         },
       ],
     }));
@@ -558,16 +558,10 @@ export function ChatSeeding() {
 
   return (
     <Screen>
-      <ScreenHeader
-        left={<Wordmark />}
-        right={
-          savedCount > 0 ? (
-            <span className="rounded-full border border-green/25 bg-green-wash px-3 py-1.5 text-[12px] font-semibold text-green-deep">
-              {savedCount} {savedCount === 1 ? "card" : "cards"} ready
-            </span>
-          ) : null
-        }
-      />
+      {/* No running "N cards ready" counter: the saved cards are already on the
+          screen as recaps, so the pill only repeated what the parent could see —
+          and a count in the header edges towards scorekeeping. */}
+      <ScreenHeader left={<Wordmark />} />
 
       <ScreenBody className="pt-5">
         <div className="space-y-2.5">

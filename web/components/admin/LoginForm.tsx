@@ -6,13 +6,15 @@ import { Button, Field, inputClass } from "@/components/admin/ui";
 
 export function LoginForm({
   users,
-  configured,
+  mode,
   next,
 }: {
   users: string[];
-  configured: boolean;
+  /** `shared` is the deprecated one-password fallback; the screen says so. */
+  mode: "per_user" | "shared" | "off";
   next: string;
 }) {
+  const configured = mode !== "off";
   const [user, setUser] = useState(users[0] ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +59,10 @@ export function LoginForm({
               Admin isn&apos;t set up on this deployment
             </h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-gold-ink">
-              Set <code>ADMIN_PASSWORD</code> and <code>ADMIN_USERS</code> (a
-              comma-separated list of names) and restart. Until both exist the admin
-              stays closed rather than open without a password.
+              Generate a record per person with{" "}
+              <code>npm run admin:credential -- &lt;name&gt;</code>, put them in{" "}
+              <code>ADMIN_CREDENTIALS</code> comma-separated, and restart. Until that
+              exists the admin stays closed rather than open without a password.
             </p>
           </div>
         ) : (
@@ -69,8 +72,24 @@ export function LoginForm({
           >
             <h1 className="font-display text-[1.25rem] font-bold">Sign in</h1>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
-              Pick who you are — sensitive actions are recorded against your name.
+              {mode === "per_user"
+                ? "Your own password. Sensitive actions are recorded against your name."
+                : "Pick who you are — sensitive actions are recorded against your name."}
             </p>
+
+            {mode === "shared" && (
+              /*
+                Said out loud, because in this mode the name on an audit row is
+                chosen rather than proved: anyone with the shared password can sign
+                in as anyone on the list.
+              */
+              <p className="mt-3 rounded-lg border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
+                This deployment still uses one shared password, so the name on an
+                audit row is picked, not proved. Run{" "}
+                <code>npm run admin:credential</code> per person and move to{" "}
+                <code>ADMIN_CREDENTIALS</code>.
+              </p>
+            )}
 
             <div className="mt-5 space-y-4">
               <Field label="You are">
@@ -99,7 +118,7 @@ export function LoginForm({
             </div>
 
             {error && (
-              <p className="mt-3 text-[13.5px] font-medium text-[#8a2f2f]">{error}</p>
+              <p className="mt-3 text-[13.5px] font-medium text-alert">{error}</p>
             )}
 
             <Button

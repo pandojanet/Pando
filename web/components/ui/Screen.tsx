@@ -52,6 +52,13 @@ export function Container({
     <div
       className={cn(
         "mx-auto w-full max-w-[27rem] px-5 md:max-w-[40rem] md:px-8",
+        /* 40rem is right where `lg` starts — a 21rem rail leaves ~43rem of
+           column, so the measure nearly fills it. Past that the window grows and
+           the column doesn't, which stranded 150–300px of empty paper either
+           side. The measure grows with it instead. What uses the extra width is
+           the recap table and the tap lists; chat lines are capped separately in
+           `Bubble` so they don't turn into one long line. */
+        "xl:max-w-[46rem] 2xl:max-w-[52rem] 3xl:max-w-[62rem]",
         className,
       )}
     >

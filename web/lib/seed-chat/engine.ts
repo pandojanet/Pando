@@ -13,8 +13,8 @@ import type {
 
 /**
  * Pure conversation logic: which step comes next, what the parent's answer reads
- * as, and how a finished card recaps. No React, no fetch — so this is the piece
- * n8n can take over later (it decides the next step; the UI just renders it).
+ * as, and how a finished card recaps. No React, no fetch — so the server could
+ * drive it later (it decides the next step; the UI just renders it).
  */
 
 export function newDraft(kind: ShareKind): ChatDraft {

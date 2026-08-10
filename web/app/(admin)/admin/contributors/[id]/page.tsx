@@ -18,7 +18,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import type { ContributorDetail } from "@/lib/admin/types";
+import type { ContributorDetail, ContributorRow } from "@/lib/admin/types";
 
 /**
  * Estimate 2.3 — one contributor.
@@ -44,6 +44,25 @@ export default function ContributorDetailPage({
 
   const c = rows;
 
+  /**
+   * The picker's options. Linking a referral is an admin judgement — with one
+   * shared invite link there is no code in the URL to read it from — so the list
+   * of candidates is simply everyone else.
+   *
+   * Fetched on the click that opens the picker, and not before. Gating it on the
+   * loaded contributor instead (`c != null && …`) looked like the careful version
+   * and was worse: `c` is null until the first request lands, so the condition
+   * turned one request into two *sequential* ones — ~250ms of waterfall added to
+   * every contributor page, for a control that is only used once per parent.
+   */
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const { rows: everyone, loading: everyoneLoading } = useAdminRows<
+    ContributorRow[]
+  >("contributors", undefined, pickerOpen);
+  const [referrer, setReferrer] = useState("");
+  const [refBusy, setRefBusy] = useState(false);
+  const [refMessage, setRefMessage] = useState<string | null>(null);
+
   async function addNote() {
     if (!note.trim()) return;
     setSaving(true);
@@ -63,6 +82,31 @@ export default function ContributorDetailPage({
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runReferral(action: "link" | "void", target: string) {
+    setRefBusy(true);
+    setRefMessage(null);
+    try {
+      const result = await adminAction(
+        action === "link"
+          ? { action: "referral.link", referrer: target, referred: id }
+          : { action: "referral.void", id: target },
+      );
+      setReferrer("");
+      setRefMessage(
+        result.persisted
+          ? action === "link"
+            ? "Referral recorded."
+            : "Referral withdrawn."
+          : "Not stored — no database connected.",
+      );
+      await reload();
+    } catch (err) {
+      setRefMessage(err instanceof Error ? err.message : "That didn't go through");
+    } finally {
+      setRefBusy(false);
     }
   }
 
@@ -283,6 +327,118 @@ export default function ContributorDetailPage({
                 </Button>
                 {message && (
                   <p className="mt-2 text-[12.5px] text-muted">{message}</p>
+                )}
+              </div>
+            </Card>
+
+            {/*
+              D2. Who brought this parent in, recorded by hand: the invite link is
+              one shared URL, so nothing in it says who passed it on. This is the
+              same judgement the founding queue already asks for ("is this really
+              Sarah from our group?"), written down where a credit can later read it.
+            */}
+            <Card title="Referrals">
+              <div className="border-b border-bark/70 px-4 py-3">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                  Invited by
+                </p>
+                {c.referral.referred_by ? (
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <Link
+                      href={`/admin/contributors/${c.referral.referred_by.id}`}
+                      className="font-semibold text-green-deep underline underline-offset-2"
+                    >
+                      {c.referral.referred_by.name ?? "Unknown"}
+                    </Link>
+                  </div>
+                ) : !pickerOpen ? (
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <span className="text-[13.5px] text-muted">Nobody recorded</span>
+                    <button
+                      type="button"
+                      onClick={() => setPickerOpen(true)}
+                      className="text-[12.5px] font-semibold text-green-deep underline underline-offset-2"
+                    >
+                      Record who invited them
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      aria-label="Invited by"
+                      value={referrer}
+                      onChange={(e) => setReferrer(e.target.value)}
+                      disabled={everyoneLoading}
+                      className={`${inputClass} mt-1.5`}
+                    >
+                      <option value="">
+                        {everyoneLoading ? "Loading contributors…" : "Pick a parent"}
+                      </option>
+                      {(everyone ?? [])
+                        .filter((p) => p.id !== id && !p.is_test)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name ?? "Unknown"}
+                            {p.neighborhood ? ` · ${slugLabel(p.neighborhood)}` : ""}
+                          </option>
+                        ))}
+                    </select>
+                    <Button
+                      tone="primary"
+                      className="mt-2 w-full"
+                      disabled={refBusy || referrer === ""}
+                      onClick={() => void runReferral("link", referrer)}
+                    >
+                      {refBusy ? "Saving…" : "Record referral"}
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              <div className="px-4 py-3">
+                <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                  Brought in ({c.referral.referred.filter((r) => r.status !== "void").length})
+                </p>
+                {c.referral.referred.length === 0 ? (
+                  <p className="mt-1 text-[13px] text-muted">Nobody yet.</p>
+                ) : (
+                  <ul className="mt-1.5 space-y-1.5">
+                    {c.referral.referred.map((r) => (
+                      <li key={r.referral_id} className="flex items-center justify-between gap-2">
+                        <Link
+                          href={`/admin/contributors/${r.id}`}
+                          className={
+                            r.status === "void"
+                              ? "text-[13.5px] text-muted line-through"
+                              : "text-[13.5px] font-semibold text-green-deep underline underline-offset-2"
+                          }
+                        >
+                          {r.name ?? "Unknown"}
+                        </Link>
+                        {r.status !== "void" && (
+                          <button
+                            type="button"
+                            disabled={refBusy}
+                            onClick={() => void runReferral("void", r.referral_id)}
+                            className="text-[12px] text-muted underline underline-offset-2"
+                          >
+                            wrong
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/*
+                  Credits are earned in Network Asks, and those do not exist until
+                  Phase 2 — so this records who to credit, and nothing is credited.
+                */}
+                <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                  Recorded for crediting later. Network Asks don&apos;t exist yet, so
+                  nothing is granted here.
+                </p>
+                {refMessage && (
+                  <p className="mt-2 text-[12.5px] text-muted">{refMessage}</p>
                 )}
               </div>
             </Card>

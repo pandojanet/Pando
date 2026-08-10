@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Instrument_Sans } from "next/font/google";
+import { PostHogProvider, PostHogPageview } from "@/lib/posthog-provider";
 import "./globals.css";
 
 const bricolage = Bricolage_Grotesque({
@@ -46,7 +47,12 @@ export default function RootLayout({
       lang="en"
       className={`${bricolage.variable} ${instrument.variable} antialiased`}
     >
-      <body>{children}</body>
+      <body>
+        <PostHogProvider>
+          <PostHogPageview />
+          {children}
+        </PostHogProvider>
+      </body>
     </html>
   );
 }

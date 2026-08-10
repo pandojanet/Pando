@@ -3,8 +3,9 @@
 import type { InviteResult, ProfilePayload } from "./types";
 
 /**
- * The browser only ever talks to our own route handlers. Those forward to n8n
- * server-side, so webhook URLs and tokens never reach the client bundle.
+ * The browser only ever talks to our own route handlers. They do the work
+ * in-process via `lib/server/repo/*`, so the connection string never reaches the
+ * client bundle.
  */
 
 export class ApiError extends Error {
@@ -119,7 +120,7 @@ export async function checkVerification(code: string): Promise<VerifyCheckResult
 export interface SaveProfileResult {
   ok: true;
   contributor_id: string | null;
-  /** False when n8n isn't configured yet — the UI stays honest about it. */
+  /** False when `DATABASE_URL` isn't set — the UI stays honest about it. */
   persisted: boolean;
 }
 

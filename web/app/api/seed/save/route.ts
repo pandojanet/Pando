@@ -4,7 +4,10 @@ import { toE164 } from "@/lib/phone";
 import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { validateInviteCode } from "@/lib/server/invite";
 import { submitGate } from "@/lib/server/gate";
-import { forwardToN8n, isHookConfigured } from "@/lib/server/n8n";
+import { getDb, withDb } from "@/lib/server/db";
+import { saveCard, type CardKind } from "@/lib/server/repo/cards";
+import { scheduleExtraction } from "@/lib/server/repo/flags";
+import { findPersonByPhone } from "@/lib/server/repo/profile";
 
 /**
  * POST /api/seed/save — one finished capture card (spec §16.1).
@@ -239,53 +242,72 @@ export async function POST(request: Request) {
       kind === "caregiver" ? record.pay_benchmark_consent : undefined,
   });
 
-  if (!isHookConfigured("save")) {
-    return NextResponse.json({ ok: true, record_id: randomUUID(), persisted: false });
-  }
-
-  const result = await forwardToN8n<{
-    record_id?: string;
+  const result = await withDb(async (db) => {
     /**
-     * A capture workflow may validate and shape without storing — the 1.5/1.6
-     * scenario runs that way before Supabase exists. Report what it says about
-     * itself rather than assuming a write happened.
+     * A card is attached to its contributor by the phone the gate just verified.
+     * The anonymous path has none, and its cards are stored with a null
+     * person_id — welcome, labelled, and never qualifying for Founding.
      */
-    persisted?: boolean;
-    would_write?: Record<string, number>;
-    review_queue?: unknown[];
-    invariants?: Record<string, unknown>;
-  }>("save", record);
+    const person = contributorPhone
+      ? await findPersonByPhone(db, contributorPhone)
+      : null;
 
-  if (!result.forwarded) {
-    console.error("[seed:save] n8n forward failed", result.error ?? result.reason);
+    return saveCard(db, {
+      kind: kind as CardKind,
+      market_id: invite.market_id,
+      is_test: raw.is_test === true,
+      client_id: (record.client_id as string | null) ?? null,
+      person_id: person?.id ?? null,
+      fields,
+      first_name: (record.first_name as string | null) ?? null,
+      last_initial: (record.last_initial as string | null) ?? null,
+      review_hold: record.review_hold === true,
+      hold_reasons: (record.hold_reasons as string[] | undefined) ?? [],
+      private_note: (record.private_note as string | null) ?? null,
+      hesitation_reason: (record.hesitation_reason as string | null) ?? null,
+      pay_band: (record.pay_band as string | null) ?? null,
+      pay_benchmark_consent: record.pay_benchmark_consent === true,
+      reference_willing: (record.reference_willing as string | null) ?? null,
+      consent_outreach: (record.consent_outreach as string | undefined) ?? undefined,
+    });
+  });
+
+  if (!result.persisted) {
+    if (result.reason === "unconfigured") {
+      return NextResponse.json({
+        ok: true,
+        record_id: randomUUID(),
+        persisted: false,
+      });
+    }
     return NextResponse.json(
       { error: "Could not save that right now" },
       { status: 502 },
     );
   }
 
-  const persisted = result.data.persisted !== false;
+  console.info("[seed:save] stored", {
+    kind,
+    updated: result.data.updated,
+  });
 
-  if (result.data.would_write || result.data.invariants) {
-    console.info("[seed:save] workflow", {
-      kind,
-      persisted,
-      would_write: result.data.would_write ?? null,
-      review_queued: Array.isArray(result.data.review_queue)
-        ? result.data.review_queue.length
-        : null,
-      // Echoed by the workflow so a broken safety rule is visible in the log,
-      // not only in whatever ends up in the database.
-      invariants_ok:
-        result.data.invariants === undefined
-          ? null
-          : Object.values(result.data.invariants).every((v) => v !== false),
-    });
+  /**
+   * Extraction and flagging (1.8/1.9) run after this response, never before it.
+   * They are a network call to another API, and a parent tapping "save" should
+   * not wait on our metadata — if it fails or the process restarts mid-flight,
+   * `sweepExtraction` picks the card up later.
+   *
+   * Caregiver cards are excluded on purpose: their free text is the restricted
+   * note, and a restricted note is never AI-summarized (invariant 12).
+   */
+  if (kind !== "caregiver") {
+    const db = getDb();
+    if (db) scheduleExtraction(db, result.data.record_id);
   }
 
   return NextResponse.json({
     ok: true,
-    record_id: result.data.record_id ?? null,
-    persisted,
+    record_id: result.data.record_id,
+    persisted: true,
   });
 }

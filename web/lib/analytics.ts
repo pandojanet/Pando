@@ -48,6 +48,11 @@ export type SeedEvent =
   | "seed_card_save_failed"
   | "seed_chat_finished"
   | "seed_completion_viewed"
+  /* The completion screen is three pages (1.7). These two are the funnel between
+     them — the split added two places to leave before the consent is answered, and
+     without them a drop-off there is invisible. */
+  | "seed_done_continue"
+  | "seed_done_next_opened"
   | "seed_demand_captured"
   | "seed_demand_skipped"
   | "seed_follow_up_answered"

@@ -2,7 +2,7 @@
  * Shared types for the Pando Seed Tool (Phase 1).
  *
  * Naming follows the engineering spec's database schema so the payloads we
- * hand to n8n / Supabase need no translation layer:
+ * hand to the repo layer need no translation layer:
  *   social_affinities(affinity_type, affinity_value, score_weight)
  *   life_relevance(dimension, value)
  *   market_options(market_id, category, option_value)
@@ -283,8 +283,15 @@ export interface ProfilePayload {
    */
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
-  /** P13 — how this parent may be named. Nothing else in the profile gates this. */
-  attribution: string | null;
+  /**
+   * P13 — how this parent may be named. Nothing else in the profile gates this.
+   *
+   * Two values or nothing, in the type as well as at runtime: the route already
+   * fails an unrecognised attribution closed to null, and widening this to
+   * `string` let that narrowing get lost again on the way to the database, where
+   * the column is an enum and a stray value aborts the write.
+   */
+  attribution: "anonymous_verified" | "first_name_safe" | null;
   /**
    * Anonymous group mentions ("five parents at Oakwood…"), disclosed rather than
    * asked, so it defaults true. Texting PRIVACY sets it false.

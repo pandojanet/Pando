@@ -13,7 +13,7 @@ import { PandoMark } from "./Logo";
  * parent is. On a phone none of it exists, and none of it is load-bearing.
  */
 
-type PanelKey = "join" | "profile" | "share" | "done";
+type PanelKey = "join" | "profile" | "share" | "finish" | "done";
 
 const STEPS: Array<{ key: PanelKey; label: string }> = [
   { key: "profile", label: "Your profile" },
@@ -73,6 +73,24 @@ const PANELS: Record<
       "Every answer lands in its own field, so nothing gets lost in a wall of text.",
     ],
   },
+  /* /done/ask still has two questions on it. The "done" panel congratulates them
+     for finishing, which would be the rail contradicting the screen beside it. */
+  finish: {
+    badge: "Last step",
+    title: (
+      <>
+        Two things left,
+        <br />
+        <span className="text-gold">then it&apos;s ours to carry.</span>
+      </>
+    ),
+    lead: "One is your turn to ask — the question you'd actually want a straight answer to. The other is whether Pando may come back to you about what you shared.",
+    points: [
+      "Your answers are saved on this phone as you go.",
+      "Follow-ups are capped at the number you set, and STOP works from the first text.",
+      "Saying no to follow-ups doesn't affect your founding place.",
+    ],
+  },
   done: {
     badge: "Founding parent",
     title: (
@@ -94,6 +112,8 @@ const PANELS: Record<
 function panelFor(pathname: string): PanelKey {
   if (pathname.startsWith("/profile")) return "profile";
   if (pathname.startsWith("/share")) return "share";
+  // Before the bare /done check — it is a prefix of this one.
+  if (pathname.startsWith("/done/ask")) return "finish";
   if (pathname.startsWith("/done")) return "done";
   return "join";
 }
@@ -101,13 +121,19 @@ function panelFor(pathname: string): PanelKey {
 export function BrandPanel() {
   const key = panelFor(usePathname());
   const panel = PANELS[key];
-  const activeStep = STEPS.findIndex((s) => s.key === key);
+  /* "finish" is not its own step in the rail — it's the last stretch of "Done", and
+     giving it a fourth dot would tell the parent the flow just got longer. */
+  const railKey = key === "finish" ? "done" : key;
+  const activeStep = STEPS.findIndex((s) => s.key === railKey);
 
   return (
     <aside
       className={cn(
         "frame-scroll hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-[21rem] lg:shrink-0 lg:flex-col",
-        "lg:justify-between lg:overflow-y-auto lg:px-8 lg:py-10 xl:w-[25rem] xl:px-10",
+        /* The rail grows on a wide window too. It carries real context, so giving
+           it the room is using the space rather than padding the app column with
+           it. */
+        "lg:justify-between lg:overflow-y-auto lg:px-8 lg:py-10 xl:w-[25rem] xl:px-10 2xl:w-[29rem] 3xl:w-[34rem]",
         "lg:bg-moss lg:bg-[radial-gradient(120%_80%_at_10%_6%,var(--color-moss-lift)_0%,var(--color-moss)_55%,var(--color-moss-deep)_100%)]",
       )}
     >
@@ -116,7 +142,9 @@ export function BrandPanel() {
         <span className="font-display text-[1.1rem] font-bold tracking-[-0.02em]">
           Pando
         </span>
-        <span className="rounded-full border border-gold/40 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-gold">
+        {/* 11.5px is the smallest size in the type scale (the eyebrow). 10.5px was
+            below the system's own floor for no reason other than fitting. */}
+        <span className="rounded-full border border-gold/40 px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-gold">
           {panel.badge}
         </span>
       </div>

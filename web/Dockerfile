@@ -29,6 +29,21 @@ COPY . .
 # Creating it here keeps the build independent of whether anyone has added a
 # static asset yet.
 RUN mkdir -p public
+
+# `NEXT_PUBLIC_*` is the one class of config that is NOT read at request time:
+# Next inlines it into the client bundle during `next build`. Putting the PostHog
+# key in /docker/pando/.env therefore does nothing — the browser bundle would
+# already carry `undefined` and the provider would stay inert with no error
+# anywhere. It has to arrive here, as a build arg, and CI passes it from repo
+# secrets (see .github/workflows/deploy.yml and DEPLOY.md §3).
+#
+# Both are optional: an image built without them is a working image with
+# analytics switched off, which is the same honest no-op as an unset key locally.
+ARG NEXT_PUBLIC_POSTHOG_KEY=""
+ARG NEXT_PUBLIC_POSTHOG_HOST="https://us.i.posthog.com"
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY \
+    NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST
+
 ENV NODE_ENV=production
 RUN npm run build
 

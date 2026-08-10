@@ -3,15 +3,14 @@ import "server-only";
 /**
  * The single outbound SMS layer (invariant 6 — spec §14, §21).
  *
- * Every text Pando ever sends goes through `sendSms`. Nothing else in the app —
- * and nothing in n8n — may call Twilio directly, because the order of the checks
- * below *is* the compliance story: opt-out, then quiet hours, then frequency, then
- * the send.
+ * Every text Pando ever sends goes through `sendSms`. Nothing else in the app may
+ * call Twilio directly, because the order of the checks below *is* the compliance
+ * story: opt-out, then quiet hours, then frequency, then the send.
  *
  * Today it is deliberately inert: the A2P 10DLC campaign isn't approved and the
  * Messaging Service SID hasn't been issued, so `sendSms` reports
  * `not_provisioned` instead of pretending. Callers must handle that — the same
- * rule as `persisted: false` on the n8n seam: never claim something happened.
+ * rule as `persisted: false` without a `DATABASE_URL`: never claim something happened.
  *
  * When the SID arrives, only the marked block at the bottom changes.
  */

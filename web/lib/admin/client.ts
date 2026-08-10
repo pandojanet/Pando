@@ -30,19 +30,25 @@ interface QueryResponse<T> {
 }
 
 /**
- * Loads one resource for a page. Returns `configured: false` when the n8n read hook
+ * Loads one resource for a page. Returns `configured: false` when `DATABASE_URL`
  * isn't set yet — pages show that state instead of pretending they have data, and
  * offer sample rows for reviewing the layout.
  */
 export function useAdminRows<T>(
   resource: AdminResource,
   params?: Record<string, unknown>,
+  /**
+   * Set false to hold the request back until the page actually needs the rows.
+   * A query is ~200ms of round trip whatever it returns, so a list fetched for a
+   * control the admin may never open is 200ms spent on nothing.
+   */
+  enabled = true,
 ) {
   const [rows, setRows] = useState<T | null>(null);
   const [configured, setConfigured] = useState(true);
   const [sample, setSample] = useState(false);
   const [demo, setDemo] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const key = JSON.stringify(params ?? {});
@@ -70,8 +76,9 @@ export function useAdminRows<T>(
   );
 
   useEffect(() => {
+    if (!enabled) return;
     void load(demo);
-  }, [load, demo]);
+  }, [load, demo, enabled]);
 
   return {
     rows,
@@ -108,7 +115,7 @@ export async function readRestrictedNote(
     { resource: "restricted_note", params: { nomination_id: nominationId } },
   );
   if (!data.configured) {
-    return "No admin_read hook is connected yet, so there is nothing to show.";
+    return "No database is connected yet, so there is nothing to show.";
   }
   return data.rows?.body ?? "No note on this nomination.";
 }

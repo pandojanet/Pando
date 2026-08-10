@@ -9,20 +9,24 @@ import {
 } from "@/lib/sanitize";
 import { toE164 } from "@/lib/phone";
 import { submitGate } from "@/lib/server/gate";
-import { forwardToN8n, isHookConfigured } from "@/lib/server/n8n";
+import { withDb } from "@/lib/server/db";
+import { writeProfile } from "@/lib/server/repo/profile";
 import { validateInviteCode } from "@/lib/server/invite";
 import type { ProfilePayload, QuestionId } from "@/lib/types";
 
 /**
  * POST /api/seed/profile — save the tap-first profile (spec §16.1).
  *
- * Everything user-typed is sanitized here, before the payload leaves the app.
- * The write itself belongs to the n8n workflow (contributors + social_affinities
- * + life_relevance + pending_options, estimate 1.3); until that webhook exists
- * we answer `persisted: false` rather than pretend.
+ * Everything user-typed is sanitized here, before it reaches the database. The
+ * write itself is one transaction in `lib/server/repo/profile.ts` (person +
+ * children + affinities + relevance + schools + pending options, estimate 1.3).
  *
- * Not yet here, and deliberately: rate limiting and Supabase RLS land with the
- * Phase 3 hardening pass (estimate 19.3).
+ * With `DATABASE_URL` unset the route still answers 200 with
+ * `persisted: false` — the same honesty rule the n8n seam had, and what keeps
+ * the whole flow walkable before there is a database.
+ *
+ * Not yet here, and deliberately: rate limiting lands with the Phase 3
+ * hardening pass (estimate 19.3).
  */
 
 type ListKey = Extract<
@@ -243,51 +247,68 @@ export async function POST(request: Request) {
     schools_with_status: Object.keys(payload.school_status).length,
   });
 
-  if (!isHookConfigured("profile")) {
-    return NextResponse.json({
-      ok: true,
-      contributor_id: randomUUID(),
-      persisted: false,
-    });
-  }
+  const result = await withDb((db) =>
+    writeProfile(db, {
+      invite_code: payload.invite_code,
+      market_id: payload.market_id,
+      source: payload.source,
+      is_test: payload.is_test,
+      first_name: payload.first_name,
+      last_name: payload.last_name,
+      phone: payload.phone,
+      phone_verified_at: payload.phone_verified_at,
+      sms_consent: payload.sms_consent as ProfileConsent,
+      wants_founding: payload.wants_founding,
+      neighborhood,
+      children: payload.children as never,
+      child_ages_at_capture: payload.child_ages_at_capture,
+      profile_captured_at: payload.profile_captured_at,
+      allowance_mode: payload.allowance_mode as "fixed" | "as_relevant",
+      monthly_contact_allowance: payload.monthly_contact_allowance,
+      attribution: payload.attribution,
+      aggregate_display: payload.aggregate_display,
+      topic_preferences: payload.topic_preferences,
+      topics_lived_experience: payload.topics_lived_experience,
+      school_status: payload.school_status,
+      time_in_area: payload.time_in_area,
+      moved_from: payload.moved_from,
+      invited_via_group: payload.invited_via_group,
+      answers: payload.answers,
+      social_affinities: payload.social_affinities as never,
+      life_relevance: payload.life_relevance as never,
+      pending_options: payload.pending_options as never,
+      profile_completeness: payload.profile_completeness,
+    }),
+  );
 
-  const result = await forwardToN8n<{
-    contributor_id?: string;
+  if (!result.persisted) {
     /**
-     * A workflow may answer without storing anything — the 1.3 derivation
-     * scenario runs without a database on purpose (see n8n/1.3-profile-derive.md).
-     * Trust what it reports about itself; only assume a write when it says so.
+     * `unconfigured` is the honest no-backend answer and must stay a 200: the
+     * parent's answers are safe on their phone and the flow continues. A real
+     * failure is a 502 — the screen tells them to try again rather than moving
+     * on as though the profile were saved.
      */
-    persisted?: boolean;
-    /** Row counts the workflow would write. Counts only, never rows. */
-    would_write?: Record<string, number>;
-    /** Whether the workflow's derivation matched ours. */
-    crosscheck?: { agrees?: boolean };
-  }>("profile", payload);
-
-  if (!result.forwarded) {
-    console.error("[seed:profile] n8n forward failed", result.error ?? result.reason);
+    if (result.reason === "unconfigured") {
+      return NextResponse.json({
+        ok: true,
+        contributor_id: randomUUID(),
+        persisted: false,
+      });
+    }
     return NextResponse.json(
       { error: "Could not save the profile right now" },
       { status: 502 },
     );
   }
 
-  const persisted = result.data.persisted !== false;
-
-  if (result.data.would_write || result.data.crosscheck) {
-    console.info("[seed:profile] workflow", {
-      persisted,
-      would_write: result.data.would_write ?? null,
-      // False here means the workflow's derivation rules and lib/derive.ts have
-      // drifted apart — a real bug on one of the two sides.
-      derivation_agrees: result.data.crosscheck?.agrees ?? null,
-    });
-  }
+  console.info("[seed:profile] stored", result.data.counts);
 
   return NextResponse.json({
     ok: true,
-    contributor_id: result.data.contributor_id ?? null,
-    persisted,
+    contributor_id: result.data.person_id,
+    persisted: true,
   });
 }
+
+/** The shape `lib/consent.ts` produces, narrowed for the repository. */
+type ProfileConsent = { status: string; text_version: string; source?: string } | null;

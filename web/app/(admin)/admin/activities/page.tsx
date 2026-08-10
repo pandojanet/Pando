@@ -75,7 +75,7 @@ export default function ContributionsPage() {
       setMessage(
         result.persisted
           ? `${label} — done.`
-          : `${label} — not stored (no admin_write hook).`,
+          : `${label} — not stored (no database connected).`,
       );
       setEditing(null);
       setQuestion("");

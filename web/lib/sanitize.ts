@@ -1,6 +1,6 @@
 /**
  * Text hygiene for anything a parent typed (spec §19: "Sanitize all user text").
- * Applied server-side before the payload leaves for n8n, so no free text reaches
+ * Applied in the route before the payload reaches the repo layer, so no free text reaches
  * the database with control characters or unbounded length.
  */
 

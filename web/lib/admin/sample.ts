@@ -14,14 +14,14 @@ import type {
 } from "./types";
 
 /**
- * Sample rows for reviewing the admin before the backend exists.
+ * Sample rows for reviewing the admin before there is a database to read.
  *
- * Only ever served when the n8n hook is unconfigured **and** the page explicitly asks
+ * Only ever served when `DATABASE_URL` is unset **and** the page explicitly asks
  * for it, and every page that shows them displays a banner saying so. Names are
  * obviously invented on purpose — nothing here should be mistakable for a real
  * contributor.
  *
- * They double as shape documentation: if `admin_read` returns these keys, the pages
+ * They double as shape documentation: if the read layer returns these keys, the pages
  * render.
  */
 
@@ -32,8 +32,17 @@ export const sampleOverview: Overview = {
   submissions: { activities: 58, caregivers: 11, places: 22, tips: 14 },
   consent: { follow_up_opt_in: 27, reference_willing: 8 },
   caregivers: { mentioned: 6, invited: 3, consented: 2, declined: 0 },
-  quality: { low_confidence: 5, open_flags: 2, pending_options: 9, review_holds: 2 },
+  quality: {
+    low_confidence: 5,
+    open_flags: 2,
+    pending_options: 9,
+    review_holds: 2,
+    pending_contributions: 7,
+    escalations: 1,
+  },
   founding: { pending: 12, approved: 19 },
+  /** The three add up to `contributors.total`, as they do against a real database. */
+  reward: { eligible: 19, started: 9, none: 14 },
   demand: { ordinary: 14, peer_support: 3, high_stakes: 1 },
   drop_off: [
     { step: "Opened the link", reached: 64 },
@@ -56,6 +65,8 @@ export const sampleContributors: ContributorRow[] = [
     child_birth_years: [2023, 2020],
     submissions: 4,
     qualifying_approved: 3,
+    caregiver_approved: 1,
+    reward_status: "eligible",
     founding_status: "founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -70,6 +81,8 @@ export const sampleContributors: ContributorRow[] = [
     child_birth_years: [2019],
     submissions: 2,
     qualifying_approved: 1,
+    caregiver_approved: 0,
+    reward_status: "eligible",
     founding_status: "pending_founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -84,6 +97,8 @@ export const sampleContributors: ContributorRow[] = [
     child_birth_years: [2025],
     submissions: 1,
     qualifying_approved: 0,
+    caregiver_approved: 0,
+    reward_status: "started",
     founding_status: "none",
     follow_up_opt_in: null,
     /** The anonymous path: welcome, labelled, not eligible for founding. */
@@ -99,10 +114,29 @@ export const sampleContributors: ContributorRow[] = [
     child_birth_years: [2021],
     submissions: 3,
     qualifying_approved: 0,
+    caregiver_approved: 0,
+    reward_status: "started",
     founding_status: "pending_founding",
     follow_up_opt_in: false,
     wants_founding: true,
     is_test: true,
+    created_at: now,
+  },
+  {
+    /** The case the client asked to be able to see: arrived, left nothing. */
+    id: "c5",
+    name: "Sample Parent C",
+    phone_masked: "••• ••• 7714",
+    neighborhood: "altadena",
+    child_birth_years: [2022],
+    submissions: 0,
+    qualifying_approved: 0,
+    caregiver_approved: 0,
+    reward_status: "none",
+    founding_status: "pending_founding",
+    follow_up_opt_in: null,
+    wants_founding: true,
+    is_test: false,
     created_at: now,
   },
 ];
@@ -184,6 +218,12 @@ export const sampleContributorDetail: ContributorDetail = {
       at: now,
     },
   ],
+  referral: {
+    referred_by: null,
+    referred: [
+      { referral_id: "r1", id: "c2", name: "Sample Parent B", status: "profile_complete" },
+    ],
+  },
 };
 
 export const sampleContributions: ContributionRow[] = [

@@ -20,7 +20,7 @@ import type {
  * spec §8.1: "Each selection writes to social_affinities with its score
  * weight — no post-processing or fuzzy matching at blast time").
  *
- * We derive on the client too, so n8n receives a ready-to-insert shape and the
+ * We derive on the client too, so the route receives a ready-to-insert shape and the
  * weights live in exactly one place the whole team can read. The backend stays
  * free to re-derive (weights are config, per spec §18.1) — this is a
  * convenience, never the source of truth.
@@ -163,8 +163,18 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
           ? Number(answers.allowance)
           : 3,
     allowance_mode: answers.allowance === "as_relevant" ? "as_relevant" : "fixed",
-    /** P13 — the single control over how this parent is named in an answer. */
-    attribution: answers.attribution,
+    /**
+     * P13 — the single control over how this parent is named in an answer.
+     *
+     * Narrowed here rather than passed through: this is a raw tap id, and an
+     * unrecognised one must fail closed to anonymous. Naming a parent because a
+     * stale option slipped through is the one mistake this field can make.
+     */
+    attribution:
+      answers.attribution === "first_name_safe" ||
+      answers.attribution === "anonymous_verified"
+        ? answers.attribution
+        : null,
     /** Disclosed, not asked, so it starts true; texting PRIVACY turns it off. */
     aggregate_display: true,
     /** What this parent is the person to ask about (users.topic_preferences). */

@@ -27,18 +27,33 @@ export default function ContributorsPage() {
     useAdminRows<ContributorRow[]>("contributors");
   const [search, setSearch] = useState("");
   const [hideTest, setHideTest] = useState(true);
+  const [reward, setReward] = useState<"all" | ContributorRow["reward_status"]>("all");
+  /**
+   * The contest the client described ("give more information and you're entered")
+   * has no threshold — she never named one, and inventing a number here would
+   * make up a rule nobody agreed to. So this sorts, and she picks off the top.
+   */
+  const [sort, setSort] = useState<"recent" | "contributions">("recent");
 
   const all = rows ?? [];
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return all.filter((row) => {
+    const matched = all.filter((row) => {
       if (hideTest && row.is_test) return false;
+      if (reward !== "all" && row.reward_status !== reward) return false;
       if (!q) return true;
       return [row.name, row.neighborhood, row.phone_masked]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [all, search, hideTest, ]);
+
+    if (sort === "recent") return matched;
+    return [...matched].sort(
+      (a, b) =>
+        b.qualifying_approved + b.caregiver_approved -
+        (a.qualifying_approved + a.caregiver_approved),
+    );
+  }, [all, search, hideTest, reward, sort]);
 
   const testCount = all.filter((r) => r.is_test).length;
 
@@ -55,6 +70,30 @@ export default function ContributorsPage() {
               placeholder="Name, neighborhood…"
               className={`${inputClass} w-[13rem]`}
             />
+            <select
+              aria-label="Reward"
+              value={reward}
+              onChange={(e) =>
+                setReward(e.target.value as "all" | ContributorRow["reward_status"])
+              }
+              className={inputClass}
+            >
+              <option value="all">Every contributor</option>
+              <option value="eligible">Reward earned</option>
+              <option value="started">Waiting on review</option>
+              <option value="none">Gave nothing</option>
+            </select>
+            <select
+              aria-label="Sort"
+              value={sort}
+              onChange={(e) =>
+                setSort(e.target.value as "recent" | "contributions")
+              }
+              className={inputClass}
+            >
+              <option value="recent">Newest first</option>
+              <option value="contributions">Most contributions</option>
+            </select>
             {testCount > 0 && (
               <label className="flex items-center gap-2 text-[13px] text-muted">
                 <input
@@ -95,6 +134,7 @@ export default function ContributorsPage() {
                 <Th>Born</Th>
                 <Th className="text-right">Cards</Th>
                 <Th className="text-right">Qualifying</Th>
+                <Th>Reward</Th>
                 <Th>Founding</Th>
                 <Th>Follow-ups</Th>
                 <Th>Joined</Th>
@@ -127,6 +167,23 @@ export default function ContributorsPage() {
                     title="Approved contributions meeting every Founding criterion"
                   >
                     {row.qualifying_approved}
+                    {row.caregiver_approved > 0 && (
+                      <span
+                        className="ml-1 text-[12px] font-normal text-muted"
+                        title="Approved caregiver nominations, not on hold"
+                      >
+                        +{row.caregiver_approved} cg
+                      </span>
+                    )}
+                  </Td>
+                  <Td>
+                    {row.reward_status === "eligible" ? (
+                      <Badge tone="green">Earned</Badge>
+                    ) : row.reward_status === "started" ? (
+                      <Badge tone="gold">In review</Badge>
+                    ) : (
+                      <Badge tone="muted">Nothing yet</Badge>
+                    )}
                   </Td>
                   <Td>
                     {row.founding_status === "founding" ? (

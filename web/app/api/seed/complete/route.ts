@@ -6,7 +6,9 @@ import { toE164 } from "@/lib/phone";
 import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { validateInviteCode } from "@/lib/server/invite";
 import { submitGate } from "@/lib/server/gate";
-import { forwardToN8n, isHookConfigured } from "@/lib/server/n8n";
+import { withDb } from "@/lib/server/db";
+import { findPersonByPhone } from "@/lib/server/repo/profile";
+import { writeCompletion } from "@/lib/server/repo/completion";
 
 /**
  * POST /api/seed/complete — the parent finished the Seed Tool (estimate 1.7).
@@ -161,34 +163,42 @@ export async function POST(request: Request) {
     shared_total: record.shared_total,
   });
 
-  if (!isHookConfigured("complete")) {
-    return NextResponse.json({
-      ok: true,
-      contributor_id: randomUUID(),
-      contributor_status: record.contributor_status,
-      persisted: false,
+  const result = await withDb(async (db) => {
+    const person = phone ? await findPersonByPhone(db, phone) : null;
+    return writeCompletion(db, {
+      person_id: person?.id ?? null,
+      follow_up_opt_in: record.follow_up_opt_in,
+      consent_text_version: CONSENT_TEXT_VERSION,
+      monthly_contact_allowance: record.monthly_contact_allowance,
+      demand: record.demand,
+      is_test: record.is_test,
     });
-  }
+  });
 
-  const result = await forwardToN8n<{ contributor_id?: string }>(
-    "complete",
-    record,
-  );
-
-  if (!result.forwarded) {
-    console.error(
-      "[seed:complete] n8n forward failed",
-      result.error ?? result.reason,
-    );
+  if (!result.persisted) {
+    if (result.reason === "unconfigured") {
+      return NextResponse.json({
+        ok: true,
+        contributor_id: randomUUID(),
+        contributor_status: record.contributor_status,
+        persisted: false,
+      });
+    }
     return NextResponse.json(
       { error: "Could not record that right now" },
       { status: 502 },
     );
   }
 
+  console.info("[seed:complete] stored", {
+    has_person: result.data.person_id !== null,
+    demand_stored: result.data.demand_signal_id !== null,
+    escalated: result.data.flagged,
+  });
+
   return NextResponse.json({
     ok: true,
-    contributor_id: result.data.contributor_id ?? null,
+    contributor_id: result.data.person_id,
     contributor_status: record.contributor_status,
     persisted: true,
   });
