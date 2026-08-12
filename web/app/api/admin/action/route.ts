@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
+import { ADMIN_COOKIE } from "@/lib/admin/auth";
+import { readAdminSession } from "@/lib/server/admin-auth";
 import { cleanText } from "@/lib/sanitize";
 import { withDb } from "@/lib/server/db";
+import { invalidateOptions } from "@/lib/server/market-cache";
+import { invalidateInvites } from "@/lib/server/invite-cache";
 import { applyAction } from "@/lib/server/repo/admin-write";
 
 /**
@@ -33,12 +36,16 @@ const ACTIONS = new Set([
   "contribution.needs_detail",
   "contribution.reject",
   "contribution.edit",
+  "place.answer_ready",
   "nomination.approve",
   "nomination.reject",
   "nomination.release_hold",
   "caregiver.consent",
   "caregiver.visibility",
   "caregiver.merge",
+  "invite.create",
+  "invite.retire",
+  "invite.restore",
   "option.promote",
   "option.reject",
   "option.retire",
@@ -48,6 +55,9 @@ const ACTIONS = new Set([
   "founding.approve",
   "founding.request_invite",
   "contributor.note",
+  "claim.link",
+  "claim.decline",
+  "claim.delete",
   "referral.link",
   "referral.void",
 ]);
@@ -73,7 +83,9 @@ const CONSENT_METHODS = new Set([
 const METHODS_NEEDING_NOTE = new Set(["call_logged", "in_person"]);
 
 export async function POST(request: Request) {
-  const session = readToken((await cookies()).get(ADMIN_COOKIE)?.value);
+  const session = await readAdminSession(
+    (await cookies()).get(ADMIN_COOKIE)?.value,
+  );
   if (!session) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
@@ -155,6 +167,28 @@ export async function POST(request: Request) {
     }
   }
 
+  /**
+   * An invite code goes in a URL and gets typed by hand off a QR card, so it is
+   * held to the same shape as every other id a person can type. The label is what
+   * the parent reads back ("You joined through …"), so an empty one would produce
+   * a sentence with a hole in it.
+   */
+  if (action === "invite.create") {
+    const code = typeof body?.code === "string" ? body.code : "";
+    if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(code)) {
+      return NextResponse.json(
+        { error: "A code needs to be lowercase and hyphenated — it goes in a link" },
+        { status: 422 },
+      );
+    }
+    if (!cleanText(body?.label, 80)) {
+      return NextResponse.json(
+        { error: "Name the group — the parent sees this, not the code" },
+        { status: 422 },
+      );
+    }
+  }
+
   if (action === "option.promote") {
     const value = typeof body?.option_value === "string" ? body.option_value : "";
     if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(value)) {
@@ -182,6 +216,33 @@ export async function POST(request: Request) {
     if (referrer === referred) {
       return NextResponse.json(
         { error: "A parent cannot have invited themselves" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /** Declining somebody's registration is a decision, so it carries a reason. */
+  if (action === "claim.decline") {
+    const reason = cleanText(body?.reason, 300);
+    if (!reason) {
+      return NextResponse.json(
+        { error: "Say why — this is a person who asked to be listed" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * A deletion is the one action here that cannot be undone by another action, so
+   * it records *how the person asked* — the flow promises "text DELETE", and once
+   * the SMS channel is live that string is the only evidence the request was real.
+   * No reason is asked for: the same promise says "without asking why".
+   */
+  if (action === "claim.delete") {
+    const via = cleanText(body?.requested_via, 120);
+    if (!via) {
+      return NextResponse.json(
+        { error: "Record how they asked — a text, an email, a call" },
         { status: 422 },
       );
     }
@@ -236,6 +297,20 @@ export async function POST(request: Request) {
       { status: 501 },
     );
   }
+
+  /**
+   * The tap lists are read at request time and cached for a minute, so a write
+   * that changes them clears that cache — otherwise an admin promotes an option,
+   * reloads the questionnaire, sees nothing and concludes the button is broken.
+   *
+   * **After the commit, never before.** Clearing first leaves a window where a
+   * read repopulates the cache with pre-write rows and then serves them for the
+   * full minute — the exact staleness this is here to prevent.
+   */
+  if (action.startsWith("option.")) invalidateOptions();
+  /* Same rule for the codes: an admin's next move after creating an invite is to
+     open the link and check it works. */
+  if (action.startsWith("invite.")) invalidateInvites();
 
   return NextResponse.json({ ok: true, persisted: true, actor: session.user });
 }

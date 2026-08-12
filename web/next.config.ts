@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   // carries no node_modules install of its own.
   output: "standalone",
 
+  // Dev only, and not cosmetic: the indicator's default corner is bottom-left,
+  // which is exactly where the admin sidebar keeps "Signed in as / Change
+  // password / Sign out". It sat on top of them, so a control we needed to click
+  // during QA was unreachable and looked broken. Nothing about production.
+  devIndicators: { position: "bottom-right" },
+
   async redirects() {
     return [
       // The public site used to be four static .html files at the repo root.

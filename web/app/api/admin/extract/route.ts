@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
+import { ADMIN_COOKIE } from "@/lib/admin/auth";
+import { readAdminSession } from "@/lib/server/admin-auth";
 import { getDb } from "@/lib/server/db";
 import { isExtractionConfigured } from "@/lib/server/extract";
 import { sweepExtraction } from "@/lib/server/repo/flags";
@@ -23,7 +24,9 @@ export const dynamic = "force-dynamic";
 const MAX_BATCH = 50;
 
 export async function POST(request: Request) {
-  const session = readToken((await cookies()).get(ADMIN_COOKIE)?.value);
+  const session = await readAdminSession(
+    (await cookies()).get(ADMIN_COOKIE)?.value,
+  );
   if (!session) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }

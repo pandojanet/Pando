@@ -72,6 +72,9 @@ export async function POST(request: Request) {
           started.reason === "phone_send_limit"
             ? VERIFICATION_SENDS_PER_HOUR
             : VERIFICATION_MAX_SENDS,
+        /* §19's lock, in seconds, so the screen can say when rather than "later". */
+        retry_in_seconds:
+          started.reason === "locked" ? started.retry_in_seconds : undefined,
       },
       { status: 429 },
     );

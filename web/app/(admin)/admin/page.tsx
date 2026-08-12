@@ -180,6 +180,13 @@ export default function AdminOverviewPage() {
                     value={o.quality.review_holds}
                     href="/admin/caregivers"
                   />
+                  {/* The one number here that should go up, not down: records an
+                      admin has judged good enough to answer with (§17.1). */}
+                  <QualityRow
+                    label="Answer-ready records"
+                    value={o.answer_ready}
+                    href="/admin/activities"
+                  />
                 </ul>
               </Card>
 
@@ -203,9 +210,11 @@ export default function AdminOverviewPage() {
                   <QualityRow label="Ordinary questions" value={o.demand.ordinary} href="/admin/demand" />
                   <QualityRow label="Peer support" value={o.demand.peer_support} href="/admin/demand" />
                   <QualityRow label="Health, legal or safety" value={o.demand.high_stakes} href="/admin/demand" />
+                  <QualityRow label="Claims about a named person" value={o.demand.named_allegation} href="/admin/demand" />
                 </ul>
                 <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] text-muted">
-                  Anything but ordinary waits for a person before it can be used.
+                  Anything but ordinary waits for a person before it can be used, and a
+                  claim about a named person is never used at all.
                 </p>
               </Card>
 

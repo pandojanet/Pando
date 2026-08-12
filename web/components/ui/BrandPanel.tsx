@@ -13,7 +13,7 @@ import { PandoMark } from "./Logo";
  * parent is. On a phone none of it exists, and none of it is load-bearing.
  */
 
-type PanelKey = "join" | "profile" | "share" | "finish" | "done";
+type PanelKey = "join" | "profile" | "share" | "finish" | "done" | "caregiver";
 
 const STEPS: Array<{ key: PanelKey; label: string }> = [
   { key: "profile", label: "Your profile" },
@@ -38,7 +38,33 @@ const PANELS: Record<
     points: [
       "Nothing here is published or searchable.",
       "Your name is never attached to a recommendation another parent sees.",
-      "A caregiver you nominate is contacted for consent before they appear anywhere.",
+      /* Was "a caregiver you nominate is contacted for consent" — which the
+         product deliberately does not do. Pando holds no way to reach them and
+         never asks on your behalf (invariant 13, client's call 3 Aug); you send
+         the invite yourself, and nothing about them is stored until they set up
+         their own profile. Stale copy that promised the opposite. */
+      "You invite a caregiver yourself — Pando never contacts them, and stores no way to.",
+    ],
+  },
+  /**
+   * 2C. A different reader with a different worry: not "will my recommendation be
+   * useful" but "who is going to see this, and can I get out". So the three points
+   * are the three things they are owed before answering anything.
+   */
+  caregiver: {
+    badge: "For caregivers",
+    title: (
+      <>
+        A family recommended you.
+        <br />
+        <span className="text-gold">Nothing is listed until you say so.</span>
+      </>
+    ),
+    lead: "Pando is how parents here ask each other about care. Someone you've worked for put your name forward — this is you deciding what, if anything, a family gets to see.",
+    points: [
+      "Your number is never shown to a family, and never passed on without asking you first.",
+      "Every permission is separate, and each one is a yes you can take back.",
+      "Text DELETE at any point and the whole profile goes.",
     ],
   },
   profile: {
@@ -110,6 +136,10 @@ const PANELS: Record<
 };
 
 function panelFor(pathname: string): PanelKey {
+  /* First, because the fallback below is the parent's founding pitch — on the
+     caregiver flow that panel would address the wrong person and promise them a
+     status they cannot have. */
+  if (pathname.startsWith("/caregiver")) return "caregiver";
   if (pathname.startsWith("/profile")) return "profile";
   if (pathname.startsWith("/share")) return "share";
   // Before the bare /done check — it is a prefix of this one.

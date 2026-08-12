@@ -57,6 +57,21 @@ try {
     console.log(`  ${label.padEnd(24)} ${n}`);
   }
 
+  /**
+   * Who can sign in — the one count that is about people rather than parents.
+   * Zero is not an error: with an empty table the app falls back to
+   * `ADMIN_CREDENTIALS` (bootstrap), and says so on the sign-in screen.
+   */
+  const adminsActive = await one(
+    sql`select count(*)::int from admin_users where active`,
+  );
+  const adminsTotal = await one(sql`select count(*)::int from admin_users`);
+  console.log(
+    `  ${"admin_users".padEnd(24)} ${adminsActive} active` +
+      (adminsTotal > adminsActive ? `, ${adminsTotal - adminsActive} revoked` : "") +
+      (adminsTotal === 0 ? "  (falling back to ADMIN_CREDENTIALS)" : ""),
+  );
+
   console.log("\n── extraction (1.8) ───────────────────────────────────");
   const scored = await one(
     sql`select count(*)::int from place_contributions where confidence is not null`,
@@ -82,10 +97,61 @@ try {
   const unattributed = await one(sql`
     select count(*)::int from audit_log where actor is null or actor = ''
   `);
+  /**
+   * §17.1 — "ready to answer with" has to be a subset of "a human approved it".
+   * The CHECK enforces it on write; this catches a row that predates the
+   * constraint, or one changed by hand.
+   */
+  const goldenUnapproved = await one(sql`
+    select count(*)::int from places where answer_ready and status <> 'approved'
+  `);
+  /** The Product Strategy's rule for a claim about a named person. */
+  const allegationUsable = await one(sql`
+    select count(*)::int from demand_signals
+    where sensitivity = 'named_allegation' and not requires_human_review
+  `);
+  /**
+   * A2P §3.8, the acceptance check that is provable without a live channel:
+   * "a consent record exists for every user who has ever received a proactive
+   * message". Outreach only — a transactional reply to something they just did is
+   * exempt, and so is a row whose person was deleted at their own request.
+   */
+  const outreachWithoutConsent = await one(sql`
+    select count(*)::int from message_log m
+    where m.category = 'outreach'
+      and m.direction = 'out'
+      and m.person_id is not null
+      and not exists (
+        select 1 from consents c
+        where c.person_id = m.person_id and c.status = 'opted_in'
+      )
+  `);
+  /** The suppression list is the first check in the send layer, so it must hold. */
+  const sentAfterOptOut = await one(sql`
+    select count(*)::int from message_log m
+    join people p on p.id = m.person_id
+    join sms_opt_outs o on o.phone = p.phone
+    where m.category = 'outreach' and m.direction = 'out'
+      and m.sent_at > o.opted_out_at
+  `);
+  /**
+   * Belt to the CHECK in 0008: an admin credential that is not a scrypt record
+   * is either a row that predates the constraint or one written by hand, and
+   * either way it is the shape a plaintext password would arrive in.
+   */
+  const adminPlaintext = await one(sql`
+    select count(*)::int from admin_users
+    where password_hash !~ '^scrypt:[0-9]+:[0-9]+:[0-9]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$'
+  `);
   const rows = [
     ["caregiver discoverable without consent (inv. 1)", leak],
     ["caregiver stored under 18 (inv. 2)", minors],
     ["audit row with no actor", unattributed],
+    ["admin credential that isn't a scrypt record", adminPlaintext],
+    ["answer-ready on an unapproved record (§17.1)", goldenUnapproved],
+    ["named allegation not held for review", allegationUsable],
+    ["outreach with no consent record (A2P §3.8)", outreachWithoutConsent],
+    ["outreach sent after a STOP (A2P §3.8)", sentAfterOptOut],
   ];
   for (const [label, n] of rows) {
     console.log(`  ${n === 0 ? "ok  " : "FAIL"} ${label}: ${n}`);

@@ -20,7 +20,7 @@ export default async function Page({
   };
 
   const rawCode = first("i") ?? first("invite") ?? null;
-  const invite = validateInviteCode(rawCode);
+  const invite = await validateInviteCode(rawCode);
   const source = first("src") === "qr" ? "qr" : invite.valid ? "link" : "direct";
 
   return <InviteLanding invite={invite} inviteCode={rawCode} source={source} />;

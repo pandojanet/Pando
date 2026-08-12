@@ -46,6 +46,8 @@ export async function readResource(
       return contributions(db);
     case "caregivers":
       return caregivers(db);
+    case "caregiver_claims":
+      return caregiverClaims(db);
     case "restricted_note":
       return restrictedNote(db, String(params.nomination_id ?? params.id ?? ""));
     case "duplicates":
@@ -58,6 +60,10 @@ export async function readResource(
       return demandRows(db);
     case "founding":
       return foundingQueue(db);
+    case "invites":
+      return inviteRows(db);
+    case "consents":
+      return consentRows(db);
     case "audit":
       return auditRows(db);
   }
@@ -120,6 +126,8 @@ async function overview(db: Db) {
            where status = 'open' and severity = 'escalation')                      as escalations,
         (select count(*) from pending_options where status = 'pending')            as pending_options,
         (select count(*) from caregiver_nominations where review_hold and not is_test) as review_holds,
+        (select count(*) from caregiver_claims
+           where status = 'pending' and not is_test)                            as pending_claims,
         (select count(*) from place_contributions
            where status = 'pending_review' and not is_test)                        as pending_contributions,
         (select count(*) from people where founding = 'pending_founding' and not is_test) as founding_pending,
@@ -135,7 +143,13 @@ async function overview(db: Db) {
         (select count(*) from demand_signals
            where status = 'open' and sensitivity = 'peer_support' and not is_test) as demand_peer,
         (select count(*) from demand_signals
-           where status = 'open' and sensitivity = 'high_stakes' and not is_test)  as demand_high
+           where status = 'open' and sensitivity = 'high_stakes' and not is_test)  as demand_high,
+        (select count(*) from demand_signals
+           where status = 'open' and sensitivity = 'named_allegation'
+             and not is_test)                                                     as demand_allegation,
+        -- §17.1. Not a queue: this one counts *up* as the golden-answer pass
+        -- progresses, which is why it is not one of the quality numbers.
+        (select count(*) from places where answer_ready and not is_test)           as answer_ready
       from reward r
     `,
   );
@@ -171,6 +185,7 @@ async function overview(db: Db) {
       review_holds: n("review_holds"),
       pending_contributions: n("pending_contributions"),
       escalations: n("escalations"),
+      pending_claims: n("pending_claims"),
     },
     founding: { pending: n("founding_pending"), approved: n("founding_approved") },
     reward: {
@@ -182,7 +197,9 @@ async function overview(db: Db) {
       ordinary: n("demand_ordinary"),
       peer_support: n("demand_peer"),
       high_stakes: n("demand_high"),
+      named_allegation: n("demand_allegation"),
     },
+    answer_ready: n("answer_ready"),
     /** Funnels live in PostHog; this page does not invent its own. */
     drop_off: [],
     posthog_url: process.env.POSTHOG_DASHBOARD_URL ?? null,
@@ -440,6 +457,7 @@ async function contributions(db: Db) {
     sql`
       select pc.*, pl.name, pl.venue, pl.neighborhoods, pl.age_bands,
              pl.freshness_state, pl.last_confirmed_at, pl.validated_count,
+             pl.answer_ready,
              pl.id as place_id, pl.kind, pl.provenance,
              p.id as contributor_id, p.first_name, p.last_name
       from place_contributions pc
@@ -462,6 +480,7 @@ async function contributions(db: Db) {
       freshness_state: r.freshness_state,
       last_confirmed_at: r.last_confirmed_at,
       validated_count: Number(r.validated_count ?? 0),
+      answer_ready: r.answer_ready === true,
     },
     firsthand: r.firsthand,
     child_age_at_time: r.child_age_at_time ?? [],
@@ -501,7 +520,8 @@ async function caregivers(db: Db) {
     db,
     sql`
       select r.*, n.needs_horizon, n.needs_change_type, n.recontact_ok,
-             n.pay_band, n.pay_benchmark_consent
+             n.pay_band, n.pay_benchmark_consent,
+             n.schedule_pattern, n.hours_per_week, n.benefits
       from admin_caregiver_rows r
       left join caregiver_nominations n
         on n.caregiver_id = r.id and n.status = r.nomination_status
@@ -536,6 +556,9 @@ async function caregivers(db: Db) {
     recontact_ok: r.recontact_ok ?? false,
     pay_band: r.pay_band,
     pay_benchmark_consent: r.pay_benchmark_consent ?? false,
+    schedule_pattern: r.schedule_pattern ?? [],
+    hours_per_week: r.hours_per_week,
+    benefits: r.benefits ?? [],
     nominations: Number(r.nominations ?? 0),
     provenance: r.provenance,
     is_test: r.is_test,
@@ -674,7 +697,14 @@ async function demandRows(db: Db) {
       from demand_signals d
       left join people p on p.id = d.person_id
       order by
-        case d.sensitivity when 'high_stakes' then 0 when 'peer_support' then 1 else 2 end,
+        -- A claim about a named person sorts above everything, including a
+        -- high-stakes question: it is the one class where nothing at all can
+        -- happen until somebody has read it.
+        case d.sensitivity
+          when 'named_allegation' then 0
+          when 'high_stakes' then 1
+          when 'peer_support' then 2
+          else 3 end,
         d.created_at desc
       limit 300
     `,
@@ -684,6 +714,7 @@ async function demandRows(db: Db) {
     id: r.id,
     question_text: r.question_text,
     category: r.category,
+    neighborhood: r.neighborhood,
     sensitivity: r.sensitivity,
     requires_human_review: r.requires_human_review,
     status: r.status,
@@ -691,6 +722,86 @@ async function demandRows(db: Db) {
       ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
       : null,
     is_test: r.is_test,
+    created_at: r.created_at,
+  }));
+}
+
+/* ── 2C Caregiver claims ─────────────────────────────────────────────────── */
+
+/**
+ * A caregiver's own registration, plus the nominations it *might* belong to.
+ *
+ * The candidate list is a shortlist, not a match. It is scoped to the same market,
+ * the same first name and the same initial, and to nominees whose invite a parent
+ * actually sent — because the only legitimate way here is that invite. Anything
+ * looser would invite an admin to link two different people who share a name, which
+ * is the one mistake this table exists to make impossible to do by accident.
+ *
+ * Note what is absent: nothing from `caregiver_nominations` beyond a count, and
+ * nothing at all from `restricted_notes`. A private note about a named person does
+ * not travel to a screen about that person (invariant 12).
+ */
+async function caregiverClaims(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select cc.*, p.phone,
+             lc.first_name as linked_first_name,
+             lc.last_initial as linked_last_initial,
+             (select coalesce(json_agg(json_build_object(
+                       'id', c.id,
+                       'first_name', c.first_name,
+                       'last_initial', c.last_initial,
+                       'consent_status', c.consent_status,
+                       'nominations', (select count(*) from caregiver_nominations n
+                                         where n.caregiver_id = c.id),
+                       'invite_sent_by_parent', exists (
+                         select 1 from caregiver_nominations n
+                         where n.caregiver_id = c.id and n.invite_sent_by_parent))
+                     ), '[]'::json)
+                from caregivers c
+                where c.market_id = cc.market_id
+                  and not c.is_test
+                  and lower(c.first_name) = lower(cc.first_name)
+                  and coalesce(upper(c.last_initial), '') = coalesce(upper(cc.last_initial), '')
+                  and c.consent_status in ('mentioned', 'invited')
+             ) as candidates
+      from caregiver_claims cc
+      join people p on p.id = cc.person_id
+      left join caregivers lc on lc.id = cc.linked_caregiver_id
+      where not cc.is_test
+      order by cc.status = 'pending' desc, cc.created_at desc
+      limit 200
+    `,
+  );
+
+  return list.map((r) => ({
+    id: r.id,
+    first_name: r.first_name,
+    last_initial: r.last_initial,
+    phone_masked: maskPhone(r.phone as string | null),
+    roles_wanted: r.roles_wanted ?? [],
+    age_experience: r.age_experience ?? [],
+    strengths: r.strengths ?? [],
+    areas_served: r.areas_served ?? [],
+    drives: r.drives,
+    days_available: r.days_available ?? [],
+    available_from: r.available_from,
+    hours_note: r.hours_note,
+    rate_band: r.rate_band,
+    appear_in_answers: r.appear_in_answers,
+    open_to_introductions: r.open_to_introductions,
+    open_to_reference_intros: r.open_to_reference_intros,
+    consent_text_version: r.consent_text_version,
+    status: r.status,
+    linked_caregiver: r.linked_caregiver_id
+      ? {
+          id: r.linked_caregiver_id as string,
+          first_name: r.linked_first_name as string,
+          last_initial: r.linked_last_initial as string | null,
+        }
+      : null,
+    candidates: Array.isArray(r.candidates) ? r.candidates : [],
     created_at: r.created_at,
   }));
 }
@@ -751,6 +862,96 @@ async function foundingQueue(db: Db) {
     },
     status: r.founding,
     created_at: r.created_at,
+  }));
+}
+
+/* ── Invites (one per group) ─────────────────────────────────────────────── */
+
+/**
+ * Every invite with what it actually produced.
+ *
+ * `delivered` is the number worth reading: contributors who arrived on this code
+ * *and* have at least one approved contribution. A group that delivers two out of
+ * forty is telling you something a click count never would — and `founding_checklist`
+ * is where "approved contribution" is defined, so this cannot drift from the
+ * founding queue's idea of the same thing.
+ *
+ * One statement with scalar sub-selects rather than three round trips (CLAUDE.md:
+ * against the pooler the round trip is the cost, not the query).
+ */
+async function inviteRows(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select i.*,
+             (select count(*) from people p
+               where p.invite_id = i.id and not p.is_test)              as contributors,
+             (select count(*) from people p
+               join founding_checklist fc on fc.person_id = p.id
+              where p.invite_id = i.id and not p.is_test
+                and (fc.qualifying_approved > 0 or fc.caregiver_approved > 0)) as delivered
+      from invites i
+      order by i.active desc, i.created_at desc
+      limit 200
+    `,
+  );
+
+  return list.map((r) => ({
+    id: r.id,
+    code: r.code,
+    label: r.label,
+    market_id: r.market_id,
+    group_option_value: r.group_option_value,
+    active: r.active === true,
+    note: r.note,
+    contributors: Number(r.contributors ?? 0),
+    delivered: Number(r.delivered ?? 0),
+    created_at: r.created_at,
+    created_by: r.created_by,
+  }));
+}
+
+/* ── Consent export (A2P §3.3) ───────────────────────────────────────────── */
+
+/**
+ * Every consent decision, newest first, with the opt-out state that may have
+ * overridden it. A2P §3.3: "consent records must be exportable — if there's ever a
+ * TCPA complaint, this table is the defense."
+ *
+ * Two deliberate choices. Test rows are included, because a complaint is about a
+ * phone number and not about our idea of which rows count — and they are labelled
+ * rather than hidden. And the opt-out is joined from `sms_opt_outs` by phone
+ * rather than looked up per row: the defence has to show the *sequence* (agreed
+ * here, withdrew there), and one join gives it.
+ */
+async function consentRows(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select c.id, c.person_id, c.scope, c.status, c.source,
+             c.text_version, c.captured_at,
+             p.first_name, p.last_name, p.phone, p.is_test,
+             o.opted_out_at
+      from consents c
+      left join people p on p.id = c.person_id
+      left join sms_opt_outs o on o.phone = p.phone
+      order by c.captured_at desc
+      limit 5000
+    `,
+  );
+
+  return list.map((r) => ({
+    id: r.id,
+    person_id: r.person_id,
+    name: fullName(r.first_name, r.last_name),
+    phone: r.phone,
+    scope: r.scope,
+    status: r.status,
+    source: r.source,
+    text_version: r.text_version,
+    captured_at: r.captured_at,
+    opted_out_at: r.opted_out_at,
+    is_test: r.is_test === true,
   }));
 }
 

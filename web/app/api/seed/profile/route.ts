@@ -12,6 +12,13 @@ import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { writeProfile } from "@/lib/server/repo/profile";
 import { validateInviteCode } from "@/lib/server/invite";
+import { SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
+import {
+  deriveAffinities,
+  deriveLifeRelevance,
+  derivePendingOptions,
+} from "@/lib/derive";
+import { EMPTY_ANSWERS } from "@/lib/questions";
 import type { ProfilePayload, QuestionId } from "@/lib/types";
 
 /**
@@ -29,6 +36,46 @@ import type { ProfilePayload, QuestionId } from "@/lib/types";
  * hardening pass (estimate 19.3).
  */
 
+/**
+ * The SMS consent, whatever shape the client sent it in.
+ *
+ * This used to be `raw.sms_consent ?? null`, forwarded straight into a row with a
+ * `NOT NULL` text_version — so a client sending the older `sms_consent: true`
+ * shape lost **the entire profile** to a 502, not just the consent record. That is
+ * not hypothetical: `lib/storage.ts` exists because a stored session is written by
+ * whatever build the parent last opened, and mid-pilot they meet several.
+ *
+ * A boolean is honoured rather than refused: the parent did tick the box, and the
+ * wording is a constant we already hold. Anything else is dropped — a consent we
+ * cannot describe is worse than no consent record, because the version *is* the
+ * artefact (see lib/consent.ts).
+ */
+function normaliseSmsConsent(
+  value: unknown,
+): { status: string; text_version: string; source?: string } | null {
+  if (value === true) {
+    return { status: "opted_in", text_version: SMS_CONSENT_TEXT_VERSION };
+  }
+  if (value === false) {
+    return { status: "declined", text_version: SMS_CONSENT_TEXT_VERSION };
+  }
+  if (typeof value !== "object" || value === null) return null;
+
+  const record = value as Record<string, unknown>;
+  const status = record.status === "opted_in" ? "opted_in" : "declined";
+  return {
+    status,
+    /* A record without a version is still a real decision the parent made, so it
+       is kept and stamped with the wording currently on screen rather than
+       thrown away. */
+    text_version:
+      typeof record.text_version === "string" && record.text_version !== ""
+        ? record.text_version
+        : SMS_CONSENT_TEXT_VERSION,
+    source: typeof record.source === "string" ? record.source : undefined,
+  };
+}
+
 type ListKey = Extract<
   QuestionId,
   | "budget"
@@ -40,6 +87,7 @@ type ListKey = Extract<
   | "topics_lived"
   | "schools"
   | "classes"
+  | "camps"
   | "faith"
   | "clubs"
   | "parent_groups"
@@ -55,6 +103,7 @@ const ID_LIST_KEYS: ListKey[] = [
   "topics_lived",
   "schools",
   "classes",
+  "camps",
   "faith",
   "clubs",
   "parent_groups",
@@ -70,7 +119,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Malformed body" }, { status: 400 });
   }
 
-  const invite = validateInviteCode(raw.invite_code ?? null);
+  const invite = await validateInviteCode(raw.invite_code ?? null);
   const neighborhood = cleanId(raw.answers?.neighborhood ?? raw.neighborhood);
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
@@ -104,6 +153,35 @@ export async function POST(request: Request) {
       .slice(0, MAX_OTHER_PER_QUESTION);
     if (cleaned.length > 0) other[key as QuestionId] = cleaned;
   }
+
+  /**
+   * The sanitised answers, and the only thing the derivation below reads.
+   *
+   * `EMPTY_ANSWERS` is the base rather than a convenience: the derivation walks
+   * every question in `SCREENS`, so a key the client simply omitted has to be an
+   * empty list and not `undefined`. Every value spread over it here is
+   * server-cleaned, so this is not the "stored session overwrites a default with
+   * null" trap that `lib/storage.ts` exists to prevent — nothing here can be null.
+   */
+  const answers = {
+    ...EMPTY_ANSWERS,
+    neighborhood,
+    child_ages: childAges,
+    allowance: cleanId(answersIn?.allowance),
+    invite_group: cleanId(answersIn?.invite_group),
+    attribution: cleanId(answersIn?.attribution),
+    time_in_area: cleanId(answersIn?.time_in_area),
+    moved_from: cleanId(answersIn?.moved_from),
+    ...lists,
+    other,
+    skipped: (Array.isArray(answersIn?.skipped) ? answersIn.skipped : [])
+      .map(cleanId)
+      .filter((v): v is string => v !== null)
+      .slice(0, 20),
+  };
+
+  /** Answers plus the market from the validated invite — nothing from the body. */
+  const derivationInput = { answers, market_id: invite.market_id };
 
   const claimedPhone = cleanE164(
     typeof raw.phone === "string" ? (toE164(raw.phone) ?? raw.phone) : null,
@@ -145,7 +223,7 @@ export async function POST(request: Request) {
      */
     phone_verified: gate.verified_at !== null,
     phone_verified_at: gate.verified_at,
-    sms_consent: raw.sms_consent ?? null,
+    sms_consent: normaliseSmsConsent(raw.sms_consent),
     wants_founding: raw.wants_founding !== false,
     neighborhood,
     /** Birth years, not ages — plus the date the ages were taken. */
@@ -200,26 +278,31 @@ export async function POST(request: Request) {
     time_in_area: cleanId(raw.time_in_area),
     moved_from: cleanId(raw.moved_from),
     invited_via_group: cleanId(raw.invited_via_group),
-    answers: {
-      neighborhood,
-      child_ages: childAges,
-      allowance: cleanId(answersIn?.allowance),
-      invite_group: cleanId(answersIn?.invite_group),
-      attribution: cleanId(answersIn?.attribution),
-      time_in_area: cleanId(answersIn?.time_in_area),
-      moved_from: cleanId(answersIn?.moved_from),
-      ...lists,
-      other,
-      skipped: (Array.isArray(answersIn?.skipped) ? answersIn.skipped : [])
-        .map(cleanId)
-        .filter((v): v is string => v !== null)
-        .slice(0, 20),
-    },
-    // Derived rows come from the client for convenience; the workflow is free to
-    // re-derive them from `answers`, which is the authoritative part.
-    social_affinities: (raw.social_affinities ?? []).slice(0, 200),
-    life_relevance: (raw.life_relevance ?? []).slice(0, 100),
-    pending_options: (raw.pending_options ?? []).slice(0, 60),
+    answers,
+    /**
+     * **Derived here, from the answers above — not taken from the body.**
+     *
+     * These rows are the matching graph: which schools, groups and neighborhoods
+     * this parent is an edge to, and therefore whose questions reach them and
+     * whose answers they see. CLAUDE.md calls that graph the long-term asset, so
+     * a client deciding its own edges was the wrong shape twice over — a stale
+     * build writes stale weights, and a crafted request could assert an affinity
+     * with a school the parent has nothing to do with.
+     *
+     * `lib/derive.ts` is pure and has no browser dependency, so the server runs
+     * the *same* functions the client does, over answers it has already
+     * sanitised. The client still sends its own copy; we ignore it. That keeps
+     * every existing build working — the payload contract only got narrower —
+     * and `raw_answers` remains the record of what was actually tapped.
+     */
+    social_affinities: deriveAffinities(derivationInput),
+    life_relevance: deriveLifeRelevance(derivationInput),
+    /**
+     * The market comes from the **validated invite**, never the body: which
+     * market an "other" answer belongs to decides where it can ever be promoted
+     * to (invariant 9), and that is not the client's call either.
+     */
+    pending_options: derivePendingOptions(derivationInput),
     profile_completeness:
       typeof raw.profile_completeness === "number" ? raw.profile_completeness : 0,
     client_started_at: raw.client_started_at ?? null,
@@ -250,6 +333,10 @@ export async function POST(request: Request) {
   const result = await withDb((db) =>
     writeProfile(db, {
       invite_code: payload.invite_code,
+      /* The resolved group, from the code the server validated — never from the
+         body. Undefined for an env-var code or an unknown one, which is the same
+         "no attribution" state as arriving with no code at all. */
+      invite_id: invite.invite_id ?? null,
       market_id: payload.market_id,
       source: payload.source,
       is_test: payload.is_test,

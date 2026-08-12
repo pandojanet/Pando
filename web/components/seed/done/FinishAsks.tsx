@@ -16,7 +16,11 @@ import { completeSeed, verifyStatus, type VerifyStatus } from "@/lib/api-client"
 import { buildConsentRecord, FOLLOW_UP_CONSENT_TEXT } from "@/lib/consent";
 import { DemandQuestion } from "@/components/seed/DemandQuestion";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
-import { flushSession, holdsUntilVerified } from "@/lib/submit";
+import {
+  flushSession,
+  handleExpiredVerification,
+  holdsUntilVerified,
+} from "@/lib/submit";
 import { cn } from "@/lib/cn";
 import { saveSession } from "@/lib/storage";
 import { NoSession, useDoneSession } from "./shared";
@@ -29,8 +33,13 @@ import { NoSession, useDoneSession } from "./shared";
  * answered *before* the follow-up buttons submit. Moving it after would silently
  * drop every demand signal.
  *
- * Nothing on the founding path has left the phone when this screen opens. The
- * follow-up answer opens the OTP gate; the flush happens once a code is confirmed.
+ * **What reaches this screen changed on 12 Aug.** Normally the number was
+ * confirmed at the entry screen, the profile and the cards are already stored, and
+ * this writes one completion record. The gate below is now the *fallback* path,
+ * for the two sessions that still arrive holding everything: a deployment that
+ * could not send a code at entry (A2P pending), and a confirmation that ran out
+ * mid-flow. Both are answered here exactly as the whole flow used to be — one code,
+ * then contributor, cards and completion in one pass.
  */
 export function FinishAsks() {
   const { session, setSession, loaded } = useDoneSession();
@@ -107,7 +116,15 @@ export function FinishAsks() {
         persisted: result.completion.persisted,
         shared: count,
       });
-    } catch {
+    } catch (err) {
+      /* The confirmation ran out between the last screen and this one. Back to
+         holding, and the code box below is exactly the thing that fixes it. */
+      if (handleExpiredVerification(err)) {
+        setSession(saveSession({ ...session, phone_verified: false }));
+        setNeedsVerify(true);
+        setError("Your number needs confirming again — nothing has been lost.");
+        return;
+      }
       setError(
         "That didn't go through. Everything is still safe on this phone — try again.",
       );
@@ -245,7 +262,9 @@ export function FinishAsks() {
             />
           ) : null}
 
-          {/* The gate. Nothing above this point has left the phone. */}
+          {/* The fallback gate — only reached by a session that is still holding
+              everything: no code was sendable at entry, or the confirmation ran
+              out on the way here. */}
           {session?.phone && needsVerify && !done && gate?.sendable === false && (
             <div className="mt-7 rounded-3xl border border-gold-line bg-gold-wash p-5">
               <h2 className="font-display text-[1.15rem] font-semibold text-gold-ink">
@@ -267,6 +286,7 @@ export function FinishAsks() {
             <VerifyPhone
               phone={session.phone}
               allowance={allowance}
+              submits
               busy={saving}
               onVerified={() => void flush(answer === true, true)}
             />

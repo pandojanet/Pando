@@ -150,10 +150,13 @@ export default function PendingOptionsPage() {
       </Card>
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        Promoting adds the value to <code>market_options</code> for this market, so it
-        appears as a chip for the next parent and becomes matchable. Retiring an
-        existing option sets <code>active = false</code> rather than deleting it —
-        profiles already point at it.
+        Promoting adds the value to <code>market_options</code>, and the
+        questionnaire reads that table — so it becomes a chip for the next parent
+        <strong> straight away</strong>, with no deploy. Anyone else who typed the
+        same thing is approved in the same step,
+        and everyone who did gets the matching edge they were missing while it sat
+        here unreviewed. Retiring an existing option sets <code>active = false</code>{" "}
+        rather than deleting it — profiles already point at it.
       </p>
     </>
   );

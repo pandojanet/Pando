@@ -15,7 +15,7 @@ import {
 import { track, trackAbandonOnHide } from "@/lib/analytics";
 import { saveProfile } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
-import { holdsUntilVerified } from "@/lib/submit";
+import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import {
   canAdvance,
   customEntriesFor,
@@ -29,6 +29,7 @@ import {
   visibleScreens,
 } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
+import { useMarketOptions } from "@/lib/use-market-options";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
 
 /**
@@ -46,6 +47,13 @@ export function ProfileFlow() {
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * "No — somewhere else" on the invite-group confirm. Kept in component state
+   * rather than in the session: it is a fact about this screen, not about the
+   * parent, and storing it would mean a resumed session hides a question they
+   * never actually answered.
+   */
+  const [declinedInviteGroup, setDeclinedInviteGroup] = useState(false);
 
   // A parent can deep-link straight here from a forwarded URL; don't block them.
   useEffect(() => {
@@ -57,6 +65,14 @@ export function ProfileFlow() {
   }, []);
 
   const answers: ProfileAnswers | null = session?.answers ?? null;
+
+  /**
+   * Loads the tap lists from the database and re-renders once they arrive, so a
+   * chip an admin promoted (or Janet imported) is here without a deploy. Called
+   * before the loading early-return, because a hook cannot be conditional; until
+   * it resolves, `optionsFor` returns the built-in lists.
+   */
+  useMarketOptions(session?.market_id ?? "pasadena");
 
   const screens = useMemo(
     () => (answers ? visibleScreens(answers) : []),
@@ -249,10 +265,10 @@ export function ProfileFlow() {
     setSaving(true);
     setSaveError(null);
     try {
-      /* On the founding path nothing leaves the phone yet: the profile is sent
-         with everything else once the parent confirms their code at the end
-         (lib/submit.ts). The screen still says "saved" because it is — on this
-         device, which is what the dock line promises. */
+      /* A confirmed number means this goes up now. Without one — the anonymous
+         path, or a deployment that cannot send a code — it stays on the phone and
+         travels with everything else at the end (lib/submit.ts). Either way the
+         screen says "saved", and either way that is true. */
       const held = holdsUntilVerified(session);
       const result = held ? null : await saveProfile(buildProfilePayload(session));
       update((s) => ({ ...s, profile_saved_at: new Date().toISOString() }));
@@ -262,7 +278,19 @@ export function ProfileFlow() {
       });
       // Straight into the part only they can answer (spec §3.2, estimate 1.4).
       router.push("/share");
-    } catch {
+    } catch (err) {
+      /* The confirmation ran out mid-flow. The profile is on the phone, the
+         session is back to holding, and the end of the flow will ask for a fresh
+         code — so this is not an error to stop them with. */
+      if (handleExpiredVerification(err)) {
+        update((s) => ({
+          ...s,
+          phone_verified: false,
+          profile_saved_at: new Date().toISOString(),
+        }));
+        router.push("/share");
+        return;
+      }
       setSaveError(
         "That didn't go through. Your answers are safe on this phone — try again.",
       );
@@ -429,6 +457,50 @@ export function ProfileFlow() {
           <div className="mt-6 space-y-8">
             {questions.map((question) => (
               <div key={`${question.id}-group`}>
+              {/**
+               * P6, when the invite already names the group. The client's own
+               * wording was *"You joined through [group]. Is that one of your
+               * communities?"* and it was unusable while one link served everyone —
+               * we could not name the group. A per-group invite can.
+               *
+               * It stays a **question**, not an assertion: the link is evidence
+               * that somebody forwarded it, not that this parent belongs to the
+               * group, so only the yes writes the affinity edge. "No" falls
+               * through to the ordinary list rather than to nothing.
+               */}
+              {question.id === "invite_group" &&
+              session.invite_group &&
+              !declinedInviteGroup &&
+              selectionsFor(question, answers).length === 0 ? (
+                <div className="rounded-3xl border border-green/25 bg-green-wash p-5">
+                  <p className="text-[15.5px] leading-relaxed text-green-deep">
+                    You joined through{" "}
+                    <strong>{session.invite_group.label}</strong>. Is that one of
+                    your communities?
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      full
+                      onClick={() => {
+                        setSelections(question, [session.invite_group!.value]);
+                        track("seed_question_answered", {
+                          question: question.id,
+                          option: "invite_confirmed",
+                        });
+                      }}
+                    >
+                      Yes, that&apos;s mine
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      full
+                      onClick={() => setDeclinedInviteGroup(true)}
+                    >
+                      No — somewhere else
+                    </Button>
+                  </div>
+                </div>
+              ) : (
               <ChipGroup
                 key={question.id}
                 label={questions.length > 1 ? question.label : undefined}
@@ -455,6 +527,7 @@ export function ProfileFlow() {
                 }
                 onRemoveCustom={(value) => removeCustom(question, value)}
               />
+              )}
 
               {/* P5 — each school gets its own status. "Former" is a real signal:
                   a parent who has been through admissions is exactly who someone

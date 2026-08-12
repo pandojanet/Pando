@@ -177,11 +177,16 @@ export function DemandQuestion({
 }
 
 /**
- * The in-flow answer. Two shapes, and the difference is deliberate:
+ * The in-flow answer. Three shapes, and the differences are deliberate:
  *  - peer support gets recognition, an explanation of how Pando handles it, and a
  *    real choice about whether it is kept at all;
  *  - health, legal or safety gets resources *now*, because "you'll hear at launch"
- *    must never be the only reply to it.
+ *    must never be the only reply to it;
+ *  - a claim about a named person gets the quietest screen in the app. No resource
+ *    list, no reassurance that reads as agreement, and above all no repetition of
+ *    what they wrote: a screen that echoed the sentence back would be Pando
+ *    restating an allegation, which is the one thing the Product Strategy rules
+ *    out. It says what happens next and nothing more.
  */
 function Response({
   sensitivity,
@@ -190,6 +195,38 @@ function Response({
   sensitivity: DemandSensitivity;
   onKeep: (maySave: boolean) => void;
 }) {
+  if (sensitivity === "named_allegation") {
+    return (
+      <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
+        <h2 className="font-display text-[1.15rem] font-semibold">
+          A person will read this one.
+        </h2>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
+          When something involves a specific person, Pando doesn&apos;t pass it
+          around and doesn&apos;t turn it into an answer for anyone else. It goes to
+          one of us to read — that&apos;s the whole of what happens next.
+        </p>
+        <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
+          We&apos;re not able to look into it, mediate it or take anything away from
+          anybody. If a child has been harmed or is at risk, please call 911, or LA
+          County child protection at 1-800-540-4000 — they can act and we can&apos;t.
+        </p>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Button full onClick={() => onKeep(true)}>
+            Understood — pass it on
+          </Button>
+          <Button variant="secondary" full onClick={() => onKeep(false)}>
+            Don&apos;t keep it
+          </Button>
+        </div>
+        <p className="mt-2.5 text-[12.5px] leading-relaxed text-muted">
+          &ldquo;Don&apos;t keep it&rdquo; deletes what you typed, here and on our
+          side.
+        </p>
+      </div>
+    );
+  }
+
   if (sensitivity === "high_stakes") {
     return (
       <div className="mt-7 rounded-3xl border border-gold-line bg-gold-wash p-5">

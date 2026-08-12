@@ -69,13 +69,15 @@ export interface VerifyStartResult {
   /**
    * Why it wasn't sent, as an enum:
    * `not_provisioned` (no Twilio credentials yet) · `resend_limit` (three for this
-   * verification) · `phone_send_limit` (the number's hourly ceiling) · `opted_out`
-   * (they texted STOP) · `provider_error`.
+   * verification) · `phone_send_limit` (the number's hourly ceiling) · `locked`
+   * (three wrong guesses, §19) · `opted_out` (they texted STOP) · `provider_error`.
    */
   reason?: string;
   sends: number;
   max_sends: number;
   expires_at: string;
+  /** Seconds left on the §19 lock, sent only with `locked`. */
+  retry_in_seconds?: number;
   /** Only when SEED_VERIFY_DEV_CODES=1, so QA can walk the flow pre-approval. */
   dev_code?: string;
 }
@@ -99,8 +101,10 @@ export async function startVerification(input: {
 
 export interface VerifyCheckResult {
   ok: boolean;
-  reason?: "unknown" | "expired" | "wrong_code" | "too_many_attempts";
+  reason?: "unknown" | "expired" | "wrong_code" | "too_many_attempts" | "locked";
   attempts_left?: number;
+  /** Seconds left on the §19 lock, sent with `locked` and `too_many_attempts`. */
+  retry_in_seconds?: number;
   verified_at?: string;
 }
 

@@ -72,11 +72,21 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         count: (o) => o.quality.review_holds,
       },
       {
+        href: "/admin/claims",
+        label: "Caregiver sign-ups",
+        hint: "Match a caregiver who registered themselves to the family's nomination.",
+        count: (o) => o.quality.pending_claims,
+      },
+      {
         href: "/admin/demand",
         label: "Asked for",
-        hint: "What parents wanted at the end. Health and safety questions first.",
-        count: (o) => o.demand.ordinary + o.demand.peer_support + o.demand.high_stakes,
-        urgent: (o) => o.demand.high_stakes,
+        hint: "What parents wanted at the end. Claims about a person, then health and safety.",
+        count: (o) =>
+          o.demand.ordinary +
+          o.demand.peer_support +
+          o.demand.high_stakes +
+          o.demand.named_allegation,
+        urgent: (o) => o.demand.high_stakes + o.demand.named_allegation,
       },
       {
         href: "/admin/flags",
@@ -91,10 +101,20 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
     group: "Records",
     items: [
       {
+        href: "/admin/invites",
+        label: "Invites",
+        hint: "One link per group, and which group actually brought contributors.",
+      },
+      {
         href: "/admin/options",
         label: "Tap lists",
         hint: "Promote an 'other' answer so it can be matched on.",
         count: (o) => o.quality.pending_options,
+      },
+      {
+        href: "/admin/consents",
+        label: "Consent records",
+        hint: "Who agreed to what, in which words. Exportable — this is the TCPA defence.",
       },
       {
         href: "/admin/audit",
@@ -264,13 +284,25 @@ export function AdminShell({
         <div className="hidden border-t border-bark/70 px-4 py-3 md:block">
           <p className="text-[12px] text-muted">Signed in as</p>
           <p className="text-[13.5px] font-semibold">{user}</p>
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="mt-1.5 min-h-9 text-[13px] font-semibold text-green-deep underline underline-offset-2"
-          >
-            Sign out
-          </button>
+          {/* Stacked, not side by side: this column is 16rem wide and both labels
+              are long enough that one row crowds them at the first name longer
+              than "andrii". Two lines cost nothing here — the footer is the least
+              busy part of the page. */}
+          <div className="mt-1.5 flex flex-col items-start gap-0.5">
+            <Link
+              href="/admin/account"
+              className="flex min-h-9 items-center text-[13px] font-semibold text-green-deep underline underline-offset-2"
+            >
+              Change password
+            </Link>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="flex min-h-9 items-center text-[13px] font-semibold text-green-deep underline underline-offset-2"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -289,8 +321,14 @@ export function AdminShell({
           )}
           {children}
         </div>
-        <div className="mt-8 flex items-center gap-3 md:hidden">
+        <div className="mt-8 flex flex-wrap items-center gap-3 md:hidden">
           <span className="text-[12.5px] text-muted">Signed in as {user}</span>
+          <Link
+            href="/admin/account"
+            className="min-h-9 text-[13px] font-semibold text-green-deep underline underline-offset-2"
+          >
+            Change password
+          </Link>
           <button
             type="button"
             onClick={() => void signOut()}

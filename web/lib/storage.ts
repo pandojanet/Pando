@@ -16,6 +16,8 @@ const KEY = "pando.seed.v1";
 
 export function newSession(init: {
   invite_code: string | null;
+  /** The group behind that code, when there is one. See `SeedSession`. */
+  invite_group?: { value: string; label: string } | null;
   market_id: MarketId;
   source: string;
   /**
@@ -31,6 +33,7 @@ export function newSession(init: {
   return {
     version: 1,
     invite_code: init.invite_code,
+    invite_group: init.invite_group ?? null,
     market_id: init.market_id,
     source: init.source,
     is_test: init.is_test === true,

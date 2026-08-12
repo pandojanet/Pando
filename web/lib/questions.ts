@@ -39,6 +39,7 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   schools: [],
   school_status: {},
   classes: [],
+  camps: [],
   faith: [],
   clubs: [],
   parent_groups: [],
@@ -305,6 +306,26 @@ export const SCREENS: Screen[] = [
         affinity: { type: "activity", weight: 4 },
         allowOther: true,
         otherLabel: "Another class or activity",
+      },
+      {
+        /**
+         * v3.2 §8.4, on its own rather than folded into "classes": a camp is not a
+         * recurring class, and a parent scanning that chip list for last summer's
+         * camp does not find it there.
+         *
+         * Same affinity as a class (§7.1, "same regular activity or class", 4) —
+         * two families at the same camp week overlap in exactly the way that
+         * signal means. Hidden below preschool age, where the answer is always
+         * empty; the chips re-filter by band on top of that (§8.5).
+         */
+        id: "camps",
+        label: "Camps & school-break programs",
+        kind: "multi",
+        source: { type: "market", category: "camps" },
+        affinity: { type: "activity", weight: 4 },
+        allowOther: true,
+        otherLabel: "Another camp",
+        showForBands: ["preschool", "grade", "tween", "teen"],
       },
       {
         id: "clubs",

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
+import type { DemandSensitivity } from "@/lib/demand";
 import {
   consents,
   demandSignals,
@@ -27,7 +28,7 @@ export interface CompletionInput {
   demand: {
     question_text: string;
     category: string | null;
-    sensitivity: "ordinary" | "peer_support" | "high_stakes";
+    sensitivity: DemandSensitivity;
     requires_human_review: boolean;
   } | null;
   is_test: boolean;
@@ -82,6 +83,15 @@ export async function writeCompletion(
           personId: input.person_id,
           questionText: input.demand.question_text,
           category: input.demand.category,
+          /**
+           * Read from the parent's own profile in the same statement rather than
+           * taken from the body (spec v3.2 §9, QC Answers Q7). It is the number
+           * that decides which market Pando opens next, so the browser does not
+           * get a vote — the same reason the affinity graph is derived here.
+           */
+          neighborhood: input.person_id
+            ? sql`(select neighborhood from people where id = ${input.person_id}::uuid)`
+            : null,
           sensitivity: input.demand.sensitivity,
           requiresHumanReview: input.demand.requires_human_review,
           isTest: input.is_test,
@@ -90,15 +100,29 @@ export async function writeCompletion(
       demandSignalId = signal.id;
 
       /**
-       * A health, legal or safety question is owed a person today. The parent
-       * already saw professional resources in the flow; this is the other half
-       * of that promise — an admin queue entry that cannot be answered by an
-       * automated path.
+       * Two classes are owed a person, for opposite reasons.
+       *
+       * A health, legal or safety question is owed one *today*: the parent already
+       * saw professional resources in the flow, and this is the other half of that
+       * promise — a queue entry no automated path can answer.
+       *
+       * A claim about a named person is owed one *first*. The Product Strategy is
+       * explicit that it must never be circulated or written into the knowledge
+       * base automatically, and `demand_signals_allegation_review_check` holds the
+       * storage side of that. This flag is the human side: its own reason, so the
+       * admin can see what kind of thing it is before opening it.
        */
-      if (input.demand.sensitivity === "high_stakes" && !input.is_test) {
+      const escalation =
+        input.demand.sensitivity === "high_stakes"
+          ? "high_stakes_demand"
+          : input.demand.sensitivity === "named_allegation"
+            ? "named_allegation"
+            : null;
+
+      if (escalation && !input.is_test) {
         await tx.insert(flags).values({
           severity: "escalation",
-          reason: "high_stakes_demand",
+          reason: escalation,
           subjectKind: "demand_signal",
           subjectId: signal.id,
           personId: input.person_id,

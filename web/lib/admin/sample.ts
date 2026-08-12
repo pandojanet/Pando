@@ -1,13 +1,16 @@
 import type {
   AuditRow,
   CaregiverRow,
+  ConsentRow,
   ContributionRow,
   ContributorDetail,
   ContributorRow,
   DemandRow,
   DuplicateCandidate,
   FlagRow,
+  CaregiverClaimRow,
   FoundingRow,
+  InviteRow,
   Overview,
   PendingOptionRow,
   RestrictedNote,
@@ -39,11 +42,13 @@ export const sampleOverview: Overview = {
     review_holds: 2,
     pending_contributions: 7,
     escalations: 1,
+    pending_claims: 2,
   },
   founding: { pending: 12, approved: 19 },
   /** The three add up to `contributors.total`, as they do against a real database. */
   reward: { eligible: 19, started: 9, none: 14 },
-  demand: { ordinary: 14, peer_support: 3, high_stakes: 1 },
+  demand: { ordinary: 14, peer_support: 3, high_stakes: 1, named_allegation: 0 },
+  answer_ready: 6,
   drop_off: [
     { step: "Opened the link", reached: 64 },
     { step: "Started the profile", reached: 48 },
@@ -226,6 +231,74 @@ export const sampleContributorDetail: ContributorDetail = {
   },
 };
 
+export const sampleCaregiverClaims: CaregiverClaimRow[] = [
+  {
+    id: "cl1",
+    first_name: "Rosa",
+    last_initial: "R",
+    phone_masked: "•••4410",
+    roles_wanted: ["regular_part_time", "before_after_school"],
+    age_experience: ["toddler", "preschool"],
+    strengths: ["calm_with_shy", "reliable", "drives"],
+    areas_served: ["south-pasadena", "altadena"],
+    drives: true,
+    days_available: ["weekday_afternoons", "saturday"],
+    available_from: "1_3_months",
+    hours_note: "School pickups only until June.",
+    rate_band: "22_26",
+    appear_in_answers: true,
+    open_to_introductions: true,
+    open_to_reference_intros: true,
+    consent_text_version: "caregiver-2026-08-10",
+    status: "pending",
+    linked_caregiver: null,
+    /** Two people with the same name is the case this list exists to make visible. */
+    candidates: [
+      {
+        id: "cg1",
+        first_name: "Rosa",
+        last_initial: "R",
+        nominations: 2,
+        consent_status: "invited",
+        invite_sent_by_parent: true,
+      },
+      {
+        id: "cg2",
+        first_name: "Rosa",
+        last_initial: "R",
+        nominations: 1,
+        consent_status: "mentioned",
+        invite_sent_by_parent: false,
+      },
+    ],
+    created_at: now,
+  },
+  {
+    id: "cl2",
+    first_name: "Dana",
+    last_initial: "M",
+    phone_masked: "•••7781",
+    roles_wanted: ["occasional_sitting"],
+    age_experience: ["grade", "tween"],
+    strengths: ["homework", "no_screens"],
+    areas_served: ["bungalow-heaven"],
+    drives: false,
+    days_available: ["weekday_evenings"],
+    available_from: "now",
+    hours_note: null,
+    rate_band: "18_22",
+    /** All three refused — a profile that exists and is visible to nobody. */
+    appear_in_answers: false,
+    open_to_introductions: false,
+    open_to_reference_intros: false,
+    consent_text_version: "caregiver-2026-08-10",
+    status: "pending",
+    linked_caregiver: null,
+    candidates: [],
+    created_at: now,
+  },
+];
+
 export const sampleContributions: ContributionRow[] = [
   {
     id: "a1",
@@ -239,6 +312,7 @@ export const sampleContributions: ContributionRow[] = [
       freshness_state: "fresh",
       last_confirmed_at: now,
       validated_count: 3,
+      answer_ready: true,
     },
     firsthand: true,
     child_age_at_time: [2],
@@ -274,6 +348,7 @@ export const sampleContributions: ContributionRow[] = [
       freshness_state: "ageing",
       last_confirmed_at: "2026-01-12T10:00:00.000Z",
       validated_count: 1,
+      answer_ready: false,
     },
     /** Secondhand: welcome, labelled, and never counted toward Founding. */
     firsthand: false,
@@ -310,6 +385,7 @@ export const sampleContributions: ContributionRow[] = [
       freshness_state: "fresh",
       last_confirmed_at: now,
       validated_count: 0,
+      answer_ready: false,
     },
     firsthand: true,
     child_age_at_time: [6],
@@ -363,6 +439,9 @@ export const sampleCaregivers: CaregiverRow[] = [
     recontact_ok: true,
     pay_band: "22_26",
     pay_benchmark_consent: true,
+    schedule_pattern: ["weekday_afternoons", "saturday"],
+    hours_per_week: "10_20",
+    benefits: ["guaranteed_hours", "mileage"],
     nominations: 2,
     provenance: "parent_submitted",
     is_test: false,
@@ -395,6 +474,9 @@ export const sampleCaregivers: CaregiverRow[] = [
     recontact_ok: false,
     pay_band: "18_22",
     pay_benchmark_consent: false,
+    schedule_pattern: ["weekday_mornings"],
+    hours_per_week: "under_10",
+    benefits: ["none"],
     nominations: 1,
     provenance: "parent_submitted",
     is_test: false,
@@ -427,6 +509,10 @@ export const sampleCaregivers: CaregiverRow[] = [
     recontact_ok: false,
     pay_band: null,
     pay_benchmark_consent: false,
+    /** Skipped all three — which is a supported outcome, not missing data. */
+    schedule_pattern: [],
+    hours_per_week: null,
+    benefits: [],
     nominations: 1,
     provenance: "parent_submitted",
     is_test: false,
@@ -463,6 +549,9 @@ export const sampleCaregivers: CaregiverRow[] = [
     recontact_ok: true,
     pay_band: "26_32",
     pay_benchmark_consent: true,
+    schedule_pattern: ["weekday_mornings", "weekday_afternoons"],
+    hours_per_week: "35_45",
+    benefits: ["guaranteed_hours", "paid_time_off", "on_payroll"],
     nominations: 3,
     provenance: "parent_submitted",
     is_test: false,
@@ -572,6 +661,7 @@ export const sampleDemand: DemandRow[] = [
     id: "d1",
     question_text: "Summer camps for a 5-year-old that aren't a fortune.",
     category: "camps",
+    neighborhood: "south-pasadena",
     sensitivity: "ordinary",
     requires_human_review: false,
     status: "open",
@@ -583,6 +673,7 @@ export const sampleDemand: DemandRow[] = [
     id: "d2",
     question_text: "Sample only — something a parent wouldn't post in a group chat.",
     category: "the_emotional_side",
+    neighborhood: "altadena",
     sensitivity: "peer_support",
     requires_human_review: true,
     status: "open",
@@ -594,12 +685,126 @@ export const sampleDemand: DemandRow[] = [
     id: "d3",
     question_text: "Sample only — a health, legal or safety question.",
     category: "health_legal_safety",
+    neighborhood: "altadena",
     sensitivity: "high_stakes",
     requires_human_review: true,
     status: "open",
     contributor: { id: "c2", name: "Sample Parent B" },
     is_test: false,
     created_at: now,
+  },
+  {
+    /**
+     * The fourth class. The sample text deliberately carries no claim of its own:
+     * this row exists to show the admin what the *treatment* looks like, and a
+     * demo fixture inventing an accusation about a nanny would be the same
+     * mistake the class is here to prevent.
+     */
+    id: "d4",
+    question_text: "Sample only — a claim about a named person. Held for a human.",
+    category: "childcare",
+    neighborhood: null,
+    sensitivity: "named_allegation",
+    requires_human_review: true,
+    status: "open",
+    contributor: null,
+    is_test: false,
+    created_at: now,
+  },
+];
+
+/**
+ * The consent export, as it looks with nothing real in it. The numbers are
+ * obviously invented — this fixture is only reachable with no database attached,
+ * and an export file has to be plainly unusable as evidence when it is a demo.
+ */
+export const sampleConsents: ConsentRow[] = [
+  {
+    id: "cn1",
+    person_id: "c1",
+    name: "Sample Parent A",
+    phone: "+16265550101",
+    scope: "sms",
+    status: "opted_in",
+    source: "seed_phone_capture",
+    text_version: "seed-sms-2026-08-01",
+    captured_at: now,
+    opted_out_at: null,
+    is_test: false,
+  },
+  {
+    id: "cn2",
+    person_id: "c1",
+    name: "Sample Parent A",
+    phone: "+16265550101",
+    scope: "follow_up",
+    status: "opted_in",
+    source: "seed_completion_screen",
+    text_version: "seed-followup-2026-07-31",
+    captured_at: now,
+    opted_out_at: null,
+    is_test: false,
+  },
+  {
+    /** A decline is as much a record as a yes, and the export has to show both. */
+    id: "cn3",
+    person_id: "c2",
+    name: "Sample Parent B",
+    phone: "+16265550102",
+    scope: "follow_up",
+    status: "declined",
+    source: "seed_completion_screen",
+    text_version: "seed-followup-2026-07-31",
+    captured_at: now,
+    opted_out_at: "2026-07-31T09:00:00.000Z",
+    is_test: false,
+  },
+];
+
+/**
+ * Invites, as they look with nothing real behind them. The point of the fixture is
+ * the gap between `contributors` and `delivered` — a group can be handed a link and
+ * still deliver nobody, and the layout has to make that legible rather than proud.
+ */
+export const sampleInvites: InviteRow[] = [
+  {
+    id: "iv1",
+    code: "pta-field",
+    label: "Field Elementary PTA",
+    market_id: "pasadena",
+    group_option_value: "school-pta",
+    active: true,
+    note: "Posted in the Tuesday newsletter",
+    contributors: 14,
+    delivered: 9,
+    created_at: now,
+    created_by: "Sample Admin",
+  },
+  {
+    id: "iv2",
+    code: "moms-fb",
+    label: "Pasadena Moms (Facebook)",
+    market_id: "pasadena",
+    group_option_value: "pasadena-moms-fb",
+    active: true,
+    note: null,
+    contributors: 31,
+    delivered: 4,
+    created_at: now,
+    created_by: "Sample Admin",
+  },
+  {
+    id: "iv3",
+    code: "sgv-founding",
+    label: "The original shared link",
+    market_id: "pasadena",
+    group_option_value: null,
+    active: false,
+    note: "Retired once each group had its own",
+    contributors: 22,
+    delivered: 12,
+    created_at: now,
+    created_by: null,
   },
 ];
 

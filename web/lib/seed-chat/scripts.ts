@@ -1,4 +1,14 @@
 import { marketOptions } from "../market-options";
+import {
+  CAREGIVER_AGE_BANDS as AGE_BANDS,
+  CAREGIVER_BENEFITS,
+  CAREGIVER_FIT,
+  CAREGIVER_HOURS,
+  CAREGIVER_PAY_BANDS as PAY_BANDS,
+  CAREGIVER_SCHEDULE,
+  CAREGIVER_STRENGTHS,
+  CAREGIVER_TYPES,
+} from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
 import type { Script, ShareKind } from "./types";
 
@@ -14,66 +24,6 @@ import type { Script, ShareKind } from "./types";
  * runs server-side in `lib/server/extract.ts`, after the save response. What lives
  * here is the structured capture: every answer already arrives as a field.
  */
-
-const AGE_BANDS: Option[] = [
-  { id: "baby", label: "Babies (0–1)" },
-  { id: "toddler", label: "Toddlers (1–3)" },
-  { id: "preschool", label: "Preschool (3–5)" },
-  { id: "grade", label: "School age (5–11)" },
-  { id: "tween", label: "Tweens & teens (11+)" },
-];
-
-/** C2, in the client's own categories: the kind of care, not a job title. */
-const CAREGIVER_TYPES: Option[] = [
-  { id: "occasional_sitting", label: "Occasional sitting" },
-  { id: "regular_part_time", label: "Regular part-time" },
-  { id: "full_time", label: "Full-time" },
-  { id: "night_newborn", label: "Night / newborn" },
-  { id: "before_after_school", label: "Before / after school" },
-];
-
-/** Closed strengths, so matching never waits on extraction from free text. */
-const CAREGIVER_STRENGTHS: Option[] = [
-  { id: "calm_with_shy", label: "Calm with a shy kid" },
-  { id: "plays_actively", label: "Actually plays" },
-  { id: "reliable", label: "Reliable / on time" },
-  { id: "newborns", label: "Newborn experience" },
-  { id: "toddlers", label: "Great with toddlers" },
-  { id: "big_kids", label: "Great with older kids" },
-  { id: "homework", label: "Helps with homework" },
-  { id: "special_needs", label: "Additional needs experience" },
-  { id: "bilingual", label: "Bilingual" },
-  { id: "drives", label: "Drives / can do pickups" },
-  { id: "cooks", label: "Cooks / handles meals" },
-  { id: "cpr", label: "CPR / first aid" },
-  { id: "no_screens", label: "Not a screens babysitter" },
-  { id: "flexible_hours", label: "Flexible hours" },
-];
-
-const CAREGIVER_FIT: Option[] = [
-  { id: "first_time_parents", label: "First-time parents" },
-  { id: "multiple_kids", label: "Two or more kids" },
-  { id: "regular_schedule", label: "A regular weekly schedule" },
-  { id: "occasional_nights", label: "Occasional nights out" },
-  { id: "work_from_home", label: "Parents working from home" },
-  { id: "school_runs", label: "School runs / after-school" },
-  { id: "shy_or_anxious", label: "A shy or anxious child" },
-  { id: "high_energy", label: "A high-energy child" },
-];
-
-/**
- * Bands, never a number: the client wants a pay benchmark, and a band is the most
- * a parent can say about someone else's rate without it reading as their wage.
- */
-const PAY_BANDS: Option[] = [
-  { id: "under_18", label: "Under $18/hr" },
-  { id: "18_22", label: "$18–22/hr" },
-  { id: "22_26", label: "$22–26/hr" },
-  { id: "26_32", label: "$26–32/hr" },
-  { id: "over_32", label: "$32+/hr" },
-  { id: "salaried", label: "Salaried / other" },
-  { id: "prefer_not_to_say", label: "Prefer not to say" },
-];
 
 const PLACE_TYPES: Option[] = [
   { id: "park", label: "Park" },
@@ -408,6 +358,18 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           ],
         },
         {
+          /**
+           * Stage 1: "schedule pattern". Same ids as the caregiver's own
+           * availability (2C, G6), because "she worked weekday mornings" and "I'm
+           * free weekday mornings" is the match this data exists to make.
+           */
+          id: "schedule_pattern",
+          prompt: "What did the week usually look like?",
+          widget: "chips",
+          options: CAREGIVER_SCHEDULE,
+          optional: true,
+        },
+        {
           /* The ages they actually cared for — evidence, not an opinion about who
              they'd be good with. */
           id: "cared_for_ages",
@@ -551,6 +513,35 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           widget: "quick",
           optional: true,
           options: PAY_BANDS,
+        },
+        {
+          /**
+           * Stage 1: "rate, hours and benefits" — the three that only mean
+           * something together. Asked between the band and the benchmark consent on
+           * purpose, so the yes below covers the whole picture rather than a number
+           * that could describe two completely different jobs.
+           */
+          id: "hours_per_week",
+          prompt: "Roughly how many hours a week?",
+          widget: "quick",
+          optional: true,
+          options: CAREGIVER_HOURS,
+          when: (fields) =>
+            typeof fields.pay_band === "string" &&
+            fields.pay_band !== "" &&
+            fields.pay_band !== "prefer_not_to_say",
+        },
+        {
+          id: "benefits",
+          prompt: "Did anything come with the job?",
+          aside: "Guaranteed hours and paid time off are what make one rate comparable to another.",
+          widget: "chips",
+          optional: true,
+          options: CAREGIVER_BENEFITS,
+          when: (fields) =>
+            typeof fields.pay_band === "string" &&
+            fields.pay_band !== "" &&
+            fields.pay_band !== "prefer_not_to_say",
         },
         {
           /* A separate, explicit yes — the client asked for pay and permission to

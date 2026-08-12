@@ -3,16 +3,21 @@
 One Next.js app holding two things: the **public site** (pando.is) and the
 **Seed Tool** (Phase 1 contributor app — mobile-first, tap-first, no login).
 
-Built so far — **estimate 1.1** (landing / invite + QR entry), **1.2** (tap-first
-profile), **1.4** (chat-seeding interface, including the structured capture cards
-for activities, caregivers, places and tips) and **1.7** (completion screen with the
-versioned follow-up consent), plus the four marketing pages ported from the static
-HTML that used to live at the repo root.
+Built so far — the whole of Phase 1: **1.1** (landing / invite + QR entry), **1.2**
+(tap-first profile, the client's July question set), **1.3** (server-side
+derivation), **1.4–1.6** (chat-seeding and the capture cards for activities,
+caregivers, places and tips), **1.7** (completion, in three screens), **1.8/1.9**
+(extraction + flags), **M2** (the ten admin pages), **M3** (PostHog) and **2C**
+(the caregiver's own flow), plus the four marketing pages ported from the static
+HTML that used to live at the repo root. `../CLAUDE.md` holds the status table and
+every decision behind it.
 
 A line-by-line [spec compliance review](../docs/spec-compliance-review.md) of
-this build against every client document sits in [`../docs`](../docs). All
-frontend logic is complete and exercised end to end; the backend runs in this
-same app (`lib/server/repo/*`) and waits only on a `DATABASE_URL`.
+this build against every client document sits in [`../docs`](../docs) — its §5
+reconciles the three July documents (spec v3.2, the QC answers + A2P prep, and the
+Product Strategy paper) item by item. The backend runs in this same app
+(`lib/server/repo/*`); without `DATABASE_URL` every write route answers
+`persisted: false` rather than pretending.
 
 ```bash
 npm --prefix web install
@@ -34,10 +39,10 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/privacy`               | Privacy policy.                                                             |
 | `/terms`                 | Text messaging terms.                                                       |
 | `/join?i=<code>&src=qr`  | Invite landing. Validates the shared code server-side; optional name/phone. |
-| `/profile`               | The 8-screen tap-first profile + review.                                    |
+| `/profile`               | The tap-first profile (P3–P14, 15 screens in the client's order) + review.   |
 | `/share`                 | Chat-seeding: share menu, capture cards, add-another loop.                  |
 | `/done`                  | 1.7 screen 1 of 3 — badge, thank-you, what they shared. Tells only.          |
-| `/done/ask`              | 1.7 screen 2 of 3 — D1, follow-up consent, OTP gate. The only one that writes. |
+| `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
 | `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
 | `POST /api/seed/invite`  | Validates a hand-typed code.                                                |
 | `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools in one transaction. |
@@ -45,24 +50,42 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
-| `/admin/login`           | Shared password + pick who you are (so the audit log has a name).            |
+| `/caregiver`             | 2C — the caregiver's own flow (G1–G10). Writes a **claim**, never a listing. |
+| `POST /api/caregiver/claim` | Consent first, then the claim, in one transaction. 401 before the code.  |
+| `/admin/login`           | One scrypt credential per person, from `admin_users` — the actor is proved, not picked. |
 | `/admin`                 | Overview: completion, two-or-more rate, drop-off, quality queues.            |
 | `/admin/founding`        | Founding approval queue — cards, bulk-approve per link.                     |
 | `/admin/contributors`    | List + detail (taps, derived profile, cards, transcript, notes).             |
 | `/admin/activities`      | Review with confidence filter, edit, approve/reject.                        |
 | `/admin/caregivers`      | Consent state machine with evidence + duplicate candidates.                 |
+| `/admin/claims`          | 2C — match a caregiver's claim to a nomination, or decline it with a reason. |
+| `/admin/account`         | Change your own password. Adding or revoking an admin stays `npm run admin:user`. |
+| `/admin/invites`         | One link per group, and which group actually brought contributors.          |
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |
+| `/admin/demand`          | D1 queue: high-stakes and named-allegation questions first.                 |
+| `/admin/consents`        | The A2P §3.3 consent file — unmasked numbers, wording versions, downloadable. |
 | `/admin/flags`           | Escalations first, then review queue.                                       |
 | `/admin/audit`           | Who changed what, with a before → after diff.                               |
 | `POST /api/admin/query`  | One read endpoint for every admin page → `lib/server/repo/admin-read.ts`.    |
 | `POST /api/admin/action` | One write endpoint → `admin-write.ts`; the audit row is written in the same transaction as the change. |
+| `POST /api/admin/password` | A signed-in admin changes their **own** password. Needs the current one; re-issues the cookie, because rotating a hash retires the old session. |
 | `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
+| `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. |
 
-Flow: `/join` → profile → review → **chat** → done. A parent can leave at any
-point and pick up where they left off on the same phone.
+Flow: `/join` → **confirm the number** → profile → review → **chat** → done. A
+parent can leave at any point and pick up where they left off on the same phone.
 
-Add `&test=1` to the entry URL for a QA run: every payload carries `is_test: true`
-and a gold TEST tag shows on every screen.
+The code sits at the front (12 Aug). Everything before it is on the phone and
+nowhere else; everything after it is stored as it is finished, so a card that says
+"saved" is saved. Where a code cannot be sent — production until the A2P campaign
+is approved — entry skips it and the old shape applies instead: the whole session
+is held on the phone and flushed at `/done/ask` once a code is confirmed there.
+
+**No query parameter changes app behaviour** — `?i=` and `?src=` are the only two
+read, and they are the product's own link. `?test=1` was removed on 4 Aug: a URL
+that quietly changes what gets stored is a footgun for whoever forwards it.
+`is_test` is still a column, set from the admin side or by a seed script, so our
+own walkthroughs are cleared from the database rather than flagged in it.
 
 Redirects in `next.config.ts` keep every old URL alive: `/about.html` → `/about`
 (and the rest), and `/?i=<code>` → `/join?i=<code>` so invite links already
@@ -73,11 +96,15 @@ forwarded around parent group chats still land in the right place.
 | File                    | Responsibility                                                           |
 | ----------------------- | ------------------------------------------------------------------------ |
 | `lib/questions.ts`      | The questionnaire: order, required fields, age gating, weights, screens.  |
-| `lib/market-options.ts` | **Placeholder** Pasadena taxonomy → `market_options` rows.               |
+| `lib/market-options.ts` | The tap lists: the database in front (loaded by `lib/use-market-options.ts`), the **placeholder** Pasadena taxonomy behind as fallback and seed. |
+| `scripts/import-market-options.mjs` | Janet's sheet → `market_options`. Dry run by default; `--commit` writes. |
+| `lib/demand.ts`         | D1 routing, including the named-allegation class the Strategy paper adds. |
+| `lib/consent.ts` · `lib/sms-templates.ts` | Consent wording + registered SMS copy, both versioned. |
+| `lib/caregiver-flow.ts` · `lib/caregiver-options.ts` | 2C's questions, and the option lists both caregiver surfaces share. |
 | `lib/derive.ts`         | Answers → `social_affinities` / `life_relevance` / `pending_options`.     |
 | `lib/storage.ts`        | Autosave + resume (localStorage, versioned key).                         |
 | `lib/analytics.ts`      | Funnel events, PostHog-shaped, provider not yet attached.                |
-| `lib/server/invite.ts`  | Shared invite codes → market.                                            |
+| `lib/server/invite.ts`  | Invite codes → group + market. The `invites` table first, `SEED_INVITE_CODES` as fallback. |
 | `lib/server/db.ts`      | **The only place a connection string exists.**                           |
 | `lib/db/schema.ts`      | The data model, and every CHECK that encodes an invariant.               |
 | `lib/server/repo/*`     | The backend: profile, cards, completion, flags, admin read/write.        |
@@ -198,6 +225,16 @@ Migrations live in `drizzle/` and are applied with `npm run migrate` (use port
 `lib/db/schema.ts` is the source of truth for the schema; `supabase/README.md`
 has the setup walkthrough.
 
+| Command | What it does |
+| --- | --- |
+| `npm run migrate` | Applies `drizzle/*.sql`. Safe to re-run — already-applied files are skipped. |
+| `npm run seed` | Loads `../supabase/seed.sql`: affinity weights, freshness policy, the placeholder taxonomy. |
+| `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
+| `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
+| `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
+| `npm run test:e2e` | 212 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
+
 The write paths, and what each guarantees atomically:
 
 | Route | Transaction |
@@ -205,8 +242,10 @@ The write paths, and what each guarantees atomically:
 | `seed/profile` | person + children + affinities + relevance + schools + pending options |
 | `seed/save` (place-like) | submission + place + contribution, upserted on `client_id` |
 | `seed/save` (caregiver) | submission + caregiver + nomination + **its restricted notes** |
-| `seed/complete` | founding status + follow-up consent + demand signal + escalation flag |
+| `seed/complete` | founding status + follow-up consent + demand signal (with the asker's neighborhood, read from their own profile) + escalation flag |
+| `caregiver/claim` | person + claim + its four consent records |
 | `admin/action` | the change **and its audit row** |
+| `admin/action` → `claim.delete` | claim + copied profile + their consents + the identity, and the linked caregiver back down the ladder |
 
 The last one is the reason this is not a set of independent calls: an admin write
 whose audit row failed separately would be an unattributed change to a record
@@ -251,10 +290,12 @@ about a real family.
 
 ## Open questions for the client
 
-1. The Pasadena lists in `lib/market-options.ts` are placeholders (spec §23.2 Q10).
-   Who supplies neighborhoods / schools / faith / clubs / parent groups / classes,
-   and in what format? Should they be read from `market_options` at runtime
-   instead of shipped in the bundle?
+1. The Pasadena lists in `lib/market-options.ts` are still placeholders. **How**
+   was answered (QC Answers Q10: a Google Sheet with `market_id, category,
+   option_value, active`, imported by `npm run options:import`); **when** was not.
+   Separately: should the chips be read from `market_options` at runtime instead of
+   shipped in the bundle? Until they are, the file and the table are kept in step
+   by hand, and promoting an "other" changes the table but not the chips.
 2. Confirmed invite code(s) for the shared link, and the domain it lives on (Q2/Q3).
 3. Return visits: right now a saved profile on the same phone offers "start a
    fresh one". Once OTP exists (estimate 5.1) this should re-verify instead (Q4).
@@ -264,15 +305,20 @@ about a real family.
    `caregivers`. Right now a place and a tip forward as their own `kind` with their
    own fields. Do they get their own tables, fold into `activities` with a type
    column, or drop from the pilot menu?
-6. Caregiver contact capture: we ask for a number and use it only for consent
-   outreach. Confirm that's the intended Phase 1 behaviour rather than admin
-   entering it during outreach.
+6. ~~Caregiver contact capture~~ — **settled 3 Aug and reversed: no contact detail
+   for a nominated caregiver is collected or stored at all** (invariant 13). The
+   only path in is the invite the nominating parent sends themselves, and the save
+   route refuses `contact` / `caregiver_phone` even if an older client sends them.
 
 ## Not built yet (by design)
 
-The caregiver's own flow (2C), the freshness-ping and matching crons, and the
-PostHog provider (M3).
+Everything Phase 2 owns: the SMS send/receive surfaces (opt-out precedence, quiet
+hours, delivery monitoring), freshness pings, blast credits and graph write-back,
+the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
+the one Phase 1 promise still outstanding — the consent copy offers it.
 
-There are no automated tests. The eight invariant assertions in
-`drizzle/0002_rls.sql` run at migration time and are the only thing standing in
-for them.
+Tests: `npm run test:e2e` (212 checks, needs a dev server and a database),
+`npm run test:auth` (45), `npm run check`, `npm run typecheck`, `npm run build`.
+Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
+purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at
+migration time on top of that.

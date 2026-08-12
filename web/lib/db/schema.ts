@@ -72,6 +72,50 @@ export const shareKind = pgEnum("share_kind", [
   "tip",
 ]);
 
+/* ── 0. Invites (estimate 1.1) ────────────────────────────────────────────── */
+
+/**
+ * One invite per **group**, never per parent.
+ *
+ * The 31 Jul decision — reaffirmed 12 Aug against QC Answers Q3 — is that there is
+ * no unique link per founding contributor. A row here is a parent group, shared by
+ * everyone in it; the day a row means one person, cross-device resume, automatic
+ * referral attribution and `/seed/[token]` arrive with it, and that is a different
+ * decision that has been made twice already.
+ *
+ * The code is a **soft gate**, not authentication: it keeps the tool off the open
+ * web and says which group a contributor came through. `SEED_INVITE_CODES` stays
+ * as the fallback for an unconfigured database.
+ */
+export const invites = pgTable(
+  "invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** What goes in the URL: `?i=pta-field`. */
+    code: text("code").notNull().unique(),
+    marketId: text("market_id").notNull(),
+    /** Shown to the parent, so it reads like a person wrote it. */
+    label: text("label").notNull(),
+    /**
+     * Optional `market_options.parent_groups` value. When set, P6 confirms the
+     * group instead of asking for it — and **only the parent's yes writes the
+     * affinity edge**. A link that was forwarded out of the group is not evidence
+     * that the person who opened it belongs to it.
+     */
+    groupOptionValue: text("group_option_value"),
+    active: boolean("active").notNull().default(true),
+    /** The admin's own note: where it was posted, who runs the group. */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdBy: text("created_by"),
+  },
+  (t) => [
+    check("invites_code_check", sql`${t.code} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+  ],
+);
+
 /* ── 1. Identity (estimate 1.1, 1.10 · invariants 10, 11) ─────────────────── */
 
 /**
@@ -89,7 +133,15 @@ export const people = pgTable(
     marketId: text("market_id").notNull().default("pasadena"),
     neighborhood: text("neighborhood"),
     inviteCode: text("invite_code"),
-    /** P6: which group the link came from. */
+    /**
+     * The resolved `invites` row, so "which group delivered contributors" is a
+     * join rather than string-matching `invite_code`. Null is ordinary: no code,
+     * a retired one, or a parent who arrived before invites existed.
+     */
+    inviteId: uuid("invite_id").references(() => invites.id, {
+      onDelete: "set null",
+    }),
+    /** P6: which group the link came from — the parent's own answer, not the link's. */
     invitedViaGroup: text("invited_via_group"),
     /** 'link' | 'qr' | 'direct' */
     source: text("source"),
@@ -196,9 +248,10 @@ export const consents = pgTable(
       .defaultNow(),
   },
   (t) => [
+    /** Widened by 0004 for 2C — the caregiver's own four permissions (G2, G8–G10). */
     check(
       "consents_scope_check",
-      sql`${t.scope} in ('sms','follow_up','blast','reference','caregiver_profile')`,
+      sql`${t.scope} in ('sms','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference')`,
     ),
     check(
       "consents_status_check",
@@ -434,6 +487,17 @@ export const places = pgTable(
     provenance: provenance("provenance").notNull().default("parent_submitted"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
 
+    /**
+     * Spec v3.2 §17.1 — the pre-launch golden-answer pass. An admin marks the
+     * records already complete enough to answer a common local question with no
+     * Blast behind them, prioritised by the demand signals in `demand_signals`.
+     *
+     * Set only by an admin (`place.answer_ready`), and only on an approved place:
+     * the CHECK below is what stops it becoming a route for unreviewed parent
+     * text to reach an answer.
+     */
+    answerReady: boolean("answer_ready").notNull().default(false),
+
     /** Freshness (v3.2 pings). last_confirmed_at is what a ping refreshes. */
     lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }),
     lastPingedAt: timestamp("last_pinged_at", { withTimezone: true }),
@@ -449,6 +513,11 @@ export const places = pgTable(
   },
   (t) => [
     check("places_kind_check", sql`${t.kind} <> 'caregiver'`),
+    /* "Good enough to answer with" must be a superset of "a human read it". */
+    check(
+      "places_answer_ready_check",
+      sql`not ${t.answerReady} or ${t.status} = 'approved'`,
+    ),
     check(
       "places_confidence_check",
       sql`${t.confidence} is null or (${t.confidence} >= 0 and ${t.confidence} <= 1)`,
@@ -640,8 +709,18 @@ export const caregiverNominations = pgTable(
     careType: text("care_type"),
     howKnown: text("how_known"),
     howLong: text("how_long"),
-    /** C3 */
+    /** C3. Also answers "are they still employed by you": `current`. */
     lastWorked: text("last_worked"),
+    /**
+     * Stage 1 of the Product Strategy's caregiver ladder: "schedule pattern …
+     * rate, hours and benefits". The band alone cannot separate a guaranteed-hours
+     * 40-hour role from ten hours of date nights, and pay benchmarking (C9) on the
+     * first without the second is a misleading aggregate rather than a useful one.
+     * All three are skippable.
+     */
+    schedulePattern: text("schedule_pattern").array(),
+    hoursPerWeek: text("hours_per_week"),
+    benefits: text("benefits").array(),
     /** C4 */
     caredForAges: text("cared_for_ages").array(),
     /** C5, closed */
@@ -739,11 +818,15 @@ export const caregiverProfiles = pgTable("caregiver_profiles", {
     .references(() => caregivers.id, { onDelete: "cascade" }),
   rolesWanted: text("roles_wanted").array(),
   ageExperience: text("age_experience").array(),
+  /** Same closed list as the parent's nomination — see lib/caregiver-options.ts. */
+  strengths: text("strengths").array(),
   areasServed: text("areas_served").array(),
   drives: boolean("drives"),
   daysAvailable: text("days_available").array(),
   hoursNote: text("hours_note"),
   rateBand: text("rate_band"),
+  /** A window, not a date: "available from August 2027" goes stale silently. */
+  availableFrom: text("available_from"),
   openToReferenceIntros: boolean("open_to_reference_intros")
     .notNull()
     .default(false),
@@ -751,6 +834,79 @@ export const caregiverProfiles = pgTable("caregiver_profiles", {
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * 2C — a caregiver's self-registration, before an admin has decided which
+ * nomination it belongs to.
+ *
+ * Deliberately **not** a `caregivers` row. The invite is one shared link with no
+ * token (there is no contact detail to key one against — invariant 13), so a
+ * caregiver arrives unlinked and we cannot know which nomination is theirs;
+ * matching on a first name and an initial is the one thing `cards.ts` already
+ * refuses to do. And the client's rule is that a caregiver reaches Pando only
+ * through a parent's invite, so a self-made listing must not exist: a claim is
+ * invisible to every answering path until a human attaches it.
+ *
+ * `drizzle/0004_caregiver_claims.sql` carries the long version of the reasoning.
+ */
+export const caregiverClaims = pgTable(
+  "caregiver_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** G1. Their own identity, verified — invariant 10 applies to them too. */
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    marketId: text("market_id").notNull().default("pasadena"),
+    firstName: text("first_name").notNull(),
+    lastInitial: char("last_initial", { length: 1 }),
+    rolesWanted: text("roles_wanted").array().notNull().default([]),
+    ageExperience: text("age_experience").array().notNull().default([]),
+    /** Same ids as the parent side, or a claim and a nomination never meet. */
+    strengths: text("strengths").array().notNull().default([]),
+    areasServed: text("areas_served").array().notNull().default([]),
+    drives: boolean("drives"),
+    daysAvailable: text("days_available").array().notNull().default([]),
+    hoursNote: text("hours_note"),
+    rateBand: text("rate_band"),
+    availableFrom: text("available_from"),
+    /** G8–G10 — three decisions, never one visibility level. */
+    openToReferenceIntros: boolean("open_to_reference_intros")
+      .notNull()
+      .default(false),
+    appearInAnswers: boolean("appear_in_answers").notNull().default(false),
+    openToIntroductions: boolean("open_to_introductions")
+      .notNull()
+      .default(false),
+    consentTextVersion: text("consent_text_version").notNull(),
+    status: text("status").notNull().default("pending"),
+    linkedCaregiverId: uuid("linked_caregiver_id").references(
+      () => caregivers.id,
+      { onDelete: "set null" },
+    ),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: text("resolved_by"),
+    isTest: boolean("is_test").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    check(
+      "caregiver_claims_status_check",
+      sql`${t.status} in ('pending','linked','declined')`,
+    ),
+    /** Being introduced is more exposure than being named. It cannot be the only yes. */
+    check(
+      "claim_ladder_order",
+      sql`not ${t.openToIntroductions} or ${t.appearInAnswers}`,
+    ),
+    unique("caregiver_claims_person_key").on(t.personId),
+  ],
+);
 
 /* ── 6. Review, demand, audit (estimate 1.9, 2.7, 2.8 · v3.2) ────────────── */
 
@@ -803,6 +959,14 @@ export const demandSignals = pgTable(
     }),
     questionText: text("question_text").notNull(),
     category: text("category"),
+    /**
+     * Spec v3.2 §9 / §15.1 and QC Answers Q7. Read from the asker's own profile on
+     * the server, never from the request body — this column is the market-expansion
+     * signal ("demand by area"), and a client-supplied value would be a way to vote
+     * for where Pando launches next. Null on the anonymous path, which has no
+     * identity to read it from.
+     */
+    neighborhood: text("neighborhood"),
     sensitivity: text("sensitivity").notNull(),
     requiresHumanReview: boolean("requires_human_review")
       .notNull()
@@ -816,7 +980,16 @@ export const demandSignals = pgTable(
   (t) => [
     check(
       "demand_signals_sensitivity_check",
-      sql`${t.sensitivity} in ('ordinary','peer_support','high_stakes')`,
+      sql`${t.sensitivity} in ('ordinary','peer_support','high_stakes','named_allegation')`,
+    ),
+    /**
+     * The Product Strategy rule for a claim about a named person, made structural:
+     * "human review only; never broadly circulated or automatically written into
+     * the knowledge base". A code path can forget to set the flag; this cannot.
+     */
+    check(
+      "demand_signals_allegation_review_check",
+      sql`${t.sensitivity} <> 'named_allegation' or ${t.requiresHumanReview}`,
     ),
     check(
       "demand_signals_status_check",
@@ -842,6 +1015,51 @@ export const auditLog = pgTable(
     after: jsonb("after"),
   },
   (t) => [index("audit_log_at_idx").on(sql`${t.at} desc`)],
+);
+
+/**
+ * Who may act at all — the other half of `audit_log`, and the reason the actor in
+ * those rows means something (estimate 2.1, spec §13).
+ *
+ * One scrypt record per person, exactly as `ADMIN_CREDENTIALS` held it, moved
+ * here so that granting and — the one that matters — **revoking** access is a
+ * statement rather than a deploy. `password_hash` carries its own cost
+ * parameters, so raising them later needs no migration and cannot silently
+ * mismatch; `admin_users_hash_check` is what stops anything but a hash landing in
+ * the column.
+ *
+ * Nobody is ever deleted from here: `active = false` keeps their name resolvable
+ * in the audit log after they leave.
+ */
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** The actor string in every audit row. */
+    name: text("name").notNull().unique(),
+    /** `scrypt:<N>:<r>:<p>:<salt>:<hash>`, base64url. Never a password. */
+    passwordHash: text("password_hash").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("admin_users_name_check", sql`${t.name} ~ '^[a-z0-9][a-z0-9._-]*$'`),
+    check(
+      "admin_users_hash_check",
+      sql`${t.passwordHash} ~ '^scrypt:[0-9]+:[0-9]+:[0-9]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$'`,
+    ),
+    index("admin_users_active_idx").on(t.name).where(sql`active`),
+  ],
 );
 
 /* ── 7. Messaging + entitlements (Phase 2, estimate 1.7 D2/D3) ───────────── */
@@ -974,3 +1192,4 @@ export type Submission = typeof submissions.$inferSelect;
 export type Flag = typeof flags.$inferSelect;
 export type DemandSignal = typeof demandSignals.$inferSelect;
 export type AuditEntry = typeof auditLog.$inferSelect;
+export type AdminUser = typeof adminUsers.$inferSelect;

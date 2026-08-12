@@ -19,6 +19,7 @@ import {
   nextIndex,
 } from "@/lib/seed-chat/engine";
 import { buildScripts } from "@/lib/seed-chat/scripts";
+import { useMarketOptions } from "@/lib/use-market-options";
 import type {
   ChatMessage,
   ChatState,
@@ -29,7 +30,7 @@ import type {
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
-import { holdsUntilVerified } from "@/lib/submit";
+import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import type { SeedSession } from "@/lib/types";
 import { Bubble, CardRecap, TypingDots } from "./Bubble";
 import { InviteMessage } from "./InviteMessage";
@@ -57,9 +58,12 @@ export function ChatSeeding() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const reduced = useRef(false);
 
+  /* The neighborhood chips inside these scripts come from `market_options`;
+     `optionsVersion` changes when that table loads, which is what rebuilds them. */
+  const optionsVersion = useMarketOptions(session?.market_id ?? "pasadena");
   const scripts = useMemo(
     () => buildScripts(session?.market_id ?? "pasadena"),
-    [session?.market_id],
+    [session?.market_id, optionsVersion],
   );
 
   useEffect(() => {
@@ -453,9 +457,9 @@ export function ChatSeeding() {
 
   async function persist(submission: Submission) {
     if (!session) return;
-    /* Founding path: the card stays on this phone until the parent confirms their
-       code on the completion screen, then goes up with everything else. The footer
-       already says exactly that — "Kept on this phone until you finish." */
+    /* No confirmed number yet — the anonymous path aside, that means a deployment
+       that cannot send a code, or a confirmation that ran out. The card stays on
+       this phone and goes up with everything else at the end; the footer says so. */
     if (holdsUntilVerified(session)) {
       markSubmission(submission.id, { persisted: false, error: false });
       track("seed_card_held", { kind: submission.kind });
@@ -481,7 +485,16 @@ export function ChatSeeding() {
         kind: submission.kind,
         persisted: result.persisted,
       });
-    } catch {
+    } catch (err) {
+      /* The confirmation ran out. Not an error the parent did anything about, and
+         not a lost card: the session goes back to holding, this card is held with
+         the rest, and the end of the flow asks for a fresh code. */
+      if (handleExpiredVerification(err)) {
+        update((s) => ({ ...s, phone_verified: false }));
+        markSubmission(submission.id, { persisted: false, error: false });
+        track("seed_card_held", { kind: submission.kind });
+        return;
+      }
       markSubmission(submission.id, { persisted: false, error: true });
       track("seed_card_save_failed", { kind: submission.kind });
     }

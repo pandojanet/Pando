@@ -32,14 +32,30 @@ export type RelevanceDimension =
   | "tenure"
   | "trust_circle";
 
-/** Spec §15.3 — market_options.category */
-export type MarketCategory =
-  | "neighborhoods"
-  | "schools"
-  | "worship"
-  | "clubs"
-  | "parent_groups"
-  | "baby_activities";
+/**
+ * Spec §15.3 — the `market_options.category` values the **questionnaire** draws
+ * chips from. `camps` is v3.2's addition (§8.4): camp registration season is the
+ * highest-intent local search of the year, and the dataset has to be built during
+ * the pilot rather than in January.
+ *
+ * The eighth category in §15.3, `focus`, is deliberately absent: it is not a place
+ * a family belongs to but the list of things a parent is willing to be asked
+ * about, and the questionnaire asks that as static topic chips (P11/P12). It
+ * exists in the table — see `supabase/seed.sql` — because that is what an admin
+ * promotes an "other" topic into, and `scripts/import-market-options.mjs` accepts
+ * it for the same reason.
+ */
+export const MARKET_CATEGORIES = [
+  "neighborhoods",
+  "schools",
+  "worship",
+  "clubs",
+  "parent_groups",
+  "baby_activities",
+  "camps",
+] as const;
+
+export type MarketCategory = (typeof MARKET_CATEGORIES)[number];
 
 /** Child-age buckets used only to decide which options are worth showing. */
 export type AgeBand =
@@ -72,6 +88,7 @@ export type QuestionId =
   | "child_ages"
   | "schools"
   | "classes"
+  | "camps"
   | "faith"
   | "clubs"
   | "parent_groups"
@@ -142,6 +159,8 @@ export interface ProfileAnswers {
   /** P5 — school option id → current | former | not_yet | homeschool. */
   school_status: Record<string, string>;
   classes: string[];
+  /** v3.2 §8.4 — the seasonal half of the same signal as `classes`. */
+  camps: string[];
   faith: string[];
   clubs: string[];
   parent_groups: string[];
@@ -186,8 +205,18 @@ export interface SeedSession {
   /** Chat-seeding transcript, current draft and saved cards (estimate 1.4). */
   chat: import("./seed-chat/types").ChatState | null;
   version: 1;
-  /** The shared invite code the link carried (spec: one link for everyone). */
+  /** The invite code the link carried. Identifies a **group**, never a person. */
   invite_code: string | null;
+  /**
+   * The group that code resolved to, when an admin linked it to one. Held so P6
+   * can *confirm* — "You joined through Field Elementary PTA. Is that one of your
+   * communities?" — rather than ask a parent to find their own group in a list.
+   *
+   * It never becomes an affinity edge on its own. A link forwarded out of the
+   * group is not evidence the person who opened it belongs to it; only their yes
+   * is, which is why this is copy on a screen and not a derivation input.
+   */
+  invite_group: { value: string; label: string } | null;
   market_id: MarketId;
   /** "qr" | "link" | "direct" — where this contributor came from. */
   source: string;
@@ -231,7 +260,7 @@ export interface SeedSession {
   demand: {
     question_text: string;
     category: string | null;
-    sensitivity?: "ordinary" | "peer_support" | "high_stakes";
+    sensitivity?: import("./demand").DemandSensitivity;
     may_save?: boolean;
   } | null;
   completed_at: string | null;
@@ -320,4 +349,19 @@ export interface InviteResult {
   market_label: string;
   /** Copy the landing page shows when the code is wrong or missing. */
   reason?: "missing" | "unknown";
+  /**
+   * Set only when the code resolved to a row in `invites` — a **group**, never a
+   * person (see `lib/server/invite.ts`). The env-var codes carry no group, and an
+   * unknown code carries nothing at all, so all three of these stay undefined
+   * rather than being guessed.
+   */
+  invite_id?: string;
+  /** How the group is named to the parent: "Field Elementary PTA". */
+  group_label?: string;
+  /**
+   * The `market_options.parent_groups` value this group maps to, when an admin
+   * linked it. It lets P6 *confirm* the group instead of asking — and only the
+   * parent's yes turns it into an affinity edge.
+   */
+  group_option_value?: string | null;
 }

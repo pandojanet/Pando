@@ -2,6 +2,7 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
+import { graphTargetForCategory } from "@/lib/derive";
 
 /**
  * Estimates 2.4–2.8 — every sensitive admin write.
@@ -142,6 +143,24 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "place_contribution", resource_id: target };
     }
 
+    /**
+     * §17.1 golden answers. The place, not the contribution — and the update is
+     * conditional on `status = 'approved'` rather than trusting the page, because
+     * `places_answer_ready_check` would otherwise abort the whole transaction
+     * (audit row included) on a stale screen. A no-op is the right answer to
+     * "mark a record ready that has since been rejected".
+     */
+    case "place.answer_ready": {
+      const target = id(b.id);
+      const to = b.to === true;
+      await tx.execute(
+        sql`update places set answer_ready = ${to}, updated_at = now()
+            where id = ${target}::uuid
+              and (${to} = false or status = 'approved')`,
+      );
+      return { applied: true, resource: "place", resource_id: target };
+    }
+
     /* ── 2.5 Caregivers ──────────────────────────────────────────────────── */
 
     case "nomination.approve": {
@@ -254,8 +273,76 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "caregiver", resource_id: keep };
     }
 
+    /* ── Invites: one per group, never per parent ────────────────────────── */
+
+    /**
+     * The code is a soft gate and an attribution key, not authentication — see
+     * `lib/server/invite.ts`. Creating one is therefore cheap and reversible; the
+     * only thing that must not happen is a row per parent.
+     *
+     * `on conflict do update` rather than an error: re-creating an existing code is
+     * how an admin brings a retired one back with a corrected label, and a
+     * Postgres violation is a worse answer to that than doing it.
+     */
+    case "invite.create": {
+      const code = id(b.code);
+      const label = text(b.label);
+      if (!code || !label) return { applied: false, reason: "not_implemented" };
+
+      const [row] = (await tx.execute(
+        sql`insert into invites (code, market_id, label, group_option_value, note, created_by)
+            values (${code}, ${id(b.market_id) || "pasadena"}, ${label},
+                    ${text(b.group_option_value)}, ${text(b.note)}, ${ctx.actor})
+            on conflict (code) do update set
+              label = excluded.label,
+              market_id = excluded.market_id,
+              group_option_value = excluded.group_option_value,
+              note = excluded.note,
+              active = true
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+
+      return { applied: true, resource: "invite", resource_id: String(row?.id ?? "") };
+    }
+
+    /* Stops it being offered to anyone new. Deliberately not a delete: `people`
+       rows point at it, and a parent who was handed the link last week still has
+       to be able to walk in — they just arrive without attribution. */
+    case "invite.retire": {
+      const target = id(b.id);
+      await tx.execute(
+        sql`update invites set active = false where id = ${target}::uuid`,
+      );
+      return { applied: true, resource: "invite", resource_id: target };
+    }
+
+    case "invite.restore": {
+      const target = id(b.id);
+      await tx.execute(
+        sql`update invites set active = true where id = ${target}::uuid`,
+      );
+      return { applied: true, resource: "invite", resource_id: target };
+    }
+
     /* ── 2.6 Tap lists ───────────────────────────────────────────────────── */
 
+    /**
+     * Invariant 9, resolved: an "other" answer becomes matchable the moment a
+     * human says it is a real thing. Three effects, in one transaction.
+     *
+     *  1. **The option exists.** `market_options` is now read at request time by
+     *     `/api/market/options`, so this is what puts the chip in front of the
+     *     next parent — no deploy, per spec §8.5.
+     *  2. **Everyone who asked for it is answered at once.** Two parents typing
+     *     the same club are two pending rows; promoting one and leaving the other
+     *     in the queue would ask an admin to make the same judgement twice, and
+     *     the second promotion would then be a no-op with a different slug.
+     *  3. **Their graph is repaired.** This is the part that was missing: a parked
+     *     value writes no affinity, so the parent who typed it never had the edge
+     *     everyone tapping the canonical chip got. The row is *re-derived*, not
+     *     invented — `raw_answers` still says exactly what they tapped, and the
+     *     edge now says what the admin decided it meant.
+     */
     case "option.promote": {
       const target = id(b.id);
       const [row] = (await tx.execute(
@@ -264,15 +351,83 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       )) as unknown as Array<Record<string, unknown>>;
       if (!row) return { applied: false, reason: "not_implemented" };
 
+      const market = row.market_id as string;
+      const category = row.category as string;
+      const submitted = row.submitted_value as string;
+      const slug = id(b.option_value);
+
       await tx.execute(
         sql`insert into market_options (market_id, category, option_value, label)
-            values (${row.market_id as string}, ${row.category as string},
-                    ${id(b.option_value)}, ${text(b.label) ?? (row.submitted_value as string)})
+            values (${market}, ${category}, ${slug},
+                    ${text(b.label) ?? submitted})
             on conflict (market_id, category, option_value) do update set active = true`,
       );
-      await tx.execute(
-        sql`update pending_options set status = 'approved' where id = ${target}::uuid`,
+
+      /* The target row whatever its state, plus every *pending* duplicate of the
+         same value — case and stray spaces included, because "Audit Club " and
+         "audit club" are one club and two typists. */
+      const approved = (await tx.execute(
+        sql`update pending_options set status = 'approved'
+            where id = ${target}::uuid
+               or (market_id = ${market} and category = ${category}
+                   and status = 'pending'
+                   and lower(btrim(submitted_value)) = lower(btrim(${submitted})))
+            returning submitted_by`,
+      )) as unknown as Array<Record<string, unknown>>;
+
+      const people = [
+        ...new Set(
+          approved
+            .map((r) => r.submitted_by)
+            .filter((v): v is string => typeof v === "string"),
+        ),
+      ];
+
+      /**
+       * The backfill. The value written is the admin's **slug**, never the parent's
+       * free text — matching keys on the slug, so storing what they typed would
+       * recreate the unmatchable state promotion exists to end.
+       *
+       * `on conflict do nothing`: the primary key is (person, type, value), so
+       * promoting twice, or a parent who also tapped the canonical chip later, is
+       * a no-op rather than an error.
+       *
+       * `person_schools` is deliberately *not* written for a promoted school: that
+       * table carries a per-school status (current / former, P5) which nobody
+       * asked for at capture, and inventing "current" would put a fact in the
+       * record that no parent stated.
+       */
+      const graph = people.length > 0 ? graphTargetForCategory(category) : null;
+
+      /**
+       * Built as a Postgres array *literal*, not passed as a JS array: drizzle's
+       * `sql` template expands an array into a record list, and `unnest(...)` then
+       * fails with "expression is of type record" — the same trap that forced
+       * `repo/caregiver.ts` onto the query builder. Every id came from
+       * `returning submitted_by` on a uuid column, and is re-checked here anyway,
+       * because a literal is a string and a string in SQL is worth checking twice.
+       */
+      const ids = people.filter((v) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
       );
+      const idArray = `{${ids.join(",")}}`;
+
+      if (graph && ids.length > 0) {
+        if (graph.kind === "affinity") {
+          await tx.execute(
+            sql`insert into social_affinities (person_id, affinity_type, affinity_value, weight_at_capture)
+                select unnest(${idArray}::uuid[]), ${graph.type}, ${slug}, ${graph.weight}
+                on conflict do nothing`,
+          );
+        } else {
+          await tx.execute(
+            sql`insert into life_relevance (person_id, dimension, value)
+                select unnest(${idArray}::uuid[]), ${graph.dimension}, ${slug}
+                on conflict do nothing`,
+          );
+        }
+      }
+
       return { applied: true, resource: "market_option", resource_id: target };
     }
 
@@ -365,6 +520,155 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * from the text.
        */
       return { applied: true, resource: "contributor_note", resource_id: id(b.id) };
+    }
+
+    /* ── 2C Caregiver claims ─────────────────────────────────────────────── */
+
+    case "claim.link": {
+      const claim = id(b.id);
+      const caregiver = id(b.caregiver_id);
+      if (!claim || !caregiver) return { applied: false, reason: "not_implemented" };
+
+      /**
+       * The one place a caregiver reaches `consented`, and it takes both halves:
+       * the caregiver's own yes (the claim, which cannot exist without it) and an
+       * admin's judgement that this claim is that nominated person. Neither alone
+       * is enough — a self-registration must not become a listing, and an admin
+       * must not consent on someone's behalf.
+       *
+       * Visibility is deliberately **not** raised here. `active`,
+       * `discoverable` and `introducible` stay as they are; turning them on is a
+       * separate action with its own checks, and the ladder only ever increases.
+       */
+      await tx.execute(
+        sql`
+          update caregivers c
+          set consent_status = 'consented',
+              profile_person_id = cc.person_id,
+              consent_evidence = jsonb_build_object(
+                'method', 'signed_link',
+                'note', 'caregiver registered themselves at /caregiver',
+                'at', now()
+              ),
+              updated_at = now()
+          from caregiver_claims cc
+          where cc.id = ${claim}::uuid and c.id = ${caregiver}::uuid
+        `,
+      );
+
+      /** The profile itself, copied across so answering paths read one shape. */
+      await tx.execute(
+        sql`
+          insert into caregiver_profiles (
+            caregiver_id, roles_wanted, age_experience, strengths, areas_served,
+            drives, days_available, hours_note, rate_band, available_from,
+            open_to_reference_intros, updated_at
+          )
+          select ${caregiver}::uuid, cc.roles_wanted, cc.age_experience, cc.strengths,
+                 cc.areas_served, cc.drives, cc.days_available, cc.hours_note,
+                 cc.rate_band, cc.available_from, cc.open_to_reference_intros, now()
+          from caregiver_claims cc where cc.id = ${claim}::uuid
+          on conflict (caregiver_id) do update set
+            roles_wanted = excluded.roles_wanted,
+            age_experience = excluded.age_experience,
+            strengths = excluded.strengths,
+            areas_served = excluded.areas_served,
+            drives = excluded.drives,
+            days_available = excluded.days_available,
+            hours_note = excluded.hours_note,
+            rate_band = excluded.rate_band,
+            available_from = excluded.available_from,
+            open_to_reference_intros = excluded.open_to_reference_intros,
+            updated_at = now()
+        `,
+      );
+
+      await tx.execute(
+        sql`update caregiver_claims
+            set status = 'linked', linked_caregiver_id = ${caregiver}::uuid,
+                resolved_at = now(), resolved_by = ${ctx.actor}, updated_at = now()
+            where id = ${claim}::uuid`,
+      );
+
+      return { applied: true, resource: "caregiver_claim", resource_id: claim };
+    }
+
+    case "claim.decline": {
+      const claim = id(b.id);
+      if (!claim) return { applied: false, reason: "not_implemented" };
+      /** Kept and marked, never deleted: the person still asked, and that is a fact. */
+      await tx.execute(
+        sql`update caregiver_claims
+            set status = 'declined', resolved_at = now(), resolved_by = ${ctx.actor},
+                updated_at = now()
+            where id = ${claim}::uuid`,
+      );
+      return { applied: true, resource: "caregiver_claim", resource_id: claim };
+    }
+
+    /**
+     * "Text DELETE and the whole profile goes, without asking why." That sentence
+     * is on the last screen of the caregiver flow, so this action has to be a real
+     * delete — a status change would leave the row in every table it was in and
+     * make the promise false.
+     *
+     * Scope is exactly what was promised: *their* profile. The claim, the copied
+     * profile, and their own consent records go; if the claim had been linked, the
+     * caregivers row goes back down the ladder and stops pointing at them. The
+     * nominating parent's card stays, because it is the parent's contribution and
+     * their sentence about their own experience — and it holds no contact detail
+     * for anybody (invariant 13), which is what makes "the whole profile" and
+     * "everything Pando has about you as a person" the same thing here.
+     *
+     * The `people` row is deleted only when nothing else in the app is attached to
+     * it. A caregiver who is also a contributing parent keeps their identity and
+     * their submissions; the alternative is a delete request from one role wiping
+     * the other. The existence checks look past caregiver-scope consents on
+     * purpose: the CTE above removes those, and inside one statement they are all
+     * still visible, so counting them would mean the row is never removed.
+     *
+     * One statement, so nothing can half-happen — and the audit row (written by
+     * the caller, in the same transaction) is the only trace left.
+     */
+    case "claim.delete": {
+      const claim = id(b.id);
+      if (!claim) return { applied: false, reason: "not_implemented" };
+
+      await tx.execute(
+        sql`
+          with claim as (
+            delete from caregiver_claims where id = ${claim}::uuid
+            returning person_id, linked_caregiver_id
+          ),
+          cg as (
+            update caregivers c
+            set consent_status = 'revoked',
+                active = false, discoverable = false, introducible = false,
+                profile_person_id = null, updated_at = now()
+            from claim
+            where c.id = claim.linked_caregiver_id
+            returning c.id
+          ),
+          prof as (
+            delete from caregiver_profiles where caregiver_id in (select id from cg)
+          ),
+          cons as (
+            delete from consents
+            where person_id in (select person_id from claim)
+              and scope like 'caregiver%'
+          )
+          delete from people p
+          where p.id in (select person_id from claim)
+            and not exists (select 1 from submissions s where s.person_id = p.id)
+            and not exists (select 1 from caregiver_nominations n where n.person_id = p.id)
+            and not exists (
+              select 1 from consents c
+              where c.person_id = p.id and c.scope not like 'caregiver%'
+            )
+        `,
+      );
+
+      return { applied: true, resource: "caregiver_claim", resource_id: claim };
     }
 
     /* ── D2 Referrals ────────────────────────────────────────────────────── */

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { AdminShell } from "@/components/admin/Shell";
-import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
+import { ADMIN_COOKIE } from "@/lib/admin/auth";
+import { readAdminSession } from "@/lib/server/admin-auth";
 
 export const metadata: Metadata = {
   title: { absolute: "Pando admin" },
@@ -18,7 +19,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = readToken((await cookies()).get(ADMIN_COOKIE)?.value);
+  const session = await readAdminSession((await cookies()).get(ADMIN_COOKIE)?.value);
 
   // Unreachable in practice (proxy redirects first), and harmless if it happens.
   if (!session) return children;

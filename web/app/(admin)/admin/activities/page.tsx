@@ -46,7 +46,7 @@ export default function ContributionsPage() {
     useAdminRows<ContributionRow[]>("contributions");
 
   const [filter, setFilter] = useState<
-    "pending" | "low" | "secondhand" | "incomplete" | "all"
+    "pending" | "low" | "secondhand" | "incomplete" | "golden" | "all"
   >("pending");
   const { ref: filterRef, maskStyle: filterMask } = useEdgeFade<HTMLDivElement>();
   const [editing, setEditing] = useState<string | null>(null);
@@ -64,6 +64,17 @@ export default function ContributionsPage() {
     if (filter === "incomplete")
       return list.filter((r) => missingForFounding(r).length > 0 && r.firsthand);
     if (filter === "pending") return list.filter((r) => r.status === "pending_review");
+    /**
+     * The golden-answer pass (§23.1 step 9): approved records only, because that is
+     * the pool the flag can be set on, and the ones already marked float to the top
+     * so a session can be picked up where it was left.
+     */
+    if (filter === "golden")
+      return list
+        .filter((r) => r.status === "approved")
+        .sort(
+          (a, b) => Number(b.place.answer_ready) - Number(a.place.answer_ready),
+        );
     return list;
   }, [all, filter]);
 
@@ -98,7 +109,9 @@ export default function ContributionsPage() {
             style={filterMask}
             className="flex gap-1 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible"
           >
-            {(["pending", "low", "incomplete", "secondhand", "all"] as const).map(
+            {(
+              ["pending", "low", "incomplete", "secondhand", "golden", "all"] as const
+            ).map(
               (key) => (
                 <Button
                   key={key}
@@ -114,7 +127,9 @@ export default function ContributionsPage() {
                         ? "One detail short"
                         : key === "secondhand"
                           ? "Secondhand"
-                          : "All"}
+                          : key === "golden"
+                            ? "Answer-ready"
+                            : "All"}
                 </Button>
               ),
             )}
@@ -170,6 +185,16 @@ export default function ContributionsPage() {
                         <span className="ml-1.5 text-[12px] uppercase tracking-[0.06em] text-muted">
                           {row.kind}
                         </span>
+                        {row.place.answer_ready && (
+                          <span className="ml-1.5">
+                            <Badge
+                              tone="green"
+                              title="Marked good enough to answer a question with, without asking the network"
+                            >
+                              answer-ready
+                            </Badge>
+                          </span>
+                        )}
                         {row.place.venue && (
                           <span className="mt-0.5 block text-[12.5px] text-muted">
                             {row.place.venue}
@@ -315,6 +340,39 @@ export default function ContributionsPage() {
                           >
                             {open ? "Cancel" : "Edit / ask"}
                           </Button>
+                          {/**
+                           * Golden answers (§17.1). Only offered on an approved
+                           * record, because that is the only state the flag can be
+                           * true in — the database says so too.
+                           */}
+                          {row.status === "approved" && (
+                            <Button
+                              tone="secondary"
+                              disabled={busy}
+                              title={
+                                row.place.answer_ready
+                                  ? "Take it back out of the answer-ready set"
+                                  : "This record could answer a real question as it stands"
+                              }
+                              onClick={() =>
+                                void run(
+                                  row.place.answer_ready
+                                    ? "Unmarked"
+                                    : "Marked answer-ready",
+                                  async () =>
+                                    adminAction({
+                                      action: "place.answer_ready",
+                                      id: row.place.id,
+                                      to: !row.place.answer_ready,
+                                    }),
+                                )
+                              }
+                            >
+                              {row.place.answer_ready
+                                ? "Not ready"
+                                : "Answer-ready"}
+                            </Button>
+                          )}
                           {row.status !== "rejected" && (
                             <Button
                               tone="danger"

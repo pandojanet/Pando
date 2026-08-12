@@ -23,7 +23,22 @@ export const FOLLOW_UP_CONSENT_TEXT =
   "Yes — Pando may text me at this number about what I shared: to check a recommendation is still current, or to ask a question my experience can answer. At most a few times a month, never a marketing message. Reply STOP to end, HELP for help. Msg & data rates may apply.";
 
 /**
- * SMS consent at the phone field — the client's registered wording, verbatim.
+ * SMS consent at the phone field.
+ *
+ * ⚠️ **This is not word for word the text in the client's documents, and that is
+ * a decision (12 Aug), not an oversight.** "Pando — QC Answers + A2P Prep"
+ * (Part 2, §3.3) and spec v3.2 §19.1 both quote the shorter *"By providing your
+ * number you agree to receive text messages from Pando. Message frequency varies.
+ * Msg & data rates may apply. Reply STOP to cancel, HELP for help."* The wording
+ * below came from the client's own dictation on the kickoff call and says more —
+ * it names the legal entity and the kinds of message, which is what carriers
+ * actually want to see.
+ *
+ * **The string below is the one to register.** §3.7 warns that a mismatch between
+ * the registered opt-in flow and the built one is a common cause of campaign
+ * suspension, so this exact text — not the documents' shorter one — has to go into
+ * the A2P campaign's opt-in description. Replacing it here to "match the spec"
+ * would create the mismatch it looks like it is fixing.
  *
  * Two rules that come with it and are not ours to soften:
  *  - its own checkbox, unchecked by default, never bundled with anything else;
@@ -64,7 +79,36 @@ export const SMS_CONSENT_TERMS = SMS_CONSENT_TEXT.slice(CONSENT_SPLIT_INDEX);
 export const SMS_CONSENT_REASSURANCE =
   "We won't text you anything you didn't ask for.";
 
-/** The three permissions, kept distinct on purpose. */
+/**
+ * 2C — the caregiver's own permissions (G2, G8–G10).
+ *
+ * Four decisions, asked and stored separately, because they are four different
+ * amounts of exposure and none of them implies the next: existing at all, being
+ * named in an answer, being introduced to a family, and being willing to have a
+ * former family vouch for you. A single "make me visible" switch would collapse
+ * them, and the ladder in `caregivers` only means something if each rung was
+ * agreed to on its own.
+ *
+ * Same rule as above: bump the version, never edit the text.
+ */
+export const CAREGIVER_CONSENT_TEXT_VERSION = "caregiver-2026-08-10";
+
+export const CAREGIVER_CONSENT_TEXT = {
+  /** G2 — the price of entry, and it buys nothing visible on its own. */
+  profile:
+    "Yes — Pando may keep this profile. It stays private until I say otherwise, and I can delete it at any time by texting DELETE.",
+  /** G9 — being named in an answer to a parent who asked. */
+  listing:
+    "Families near me may see my first name, what I'm good with, my areas and my rate range when they ask Pando about care. Never my number.",
+  /** G10 — a family being put in touch. Strictly more than being named. */
+  introduction:
+    "If a family wants to reach me, Pando may pass on my contact details — but only after asking me first, every time.",
+  /** G8 — a former family speaking for you. Their consent is separate and theirs. */
+  reference:
+    "A family I've worked for may be asked to be a reference for me. Pando asks them, not me, and they can always say no.",
+} as const;
+
+/** The permissions, kept distinct on purpose. */
 export type ConsentScope =
   /** The registered SMS consent taken at the phone field. */
   | "sms"
@@ -73,7 +117,15 @@ export type ConsentScope =
   /** Pando may include me in paid Blasts from other parents (Phase 2). */
   | "blast"
   /** Pando may introduce me to a parent asking about someone I nominated. */
-  | "reference";
+  | "reference"
+  /** 2C · G2 — the caregiver agrees Pando may hold their profile at all. */
+  | "caregiver_profile"
+  /** 2C · G9 — the caregiver may be named in an answer. */
+  | "caregiver_listing"
+  /** 2C · G10 — the caregiver may be introduced to a family. */
+  | "caregiver_introduction"
+  /** 2C · G8 — the caregiver is open to a former family being a reference. */
+  | "caregiver_reference";
 
 export interface ConsentRecord {
   scope: ConsentScope;
@@ -94,7 +146,11 @@ export function buildConsentRecord(
     status: optedIn ? "opted_in" : "declined",
     source,
     text_version:
-      scope === "sms" ? SMS_CONSENT_TEXT_VERSION : CONSENT_TEXT_VERSION,
+      scope === "sms"
+        ? SMS_CONSENT_TEXT_VERSION
+        : scope.startsWith("caregiver_")
+          ? CAREGIVER_CONSENT_TEXT_VERSION
+          : CONSENT_TEXT_VERSION,
     captured_at: new Date().toISOString(),
   };
 }

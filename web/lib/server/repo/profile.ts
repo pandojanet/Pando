@@ -56,6 +56,8 @@ export interface PendingOptionInput {
 
 export interface ProfileInput {
   invite_code: string | null;
+  /** The `invites` row the code resolved to, when it resolved to one. */
+  invite_id?: string | null;
   market_id: string;
   source: string;
   is_test: boolean;
@@ -128,6 +130,7 @@ export async function writeProfile(
       marketId: input.market_id,
       neighborhood: input.neighborhood,
       inviteCode: input.invite_code,
+      inviteId: input.invite_id ?? null,
       invitedViaGroup: input.invited_via_group,
       source: input.source,
       timeInArea: input.time_in_area,

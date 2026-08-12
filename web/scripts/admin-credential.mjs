@@ -1,5 +1,10 @@
 /**
- * Generates an `ADMIN_CREDENTIALS` record for one admin.
+ * Generates an `ADMIN_CREDENTIALS` record for one admin — the **bootstrap** path.
+ *
+ * Prefer `npm run admin:user -- add <name>`, which writes the same scrypt record
+ * into `admin_users` and needs no redeploy to add, rotate or revoke. This one is
+ * for the case that table cannot answer yet: no database configured, or the
+ * deployment that is about to create it.
  *
  *   npm run admin:credential -- janet              # invents a strong passphrase
  *   npm run admin:credential -- janet --stdin      # reads the password from stdin
@@ -95,4 +100,11 @@ console.log(`${record}\n`);
 console.log(
   "  Then remove ADMIN_PASSWORD and ADMIN_USERS — while they are set the old\n" +
     "  shared-password mode stays available as a fallback.\n",
+);
+console.log(
+  "  With a database configured, `npm run admin:user -- add " +
+    name +
+    "` is the better\n" +
+    "  move: same hash, in `admin_users`, where revoking it later is one command\n" +
+    "  rather than a redeploy. A populated table ignores this variable entirely.\n",
 );

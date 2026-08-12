@@ -350,6 +350,15 @@ async function writeCaregiver(
     howKnown: str(f.how_known),
     howLong: str(f.how_long),
     lastWorked: str(f.last_worked),
+    /**
+     * Stage 1 of the caregiver ladder — schedule, size and terms of the job. All
+     * three are skippable in the flow, so all three are nullable here, and none of
+     * them is ever shown next to a name: they exist to make a pay band comparable
+     * and to tell a ten-hour sitter from a full-time role.
+     */
+    schedulePattern: strArray(f.schedule_pattern),
+    hoursPerWeek: str(f.hours_per_week),
+    benefits: strArray(f.benefits),
     caredForAges: strArray(f.cared_for_ages),
     strengths: strArray(f.strengths),
     inTheirWords: str(f.in_their_words),

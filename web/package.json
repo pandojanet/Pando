@@ -9,10 +9,13 @@
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
+    "options:import": "node scripts/import-market-options.mjs",
     "check": "node scripts/check.mjs",
+    "admin:user": "node scripts/admin-user.mjs",
     "admin:credential": "node scripts/admin-credential.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "test:auth": "node --experimental-strip-types --no-warnings scripts/test-admin-auth.mts"
+    "test:auth": "node --experimental-strip-types --no-warnings scripts/test-admin-auth.mts",
+    "test:e2e": "node scripts/test-e2e.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

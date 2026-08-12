@@ -29,6 +29,41 @@
       "when": 1786091201872,
       "tag": "0003_add_contribution_confidence",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786370400000,
+      "tag": "0004_caregiver_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786372200000,
+      "tag": "0005_caregiver_strengths",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786458600000,
+      "tag": "0006_answer_ready_and_stage1",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786545000000,
+      "tag": "0007_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786552800000,
+      "tag": "0008_admin_users",
+      "breakpoints": true
     }
   ]
 }

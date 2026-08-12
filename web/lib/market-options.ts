@@ -1,16 +1,25 @@
 import type { AgeBand, MarketCategory, MarketId, Option } from "./types";
 
 /**
- * ⚠️ PLACEHOLDER DATA — awaiting the client's Pasadena lists (spec §23.2, open
- * question 10: "Who supplies the initial Pasadena market_options lists, and in
- * what format?").
+ * The tap lists, and where they come from.
  *
- * These are stand-ins so the flow can be built, demoed and QA'd. Every entry
- * here maps 1:1 to a `market_options` row (market_id, category, option_value),
- * so replacing this file with the real lists — or serving them from the database
- * at runtime via GET /api/market/options — changes no component code.
+ * **The database is the source of truth; the tables below are the fallback.**
+ * `GET /api/market/options` serves `market_options`, the client loads it once per
+ * session (`useMarketOptions`), and `marketOptions()` prefers what it loaded. That
+ * is spec §8.5 — "the questionnaire localizes itself as data, not code" — and it
+ * is what makes an admin promoting an "other" answer, or Janet importing her
+ * sheet, take effect without a deploy.
  *
- * Spec §8.5: "the questionnaire localizes itself as data, not code."
+ * The tables here are still real and still used:
+ *  - **before the fetch lands**, on the very first render, so no screen ever
+ *    flashes empty;
+ *  - **when there is no database**, which is the same honesty rule as
+ *    `persisted: false` — the flow stays walkable, on visibly placeholder data;
+ *  - **as the seed**: `supabase/seed.sql` is generated from this file.
+ *
+ * ⚠️ The Pasadena values are still PLACEHOLDERS awaiting the client's lists
+ * (spec §23.2, open question 10). Replacing them is `npm run options:import`, not
+ * a code change.
  */
 
 export const MARKET_LABELS: Record<MarketId, string> = {
@@ -129,14 +138,87 @@ const pasadena: MarketOptions = {
     { id: "tutoring-center", label: "Tutoring center", bands: ["grade", "tween", "teen"] },
     { id: "kids-yoga", label: "Kids yoga", bands: ["toddler", "preschool", "grade"] },
   ],
+
+  /**
+   * v3.2 §8.4 — camps as a first-class category rather than a kind of class.
+   * They behave differently from everything above: a family "belongs" to a camp
+   * for one week a year, decides in January, and forgets by March. That is
+   * exactly why the list is worth holding as data — the answer has to exist
+   * before the season, and by the season nobody is being asked.
+   */
+  camps: [
+    { id: "tom-sawyer-camps", label: "Tom Sawyer Camps", bands: ["preschool", "grade", "tween"] },
+    { id: "kidspace-summer-camp", label: "Kidspace summer camp", bands: ["preschool", "grade"] },
+    { id: "rba-summer-camp", label: "Rose Bowl Aquatics summer camp", bands: ["grade", "tween"] },
+    { id: "ymca-day-camp", label: "Pasadena YMCA day camp", bands: ["preschool", "grade", "tween"] },
+    { id: "armory-art-camp", label: "Armory Center art camp", bands: ["preschool", "grade", "tween"] },
+    { id: "descanso-nature-camp", label: "Descanso Gardens nature camp", bands: ["preschool", "grade"] },
+    { id: "conservatory-summer", label: "Pasadena Conservatory summer program", bands: ["grade", "tween", "teen"] },
+    { id: "school-break-camp", label: "Our school's break camp", bands: ["preschool", "grade", "tween"] },
+    { id: "sports-skills-camp", label: "Sports skills camp", bands: ["grade", "tween"] },
+    { id: "stem-coding-camp", label: "STEM / coding camp", bands: ["grade", "tween", "teen"] },
+    { id: "theatre-camp", label: "Theatre camp", bands: ["grade", "tween", "teen"] },
+    { id: "sleepaway-camp", label: "Sleepaway camp", bands: ["tween", "teen"] },
+  ],
 };
 
 const MARKETS: Record<MarketId, MarketOptions> = { pasadena };
 
+/* ── The runtime table ────────────────────────────────────────────────────── */
+
+/**
+ * What `/api/market/options` returned, once it has. Module state rather than
+ * React state because the readers are pure functions called deep inside
+ * `optionsFor` / `buildScripts` / `caregiverSteps`, and threading a table through
+ * every one of them would be a refactor of the whole questionnaire to solve a
+ * loading problem.
+ *
+ * On the **server** this stays empty and nothing sets it: server code (the profile
+ * route's derivation) does not read option lists to decide anything, so there is
+ * no request-scoped state to leak between users.
+ */
+const runtime = new Map<MarketId, Partial<Record<MarketCategory, Option[]>>>();
+let version = 0;
+const listeners = new Set<() => void>();
+
+export function setRuntimeOptions(
+  market: MarketId,
+  table: Partial<Record<MarketCategory, Option[]>>,
+): void {
+  runtime.set(market, table);
+  version += 1;
+  for (const listener of listeners) listener();
+}
+
+export function subscribeMarketOptions(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Bumped whenever a table loads, so React can re-render what it built. */
+export function marketOptionsVersion(): number {
+  return version;
+}
+
+/**
+ * The loaded list for this market and category, or the built-in one.
+ *
+ * **An empty loaded category falls back to the built-in list on purpose.** A
+ * category with no rows is far more likely to mean "nobody has seeded it yet"
+ * than "this market genuinely offers nothing", and the failure modes are not
+ * comparable: a placeholder chip is visibly wrong and fixable, while a screen with
+ * no options is a dead end a parent cannot get past and will not report. The cost
+ * to accept is that deliberately retiring *every* option in a category brings the
+ * placeholders back — visible in the admin as a category with zero active rows.
+ */
 export function marketOptions(
   market: MarketId,
   category: MarketCategory,
 ): Option[] {
+  const loaded = runtime.get(market)?.[category];
+  if (loaded && loaded.length > 0) return loaded;
   return MARKETS[market][category];
 }
 

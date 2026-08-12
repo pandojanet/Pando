@@ -13,5 +13,5 @@ export async function POST(request: Request) {
   } | null;
 
   const code = typeof body?.code === "string" ? body.code.slice(0, 64) : null;
-  return NextResponse.json(validateInviteCode(code));
+  return NextResponse.json(await validateInviteCode(code));
 }

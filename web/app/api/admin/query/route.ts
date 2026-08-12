@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { sql } from "drizzle-orm";
-import { ADMIN_COOKIE, readToken } from "@/lib/admin/auth";
+import { ADMIN_COOKIE } from "@/lib/admin/auth";
+import { readAdminSession } from "@/lib/server/admin-auth";
 import * as sample from "@/lib/admin/sample";
 import type { AdminResource } from "@/lib/admin/types";
 import { getDb } from "@/lib/server/db";
@@ -25,12 +26,15 @@ const EMPTY: Record<AdminResource, unknown> = {
   contributor: null,
   contributions: [],
   caregivers: [],
+  caregiver_claims: [],
   restricted_note: null,
   duplicates: [],
   options: [],
   flags: [],
   demand: [],
   founding: [],
+  invites: [],
+  consents: [],
   audit: [],
 };
 
@@ -40,17 +44,22 @@ const SAMPLE: Record<AdminResource, unknown> = {
   contributor: sample.sampleContributorDetail,
   contributions: sample.sampleContributions,
   caregivers: sample.sampleCaregivers,
+  caregiver_claims: sample.sampleCaregiverClaims,
   restricted_note: sample.sampleRestrictedNote,
   duplicates: sample.sampleDuplicates,
   options: sample.samplePendingOptions,
   flags: sample.sampleFlags,
   demand: sample.sampleDemand,
   founding: sample.sampleFounding,
+  invites: sample.sampleInvites,
+  consents: sample.sampleConsents,
   audit: sample.sampleAudit,
 };
 
 export async function POST(request: Request) {
-  const session = readToken((await cookies()).get(ADMIN_COOKIE)?.value);
+  const session = await readAdminSession(
+    (await cookies()).get(ADMIN_COOKIE)?.value,
+  );
   if (!session) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
@@ -80,14 +89,20 @@ export async function POST(request: Request) {
     const data = await readResource(db, resource, params);
 
     /**
-     * Reading a restricted note is itself an event worth recording: these are
-     * the bodies invariant 12 keeps off every list, and "who opened it" is the
-     * only control left once someone has access to the admin at all.
+     * Two reads are events in themselves, and both get an audit row.
+     *
+     * A restricted note is a body invariant 12 keeps off every list, and "who
+     * opened it" is the only control left once someone has admin access at all.
+     *
+     * The consent export is the one read whose purpose is to leave the building
+     * with unmasked phone numbers (A2P §3.3). Nothing stops an admin exporting it —
+     * it is their defence file — but every export is recorded, so the log can
+     * answer "when did this list of numbers get taken out, and by whom".
      */
-    if (resource === "restricted_note") {
+    if (resource === "restricted_note" || resource === "consents") {
       await db.execute(
         sql`insert into audit_log (actor, action, resource, resource_id)
-            values (${session.user}, 'read', 'restricted_note',
+            values (${session.user}, 'read', ${resource},
                     ${String(params.nomination_id ?? params.id ?? "")})`,
       );
     }

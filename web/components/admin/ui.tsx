@@ -248,6 +248,7 @@ export function Button({
   disabled,
   type = "button",
   className,
+  title,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -255,6 +256,8 @@ export function Button({
   disabled?: boolean;
   type?: "button" | "submit";
   className?: string;
+  /** For a control whose label has to stay short — this table is dense on purpose. */
+  title?: string;
 }) {
   const tones = {
     primary: "bg-green-deep text-white hover:bg-ink",
@@ -267,6 +270,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={cn(
         "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         tones[tone],

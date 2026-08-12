@@ -41,6 +41,14 @@ export type SeedEvent =
   | "seed_verify_send_blocked"
   | "seed_verify_failed"
   | "seed_verify_confirmed"
+  /**
+   * The code was confirmed at the entry screen, before the questionnaire. Its own
+   * event because it is now the flow's biggest single gate: everything after it is
+   * saved as it happens, and everyone who drops here leaves nothing behind at all.
+   */
+  | "seed_verified_at_entry"
+  /** A write was refused mid-flow: the session fell back to holding on the phone. */
+  | "seed_verification_expired"
   | "seed_demand_response_shown"
   | "seed_referral_copied"
   | "seed_submit_flushed"

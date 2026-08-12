@@ -63,9 +63,41 @@ export default function DemandPage() {
   const counts = useMemo(() => {
     const open = all.filter((r) => !r.is_test && r.status === "open");
     return {
+      allegation: open.filter((r) => r.sensitivity === "named_allegation").length,
       high: open.filter((r) => r.sensitivity === "high_stakes").length,
       peer: open.filter((r) => r.sensitivity === "peer_support").length,
       ordinary: open.filter((r) => r.sensitivity === "ordinary").length,
+    };
+  }, [all]);
+
+  /**
+   * Demand by area — spec §9 and QC Answers Q7: "log the question with neighborhood
+   * … this becomes your market-expansion demand signal." The table answers "what did
+   * this parent want"; this answers the question the client actually asks the data,
+   * which is "where are people asking from, and about what".
+   *
+   * Anonymous sessions have no neighborhood to read, so they are counted apart
+   * rather than folded into a total that would quietly under-report every area.
+   */
+  const byArea = useMemo(() => {
+    const areas = new Map<string, { total: number; categories: Set<string> }>();
+    let unknown = 0;
+    for (const r of all) {
+      if (r.is_test) continue;
+      if (!r.neighborhood) {
+        unknown += 1;
+        continue;
+      }
+      const entry = areas.get(r.neighborhood) ?? { total: 0, categories: new Set() };
+      entry.total += 1;
+      if (r.category) entry.categories.add(r.category);
+      areas.set(r.neighborhood, entry);
+    }
+    return {
+      rows: [...areas.entries()]
+        .map(([area, v]) => ({ area, total: v.total, categories: [...v.categories] }))
+        .sort((a, b) => b.total - a.total),
+      unknown,
     };
   }, [all]);
 
@@ -126,6 +158,25 @@ export default function DemandPage() {
         </div>
       )}
 
+      {/**
+       * Above the high-stakes banner on purpose: this is the only class where Pando
+       * does nothing at all until a person has read it.
+       */}
+      {counts.allegation > 0 && (
+        <div className="mb-4 rounded-2xl border border-alert-line bg-alert-wash p-4">
+          <p className="text-[14.5px] font-semibold text-alert">
+            {counts.allegation === 1
+              ? "One parent made a claim about a named person."
+              : `${counts.allegation} parents made claims about named people.`}
+          </p>
+          <p className="mt-1 text-[13.5px] leading-relaxed text-alert/90">
+            Read it, and nothing else. These are never circulated, never quoted in an
+            answer, and never written into the knowledge base — and Pando told the
+            parent it cannot look into it.
+          </p>
+        </div>
+      )}
+
       {counts.high > 0 && (
         <div className="mb-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
           <p className="text-[14.5px] font-semibold text-gold-ink">
@@ -162,6 +213,7 @@ export default function DemandPage() {
               <tr>
                 <Th>What they asked</Th>
                 <Th>About</Th>
+                <Th>Where from</Th>
                 <Th>Routing</Th>
                 <Th>Status</Th>
                 <Th>From</Th>
@@ -174,7 +226,11 @@ export default function DemandPage() {
                 <tr
                   key={row.id}
                   className={
-                    row.sensitivity === "high_stakes" ? "bg-gold-wash/40" : undefined
+                    row.sensitivity === "named_allegation"
+                      ? "bg-alert-wash/60"
+                      : row.sensitivity === "high_stakes"
+                        ? "bg-gold-wash/40"
+                        : undefined
                   }
                 >
                   <Td className="max-w-[26rem]">
@@ -183,9 +239,19 @@ export default function DemandPage() {
                     </span>
                   </Td>
                   <Td>{row.category ? slugLabel(row.category) : "—"}</Td>
+                  <Td className="text-[13px]">
+                    {row.neighborhood ? (
+                      slugLabel(row.neighborhood)
+                    ) : (
+                      <span className="text-muted" title="Anonymous session — no profile to read it from">
+                        not known
+                      </span>
+                    )}
+                  </Td>
                   <Td>
                     <Badge
                       tone={
+                        row.sensitivity === "named_allegation" ||
                         row.sensitivity === "high_stakes"
                           ? "red"
                           : row.sensitivity === "peer_support"
@@ -193,11 +259,13 @@ export default function DemandPage() {
                             : "neutral"
                       }
                       title={
-                        row.sensitivity === "high_stakes"
-                          ? "Professional resources were shown in the flow"
-                          : row.sensitivity === "peer_support"
-                            ? "Stored only because the parent agreed to keep it"
-                            : "Ordinary local question"
+                        row.sensitivity === "named_allegation"
+                          ? "A claim about a named person. Human review only — never circulated, never an answer"
+                          : row.sensitivity === "high_stakes"
+                            ? "Professional resources were shown in the flow"
+                            : row.sensitivity === "peer_support"
+                              ? "Stored only because the parent agreed to keep it"
+                              : "Ordinary local question"
                       }
                     >
                       {slugLabel(row.sensitivity)}
@@ -223,7 +291,8 @@ export default function DemandPage() {
                           disabled={busy}
                           onClick={() => setNoteFor(row.id)}
                         >
-                          {row.sensitivity === "high_stakes"
+                          {row.sensitivity === "high_stakes" ||
+                          row.sensitivity === "named_allegation"
                             ? "Record follow-up…"
                             : "Mark matched…"}
                         </Button>
@@ -252,7 +321,8 @@ export default function DemandPage() {
                       <div className="mt-2 rounded-xl border border-bark bg-paper p-2.5">
                         <Field
                           label={
-                            row.sensitivity === "high_stakes"
+                            row.sensitivity === "high_stakes" ||
+                            row.sensitivity === "named_allegation"
                               ? "What was done"
                               : "What matched it"
                           }
@@ -274,7 +344,8 @@ export default function DemandPage() {
                                   action: "demand.status",
                                   id: row.id,
                                   to:
-                                    row.sensitivity === "high_stakes"
+                                    row.sensitivity === "high_stakes" ||
+                                    row.sensitivity === "named_allegation"
                                       ? "answered"
                                       : "matched",
                                   note: note.trim(),
@@ -303,6 +374,39 @@ export default function DemandPage() {
           </TableWrap>
         )}
       </Card>
+
+      {(byArea.rows.length > 0 || byArea.unknown > 0) && (
+        <Card className="mt-4">
+          <div className="px-4 py-3">
+            <h2 className="text-[14px] font-semibold">Where the demand is</h2>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+              Questions by the asker&apos;s own neighborhood — the signal for which
+              area to open next, and which category to have answers ready for.
+            </p>
+            <ul className="mt-3 space-y-1.5">
+              {byArea.rows.map((r) => (
+                <li key={r.area} className="flex items-baseline gap-2 text-[13.5px]">
+                  <span className="w-40 shrink-0 font-medium">
+                    {slugLabel(r.area)}
+                  </span>
+                  <span className="tabular-nums font-semibold">{r.total}</span>
+                  {r.categories.length > 0 && (
+                    <span className="text-[12.5px] text-muted">
+                      {r.categories.map(slugLabel).join(" · ")}
+                    </span>
+                  )}
+                </li>
+              ))}
+              {byArea.unknown > 0 && (
+                <li className="text-[12.5px] text-muted">
+                  {byArea.unknown} from anonymous sessions, with no neighborhood on
+                  record.
+                </li>
+              )}
+            </ul>
+          </div>
+        </Card>
+      )}
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
         These are a parent&apos;s own words about their own family. Nothing on this page

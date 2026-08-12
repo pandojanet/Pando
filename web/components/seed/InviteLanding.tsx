@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/Screen";
 import { Wordmark } from "@/components/ui/Logo";
 import { track } from "@/lib/analytics";
-import { validateInvite } from "@/lib/api-client";
+import { validateInvite, verifyStatus, type VerifyStatus } from "@/lib/api-client";
+import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -30,7 +31,7 @@ import {
   saveSession,
   clearSession,
 } from "@/lib/storage";
-import type { InviteResult } from "@/lib/types";
+import type { InviteResult, SeedSession } from "@/lib/types";
 
 interface Props {
   invite: InviteResult;
@@ -53,6 +54,16 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [anonymous, setAnonymous] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
+  /** "form" until the details are in; "verify" while the code is being confirmed. */
+  const [stage, setStage] = useState<"form" | "verify">("form");
+  const [session, setSession] = useState<SeedSession | null>(null);
+  /**
+   * How this deployment is configured. Asked on mount rather than at the tap, so
+   * the button never pauses — and null means "not answered yet", which reads as
+   * "cannot verify" below: sending a parent onward is recoverable, showing a code
+   * box that can never be satisfied is not.
+   */
+  const [gate, setGate] = useState<VerifyStatus | null>(null);
 
   const identityComplete =
     firstName.trim().length > 0 &&
@@ -67,6 +78,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       reason: invite.reason ?? null,
     });
   }, [invite.valid, invite.reason, source]);
+
+  /* Whether a code can reach this parent at all. Left null on failure, which the
+     branch in `begin` treats as "no" — the flow still works, held on the phone. */
+  useEffect(() => {
+    void verifyStatus()
+      .then(setGate)
+      .catch(() => setGate(null));
+  }, []);
 
   // Read storage after mount only — the server render can't know about it.
   useEffect(() => {
@@ -107,16 +126,34 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     }
   }
 
+  /**
+   * Captures the identity, then decides whether the code comes now or later.
+   *
+   * The code moved here (12 Aug) so that "saved" means saved: once the number is
+   * confirmed, the profile and every card post as they are finished instead of
+   * living on the phone until the last screen. It also fails kindly — a parent who
+   * cannot receive a code finds out in the first ten seconds rather than after
+   * fifteen screens of work.
+   */
   function begin(mode: "new" | "resume") {
     const existing = loadSession();
 
-    const session =
+    const base =
       mode === "resume" && existing
         ? existing
         : newSession({
             invite_code: resolved.valid
               ? (inviteCode ?? (code.trim() || null))
               : null,
+            /* Carried so P6 can confirm the group instead of asking for it. Only
+               present when an admin linked this invite to a real chip. */
+            invite_group:
+              resolved.valid && resolved.group_option_value && resolved.group_label
+                ? {
+                    value: resolved.group_option_value,
+                    label: resolved.group_label,
+                  }
+                : null,
             market_id: resolved.market_id,
             source,
           });
@@ -125,13 +162,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     const first = anonymous ? null : firstName.trim() || null;
     const last = anonymous ? null : lastName.trim() || null;
 
-    saveSession({
-      ...session,
-      first_name: first ?? session.first_name,
-      last_name: last ?? session.last_name,
+    const saved = saveSession({
+      ...base,
+      first_name: first ?? base.first_name,
+      last_name: last ?? base.last_name,
       // Kept in step with the split fields for anything still reading `name`.
-      name: [first, last].filter(Boolean).join(" ") || session.name,
-      phone: e164 ?? session.phone,
+      name: [first, last].filter(Boolean).join(" ") || base.name,
+      phone: e164 ?? base.phone,
       wants_founding: !anonymous,
       /* The checkbox is what authorises the first verification text, so the record
          is written the moment it's ticked — with the exact wording version shown. */
@@ -139,9 +176,9 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
         anonymous || !smsConsent
           ? null
           : buildConsentRecord("sms", true, "seed_entry_phone_field"),
-      /* Stays false: verification happens at submit, and the A2P campaign for it
-         is still pending carrier approval. */
-      phone_verified: false,
+      /* Whatever a resumed session claims, this is re-established by the step
+         below — the server is the only thing that can say a number is confirmed. */
+      phone_verified: mode === "resume" ? base.phone_verified : false,
     });
 
     track(e164 ? "seed_phone_captured" : "seed_phone_skipped", {
@@ -151,6 +188,36 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       market_id: resolved.market_id,
       source,
     });
+
+    /**
+     * Who skips the code, and why each of them is right to:
+     *  - the **anonymous path** has no number to confirm and never had;
+     *  - a **resumed session that already confirmed one** should not be asked
+     *    twice on the same device;
+     *  - a deployment where a code **cannot arrive** (`sendable: false`, which is
+     *    production until the A2P campaign is approved) or **is not required**
+     *    (`SEED_REQUIRE_VERIFICATION=0`). There the old shape still applies:
+     *    everything is held on the phone and the gate at the end deals with it.
+     *    Blocking entry instead would take the whole tool offline for a carrier
+     *    approval that has nothing to do with this parent.
+     */
+    const canVerifyNow =
+      !anonymous && e164 !== null && gate?.required === true && gate.sendable;
+
+    if (canVerifyNow && !saved.phone_verified) {
+      setSession(saved);
+      setStage("verify");
+      return;
+    }
+
+    router.push("/profile");
+  }
+
+  /** The code was confirmed. From here, everything this parent does is saved as it happens. */
+  function onVerified() {
+    const current = loadSession();
+    if (current) saveSession({ ...current, phone_verified: true });
+    track("seed_verified_at_entry");
     router.push("/profile");
   }
 
@@ -228,6 +295,48 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             No app. No account. No password.
           </p>
         </ScreenDock>
+      </Screen>
+    );
+  }
+
+  /**
+   * The code, before the questionnaire rather than after it.
+   *
+   * Deliberately its own screen and not a modal: this is the moment the parent
+   * stops being anonymous to us, and it deserves the whole viewport and a way
+   * back. Nothing has been sent yet — their details are on this phone — so
+   * "Use a different number" is a real, safe exit.
+   */
+  if (stage === "verify" && session?.phone) {
+    return (
+      <Screen>
+        <ScreenHeader left={<Wordmark />} />
+        <ScreenBody className="pt-7">
+          <div className="animate-rise">
+            <Eyebrow>One quick check</Eyebrow>
+            <h1 className="mt-2.5 font-display text-[1.7rem] font-extrabold leading-[1.1]">
+              Let&apos;s confirm your number first.
+            </h1>
+            <p className="mt-3 text-[16px] leading-relaxed text-ink-soft">
+              It takes ten seconds, and it&apos;s what lets Pando keep what you
+              share as you go — rather than holding it all on this phone until the
+              end. Nothing has been sent to us yet.
+            </p>
+          </div>
+
+          <VerifyPhone
+            phone={session.phone}
+            onVerified={onVerified}
+          />
+
+          <button
+            type="button"
+            onClick={() => setStage("form")}
+            className="mt-5 min-h-11 text-[14.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
+          >
+            Use a different number
+          </button>
+        </ScreenBody>
       </Screen>
     );
   }
@@ -400,7 +509,9 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             </div>
 
             <p className="mt-3 text-[13px] leading-relaxed text-muted">
-              We&apos;ll send a 6-digit code to confirm the number when you finish.
+              {gate?.required && gate.sendable
+                ? "Next: a 6-digit code, so we know the number is yours."
+                : "We'll send a 6-digit code to confirm the number when you finish."}
             </p>
 
             <button

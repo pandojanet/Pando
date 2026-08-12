@@ -3,10 +3,15 @@ import "server-only";
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import {
   VERIFICATION_CODE_LENGTH,
+  VERIFICATION_LOCK_MINUTES,
   VERIFICATION_MAX_ATTEMPTS,
   VERIFICATION_MAX_SENDS,
+  VERIFICATION_SESSION_HOURS,
   VERIFICATION_TTL_MINUTES,
 } from "@/lib/sms-templates";
+
+/** A confirmed verification stays usable this long — see the constant's note. */
+const SESSION_MS = VERIFICATION_SESSION_HOURS * 60 * 60 * 1000;
 
 /**
  * Phone verification for the founding path (client's v3.2 round).
@@ -18,12 +23,12 @@ import {
  *  - the phone, kept in memory for the length of the attempt because we have to
  *    text it, and never written to a log;
  *  - a keyed hash of the code, so a memory dump isn't a list of live codes;
- *  - the counters the client specified: 10-minute expiry, 3 sends, and (ours) 5
- *    wrong guesses before the code is burned.
+ *  - the counters spec §19 specifies: 5-minute expiry, 3 sends, 3 wrong guesses,
+ *    then a 15-minute lock on the number.
  *
  * State is process-local on purpose. It survives a page reload (the browser keeps
  * the id in an httpOnly cookie) but not a deploy, which is the right trade for a
- * ten-minute code and one VPS container. When this moves to Supabase it becomes a
+ * five-minute code and one VPS container. When this moves to Supabase it becomes a
  * `phone_verifications` table with the same fields and the same TTL.
  */
 
@@ -74,6 +79,36 @@ const sendsByPhone = perPhone.__pandoVerifySends;
 /** Codes to one number per hour, across every session and cookie. */
 export const VERIFICATION_SENDS_PER_HOUR = 5;
 
+/**
+ * The §19 lock, keyed to the phone rather than to the pending verification.
+ *
+ * On the verification it would be worthless: three wrong guesses, drop the cookie,
+ * ask for another code, three more guesses. Keyed to the number it is what the
+ * spec means — the number stops being verifiable for fifteen minutes, whatever the
+ * browser does. Same store shape as the send counter above, and it moves into the
+ * same table when this does.
+ */
+const lockStore = globalThis as typeof globalThis & {
+  __pandoVerifyLocks?: Map<string, number>;
+};
+lockStore.__pandoVerifyLocks ??= new Map<string, number>();
+const locksByPhone = lockStore.__pandoVerifyLocks;
+
+/** Milliseconds until this number can try again, or 0 when it is not locked. */
+export function lockRemaining(phone: string, now = Date.now()): number {
+  const until = locksByPhone.get(phone);
+  if (until === undefined) return 0;
+  if (until <= now) {
+    locksByPhone.delete(phone);
+    return 0;
+  }
+  return until - now;
+}
+
+function lockPhone(phone: string, now = Date.now()) {
+  locksByPhone.set(phone, now + VERIFICATION_LOCK_MINUTES * 60 * 1000);
+}
+
 function recentSends(phone: string, now: number): number[] {
   const cutoff = now - 60 * 60 * 1000;
   const kept = (sendsByPhone.get(phone) ?? []).filter((at) => at > cutoff);
@@ -96,9 +131,10 @@ function recordSend(phone: string, now = Date.now()) {
 
 function sweep(now = Date.now()) {
   for (const [id, entry] of pending) {
-    // A verified record is kept a while longer: the flush that follows it makes
-    // several requests, and each one re-checks the gate.
-    const cutoff = entry.verified_at ? entry.expires_at + 60 * 60 * 1000 : entry.expires_at;
+    /* A verified record long outlives its code: since the code moved to the start
+       of the flow, every write a parent makes for the rest of the visit re-checks
+       this record. An unconfirmed one still dies with the code. */
+    const cutoff = entry.verified_at ? entry.expires_at + SESSION_MS : entry.expires_at;
     if (cutoff < now) pending.delete(id);
   }
 }
@@ -116,7 +152,9 @@ export type StartOutcome =
   | { ok: true; id: string; code: string; sends: number; expires_at: string }
   | { ok: false; reason: "resend_limit"; sends: number }
   /** This number has had its hourly allowance, whatever the cookie says. */
-  | { ok: false; reason: "phone_send_limit"; sends: number };
+  | { ok: false; reason: "phone_send_limit"; sends: number }
+  /** §19: three wrong guesses locked this number for fifteen minutes. */
+  | { ok: false; reason: "locked"; sends: number; retry_in_seconds: number };
 
 /**
  * Creates or refreshes a pending verification and returns the code so the caller
@@ -127,6 +165,18 @@ export function startVerification(phone: string, existingId: string | null): Sta
   sweep();
 
   const now = Date.now();
+
+  /* The lock comes first: a locked number must not be able to buy its way out of
+     the lock by asking for a fresh code. */
+  const locked = lockRemaining(phone, now);
+  if (locked > 0) {
+    return {
+      ok: false,
+      reason: "locked",
+      sends: recentSends(phone, now).length,
+      retry_in_seconds: Math.ceil(locked / 1000),
+    };
+  }
 
   // Checked before a code exists, so a rate-limited request costs nothing and no
   // number is burned.
@@ -179,8 +229,9 @@ export type CheckOutcome =
   | { ok: true; verified_at: string }
   | {
       ok: false;
-      reason: "unknown" | "expired" | "wrong_code" | "too_many_attempts";
+      reason: "unknown" | "expired" | "wrong_code" | "too_many_attempts" | "locked";
       attempts_left?: number;
+      retry_in_seconds?: number;
     };
 
 export function checkVerification(id: string | null, code: string): CheckOutcome {
@@ -189,12 +240,24 @@ export function checkVerification(id: string | null, code: string): CheckOutcome
 
   const entry = pending.get(id);
   if (!entry) return { ok: false, reason: "unknown" };
+
+  const locked = lockRemaining(entry.phone);
+  if (locked > 0) {
+    pending.delete(id);
+    return {
+      ok: false,
+      reason: "locked",
+      retry_in_seconds: Math.ceil(locked / 1000),
+    };
+  }
+
   if (entry.expires_at < Date.now()) {
     pending.delete(id);
     return { ok: false, reason: "expired" };
   }
   if (entry.attempts >= VERIFICATION_MAX_ATTEMPTS) {
     pending.delete(id);
+    lockPhone(entry.phone);
     return { ok: false, reason: "too_many_attempts" };
   }
 
@@ -207,6 +270,9 @@ export function checkVerification(id: string | null, code: string): CheckOutcome
     const left = VERIFICATION_MAX_ATTEMPTS - entry.attempts;
     if (left <= 0) {
       pending.delete(id);
+      /* §19's "then a 15-minute lock". Set here rather than on the next request,
+         because the entry that was counting the attempts is now gone. */
+      lockPhone(entry.phone);
       return { ok: false, reason: "too_many_attempts", attempts_left: 0 };
     }
     return { ok: false, reason: "wrong_code", attempts_left: left };
@@ -224,7 +290,7 @@ export function checkVerification(id: string | null, code: string): CheckOutcome
 export function verifiedPhone(id: string | null): { phone: string; verified_at: string } | null {
   if (!id) return null;
   const entry = pending.get(id);
-  if (!entry || !entry.verified_at || entry.expires_at + 60 * 60 * 1000 < Date.now()) {
+  if (!entry || !entry.verified_at || entry.expires_at + SESSION_MS < Date.now()) {
     return null;
   }
   return { phone: entry.phone, verified_at: entry.verified_at };

@@ -117,7 +117,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown share kind" }, { status: 400 });
   }
 
-  const invite = validateInviteCode(
+  const invite = await validateInviteCode(
     typeof raw.invite_code === "string" ? raw.invite_code : null,
   );
 

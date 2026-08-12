@@ -181,7 +181,44 @@ export default function CaregiversPage() {
                             </span>
                           )}
                         </Td>
-                        <Td>{row.type ? slugLabel(row.type) : "—"}</Td>
+                        <Td>
+                          {row.type ? slugLabel(row.type) : "—"}
+                          {/**
+                           * Stage 1 employment context. Kept together and kept here
+                           * rather than given columns of its own, because it is only
+                           * ever read as one thing: what kind of job this was. A pay
+                           * band on its own is not a market rate.
+                           */}
+                          {(row.hours_per_week ||
+                            row.schedule_pattern.length > 0 ||
+                            row.pay_band ||
+                            row.benefits.length > 0) && (
+                            <span className="mt-1 block text-[12px] leading-relaxed text-muted">
+                              {[
+                                row.hours_per_week && slugLabel(row.hours_per_week),
+                                row.schedule_pattern.map(slugLabel).join(", ") ||
+                                  null,
+                                row.pay_band && slugLabel(row.pay_band),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                              {row.benefits.length > 0 &&
+                                row.benefits[0] !== "none" && (
+                                  <span className="mt-0.5 block">
+                                    with {row.benefits.map(slugLabel).join(", ")}
+                                  </span>
+                                )}
+                              {row.pay_band && !row.pay_benchmark_consent && (
+                                <span
+                                  className="mt-0.5 block"
+                                  title="Stored for context, but the parent did not agree to it being pooled"
+                                >
+                                  not poolable
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </Td>
                         <Td>{row.good_with_bands.join(", ") || "—"}</Td>
                         <Td>
                           <Badge

@@ -1,25 +1,41 @@
 "use client";
 
 import {
+  ApiError,
   completeSeed,
   saveProfile,
   saveSubmission,
   type CompleteSeedResult,
 } from "./api-client";
 import { buildProfilePayload } from "./derive";
+import { loadSession, saveSession } from "./storage";
+import { track } from "./analytics";
 import type { SeedSession } from "./types";
 
 /**
- * Deferred submit (client's v3.2 round).
+ * When a session's data may leave the phone.
  *
- * "Nothing is stored server-side until the code is confirmed — profile and
- * contributions are held in the session. If they abandon at OTP, nothing
- * persists."
+ * The client's rule is unchanged and non-negotiable: *"nothing is stored
+ * server-side until the code is confirmed. If they abandon at OTP, nothing
+ * persists."* What changed (12 Aug) is **when the code is asked for** — right
+ * after the parent's own details, before the questionnaire, rather than at the
+ * very end. The rule then produces a different, better shape:
  *
- * So on the founding path the profile screen and every capture card stop posting
- * as they go: everything waits on the phone until the parent confirms a code on the
- * completion screen, and then goes up in one pass, in dependency order — the
- * contributor first, their cards second, the completion record last.
+ *  - **Before verification** nothing is sent, exactly as before. A parent who
+ *    walks away at the code has left nothing behind anywhere.
+ *  - **After it** the profile and each card post as they are finished, which is
+ *    what the screens have always claimed. Previously "saved" meant *on this
+ *    phone* for the whole flow, and a parent could not tell — nor could we
+ *    answer "did that card land?" without asking them to reach the last screen.
+ *
+ * This one predicate is the whole switch: `ProfileFlow`, `ChatSeeding` and
+ * `FinishAsks` each ask it, so the two worlds cannot drift apart.
+ *
+ * **A session that predates the change still works.** It has no confirmed code,
+ * so this stays true, everything stays held, and the gate on the completion screen
+ * flushes it exactly as it used to. The same fallback catches an expired
+ * verification mid-flow: the write answers 401, the session drops back to holding,
+ * and the parent finishes through the old path rather than losing anything.
  *
  * The anonymous path has no number to confirm, so it keeps posting as it goes and
  * carries no founding status. The write routes enforce the same split server-side
@@ -28,7 +44,34 @@ import type { SeedSession } from "./types";
 
 /** True when this session must wait for a confirmed code before anything is sent. */
 export function holdsUntilVerified(session: SeedSession | null): boolean {
-  return Boolean(session?.wants_founding && session?.phone);
+  return Boolean(
+    session?.wants_founding && session?.phone && !session?.phone_verified,
+  );
+}
+
+/**
+ * A write came back 401: the confirmed number this session was writing under is no
+ * longer confirmed — the window ran out, or the container restarted and took the
+ * in-memory record with it.
+ *
+ * The recovery is to stop trusting it and go back to holding. Everything the
+ * parent has done is still on this phone, the screens carry on saying "kept on
+ * this phone", and the gate at the end asks for a fresh code and sends it all.
+ * Nothing is lost and nothing needs a new screen — the deferred path is still
+ * there, and this is what it now exists for.
+ *
+ * Returns true when it handled the error, so a caller can tell "the number needs
+ * confirming again" from "that genuinely failed".
+ */
+export function handleExpiredVerification(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 401) return false;
+
+  const current = loadSession();
+  if (current?.phone_verified) {
+    saveSession({ ...current, phone_verified: false });
+  }
+  track("seed_verification_expired");
+  return true;
 }
 
 export interface FlushResult {

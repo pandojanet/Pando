@@ -77,6 +77,69 @@ const ok = (label: string) => { pass++; console.log(`  ok    ${label}`); };
   delete process.env.ADMIN_SESSION_SECRET;
 }
 
+// ── database mode ─────────────────────────────────────────────────────────
+// The store is `admin_users` (0008). These are pure: `databaseCredentials` takes
+// rows, so what the table would return can be asserted without a database.
+{
+  const a = await load();
+  const jHash = await a.passwordRecord("amber-cedar-heron-slate-4417");
+  const aHash = await a.passwordRecord("quartz-willow-mesa-teal-9008");
+  const rows = [
+    { name: "andrii", password_hash: aHash },
+    { name: "janet", password_hash: jHash },
+  ];
+
+  const db = a.databaseCredentials(rows);
+  assert.equal(a.adminAuthMode(db), "database");                      ok("mode is database");
+  assert.deepEqual(a.adminUsers(db), ["andrii", "janet"]);            ok("users come from the rows");
+  assert.equal(await a.verifyCredentials("janet", "amber-cedar-heron-slate-4417", db), true);
+  ok("right person, right password (database)");
+  assert.equal(await a.verifyCredentials("janet", "quartz-willow-mesa-teal-9008", db), false);
+  ok("janet still cannot use andrii's password");
+  assert.ok(!JSON.stringify(rows).includes("amber-cedar-heron-slate-4417"));
+  ok("no plaintext password in what the column holds");
+  assert.ok(rows.every((r) => r.password_hash.startsWith("scrypt:")));
+  ok("every stored record is a scrypt record");
+
+  // A session survives a restart: same rows in, same signing key out.
+  const token = a.issueToken("janet", db);
+  const restarted = (await load()).databaseCredentials(rows);
+  assert.equal(a.readToken(token.value, restarted)?.user, "janet");
+  ok("a session survives a process restart (key derived from the rows, sorted)");
+
+  // Deactivating is dropping the row from the set — the session ends with it.
+  const withoutJanet = a.databaseCredentials(rows.filter((r) => r.name !== "janet"));
+  assert.equal(a.readToken(token.value, withoutJanet), null);
+  ok("a revoked admin's open session stops, without waiting for expiry");
+
+  // Rotation changes that person's fingerprint.
+  const rotated = a.databaseCredentials([
+    { name: "andrii", password_hash: aHash },
+    { name: "janet", password_hash: await a.passwordRecord("brand-new-passphrase-771") },
+  ]);
+  assert.equal(a.readToken(token.value, rotated), null);
+  ok("rotation invalidates the session it was issued against");
+  assert.equal(await a.verifyCredentials("janet", "brand-new-passphrase-771", rotated), true);
+  ok("the rotated password works");
+
+  // One broken row must not take the whole admin down.
+  const mixed = a.databaseCredentials([
+    { name: "janet", password_hash: jHash },
+    { name: "broken", password_hash: "scrypt:not-a-number" },
+  ]);
+  assert.deepEqual(a.adminUsers(mixed), ["janet"]);                   ok("a malformed row is dropped, the rest stand");
+
+  // Unreadable store: closed, not open. `lib/server/admin-auth.ts` returns this
+  // set instead of falling back to the environment, which is how a revoked admin
+  // would otherwise get their access back for the length of an outage.
+  const down = a.unavailableCredentials();
+  assert.equal(a.adminAuthMode(down), "unavailable");                 ok("an unreadable store reports itself");
+  assert.equal(a.adminConfigured(down), false);                       ok("and counts as not configured");
+  assert.equal(await a.verifyCredentials("janet", "amber-cedar-heron-slate-4417", down), false);
+  ok("nothing signs in while the store is unreadable");
+  assert.equal(a.readToken(token.value, down), null);                 ok("and no existing session is honoured");
+}
+
 // ── timing: an unknown name must cost the same as a wrong password ─────────
 {
   const a = await load();
