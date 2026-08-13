@@ -322,6 +322,12 @@ export const socialAffinities = pgTable(
     affinityType: text("affinity_type").notNull(),
     affinityValue: text("affinity_value").notNull(),
     weightAtCapture: integer("weight_at_capture"),
+    /**
+     * For the edges that belong to a child rather than to the household —
+     * school, class, camp. Two families at "the same school" nine years apart
+     * are not the match this edge is for.
+     */
+    childBirthYears: integer("child_birth_years").array(),
   },
   (t) => [
     primaryKey({ columns: [t.personId, t.affinityType, t.affinityValue] }),
@@ -366,6 +372,12 @@ export const personSchools = pgTable(
       .references(() => people.id, { onDelete: "cascade" }),
     optionValue: text("option_value").notNull(),
     status: text("status").notNull(),
+    /**
+     * Whose school it is, by the birth year the parent tapped (P4). Null when
+     * they skipped the attribution or there is only one child — the question is
+     * only asked when it has more than one possible answer.
+     */
+    childBirthYears: integer("child_birth_years").array(),
   },
   (t) => [
     primaryKey({ columns: [t.personId, t.optionValue] }),
@@ -604,6 +616,17 @@ export const shareContributions = pgTable(
      * a guessed number would sort a card out of the queue meant to catch it.
      */
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
+    /**
+     * One sentence from the same pass, saying *why* the score is what it is —
+     * stored for every scored card, not only the ones that tripped a flag, so a
+     * number an admin is asked to act on always comes with its reasoning.
+     *
+     * Never a quote of the parent (the prompt forbids it) and never a summary to
+     * publish: this is written for the person reviewing, and it is cleared
+     * whenever the score is, because a reason for a sentence that has since been
+     * edited is worse than none.
+     */
+    confidenceNote: text("confidence_note"),
 
     status: reviewStatus("status").notNull().default("pending_review"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),

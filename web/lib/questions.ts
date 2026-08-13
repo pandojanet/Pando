@@ -38,6 +38,7 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   child_ages: [],
   schools: [],
   school_status: {},
+  child_of: {},
   classes: [],
   camps: [],
   faith: [],
@@ -276,6 +277,9 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: "Another school",
         perSelectionStatus: { label: "For each one", options: SCHOOL_STATUS },
+        /* A school belongs to a child, not to a household. Asked only when the
+           family has more than one. */
+        perChild: true,
         /* Expecting-only families have nothing to answer here yet, and a screen
            with no chips on it is a dead end (spec §8.5 gates whole questions). */
         showForBands: ["baby", "toddler", "preschool", "grade", "tween", "teen"],
@@ -305,6 +309,7 @@ export const SCREENS: Screen[] = [
         affinity: { type: "activity", weight: 4 },
         allowOther: true,
         otherLabel: "Another class or activity",
+        perChild: true,
       },
       {
         /**
@@ -324,6 +329,7 @@ export const SCREENS: Screen[] = [
         affinity: { type: "activity", weight: 4 },
         allowOther: true,
         otherLabel: "Another camp",
+        perChild: true,
         showForBands: ["preschool", "grade", "tween", "teen"],
       },
       {
@@ -652,6 +658,39 @@ function rawSelectionsFor(
     default:
       return answers[question.id];
   }
+}
+
+/**
+ * The children a per-child question can attribute an answer to, labelled the way
+ * the parent tapped them in P4 — birth years, not ages.
+ *
+ * One child is not a question: there is only one possible answer, so the UI does
+ * not ask and `childrenFor` below attributes it silently.
+ */
+export function childOptions(answers: ProfileAnswers): Option[] {
+  return [...new Set(answers.child_ages)]
+    .sort((a, b) => a - b)
+    .map((age) => ({
+      id: String(age),
+      label: age === EXPECTING ? "Expecting" : String(CURRENT_YEAR - age),
+    }));
+}
+
+/**
+ * Whose this answer is, as ages. Falls back to the whole family when a parent
+ * skipped the question — an unattributed school still belongs to *someone* in
+ * this household, and a single-child family is never asked at all.
+ */
+export function childrenFor(
+  question: Question,
+  answers: ProfileAnswers,
+  optionId: string,
+): number[] {
+  if (!question.perChild) return [];
+  const unique = [...new Set(answers.child_ages)];
+  if (unique.length <= 1) return unique;
+  const picked = answers.child_of?.[question.id]?.[optionId] ?? [];
+  return picked.filter((age) => unique.includes(age));
 }
 
 export function customEntriesFor(

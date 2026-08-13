@@ -103,7 +103,7 @@ const SCHEMA = {
     note: {
       type: "string",
       description:
-        "One short sentence explaining the score, for an admin. Do not quote the parent's words back.",
+        "One short sentence saying WHY the score came out where it did — name what the text does or does not give another parent. Written for the reviewer, in your own words: never quote or paraphrase the parent's sentence back, and never list facts captured elsewhere as missing.",
     },
   },
   required: ["confidence", "possible_named_person", "note"],
@@ -120,6 +120,8 @@ Two things must not lower the score.
 
 1. **Naming a person does not lower it.** A parent praising one teacher by name is often the most useful note there is. Report that separately in possible_named_person, because a human has to read it before it can be used — but score the note on what it tells a parent.
 2. **Facts listed under "Already answered" do not lower it.** Those were captured as taps on other screens. A note is not worse for leaving out a price that is already recorded.
+
+Always explain the score. The note is shown next to the number to the person deciding what to read first, so it has to say what drove it — what this text gives a parent, or what it leaves them still not knowing. "Vague" on its own is not a reason.
 
 You are classifying, not rewriting. Never reproduce the parent's wording in your note, and never suggest what is missing from a card — only what this text does or does not tell a parent.`;
 

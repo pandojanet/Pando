@@ -51,7 +51,7 @@ npm run check         # row counts, extraction coverage, invariants 1 and 2
 npm run build         # every route compiles
 
 npm run dev           # in another terminal, then:
-npm run test:e2e      # 218 checks: the whole of Phase 1, end to end
+npm run test:e2e      # 223 checks: the whole of Phase 1, end to end
 ```
 
 `test:e2e` is the one that would catch a regression the others cannot. It signs up
@@ -124,6 +124,14 @@ the market falling back — a typo in a forwarded link is not a dead end.
   programs** (v3.2 §8.4). With a baby-only profile the whole group is absent; with
   a school-age child it appears, and its chips re-filter by band like every other
   market list — a sleepaway camp must not be offered for a five-year-old.
+- **Whose is it.** With **two or more** children, every school, class and camp you
+  pick grows a "Which of your children?" row of birth years under it, and the
+  review screen shows the answer in brackets — "Walden School (Current · 2019)".
+  With **one** child the question is not asked at all (there is nothing to ask) and
+  the attribution still lands. Skipping it is allowed: an empty answer means "they
+  didn't say", and `social_affinities.child_birth_years` is null rather than a
+  guess. Reload mid-profile and the taps survive — they are two levels deep, which
+  is exactly the shape a naive session-normaliser drops.
 - Single-select chips behave like radios: **tap the already-chosen chip and it
   stays chosen.** Deselecting used to clear the pre-set allowance on the first tap,
   which is the opposite of what the tap means.
@@ -294,6 +302,14 @@ picks it back up and scores the edited text on its own next pass.
 is honest in three states — `no_api_key`, `no_database`, or counts.
 
 ## 1.10 · Session and passwordless
+
+**Where the code sits (13 Aug):** at the **end of the profile**, not at the entry
+screen. Finish the questions, tap through the review, and the next screen is the
+six-digit code — the profile is written the moment it is confirmed. Two failures
+worth aiming at: reload that screen (the answers are still on the phone, nothing
+has been sent), and throttle the network before tapping the last button (the step
+must still appear — it awaits the status rather than reading whatever a background
+fetch had finished, which is what used to wave a parent straight past it).
 
 **Exercise:** device-local autosave and the phone OTP.
 

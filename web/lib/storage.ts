@@ -103,6 +103,36 @@ function normaliseAnswers(stored: unknown): ProfileAnswers {
           : {};
       continue;
     }
+    if (key === "child_of") {
+      /**
+       * Question id → option id → the ages it belongs to. Two levels deep, so it
+       * needs its own branch: the generic one below would see an object where it
+       * expects a list and drop the whole thing — which is exactly how a parent
+       * who reloads mid-profile would silently lose every "whose is it" tap.
+       */
+      out.child_of = {};
+      if (typeof value === "object" && !Array.isArray(value)) {
+        for (const [questionId, perOption] of Object.entries(
+          value as Record<string, unknown>,
+        )) {
+          if (typeof perOption !== "object" || perOption === null) continue;
+          const cleaned: Record<string, number[]> = {};
+          for (const [optionId, ages] of Object.entries(
+            perOption as Record<string, unknown>,
+          )) {
+            if (!Array.isArray(ages)) continue;
+            const kept = ages.filter(
+              (a): a is number => typeof a === "number" && Number.isFinite(a),
+            );
+            if (kept.length > 0) cleaned[optionId] = kept;
+          }
+          if (Object.keys(cleaned).length > 0) {
+            out.child_of[questionId as keyof typeof out.child_of] = cleaned;
+          }
+        }
+      }
+      continue;
+    }
     if (key === "school_status") {
       out.school_status =
         typeof value === "object" && !Array.isArray(value)

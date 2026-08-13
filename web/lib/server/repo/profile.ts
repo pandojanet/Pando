@@ -41,6 +41,8 @@ export interface AffinityInput {
   affinity_type: string;
   affinity_value: string;
   score_weight?: number | null;
+  /** Whose it is, for a school / class / camp edge. Null on household edges. */
+  child_birth_years?: number[] | null;
 }
 
 export interface RelevanceInput {
@@ -215,6 +217,10 @@ export async function writeProfile(
           affinityType: a.affinity_type,
           affinityValue: a.affinity_value,
           weightAtCapture: a.score_weight ?? null,
+          childBirthYears:
+            a.child_birth_years && a.child_birth_years.length > 0
+              ? a.child_birth_years
+              : null,
         })),
       );
     }
@@ -238,11 +244,20 @@ export async function writeProfile(
       SCHOOL_STATUSES.has(status),
     );
     if (schoolRows.length > 0) {
+      /* Whose school it is comes from the affinity row derived for the same
+         value — one derivation, so the two tables cannot disagree about which
+         child a school belongs to. */
+      const schoolChildren = new Map(
+        input.social_affinities
+          .filter((a) => a.affinity_type === "school")
+          .map((a) => [a.affinity_value, a.child_birth_years ?? null]),
+      );
       await tx.insert(personSchools).values(
         schoolRows.map(([optionValue, status]) => ({
           personId,
           optionValue,
           status,
+          childBirthYears: schoolChildren.get(optionValue) ?? null,
         })),
       );
     }

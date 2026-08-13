@@ -1,5 +1,6 @@
 import {
   ageBandsOf,
+  childrenFor,
   profileCompleteness,
   questionById,
   SCREENS,
@@ -69,6 +70,7 @@ export function deriveAffinities(session: DerivationInput): AffinityRow[] {
   const { answers } = session;
   const rows: AffinityRow[] = [];
   const seen = new Set<string>();
+  const capturedAt = new Date();
 
   const push = (id: QuestionId, values: string[]) => {
     const q = questionById(id);
@@ -79,10 +81,22 @@ export function deriveAffinities(session: DerivationInput): AffinityRow[] {
       const key = `${q.affinity.type}|${value}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      /**
+       * Whose it is, for the edges that belong to a child. Stored as birth years
+       * — the same conversion `childrenFromAges` makes, and for the same reason:
+       * an age stops being true in a year, a birth year does not.
+       */
+      const ages = childrenFor(q, answers, value);
       rows.push({
         affinity_type: q.affinity.type,
         affinity_value: value,
         score_weight: q.affinity.weight,
+        child_birth_years:
+          ages.length > 0
+            ? ages
+                .filter((age) => age !== EXPECTING)
+                .map((age) => capturedAt.getFullYear() - age)
+            : null,
       });
     }
   };

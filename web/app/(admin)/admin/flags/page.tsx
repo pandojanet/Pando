@@ -129,7 +129,7 @@ export default function FlagsPage() {
     <>
       <PageHead
         title="Flags"
-        intro="Raised automatically from free text (estimate 1.9), tuned to over-flag rather than miss anything. Nothing here is ever shown to a parent word for word."
+        intro="Raised automatically from free text, tuned to over-flag rather than miss anything. Nothing here is ever shown to a parent word for word."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

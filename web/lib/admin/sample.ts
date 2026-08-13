@@ -331,6 +331,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: null,
     status: "pending_review",
     confidence: 0.91,
+    confidence_note:
+      "Specific about what happens in the class and who it suits; a parent could act on this without asking anything else.",
     provenance: "parent_submitted",
     contributor: { id: "c1", name: "Sample Parent A" },
     is_test: false,
@@ -368,6 +370,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: null,
     status: "pending_review",
     confidence: 0.44,
+    confidence_note:
+      "Positive but general — nothing here tells another parent what the sessions are actually like.",
     provenance: "parent_submitted",
     contributor: { id: "c2", name: "Sample Parent B" },
     is_test: false,
@@ -405,6 +409,7 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: "Sign up the week registration opens or you'll be waitlisted.",
     status: "approved",
     confidence: null,
+    confidence_note: null,
     provenance: "parent_submitted",
     contributor: { id: "c1", name: "Sample Parent A" },
     is_test: false,

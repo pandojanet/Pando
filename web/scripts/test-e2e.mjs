@@ -102,12 +102,15 @@ head("1.1  entry, invite, public site");
   }
 }
 
-/* The order below — verify, then profile, then cards — is now the order a parent
-   meets on screen too (12 Aug): the code is asked for at the entry screen, and
-   everything after it is stored as it happens. The suite drove it this way from
-   the start because it is the *server's* order; what changed is that the UI stopped
-   holding everything until the last screen. So these checks now prove the normal
-   path rather than an API shortcut. */
+/* The order below — verify, then profile, then cards — is the *server's* order,
+   and it is what these checks prove: nothing about a named parent exists before a
+   confirmed code, whatever the client sends.
+
+   On screen the code sits at the **end of the profile** (13 Aug): the answers are
+   held on the phone until then, so the guarantee is the same, and everything after
+   it is stored as it happens. It moved off the entry screen because asking a
+   parent to prove a number before they have seen a single question is the friction
+   the client asked us to keep off the front door. */
 head("1.10  nothing is stored before the phone is verified");
 const parent = session();
 {
@@ -172,6 +175,12 @@ head("1.2 / 1.3  profile, and the graph derived from it");
       neighborhood: "altadena",
       child_ages: [3, 6],
       schools: ["walden-school"],
+      /* Whose it is. The 6-year-old's school, and a camp both children went to —
+         plus an age nobody tapped, which must not survive. */
+      child_of: {
+        schools: { "walden-school": [6] },
+        camps: { "tom-sawyer-camps": [3, 6, 11] },
+      },
       classes: [], camps: ["tom-sawyer-camps"], faith: [], clubs: [], parent_groups: [],
       /* Removed as a question on 12 Aug — invites carry the group now. Still sent
          to prove the route ignores it rather than reviving a field. */
@@ -337,13 +346,19 @@ head("1.3  the derived graph — and the lies that did not survive");
 ok("the person exists", !!p);
 ok("phone_verified_at is a server fact", p && p.phone_verified_at !== null);
 ok("founding is pending, never self-granted", p && p.founding === "pending_founding");
-const aff = await sql`select affinity_type, affinity_value, weight_at_capture from social_affinities where person_id = ${p.id} order by affinity_type`;
+const aff = await sql`select affinity_type, affinity_value, weight_at_capture, child_birth_years from social_affinities where person_id = ${p.id} order by affinity_type`;
 ok("the fabricated school affinity was ignored", !aff.some((a) => a.affinity_value === "a-school-never-picked"));
 ok("the fabricated neighborhood was ignored", !aff.some((a) => a.affinity_value === "somewhere-else"));
 ok("the real neighborhood was derived", aff.some((a) => a.affinity_value === "altadena"));
 ok("the real school was derived", aff.some((a) => a.affinity_value === "walden-school"));
 const camp = aff.find((a) => a.affinity_value === "tom-sawyer-camps");
 ok("a camp is an activity edge, at the class weight (v3.2 §8.4)", !!camp && camp.affinity_type === "activity" && Number(camp.weight_at_capture) === 4);
+const thisYear = new Date().getFullYear();
+const school = aff.find((a) => a.affinity_value === "walden-school");
+ok("a school edge says which child it belongs to", school && JSON.stringify(school.child_birth_years) === JSON.stringify([thisYear - 6]));
+ok("a camp can belong to two children", camp && (camp.child_birth_years ?? []).length === 2);
+ok("an age nobody tapped is not attributed to anybody", camp && !(camp.child_birth_years ?? []).includes(thisYear - 11));
+ok("household edges carry no child at all", aff.filter((a) => a.affinity_type === "neighborhood").every((a) => a.child_birth_years === null));
 ok("age bands were derived from the tapped ages", aff.some((a) => a.affinity_type === "age_range"));
 ok("weights come from the question set, not the body", aff.every((a) => Number(a.weight_at_capture) < 99));
 const rel = await sql`select dimension, value from life_relevance where person_id = ${p.id}`;
@@ -355,8 +370,9 @@ ok("the real 'other' answer is parked as pending (inv 9)", pend.some((o) => o.su
 ok("its market came from the invite", pend.every((o) => o.market_id === "pasadena"));
 const kids = await sql`select birth_year from children where person_id = ${p.id}`;
 ok("children stored as birth years", kids.length === 2);
-const sch = await sql`select status from person_schools where person_id = ${p.id}`;
+const sch = await sql`select status, child_birth_years from person_schools where person_id = ${p.id}`;
 ok("school carries its own status (P5)", sch.length === 1 && sch[0].status === "current");
+ok("and the same child the affinity says", sch.length === 1 && JSON.stringify(sch[0].child_birth_years) === JSON.stringify([thisYear - 6]));
 
 head("1.5  the activity card");
 const [a] = await sql`select pc.* from share_contributions pc join shares pl on pl.id = pc.share_id where pl.name = 'Audit Swim School'`;
@@ -405,7 +421,7 @@ ok("and it cannot be stored without a human attached", allegation && allegation.
 ok("it raised its own escalation, under its own reason", (await sql`select 1 from flags where reason = 'named_allegation' and status = 'open'`).length > 0);
 
 head("1.8 / 1.9  extraction and flags");
-const scored = await sql`select confidence from share_contributions where person_id = ${p.id} and confidence is not null`;
+const scored = await sql`select confidence, confidence_note from share_contributions where person_id = ${p.id} and confidence is not null`;
 ok("cards were scored by the model", scored.length === 3, `${scored.length} of 3`);
 ok("the corrected card was re-scored, not left stale", a && Number(a.confidence) > 0.4, a ? String(a.confidence) : "");
 ok("stale_at_capture raised without the model", (await sql`select 1 from flags where reason = 'stale_at_capture' and status = 'open'`).length > 0);

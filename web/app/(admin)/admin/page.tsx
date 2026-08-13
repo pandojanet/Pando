@@ -37,7 +37,7 @@ export default function AdminOverviewPage() {
     <>
       <PageHead
         title="Overview"
-        intro="Where the seed pilot stands. Anything here that reads 0 with a backend connected is a real 0, not a placeholder."
+        intro="Where the seed pilot stands. A 0 here is a real 0 — nothing on this page is a placeholder."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -152,7 +152,7 @@ export default function AdminOverviewPage() {
                     Open the funnel in PostHog →
                   </a>
                 ) : (
-                  "Funnels and cohorts live in PostHog (estimate 3.1) — the provider isn't attached yet."
+                  "Funnels and cohorts live in PostHog."
                 )}
               </p>
             </Card>
@@ -181,7 +181,7 @@ export default function AdminOverviewPage() {
                     href="/admin/caregivers"
                   />
                   {/* The one number here that should go up, not down: records an
-                      admin has judged good enough to answer with (§17.1). */}
+                      admin has judged good enough to answer with. */}
                   <QualityRow
                     label="Answer-ready records"
                     value={o.answer_ready}

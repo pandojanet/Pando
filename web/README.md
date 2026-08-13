@@ -55,7 +55,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/login`           | One scrypt credential per person, from `admin_users` — the actor is proved, not picked. |
 | `/admin`                 | Overview: completion, two-or-more rate, drop-off, quality queues.            |
 | `/admin/founding`        | Founding approval queue — cards, bulk-approve per link.                     |
-| `/admin/contributors`    | List + detail (taps, derived profile, cards, transcript, notes).             |
+| `/admin/contributors`    | Two tabs on the same people: what they shared, and the consent file (unmasked numbers, wording versions, downloadable). Detail per person. |
 | `/admin/activities`      | Review with confidence filter, edit, approve/reject.                        |
 | `/admin/caregivers`      | Consent state machine with evidence + duplicate candidates.                 |
 | `/admin/claims`          | 2C — match a caregiver's claim to a nomination, or decline it with a reason. |
@@ -63,7 +63,6 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/invites`         | One link per group, and which group actually brought contributors.          |
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |
 | `/admin/demand`          | D1 queue: high-stakes and named-allegation questions first.                 |
-| `/admin/consents`        | The A2P §3.3 consent file — unmasked numbers, wording versions, downloadable. |
 | `/admin/flags`           | Escalations first, then review queue.                                       |
 | `/admin/audit`           | Who changed what, with a before → after diff.                               |
 | `POST /api/admin/query`  | One read endpoint for every admin page → `lib/server/repo/admin-read.ts`.    |
@@ -72,14 +71,15 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
 | `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. |
 
-Flow: `/join` → **confirm the number** → profile → review → **chat** → done. A
+Flow: `/join` → profile → review → **confirm the number** → **chat** → done. A
 parent can leave at any point and pick up where they left off on the same phone.
 
-The code sits at the front (12 Aug). Everything before it is on the phone and
-nowhere else; everything after it is stored as it is finished, so a card that says
-"saved" is saved. Where a code cannot be sent — production until the A2P campaign
-is approved — entry skips it and the old shape applies instead: the whole session
-is held on the phone and flushed at `/done/ask` once a code is confirmed there.
+The code sits at the **end of the profile** (13 Aug). Everything before it is on
+the phone and nowhere else; the profile is written the moment it is confirmed, and
+everything after that is stored as it is finished, so a card that says "saved" is
+saved. Where a code cannot be sent — production until the A2P campaign is approved
+— the step is skipped and the old shape applies instead: the whole session is held
+on the phone and flushed at `/done/ask` once a code is confirmed there.
 
 **No query parameter changes app behaviour** — `?i=` and `?src=` are the only two
 read, and they are the product's own link. `?test=1` was removed on 4 Aug: a URL
@@ -232,7 +232,7 @@ has the setup walkthrough.
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 218 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 223 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
 
 The write paths, and what each guarantees atomically:
@@ -317,7 +317,7 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (218 checks, needs a dev server and a database),
+Tests: `npm run test:e2e` (223 checks, needs a dev server and a database),
 `npm run test:auth` (45), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at

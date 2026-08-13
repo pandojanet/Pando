@@ -352,9 +352,9 @@ export function NotConfigured({
       title="No database connected yet"
       body={
         <>
-          This page reads from the database, and <code>DATABASE_URL</code> isn&apos;t
-          set. Until then there is nothing to show — you can switch on sample rows
-          to review the layout.
+          This page reads from the pilot database, and this deployment isn&apos;t
+          connected to one. Until it is there is nothing to show — you can switch on
+          sample rows to review the layout.
         </>
       }
       action={
@@ -413,15 +413,39 @@ export function ProvenanceBadge({ provenance }: { provenance: string }) {
   return <Badge tone="muted">{slugLabel(provenance)}</Badge>;
 }
 
-export function ConfidenceBadge({ value }: { value: number | null }) {
+/**
+ * The score, and — since it is a number somebody is asked to sort a queue by —
+ * the sentence saying what it is a number about.
+ *
+ * The reason is shown, not hidden in a tooltip: an admin deciding whether to read
+ * a card first should not have to hover to find out why it is at the top. It is
+ * written by the review pass about the *text*, never a quote of the parent, and
+ * it disappears with the score when the text is edited.
+ */
+export function ConfidenceBadge({
+  value,
+  note,
+}: {
+  value: number | null;
+  note?: string | null;
+}) {
   if (value === null) {
-    return <Badge tone="muted" title="No extraction run yet (estimate 1.8)">—</Badge>;
+    return (
+      <Badge tone="muted" title="Not reviewed yet — no score, rather than a guessed one">
+        —
+      </Badge>
+    );
   }
   const pct = Math.round(value * 100);
   return (
-    <Badge tone={value < 0.6 ? "gold" : value < 0.85 ? "neutral" : "green"}>
-      {pct}%
-    </Badge>
+    <div className="flex flex-col items-start gap-1">
+      <Badge tone={value < 0.6 ? "gold" : value < 0.85 ? "neutral" : "green"}>
+        {pct}%
+      </Badge>
+      {note && (
+        <p className="max-w-[16rem] text-[12px] leading-snug text-muted">{note}</p>
+      )}
+    </div>
   );
 }
 

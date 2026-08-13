@@ -52,7 +52,7 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       {
         href: "/admin/contributors",
         label: "Contributors",
-        hint: "Everyone who came through, and what each of them shared.",
+        hint: "Everyone who came through: what each of them shared, and what they agreed to.",
       },
     ],
   },
@@ -110,11 +110,6 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         label: "Tap lists",
         hint: "Promote an 'other' answer so it can be matched on.",
         count: (o) => o.quality.pending_options,
-      },
-      {
-        href: "/admin/consents",
-        label: "Consent records",
-        hint: "Who agreed to what, in which words. Exportable — this is the TCPA defence.",
       },
       {
         href: "/admin/audit",

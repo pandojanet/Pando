@@ -499,6 +499,7 @@ async function contributions(db: Db) {
     tip_text: r.tip_text,
     status: r.status,
     confidence: r.confidence === null ? null : Number(r.confidence),
+    confidence_note: (r.confidence_note as string | null) ?? null,
     provenance: r.provenance,
     contributor: r.contributor_id
       ? { id: r.contributor_id, name: fullName(r.first_name, r.last_name) }

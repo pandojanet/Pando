@@ -63,6 +63,23 @@ export function StepWidget({
         )}
       </div>
 
+      {/*
+        The question again, in the dock, right above the answer.
+
+        It is already in the transcript — and that is the problem: the bubble
+        scrolls away the moment the keyboard opens or the option list is long, so
+        the parent is left tapping chips with the question off-screen. Repeating
+        it here costs one line and removes the "what was I answering?" scroll.
+      */}
+      <p className="mb-2.5 text-[15px] font-semibold leading-snug text-ink">
+        {step.prompt}
+      </p>
+      {step.aside && (
+        <p className="mb-2.5 -mt-1 text-[13px] leading-snug text-muted">
+          {step.aside}
+        </p>
+      )}
+
       <Widget
         step={step}
         initialValue={initialValue}

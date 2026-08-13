@@ -12,12 +12,14 @@ import {
   ScreenDock,
   ScreenHeader,
 } from "@/components/ui/Screen";
+import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { saveProfile } from "@/lib/api-client";
+import { saveProfile, verifyStatus, type VerifyStatus } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
 import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import {
   canAdvance,
+  childOptions,
   customEntriesFor,
   isQuestionAnswered,
   labelForOption,
@@ -43,7 +45,11 @@ import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
 export function ProfileFlow() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
-  const [stage, setStage] = useState<"questions" | "review">("questions");
+  const [stage, setStage] = useState<"questions" | "review" | "verify">(
+    "questions",
+  );
+  /** Configuration, not a person: whether a code can be asked for at all. */
+  const [gate, setGate] = useState<VerifyStatus | null>(null);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -69,6 +75,12 @@ export function ProfileFlow() {
 
   const screens = useMemo(
     () => (answers ? visibleScreens(answers) : []),
+    [answers],
+  );
+
+  /** The birth years tapped in P4, for the "whose is it" chips. */
+  const children = useMemo(
+    () => (answers ? childOptions(answers) : []),
     [answers],
   );
 
@@ -154,8 +166,44 @@ export function ProfileFlow() {
         default:
           a[question.id] = next;
       }
+      /* Deselecting an option takes its attribution with it — the same rule the
+         school status follows, for the same reason: an orphaned answer about a
+         school nobody picked is a fact about nothing. */
+      if (question.perChild && a.child_of[question.id]) {
+        a.child_of = {
+          ...a.child_of,
+          [question.id]: Object.fromEntries(
+            Object.entries(a.child_of[question.id] ?? {}).filter(([id]) =>
+              next.includes(id),
+            ),
+          ),
+        };
+      }
       a.skipped = s.answers.skipped.filter((id) => id !== screen.id);
       return { ...s, answers: a };
+    });
+  }
+
+  /**
+   * Whose this answer is. Multi-select, because one class genuinely covers two
+   * children — and tapping the only chosen child off is allowed: "they didn't
+   * say" is a real answer, and inventing one would put a fact in the record that
+   * no parent stated.
+   */
+  function toggleChild(question: Question, optionId: string, age: number) {
+    update((s) => {
+      const forQuestion = { ...(s.answers.child_of[question.id] ?? {}) };
+      const current = forQuestion[optionId] ?? [];
+      forQuestion[optionId] = current.includes(age)
+        ? current.filter((a) => a !== age)
+        : [...current, age].sort((a, b) => a - b);
+      return {
+        ...s,
+        answers: {
+          ...s.answers,
+          child_of: { ...s.answers.child_of, [question.id]: forQuestion },
+        },
+      };
     });
   }
 
@@ -250,8 +298,52 @@ export function ProfileFlow() {
     update((s) => ({ ...s, screen_index: target }));
   }
 
+  /**
+   * The number is confirmed **here** — after the questions, before anything is
+   * sent (13 Aug). It sat on the entry screen for a day and was wrong there: a
+   * parent was asked to prove a number before they had seen what the tool even
+   * does, which is the friction the client asked us to keep off the front door.
+   *
+   * Two rules this placement has to keep, and the entry version broke the first:
+   *
+   *  - **it never skips silently.** The status is awaited rather than read from
+   *    whatever a background fetch happened to have finished. Previously a slow
+   *    or failed `/verify/status` left the gate null and the parent walked
+   *    straight past the code — verification looked "missing" and nothing said so.
+   *  - **it never becomes a dead end.** If the status cannot be fetched, or a
+   *    code cannot be sent on this deployment, the session falls back to holding
+   *    everything on the phone and the completion screen asks — the shape that
+   *    has always existed for exactly this.
+   */
+  async function gateNow(): Promise<VerifyStatus | null> {
+    if (gate) return gate;
+    try {
+      const fresh = await verifyStatus();
+      setGate(fresh);
+      return fresh;
+    } catch {
+      return null;
+    }
+  }
+
   async function save() {
     if (!session) return;
+
+    if (holdsUntilVerified(session)) {
+      setSaving(true);
+      const status = await gateNow();
+      setSaving(false);
+      if (status?.required && status.sendable) {
+        track("seed_verify_reached", { at: "profile_end" });
+        setStage("verify");
+        return;
+      }
+    }
+
+    await persist(session);
+  }
+
+  async function persist(current: SeedSession) {
     setSaving(true);
     setSaveError(null);
     try {
@@ -259,14 +351,14 @@ export function ProfileFlow() {
          path, or a deployment that cannot send a code — it stays on the phone and
          travels with everything else at the end (lib/submit.ts). Either way the
          screen says "saved", and either way that is true. */
-      const held = holdsUntilVerified(session);
-      const result = held ? null : await saveProfile(buildProfilePayload(session));
+      const held = holdsUntilVerified(current);
+      const result = held ? null : await saveProfile(buildProfilePayload(current));
       update((s) => ({ ...s, profile_saved_at: new Date().toISOString() }));
       track("seed_profile_saved", {
-        completeness: profileCompleteness(session.answers),
+        completeness: profileCompleteness(current.answers),
         persisted: result?.persisted ?? false,
       });
-      // Straight into the part only they can answer (spec §3.2, estimate 1.4).
+      // Straight into the part only they can answer.
       router.push("/share");
     } catch (err) {
       /* The confirmation ran out mid-flow. The profile is on the phone, the
@@ -288,6 +380,53 @@ export function ProfileFlow() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /* ── The code, once the questions are answered ───────────────── */
+
+  if (stage === "verify" && session.phone) {
+    return (
+      <Screen>
+        <ScreenHeader
+          left={<BackButton onClick={() => setStage("review")} />}
+          below={
+            <div className="mt-1">
+              <Progress total={screens.length + 1} current={screens.length + 1} />
+            </div>
+          }
+        />
+        <ScreenBody className="pt-2">
+          <div className="animate-step-in">
+            <Eyebrow>One quick check</Eyebrow>
+            <h1 className="mt-2.5 font-display text-[1.7rem] font-bold">
+              Confirm your number and this is saved.
+            </h1>
+            <p className="mt-2.5 text-[15px] leading-relaxed text-ink-soft">
+              Ten seconds, and it&apos;s the last thing standing between these
+              answers and your place in the pilot. Nothing has left this phone yet.
+            </p>
+          </div>
+
+          <VerifyPhone
+            phone={session.phone}
+            onVerified={() => {
+              const verified: SeedSession = { ...session, phone_verified: true };
+              saveSession(verified);
+              setSession(verified);
+              track("seed_verified", { at: "profile_end" });
+              void persist(verified);
+            }}
+          />
+
+          {saving && (
+            <p className="mt-4 text-[13.5px] text-muted">Saving your answers…</p>
+          )}
+          {saveError && (
+            <p className="mt-4 text-[13.5px] font-medium text-alert">{saveError}</p>
+          )}
+        </ScreenBody>
+      </Screen>
+    );
   }
 
   /* ── Review ──────────────────────────────────────────────────── */
@@ -325,7 +464,25 @@ export function ProfileFlow() {
                       const status = q.perSelectionStatus
                         ? answers.school_status[id]
                         : undefined;
-                      return status ? `${label} (${statusLabel(status)})` : label;
+                      /* And whose it is, when they said — a school with no child
+                         against it reads as the family's, which is the ambiguity
+                         the question exists to remove. */
+                      const whose =
+                        q.perChild && children.length > 1
+                          ? (answers.child_of[q.id]?.[id] ?? [])
+                              .map(
+                                (age) =>
+                                  children.find((c) => Number(c.id) === age)?.label,
+                              )
+                              .filter(Boolean)
+                          : [];
+                      const detail = [
+                        status ? statusLabel(status) : null,
+                        ...whose,
+                      ].filter(Boolean);
+                      return detail.length > 0
+                        ? `${label} (${detail.join(" · ")})`
+                        : label;
                     }),
                     ...customEntriesFor(q, answers),
                   ];
@@ -474,50 +631,101 @@ export function ProfileFlow() {
                 onRemoveCustom={(value) => removeCustom(question, value)}
               />
 
-              {/* P5 — each school gets its own status. "Former" is a real signal:
+              {/* Per selection, two follow-ups on the same card.
+                  P5 — each school gets its own status. "Former" is a real signal:
                   a parent who has been through admissions is exactly who someone
-                  needs, so we keep them matchable instead of dropping them. */}
-              {question.perSelectionStatus &&
+                  needs, so we keep them matchable instead of dropping them.
+                  And, for anything that belongs to a child rather than to the
+                  household, **whose it is** — asked only when the family has more
+                  than one, because with one child there is nothing to ask. */}
+              {(question.perSelectionStatus ||
+                (question.perChild && children.length > 1)) &&
                 selectionsFor(question, answers).length > 0 && (
                   <div className="mt-4 space-y-2.5">
                     <p className="text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
-                      {question.perSelectionStatus.label}
+                      {question.perSelectionStatus?.label ?? "For each one"}
                     </p>
-                    {selectionsFor(question, answers).map((optionId) => (
-                      <div
-                        key={optionId}
-                        className="rounded-2xl border border-bark bg-card p-3"
-                      >
-                        <p className="text-[14.5px] font-semibold">
-                          {labelForOption(question, market, answers, optionId)}
-                        </p>
+                    {selectionsFor(question, answers).map((optionId) => {
+                      const optionLabel = labelForOption(
+                        question,
+                        market,
+                        answers,
+                        optionId,
+                      );
+                      return (
                         <div
-                          role="radiogroup"
-                          aria-label={`Status for ${labelForOption(question, market, answers, optionId)}`}
-                          className="mt-2 flex flex-wrap gap-2"
+                          key={optionId}
+                          className="rounded-2xl border border-bark bg-card p-3"
                         >
-                          {question.perSelectionStatus!.options.map((status) => {
-                            const on = answers.school_status[optionId] === status.id;
-                            return (
-                              <button
-                                key={status.id}
-                                type="button"
-                                role="radio"
-                                aria-checked={on}
-                                onClick={() => setStatus(optionId, status.id)}
-                                className={
-                                  on
-                                    ? "min-h-[44px] rounded-full border border-green bg-green-wash px-3.5 text-[14px] font-semibold text-green-deep"
-                                    : "min-h-[44px] rounded-full border border-bark px-3.5 text-[14px] font-medium text-ink-soft"
-                                }
+                          <p className="text-[14.5px] font-semibold">{optionLabel}</p>
+
+                          {question.perSelectionStatus && (
+                            <div
+                              role="radiogroup"
+                              aria-label={`Status for ${optionLabel}`}
+                              className="mt-2 flex flex-wrap gap-2"
+                            >
+                              {question.perSelectionStatus.options.map((status) => {
+                                const on =
+                                  answers.school_status[optionId] === status.id;
+                                return (
+                                  <button
+                                    key={status.id}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={on}
+                                    onClick={() => setStatus(optionId, status.id)}
+                                    className={
+                                      on
+                                        ? "min-h-[44px] rounded-full border border-green bg-green-wash px-3.5 text-[14px] font-semibold text-green-deep"
+                                        : "min-h-[44px] rounded-full border border-bark px-3.5 text-[14px] font-medium text-ink-soft"
+                                    }
+                                  >
+                                    {status.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {question.perChild && children.length > 1 && (
+                            <div className="mt-3">
+                              <p className="text-[13px] text-muted">
+                                Which of your children?
+                              </p>
+                              <div
+                                aria-label={`Which child ${optionLabel} is for`}
+                                className="mt-1.5 flex flex-wrap gap-2"
                               >
-                                {status.label}
-                              </button>
-                            );
-                          })}
+                                {children.map((child) => {
+                                  const age = Number(child.id);
+                                  const on = (
+                                    answers.child_of[question.id]?.[optionId] ?? []
+                                  ).includes(age);
+                                  return (
+                                    <button
+                                      key={child.id}
+                                      type="button"
+                                      aria-pressed={on}
+                                      onClick={() =>
+                                        toggleChild(question, optionId, age)
+                                      }
+                                      className={
+                                        on
+                                          ? "min-h-[44px] rounded-full border border-green bg-green-wash px-3.5 text-[14px] font-semibold text-green-deep"
+                                          : "min-h-[44px] rounded-full border border-bark px-3.5 text-[14px] font-medium text-ink-soft"
+                                      }
+                                    >
+                                      {child.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

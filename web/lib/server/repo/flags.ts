@@ -137,9 +137,18 @@ export async function extractAndFlag(
 
   if (!result) return { scored: false, flags };
 
+  /**
+   * The score and its reason are written together, for every scored card rather
+   * than only for the ones that also raise a flag. A number an admin is asked to
+   * sort a queue by should say what it is a number *about* — before this, a card
+   * at 0.85 carried no reasoning anywhere, and one at 0.35 only carried it as a
+   * side effect of being flagged.
+   */
   await db.execute(
-    sql`update share_contributions set confidence = ${result.confidence}
-        where id = ${contributionId}::uuid`,
+    sql`update share_contributions
+           set confidence = ${result.confidence},
+               confidence_note = ${result.note === "" ? null : result.note}
+         where id = ${contributionId}::uuid`,
   );
 
   /**

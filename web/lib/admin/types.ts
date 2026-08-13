@@ -248,8 +248,13 @@ export interface ContributionRow {
   follow_up_ok: boolean;
   tip_text: string | null;
   status: ReviewStatus;
-  /** From the extraction engine (1.8). 0–1, null until that workflow runs. */
+  /** 0–1, from the review pass. Null until it has run, and after an edit. */
   confidence: number | null;
+  /**
+   * Why the score is what it is, in the reviewer's words rather than the
+   * parent's — written by the same pass, cleared with the score.
+   */
+  confidence_note: string | null;
   provenance: Provenance;
   contributor: { id: string; name: string | null } | null;
   is_test: boolean;

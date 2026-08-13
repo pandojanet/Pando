@@ -16,7 +16,6 @@ import {
 import { Wordmark } from "@/components/ui/Logo";
 import { track } from "@/lib/analytics";
 import { validateInvite, verifyStatus, type VerifyStatus } from "@/lib/api-client";
-import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -55,7 +54,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
   /** "form" until the details are in; "verify" while the code is being confirmed. */
-  const [stage, setStage] = useState<"form" | "verify">("form");
   const [session, setSession] = useState<SeedSession | null>(null);
   /**
    * How this deployment is configured. Asked on mount rather than at the tap, so
@@ -185,34 +183,17 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     });
 
     /**
-     * Who skips the code, and why each of them is right to:
-     *  - the **anonymous path** has no number to confirm and never had;
-     *  - a **resumed session that already confirmed one** should not be asked
-     *    twice on the same device;
-     *  - a deployment where a code **cannot arrive** (`sendable: false`, which is
-     *    production until the A2P campaign is approved) or **is not required**
-     *    (`SEED_REQUIRE_VERIFICATION=0`). There the old shape still applies:
-     *    everything is held on the phone and the gate at the end deals with it.
-     *    Blocking entry instead would take the whole tool offline for a carrier
-     *    approval that has nothing to do with this parent.
+     * The code is **not** asked for here (13 Aug). It sat on this screen for a
+     * day, and it was the wrong door: a parent who has not yet seen a single
+     * question was being asked to prove a phone number, which is exactly the
+     * friction the client wanted kept off the entrance.
+     *
+     * It now sits at the end of the profile — the answers are on this phone until
+     * then, so the rule that matters is unchanged: abandon before the code and
+     * nothing exists anywhere. `ProfileFlow` owns it, and it awaits the status
+     * rather than reading whatever a background fetch had finished, which is what
+     * used to let a slow response wave somebody straight past it.
      */
-    const canVerifyNow =
-      !anonymous && e164 !== null && gate?.required === true && gate.sendable;
-
-    if (canVerifyNow && !saved.phone_verified) {
-      setSession(saved);
-      setStage("verify");
-      return;
-    }
-
-    router.push("/profile");
-  }
-
-  /** The code was confirmed. From here, everything this parent does is saved as it happens. */
-  function onVerified() {
-    const current = loadSession();
-    if (current) saveSession({ ...current, phone_verified: true });
-    track("seed_verified_at_entry");
     router.push("/profile");
   }
 
@@ -294,47 +275,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     );
   }
 
-  /**
-   * The code, before the questionnaire rather than after it.
-   *
-   * Deliberately its own screen and not a modal: this is the moment the parent
-   * stops being anonymous to us, and it deserves the whole viewport and a way
-   * back. Nothing has been sent yet — their details are on this phone — so
-   * "Use a different number" is a real, safe exit.
-   */
-  if (stage === "verify" && session?.phone) {
-    return (
-      <Screen>
-        <ScreenHeader left={<Wordmark />} />
-        <ScreenBody className="pt-7">
-          <div className="animate-rise">
-            <Eyebrow>One quick check</Eyebrow>
-            <h1 className="mt-2.5 font-display text-[1.7rem] font-extrabold leading-[1.1]">
-              Let&apos;s confirm your number first.
-            </h1>
-            <p className="mt-3 text-[16px] leading-relaxed text-ink-soft">
-              It takes ten seconds, and it&apos;s what lets Pando keep what you
-              share as you go — rather than holding it all on this phone until the
-              end. Nothing has been sent to us yet.
-            </p>
-          </div>
-
-          <VerifyPhone
-            phone={session.phone}
-            onVerified={onVerified}
-          />
-
-          <button
-            type="button"
-            onClick={() => setStage("form")}
-            className="mt-5 min-h-11 text-[14.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
-          >
-            Use a different number
-          </button>
-        </ScreenBody>
-      </Screen>
-    );
-  }
 
   return (
     <Screen>
@@ -505,7 +445,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
 
             <p className="mt-3 text-[13px] leading-relaxed text-muted">
               {gate?.required && gate.sendable
-                ? "Next: a 6-digit code, so we know the number is yours."
+                ? "Once you've answered the questions, we'll text a 6-digit code — that's what saves them."
                 : "We'll send a 6-digit code to confirm the number when you finish."}
             </p>
 

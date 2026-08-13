@@ -42,11 +42,13 @@ export type SeedEvent =
   | "seed_verify_failed"
   | "seed_verify_confirmed"
   /**
-   * The code was confirmed at the entry screen, before the questionnaire. Its own
-   * event because it is now the flow's biggest single gate: everything after it is
-   * saved as it happens, and everyone who drops here leaves nothing behind at all.
+   * The code step was reached, and then passed, at the end of the profile. Its own
+   * pair because this is the flow's biggest single gate: everything after it is
+   * saved as it happens, and everyone who drops between the two leaves nothing
+   * behind at all. The gap between them is the number to watch.
    */
-  | "seed_verified_at_entry"
+  | "seed_verify_reached"
+  | "seed_verified"
   /** A write was refused mid-flow: the session fell back to holding on the phone. */
   | "seed_verification_expired"
   | "seed_demand_response_shown"

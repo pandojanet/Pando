@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   Badge,
@@ -18,11 +19,25 @@ import {
   yearList,
   when,
 } from "@/components/admin/ui";
+import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { useAdminRows } from "@/lib/admin/client";
 import type { ContributorRow } from "@/lib/admin/types";
 
-/** Estimate 2.3 — contributors list. Detail lives at /admin/contributors/[id]. */
+/**
+ * Everyone who came through, in two views of the same people: what they shared,
+ * and what they agreed to.
+ *
+ * The consent file used to be its own item in the nav, and reading it cold gave
+ * no clue why it existed. It is the same population asked a different question,
+ * so it is a tab here — and it keeps the properties that make it evidence: the
+ * number in full, test rows shown and labelled, and an audit row written every
+ * time it is read.
+ */
 export default function ContributorsPage() {
+  /* ?view=consents is where the old /admin/consents address lands. */
+  const initialView =
+    useSearchParams().get("view") === "consents" ? "consents" : "people";
+  const [view, setView] = useState<"people" | "consents">(initialView);
   const { rows, configured, sample, demo, setDemo, loading, error } =
     useAdminRows<ContributorRow[]>("contributors");
   const [search, setSearch] = useState("");
@@ -108,6 +123,33 @@ export default function ContributorsPage() {
         }
       />
 
+      <div className="mb-4 flex gap-1.5">
+        {(
+          [
+            ["people", "What they shared"],
+            ["consents", "What they agreed to"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setView(key)}
+            aria-pressed={view === key}
+            className={
+              view === key
+                ? "min-h-10 rounded-full border border-green bg-green-wash px-3.5 text-[13.5px] font-semibold text-green-deep"
+                : "min-h-10 rounded-full border border-bark px-3.5 text-[13.5px] font-medium text-muted hover:text-ink"
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "consents" && <ConsentRecords />}
+
+      {view === "people" && (
+        <>
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
 
@@ -210,6 +252,8 @@ export default function ContributorsPage() {
           </TableWrap>
         )}
       </Card>
+        </>
+      )}
     </>
   );
 }

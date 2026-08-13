@@ -208,10 +208,10 @@ export default function InvitesPage() {
 
       {retired.length > 0 && (
         <div className="mt-4">
-          <Card title={`Retired (${retired.length})`}>
+          <Card title={`No longer shared (${retired.length})`}>
             <InviteTable rows={retired} busy={busy} onAction={run} />
             <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
-              A retired code still lets a parent in — it just records no group. The
+              A stopped code still lets a parent in — it just records no group. The
               link was already forwarded; making it a dead end punishes the wrong
               person.
             </p>
@@ -307,26 +307,26 @@ function InviteTable({
                 <Button
                   tone="secondary"
                   disabled={busy}
-                  title="Stops it being handed out. Anyone holding the link still gets in."
+                  title="Stops this link being handed out. Anyone already holding it still gets in — it just stops counting towards this group."
                   onClick={() =>
-                    void onAction("Retired", async () =>
+                    void onAction("Stopped sharing", async () =>
                       adminAction({ action: "invite.retire", id: row.id }),
                     )
                   }
                 >
-                  Retire
+                  Stop sharing
                 </Button>
               ) : (
                 <Button
                   tone="secondary"
                   disabled={busy}
                   onClick={() =>
-                    void onAction("Back in use", async () =>
+                    void onAction("Shared again", async () =>
                       adminAction({ action: "invite.restore", id: row.id }),
                     )
                   }
                 >
-                  Put back
+                  Share again
                 </Button>
               )}
             </Td>

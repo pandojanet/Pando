@@ -304,7 +304,10 @@ export default function ContributionsPage() {
                         )}
                       </Td>
                       <Td>
-                        <ConfidenceBadge value={row.confidence} />
+                        <ConfidenceBadge
+                          value={row.confidence}
+                          note={row.confidence_note}
+                        />
                       </Td>
                       <Td className="text-[13px]">
                         {row.contributor?.name ?? "—"}

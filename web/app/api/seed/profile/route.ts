@@ -19,7 +19,7 @@ import {
   derivePendingOptions,
 } from "@/lib/derive";
 import { EMPTY_ANSWERS } from "@/lib/questions";
-import type { ProfilePayload, QuestionId } from "@/lib/types";
+import type { ProfileAnswers, ProfilePayload, QuestionId } from "@/lib/types";
 
 /**
  * POST /api/seed/profile — save the tap-first profile (spec §16.1).
@@ -163,10 +163,38 @@ export async function POST(request: Request) {
    * server-cleaned, so this is not the "stored session overwrites a default with
    * null" trap that `lib/storage.ts` exists to prevent — nothing here can be null.
    */
+  /**
+   * "Whose is it" — question id → option id → the ages this answer belongs to.
+   *
+   * Cleaned against `childAges` rather than trusted: an age nobody tapped would
+   * put a child in the graph who does not exist, and the whole point of this
+   * field is that a "same school" edge means two children of a similar age.
+   */
+  const childOf: Record<string, Record<string, number[]>> = {};
+  for (const [questionId, perOption] of Object.entries(
+    (answersIn?.child_of ?? {}) as Record<string, unknown>,
+  )) {
+    const key = cleanId(questionId);
+    if (!key || typeof perOption !== "object" || perOption === null) continue;
+    const cleaned: Record<string, number[]> = {};
+    for (const [optionId, ages] of Object.entries(
+      perOption as Record<string, unknown>,
+    )) {
+      const option = cleanId(optionId);
+      if (!option || !Array.isArray(ages)) continue;
+      const kept = ages
+        .filter((a): a is number => typeof a === "number" && childAges.includes(a))
+        .slice(0, 12);
+      if (kept.length > 0) cleaned[option] = kept;
+    }
+    if (Object.keys(cleaned).length > 0) childOf[key] = cleaned;
+  }
+
   const answers = {
     ...EMPTY_ANSWERS,
     neighborhood,
     child_ages: childAges,
+    child_of: childOf as ProfileAnswers["child_of"],
     allowance: cleanId(answersIn?.allowance),
     attribution: cleanId(answersIn?.attribution),
     time_in_area: cleanId(answersIn?.time_in_area),

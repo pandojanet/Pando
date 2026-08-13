@@ -150,7 +150,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
          */
         await tx.execute(
           sql`update share_contributions
-              set ${sql.join(sets, sql`, `)}, confidence = null
+              set ${sql.join(sets, sql`, `)}, confidence = null, confidence_note = null
               where id = ${target}::uuid`,
         );
       }

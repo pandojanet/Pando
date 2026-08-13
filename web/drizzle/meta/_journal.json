@@ -71,6 +71,13 @@
       "when": 1786556400000,
       "tag": "0009_rename_places_to_shares",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786561200000,
+      "tag": "0010_per_child_and_confidence_note",
+      "breakpoints": true
     }
   ]
 }

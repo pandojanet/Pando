@@ -129,6 +129,16 @@ export interface Question {
    * homeschool). Stored in `answers.school_status`, keyed by option id.
    */
   perSelectionStatus?: { label: string; options: Option[] };
+  /**
+   * The answer belongs to a **child**, not to the household — a school, a class,
+   * a camp. Each selection then asks whose it is, by the birth year the parent
+   * already tapped, and only when there is more than one child to choose between.
+   *
+   * Without it "same school" matches two families whose children are nine years
+   * apart, which is the opposite of what that signal is for. Stored in
+   * `answers.child_of` and written to `child_birth_years` on the row it produces.
+   */
+  perChild?: boolean;
 }
 
 export interface Screen {
@@ -157,6 +167,15 @@ export interface ProfileAnswers {
   schools: string[];
   /** P5 — school option id → current | former | not_yet | homeschool. */
   school_status: Record<string, string>;
+  /**
+   * Whose it is. Question id → option id → the **ages** tapped in P4 (the same
+   * numbers as `child_ages`; a birth year is what the parent sees and what gets
+   * stored, converted at capture like everything else child-shaped).
+   *
+   * Only asked when a family has more than one child, and skippable — an empty
+   * entry means "they didn't say", never "nobody's".
+   */
+  child_of: Partial<Record<QuestionId, Record<string, number[]>>>;
   classes: string[];
   /** v3.2 §8.4 — the seasonal half of the same signal as `classes`. */
   camps: string[];
@@ -262,6 +281,11 @@ export interface AffinityRow {
   affinity_type: AffinityType;
   affinity_value: string;
   score_weight: number;
+  /**
+   * Birth years, for the edges that belong to a child (school, class, camp).
+   * Null on household-level edges and when the parent skipped saying whose it is.
+   */
+  child_birth_years?: number[] | null;
 }
 
 export interface RelevanceRow {
