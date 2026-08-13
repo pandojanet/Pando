@@ -43,7 +43,7 @@ try {
     ["children", "children"],
     ["submissions", "submissions"],
     ["places", "places"],
-    ["place_contributions", "place_contributions"],
+    ["share_contributions", "share_contributions"],
     ["caregivers", "caregivers"],
     ["caregiver_nominations", "caregiver_nominations"],
     ["restricted_notes", "restricted_notes"],
@@ -74,10 +74,10 @@ try {
 
   console.log("\n── extraction (1.8) ───────────────────────────────────");
   const scored = await one(
-    sql`select count(*)::int from place_contributions where confidence is not null`,
+    sql`select count(*)::int from share_contributions where confidence is not null`,
   );
   const unscored = await one(
-    sql`select count(*)::int from place_contributions where confidence is null`,
+    sql`select count(*)::int from share_contributions where confidence is null`,
   );
   console.log(`  scored: ${scored}   unscored: ${unscored}`);
   if (unscored > 0) {
@@ -103,7 +103,7 @@ try {
    * constraint, or one changed by hand.
    */
   const goldenUnapproved = await one(sql`
-    select count(*)::int from places where answer_ready and status <> 'approved'
+    select count(*)::int from shares where answer_ready and status <> 'approved'
   `);
   /** The Product Strategy's rule for a claim about a named person. */
   const allegationUsable = await one(sql`

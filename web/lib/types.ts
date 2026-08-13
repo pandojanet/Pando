@@ -92,7 +92,6 @@ export type QuestionId =
   | "faith"
   | "clubs"
   | "parent_groups"
-  | "invite_group"
   | "time_in_area"
   | "moved_from"
   | "family_structure"
@@ -165,7 +164,6 @@ export interface ProfileAnswers {
   clubs: string[];
   parent_groups: string[];
   /** Which group the invite link came from — powers founding recognition. */
-  invite_group: string | null;
   time_in_area: string | null;
   moved_from: string | null;
   family_structure: string[];
@@ -207,16 +205,6 @@ export interface SeedSession {
   version: 1;
   /** The invite code the link carried. Identifies a **group**, never a person. */
   invite_code: string | null;
-  /**
-   * The group that code resolved to, when an admin linked it to one. Held so P6
-   * can *confirm* — "You joined through Field Elementary PTA. Is that one of your
-   * communities?" — rather than ask a parent to find their own group in a list.
-   *
-   * It never becomes an affinity edge on its own. A link forwarded out of the
-   * group is not evidence the person who opened it belongs to it; only their yes
-   * is, which is why this is copy on a screen and not a derivation input.
-   */
-  invite_group: { value: string; label: string } | null;
   market_id: MarketId;
   /** "qr" | "link" | "direct" — where this contributor came from. */
   source: string;
@@ -333,7 +321,6 @@ export interface ProfilePayload {
   school_status: Record<string, string>;
   time_in_area: string | null;
   moved_from: string | null;
-  invited_via_group: string | null;
   answers: ProfileAnswers;
   social_affinities: AffinityRow[];
   life_relevance: RelevanceRow[];

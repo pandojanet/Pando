@@ -15,12 +15,25 @@ import { cachedInvites, cacheInvites, type InviteRecord } from "./invite-cache";
  * `invites` table exists, is which parent group a contributor arrived through —
  * the one thing "one shared link" could never answer.
  *
- * Two sources, in this order:
+ * ## Where a code comes from
  *
- *  1. **The `invites` table**, which an admin manages at `/admin/invites`.
- *  2. **`SEED_INVITE_CODES`** — `"sgv-founding:pasadena,pasadena:pasadena"` — kept as
- *     the fallback so an unconfigured or unreachable database still lets a parent
- *     in. Same honesty rule as `persisted: false`: degrade, never blank.
+ *  1. **With a database, the `invites` table is the only source** (12 Aug). Not
+ *     "unless it is empty" — if there is a store to read, it is the answer, even
+ *     when the answer is "no invites exist yet". A built-in code that keeps working
+ *     next to a real table is a way in that no admin created and no admin can
+ *     retire, which is precisely what was wrong with `sgv-founding` outliving it.
+ *  2. **`SEED_INVITE_CODES` applies only when there is no database at all.** That
+ *     is the laptop-and-sample-data case, where nothing could be stored anyway.
+ *  3. **An unreadable store falls back to the env list** — the one place this
+ *     deliberately differs from `admin_users`, which fails closed. There, an outage
+ *     that let a revoked admin in would be a security failure; here, an outage that
+ *     turned every invite link into a dead end would take the tool offline for
+ *     people who did nothing wrong. What is lost is attribution, and attribution is
+ *     recoverable.
+ *
+ * **The consequence to accept:** a fresh deployment with a database and no invites
+ * yet admits nobody by code. That is the same shape as the admin being dark until
+ * somebody is added, and the fix is the same — one invite at `/admin/invites`.
  *
  * An **unknown or retired code still lets the parent in**, with the market falling
  * back and no attribution recorded. A typo in a link forwarded around a group chat
@@ -50,10 +63,19 @@ export function normalizeCode(code: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-/** Active invites, keyed by code. Cached — see `invite-cache.ts` for why. */
-async function liveInvites(): Promise<Map<string, InviteRecord>> {
+/**
+ * Active invites, keyed by code — and **whether there was a store to read at
+ * all**, which is the difference between "no invites exist" and "no database
+ * exists". Only the second one may fall back to the environment.
+ *
+ * Cached; see `invite-cache.ts` for why that matters on the first screen.
+ */
+async function liveInvites(): Promise<{
+  table: Map<string, InviteRecord>;
+  authoritative: boolean;
+}> {
   const hit = cachedInvites();
-  if (hit) return hit;
+  if (hit) return { table: hit, authoritative: true };
 
   const result = await withDb(async (db) => {
     const rows = (await db.execute(
@@ -64,22 +86,27 @@ async function liveInvites(): Promise<Map<string, InviteRecord>> {
   });
 
   const table = new Map<string, InviteRecord>();
-  if (result.persisted) {
-    for (const row of result.data) {
-      table.set(String(row.code), {
-        id: String(row.id),
-        code: String(row.code),
-        market_id: String(row.market_id) as MarketId,
-        label: String(row.label),
-        group_option_value:
-          typeof row.group_option_value === "string"
-            ? row.group_option_value
-            : null,
-      });
-    }
-    cacheInvites(table);
+  if (!result.persisted) {
+    /* No database, or it could not be read. Either way there is no store to be
+       authoritative, so the env list answers — see the header for why this one
+       degrades open while `admin_users` fails closed. */
+    return { table, authoritative: false };
   }
-  return table;
+
+  for (const row of result.data) {
+    table.set(String(row.code), {
+      id: String(row.id),
+      code: String(row.code),
+      market_id: String(row.market_id) as MarketId,
+      label: String(row.label),
+      group_option_value:
+        typeof row.group_option_value === "string"
+          ? row.group_option_value
+          : null,
+    });
+  }
+  cacheInvites(table);
+  return { table, authoritative: true };
 }
 
 export async function validateInviteCode(
@@ -97,7 +124,8 @@ export async function validateInviteCode(
     };
   }
 
-  const invite = (await liveInvites()).get(normalized);
+  const { table: live, authoritative } = await liveInvites();
+  const invite = live.get(normalized);
   if (invite) {
     return {
       valid: true,
@@ -109,8 +137,23 @@ export async function validateInviteCode(
     };
   }
 
-  /* Not in the table — either there is no database, or this code predates it.
-     The env list is what the pilot ran on before `/admin/invites` existed. */
+  /**
+   * There is a store, and this code is not in it — so it is not an invite,
+   * whatever `SEED_INVITE_CODES` says. **Including when the store is empty:** a
+   * built-in code that works next to a real table is a door no admin opened and
+   * no admin can close.
+   */
+  if (authoritative) {
+    return {
+      valid: false,
+      market_id: fallback,
+      market_label: MARKET_LABELS[fallback],
+      reason: "unknown",
+    };
+  }
+
+  /* No store at all: the env list is the whole answer, which is what keeps the
+     flow walkable on a laptop with no database. */
   const market = codeTable()[normalized];
   if (!market) {
     return {

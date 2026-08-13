@@ -43,7 +43,6 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   faith: [],
   clubs: [],
   parent_groups: [],
-  invite_group: null,
   time_in_area: null,
   moved_from: null,
   family_structure: [],
@@ -345,21 +344,21 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: "Another community",
       },
-      {
-        /**
-         * The group the invite came from. The client's version reads "You joined
-         * through [group]. Is that one of your communities?" — with one shared
-         * link we can't name the group, so we ask which one it was. It doubles as
-         * attribution (`affinity.invite_source`) and as a membership for matching.
-         */
-        id: "invite_group",
-        label: "Where this link reached you",
-        kind: "single",
-        source: { type: "market", category: "parent_groups" },
-        affinity: { type: "social_group", weight: 3 },
-        allowOther: true,
-        otherLabel: "Somewhere else",
-      },
+      /**
+       * "Where this link reached you" used to be a question here. It was removed
+       * on 12 Aug, when invites became one row per group: the link now *knows*
+       * which group it was posted in, so asking the parent to find it in a list
+       * was asking them to re-enter something we already had — and it produced a
+       * second, weaker copy of a fact `people.invite_id` holds exactly.
+       *
+       * What each half does now, and why they stay apart:
+       *  - **attribution** comes from the invite, server-side, from the code the
+       *    server validated (`invited_via_group`);
+       *  - **membership** comes from "Parent groups" above, because that is the
+       *    question that asks it. A link forwarded out of a group is evidence
+       *    somebody shared it, never that whoever opened it belongs there — so an
+       *    invite still writes no affinity edge on its own.
+       */
     ],
   },
   {
@@ -549,7 +548,7 @@ export const SCREENS: Screen[] = [
 ];
 
 /** Questions whose chip lists are sensitive enough to always offer an out. */
-const SENSITIVE: QuestionId[] = ["faith", "clubs", "parent_groups", "invite_group"];
+const SENSITIVE: QuestionId[] = ["faith", "clubs", "parent_groups"];
 
 const PREFER_NOT: Option = {
   id: "prefer_not_to_say",
@@ -640,8 +639,6 @@ function rawSelectionsFor(
   switch (question.id) {
     case "neighborhood":
       return answers.neighborhood ? [answers.neighborhood] : [];
-    case "invite_group":
-      return answers.invite_group ? [answers.invite_group] : [];
     case "time_in_area":
       return answers.time_in_area ? [answers.time_in_area] : [];
     case "moved_from":

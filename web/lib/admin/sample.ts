@@ -303,7 +303,7 @@ export const sampleContributions: ContributionRow[] = [
   {
     id: "a1",
     kind: "activity",
-    place: {
+    share: {
       id: "p1",
       name: "Little Maestros",
       venue: "on Mission Ave",
@@ -339,7 +339,7 @@ export const sampleContributions: ContributionRow[] = [
   {
     id: "a2",
     kind: "activity",
-    place: {
+    share: {
       id: "p2",
       name: "Rose Bowl Aquatics parent & me",
       venue: null,
@@ -376,7 +376,7 @@ export const sampleContributions: ContributionRow[] = [
   {
     id: "t1",
     kind: "tip",
-    place: {
+    share: {
       id: "p3",
       name: "Camp registration timing",
       venue: null,
@@ -870,7 +870,7 @@ export const sampleAudit: AuditRow[] = [
     at: now,
     user: "andrii",
     action: "contribution.approve",
-    resource: "place_contribution",
+    resource: "share_contribution",
     resource_id: "a1",
     before: { status: "pending_review" },
     after: { status: "approved" },

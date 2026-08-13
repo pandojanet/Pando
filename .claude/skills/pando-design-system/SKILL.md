@@ -25,6 +25,7 @@ value in a component. If a colour isn't in the theme, it isn't in the product.
 | `green-wash`              | `#EEF2E8` | Positive/reassurance notes.                      |
 | `gold`                     | `#D9A31C` | Highlighter, focus ring, founding badge.         |
 | `gold-wash`/`gold-line`/`gold-ink` | —  | Warnings, "other" chips, pending states.         |
+| `alert`/`alert-wash`/`alert-line` | — | The only red, and **not a brand colour**. Reserved for what is owed a person *today*: an escalated flag, a high-stakes D1 question, a rejected record, an error line. Gold already means "pending" — if red starts meaning that too, neither means anything. Added 10 Aug, replacing three literal hexes that had been copy-pasted through `components/admin/*`, which is exactly what the rule above the table forbids and exactly the cost of breaking it: nothing else could reuse them. |
 | `moss`                     | `#26331D` | Dark bands, sheet scrims.                        |
 
 Rules that keep it coherent:

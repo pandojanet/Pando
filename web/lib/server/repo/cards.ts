@@ -6,8 +6,8 @@ import {
   caregiverNominations,
   caregivers,
   flags,
-  placeContributions,
-  places,
+  shareContributions,
+  shares,
   restrictedNotes,
   submissions,
 } from "@/lib/db/schema";
@@ -27,7 +27,7 @@ import {
  *    prevent.
  *  - **`client_id` is the idempotency key.** Tapping a recap row to fix one
  *    answer re-sends the same card; that must update in place, never create a
- *    second contribution (unique on place_id + submission_id backs this up).
+ *    second contribution (unique on share_id + submission_id backs this up).
  */
 
 export type CardKind = "activity" | "caregiver" | "place" | "tip";
@@ -111,16 +111,16 @@ export async function saveCard(
       return { record_id: recordId, submission_id: submission.id, updated };
     }
 
-    const recordId = await writePlaceCard(tx, input, submission.id);
+    const recordId = await writeShareCard(tx, input, submission.id);
     return { record_id: recordId, submission_id: submission.id, updated };
   });
 }
 
-/* ── Activities, places and tips ─────────────────────────────────────────── */
+/* ── Activities, camps, places and tips ─────────────────────────────────────────── */
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-async function writePlaceCard(
+async function writeShareCard(
   tx: Tx,
   input: CardInput,
   submissionId: string,
@@ -135,23 +135,23 @@ async function writePlaceCard(
    * because silently folding two different places together corrupts both.
    */
   const [found] = await tx
-    .select({ id: places.id })
-    .from(places)
+    .select({ id: shares.id })
+    .from(shares)
     .where(
       and(
-        eq(places.marketId, input.market_id),
-        eq(places.kind, input.kind),
-        sql`lower(${places.name}) = lower(${name})`,
+        eq(shares.marketId, input.market_id),
+        eq(shares.kind, input.kind),
+        sql`lower(${shares.name}) = lower(${name})`,
       ),
     )
     .limit(1);
 
-  let placeId: string;
+  let shareId: string;
   if (found) {
-    placeId = found.id;
+    shareId = found.id;
   } else {
     const [created] = await tx
-      .insert(places)
+      .insert(shares)
       .values({
         marketId: input.market_id,
         kind: input.kind,
@@ -163,11 +163,11 @@ async function writePlaceCard(
         topic: str(f.topic),
         isTest: input.is_test,
       })
-      .returning({ id: places.id });
-    placeId = created.id;
+      .returning({ id: shares.id });
+    shareId = created.id;
 
-    await flagNearDuplicatePlace(tx, {
-      placeId,
+    await flagNearDuplicateShare(tx, {
+      shareId,
       marketId: input.market_id,
       kind: input.kind,
       name,
@@ -187,7 +187,7 @@ async function writePlaceCard(
   const safeBand = bandNeedsUnit && priceUnit === null ? null : priceBand;
 
   const values = {
-    placeId,
+    shareId,
     personId: input.person_id,
     submissionId,
     /** R2 — decides the label, and whether this can ever count toward Founding. */
@@ -211,13 +211,13 @@ async function writePlaceCard(
   };
 
   const [row] = await tx
-    .insert(placeContributions)
+    .insert(shareContributions)
     .values(values)
     .onConflictDoUpdate({
-      target: [placeContributions.placeId, placeContributions.submissionId],
+      target: [shareContributions.shareId, shareContributions.submissionId],
       set: values,
     })
-    .returning({ id: placeContributions.id });
+    .returning({ id: shareContributions.id });
 
   return row.id;
 }
@@ -227,10 +227,10 @@ async function writePlaceCard(
  * only when something similar already exists — raising one for every new place
  * would make the queue meaningless.
  */
-async function flagNearDuplicatePlace(
+async function flagNearDuplicateShare(
   tx: Tx,
   place: {
-    placeId: string;
+    shareId: string;
     marketId: string;
     kind: CardKind;
     name: string;
@@ -240,14 +240,14 @@ async function flagNearDuplicatePlace(
   if (place.isTest) return;
 
   const similar = await tx
-    .select({ id: places.id })
-    .from(places)
+    .select({ id: shares.id })
+    .from(shares)
     .where(
       and(
-        eq(places.marketId, place.marketId),
-        eq(places.kind, place.kind),
-        sql`${places.id} <> ${place.placeId}`,
-        sql`similarity(lower(${places.name}), lower(${place.name})) > 0.55`,
+        eq(shares.marketId, place.marketId),
+        eq(shares.kind, place.kind),
+        sql`${shares.id} <> ${place.shareId}`,
+        sql`similarity(lower(${shares.name}), lower(${place.name})) > 0.55`,
       ),
     )
     .limit(1);
@@ -256,9 +256,9 @@ async function flagNearDuplicatePlace(
 
   await tx.insert(flags).values({
     severity: "note",
-    reason: "possible_duplicate_place",
+    reason: "possible_duplicate_share",
     subjectKind: "place",
-    subjectId: place.placeId,
+    subjectId: place.shareId,
     field: "name",
   });
 }

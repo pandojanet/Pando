@@ -80,9 +80,11 @@ export async function extractAndFlag(
     sql`
       select pc.id, pc.person_id, pc.what_makes_it_great, pc.caveat, pc.tip_text,
              pc.who_for, pc.who_not_for, pc.last_there, pc.is_test,
+             pc.price_band, pc.price_unit, pc.worth_it, pc.how_much,
+             pc.recommendation, pc.child_age_at_time,
              pl.name as place_name, pl.kind, pl.freshness_state
-      from place_contributions pc
-      join places pl on pl.id = pc.place_id
+      from share_contributions pc
+      join shares pl on pl.id = pc.share_id
       where pc.id = ${contributionId}::uuid
       limit 1
     `,
@@ -102,7 +104,7 @@ export async function extractAndFlag(
     const { created } = await writeFlagIfNew(db, {
       severity: "note",
       reason: "stale_at_capture",
-      subject_kind: "place_contribution",
+      subject_kind: "share_contribution",
       subject_id: contributionId,
       field: "last_there",
       person_id: (row.person_id as string | null) ?? null,
@@ -120,12 +122,23 @@ export async function extractAndFlag(
     tip_text: (row.tip_text as string | null) ?? null,
     who_for: (row.who_for as string | null) ?? null,
     who_not_for: (row.who_not_for as string | null) ?? null,
+    /* The taps, so a complete card is not marked down for a price that lives in
+       another column. See `ExtractionInput.captured`. */
+    captured: {
+      price_band: (row.price_band as string | null) ?? null,
+      price_unit: (row.price_unit as string | null) ?? null,
+      worth_it: (row.worth_it as string | null) ?? null,
+      last_there: (row.last_there as string | null) ?? null,
+      how_much: (row.how_much as string | null) ?? null,
+      recommendation: (row.recommendation as string | null) ?? null,
+      child_ages: (row.child_age_at_time as number[] | null) ?? null,
+    },
   });
 
   if (!result) return { scored: false, flags };
 
   await db.execute(
-    sql`update place_contributions set confidence = ${result.confidence}
+    sql`update share_contributions set confidence = ${result.confidence}
         where id = ${contributionId}::uuid`,
   );
 
@@ -139,7 +152,7 @@ export async function extractAndFlag(
     const { created } = await writeFlagIfNew(db, {
       severity: "review",
       reason: "possible_named_person",
-      subject_kind: "place_contribution",
+      subject_kind: "share_contribution",
       subject_id: contributionId,
       excerpt: result.note,
       confidence: result.confidence,
@@ -157,7 +170,7 @@ export async function extractAndFlag(
     const { created } = await writeFlagIfNew(db, {
       severity: "note",
       reason: "low_confidence",
-      subject_kind: "place_contribution",
+      subject_kind: "share_contribution",
       subject_id: contributionId,
       excerpt: result.note,
       confidence: result.confidence,
@@ -201,7 +214,7 @@ export async function sweepExtraction(
   const pending = (await db.execute(
     sql`
       select pc.id
-      from place_contributions pc
+      from share_contributions pc
       where pc.confidence is null
         and not pc.is_test
         and (pc.what_makes_it_great is not null

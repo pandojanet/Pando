@@ -119,7 +119,7 @@ async function overview(db: Db) {
         (select count(*) from caregivers where consent_status = 'invited'   and not is_test) as cg_invited,
         (select count(*) from caregivers where consent_status = 'consented' and not is_test) as cg_consented,
         (select count(*) from caregivers where consent_status = 'declined'  and not is_test) as cg_declined,
-        (select count(*) from place_contributions
+        (select count(*) from share_contributions
            where confidence is not null and confidence < 0.6 and not is_test)      as low_confidence,
         (select count(*) from flags where status = 'open')                         as open_flags,
         (select count(*) from flags
@@ -128,7 +128,7 @@ async function overview(db: Db) {
         (select count(*) from caregiver_nominations where review_hold and not is_test) as review_holds,
         (select count(*) from caregiver_claims
            where status = 'pending' and not is_test)                            as pending_claims,
-        (select count(*) from place_contributions
+        (select count(*) from share_contributions
            where status = 'pending_review' and not is_test)                        as pending_contributions,
         (select count(*) from people where founding = 'pending_founding' and not is_test) as founding_pending,
         (select count(*) from people where founding = 'founding' and not is_test)  as founding_approved,
@@ -149,7 +149,7 @@ async function overview(db: Db) {
              and not is_test)                                                     as demand_allegation,
         -- §17.1. Not a queue: this one counts *up* as the golden-answer pass
         -- progresses, which is why it is not one of the quality numbers.
-        (select count(*) from places where answer_ready and not is_test)           as answer_ready
+        (select count(*) from shares where answer_ready and not is_test)           as answer_ready
       from reward r
     `,
   );
@@ -320,8 +320,8 @@ async function contributorDetail(db: Db, id: string) {
                     coalesce(pc.status, cn.status, 'pending_review') as status,
                     coalesce(pc.firsthand, cn.worked_for_family, false) as firsthand
              from submissions s
-             left join place_contributions pc on pc.submission_id = s.id
-             left join places pl on pl.id = pc.place_id
+             left join share_contributions pc on pc.submission_id = s.id
+             left join shares pl on pl.id = pc.share_id
              left join caregiver_nominations cn on cn.submission_id = s.id
              left join caregivers cg on cg.id = cn.caregiver_id
              where s.person_id = p.id
@@ -458,10 +458,10 @@ async function contributions(db: Db) {
       select pc.*, pl.name, pl.venue, pl.neighborhoods, pl.age_bands,
              pl.freshness_state, pl.last_confirmed_at, pl.validated_count,
              pl.answer_ready,
-             pl.id as place_id, pl.kind, pl.provenance,
+             pl.id as share_id, pl.kind, pl.provenance,
              p.id as contributor_id, p.first_name, p.last_name
-      from place_contributions pc
-      join places pl on pl.id = pc.place_id
+      from share_contributions pc
+      join shares pl on pl.id = pc.share_id
       left join people p on p.id = pc.person_id
       order by pc.created_at desc
       limit 500
@@ -471,8 +471,8 @@ async function contributions(db: Db) {
   return list.map((r) => ({
     id: r.id,
     kind: r.kind,
-    place: {
-      id: r.place_id,
+    share: {
+      id: r.share_id,
       name: r.name,
       venue: r.venue,
       neighborhoods: r.neighborhoods ?? [],

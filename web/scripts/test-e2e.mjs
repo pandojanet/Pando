@@ -22,6 +22,12 @@
  *
  * A fresh phone number per run, because the send limit (5/hour/number) is real and
  * re-using one across runs trips it and reads like a failure.
+ *
+ * **And a fresh `client_id` per run, for a subtler reason.** A card is idempotent on
+ * that id, so a fixed one meant a re-run upserted into the row a previous run had
+ * already approved — and "a contribution is queued for review" then failed against
+ * state this run did not create. Only visible after a run crashed before its
+ * cleanup, which is exactly when a suite should be at its most trustworthy.
  */
 
 import { existsSync } from "node:fs";
@@ -167,6 +173,8 @@ head("1.2 / 1.3  profile, and the graph derived from it");
       child_ages: [3, 6],
       schools: ["walden-school"],
       classes: [], camps: ["tom-sawyer-camps"], faith: [], clubs: [], parent_groups: [],
+      /* Removed as a question on 12 Aug — invites carry the group now. Still sent
+         to prove the route ignores it rather than reviving a field. */
       invite_group: "altadena-moms",
       time_in_area: "3_10_years",
       family_structure: [], childcare_now: ["nanny_or_sitter"],
@@ -201,21 +209,39 @@ head("1.4 / 1.5  cards, R1-R11, fix-a-field");
     who_for: "a nervous swimmer", price_band: "50_100", price_unit: "per_month",
     worth_it: "great_value", follow_up_ok: true, age_bands: ["preschool"],
   };
-  const first = await card(full, "audit-activity-1");
+  const first = await card(full, `audit-activity-${RUN}`);
   ok("activity saved", first.status === 200 && first.json.persisted === true);
 
-  const fixed = await card({ ...full, what_makes_it_great: "small groups and a very patient teacher", caveat: "Saturdays get packed" }, "audit-activity-1");
+  const fixed = await card({ ...full, what_makes_it_great: "small groups and a very patient teacher", caveat: "Saturdays get packed" }, `audit-activity-${RUN}`);
   ok("fix-a-field re-saves the same card, not a second one", fixed.json.record_id === first.json.record_id);
 
-  const place = await card({ __kind: "place", name: "Audit Park", place_type: "park", firsthand: "firsthand", child_age_at_time: [3], freshness: "over_year", what_makes_it_great: "shaded and fenced", caveat: "no toilets" }, "audit-place-1");
+  const place = await card({ __kind: "place", name: "Audit Park", place_type: "park", firsthand: "firsthand", child_age_at_time: [3], freshness: "over_year", what_makes_it_great: "shaded and fenced", caveat: "no toilets" }, `audit-place-${RUN}`);
   ok("a second card (stale place) saved", place.status === 200);
+
+  /**
+   * The card that made 1.8 wrong. It is concrete, first-hand and the most useful
+   * of the three — and it praises one teacher by name, which used to cost it
+   * roughly half its score and drop it into the low-confidence queue. Naming a
+   * person is a *review* matter, never a *quality* one; the checks in 1.8 below
+   * assert both halves of that.
+   */
+  const named = await card({
+    __kind: "activity", name: "Audit Conservatory", neighborhoods: ["altadena"],
+    firsthand: "firsthand", child_age_at_time: [7], freshness: "current",
+    how_much: "a_year_plus", recommendation: "yes",
+    what_makes_it_great: "Ms. Diane is extraordinary with anxious kids — she got my son playing in three weeks after a year of refusing to touch the piano.",
+    caveat: "Her Tuesday slot goes first.", who_for: "A child who has given up on lessons before",
+    price_band: "100_200", price_unit: "per_month", worth_it: "pricey_worth_it",
+    follow_up_ok: true, age_bands: ["grade"],
+  }, `audit-named-${RUN}`);
+  ok("a card praising a named teacher saved", named.status === 200);
 }
 
 head("1.6  caregiver nomination — the refusals first");
 {
   const nom = (fields, id) => parent.post("/api/seed/save", { invite_code: "sgv-founding", contributor_phone: PHONE, submission: { id, kind: "caregiver", fields } });
-  ok("secondhand nomination refused (inv 14)", (await nom({ name: ["Nope", "N"], age_gate: "yes", worked_for_you: "no" }, "cg-bad-1")).status === 422);
-  ok("under-18 nomination refused (inv 2)", (await nom({ name: ["Nope", "N"], age_gate: "no", worked_for_you: "yes" }, "cg-bad-2")).status === 422);
+  ok("secondhand nomination refused (inv 14)", (await nom({ name: ["Nope", "N"], age_gate: "yes", worked_for_you: "no" }, `cg-bad-${RUN}a`)).status === 422);
+  ok("under-18 nomination refused (inv 2)", (await nom({ name: ["Nope", "N"], age_gate: "no", worked_for_you: "yes" }, `cg-bad-${RUN}b`)).status === 422);
   const held = await nom({
     name: ["Auditcarer", "T"], age_gate: "yes", worked_for_you: "yes", type: "regular_part_time",
     strengths: ["reliable"], cared_for_ages: ["preschool"], last_worked: "current",
@@ -227,7 +253,7 @@ head("1.6  caregiver nomination — the refusals first");
     pay_band: "22_26", pay_benchmark_ok: "yes", reference_willing: "yes", send_invite: "yes",
     /* Smuggled: must all be refused. */
     contact: "+15550000000", caregiver_phone: "+15550000000", consent_status: "consented", active: true,
-  }, "audit-cg-1");
+  }, `audit-cg-${RUN}`);
   ok("a held nomination saved", held.status === 200 && held.json.persisted === true);
 }
 
@@ -266,7 +292,7 @@ head("1.7  completion and D1 routing");
 head("the anonymous path");
 {
   const anon = session();
-  const res = await anon.post("/api/seed/save", { invite_code: "sgv-founding", submission: { id: "audit-anon-1", kind: "tip", fields: { tip: "An audit anonymous tip", topic: "schedules" } } });
+  const res = await anon.post("/api/seed/save", { invite_code: "sgv-founding", submission: { id: `audit-anon-${RUN}`, kind: "tip", fields: { tip: "An audit anonymous tip", topic: "schedules" } } });
   ok("an anonymous card stores with no phone", res.status === 200 && res.json.persisted === true);
 }
 
@@ -333,13 +359,14 @@ const sch = await sql`select status from person_schools where person_id = ${p.id
 ok("school carries its own status (P5)", sch.length === 1 && sch[0].status === "current");
 
 head("1.5  the activity card");
-const [a] = await sql`select pc.* from place_contributions pc join places pl on pl.id = pc.place_id where pl.name = 'Audit Swim School'`;
+const [a] = await sql`select pc.* from share_contributions pc join shares pl on pl.id = pc.share_id where pl.name = 'Audit Swim School'`;
 ok("firsthand recorded", a && a.firsthand === true);
 ok("caveat_answered true", a && a.caveat_answered === true);
 ok("price band kept with its unit", a && a.price_band === "50_100" && a.price_unit === "per_month");
 ok("the correction replaced the text", a && /patient teacher/.test(a.what_makes_it_great ?? ""));
-const nCards = await sql`select count(*)::int as n from place_contributions where person_id = ${p.id}`;
-ok("one contribution per card, not per save", nCards[0].n === 2);
+const nCards = await sql`select count(*)::int as n from share_contributions where person_id = ${p.id}`;
+/* Three cards, four saves — the activity was re-saved once as a fix-a-field. */
+ok("one contribution per card, not per save", nCards[0].n === 3, `${nCards[0].n} rows`);
 
 head("1.6  the nomination, holds and restricted notes");
 const [n] = await sql`select cn.id as nomination_id, cn.*, c.consent_status, c.active, c.discoverable, c.introducible from caregiver_nominations cn join caregivers c on c.id = cn.caregiver_id where c.first_name = 'Auditcarer'`;
@@ -378,15 +405,31 @@ ok("and it cannot be stored without a human attached", allegation && allegation.
 ok("it raised its own escalation, under its own reason", (await sql`select 1 from flags where reason = 'named_allegation' and status = 'open'`).length > 0);
 
 head("1.8 / 1.9  extraction and flags");
-const scored = await sql`select confidence from place_contributions where person_id = ${p.id} and confidence is not null`;
-ok("cards were scored by the model", scored.length === 2, `${scored.length} of 2`);
+const scored = await sql`select confidence from share_contributions where person_id = ${p.id} and confidence is not null`;
+ok("cards were scored by the model", scored.length === 3, `${scored.length} of 3`);
 ok("the corrected card was re-scored, not left stale", a && Number(a.confidence) > 0.4, a ? String(a.confidence) : "");
 ok("stale_at_capture raised without the model", (await sql`select 1 from flags where reason = 'stale_at_capture' and status = 'open'`).length > 0);
-const cgExtract = await sql`select count(*)::int as n from place_contributions pc join submissions s on s.id = pc.submission_id where s.kind = 'caregiver'`;
+
+/**
+ * The two halves of the defect found on 12 Aug by probing the model rather than
+ * reading the code: naming a person is a review matter, not a quality one. The
+ * prompt used to conflate them, so the single most useful card in the suite scored
+ * 0.35 and sorted into the queue meant for vague ones.
+ */
+const [namedCard] = await sql`
+  select sc.confidence, sc.id from share_contributions sc
+  join shares sh on sh.id = sc.share_id
+  where sh.name = 'Audit Conservatory'`;
+ok("the named-teacher card is flagged for a human", (await sql`select 1 from flags where reason = 'possible_named_person' and subject_id = ${namedCard.id}::uuid`).length > 0);
+ok("but it is NOT treated as low quality", namedCard && Number(namedCard.confidence) >= 0.6, namedCard ? String(namedCard.confidence) : "unscored");
+/* No assertion on the swim-school card's number: after the fix-a-field it reads
+   "small groups and a very patient teacher", which is neither vague nor detailed.
+   A check that cannot fail is not a check. */
+const cgExtract = await sql`select count(*)::int as n from share_contributions pc join submissions s on s.id = pc.submission_id where s.kind = 'caregiver'`;
 ok("caregiver cards never enter extraction (inv 12)", cgExtract[0].n === 0);
 
 head("the anonymous contribution");
-const [anon] = await sql`select person_id from place_contributions where tip_text like '%audit anonymous%'`;
+const [anon] = await sql`select person_id from share_contributions where tip_text like '%audit anonymous%'`;
 ok("stored with no person attached", anon && anon.person_id === null);
 
 head("2C  the claim");
@@ -406,7 +449,7 @@ for (const [label, stmt] of [
   ["a hesitant nomination cannot drop its hold", sql`update caregiver_nominations set review_hold = false where id = ${n.nomination_id}`],
   ["a claim cannot be introducible without being listed", sql`update caregiver_claims set open_to_introductions = true where id = ${claim.id}`],
   ["a plaintext password cannot be stored as an admin credential", sql`insert into admin_users (name, password_hash) values ('auditplain', 'correct-horse-battery-staple')`],
-  ["an unreviewed record cannot be marked answer-ready (§17.1)", sql`update places set answer_ready = true where name = 'Audit Park'`],
+  ["an unreviewed record cannot be marked answer-ready (§17.1)", sql`update shares set answer_ready = true where name = 'Audit Park'`],
   ["a demand signal cannot name a person without a human on it", sql`update demand_signals set requires_human_review = false where sensitivity = 'named_allegation'`],
 ]) {
   try { await stmt; ok(label, false, "the database ACCEPTED it"); }
@@ -492,13 +535,13 @@ ok("approve works", (await act({ action: "contribution.approve", id: pendingCont
    question today", so it may only ever sit on a record a human has approved. The
    page cannot be trusted to know that: it may have been open since before a
    rejection. */
-const [park] = await sql`select id from places where name = 'Audit Park'`;
-ok("marking an unreviewed record answer-ready is refused quietly", (await act({ action: "place.answer_ready", id: park.id, to: true })).status === 200);
-ok("and it did not become answer-ready", (await sql`select answer_ready from places where id = ${park.id}`)[0].answer_ready === false);
-const [swimContrib] = await sql`select pc.id from place_contributions pc join places pl on pl.id = pc.place_id where pl.name = 'Audit Swim School'`;
+const [park] = await sql`select id from shares where name = 'Audit Park'`;
+ok("marking an unreviewed record answer-ready is refused quietly", (await act({ action: "share.answer_ready", id: park.id, to: true })).status === 200);
+ok("and it did not become answer-ready", (await sql`select answer_ready from shares where id = ${park.id}`)[0].answer_ready === false);
+const [swimContrib] = await sql`select pc.id from share_contributions pc join shares pl on pl.id = pc.share_id where pl.name = 'Audit Swim School'`;
 await act({ action: "contribution.approve", id: swimContrib.id });
-ok("an approved record can be marked answer-ready", (await act({ action: "place.answer_ready", id: (await sql`select id from places where name = 'Audit Swim School'`)[0].id, to: true })).status === 200);
-ok("and the flag landed", (await sql`select answer_ready from places where name = 'Audit Swim School'`)[0].answer_ready === true);
+ok("an approved record can be marked answer-ready", (await act({ action: "share.answer_ready", id: (await sql`select id from shares where name = 'Audit Swim School'`)[0].id, to: true })).status === 200);
+ok("and the flag landed", (await sql`select answer_ready from shares where name = 'Audit Swim School'`)[0].answer_ready === true);
 const held = (await q("caregivers")).json.rows.find((c) => c.review_hold);
 ok("the held nomination is listed", !!held);
 ok("the list says a note exists, never its text", held.has_restricted_notes === true && !JSON.stringify(held).includes("private note recorded"));
@@ -532,7 +575,19 @@ head("invites — one per group, never per parent");
     body: JSON.stringify({ code: "audit-group" }),
   })).json();
   ok("the code resolves straight away", resolved.valid === true);
-  ok("and carries its group, for P6 to confirm", resolved.group_option_value === "school-pta" && resolved.group_label === "Audit Group PTA");
+  ok("and carries its group", resolved.group_option_value === "school-pta" && resolved.group_label === "Audit Group PTA");
+
+  /**
+   * The point of the table being authoritative (12 Aug): while a real invite
+   * exists, the built-in `SEED_INVITE_CODES` list is not consulted at all. Without
+   * this, `sgv-founding` stays a way in forever — which is how a code an admin
+   * never created, and cannot retire, keeps admitting people.
+   */
+  const envCode = await (await fetch(B + "/api/seed/invite", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "sgv-founding" }),
+  })).json();
+  ok("a populated invites table makes the env-var codes inert", envCode.valid === false, `sgv-founding -> ${envCode.reason ?? "valid"}`);
 
   /* A parent arriving on it is attributed to the invite — from the code the
      server validated, never from the body. */
@@ -548,6 +603,9 @@ head("invites — one per group, never per parent");
   });
   const [attributed] = await sql`select p.invite_id, i.code from people p join invites i on i.id = p.invite_id where p.first_name = 'Auditinvite'`;
   ok("the contributor is attributed to the invite", attributed && attributed.code === "audit-group");
+  /* The group comes off the invite server-side, not from a question the parent
+     answers — that question was removed on 12 Aug. */
+  ok("and the group is recorded from the code, not asked for", (await sql`select invited_via_group from people where first_name = 'Auditinvite'`)[0].invited_via_group === "school-pta");
 
   /* The link is not evidence of membership: this parent never confirmed the
      group, so there must be no edge to it. */
@@ -566,7 +624,15 @@ head("invites — one per group, never per parent");
   })).json();
   ok("a retired code is no longer a valid invite", afterRetire.valid === false);
   ok("but the market still falls back, so nobody is stranded", afterRetire.market_id === "pasadena");
-  ok("and the env-var codes still work", (await (await fetch(B + "/api/seed/invite", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: "sgv-founding" }) })).json()).valid === true);
+  /* And with the table empty again, the built-in codes stay inert — the store is
+     the answer even when the answer is "no invites yet". A code nobody created is
+     a code nobody can retire. */
+  const builtIn = await (await fetch(B + "/api/seed/invite", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: "sgv-founding" }),
+  })).json();
+  ok("a built-in code is not a way in while a store exists", builtIn.valid === false, `sgv-founding -> ${builtIn.reason ?? "valid"}`);
+  ok("and a parent who has one still reaches the market", builtIn.market_id === "pasadena");
 }
 
 head("2.6  promotion: the chip, the queue and the graph");
@@ -746,14 +812,14 @@ head("2.1  the CLI that is the only way in or out of that table");
 /* ── Cleanup ─────────────────────────────────────────────────────────────── */
 
 const ids = (await sql`select id from people where first_name like 'Audit%'`).map((r) => r.id);
-await sql`delete from flags where subject_id in (select id from place_contributions where person_id = any(${ids}::uuid[])) or subject_id in (select id from demand_signals where person_id = any(${ids}::uuid[])) or subject_id in (select id from places where name like 'Audit%')`;
+await sql`delete from flags where subject_id in (select id from share_contributions where person_id = any(${ids}::uuid[])) or subject_id in (select id from demand_signals where person_id = any(${ids}::uuid[])) or subject_id in (select id from shares where name like 'Audit%')`;
 await sql`delete from restricted_notes where nomination_id in (select cn.id from caregiver_nominations cn join caregivers c on c.id = cn.caregiver_id where c.first_name like 'Audit%')`;
 await sql`delete from caregiver_nominations where caregiver_id in (select id from caregivers where first_name like 'Audit%')`;
 await sql`delete from caregiver_profiles where caregiver_id in (select id from caregivers where first_name like 'Audit%')`;
 await sql`delete from caregiver_claims where person_id = any(${ids}::uuid[])`;
 await sql`delete from caregivers where first_name like 'Audit%'`;
-await sql`delete from place_contributions where person_id = any(${ids}::uuid[]) or place_id in (select id from places where name like 'Audit%') or tip_text like '%audit anonymous%'`;
-await sql`delete from places where name like 'Audit%'`;
+await sql`delete from share_contributions where person_id = any(${ids}::uuid[]) or share_id in (select id from shares where name like 'Audit%') or tip_text like '%audit anonymous%'`;
+await sql`delete from shares where name like 'Audit%'`;
 await sql`delete from submissions where person_id = any(${ids}::uuid[]) or client_id like 'audit-%' or client_id like 'cg-bad-%'`;
 await sql`delete from demand_signals where person_id = any(${ids}::uuid[])`;
 await sql`delete from pending_options where submitted_by = any(${ids}::uuid[])`;
@@ -769,8 +835,8 @@ await sql`delete from referrals`;
 await sql`delete from admin_users where created_by = 'test:e2e' or name like 'auditadmin%'`;
 /* Flags and audit rows whose subject this run deleted — a queue entry pointing at
    nothing is worse than no entry. */
-const orphans = await sql`delete from flags f where (f.subject_kind = 'place_contribution' and not exists (select 1 from place_contributions pc where pc.id = f.subject_id)) or (f.subject_kind = 'demand_signal' and not exists (select 1 from demand_signals d where d.id = f.subject_id)) or (f.subject_kind = 'place' and not exists (select 1 from places pl where pl.id = f.subject_id)) returning f.id`;
-await sql`delete from audit_log where action in ('contribution.approve','referral.link','place.answer_ready','claim.delete','invite.create','invite.retire') and at > now() - interval '1 hour'`;
+const orphans = await sql`delete from flags f where (f.subject_kind = 'place_contribution' and not exists (select 1 from share_contributions pc where pc.id = f.subject_id)) or (f.subject_kind = 'demand_signal' and not exists (select 1 from demand_signals d where d.id = f.subject_id)) or (f.subject_kind = 'place' and not exists (select 1 from shares pl where pl.id = f.subject_id)) returning f.id`;
+await sql`delete from audit_log where action in ('contribution.approve','referral.link','share.answer_ready','claim.delete','invite.create','invite.retire') and at > now() - interval '1 hour'`;
 
 console.log(`\n  cleaned up: ${ids.length} test parent(s), ${orphans.length} orphaned flag(s)`);
 console.log(`\n  ${pass} passed, ${fail} failed`);

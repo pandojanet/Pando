@@ -82,7 +82,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "contribution.approve": {
       const target = id(b.id);
       await tx.execute(
-        sql`update place_contributions
+        sql`update share_contributions
             set status = 'approved', approved_at = now(), approved_by = ${ctx.actor}
             where id = ${target}::uuid`,
       );
@@ -92,30 +92,30 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * behind it must never reach an answer.
        */
       await tx.execute(
-        sql`update places
+        sql`update shares
             set status = 'approved',
                 validated_count = validated_count + 1,
                 last_confirmed_at = now(),
                 freshness_state = 'fresh'
-            where id = (select place_id from place_contributions where id = ${target}::uuid)`,
+            where id = (select share_id from share_contributions where id = ${target}::uuid)`,
       );
-      return { applied: true, resource: "place_contribution", resource_id: target };
+      return { applied: true, resource: "share_contribution", resource_id: target };
     }
 
     case "contribution.needs_detail": {
       const target = id(b.id);
       await tx.execute(
-        sql`update place_contributions set status = 'needs_detail' where id = ${target}::uuid`,
+        sql`update share_contributions set status = 'needs_detail' where id = ${target}::uuid`,
       );
-      return { applied: true, resource: "place_contribution", resource_id: target };
+      return { applied: true, resource: "share_contribution", resource_id: target };
     }
 
     case "contribution.reject": {
       const target = id(b.id);
       await tx.execute(
-        sql`update place_contributions set status = 'rejected' where id = ${target}::uuid`,
+        sql`update share_contributions set status = 'rejected' where id = ${target}::uuid`,
       );
-      return { applied: true, resource: "place_contribution", resource_id: target };
+      return { applied: true, resource: "share_contribution", resource_id: target };
     }
 
     case "contribution.edit": {
@@ -136,29 +136,43 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (text(patch.tip_text) !== null)
         sets.push(sql`tip_text = ${text(patch.tip_text)}`);
       if (sets.length > 0) {
+        /**
+         * The score describes *this text*, so editing the text retires it. Cleared
+         * rather than recomputed here: extraction is a network call to another API
+         * and this is inside the transaction that also writes the audit row — one
+         * slow provider must not be able to fail an admin's edit. Null puts the
+         * card back in the sweep (`POST /api/admin/extract`), which is the path
+         * that exists for exactly this.
+         *
+         * Leaving the old number would have been worse than having none: it was
+         * about a sentence that no longer exists, and the low-confidence queue
+         * would sort on it.
+         */
         await tx.execute(
-          sql`update place_contributions set ${sql.join(sets, sql`, `)} where id = ${target}::uuid`,
+          sql`update share_contributions
+              set ${sql.join(sets, sql`, `)}, confidence = null
+              where id = ${target}::uuid`,
         );
       }
-      return { applied: true, resource: "place_contribution", resource_id: target };
+      return { applied: true, resource: "share_contribution", resource_id: target };
     }
 
     /**
      * §17.1 golden answers. The place, not the contribution — and the update is
      * conditional on `status = 'approved'` rather than trusting the page, because
-     * `places_answer_ready_check` would otherwise abort the whole transaction
+     * `shares_answer_ready_check` would otherwise abort the whole transaction
      * (audit row included) on a stale screen. A no-op is the right answer to
      * "mark a record ready that has since been rejected".
      */
-    case "place.answer_ready": {
+    case "share.answer_ready": {
       const target = id(b.id);
       const to = b.to === true;
       await tx.execute(
-        sql`update places set answer_ready = ${to}, updated_at = now()
+        sql`update shares set answer_ready = ${to}, updated_at = now()
             where id = ${target}::uuid
               and (${to} = false or status = 'approved')`,
       );
-      return { applied: true, resource: "place", resource_id: target };
+      return { applied: true, resource: "share", resource_id: target };
     }
 
     /* ── 2.5 Caregivers ──────────────────────────────────────────────────── */

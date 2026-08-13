@@ -36,7 +36,7 @@ const ACTIONS = new Set([
   "contribution.needs_detail",
   "contribution.reject",
   "contribution.edit",
-  "place.answer_ready",
+  "share.answer_ready",
   "nomination.approve",
   "nomination.reject",
   "nomination.release_hold",

@@ -232,7 +232,7 @@ has the setup walkthrough.
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 212 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 218 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
 
 The write paths, and what each guarantees atomically:
@@ -240,7 +240,7 @@ The write paths, and what each guarantees atomically:
 | Route | Transaction |
 | --- | --- |
 | `seed/profile` | person + children + affinities + relevance + schools + pending options |
-| `seed/save` (place-like) | submission + place + contribution, upserted on `client_id` |
+| `seed/save` (activity, place, tip) | submission + **share** + contribution, upserted on `client_id`. `shares` is the subject (renamed from `places`, drizzle 0009); `submissions` is what was typed. |
 | `seed/save` (caregiver) | submission + caregiver + nomination + **its restricted notes** |
 | `seed/complete` | founding status + follow-up consent + demand signal (with the asker's neighborhood, read from their own profile) + escalation flag |
 | `caregiver/claim` | person + claim + its four consent records |
@@ -317,7 +317,7 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (212 checks, needs a dev server and a database),
+Tests: `npm run test:e2e` (218 checks, needs a dev server and a database),
 `npm run test:auth` (45), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at

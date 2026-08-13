@@ -64,6 +64,13 @@
       "when": 1786552800000,
       "tag": "0008_admin_users",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786556400000,
+      "tag": "0009_rename_places_to_shares",
+      "breakpoints": true
     }
   ]
 }

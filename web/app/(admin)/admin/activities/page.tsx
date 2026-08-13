@@ -73,7 +73,7 @@ export default function ContributionsPage() {
       return list
         .filter((r) => r.status === "approved")
         .sort(
-          (a, b) => Number(b.place.answer_ready) - Number(a.place.answer_ready),
+          (a, b) => Number(b.share.answer_ready) - Number(a.share.answer_ready),
         );
     return list;
   }, [all, filter]);
@@ -181,11 +181,11 @@ export default function ContributionsPage() {
                   <Fragment key={row.id}>
                     <tr className={row.firsthand ? undefined : "bg-gold-wash/30"}>
                       <Td>
-                        <span className="font-semibold">{row.place.name}</span>
+                        <span className="font-semibold">{row.share.name}</span>
                         <span className="ml-1.5 text-[12px] uppercase tracking-[0.06em] text-muted">
                           {row.kind}
                         </span>
-                        {row.place.answer_ready && (
+                        {row.share.answer_ready && (
                           <span className="ml-1.5">
                             <Badge
                               tone="green"
@@ -195,9 +195,9 @@ export default function ContributionsPage() {
                             </Badge>
                           </span>
                         )}
-                        {row.place.venue && (
+                        {row.share.venue && (
                           <span className="mt-0.5 block text-[12.5px] text-muted">
-                            {row.place.venue}
+                            {row.share.venue}
                           </span>
                         )}
                         {row.tip_text && (
@@ -216,9 +216,9 @@ export default function ContributionsPage() {
                         ) : null}
                       </Td>
                       <Td>
-                        {row.place.neighborhoods.length === 0
+                        {row.share.neighborhoods.length === 0
                           ? "—"
-                          : row.place.neighborhoods.map(slugLabel).join(", ")}
+                          : row.share.neighborhoods.map(slugLabel).join(", ")}
                       </Td>
                       <Td>
                         {/* R2 — the label reads the source, never who typed it. */}
@@ -284,9 +284,9 @@ export default function ContributionsPage() {
                         )}
                       </Td>
                       <Td className="text-[13px]">
-                        {slugLabel(row.place.freshness_state)}
+                        {slugLabel(row.share.freshness_state)}
                         <span className="mt-0.5 block text-muted">
-                          {when(row.place.last_confirmed_at)}
+                          {when(row.share.last_confirmed_at)}
                         </span>
                       </Td>
                       <Td className="text-[12.5px]">
@@ -350,25 +350,25 @@ export default function ContributionsPage() {
                               tone="secondary"
                               disabled={busy}
                               title={
-                                row.place.answer_ready
+                                row.share.answer_ready
                                   ? "Take it back out of the answer-ready set"
                                   : "This record could answer a real question as it stands"
                               }
                               onClick={() =>
                                 void run(
-                                  row.place.answer_ready
+                                  row.share.answer_ready
                                     ? "Unmarked"
                                     : "Marked answer-ready",
                                   async () =>
                                     adminAction({
-                                      action: "place.answer_ready",
-                                      id: row.place.id,
-                                      to: !row.place.answer_ready,
+                                      action: "share.answer_ready",
+                                      id: row.share.id,
+                                      to: !row.share.answer_ready,
                                     }),
                                 )
                               }
                             >
-                              {row.place.answer_ready
+                              {row.share.answer_ready
                                 ? "Not ready"
                                 : "Answer-ready"}
                             </Button>

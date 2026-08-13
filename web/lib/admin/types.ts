@@ -214,7 +214,7 @@ export interface ContributionRow {
   id: string;
   kind: "activity" | "place" | "tip";
   /** The subject. Five parents recommending one class is five rows, one place. */
-  place: {
+  share: {
     id: string;
     name: string;
     venue: string | null;
@@ -483,7 +483,7 @@ export type AdminAction =
    * §17.1 golden answers. Keyed by *place* id, not contribution id: the flag says
    * "this record could answer a question", and the record is the place.
    */
-  | { action: "place.answer_ready"; id: string; to: boolean }
+  | { action: "share.answer_ready"; id: string; to: boolean }
   /* Caregivers — 2.5 */
   | { action: "nomination.approve"; id: string }
   | { action: "nomination.reject"; id: string; reason: string }

@@ -4,7 +4,7 @@
 -- ⚠️ The taxonomy below is a PLACEHOLDER, generated from web/lib/market-options.ts,
 -- which is itself a stand-in until Janet's CSV of Pasadena preschools, daycares
 -- and neighborhoods arrives (spec §23.2, open question 10). Replacing it is a
--- `market_options` import, not a code change — see docs/n8n-supabase-plan.md §3.13.
+-- `market_options` import, not a code change.
 --
 -- The weights and freshness thresholds are NOT placeholders: they come from the
 -- spec (§7.1, §18.1) and are meant to be edited here rather than in code, because
@@ -117,6 +117,45 @@ insert into market_options (market_id, category, option_value, label, bands) val
   ('pasadena', 'baby_activities', 'ice-skating-center', 'Pasadena Ice Skating Center', array['grade', 'tween', 'teen']::text[]),
   ('pasadena', 'baby_activities', 'robotics-club', 'Robotics / STEM club', array['grade', 'tween', 'teen']::text[]),
   ('pasadena', 'baby_activities', 'tutoring-center', 'Tutoring center', array['grade', 'tween', 'teen']::text[]),
-  ('pasadena', 'baby_activities', 'kids-yoga', 'Kids yoga', array['toddler', 'preschool', 'grade']::text[])
+  ('pasadena', 'baby_activities', 'kids-yoga', 'Kids yoga', array['toddler', 'preschool', 'grade']::text[]),
+  -- `camps` — its own category since spec v3.2 (§8.4, §15.3), not a flavour of
+  -- baby_activities. Camp season is decided months before it starts, so the list
+  -- has to exist well before the questions it answers arrive.
+  ('pasadena', 'camps', 'tom-sawyer-camps', 'Tom Sawyer Camps', array['preschool', 'grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'kidspace-summer-camp', 'Kidspace summer camp', array['preschool', 'grade']::text[]),
+  ('pasadena', 'camps', 'rba-summer-camp', 'Rose Bowl Aquatics summer camp', array['grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'ymca-day-camp', 'Pasadena YMCA day camp', array['preschool', 'grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'armory-art-camp', 'Armory Center art camp', array['preschool', 'grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'descanso-nature-camp', 'Descanso Gardens nature camp', array['preschool', 'grade']::text[]),
+  ('pasadena', 'camps', 'conservatory-summer', 'Pasadena Conservatory summer program', array['grade', 'tween', 'teen']::text[]),
+  ('pasadena', 'camps', 'school-break-camp', 'Our school''s break camp', array['preschool', 'grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'sports-skills-camp', 'Sports skills camp', array['grade', 'tween']::text[]),
+  ('pasadena', 'camps', 'stem-coding-camp', 'STEM / coding camp', array['grade', 'tween', 'teen']::text[]),
+  ('pasadena', 'camps', 'theatre-camp', 'Theatre camp', array['grade', 'tween', 'teen']::text[]),
+  ('pasadena', 'camps', 'sleepaway-camp', 'Sleepaway camp', array['tween', 'teen']::text[]),
+  -- `focus` — the seventh category in QC Answers Q10 and spec §15.3, and the one
+  -- that was missing here. It is not a place: it is what a parent is willing to be
+  -- asked about, which is what routes a question to them rather than to whoever
+  -- happens to live nearby.
+  --
+  -- The ids are the same strings as TOPICS_LOCAL / TOPICS_LIVED in
+  -- web/lib/questions.ts, and they have to stay that way: `people.topic_preferences`
+  -- stores exactly these, so a mismatch means a parent who volunteered for camps
+  -- never receives a camps question. The questionnaire still reads from code; this
+  -- table is what an admin promotes an "other" answer *into*, and what the next
+  -- market gets seeded from instead of a code change.
+  ('pasadena', 'focus', 'activities', 'Activities', null),
+  ('pasadena', 'focus', 'preschools_schools', 'Preschools & schools', null),
+  ('pasadena', 'focus', 'camps', 'Camps', null),
+  ('pasadena', 'focus', 'babysitters', 'Babysitters', null),
+  ('pasadena', 'focus', 'nannies', 'Nannies', null),
+  ('pasadena', 'focus', 'newborn_care', 'Newborn care', null),
+  ('pasadena', 'focus', 'special_needs_resources', 'Special-needs resources', null),
+  ('pasadena', 'focus', 'working_parent_logistics', 'Working-parent logistics', null),
+  ('pasadena', 'focus', 'outings', 'Outings', null),
+  ('pasadena', 'focus', 'sports', 'Sports', null),
+  ('pasadena', 'focus', 'arts_music', 'Arts & music', null),
+  ('pasadena', 'focus', 'pediatric_health', 'Pediatric / health recommendations', null),
+  ('pasadena', 'focus', 'new_to_area_help', 'New-to-area help', null)
 on conflict (market_id, category, option_value) do update set
   label = excluded.label, bands = excluded.bands, active = true;

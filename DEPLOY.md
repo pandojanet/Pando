@@ -60,8 +60,10 @@ rename the second to `.env`, then:
 
 - in `docker-compose.yml`, replace `OWNER/REPO` in the fallback image with your
   GitHub owner and repo, lowercase;
-- in `.env`, set `ADMIN_PASSWORD` (without it `/admin` stays dark, by design) and
-  the invite codes. Leaving the n8n block empty is fine — the app runs and
+- in `.env`, set the invite codes. **Admin sign-in no longer belongs in this
+  file** — credentials live in the `admin_users` table (§3, step 7). Without
+  either that table or the `ADMIN_CREDENTIALS` bootstrap, `/admin` stays dark, by
+  design. Leaving the n8n block empty is fine — the app runs and
   reports `persisted: false`. Leave the Twilio block empty and
   `SEED_REQUIRE_VERIFICATION=0` until the A2P campaign is approved.
 
@@ -100,9 +102,87 @@ ssh-keyscan -H YOUR_SERVER_HOST
 | `VPS_APP_DIR`       | `/docker/pando`.                                               |
 | `VPS_SSH_HOST_KEY`  | The `ssh-keyscan` output. Optional, strongly recommended.      |
 | `VPS_PORT`          | Only if SSH is not on 22.                                      |
+| `NEXT_PUBLIC_POSTHOG_KEY` | PostHog project API key. Optional — see below.           |
+
+And under **Variables** (not secrets — it is not one), optionally
+`NEXT_PUBLIC_POSTHOG_HOST` if the project is not on `https://us.i.posthog.com`
+(EU projects are `https://eu.i.posthog.com`).
+
+**Why PostHog is a repo secret and not a server `.env` value.** Everything in
+`/docker/pando/.env` is read at request time by the running server. `NEXT_PUBLIC_*`
+is the exception: Next inlines it into the client bundle during `next build`, so
+by the time the container starts it is already baked in — or already `undefined`.
+The deploy workflow passes it to `docker build` as a build arg. Set the secret and
+push; there is nothing to change on the server. Leave it unset and the image is a
+working image with analytics off, which fails safe rather than loudly.
 
 No registry credential is stored on the server: the deploy logs in to GHCR with
 the job's own short-lived `GITHUB_TOKEN` and logs out again when it finishes.
+
+## 3b. One-time: the database
+
+Supabase hosts the Postgres; the app owns the schema. Nothing here runs on the
+VPS — you apply the migrations from your own machine, once, before the first
+deploy that has `DATABASE_URL` set.
+
+1. Create the Supabase project. Note the database password it shows you — it is
+   shown **once**, and the only fix is a reset.
+2. Take the **pooler** connection string (Connect → *Connection pooling*), not the
+   direct one. The direct host is IPv6-only without the paid add-on, and an IPv4
+   VPS cannot reach it — the same constraint that shaped `lib/server/db.ts`.
+3. Put it in `web/.env.local` as `DATABASE_URL`, and apply the schema:
+
+   ```bash
+   npm run migrate
+   ```
+
+   Safe to re-run: Drizzle records what it has applied in a
+   `drizzle.__drizzle_migrations` table and skips those.
+
+   **Use port 5432 for this command**, not 6543. Both are the same pooler host;
+   6543 is transaction mode, which the app wants and a migration does not. The
+   script warns if it sees 6543 and continues anyway. To keep the app on 6543 while
+   migrating over 5432, set `MIGRATE_DATABASE_URL` to the 5432 form.
+
+4. `web/drizzle/0002_rls.sql` asserts eight product invariants as it runs. If the
+   migration fails there, that is the assertion doing its job — read the message
+   before touching the SQL.
+5. Load the reference data the tap lists read, once:
+
+   ```bash
+   npm run seed
+   ```
+
+6. Put the same `DATABASE_URL` (the **6543** form) into `/docker/pando/.env` on the
+   server and redeploy. Until it is set, every write route answers
+   `persisted: false` and no screen claims a contribution was stored.
+
+7. Create the people who may sign in to the admin. Same place as the two commands
+   above — a checkout, pointed at this database — because the runtime image is a
+   standalone bundle with no scripts in it:
+
+   ```bash
+   npm run admin:user -- add janet
+   ```
+
+   It prints a passphrase once, hashes it with scrypt, and stores only the hash;
+   `admin_users_hash_check` is what stops anything else reaching that column. From
+   then on `admin_users` is authoritative and `ADMIN_CREDENTIALS` /
+   `ADMIN_PASSWORD` are ignored — which is the point: **taking access away is one
+   command, not a redeploy.**
+
+   ```bash
+   npm run admin:user -- list          # who can sign in, and when they last did
+   npm run admin:user -- password janet # rotate; ends that person's sessions
+   npm run admin:user -- disable someone
+   ```
+
+   A change reaches a running server within a minute, and immediately on the next
+   sign-in attempt. Set `ADMIN_SESSION_SECRET` in `/docker/pando/.env` too, or
+   rotating one password signs everyone out (see `lib/admin/auth.ts`).
+
+Re-run `npm run migrate` after any change to `web/lib/db/schema.ts` that
+`drizzle-kit generate` turns into a new file in `web/drizzle/`.
 
 ## 4. Ingress — Traefik, not nginx
 

@@ -94,7 +94,6 @@ export function deriveAffinities(session: DerivationInput): AffinityRow[] {
   push("faith", answers.faith);
   push("clubs", answers.clubs);
   push("parent_groups", answers.parent_groups);
-  if (answers.invite_group) push("invite_group", [answers.invite_group]);
   // Age is matched as overlapping bands, not exact years (spec §6.4 / M6.4).
   // Bands are "as of capture" — the backend recomputes them from birth_year.
   push("child_ages", ageBandsOf(answers.child_ages));
@@ -241,7 +240,6 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     school_status: answers.school_status,
     time_in_area: answers.time_in_area,
     moved_from: answers.moved_from,
-    invited_via_group: answers.invite_group,
     answers,
     social_affinities: deriveAffinities(session),
     life_relevance: deriveLifeRelevance(session),

@@ -466,11 +466,21 @@ export const submissions = pgTable(
 );
 
 /**
+ * **The subject of a recommendation** — an activity, a camp, a place or a tip.
+ * Renamed from `places` on 12 Aug (drizzle 0009): the structure was right and the
+ * word was wrong, because a music class is not a place and a piece of advice
+ * certainly isn't.
+ *
+ * Not to be confused with `submissions`, which is the raw card exactly as it was
+ * typed. A submission is an event — "did the parent actually say that". A share is
+ * the thing it was about, and five parents recommending one class is five
+ * `share_contributions` rows against one `shares` row.
+ *
  * Activities, camps, places and tips share one subject table: they differ by
  * `kind`, not by shape, and an admin reviews them in one queue.
  */
-export const places = pgTable(
-  "places",
+export const shares = pgTable(
+  "shares",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     marketId: text("market_id").notNull(),
@@ -512,24 +522,24 @@ export const places = pgTable(
       .defaultNow(),
   },
   (t) => [
-    check("places_kind_check", sql`${t.kind} <> 'caregiver'`),
+    check("shares_kind_check", sql`${t.kind} <> 'caregiver'`),
     /* "Good enough to answer with" must be a superset of "a human read it". */
     check(
-      "places_answer_ready_check",
+      "shares_answer_ready_check",
       sql`not ${t.answerReady} or ${t.status} = 'approved'`,
     ),
     check(
-      "places_confidence_check",
+      "shares_confidence_check",
       sql`${t.confidence} is null or (${t.confidence} >= 0 and ${t.confidence} <= 1)`,
     ),
     check(
-      "places_freshness_state_check",
+      "shares_freshness_state_check",
       sql`${t.freshnessState} in ('fresh','ageing','stale')`,
     ),
-    index("places_market_idx")
+    index("shares_market_idx")
       .on(t.marketId, t.kind, t.status)
       .where(sql`not is_test`),
-    index("places_name_trgm_idx").using(
+    index("shares_name_trgm_idx").using(
       "gin",
       sql`lower(${t.name}) gin_trgm_ops`,
     ),
@@ -540,13 +550,13 @@ export const places = pgTable(
  * One parent's experience of one place. R1–R11 land here, so five parents
  * recommending the same class is five rows and one place.
  */
-export const placeContributions = pgTable(
-  "place_contributions",
+export const shareContributions = pgTable(
+  "share_contributions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    placeId: uuid("place_id")
+    shareId: uuid("share_id")
       .notNull()
-      .references(() => places.id, { onDelete: "cascade" }),
+      .references(() => shares.id, { onDelete: "cascade" }),
     personId: uuid("person_id").references(() => people.id, {
       onDelete: "set null",
     }),
@@ -613,17 +623,17 @@ export const placeContributions = pgTable(
       sql`${t.priceBand} is null or ${t.priceBand} in ('free','prefer_not_to_say') or ${t.priceUnit} is not null`,
     ),
     check(
-      "place_contributions_confidence_check",
+      "share_contributions_confidence_check",
       sql`${t.confidence} is null or (${t.confidence} >= 0 and ${t.confidence} <= 1)`,
     ),
     /* One parent, one contribution per place. A correction upserts, never doubles. */
-    unique("place_contributions_place_id_submission_id_key").on(
-      t.placeId,
+    unique("share_contributions_share_id_submission_id_key").on(
+      t.shareId,
       t.submissionId,
     ),
-    index("place_contributions_place_idx").on(t.placeId),
-    index("place_contributions_person_idx").on(t.personId, t.status),
-    index("place_contributions_review_idx")
+    index("share_contributions_share_idx").on(t.shareId),
+    index("share_contributions_person_idx").on(t.personId, t.status),
+    index("share_contributions_review_idx")
       .on(t.status, t.createdAt)
       .where(sql`not is_test`),
   ],
@@ -1184,8 +1194,8 @@ export const seedConversations = pgTable("seed_conversations", {
 
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
-export type Place = typeof places.$inferSelect;
-export type PlaceContribution = typeof placeContributions.$inferSelect;
+export type Share = typeof shares.$inferSelect;
+export type ShareContribution = typeof shareContributions.$inferSelect;
 export type Caregiver = typeof caregivers.$inferSelect;
 export type CaregiverNomination = typeof caregiverNominations.$inferSelect;
 export type Submission = typeof submissions.$inferSelect;

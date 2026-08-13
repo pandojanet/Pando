@@ -3,12 +3,19 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 
 /**
- * Estimate 1.8 — the extraction engine.
+ * Estimate 1.8 — the extraction pass.
  *
- * A parent types a sentence about a place; this turns it into the structured
- * facts an answer can be built from, and scores how confident it is. The score
- * is what fills the admin's "low confidence first" queue — the queue that tells
- * Janet which cards need a human before they can be used.
+ * **What it is not:** it does not pull structured facts out of prose. The
+ * estimate's word "extraction" assumed a parent would type a paragraph; our
+ * capture asks closed questions instead, so age bands, price band and unit,
+ * recency, how much they went and whether they recommend it all arrive as taps
+ * (R1–R11). There is nothing left to extract. What remains is the handful of
+ * sentences a parent chose to write, and the useful question about those is
+ * *which ones need a human first* — so this classifies and flags, and never
+ * rewrites (invariant 8).
+ *
+ * The score fills the admin's "low confidence first" queue. It answers one
+ * question only: **how much does this text add, on its own terms.**
  *
  * Three rules constrain what this file is allowed to see and say, and none of
  * them are negotiable:
@@ -46,6 +53,25 @@ export interface ExtractionInput {
   tip_text: string | null;
   who_for: string | null;
   who_not_for: string | null;
+  /**
+   * What the parent already answered **as taps**, passed as context so the model
+   * stops marking a note down for omitting facts the card holds elsewhere.
+   *
+   * Found by probing it: given a complete card, the reasons it gave for a low
+   * score were "lacks information about cost", "lacks age ranges" — both of which
+   * were captured, neither of which was in front of it. A note is not worse
+   * because the price lives in a different column.
+   */
+  captured?: {
+    price_band?: string | null;
+    price_unit?: string | null;
+    worth_it?: string | null;
+    /** current | recent | over_year | unsure */
+    last_there?: string | null;
+    how_much?: string | null;
+    recommendation?: string | null;
+    child_ages?: number[] | null;
+  };
 }
 
 export interface ExtractionResult {
@@ -67,12 +93,12 @@ const SCHEMA = {
     confidence: {
       type: "number",
       description:
-        "0 to 1. How usable this contribution is as-is: specific, concrete, and about the place rather than about a person. Low when vague, contradictory, or empty of detail.",
+        "0 to 1. How much a parent could act on this note: concrete, specific, first-hand. Low when vague, contradictory, or carrying no information. Naming a person does NOT lower this — that is reported separately and does not make a note less useful.",
     },
     possible_named_person: {
       type: "boolean",
       description:
-        "True if the text names or clearly identifies an individual person (a teacher, a coach, a neighbour) rather than describing the place.",
+        "True if the text names or clearly identifies an individual person — a teacher, a coach, a neighbour. Independent of the score: a note can be excellent and still name someone.",
     },
     note: {
       type: "string",
@@ -86,13 +112,16 @@ const SCHEMA = {
 
 const SYSTEM = `You review short notes that parents write about local classes, camps, places and tips, so a human reviewer knows which ones need attention first.
 
-Score how usable each note is as-is:
-- High: concrete and specific about the place — what happens there, who it suits, what to know first.
-- Low: vague ("it's good"), contradictory, or carries no information a parent could act on.
+Score how much another parent could act on the note:
+- High: concrete and specific — what happens there, who it suits, what to know first, what surprised them.
+- Low: vague ("it's good"), contradictory, or carrying no information at all.
 
-Separately, flag whether the note names or clearly identifies an individual person. A place has staff, and a parent may praise one by name; that is not a problem with the note, but a person must read it before it can be used anywhere.
+Two things must not lower the score.
 
-You are classifying, not rewriting. Never reproduce the parent's wording in your note.`;
+1. **Naming a person does not lower it.** A parent praising one teacher by name is often the most useful note there is. Report that separately in possible_named_person, because a human has to read it before it can be used — but score the note on what it tells a parent.
+2. **Facts listed under "Already answered" do not lower it.** Those were captured as taps on other screens. A note is not worse for leaving out a price that is already recorded.
+
+You are classifying, not rewriting. Never reproduce the parent's wording in your note, and never suggest what is missing from a card — only what this text does or does not tell a parent.`;
 
 /** Unset key ⇒ no extraction. The column stays null; nothing is invented. */
 export function isExtractionConfigured(): boolean {
@@ -134,6 +163,23 @@ export async function extractCard(
      queue for no reason. */
   if (text.trim() === "") return null;
 
+  /* The taps, so the model judges what the sentences add rather than what the
+     card as a whole is missing. */
+  const c = input.captured ?? {};
+  const captured = [
+    c.recommendation && `recommends: ${c.recommendation}`,
+    c.last_there && `last there: ${c.last_there}`,
+    c.how_much && `how much they went: ${c.how_much}`,
+    c.price_band &&
+      `price: ${c.price_band}${c.price_unit ? ` per ${c.price_unit}` : ""}`,
+    c.worth_it && `worth it: ${c.worth_it}`,
+    c.child_ages && c.child_ages.length > 0
+      ? `child age at the time: ${c.child_ages.join(", ")}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("; ");
+
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
@@ -143,7 +189,16 @@ export async function extractCard(
       messages: [
         {
           role: "user",
-          content: `Kind: ${input.kind}\nPlace: ${input.place_name}\n\n${text}`,
+          content: [
+            `Kind: ${input.kind}`,
+            `Name: ${input.place_name}`,
+            captured ? `Already answered as taps — ${captured}` : null,
+            "",
+            "What the parent wrote:",
+            text,
+          ]
+            .filter((line) => line !== null)
+            .join("\n"),
         },
       ],
     });

@@ -142,18 +142,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       mode === "resume" && existing
         ? existing
         : newSession({
+            /* The code travels with the session; the *group* behind it does not.
+               The server re-resolves it from this code on every write, so a
+               client copy would only be a second version of the same fact — and
+               the one the browser could edit. */
             invite_code: resolved.valid
               ? (inviteCode ?? (code.trim() || null))
               : null,
-            /* Carried so P6 can confirm the group instead of asking for it. Only
-               present when an admin linked this invite to a real chip. */
-            invite_group:
-              resolved.valid && resolved.group_option_value && resolved.group_label
-                ? {
-                    value: resolved.group_option_value,
-                    label: resolved.group_label,
-                  }
-                : null,
             market_id: resolved.market_id,
             source,
           });

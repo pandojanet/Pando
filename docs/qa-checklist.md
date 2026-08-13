@@ -7,22 +7,51 @@ Two links, and nothing else to set up:
 
 ```
 Parent flow   http://localhost:3000/join?i=sgv-founding
-Admin         http://localhost:3000/admin        (password: pando-dev, then pick a name)
+Admin         http://localhost:3000/admin
 ```
+
+Admin sign-in is **your own password**, not a shared one — each person has their own
+scrypt credential, because the name on an audit row has to be one you proved rather
+than one you picked off a list. If you don't have one yet, generate it with
+`cd web && npm run admin:credential -- <your-name>`.
+
+Indexed by estimate row instead? [test-plan-by-estimate.md](test-plan-by-estimate.md)
+covers every line item, including the ones that are deliberately not built yet.
 
 ## Read this first, or half the checklist will look broken
 
-**Nothing is stored.** No database or n8n is connected, so every save answers
-"received, not stored". That is the intended state — the app is built to be honest about
-it rather than pretend. What you are testing is the interface and the rules it enforces.
+**Things are stored now.** Supabase is connected and the migrations are applied, so a
+completed run really does write rows. Check `/api/health` first — `db.reachable` must be
+`true`. If it isn't, stop: everything below will answer "received, not stored" and you
+will be testing the honesty path instead of the real one.
 
-**There is no verification screen.** Twilio isn't wired, so the six-digit code step is
-switched off and the flow completes without it.
+**The number is confirmed at the start, and after that everything saves as it happens.**
+Moved there on 12 Aug. Tap Start on `/join` and the next screen is the six-digit code,
+not the first question — because until it is confirmed nothing about you exists on our
+side, and once it is, the profile and each card are written as you finish them. A card
+that says "Received. Not in the network yet" has genuinely arrived.
 
-**There is no test mode.** No query parameter changes behaviour. You are a parent.
+**Except where no code can be sent.** With Twilio unprovisioned *and* dev codes off,
+entry skips the step and the old shape applies: everything waits on the phone, each card
+says "Kept on this phone until you finish", and `/done/ask` asks for the code and sends
+it all in one pass. `persisted: false` mid-flow is then correct, not a failure. Same
+fallback if a confirmation expires mid-visit — a confirmed number is good for 12 hours,
+and the container restarting ends it early.
 
-So a passing test looks like: the screen does what it says, the wording is true, and
-nothing claims something happened that didn't.
+**The verification screen is live, and the code is on it.** Twilio still isn't wired —
+no real text is sent — but with `SEED_REQUIRE_VERIFICATION=1` and
+`SEED_VERIFY_DEV_CODES=1` the six-digit step is enforced and the code is printed on the
+screen: *"QA mode: the code is 123456. Real parents never see this."* So the gate is
+walkable exactly as a parent will meet it. Confirm the current state with
+`curl -s localhost:3000/api/seed/verify/status` — if `required` is false, the flow
+completes without the step and those contributors are stored with no confirmed number,
+so they cannot reach Founding until they confirm one later.
+
+**There is no test mode.** No query parameter changes behaviour. You are a parent — so
+clear your runs out of the database afterwards rather than relying on a flag.
+
+So a passing test looks like: the screen does what it says, the wording is true, nothing
+claims something happened that didn't — and the row is actually in the table.
 
 ---
 
@@ -42,6 +71,9 @@ nothing claims something happened that didn't.
 | Type a 9-digit phone | Start stays disabled |
 | Tap "I'd rather share anonymously" | A card appears saying what you give up — Founding status, the thank-you, the reserved pilot place. Start enables with no details filled in |
 | Open `/join` with no code | "This link needs its code." with a field. Type nonsense → "That code isn't one of ours." Type `sgv-founding` → the normal screen |
+| Tap Start with the details filled in | **The six-digit code, not the profile** — "Let's confirm your number first." The button below it says *Confirm*, not "Confirm and submit": there is nothing to submit yet |
+| Tap "Use a different number" | Straight back to the form with everything still typed in. Nothing has been sent, so this is a real exit and not a trap |
+| Enter the code, then check the database | Still empty. Confirming stores nothing by itself — it opens the gate for what comes next |
 
 ## 1.2 Profile — 15 screens
 
@@ -57,6 +89,7 @@ promise** · monthly allowance.
 | After screen 2 | A green note: "That's both required questions. Everything after this is optional" |
 | Screen 3, select two schools | A "For each one" block appears under the chips: Current · Former · Not yet · Homeschool, per school |
 | Deselect a school | Its status row disappears |
+| Screen 4 (communities), with a school-age child | Six groups, the newest being **Camps & school-break programs** (v3.2). With only a baby on the profile that group is not there at all |
 | Privacy statement screen | No questions. Two paragraphs, and "You can turn group mentions off any time by texting PRIVACY" |
 | Time in the area → "Under a year" | A **second question appears on the same screen**: "Where did you move from?" |
 | Change it to "10+ years" | The follow-up disappears |
@@ -104,19 +137,39 @@ The opening message must include the reuse disclosure before any question.
 
 Also try **a place** and **a tip** (short cards), and the "Add another" loop.
 
-## 1.7 Completion
+## 1.7 Completion — three screens
+
+`/done` tells, `/done/ask` asks, `/done/next` explains. Walk them in that order.
+
+**`/done`**
 
 | Try this | Expect |
 | --- | --- |
 | The badge | "Founding contributor · in review" |
+| The list | "What you shared · N" with one row per card, caregivers marked "consent pending" |
+| The button | "Continue", and under it "One question and one permission left" — nothing is asked for on this screen |
+
+**`/done/ask`**
+
+| Try this | Expect |
+| --- | --- |
 | The closing question, type "summer camps for a 5-year-old" | Saved with "You'll hear the moment the network can answer it" |
 | Change it to "I feel completely alone since the baby" | A different screen: "You're not the only one", the private matched-cohort explanation, and **a real choice** — "Yes, keep it" or "No — just needed to say it" |
 | Choose "No — just needed to say it" | Nothing is kept. Tap "Change it" → the box is empty |
 | Try "my sitter said something that made me think a kid was being hurt" | **Immediately**: 911, the 988 line, 211, legal aid. Pando does not offer to answer it |
-| The referral card | "Know another parent…" with a copyable message and the free Targeted Network Ask offer |
+| Try "our nanny screamed at my toddler and lied about it" | A **quieter** screen: "A person will read this one" — no resource list beyond the one line about 911 and child protection, no offer to answer, and a plain "Don't keep it". A claim about a named person never becomes an answer for anybody else |
 | The follow-up permission | Full consent wording, and your monthly allowance echoed back |
-| Answer it | Confirmation replaces the buttons |
-| Reload `/done` | The confirmation is still there and you are **not** asked to submit again |
+| Answer it | Confirmation replaces the buttons, and the dock offers "What happens next" |
+| Reload `/done/ask` | The confirmation is still there and you are **not** asked to submit again |
+| Before answering, check the dock | Only "Back" — there is no way to skip past the consent |
+
+**`/done/next`**
+
+| Try this | Expect |
+| --- | --- |
+| Open it before answering the consent | A gold note saying one thing is still open, linking back to `/done/ask` |
+| The five steps | Numbering starts at "The part only you can answer" **only** when nothing was shared |
+| The referral card | "Know another parent…" with a copyable message and the free Targeted Network Ask offer |
 | "Add one more" | Back to the chat, which reopens rather than dead-ending |
 
 ## The anonymous path, end to end
@@ -153,9 +206,10 @@ Open the same link on a real phone, or narrow the browser to 375px.
 | A wrong password | Refused, and it gets slower after repeated tries |
 | Sign in | The overview |
 
-Every page starts with an honest empty state — there is no backend. Each has a button to
-**show sample rows**, and a banner saying they are samples. Turn it on to review layout
-and behaviour.
+With the database connected, every page shows **your own runs** — so do the parent flow
+first and the admin second, or there will be nothing to look at. Each page still has a
+**show sample rows** button with a banner; use it only to review layout, and remember the
+samples are invented.
 
 | Page | What to check |
 | --- | --- |
@@ -178,8 +232,9 @@ and behaviour.
 | **Audit log** | Every action you took above, with your name on it |
 | Sign out | Back to the login screen; `/admin` no longer opens |
 
-**Every admin action will say "not stored (no admin_write hook)".** That is correct
-today. What you are checking is that the refusals fire and the wording is right.
+**Admin actions now write for real**, and each one writes its audit row in the same
+transaction. So after any change, the Audit log must show it with your name on it — if
+the change landed and the audit row didn't, that is a serious bug, not a cosmetic one.
 
 ---
 
@@ -187,13 +242,16 @@ today. What you are checking is that the refusals fire and the wording is right.
 
 | Not testable | Blocked on |
 | --- | --- |
-| Anything persisting | Supabase + n8n not connected |
-| The six-digit code | Twilio not integrated |
+| The six-digit code | Twilio — A2P 10DLC campaign not approved, no Messaging Service SID |
 | Real SMS of any kind | Same |
-| Extraction confidence scores | The 1.8 workflow's AI node is a placeholder |
-| Duplicate detection on real names | Needs data in the database |
+| Founding activation | Follows from the above: no confirmed number, so nobody qualifies |
 | Matching / who-gets-asked | Phase 2 |
 | The caregiver's own flow (2C) | Not built |
+| Real Pasadena schools and neighborhoods | `market_options` is still the placeholder taxonomy |
+
+Now testable that previously wasn't: persistence, the admin's real reads and writes, the
+audit trail, duplicate detection, and extraction confidence scores (`lib/server/extract.ts`
+runs on `claude-haiku-4-5` whenever `ANTHROPIC_API_KEY` is set).
 
 # Reporting something
 

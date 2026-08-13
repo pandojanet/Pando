@@ -47,13 +47,6 @@ export function ProfileFlow() {
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  /**
-   * "No — somewhere else" on the invite-group confirm. Kept in component state
-   * rather than in the session: it is a fact about this screen, not about the
-   * parent, and storing it would mean a resumed session hides a question they
-   * never actually answered.
-   */
-  const [declinedInviteGroup, setDeclinedInviteGroup] = useState(false);
 
   // A parent can deep-link straight here from a forwarded URL; don't block them.
   useEffect(() => {
@@ -127,9 +120,6 @@ export function ProfileFlow() {
       switch (question.id) {
         case "neighborhood":
           a.neighborhood = next[0] ?? null;
-          break;
-        case "invite_group":
-          a.invite_group = next[0] ?? null;
           break;
         case "time_in_area":
           a.time_in_area = next[0] ?? null;
@@ -457,50 +447,6 @@ export function ProfileFlow() {
           <div className="mt-6 space-y-8">
             {questions.map((question) => (
               <div key={`${question.id}-group`}>
-              {/**
-               * P6, when the invite already names the group. The client's own
-               * wording was *"You joined through [group]. Is that one of your
-               * communities?"* and it was unusable while one link served everyone —
-               * we could not name the group. A per-group invite can.
-               *
-               * It stays a **question**, not an assertion: the link is evidence
-               * that somebody forwarded it, not that this parent belongs to the
-               * group, so only the yes writes the affinity edge. "No" falls
-               * through to the ordinary list rather than to nothing.
-               */}
-              {question.id === "invite_group" &&
-              session.invite_group &&
-              !declinedInviteGroup &&
-              selectionsFor(question, answers).length === 0 ? (
-                <div className="rounded-3xl border border-green/25 bg-green-wash p-5">
-                  <p className="text-[15.5px] leading-relaxed text-green-deep">
-                    You joined through{" "}
-                    <strong>{session.invite_group.label}</strong>. Is that one of
-                    your communities?
-                  </p>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <Button
-                      full
-                      onClick={() => {
-                        setSelections(question, [session.invite_group!.value]);
-                        track("seed_question_answered", {
-                          question: question.id,
-                          option: "invite_confirmed",
-                        });
-                      }}
-                    >
-                      Yes, that&apos;s mine
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      full
-                      onClick={() => setDeclinedInviteGroup(true)}
-                    >
-                      No — somewhere else
-                    </Button>
-                  </div>
-                </div>
-              ) : (
               <ChipGroup
                 key={question.id}
                 label={questions.length > 1 ? question.label : undefined}
@@ -527,7 +473,6 @@ export function ProfileFlow() {
                 }
                 onRemoveCustom={(value) => removeCustom(question, value)}
               />
-              )}
 
               {/* P5 — each school gets its own status. "Former" is a real signal:
                   a parent who has been through admissions is exactly who someone

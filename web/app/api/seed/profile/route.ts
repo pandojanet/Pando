@@ -168,7 +168,6 @@ export async function POST(request: Request) {
     neighborhood,
     child_ages: childAges,
     allowance: cleanId(answersIn?.allowance),
-    invite_group: cleanId(answersIn?.invite_group),
     attribution: cleanId(answersIn?.attribution),
     time_in_area: cleanId(answersIn?.time_in_area),
     moved_from: cleanId(answersIn?.moved_from),
@@ -277,7 +276,19 @@ export async function POST(request: Request) {
     ),
     time_in_area: cleanId(raw.time_in_area),
     moved_from: cleanId(raw.moved_from),
-    invited_via_group: cleanId(raw.invited_via_group),
+    /**
+     * Where the link reached this parent — **from the invite the server just
+     * validated, never from the body** (12 Aug). Until then it came from a
+     * question in the profile ("Where this link reached you"), which asked a
+     * parent to re-enter something the code already knew and produced a second,
+     * weaker copy of it. The question is gone.
+     *
+     * Attribution only. It is deliberately *not* an affinity edge: a link
+     * forwarded out of a group says somebody shared it, not that whoever opened it
+     * belongs there. Membership still comes from the "Parent groups" question,
+     * where a parent states it themselves.
+     */
+    invited_via_group: invite.group_option_value ?? null,
     answers,
     /**
      * **Derived here, from the answers above — not taken from the body.**
