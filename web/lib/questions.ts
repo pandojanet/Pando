@@ -677,6 +677,30 @@ export function childOptions(answers: ProfileAnswers): Option[] {
 }
 
 /**
+ * The most answers a question can take: **one per child**, for the questions
+ * whose answer belongs to a child rather than to the household.
+ *
+ * A school, a class or a camp is a thing *one* child does, so a two-child family
+ * naming six schools has described a household again — which is the exact
+ * ambiguity `perChild` was added to remove (13 Aug). The cap is what keeps the
+ * "whose is it?" question under each selection answerable rather than a guess,
+ * and it is why the chip lists stopped reading as "безліч".
+ *
+ * Undefined means no cap, which is every other question on the flow: parent
+ * groups, logistics and the topic clusters take as many as genuinely apply.
+ */
+export function maxSelectionsFor(
+  question: Question,
+  answers: ProfileAnswers,
+): number | undefined {
+  if (!question.perChild) return undefined;
+  const children = new Set(answers.child_ages).size;
+  /* No cap before P4 is answered. It is required, so this is the corrupted-session
+     case — and a screen that refuses every tap is worse than an uncapped one. */
+  return children > 0 ? children : undefined;
+}
+
+/**
  * Whose this answer is, as ages. Falls back to the whole family when a parent
  * skipped the question — an unattributed school still belongs to *someone* in
  * this household, and a single-child family is never asked at all.

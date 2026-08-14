@@ -20,6 +20,17 @@ interface Props {
   onAddCustom?: (value: string) => void;
   onRemoveCustom?: (value: string) => void;
   groupLabel: string;
+  /**
+   * The most answers this question can hold, counting typed ones. Undefined is
+   * the normal case — most questions take as many as apply.
+   *
+   * A cap only ever blocks *adding*: deselecting stays possible at the limit, or
+   * a parent who reaches it can never change their mind, and "swap one for
+   * another" becomes "start the screen again".
+   */
+  max?: number;
+  /** Shown once the cap is reached. Worded by the caller — only it knows why. */
+  maxHint?: string;
 }
 
 export function ChipGroup({
@@ -34,12 +45,27 @@ export function ChipGroup({
   onAddCustom,
   onRemoveCustom,
   groupLabel,
+  max,
+  maxHint,
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const exclusiveIds = options.filter((o) => o.exclusive).map((o) => o.id);
 
+  /* Typed answers count. "Another school" is still a school, so leaving customs
+     out would make the cap trivially avoidable by the one path that produces the
+     least matchable data. */
+  const atMax = max !== undefined && selected.length + custom.length >= max;
+  /* "None / prefer not to say" clears the group, so it can never take it over the
+     limit — and refusing to answer must stay reachable at any count. */
+  const blocked = (option: Option) =>
+    mode === "multi" &&
+    atMax &&
+    !option.exclusive &&
+    !selected.includes(option.id);
+
   function toggle(option: Option) {
     const on = !selected.includes(option.id);
+    if (on && blocked(option)) return;
 
     if (mode === "single") {
       /* Radio semantics: tapping the chosen one keeps it chosen. Allowing a
@@ -91,6 +117,7 @@ export function ChipGroup({
             mode={mode}
             compact={layout === "grid"}
             selected={selected.includes(option.id)}
+            disabled={blocked(option)}
             onToggle={() => toggle(option)}
           />
         ))}
@@ -106,10 +133,18 @@ export function ChipGroup({
         {onAddCustom && (
           <AddOtherChip
             label={otherLabel ?? "Other"}
+            disabled={atMax}
             onClick={() => setSheetOpen(true)}
           />
         )}
       </div>
+
+      {/* Stated only once it bites. Explaining a limit a parent has not reached
+          is a rule to remember instead of a screen to answer — and this is a
+          full question, never an error: they have done nothing wrong. */}
+      {atMax && maxHint && (
+        <p className="mt-2.5 text-[13px] leading-relaxed text-muted">{maxHint}</p>
+      )}
 
       {onAddCustom && (
         <OtherSheet

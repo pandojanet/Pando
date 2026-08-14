@@ -23,6 +23,7 @@ import {
   customEntriesFor,
   isQuestionAnswered,
   labelForOption,
+  maxSelectionsFor,
   optionsFor,
   profileCompleteness,
   selectionsFor,
@@ -222,6 +223,16 @@ export function ProfileFlow() {
     update((s) => {
       const existing = s.answers.other[question.id] ?? [];
       if (existing.some((v) => v.toLowerCase() === value.toLowerCase())) return s;
+      /* The cap again, against the stored answers rather than against a rendered
+         button — the sheet can be open while the count changes under it, and a
+         typed school is the one path that would otherwise slip past it. */
+      const max = maxSelectionsFor(question, s.answers);
+      if (
+        max !== undefined &&
+        selectionsFor(question, s.answers).length + existing.length >= max
+      ) {
+        return s;
+      }
       return {
         ...s,
         answers: {
@@ -602,7 +613,12 @@ export function ProfileFlow() {
           )}
 
           <div className="mt-6 space-y-8">
-            {questions.map((question) => (
+            {questions.map((question) => {
+              /* One per child, for the questions that belong to a child. See
+                 `maxSelectionsFor` — the cap is what makes the "whose is it?"
+                 picker below answerable instead of a guess. */
+              const max = maxSelectionsFor(question, answers);
+              return (
               <div key={`${question.id}-group`}>
               <ChipGroup
                 key={question.id}
@@ -612,6 +628,14 @@ export function ProfileFlow() {
                 layout={question.kind === "ages" ? "grid" : "wrap"}
                 options={optionsFor(question, market, answers)}
                 selected={selectionsFor(question, answers)}
+                max={max}
+                maxHint={
+                  max === undefined
+                    ? undefined
+                    : max === 1
+                      ? "One per child — tap it off to choose a different one."
+                      : `One for each of your ${max} kids. Tap one off to swap it.`
+                }
                 onChange={(next, changed) => {
                   setSelections(question, next);
                   if (changed.on) {
@@ -729,7 +753,8 @@ export function ProfileFlow() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {index === 1 && (

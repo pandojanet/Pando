@@ -132,6 +132,27 @@ the market falling back — a typo in a forwarded link is not a dead end.
   didn't say", and `social_affinities.child_birth_years` is null rather than a
   guess. Reload mid-profile and the taps survive — they are two levels deep, which
   is exactly the shape a naive session-normaliser drops.
+- **One answer per child, on the questions that belong to a child** (14 Aug).
+  With two birth years tapped, go to schools and pick two: every other school chip
+  goes inert (faded, `not-allowed`, still on screen and still readable), "Another
+  school" goes with them, and a line appears reading *"One for each of your 2 kids.
+  Tap one off to swap it."* Then check all four rules:
+  1. **Swapping works** — tap one of the two off and everything re-enables. A cap
+     that could only be escaped by restarting the screen would be a wall.
+  2. **The ceiling is per question, not per screen.** On "Your circles", filling
+     classes must **not** disable camps, and must never touch parent groups, clubs
+     or faith — those are household questions and stay uncapped.
+  3. **A typed answer counts.** With the cap reached, "Another school" is
+     unavailable; it is still a school, and the Other sheet is the one path that
+     would otherwise walk straight past the rule.
+  4. **Nothing is said before it bites.** At one of two selections there is no
+     hint and no disabled chip — and the limit is never red, because reaching it
+     is not a mistake.
+
+  Add a third birth year and the ceiling rises to three on its own. **Known and
+  intended:** a one-child family can name only one school, which sits against the
+  screen's own "Former counts" invitation — see the Decisions row in CLAUDE.md
+  before "fixing" either half.
 - Single-select chips behave like radios: **tap the already-chosen chip and it
   stays chosen.** Deselecting used to clear the pre-set allowance on the first tap,
   which is the opposite of what the tap means.
