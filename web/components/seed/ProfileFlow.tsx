@@ -23,6 +23,7 @@ import {
   customEntriesFor,
   isQuestionAnswered,
   labelForOption,
+  maxSelectionHint,
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
@@ -629,13 +630,7 @@ export function ProfileFlow() {
                 options={optionsFor(question, market, answers)}
                 selected={selectionsFor(question, answers)}
                 max={max}
-                maxHint={
-                  max === undefined
-                    ? undefined
-                    : max === 1
-                      ? "One per child — tap it off to choose a different one."
-                      : `One for each of your ${max} kids. Tap one off to swap it.`
-                }
+                maxHint={maxSelectionHint(question, answers)}
                 onChange={(next, changed) => {
                   setSelections(question, next);
                   if (changed.on) {

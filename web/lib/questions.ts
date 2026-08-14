@@ -43,7 +43,6 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   camps: [],
   faith: [],
   clubs: [],
-  parent_groups: [],
   time_in_area: null,
   moved_from: null,
   family_structure: [],
@@ -278,8 +277,11 @@ export const SCREENS: Screen[] = [
         otherLabel: "Another school",
         perSelectionStatus: { label: "For each one", options: SCHOOL_STATUS },
         /* A school belongs to a child, not to a household. Asked only when the
-           family has more than one. */
+           family has more than one. Two each, because "Former counts" is this
+           screen's own invitation and one child commonly has a preschool behind
+           the school they are in now. */
         perChild: true,
+        perChildLimit: 2,
         /* Expecting-only families have nothing to answer here yet, and a screen
            with no chips on it is a dead end (spec §8.5 gates whole questions). */
         showForBands: ["baby", "toddler", "preschool", "grade", "tween", "teen"],
@@ -292,15 +294,6 @@ export const SCREENS: Screen[] = [
     title: "Which local groups and communities are part of your family's life?",
     help: "This powers Pando's best trust signal — “from a parent at your school”. Every one of these is optional.",
     questions: [
-      {
-        id: "parent_groups",
-        label: "Parent groups",
-        kind: "multi",
-        source: { type: "market", category: "parent_groups" },
-        affinity: { type: "social_group", weight: 3 },
-        allowOther: true,
-        otherLabel: "Another parent group",
-      },
       {
         id: "classes",
         label: "Recurring classes & activities",
@@ -351,19 +344,26 @@ export const SCREENS: Screen[] = [
         otherLabel: "Another community",
       },
       /**
-       * "Where this link reached you" used to be a question here. It was removed
-       * on 12 Aug, when invites became one row per group: the link now *knows*
-       * which group it was posted in, so asking the parent to find it in a list
-       * was asking them to re-enter something we already had — and it produced a
-       * second, weaker copy of a fact `people.invite_id` holds exactly.
+       * **Parent groups is gone entirely** (14 Aug), and this is the second half
+       * of a removal that started on 12 Aug.
        *
-       * What each half does now, and why they stay apart:
-       *  - **attribution** comes from the invite, server-side, from the code the
-       *    server validated (`invited_via_group`);
-       *  - **membership** comes from "Parent groups" above, because that is the
-       *    question that asks it. A link forwarded out of a group is evidence
-       *    somebody shared it, never that whoever opened it belongs there — so an
-       *    invite still writes no affinity edge on its own.
+       * First "Where this link reached you" went, when invites became one row per
+       * group: the link already *knew* which group it was posted in, so asking a
+       * parent to find it in a list was asking them to re-enter a fact we held.
+       * That left a second question — "Parent groups", as *membership* — which
+       * read to a parent as the same question asked twice, because the chips were
+       * the same chips. The developer's call: an invite is about a group, so the
+       * screen stops asking about groups.
+       *
+       * **The consequence, written down because nothing else records it:** the
+       * `social_group` affinity now comes from "Clubs & leagues" alone. An invite
+       * still writes **no** affinity edge (a link forwarded out of a group is
+       * evidence somebody shared it, never that whoever opened it belongs there),
+       * so a parent-group membership edge has no source in the questionnaire at
+       * all. `invited_via_group` remains attribution, and attribution only.
+       *
+       * `market_options.parent_groups` stays: `/admin/invites` links each invite
+       * to one of its values, which is the whole point of the table now.
        */
     ],
   },
@@ -554,7 +554,7 @@ export const SCREENS: Screen[] = [
 ];
 
 /** Questions whose chip lists are sensitive enough to always offer an out. */
-const SENSITIVE: QuestionId[] = ["faith", "clubs", "parent_groups"];
+const SENSITIVE: QuestionId[] = ["faith", "clubs"];
 
 const PREFER_NOT: Option = {
   id: "prefer_not_to_say",
@@ -697,7 +697,35 @@ export function maxSelectionsFor(
   const children = new Set(answers.child_ages).size;
   /* No cap before P4 is answered. It is required, so this is the corrupted-session
      case — and a screen that refuses every tap is worse than an uncapped one. */
-  return children > 0 ? children : undefined;
+  if (children === 0) return undefined;
+  return children * (question.perChildLimit ?? 1);
+}
+
+/**
+ * What the screen says once that ceiling is reached — and nothing before it.
+ *
+ * It lives here rather than in the component because the number and the sentence
+ * explaining it come from the same rule: a hint that said "one each" while the
+ * cap allowed two would be worse than no hint at all.
+ */
+export function maxSelectionHint(
+  question: Question,
+  answers: ProfileAnswers,
+): string | undefined {
+  const max = maxSelectionsFor(question, answers);
+  if (max === undefined) return undefined;
+
+  const kids = new Set(answers.child_ages).size;
+  const each = question.perChildLimit ?? 1;
+
+  if (each > 1) {
+    return kids === 1
+      ? `Up to ${each} for your child — current and former both count. Tap one off to swap.`
+      : `Up to ${each} each for your ${kids} kids — current and former both count. Tap one off to swap.`;
+  }
+  return kids === 1
+    ? "One per child — tap it off to choose a different one."
+    : `One for each of your ${kids} kids. Tap one off to swap it.`;
 }
 
 /**

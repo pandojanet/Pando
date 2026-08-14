@@ -107,7 +107,6 @@ export function deriveAffinities(session: DerivationInput): AffinityRow[] {
   push("camps", answers.camps);
   push("faith", answers.faith);
   push("clubs", answers.clubs);
-  push("parent_groups", answers.parent_groups);
   // Age is matched as overlapping bands, not exact years (spec §6.4 / M6.4).
   // Bands are "as of capture" — the backend recomputes them from birth_year.
   push("child_ages", ageBandsOf(answers.child_ages));

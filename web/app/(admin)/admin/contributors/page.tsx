@@ -173,7 +173,10 @@ export default function ContributorsPage() {
               <tr>
                 <Th>Name</Th>
                 <Th>Neighborhood</Th>
-                <Th>Born</Th>
+                {/* Not the contributor's own birth year — the label has to say
+                    whose, because a column of bare years reads as theirs. Matches
+                    the wording on the detail page rather than inventing a second. */}
+                <Th>Children born</Th>
                 <Th className="text-right">Cards</Th>
                 <Th className="text-right">Qualifying</Th>
                 <Th>Reward</Th>

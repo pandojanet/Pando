@@ -302,18 +302,28 @@ export function verificationRequired(): boolean {
 }
 
 /**
- * QA switch. Returns the code in the response so the flow can be walked while the
- * A2P campaign is still pending. Off unless explicitly set, and the route says so
- * on screen when it's on — a hidden bypass is worse than no bypass.
+ * QA switch. Returns the code in the response so the flow can be walked before the
+ * A2P campaign clears — on a laptop, and **on the server too** (14 Aug). It used to
+ * refuse under `NODE_ENV=production` whatever the env said. That was right about
+ * the risk and wrong about the need: pilot-scale testing runs on the deployed app,
+ * not on a laptop, and refusing there meant the server could store nothing at all
+ * until Twilio was provisioned. One switch now, same behaviour everywhere.
+ *
+ * **What it switches off is not the OTP.** The code is still six digits, still
+ * expires in 5 minutes, still capped at 3 sends and 3 guesses, and still locks the
+ * number for 15 — the whole of §19 runs exactly as it will in production. What goes
+ * is the *proof of possession*: anyone who can read the screen can confirm any
+ * number they type. So while it is on, two things stop being true — invariant 11 no
+ * longer means a real parent stands behind a stored profile, and a `consents` row
+ * records permission for a number nobody proved they hold. The second is the
+ * expensive half: `/admin/consents` is the A2P §3.3 defence file, and a TCPA
+ * complaint arrives about a phone number.
+ *
+ * So it is **testing-only, and it comes out before the first real founding
+ * contributor** — the same deadline as the `pando` starter password. Until then the
+ * screen it lands on says so itself: "QA mode: the code is … Real parents never see
+ * this." A hidden bypass would be worse than no bypass; this one is on screen.
  */
 export function devCodesEnabled(): boolean {
-  /**
-   * Never in production, whatever the env says.
-   *
-   * This flag exists so QA could walk the flow while the A2P campaign was pending. A
-   * misplaced `SEED_VERIFY_DEV_CODES=1` on the VPS would print live verification codes
-   * on a public screen, so the build refuses rather than trusting deployment hygiene.
-   */
-  if (process.env.NODE_ENV === "production") return false;
   return process.env.SEED_VERIFY_DEV_CODES === "1";
 }

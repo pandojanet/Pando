@@ -91,7 +91,6 @@ export type QuestionId =
   | "camps"
   | "faith"
   | "clubs"
-  | "parent_groups"
   | "time_in_area"
   | "moved_from"
   | "family_structure"
@@ -139,6 +138,16 @@ export interface Question {
    * `answers.child_of` and written to `child_birth_years` on the row it produces.
    */
   perChild?: boolean;
+  /**
+   * How many answers each child may carry, when one is not enough. Defaults to 1.
+   *
+   * Schools take **2**, because this screen invites former ones in so many words
+   * ("or has attended — Former counts") and a single child routinely has both a
+   * preschool and the school they moved on to. A flat one-per-child would have
+   * made the screen contradict its own copy. Classes and camps stay at 1: those
+   * are things a child is doing, not a history.
+   */
+  perChildLimit?: number;
 }
 
 export interface Screen {
@@ -181,8 +190,6 @@ export interface ProfileAnswers {
   camps: string[];
   faith: string[];
   clubs: string[];
-  parent_groups: string[];
-  /** Which group the invite link came from — powers founding recognition. */
   time_in_area: string | null;
   moved_from: string | null;
   family_structure: string[];

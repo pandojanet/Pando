@@ -90,7 +90,6 @@ type ListKey = Extract<
   | "camps"
   | "faith"
   | "clubs"
-  | "parent_groups"
 >;
 
 const ID_LIST_KEYS: ListKey[] = [
@@ -106,7 +105,6 @@ const ID_LIST_KEYS: ListKey[] = [
   "camps",
   "faith",
   "clubs",
-  "parent_groups",
 ];
 
 const MAX_PER_LIST = 30;
@@ -313,8 +311,12 @@ export async function POST(request: Request) {
      *
      * Attribution only. It is deliberately *not* an affinity edge: a link
      * forwarded out of a group says somebody shared it, not that whoever opened it
-     * belongs there. Membership still comes from the "Parent groups" question,
-     * where a parent states it themselves.
+     * belongs there.
+     *
+     * Since 14 Aug the "Parent groups" question is gone too, so **nothing writes a
+     * parent-group membership edge any more** — a real hole in the matching graph,
+     * recorded in CLAUDE.md rather than closed here. Closing it means deciding that
+     * an invite *does* assert membership, which is the sentence above reversed.
      */
     invited_via_group: invite.group_option_value ?? null,
     answers,

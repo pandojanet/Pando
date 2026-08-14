@@ -64,8 +64,26 @@ rename the second to `.env`, then:
   file** — credentials live in the `admin_users` table (§3, step 7). Without
   either that table or the `ADMIN_CREDENTIALS` bootstrap, `/admin` stays dark, by
   design. Leaving the n8n block empty is fine — the app runs and
-  reports `persisted: false`. Leave the Twilio block empty and
-  `SEED_REQUIRE_VERIFICATION=0` until the A2P campaign is approved.
+  reports `persisted: false`.
+
+**While the A2P campaign is still with the carriers**, leave the Twilio block empty
+and pick one of two, because with neither the server stores *nothing*: no code can
+be sent, so every founding parent takes the deferred path and never gets past it.
+
+| Set in `/docker/pando/.env` | What you get |
+| --- | --- |
+| `SEED_VERIFY_DEV_CODES=1` | The **whole** OTP runs — 6 digits, 5-minute expiry, 3 sends, 3 guesses, 15-minute lock — with the code printed on screen instead of texted. Use this to test the real flow. |
+| `SEED_REQUIRE_VERIFICATION=0` | No OTP at all. Everything stores, `phone_verified_at` stays null, nobody reaches Founding until they confirm later. Tests less. |
+
+`SEED_VERIFY_DEV_CODES=1` removes proof that a parent holds the number they typed,
+so rows created under it are not evidence of consent — clear them or mark them
+`is_test` before the pilot, and unset the variable before the first real founding
+contributor (same deadline as the `pando` starter password).
+
+**It must be in `/docker/pando/.env`, not in a `.env.local` in the image.** The
+container runs the standalone build, which reads the process environment that
+compose passes in; a `.env.local` baked into the image is not read. Verify after a
+deploy with `curl https://<host>/api/seed/verify/status` — `sendable` must be true.
 
 ```bash
 chmod 600 /docker/pando/.env

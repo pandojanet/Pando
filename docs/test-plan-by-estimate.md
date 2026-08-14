@@ -132,11 +132,23 @@ the market falling back — a typo in a forwarded link is not a dead end.
   didn't say", and `social_affinities.child_birth_years` is null rather than a
   guess. Reload mid-profile and the taps survive — they are two levels deep, which
   is exactly the shape a naive session-normaliser drops.
-- **One answer per child, on the questions that belong to a child** (14 Aug).
-  With two birth years tapped, go to schools and pick two: every other school chip
-  goes inert (faded, `not-allowed`, still on screen and still readable), "Another
-  school" goes with them, and a line appears reading *"One for each of your 2 kids.
-  Tap one off to swap it."* Then check all four rules:
+- **"Parent groups" is gone from this screen** (14 Aug) — the whole question, not
+  just P6's "where this link reached you", which went on 12 Aug. "Your circles"
+  must show exactly four groups: classes, camps, clubs, faith. **What to know
+  before reading this as a bug:** nothing writes a parent-group affinity edge now,
+  by design — the invite records the group as *attribution* and never as
+  membership. `market_options.parent_groups` is still populated, because
+  `/admin/invites` links each invite to one of its values.
+- **A per-child ceiling, one each — except schools, which take two** (14 Aug).
+  With two birth years tapped, go to schools: the first three taps do nothing
+  special, and on the **fourth** every other school chip goes inert (faded,
+  `not-allowed`, still on screen and still readable), "Another school" goes with
+  them, and a line appears reading *"Up to 2 each for your 2 kids — current and
+  former both count."* Two is deliberate here and only here: the screen invites
+  former schools in so many words, and one child commonly has a preschool behind
+  their current school. Classes and camps cap at **one** each per child — fill
+  classes with two and the hint reads *"One for each of your 2 kids."* Then check
+  all four rules:
   1. **Swapping works** — tap one of the two off and everything re-enables. A cap
      that could only be escaped by restarting the screen would be a wall.
   2. **The ceiling is per question, not per screen.** On "Your circles", filling
@@ -149,10 +161,8 @@ the market falling back — a typo in a forwarded link is not a dead end.
      hint and no disabled chip — and the limit is never red, because reaching it
      is not a mistake.
 
-  Add a third birth year and the ceiling rises to three on its own. **Known and
-  intended:** a one-child family can name only one school, which sits against the
-  screen's own "Former counts" invitation — see the Decisions row in CLAUDE.md
-  before "fixing" either half.
+  Add a third birth year and both ceilings rise on their own — six schools, three
+  classes — with no reload.
 - Single-select chips behave like radios: **tap the already-chosen chip and it
   stays chosen.** Deselecting used to clear the pre-set allowance on the first tap,
   which is the opposite of what the tap means.

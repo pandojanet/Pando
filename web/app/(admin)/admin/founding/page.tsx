@@ -144,7 +144,9 @@ export default function FoundingQueuePage() {
                           <p className="mt-0.5 text-[13.5px] text-muted">
                             {[
                               row.neighborhood ? slugLabel(row.neighborhood) : null,
-                              `born ${row.child_birth_years.join(", ")}`,
+                              /* "kids born", not "born": next to a neighborhood and
+                                 a school, a bare year reads as the parent's own. */
+                              `kids born ${row.child_birth_years.join(", ")}`,
                               row.school,
                             ]
                               .filter(Boolean)

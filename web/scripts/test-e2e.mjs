@@ -181,7 +181,7 @@ head("1.2 / 1.3  profile, and the graph derived from it");
         schools: { "walden-school": [6] },
         camps: { "tom-sawyer-camps": [3, 6, 11] },
       },
-      classes: [], camps: ["tom-sawyer-camps"], faith: [], clubs: [], parent_groups: [],
+      classes: [], camps: ["tom-sawyer-camps"], faith: [], clubs: [],
       /* Removed as a question on 12 Aug — invites carry the group now. Still sent
          to prove the route ignores it rather than reviving a field. */
       invite_group: "altadena-moms",
