@@ -95,10 +95,13 @@ export default function FlagsPage() {
           >
             {flagTitle(flag.reason)}
           </h3>
+          {/* Three bare values separated by dots left it to the reader to work
+              out which was the class and which was the parent. One word fixes
+              it, and only the ambiguous one is labelled. */}
           <p className="text-[12.5px] text-muted">
             {[
               flag.subject?.title || null,
-              flag.contributor?.name,
+              flag.contributor?.name ? `from ${flag.contributor.name}` : null,
               when(flag.created_at),
             ]
               .filter(Boolean)
@@ -106,22 +109,29 @@ export default function FlagsPage() {
           </p>
         </div>
 
-        {/* The words. The field label sits under the quote, not over it, so the
-            eye lands on what the parent said first. */}
+        {/* The words. The per-answer field label sits under each quote, not over
+            it, so the eye lands on what the parent said first — but the block as
+            a whole is named, because otherwise nothing on the card says whose
+            words these are. */}
         {wrote.length > 0 ? (
-          <div className="mt-2 space-y-1.5">
-            {wrote.map((w) => (
-              <div key={w.field}>
-                <p className="text-[15px] leading-relaxed text-ink">
-                  “{w.body}”
-                </p>
-                {!isQuestion && (
-                  <p className="text-[11.5px] text-muted">
-                    {FIELD_LABEL[w.field] ?? sentence(w.field)}
+          <div className="mt-3">
+            <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+              {isQuestion ? "What they asked" : "What they wrote"}
+            </p>
+            <div className="mt-1 space-y-1.5">
+              {wrote.map((w) => (
+                <div key={w.field}>
+                  <p className="text-[15px] leading-relaxed text-ink">
+                    “{w.body}”
                   </p>
-                )}
-              </div>
-            ))}
+                  {!isQuestion && (
+                    <p className="text-[11.5px] text-muted">
+                      {FIELD_LABEL[w.field] ?? sentence(w.field)}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="mt-2 text-[13.5px] text-muted">
@@ -134,56 +144,78 @@ export default function FlagsPage() {
         )}
 
         {why && (
-          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[13px] leading-relaxed text-ink-soft">
-            <span>{why}</span>
-            {flag.confidence !== null && <Usefulness value={flag.confidence} />}
-          </p>
+          <div className="mt-3">
+            <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+              Why it came up
+            </p>
+            <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-[13px] leading-relaxed text-ink-soft">
+              <span>{why}</span>
+              {flag.confidence !== null && <Usefulness value={flag.confidence} />}
+            </p>
+          </div>
         )}
 
-        {/* One row of controls. */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            aria-label="Your note"
-            className={`${inputClass} min-w-[12rem] flex-1`}
-            value={note}
-            onChange={(e) =>
-              setNotes({ ...notes, [flag.id]: e.target.value.slice(0, 300) })
-            }
-            placeholder="Note what you decided…"
-          />
-          <Button
-            tone="primary"
-            disabled={busy}
-            onClick={() =>
-              void run("Done — cleared from the queue.", async () =>
-                adminAction({
-                  action: "flag.resolve",
-                  id: flag.id,
-                  note: note.trim() || null,
-                }),
-              )
-            }
+        {/**
+         * A real label, not a placeholder.
+         *
+         * The compaction pass replaced this heading with a placeholder and an
+         * `aria-label`, which reads as tidy and is not: a placeholder vanishes
+         * the moment somebody types, so the one moment you might want to check
+         * what the box is for is the moment the answer disappears. The client
+         * had asked for this field to be named, twice.
+         */}
+        <div className="mt-3">
+          <label
+            htmlFor={`note-${flag.id}`}
+            className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
           >
-            Done
-          </Button>
-          {flag.severity !== "escalation" && (
+            Admin comment
+          </label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <input
+              id={`note-${flag.id}`}
+              className={`${inputClass} min-w-[12rem] flex-1`}
+              value={note}
+              onChange={(e) =>
+                setNotes({ ...notes, [flag.id]: e.target.value.slice(0, 300) })
+              }
+              placeholder="What you decided, and why"
+            />
             <Button
-              tone="danger"
+              tone="primary"
               disabled={busy}
-              title="Move it to the top of the page, for something that needs attention today"
+              title="Saves your comment and takes this off the list"
               onClick={() =>
-                void run("Moved to the top.", async () =>
+                void run("Marked as read.", async () =>
                   adminAction({
-                    action: "flag.escalate",
+                    action: "flag.resolve",
                     id: flag.id,
                     note: note.trim() || null,
                   }),
                 )
               }
             >
-              Needs attention
+              I&apos;ve read it
             </Button>
-          )}
+            {flag.severity !== "escalation" && (
+              <Button
+                tone="danger"
+                disabled={busy}
+                title="Saves your comment and moves this to the top of the page"
+                onClick={() =>
+                  void run("Moved to the top.", async () =>
+                    adminAction({
+                      action: "flag.escalate",
+                      id: flag.id,
+                      note: note.trim() || null,
+                    }),
+                  )
+                }
+              >
+                Needs attention
+              </Button>
+            )}
+          </div>
         </div>
       </li>
     );

@@ -194,7 +194,6 @@ export function AdminShell({
   const { ref: navRef, maskStyle } = useEdgeFade<HTMLElement>();
   const counts = useQueueCounts(pathname);
 
-  const current = ITEMS.find((item) => isActive(pathname, item.href));
   const waiting = counts
     ? ITEMS.reduce((sum, item) => sum + (item.count?.(counts) ?? 0), 0)
     : 0;
@@ -243,6 +242,9 @@ export function AdminShell({
                     key={item.href}
                     href={item.href}
                     aria-current={active ? "page" : undefined}
+                    /* The hint is worth having *before* you click; on the page
+                       you are already on, the page's own intro says it. */
+                    title={item.hint}
                     className={cn(
                       /*
                         44px on a phone, 40 from `md`. The admin is a denser
@@ -266,16 +268,13 @@ export function AdminShell({
         </nav>
 
         {/*
-          One line about the page you are on, and only that page. A hint under all
-          nine items is a wall of prose in a 16rem column; under the current one it
-          answers "what am I looking at" for free.
+          The hint used to be *rendered* here, for the current page only. It read
+          as a helpful line and was pure duplication: every page has a `PageHead`
+          intro saying the same thing, so the sidebar and the page said it twice,
+          side by side, on every single visit. It lives on the nav link's `title`
+          now — which is where it is actually useful, because there you have not
+          yet arrived and the page's own intro has not answered you.
         */}
-        {current?.hint && (
-          <p className="hidden border-t border-bark/70 px-4 py-3 text-[12.5px] leading-relaxed text-muted md:block">
-            {current.hint}
-          </p>
-        )}
-
         <div className="hidden border-t border-bark/70 px-4 py-3 md:block">
           <p className="text-[12px] text-muted">Signed in as</p>
           <p className="text-[13.5px] font-semibold">{user}</p>
