@@ -122,9 +122,20 @@ ssh-keyscan -H YOUR_SERVER_HOST
 | `VPS_PORT`          | Only if SSH is not on 22.                                      |
 | `NEXT_PUBLIC_POSTHOG_KEY` | PostHog project API key. Optional — see below.           |
 
-And under **Variables** (not secrets — it is not one), optionally
-`NEXT_PUBLIC_POSTHOG_HOST` if the project is not on `https://us.i.posthog.com`
-(EU projects are `https://eu.i.posthog.com`).
+And under **Variables** (not secrets — neither is one):
+
+| Variable | Value |
+| -------- | ----- |
+| `NEXT_PUBLIC_POSTHOG_HOST` | Only if the project is not on `https://us.i.posthog.com` (EU projects are `https://eu.i.posthog.com`). Getting this wrong is silent: events are accepted by nothing and no error appears anywhere. |
+| `NEXT_PUBLIC_POSTHOG_SESSION_RECORDING` | `1` turns screen recording on. **QA only** — delete the variable and redeploy before the first real founding contributor. See the warning below. |
+
+> **Screen recording records the screen.** With that variable set to `1`, every
+> parent who opens the app has their session replayed into PostHog — including
+> the profile review, the chat transcript and `/done`, each of which renders every
+> earlier answer at once (a child's birth year, their school, the neighborhood,
+> free text about a named caregiver). It is on the same deadline as
+> `SEED_VERIFY_DEV_CODES` and the `pando` starter password: it comes out before
+> the pilot opens. Turning it off is a redeploy, not a server restart.
 
 **Why PostHog is a repo secret and not a server `.env` value.** Everything in
 `/docker/pando/.env` is read at request time by the running server. `NEXT_PUBLIC_*`

@@ -41,8 +41,12 @@ RUN mkdir -p public
 # analytics switched off, which is the same honest no-op as an unset key locally.
 ARG NEXT_PUBLIC_POSTHOG_KEY=""
 ARG NEXT_PUBLIC_POSTHOG_HOST="https://us.i.posthog.com"
+# QA-only screen recording. Empty here on purpose: an image built without it is
+# an image that records nobody's screen, so forgetting the arg fails safe.
+ARG NEXT_PUBLIC_POSTHOG_SESSION_RECORDING=""
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY \
-    NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST
+    NEXT_PUBLIC_POSTHOG_HOST=$NEXT_PUBLIC_POSTHOG_HOST \
+    NEXT_PUBLIC_POSTHOG_SESSION_RECORDING=$NEXT_PUBLIC_POSTHOG_SESSION_RECORDING
 
 ENV NODE_ENV=production
 RUN npm run build
