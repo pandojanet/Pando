@@ -36,6 +36,40 @@ const PLACE_TYPES: Option[] = [
   { id: "cafe", label: "Kid-friendly café" },
 ];
 
+/**
+ * R8's price band, exported (not just used inline below) so admin display can
+ * render the real label instead of guessing one from the id. `50_100`'s
+ * underscore stands in for a dash — a generic id-to-label formatter turns it
+ * into "50 100", which is where the admin's price column bug came from.
+ */
+export const PRICE_BAND: Option[] = [
+  { id: "free", label: "Free" },
+  { id: "under_25", label: "Under $25" },
+  { id: "25_50", label: "$25–50" },
+  { id: "50_100", label: "$50–100" },
+  { id: "100_200", label: "$100–200" },
+  { id: "over_200", label: "Over $200" },
+  { id: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
+/** R8's unit for the band above — exported for the same reason. */
+export const PRICE_UNIT: Option[] = [
+  { id: "per_class", label: "Class" },
+  { id: "per_session", label: "Session" },
+  { id: "per_month", label: "Month" },
+  { id: "per_term", label: "Term" },
+  { id: "per_camp_week", label: "Camp week" },
+];
+
+/** R9 — exported for the same reason as the two above. */
+export const WORTH_IT: Option[] = [
+  { id: "great_value", label: "Great value" },
+  { id: "fair", label: "Fair" },
+  { id: "pricey_worth_it", label: "Pricey but worth it" },
+  { id: "pricey_not_worth_it", label: "Pricey, not worth it" },
+  { id: "free", label: "It's free" },
+];
+
 const TIP_TOPICS: Option[] = [
   { id: "schedules", label: "Schedules & timing" },
   { id: "costs", label: "Costs & deals" },
@@ -195,15 +229,7 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           aside: "Per month, or per session for one-offs. A rough band is plenty.",
           widget: "quick",
           optional: true,
-          options: [
-            { id: "free", label: "Free" },
-            { id: "under_25", label: "Under $25" },
-            { id: "25_50", label: "$25–50" },
-            { id: "50_100", label: "$50–100" },
-            { id: "100_200", label: "$100–200" },
-            { id: "over_200", label: "Over $200" },
-            { id: "prefer_not_to_say", label: "Prefer not to say" },
-          ],
+          options: PRICE_BAND,
         },
         {
           /* A band without a unit is unusable: $100 a month and $100 a term are
@@ -216,25 +242,13 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
             fields.price_band !== "" &&
             fields.price_band !== "free" &&
             fields.price_band !== "prefer_not_to_say",
-          options: [
-            { id: "per_class", label: "Class" },
-            { id: "per_session", label: "Session" },
-            { id: "per_month", label: "Month" },
-            { id: "per_term", label: "Term" },
-            { id: "per_camp_week", label: "Camp week" },
-          ],
+          options: PRICE_UNIT,
         },
         {
           id: "worth_it",
           prompt: "Was it worth the money?",
           widget: "quick",
-          options: [
-            { id: "great_value", label: "Great value" },
-            { id: "fair", label: "Fair" },
-            { id: "pricey_worth_it", label: "Pricey but worth it" },
-            { id: "pricey_not_worth_it", label: "Pricey, not worth it" },
-            { id: "free", label: "It's free" },
-          ],
+          options: WORTH_IT,
         },
         {
           /* Per-recommendation permission, with the cost stated plainly. */

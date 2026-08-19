@@ -143,11 +143,16 @@ export async function extractAndFlag(
    * sort a queue by should say what it is a number *about* — before this, a card
    * at 0.85 carried no reasoning anywhere, and one at 0.35 only carried it as a
    * side effect of being flagged.
+   *
+   * Written unconditionally, because `extractCard` will not return a result whose
+   * note is blank — so the two columns move together and "scored but unexplained"
+   * has no way into the table. The sweep relies on that: it treats a missing note
+   * as unscored, which would re-queue such a row on every pass.
    */
   await db.execute(
     sql`update share_contributions
            set confidence = ${result.confidence},
-               confidence_note = ${result.note === "" ? null : result.note}
+               confidence_note = ${result.note}
          where id = ${contributionId}::uuid`,
   );
 
@@ -211,6 +216,20 @@ export function scheduleExtraction(db: Db, contributionId: string): void {
  * The catch-up pass: everything still unscored, oldest first. This is what
  * makes the inline attempt safe to lose — and what backfills the whole table
  * the first time an API key is set.
+ *
+ * **A score with no reason counts as unscored** (14 Aug). It used to look only at
+ * `confidence is null`, which left a gap nothing could close: a card scored before
+ * `confidence_note` existed (13 Aug) kept its number forever and could never
+ * acquire the sentence explaining it — the admin saw "0%" with nothing to
+ * interrogate, which is the exact state that column was added to end. The same gap
+ * pinned scores produced by the *older prompt*, the one that marked a card down
+ * for naming a person and for facts captured as taps (12 Aug); those numbers were
+ * wrong by the current definition and had no way back into the queue.
+ *
+ * This cannot loop, and that is load-bearing: `extractCard` refuses a response
+ * whose note is blank, so any row this pass scores comes out with both halves or
+ * stays null — it can never land in the "has a number, has no reason" state the
+ * condition selects for.
  */
 export async function sweepExtraction(
   db: Db,
@@ -224,7 +243,7 @@ export async function sweepExtraction(
     sql`
       select pc.id
       from share_contributions pc
-      where pc.confidence is null
+      where (pc.confidence is null or pc.confidence_note is null)
         and not pc.is_test
         and (pc.what_makes_it_great is not null
              or pc.caveat is not null

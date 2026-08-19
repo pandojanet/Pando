@@ -12,7 +12,7 @@ import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { writeProfile } from "@/lib/server/repo/profile";
 import { validateInviteCode } from "@/lib/server/invite";
-import { SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
+import { LISTENING_EAR_CONSENT_TEXT_VERSION, SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
 import {
   deriveAffinities,
   deriveLifeRelevance,
@@ -72,6 +72,27 @@ function normaliseSmsConsent(
       typeof record.text_version === "string" && record.text_version !== ""
         ? record.text_version
         : SMS_CONSENT_TEXT_VERSION,
+    source: typeof record.source === "string" ? record.source : undefined,
+  };
+}
+
+/**
+ * The listening-ear opt-in. No legacy shape to accommodate — this consent
+ * scope did not exist before 18 Aug — so this only guards against a stale or
+ * corrupted stored session, not a prior client build's shape.
+ */
+function normaliseListeningEarConsent(
+  value: unknown,
+): { status: string; text_version: string; source?: string } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record.status !== "opted_in" && record.status !== "declined") return null;
+  return {
+    status: record.status,
+    text_version:
+      typeof record.text_version === "string" && record.text_version !== ""
+        ? record.text_version
+        : LISTENING_EAR_CONSENT_TEXT_VERSION,
     source: typeof record.source === "string" ? record.source : undefined,
   };
 }
@@ -249,6 +270,7 @@ export async function POST(request: Request) {
     phone_verified: gate.verified_at !== null,
     phone_verified_at: gate.verified_at,
     sms_consent: normaliseSmsConsent(raw.sms_consent),
+    listening_ear_consent: normaliseListeningEarConsent(raw.listening_ear_consent),
     wants_founding: raw.wants_founding !== false,
     neighborhood,
     /** Birth years, not ages — plus the date the ages were taken. */
@@ -261,15 +283,22 @@ export async function POST(request: Request) {
     /**
      * P14. "As many as are genuinely relevant" has no number, and the send layer
      * must not invent one — it falls back to spacing and relevance rules alone.
+     *
+     * The allow-list is 5/10 (18 Aug — supersedes the 1/3/5 scheme; "Just 1 ·
+     * Basic access" is gone, not renumbered, so 1 and 3 are no longer valid
+     * values here either, not only off the tap list). The fallback is 5, the
+     * new default, for the same reason 3 was the fallback under the old scheme:
+     * an unrecognised value must land on the client's own default, never on
+     * whichever number happens to be lowest.
      */
     allowance_mode: raw.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
     monthly_contact_allowance:
       raw.allowance_mode === "as_relevant"
         ? null
         : typeof raw.monthly_contact_allowance === "number" &&
-            [1, 3, 5].includes(raw.monthly_contact_allowance)
+            [5, 10].includes(raw.monthly_contact_allowance)
           ? raw.monthly_contact_allowance
-          : 3,
+          : 5,
     /**
      * P13. One of two values or nothing — an unrecognised attribution must fail
      * closed to anonymous, never to a name.
@@ -363,6 +392,7 @@ export async function POST(request: Request) {
     has_phone: payload.phone !== null,
     phone_verified: payload.phone_verified,
     sms_consent: payload.sms_consent?.status ?? "none",
+    listening_ear_consent: payload.listening_ear_consent?.status ?? "none",
     wants_founding: payload.wants_founding,
     children: payload.children.length,
     allowance: payload.monthly_contact_allowance,
@@ -386,6 +416,7 @@ export async function POST(request: Request) {
       phone: payload.phone,
       phone_verified_at: payload.phone_verified_at,
       sms_consent: payload.sms_consent as ProfileConsent,
+      listening_ear_consent: payload.listening_ear_consent as ProfileConsent,
       wants_founding: payload.wants_founding,
       neighborhood,
       children: payload.children as never,

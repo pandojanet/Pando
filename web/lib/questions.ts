@@ -54,8 +54,9 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   topics_lived: [],
   /** P13. Null until they choose; nothing is shown until they do. */
   attribution: null,
-  /** P14 — 3 by default, per the client. A real control, not a preference. */
-  allowance: "3",
+  /** P14 — 5 by default (18 Aug: supersedes 3). A real control, not a preference. */
+  allowance: "5",
+  listening_ear: null,
   other: {},
   skipped: [],
 };
@@ -218,12 +219,29 @@ const ATTRIBUTION: Option[] = [
   },
 ];
 
-/** P14. The default is 3; "as many as are relevant" still obeys spacing rules. */
+/**
+ * P14 — the reciprocity agreement (§7, 18 Aug), superseding the 3-question
+ * default. Five is the network's actual floor for free Community Access, not a
+ * cautious opening offer, so it is the default rather than a step up from one —
+ * the old ladder's "Just 1 · Basic access" is gone with it: the strategy doc's
+ * no-commitment path is "still use Pando, pay full price," never a fourth chip
+ * here pretending a lighter version of the same agreement exists.
+ */
 const ALLOWANCE: Option[] = [
-  { id: "3", label: "3 a month", hint: "Community Access · default" },
-  { id: "5", label: "5 a month" },
-  { id: "as_relevant", label: "As many as are genuinely relevant" },
-  { id: "1", label: "Just 1", hint: "Basic access" },
+  { id: "5", label: "Now and then", hint: "Up to 5 a month · Community Access" },
+  { id: "10", label: "Happy to help more", hint: "Up to 10 a month" },
+  { id: "as_relevant", label: "Ask me anytime it's genuinely relevant" },
+];
+
+/**
+ * The listening-ear opt-in (18 Aug strategy addition, no P-number of its own).
+ * Two options, and neither is a soft middle: the strategy doc's own copy is a
+ * plain yes/no, and a "maybe" here would leave D1 sensitive-question routing
+ * (Phase 2) unable to tell "willing" from "unset."
+ */
+const LISTENING_EAR: Option[] = [
+  { id: "opted_in", label: "I'll be a listening ear" },
+  { id: "declined", label: "Not for me right now" },
 ];
 
 export const SCREENS: Screen[] = [
@@ -541,13 +559,34 @@ export const SCREENS: Screen[] = [
     id: "allowance",
     eyebrow: "Your terms",
     title: "How often may Pando ask you a question each month?",
-    help: "A limit Pando keeps, not a suggestion — with a 48-hour gap between any two. Free access to the network's private parent knowledge begins at 3; at 1 you can still ask Pando anything and pay for Network Asks.",
+    help: "A limit Pando keeps, not a suggestion — with a 48-hour gap between any two, and you can skip any single one. Five is what free Community Access actually needs; you can always just use Pando and pay for Network Asks instead.",
     questions: [
       {
         id: "allowance",
         label: "Monthly allowance",
         kind: "single",
         source: { type: "static", options: ALLOWANCE },
+      },
+    ],
+  },
+  {
+    /**
+     * The listening-ear opt-in. Placed last and on its own — it spends the same
+     * monthly allowance the screen just above sets, so the connection between
+     * the two only reads correctly if this comes right after it, and giving it
+     * its own screen (rather than folding it into the allowance question)
+     * keeps the two-tap choice as plain as the strategy doc's own copy.
+     */
+    id: "listening_ear",
+    eyebrow: "One more thing",
+    title: "Some parents ask Pando the things they can't ask anywhere else.",
+    help: "Would you be open to occasionally answering one, anonymously? It's never who they think, and it spends the same monthly allowance as everything else.",
+    questions: [
+      {
+        id: "listening_ear",
+        label: "Listening ear",
+        kind: "single",
+        source: { type: "static", options: LISTENING_EAR },
       },
     ],
   },
@@ -653,6 +692,8 @@ function rawSelectionsFor(
       return answers.attribution ? [answers.attribution] : [];
     case "allowance":
       return answers.allowance ? [answers.allowance] : [];
+    case "listening_ear":
+      return answers.listening_ear ? [answers.listening_ear] : [];
     case "child_ages":
       return answers.child_ages.map(String);
     default:
@@ -803,6 +844,47 @@ export function labelForOption(
 
 export function statusLabel(statusId: string): string {
   return SCHOOL_STATUS.find((s) => s.id === statusId)?.label ?? statusId;
+}
+
+/**
+ * Every label the questionnaire's own static lists hold, keyed by the id that
+ * gets stored — so a surface reading a stored answer back can render the words
+ * the parent actually saw.
+ *
+ * It exists for the admin. `life_relevance.value` and the derived affinities are
+ * raw ids, and the generic slug formatter is lossy on exactly the ones a person
+ * reads most: `3_10_years` came out as "3 10 Years", `free_low_cost` as "Free
+ * Low Cost". Market-sourced values (schools, neighborhoods, classes) are
+ * deliberately absent — they are slugs of their own labels, so slugging them
+ * back is lossless, and pulling the market list in here would make this file
+ * depend on runtime data it has no business knowing about.
+ *
+ * Ids are unique across these lists today. Where two ever collide, the first
+ * list wins, which is why the order below runs from the most specific
+ * (multi-word bands) to the most generic.
+ */
+const PROFILE_VALUE_LABELS: Record<string, string> = Object.fromEntries(
+  [
+    TIME_IN_AREA,
+    MOVED_FROM,
+    HOW_YOU_CHOOSE,
+    LOGISTICS,
+    FAMILY_STRUCTURE,
+    CHILDCARE_NOW,
+    TRUST_CIRCLES,
+    TOPICS_LOCAL,
+    TOPICS_LIVED,
+    ATTRIBUTION,
+    SCHOOL_STATUS,
+  ]
+    .flat()
+    .map((o) => [o.id, o.label] as const)
+    .reverse(),
+);
+
+/** The label for a stored profile answer, or null when it isn't one of ours. */
+export function profileValueLabel(value: string): string | null {
+  return PROFILE_VALUE_LABELS[value] ?? null;
 }
 
 export function questionById(id: QuestionId): Question {

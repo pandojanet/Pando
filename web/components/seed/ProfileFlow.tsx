@@ -152,6 +152,9 @@ export function ProfileFlow() {
         case "allowance":
           a.allowance = next[0] ?? null;
           break;
+        case "listening_ear":
+          a.listening_ear = next[0] ?? null;
+          break;
         case "child_ages":
           a.child_ages = next.map(Number).sort((x, y) => x - y);
           break;

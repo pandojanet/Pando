@@ -292,8 +292,18 @@ export async function POST(request: Request) {
    * be told it worked when nothing happened.
    */
   if (!result.data.applied) {
+    /**
+     * "Not implemented" reads as a broken button, which is wrong for a refusal
+     * an admin can actually hit — the strategy's referral cap (18 Aug) is the
+     * first one that isn't a genuine gap, so it gets its own honest sentence
+     * rather than borrowing the generic one.
+     */
+    const message =
+      result.data.reason === "referral_cap_reached"
+        ? "This parent already has three referrals credited — that's the cap."
+        : "That action isn't implemented yet";
     return NextResponse.json(
-      { error: "That action isn't implemented yet", reason: "not_implemented" },
+      { error: message, reason: result.data.reason },
       { status: 501 },
     );
   }

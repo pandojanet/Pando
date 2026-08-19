@@ -62,25 +62,25 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       {
         href: "/admin/activities",
         label: "Contributions",
-        hint: "Activities, places and tips. Low confidence first.",
+        hint: "Everything parents have recommended, newest first.",
         count: (o) => o.quality.pending_contributions,
       },
       {
         href: "/admin/caregivers",
         label: "Caregivers",
-        hint: "The consent ladder, held cards, and the private notes behind them.",
+        hint: "Who a family put forward, who has said yes, and what's being held back.",
         count: (o) => o.quality.review_holds,
       },
       {
         href: "/admin/claims",
         label: "Caregiver sign-ups",
-        hint: "Match a caregiver who registered themselves to the family's nomination.",
+        hint: "A caregiver signed up herself — which family put her forward?",
         count: (o) => o.quality.pending_claims,
       },
       {
         href: "/admin/demand",
         label: "Asked for",
-        hint: "What parents wanted at the end. Claims about a person, then health and safety.",
+        hint: "The questions parents asked. Anything about a named person comes first.",
         count: (o) =>
           o.demand.ordinary +
           o.demand.peer_support +
@@ -91,7 +91,7 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       {
         href: "/admin/flags",
         label: "Flags",
-        hint: "Anything the app couldn't decide on its own.",
+        hint: "Anything a parent wrote that you should read before Pando uses it.",
         count: (o) => o.quality.open_flags,
         urgent: (o) => o.quality.escalations,
       },
@@ -107,8 +107,8 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       },
       {
         href: "/admin/options",
-        label: "Tap lists",
-        hint: "Promote an 'other' answer so it can be matched on.",
+        label: "Names & places",
+        hint: "A parent typed something new — add it to the lists everyone picks from.",
         count: (o) => o.quality.pending_options,
       },
       {

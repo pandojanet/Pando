@@ -16,6 +16,7 @@ import {
   Td,
   Th,
   inputClass,
+  optionLabel,
   slugLabel,
   when,
 } from "@/components/admin/ui";
@@ -25,6 +26,15 @@ import {
   useAdminRows,
 } from "@/lib/admin/client";
 import type { CaregiverRow, ConsentStatus, DuplicateCandidate } from "@/lib/admin/types";
+import { CONSENT_STATE, HOLD_REASON, sentence } from "@/lib/admin/labels";
+import {
+  CAREGIVER_AGE_BANDS,
+  CAREGIVER_BENEFITS,
+  CAREGIVER_HOURS,
+  CAREGIVER_PAY_BANDS,
+  CAREGIVER_SCHEDULE,
+  CAREGIVER_TYPES,
+} from "@/lib/caregiver-options";
 
 /**
  * Estimate 2.5 — caregiver consent and duplicate candidates.
@@ -96,7 +106,7 @@ export default function CaregiversPage() {
     try {
       const result = await fn();
       setMessage(
-        result.persisted ? `${label} — done.` : `${label} — not stored (no admin_write hook).`,
+        result.persisted ? label : `${label} — but nothing was saved.`,
       );
       setOpenConsent(null);
       setNote("");
@@ -113,7 +123,7 @@ export default function CaregiversPage() {
     <>
       <PageHead
         title="Caregivers"
-        intro="Nominations wait here until the person themselves says yes. Nobody appears in a parent-facing answer unless they are consented and active — enforced in the query, not just hidden here."
+        intro="Everyone a family has put forward. Nobody reaches a parent until she has said yes herself and you have switched her on — until both are true she is invisible, whatever else is set here."
       />
 
       {(caregivers.error || duplicates.error) && (
@@ -182,7 +192,7 @@ export default function CaregiversPage() {
                           )}
                         </Td>
                         <Td>
-                          {row.type ? slugLabel(row.type) : "—"}
+                          {row.type ? optionLabel(CAREGIVER_TYPES, row.type) : "—"}
                           {/**
                            * Stage 1 employment context. Kept together and kept here
                            * rather than given columns of its own, because it is only
@@ -195,17 +205,23 @@ export default function CaregiversPage() {
                             row.benefits.length > 0) && (
                             <span className="mt-1 block text-[12px] leading-relaxed text-muted">
                               {[
-                                row.hours_per_week && slugLabel(row.hours_per_week),
-                                row.schedule_pattern.map(slugLabel).join(", ") ||
-                                  null,
-                                row.pay_band && slugLabel(row.pay_band),
+                                row.hours_per_week &&
+                                  optionLabel(CAREGIVER_HOURS, row.hours_per_week),
+                                row.schedule_pattern
+                                  .map((v) => optionLabel(CAREGIVER_SCHEDULE, v))
+                                  .join(", ") || null,
+                                row.pay_band &&
+                                  optionLabel(CAREGIVER_PAY_BANDS, row.pay_band),
                               ]
                                 .filter(Boolean)
                                 .join(" · ")}
                               {row.benefits.length > 0 &&
                                 row.benefits[0] !== "none" && (
                                   <span className="mt-0.5 block">
-                                    with {row.benefits.map(slugLabel).join(", ")}
+                                    with{" "}
+                                    {row.benefits
+                                      .map((v) => optionLabel(CAREGIVER_BENEFITS, v))
+                                      .join(", ")}
                                   </span>
                                 )}
                               {row.pay_band && !row.pay_benchmark_consent && (
@@ -219,7 +235,11 @@ export default function CaregiversPage() {
                             </span>
                           )}
                         </Td>
-                        <Td>{row.good_with_bands.join(", ") || "—"}</Td>
+                        <Td>
+                          {row.good_with_bands
+                            .map((b) => optionLabel(CAREGIVER_AGE_BANDS, b))
+                            .join(", ") || "—"}
+                        </Td>
                         <Td>
                           <Badge
                             tone={
@@ -230,15 +250,16 @@ export default function CaregiversPage() {
                                   : "gold"
                             }
                           >
-                            {slugLabel(row.consent_status)}
+                            {CONSENT_STATE[row.consent_status]?.label ??
+                              slugLabel(row.consent_status)}
                           </Badge>
                           <span className="mt-1 block">
                             {answerable ? (
-                              <Badge tone="green" title="Consented and active">
-                                answerable
+                              <Badge tone="green" title="She said yes and you switched her on — families can see her">
+                                families can see her
                               </Badge>
                             ) : (
-                              <Badge tone="muted">not shown</Badge>
+                              <Badge tone="muted">not shown to anyone</Badge>
                             )}
                           </span>
                         </Td>
@@ -262,12 +283,14 @@ export default function CaregiversPage() {
                             <>
                               <Badge
                                 tone="gold"
-                                title="Cannot be used in an answer until a person clears it"
+                                title="Nothing happens with this one until you clear it"
                               >
                                 held
                               </Badge>
                               <span className="mt-1 block text-muted">
-                                {row.hold_reasons.map(slugLabel).join(", ")}
+                                {row.hold_reasons
+                                  .map((r) => HOLD_REASON[r] ?? sentence(r))
+                                  .join(", ")}
                               </span>
                             </>
                           ) : (

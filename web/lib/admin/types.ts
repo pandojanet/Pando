@@ -255,6 +255,13 @@ export interface ContributionRow {
    * parent's — written by the same pass, cleared with the score.
    */
   confidence_note: string | null;
+  /**
+   * What an admin asked for via `contribution.needs_detail` — only meaningful
+   * when `status === "needs_detail"`. There is no channel to send it yet; this
+   * is what keeps the question in front of whoever reopens the queue instead of
+   * only inside the audit log.
+   */
+  needs_detail_note: string | null;
   provenance: Provenance;
   contributor: { id: string; name: string | null } | null;
   is_test: boolean;
@@ -407,10 +414,27 @@ export interface FlagRow {
   id: string;
   severity: "escalation" | "review" | "note";
   reason: string;
-  /** Free text is shown only here, never in a parent-facing answer. */
+  /**
+   * **Why it was raised** — the review pass's own sentence, never the parent's.
+   * The two are kept apart deliberately (invariant 8); see `subject.text` for
+   * what the parent actually wrote.
+   */
   excerpt: string;
   field: string | null;
-  subject: { kind: string; id: string; title: string } | null;
+  subject: {
+    kind: string;
+    id: string;
+    /** The class or place this is about. Empty for a question, which is its own text. */
+    title: string;
+    /**
+     * What the parent wrote, **field by field** — shown to the person doing the
+     * review and nowhere else. Separate entries rather than one string because
+     * two different answers run together read as one sentence, and the admin
+     * then cannot tell which of them named somebody. Empty when the flag came
+     * from taps alone.
+     */
+    wrote: Array<{ field: string; body: string }>;
+  } | null;
   contributor: { id: string; name: string | null } | null;
   status: "open" | "resolved" | "escalated";
   confidence: number | null;

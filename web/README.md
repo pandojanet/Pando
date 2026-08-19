@@ -45,7 +45,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
 | `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
 | `POST /api/seed/invite`  | Validates a hand-typed code.                                                |
-| `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools in one transaction. |
+| `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. |
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
@@ -119,6 +119,15 @@ forwarded around parent group chats still land in the right place.
 Adding or reordering a profile question is a change to `lib/questions.ts` alone;
 adding or reordering a capture question is a change to `lib/seed-chat/scripts.ts`
 alone. Nothing in the components knows what the questions are.
+
+Two exceptions worth knowing, both learned the hard way on 18 Aug. A question
+whose answer is **a consent** also needs a scope and a wording version in
+`lib/consent.ts`, a `consents_scope_check` widening, and a line in the write
+transaction — it is a record, never a boolean. And a question whose answer is
+**constrained by the database** (the P14 allowance is the only one today) has
+its valid values in four places at once: the tap list, `derive.ts`, the route's
+own allow-list, and a `CHECK`. Change fewer than all four and the route accepts
+a value the write then aborts on.
 
 ## Presentation
 
@@ -229,10 +238,11 @@ has the setup walkthrough.
 | --- | --- |
 | `npm run migrate` | Applies `drizzle/*.sql`. Safe to re-run — already-applied files are skipped. |
 | `npm run seed` | Loads `../supabase/seed.sql`: affinity weights, freshness policy, the placeholder taxonomy. |
+| `npm run seed:demo` | A realistic Pasadena founding cohort, so no admin page is empty in front of the client. `-- --clear` removes exactly it. Not `is_test` — see the decision in `../CLAUDE.md`. |
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 223 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 232 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
 
 The write paths, and what each guarantees atomically:
@@ -317,7 +327,7 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (223 checks, needs a dev server and a database),
+Tests: `npm run test:e2e` (232 checks, needs a dev server and a database),
 `npm run test:auth` (45), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at

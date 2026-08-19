@@ -220,12 +220,27 @@ export async function extractCard(
     if (!block || block.type !== "text") return null;
 
     const parsed = JSON.parse(block.text) as ExtractionResult;
+    const note = typeof parsed.note === "string" ? parsed.note.trim() : "";
+
+    /**
+     * **A number with no reason is not a result.** The schema requires `note`, so
+     * a blank one is a malformed response rather than a quiet edge case — and
+     * storing the score anyway is precisely how a card ends up reading "0%" with
+     * nothing an admin can interrogate. Returning null leaves it unscored, which
+     * is honest and which the sweep will retry; the alternative wrote a number
+     * nobody could stand behind and no pass could ever repair.
+     */
+    if (note === "") {
+      console.warn("[extract] response carried no reason; leaving unscored");
+      return null;
+    }
+
     return {
       // Clamp rather than trust: the column has a 0–1 CHECK, and a value
       // outside it would abort the update instead of just being wrong.
       confidence: Math.min(1, Math.max(0, Number(parsed.confidence))),
       possible_named_person: parsed.possible_named_person === true,
-      note: typeof parsed.note === "string" ? parsed.note.slice(0, 300) : "",
+      note: note.slice(0, 300),
     };
   } catch (err) {
     // Error class only. The request body is a parent's own words.

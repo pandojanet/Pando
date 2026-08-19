@@ -208,9 +208,16 @@ export const people = pgTable(
       .defaultNow(),
   },
   (t) => [
+    /**
+     * Widened by 0013 (18 Aug): 1/3/5 → 5/10, the reciprocity agreement's own
+     * numbers. Not a renumbering — 1 and 3 are gone because "Just 1 · Basic
+     * access" is gone, the same rule the app-level validation in
+     * `/api/seed/profile` already enforces. The two must never disagree, or a
+     * value the route accepts would abort the whole write here instead.
+     */
     check(
       "allowance_shape",
-      sql`(${t.allowanceMode} = 'as_relevant' and ${t.monthlyContactAllowance} is null) or (${t.allowanceMode} = 'fixed' and ${t.monthlyContactAllowance} in (1,3,5))`,
+      sql`(${t.allowanceMode} = 'as_relevant' and ${t.monthlyContactAllowance} is null) or (${t.allowanceMode} = 'fixed' and ${t.monthlyContactAllowance} in (5,10))`,
     ),
     /* Nothing about a named parent is stored before verification (invariant 11). */
     check(
@@ -248,10 +255,13 @@ export const consents = pgTable(
       .defaultNow(),
   },
   (t) => [
-    /** Widened by 0004 for 2C — the caregiver's own four permissions (G2, G8–G10). */
+    /**
+     * Widened by 0004 for 2C (the caregiver's own four permissions, G2/G8–G10)
+     * and by 0012 for the listening-ear opt-in (18 Aug).
+     */
     check(
       "consents_scope_check",
-      sql`${t.scope} in ('sms','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference')`,
+      sql`${t.scope} in ('sms','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear')`,
     ),
     check(
       "consents_status_check",
@@ -631,6 +641,14 @@ export const shareContributions = pgTable(
     status: reviewStatus("status").notNull().default("pending_review"),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     approvedBy: text("approved_by"),
+    /**
+     * The one sentence an admin typed for `contribution.needs_detail` — what was
+     * actually asked. Without it the question lived only in `audit_log.after`,
+     * where nobody reviewing the queue would think to look for it; the screen's
+     * own copy promises the card "stays in the queue until they answer", which
+     * is only true if the question is still readable when they come back to it.
+     */
+    needsDetailNote: text("needs_detail_note"),
     isTest: boolean("is_test").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -76,7 +76,7 @@ export default function ContributorsPage() {
     <>
       <PageHead
         title="Contributors"
-        intro="Everyone who has been through the Seed Tool. Open one to see the derived matching profile, everything they submitted, and the original conversation."
+        intro="Everyone who has filled in a profile. Open one to see what they told Pando, everything they shared, and how much of it you have used."
         right={
           <>
             <input

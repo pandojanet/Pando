@@ -34,7 +34,7 @@ export default function AuditPage() {
     <>
       <PageHead
         title="Audit log"
-        intro="Who changed what, and when. Written automatically for every sensitive action — caregiver consent, activity approval, option promotion, profile edits."
+        intro="Who did what, and when. Written by itself every time somebody records a consent, adds a recommendation or edits a profile — nobody can turn it off."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

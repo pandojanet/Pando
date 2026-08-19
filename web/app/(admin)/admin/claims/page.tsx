@@ -11,11 +11,19 @@ import {
   PageHead,
   SampleBanner,
   inputClass,
-  slugLabel,
+  optionLabel,
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { CaregiverClaimRow } from "@/lib/admin/types";
+import {
+  CAREGIVER_AGE_BANDS,
+  CAREGIVER_AVAILABLE_FROM,
+  CAREGIVER_DAYS,
+  CAREGIVER_PAY_BANDS,
+  CAREGIVER_STRENGTHS,
+  CAREGIVER_TYPES,
+} from "@/lib/caregiver-options";
 
 /**
  * 2C — caregivers who registered themselves, waiting to be matched to a nomination.
@@ -132,7 +140,7 @@ export default function ClaimsPage() {
     <>
       <PageHead
         title="Caregiver sign-ups"
-        intro="People who followed the invite a family sent them and filled in their own profile. The question here is which nomination each one is — a judgement, not a lookup, so nothing is matched automatically. Matching records their consent; it does not make them visible."
+        intro="Caregivers who followed an invite a family sent them and filled in their own profile. Your job is to say which family put each one forward — Pando never guesses, because two people can share a name. Matching her records her yes; it does not put her in front of anyone."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -169,22 +177,22 @@ export default function ClaimsPage() {
               <div className="grid gap-4 px-4 py-3 lg:grid-cols-2">
                 <dl className="space-y-2.5 text-[13.5px]">
                   <Pair label="Number" value={claim.phone_masked ?? "—"} />
-                  <Pair label="Looking for" value={labels(claim.roles_wanted)} />
-                  <Pair label="Ages" value={labels(claim.age_experience)} />
-                  <Pair label="Says they're good at" value={labels(claim.strengths)} />
-                  <Pair label="Areas" value={labels(claim.areas_served)} />
+                  <Pair label="Looking for" value={labels(CAREGIVER_TYPES, claim.roles_wanted)} />
+                  <Pair label="Ages" value={labels(CAREGIVER_AGE_BANDS, claim.age_experience)} />
+                  <Pair label="Says they're good at" value={labels(CAREGIVER_STRENGTHS, claim.strengths)} />
+                  <Pair label="Areas" value={labels([], claim.areas_served)} />
                   <Pair
                     label="Drives"
                     value={claim.drives === null ? "—" : claim.drives ? "Yes" : "No"}
                   />
-                  <Pair label="Days" value={labels(claim.days_available)} />
+                  <Pair label="Days" value={labels(CAREGIVER_DAYS, claim.days_available)} />
                   <Pair
                     label="Can start"
-                    value={claim.available_from ? slugLabel(claim.available_from) : "—"}
+                    value={claim.available_from ? optionLabel(CAREGIVER_AVAILABLE_FROM, claim.available_from) : "—"}
                   />
                   <Pair
                     label="Rate"
-                    value={claim.rate_band ? slugLabel(claim.rate_band) : "—"}
+                    value={claim.rate_band ? optionLabel(CAREGIVER_PAY_BANDS, claim.rate_band) : "—"}
                   />
                   {claim.hours_note && (
                     <Pair label="On their hours" value={claim.hours_note} />
@@ -420,6 +428,21 @@ function Pair({ label, value }: { label: string; value: string }) {
   );
 }
 
-function labels(values: string[]): string {
-  return values.length === 0 ? "—" : values.map(slugLabel).join(", ");
+/**
+ * The caregiver's own answers, rendered from the list she was actually offered.
+ *
+ * `options` is not optional by accident: these ids come from fixed lists whose
+ * labels carry punctuation an id cannot ("$18–22/hr", "Babies (0–1)"), and
+ * running them through `slugLabel` instead produced "18 22" and "Baby". Pass
+ * the list. Neighborhoods are the one exception — they have no shared constant
+ * on this surface and slugging them is lossless ("north-pasadena" → "North
+ * Pasadena"), which is why `optionLabel` falls back to it rather than blanking.
+ */
+function labels(
+  options: readonly { id: string; label: string }[],
+  values: string[],
+): string {
+  return values.length === 0
+    ? "—"
+    : values.map((v) => optionLabel(options, v)).join(", ");
 }

@@ -18,6 +18,8 @@ import {
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { sentence } from "@/lib/admin/labels";
+import { profileValueLabel } from "@/lib/questions";
 import type { ContributorDetail, ContributorRow } from "@/lib/admin/types";
 
 /**
@@ -75,7 +77,7 @@ export default function ContributorDetailPage({
       });
       setNote("");
       setMessage(
-        result.persisted ? "Note saved." : "Not stored — admin_write hook isn't connected.",
+        result.persisted ? "Note saved." : "Note not saved — nothing was written.",
       );
       await reload();
     } catch (err) {
@@ -181,54 +183,47 @@ export default function ContributorDetailPage({
               </dl>
             </Card>
 
+            {/**
+             * One list, not two. This was "Social affinities" and "Life
+             * relevance" — the names of the two tables underneath — which asked
+             * an admin to know the data model to read her own screen. What she
+             * needs is the answer to one question: who is this family like?
+             * The weight numbers went with it; they change what Pando does and
+             * nothing an admin can act on.
+             */}
             <Card
-              title="Derived matching profile"
+              title="What Pando matches them on"
               right={
                 <span className="text-[12px] text-muted">
-                  read-only — rebuilt from the taps
+                  built from their answers
                 </span>
               }
             >
               <div className="px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
-                  Social affinities
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {c.affinities.length === 0 && (
-                    <li className="text-[13.5px] text-muted">None derived yet.</li>
-                  )}
-                  {c.affinities.map((a) => (
-                    <li key={`${a.affinity_type}-${a.affinity_value}`}>
-                      <Badge tone="neutral" title={a.affinity_type}>
-                        {slugLabel(a.affinity_value)}
-                        <span className="ml-1.5 text-muted">
-                          {a.affinity_type.replace(/_/g, " ")}
-                          {a.weight !== null && ` ·${a.weight}`}
-                        </span>
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-
-                <p className="mt-4 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
-                  Life relevance
-                </p>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {c.relevance.length === 0 && (
-                    <li className="text-[13.5px] text-muted">None derived yet.</li>
-                  )}
-                  {c.relevance.map((r) => (
-                    <li key={`${r.dimension}-${r.value}`}>
-                      <Badge tone="neutral" title={r.dimension}>
-                        {slugLabel(r.value)}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-3 text-[12px] leading-relaxed text-muted">
-                  Weights come from config at match time, so a number here is what a
-                  query would use today — not something stored on the row.
-                </p>
+                {c.affinities.length === 0 && c.relevance.length === 0 ? (
+                  <p className="text-[13.5px] text-muted">
+                    Nothing yet — they have not answered enough for Pando to find
+                    parents like them.
+                  </p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {c.affinities.map((a) => (
+                      <li key={`${a.affinity_type}-${a.affinity_value}`}>
+                        <Badge tone="neutral" title={sentence(a.affinity_type)}>
+                          {profileValueLabel(a.affinity_value) ??
+                            slugLabel(a.affinity_value)}
+                        </Badge>
+                      </li>
+                    ))}
+                    {c.relevance.map((r) => (
+                      <li key={`${r.dimension}-${r.value}`}>
+                        <Badge tone="neutral" title={sentence(r.dimension)}>
+                          {profileValueLabel(r.value) ?? slugLabel(r.value)}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </Card>
 
@@ -434,8 +429,7 @@ export default function ContributorDetailPage({
                   Phase 2 — so this records who to credit, and nothing is credited.
                 */}
                 <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                  Recorded for crediting later. Network Asks don&apos;t exist yet, so
-                  nothing is granted here.
+                  Noted so you can thank them later. Nothing is paid out from here.
                 </p>
                 {refMessage && (
                   <p className="mt-2 text-[12.5px] text-muted">{refMessage}</p>
@@ -443,13 +437,12 @@ export default function ContributorDetailPage({
               </div>
             </Card>
 
-            <Card title="Not editable here">
-              <ul className="space-y-1.5 px-4 py-3 text-[13px] leading-relaxed text-muted">
-                <li>Phone — it is the identity key; changing it is a merge, not an edit.</li>
-                <li>Derived affinities and weights — they are rebuilt from the taps.</li>
-                <li>Provenance and timestamps — the trust graph rests on them.</li>
-              </ul>
-            </Card>
+            {/* The "Not editable here" card that used to sit at the bottom is
+                gone. It explained the data model to somebody who never asked —
+                a phone number is not editable because it is how Pando knows one
+                person from another, and nobody looking at this page was about to
+                try. If a real question comes up about changing a number, the
+                answer is a conversation, not a paragraph nobody reads. */}
           </div>
         </div>
       )}

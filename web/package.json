@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs",
     "options:import": "node scripts/import-market-options.mjs",
     "check": "node scripts/check.mjs",
     "admin:user": "node scripts/admin-user.mjs",

@@ -23,6 +23,18 @@ export const FOLLOW_UP_CONSENT_TEXT =
   "Yes — Pando may text me at this number about what I shared: to check a recommendation is still current, or to ask a question my experience can answer. At most a few times a month, never a marketing message. Reply STOP to end, HELP for help. Msg & data rates may apply.";
 
 /**
+ * The listening-ear opt-in (18 Aug strategy addition). Its own version because
+ * its own wording — this is a willingness to be matched to a stranger's hard
+ * question, which is a different amount of exposure than agreeing to hear
+ * about your own contributions (`follow_up`), and the two must never be able
+ * to drift onto the same version string.
+ */
+export const LISTENING_EAR_CONSENT_TEXT_VERSION = "seed-listening-ear-2026-08-18";
+
+export const LISTENING_EAR_CONSENT_TEXT =
+  "Yes — Pando may occasionally match me to another parent's hard question, anonymously on both sides. It spends the same monthly allowance as everything else, and I can say no to any single one.";
+
+/**
  * SMS consent at the phone field.
  *
  * ⚠️ **This is not word for word the text in the client's documents, and that is
@@ -116,6 +128,8 @@ export type ConsentScope =
   | "follow_up"
   /** Pando may include me in paid Blasts from other parents (Phase 2). */
   | "blast"
+  /** Willing to be matched to a stranger's sensitive question, anonymously. */
+  | "listening_ear"
   /** Pando may introduce me to a parent asking about someone I nominated. */
   | "reference"
   /** 2C · G2 — the caregiver agrees Pando may hold their profile at all. */
@@ -148,9 +162,11 @@ export function buildConsentRecord(
     text_version:
       scope === "sms"
         ? SMS_CONSENT_TEXT_VERSION
-        : scope.startsWith("caregiver_")
-          ? CAREGIVER_CONSENT_TEXT_VERSION
-          : CONSENT_TEXT_VERSION,
+        : scope === "listening_ear"
+          ? LISTENING_EAR_CONSENT_TEXT_VERSION
+          : scope.startsWith("caregiver_")
+            ? CAREGIVER_CONSENT_TEXT_VERSION
+            : CONSENT_TEXT_VERSION,
     captured_at: new Date().toISOString(),
   };
 }

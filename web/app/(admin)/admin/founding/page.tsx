@@ -56,8 +56,8 @@ export default function FoundingQueuePage() {
       const result = await adminAction({ action, ids } as never);
       setNote(
         result.persisted
-          ? `${label} — done.`
-          : `${label} — recorded locally only: the admin_write hook isn't connected yet.`,
+          ? label
+          : `${label} — but nothing was saved.`,
       );
       await reload();
     } catch (err) {
@@ -71,7 +71,7 @@ export default function FoundingQueuePage() {
     <>
       <PageHead
         title="Founding queue"
-        intro="Everyone who finished the Seed Tool waits here until a person confirms they're really from the group. Founding is never granted automatically, and it never downgrades once given."
+        intro="Everyone who finished their profile waits here until you confirm they really are from the group. Nobody becomes a Founding parent automatically, and once you've said yes it never gets taken away."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -147,7 +147,11 @@ export default function FoundingQueuePage() {
                               /* "kids born", not "born": next to a neighborhood and
                                  a school, a bare year reads as the parent's own. */
                               `kids born ${row.child_birth_years.join(", ")}`,
-                              row.school,
+                              /* The stored value is an option id, so it needs the
+                                 same treatment as the neighborhood above — this is
+                                 a line Janet reads to recognise a person, and
+                                 "the-growing-place" is not how she knows them. */
+                              row.school ? slugLabel(row.school) : null,
                             ]
                               .filter(Boolean)
                               .join(" · ")}

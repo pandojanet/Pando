@@ -69,6 +69,8 @@ export interface ProfileInput {
   /** A server fact read from the verification cookie, never from the body. */
   phone_verified_at: string | null;
   sms_consent: { status: string; text_version: string; source?: string } | null;
+  /** 18 Aug — willingness to occasionally answer another parent's hard question. */
+  listening_ear_consent: { status: string; text_version: string; source?: string } | null;
   wants_founding: boolean;
   neighborhood: string;
   children: ChildInput[];
@@ -300,6 +302,22 @@ export async function writeProfile(
         status: input.sms_consent.status === "opted_in" ? "opted_in" : "declined",
         source: input.sms_consent.source ?? "seed_tool",
         textVersion: input.sms_consent.text_version,
+      });
+    }
+
+    /**
+     * Not gated on `input.phone` the way SMS consent is — this is a willingness
+     * flag about being matched later, not a permission to text a number, so it
+     * means the same thing on the anonymous path.
+     */
+    if (input.listening_ear_consent) {
+      await tx.insert(consents).values({
+        personId,
+        scope: "listening_ear",
+        status:
+          input.listening_ear_consent.status === "opted_in" ? "opted_in" : "declined",
+        source: input.listening_ear_consent.source ?? "seed_tool",
+        textVersion: input.listening_ear_consent.text_version,
       });
     }
 

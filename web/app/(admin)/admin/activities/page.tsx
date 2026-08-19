@@ -17,12 +17,15 @@ import {
   Td,
   Th,
   inputClass,
+  optionLabel,
   slugLabel,
   useEdgeFade,
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { ContributionRow } from "@/lib/admin/types";
+import { REVIEW_STATUS } from "@/lib/admin/labels";
+import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 
 /**
  * Estimate 2.4 — contribution review.
@@ -38,7 +41,10 @@ import type { ContributionRow } from "@/lib/admin/types";
  *    context, an answered caveat prompt. What is missing is why somebody is stuck at
  *    one qualifying contribution, so it is visible here rather than inferred.
  *  - **"needs more detail" is not a rejection.** The client was explicit: it is a
- *    friendly follow-up question, so it is its own action with the question attached.
+ *    held state, not a rejection — its own action with the question attached. It
+ *    is *not* an outbound message: there is no SMS reply pipeline yet, so the
+ *    question is a note for whoever reviews the queue next, and the row stays in
+ *    "To review" rather than disappearing into "All" the moment it's set.
  *  - **low confidence first.** That queue is what improves the extraction prompt.
  */
 export default function ContributionsPage() {
@@ -63,7 +69,17 @@ export default function ContributionsPage() {
     if (filter === "secondhand") return list.filter((r) => !r.firsthand);
     if (filter === "incomplete")
       return list.filter((r) => missingForFounding(r).length > 0 && r.firsthand);
-    if (filter === "pending") return list.filter((r) => r.status === "pending_review");
+    /**
+     * "Needs one more detail" is a held state, not a dead end — the screen's own
+     * promise is that the card "stays in the queue until they answer" (there is
+     * no way to actually notify them yet, but the queue itself must not lie).
+     * Leaving `needs_detail` rows out of "To review" would bury them in "All"
+     * the moment the question is asked, which is the opposite of staying visible.
+     */
+    if (filter === "pending")
+      return list.filter(
+        (r) => r.status === "pending_review" || r.status === "needs_detail",
+      );
     /**
      * The golden-answer pass (§23.1 step 9): approved records only, because that is
      * the pool the flag can be set on, and the ones already marked float to the top
@@ -84,9 +100,7 @@ export default function ContributionsPage() {
     try {
       const result = await fn();
       setMessage(
-        result.persisted
-          ? `${label} — done.`
-          : `${label} — not stored (no database connected).`,
+        result.persisted ? label : `${label} — but nothing was saved.`,
       );
       setEditing(null);
       setQuestion("");
@@ -102,7 +116,7 @@ export default function ContributionsPage() {
     <>
       <PageHead
         title="Contributions"
-        intro="Approve what's usable, ask for the one missing detail, and keep secondhand clearly labelled."
+        intro="What parents have shared. Add the ones you'd be happy for Pando to pass on, and hold the ones missing something."
         right={
           <div
             ref={filterRef}
@@ -122,14 +136,14 @@ export default function ContributionsPage() {
                   {key === "pending"
                     ? "To review"
                     : key === "low"
-                      ? "Low confidence"
+                      ? "Needs a read"
                       : key === "incomplete"
-                        ? "One detail short"
+                        ? "Missing a detail"
                         : key === "secondhand"
-                          ? "Secondhand"
+                          ? "Heard from a friend"
                           : key === "golden"
-                            ? "Answer-ready"
-                            : "All"}
+                            ? "Ready to answer with"
+                            : "Everything"}
                 </Button>
               ),
             )}
@@ -163,12 +177,16 @@ export default function ContributionsPage() {
               <tr>
                 <Th>What</Th>
                 <Th>Where</Th>
-                <Th>Whose</Th>
-                <Th>Recommends</Th>
+                <Th>Who it was for</Th>
+                <Th>Would recommend</Th>
                 <Th>Paid</Th>
-                <Th>Fresh</Th>
-                <Th>Founding</Th>
-                <Th>Conf.</Th>
+                <Th>How recent</Th>
+                <Th>Counts toward Founding</Th>
+                {/* Named for what it measures, not for the column it lives in
+                    — the number below it is the only thing sorting this queue. */}
+                <Th title="How much another parent could act on what this one wrote. Their taps aren't scored, only their own words.">
+                  How useful
+                </Th>
                 <Th>From</Th>
                 <Th />
               </tr>
@@ -185,14 +203,29 @@ export default function ContributionsPage() {
                         <span className="ml-1.5 text-[12px] uppercase tracking-[0.06em] text-muted">
                           {row.kind}
                         </span>
+                        {/* Where this row stands. The buttons on the right are
+                            derived from it, so without it they read as random. */}
+                        <span className="ml-1.5">
+                          <Badge
+                            tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}
+                            title={REVIEW_STATUS[row.status]?.meaning}
+                          >
+                            {REVIEW_STATUS[row.status]?.label ?? row.status}
+                          </Badge>
+                        </span>
                         {row.share.answer_ready && (
                           <span className="ml-1.5">
                             <Badge
                               tone="green"
-                              title="Marked good enough to answer a question with, without asking the network"
+                              title="Good enough to answer a parent's question on its own, without asking anyone"
                             >
-                              answer-ready
+                              ready to answer with
                             </Badge>
+                          </span>
+                        )}
+                        {row.status === "needs_detail" && row.needs_detail_note && (
+                          <span className="mt-1 block text-[12.5px] italic text-muted">
+                            You asked: “{row.needs_detail_note}”
                           </span>
                         )}
                         {row.share.venue && (
@@ -266,11 +299,11 @@ export default function ContributionsPage() {
                       <Td className="text-[13px]">
                         {row.price_band ? (
                           <>
-                            {slugLabel(row.price_band)}
+                            {optionLabel(PRICE_BAND, row.price_band)}
                             {row.price_unit && (
                               <span className="text-muted">
                                 {" "}
-                                / {slugLabel(row.price_unit).toLowerCase()}
+                                / {optionLabel(PRICE_UNIT, row.price_unit).toLowerCase()}
                               </span>
                             )}
                           </>
@@ -279,7 +312,7 @@ export default function ContributionsPage() {
                         )}
                         {row.worth_it && (
                           <span className="mt-0.5 block text-muted">
-                            {slugLabel(row.worth_it)}
+                            {optionLabel(WORTH_IT, row.worth_it)}
                           </span>
                         )}
                       </Td>
@@ -299,7 +332,7 @@ export default function ContributionsPage() {
                             className="text-gold-ink"
                             title="What this contribution would need to count"
                           >
-                            needs {missing.join(", ")}
+                            missing {missing.join(", ")}
                           </span>
                         )}
                       </Td>
@@ -317,12 +350,26 @@ export default function ContributionsPage() {
                       </Td>
                       <Td>
                         <div className="flex flex-col gap-1.5">
-                          {row.status === "pending_review" && (
+                          {/**
+                           * The action set is derived from one rule — "offer what
+                           * this row is not already" — rather than from a list of
+                           * statuses, which is how a card held for a detail ended
+                           * up with no way to be added at all: the old condition
+                           * was `status === "pending_review"`, so asking for a
+                           * detail quietly removed the only button that mattered.
+                           *
+                           * The status pill in the row is the other half. Without
+                           * it the buttons changing between rows reads as random;
+                           * with it, "this one is already added, so there is
+                           * nothing to add" is obvious at a glance.
+                           */}
+                          {row.status !== "approved" && (
                             <Button
                               tone="primary"
                               disabled={busy}
+                              title="Make this usable in an answer to a parent"
                               onClick={() =>
-                                void run("Approved", async () =>
+                                void run("Added to Pando.", async () =>
                                   adminAction({
                                     action: "contribution.approve",
                                     id: row.id,
@@ -330,7 +377,7 @@ export default function ContributionsPage() {
                                 )
                               }
                             >
-                              Approve
+                              Add to Pando
                             </Button>
                           )}
                           <Button
@@ -339,6 +386,11 @@ export default function ContributionsPage() {
                             onClick={() => {
                               setEditing(open ? null : row.id);
                               setDraft(open ? {} : { ...row });
+                              /* Otherwise a question typed for one row and left
+                                 unsent reappears in the next row's box — and a
+                                 row already asked something should show what,
+                                 not a blank field. */
+                              setQuestion(open ? "" : row.needs_detail_note ?? "");
                             }}
                           >
                             {open ? "Cancel" : "Edit / ask"}
@@ -380,8 +432,9 @@ export default function ContributionsPage() {
                             <Button
                               tone="danger"
                               disabled={busy}
+                              title="Set it aside. Nothing is sent to the parent."
                               onClick={() =>
-                                void run("Rejected", async () =>
+                                void run("Set aside.", async () =>
                                   adminAction({
                                     action: "contribution.reject",
                                     id: row.id,
@@ -390,7 +443,7 @@ export default function ContributionsPage() {
                                 )
                               }
                             >
-                              Reject
+                              Don&apos;t use
                             </Button>
                           )}
                         </div>
@@ -472,10 +525,12 @@ export default function ContributionsPage() {
                             </Button>
                           </div>
 
-                          {/* "Needs more detail" is a friendly question, never a
-                              rejection — the client's words. */}
+                          {/* "Needs more detail" is a held state, not a rejection
+                              — the client's words. It is *not* a message the
+                              parent receives: there's no SMS reply pipeline yet,
+                              so this note is for whoever reviews the queue next. */}
                           <div className="mt-4 rounded-xl border border-bark bg-card p-3">
-                            <Field label="Ask them for one more detail">
+                            <Field label="What's missing?">
                               <input
                                 className={inputClass}
                                 placeholder="Quick one — could you add roughly what age your child was?"
@@ -487,7 +542,7 @@ export default function ContributionsPage() {
                               tone="secondary"
                               disabled={busy || question.trim().length === 0}
                               onClick={() =>
-                                void run("Question queued", async () =>
+                                void run("Held — noted", async () =>
                                   adminAction({
                                     action: "contribution.needs_detail",
                                     id: row.id,
@@ -496,11 +551,12 @@ export default function ContributionsPage() {
                                 )
                               }
                             >
-                              Send as a follow-up
+                              Hold for this detail
                             </Button>
                             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                              Goes out as a question, not a rejection, and the card
-                              stays in the queue until they answer.
+                              Keeps the card out of approve/reject and in "To review" —
+                              there's no way to text the parent yet, so this is a note
+                              for the queue, not a message that reaches them.
                             </p>
                           </div>
                         </Td>

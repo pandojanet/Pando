@@ -163,7 +163,7 @@ head("1.2 / 1.3  profile, and the graph derived from it");
     first_name: "Audit",
     last_name: "Parent",
     sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
-    monthly_contact_allowance: 3,
+    monthly_contact_allowance: 5,
     allowance_mode: "fixed",
     children: [{ birth_year: 2022 }, { birth_year: 2019 }],
     child_ages_at_capture: [3, 6],
@@ -190,7 +190,7 @@ head("1.2 / 1.3  profile, and the graph derived from it");
       logistics: ["close_to_home"], budget: ["compare_value"], trust_circles: [],
       topics: ["camps"], topics_lived: [],
       attribution: "first_name_safe",
-      allowance: "3",
+      allowance: "5",
       other: { clubs: ["Audit Test Club"] },
     },
     /* Lies. None of these may survive — the server derives its own. */
@@ -270,7 +270,7 @@ head("1.7  completion and D1 routing");
 {
   const res = await parent.post("/api/seed/complete", {
     invite_code: "sgv-founding", phone: PHONE, name: "Audit Parent",
-    follow_up_opt_in: true, monthly_contact_allowance: 3,
+    follow_up_opt_in: true, monthly_contact_allowance: 5,
     shared: { activity: 1, place: 1, caregiver: 1 },
     /* The neighborhood is a lie the server must ignore — it reads the parent's own
        (v3.2 §9: this number decides which market Pando opens next). */
@@ -290,8 +290,8 @@ head("1.7  completion and D1 routing");
     const p = `+1626555${RUN}${3 + i}`;
     const st = await s.post("/api/seed/verify/start", { phone: p, sms_consent: true });
     await s.post("/api/seed/verify/check", { code: st.json.dev_code });
-    await s.post("/api/seed/profile", { invite_code: "sgv-founding", phone: p, wants_founding: true, first_name: "AuditD1", sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" }, monthly_contact_allowance: 3, children: [{ birth_year: 2021 }], child_ages_at_capture: [4], answers: { neighborhood: "altadena", child_ages: [4], allowance: "3", other: {} } });
-    const r = await s.post("/api/seed/complete", { invite_code: "sgv-founding", phone: p, follow_up_opt_in: true, monthly_contact_allowance: 3, demand });
+    await s.post("/api/seed/profile", { invite_code: "sgv-founding", phone: p, wants_founding: true, first_name: "AuditD1", sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" }, monthly_contact_allowance: 5, children: [{ birth_year: 2021 }], child_ages_at_capture: [4], answers: { neighborhood: "altadena", child_ages: [4], allowance: "5", other: {} } });
+    const r = await s.post("/api/seed/complete", { invite_code: "sgv-founding", phone: p, follow_up_opt_in: true, monthly_contact_allowance: 5, demand });
     const kept = label.includes("not kept") ? r.json.demand_signal_id == null : r.status === 200 && r.json.persisted === true;
     ok("D1: " + label, kept);
     i++;
@@ -339,6 +339,59 @@ head("honesty and health");
 
 const sql = postgres(process.env.DATABASE_URL, { max: 2, prepare: false, onnotice: () => {} });
 await new Promise((r) => setTimeout(r, 9000)); // extraction runs after the response
+
+head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
+{
+  /* The 1/3/5 scheme is gone — 3 must no longer validate, and must fall back
+     to 5, the new default, not to whatever number happens to be lowest. */
+  /* A different exchange (626556, not 626555) — the D1 loop below already owns
+     suffixes 3-7 on 626555, and every other single digit on it is spoken for
+     too, so borrowing one here would collide with a person that test creates. */
+  const oldScheme = `+1626556${RUN}1`;
+  const s1 = session();
+  const st1 = await s1.post("/api/seed/verify/start", { phone: oldScheme, sms_consent: true });
+  await s1.post("/api/seed/verify/check", { code: st1.json.dev_code });
+  await s1.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: oldScheme, wants_founding: true, first_name: "AuditOldAllowance",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    monthly_contact_allowance: 3, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
+    listening_ear_consent: { status: "opted_in", text_version: "seed-listening-ear-2026-08-18" },
+    answers: { neighborhood: "altadena", child_ages: [5], allowance: "3", other: {} },
+  });
+  const [oldRow] = await sql`select monthly_contact_allowance from people where first_name = 'AuditOldAllowance'`;
+  ok("3 no longer validates and falls back to 5, not 3", oldRow && oldRow.monthly_contact_allowance === 5, `-> ${oldRow?.monthly_contact_allowance}`);
+
+  /* 10 is new and must be accepted as-is. */
+  const tenPhone = `+1626556${RUN}2`;
+  const s2 = session();
+  const st2 = await s2.post("/api/seed/verify/start", { phone: tenPhone, sms_consent: true });
+  await s2.post("/api/seed/verify/check", { code: st2.json.dev_code });
+  await s2.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: tenPhone, wants_founding: true, first_name: "AuditTenAllowance",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    monthly_contact_allowance: 10, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
+    listening_ear_consent: { status: "declined", text_version: "seed-listening-ear-2026-08-18" },
+    answers: { neighborhood: "altadena", child_ages: [5], allowance: "10", other: {} },
+  });
+  const [tenRow] = await sql`select monthly_contact_allowance from people where first_name = 'AuditTenAllowance'`;
+  ok("10 is accepted", tenRow && tenRow.monthly_contact_allowance === 10);
+
+  /* The listening-ear opt-in is its own consent scope, recorded either way —
+     "declined" is a real answer, not a non-answer, same rule as every consent. */
+  const earConsents = await sql`
+    select p.first_name, c.status, c.text_version from consents c
+    join people p on p.id = c.person_id
+    where c.scope = 'listening_ear' and p.first_name in ('AuditOldAllowance', 'AuditTenAllowance')
+    order by p.first_name`;
+  ok(
+    "listening-ear consent recorded for both, opted_in and declined",
+    earConsents.length === 2 &&
+      earConsents[0].status === "opted_in" &&
+      earConsents[1].status === "declined" &&
+      earConsents.every((c) => c.text_version === "seed-listening-ear-2026-08-18"),
+    JSON.stringify(earConsents),
+  );
+}
 
 const [p] = await sql`select * from people where first_name = 'Audit' order by created_at desc limit 1`;
 
@@ -404,7 +457,9 @@ const cons = await sql`select scope, text_version from consents where person_id 
 ok("sms consent recorded at phone capture", cons.some((c) => c.scope === "sms"));
 ok("follow-up consent recorded", cons.some((c) => c.scope === "follow_up"));
 ok("every consent carries a wording version", cons.every((c) => c.text_version));
-const dem = await sql`select question_text, sensitivity, requires_human_review, neighborhood from demand_signals`;
+const dem = await sql`select d.question_text, d.sensitivity, d.requires_human_review, d.neighborhood
+  from demand_signals d join people p on p.id = d.person_id
+  where p.first_name like 'Audit%'`;
 const swim = dem.find((d) => /swim schools/.test(d.question_text));
 ok("the demand's neighborhood is read from the profile, not the body", swim && swim.neighborhood === "altadena", swim ? String(swim.neighborhood) : "");
 const custody = dem.filter((d) => /custody/.test(d.question_text));
@@ -449,12 +504,14 @@ const [anon] = await sql`select person_id from share_contributions where tip_tex
 ok("stored with no person attached", anon && anon.person_id === null);
 
 head("2C  the claim");
-const [claim] = await sql`select * from caregiver_claims order by created_at desc limit 1`;
+const [claim] = await sql`select c.* from caregiver_claims c join people p on p.id = c.person_id
+  where p.first_name like 'Audit%' order by c.created_at desc limit 1`;
 ok("stored as pending, against a verified identity", claim && claim.status === "pending");
 ok("the initial was upper-cased", claim && claim.last_initial === "T");
 ok("an unknown option id was dropped", claim && !claim.roles_wanted.includes("not-a-real-role"));
 ok("introduce was demoted without appear", claim && claim.appear_in_answers === false && claim.open_to_introductions === false);
-ok("four caregiver consents recorded", (await sql`select 1 from consents where source = 'caregiver_flow'`).length === 4);
+ok("four caregiver consents recorded", (await sql`select 1 from consents c join people p on p.id = c.person_id
+  where c.source = 'caregiver_flow' and p.first_name like 'Audit%'`).length === 4);
 ok("the claim created no caregivers row", (await sql`select count(*)::int as n from caregivers where first_name = 'Auditcarer'`)[0].n === 1);
 
 head("invariants the database itself enforces");
@@ -567,6 +624,54 @@ ok("consent without evidence is refused", (await act({ action: "caregiver.consen
 ok("a phone consent with no note is refused", (await act({ action: "caregiver.consent", id: held.id, to: "consented", method: "call_logged" })).status === 422);
 ok("releasing a hold without a reason is refused", (await act({ action: "nomination.release_hold", id: held.id })).status === 422);
 ok("self-referral is refused", (await act({ action: "referral.link", referrer: people[0].id, referred: people[0].id })).status === 422);
+
+{
+  /* The strategy's "up to three" (18 Aug), never enforced before — lightweight
+     rows are enough here, since referral.link only needs valid person ids.
+     `phone_verified_at` has to be set alongside a phone + name, or the insert
+     trips invariant 11's own CHECK (verified_if_named) — a good sign the
+     constraint works, and a reminder this is a real row, not a stub.
+     626556, not 626555: the D1 loop above owns every single-digit suffix on
+     the usual exchange, and the allowance block just above took .1 and .2 on
+     this one, so this starts at .3. */
+  const referrer = (
+    await sql`insert into people (phone, first_name, market_id, is_test, phone_verified_at)
+              values (${`+1626556${RUN}3`}, 'AuditReferrer', 'pasadena', true, now())
+              returning id`
+  )[0].id;
+  const referred = [];
+  for (const n of [4, 5, 6]) {
+    referred.push(
+      (
+        await sql`insert into people (phone, first_name, market_id, is_test, phone_verified_at)
+                  values (${`+1626556${RUN}${n}`}, ${`AuditReferred${n}`}, 'pasadena', true, now())
+                  returning id`
+      )[0].id,
+    );
+  }
+  const fourth = (
+    await sql`insert into people (phone, first_name, market_id, is_test, phone_verified_at)
+              values (${`+1626556${RUN}7`}, 'AuditReferredFourth', 'pasadena', true, now())
+              returning id`
+  )[0].id;
+
+  for (const r of referred) {
+    ok(
+      `referral ${referred.indexOf(r) + 1} of 3 links`,
+      (await act({ action: "referral.link", referrer, referred: r })).status === 200,
+    );
+  }
+  const capped = await act({ action: "referral.link", referrer, referred: fourth });
+  ok("a fourth referral is refused, not silently ignored", capped.status === 501);
+  ok(
+    "with the honest reason, not the generic one",
+    capped.json?.reason === "referral_cap_reached" &&
+      !/isn't implemented/.test(capped.json?.error ?? ""),
+    JSON.stringify(capped.json),
+  );
+  const linked = await sql`select count(*)::int as n from referrals where referrer_id = ${referrer}`;
+  ok("exactly three landed, not four", linked[0].n === 3);
+}
 ok("declining a claim without a reason is refused", (await act({ action: "claim.decline", id: (await q("caregiver_claims")).json.rows[0].id })).status === 422);
 ok("promoting an option needs a proper slug", (await act({ action: "option.promote", id: (await q("options")).json.rows[0].id, option_value: "Not A Slug", label: "x" })).status === 422);
 
@@ -614,8 +719,8 @@ head("invites — one per group, never per parent");
   await s.post("/api/seed/profile", {
     invite_code: "audit-group", phone: p2, wants_founding: true, first_name: "Auditinvite",
     sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
-    monthly_contact_allowance: 3, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
-    answers: { neighborhood: "altadena", child_ages: [5], allowance: "3", other: {} },
+    monthly_contact_allowance: 5, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
+    answers: { neighborhood: "altadena", child_ages: [5], allowance: "5", other: {} },
   });
   const [attributed] = await sql`select p.invite_id, i.code from people p join invites i on i.id = p.invite_id where p.first_name = 'Auditinvite'`;
   ok("the contributor is attributed to the invite", attributed && attributed.code === "audit-group");
@@ -712,7 +817,9 @@ head("2C  “text DELETE and the whole profile goes”");
   ok("deleting without recording how they asked is refused", (await act({ action: "claim.delete", id: claimId })).status === 422);
   ok("the delete goes through", (await act({ action: "claim.delete", id: claimId, requested_via: "texted DELETE (audit)" })).status === 200);
   ok("the claim is gone, not marked", (await sql`select count(*)::int as n from caregiver_claims where id = ${claimId}::uuid`)[0].n === 0);
-  ok("their consent records went with it", (await sql`select count(*)::int as n from consents where source = 'caregiver_flow'`)[0].n === 0);
+  ok("their consent records went with it", (await sql`select count(*)::int as n from consents c
+  join people p on p.id = c.person_id
+  where c.source = 'caregiver_flow' and p.first_name like 'Audit%'`)[0].n === 0);
   ok("and so did the identity they made for it", (await sql`select count(*)::int as n from people where phone = ${CG_PHONE}`)[0].n === 0);
   /* What survives, and must: the family's own card. It is that parent's
      contribution, and it holds no way to contact anybody. */
@@ -849,9 +956,27 @@ await sql`delete from children where person_id = any(${ids}::uuid[])`;
 await sql`delete from people where id = any(${ids}::uuid[])`;
 await sql`delete from referrals`;
 await sql`delete from admin_users where created_by = 'test:e2e' or name like 'auditadmin%'`;
-/* Flags and audit rows whose subject this run deleted — a queue entry pointing at
-   nothing is worse than no entry. */
-const orphans = await sql`delete from flags f where (f.subject_kind = 'place_contribution' and not exists (select 1 from share_contributions pc where pc.id = f.subject_id)) or (f.subject_kind = 'demand_signal' and not exists (select 1 from demand_signals d where d.id = f.subject_id)) or (f.subject_kind = 'place' and not exists (select 1 from shares pl where pl.id = f.subject_id)) returning f.id`;
+/**
+ * Flags whose subject this run deleted — a queue entry pointing at nothing is
+ * worse than no entry.
+ *
+ * **The kind names here were stale, and it showed on a real screen** (19 Aug):
+ * this matched `place_contribution` and `place`, the names from before the
+ * 12 Aug rename, so nothing had been cleaned since. Every run left its
+ * low-confidence flags behind, and the review queue had filled with items about
+ * cards that no longer existed. Both spellings are matched now — the current one
+ * because it is what gets written, the old one because a long-lived database may
+ * still hold pre-rename rows.
+ */
+const orphans = await sql`
+  delete from flags f
+  where (f.subject_kind in ('share_contribution', 'place_contribution')
+           and not exists (select 1 from share_contributions pc where pc.id = f.subject_id))
+     or (f.subject_kind in ('share', 'place')
+           and not exists (select 1 from shares pl where pl.id = f.subject_id))
+     or (f.subject_kind = 'demand_signal'
+           and not exists (select 1 from demand_signals d where d.id = f.subject_id))
+  returning f.id`;
 await sql`delete from audit_log where action in ('contribution.approve','referral.link','share.answer_ready','claim.delete','invite.create','invite.retire') and at > now() - interval '1 hour'`;
 
 console.log(`\n  cleaned up: ${ids.length} test parent(s), ${orphans.length} orphaned flag(s)`);

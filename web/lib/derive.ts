@@ -1,3 +1,4 @@
+import { buildConsentRecord } from "./consent";
 import {
   ageBandsOf,
   childrenFor,
@@ -216,19 +217,37 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     /** False until SMS verification exists — never implied (see lib/consent.ts). */
     phone_verified: session.phone_verified === true,
     sms_consent: session.sms_consent,
+    /**
+     * Unlike `sms_consent` (taken early, at the phone field, and carried on the
+     * session from that moment) this is an ordinary mid-profile tap — built here
+     * from the answer at payload time, the same way `attribution` is narrowed
+     * here rather than stored pre-shaped. Null when skipped, never assumed.
+     */
+    listening_ear_consent:
+      answers.listening_ear === "opted_in" || answers.listening_ear === "declined"
+        ? buildConsentRecord(
+            "listening_ear",
+            answers.listening_ear === "opted_in",
+            "seed_tool_profile",
+          )
+        : null,
     wants_founding: session.wants_founding !== false,
     neighborhood: answers.neighborhood,
     /** Stable: birth years, plus the date the ages were taken. */
     children: childrenFromAges(answers.child_ages, capturedAt),
     child_ages_at_capture: answers.child_ages,
     profile_captured_at: capturedAt.toISOString(),
-    /** Consent control, not a preference: the cap Pando must honour. */
+    /**
+     * Consent control, not a preference: the cap Pando must honour. Five,
+     * not three — 18 Aug's reciprocity agreement replaced the 1/3/5 scheme,
+     * and the server validates against the same 5/10 allow-list.
+     */
     monthly_contact_allowance:
       answers.allowance === "as_relevant"
         ? null
         : answers.allowance
           ? Number(answers.allowance)
-          : 3,
+          : 5,
     allowance_mode: answers.allowance === "as_relevant" ? "as_relevant" : "fixed",
     /**
      * P13 — the single control over how this parent is named in an answer.

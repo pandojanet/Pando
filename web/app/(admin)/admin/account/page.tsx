@@ -73,7 +73,7 @@ export default function AccountPage() {
     <>
       <PageHead
         title="Your account"
-        intro="Change your own password. Adding or removing an admin stays a terminal command — a page that grants access is a session granting a session."
+        intro="Change your own password. Adding or removing someone else isn't done here — ask a developer, so that giving somebody access is always a deliberate act."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

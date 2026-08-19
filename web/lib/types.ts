@@ -102,7 +102,8 @@ export type QuestionId =
   | "topics_lived"
   /** P13 — the one control over how this parent is named in an answer. */
   | "attribution"
-  | "allowance";
+  | "allowance"
+  | "listening_ear";
 
 export interface Question {
   id: QuestionId;
@@ -203,8 +204,15 @@ export interface ProfileAnswers {
   topics_lived: string[];
   /** P13 — anonymous_verified | first_name_safe. */
   attribution: string | null;
-  /** P14 — monthly community-question allowance. A consent control, default 3. */
+  /** P14 — monthly community-question allowance. A consent control, default 5. */
   allowance: string | null;
+  /**
+   * The listening-ear opt-in (18 Aug strategy addition, no P-number of its own):
+   * willingness to occasionally answer another parent's hard question,
+   * anonymously. `"opted_in" | "declined" | null` — null means skipped, not
+   * declined, same rule as every other optional tap.
+   */
+  listening_ear: string | null;
   /** Free-text "other" entries, keyed by question id → pending_options. */
   other: Partial<Record<QuestionId, string[]>>;
   /** Screens the parent deliberately skipped (analytics + admin insight). */
@@ -318,6 +326,12 @@ export interface ProfilePayload {
   /** Only true once a one-time code has been confirmed. */
   phone_verified: boolean;
   sms_consent: import("./consent").ConsentRecord | null;
+  /**
+   * The listening-ear opt-in, recorded the same way every other consent is —
+   * append-only, with its own wording version — never as a bare boolean.
+   * Null when the parent skipped the question rather than declined it.
+   */
+  listening_ear_consent: import("./consent").ConsentRecord | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
   wants_founding: boolean;
   neighborhood: string | null;

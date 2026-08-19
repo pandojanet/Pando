@@ -19,6 +19,7 @@ import {
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { PendingOptionRow } from "@/lib/admin/types";
+import { CATEGORY_LABEL } from "@/lib/admin/labels";
 
 /**
  * Estimate 2.6 — the "other" queue.
@@ -45,7 +46,7 @@ export default function PendingOptionsPage() {
     try {
       const result = await fn();
       setMessage(
-        result.persisted ? `${label} — done.` : `${label} — not stored (no admin_write hook).`,
+        result.persisted ? label : `${label} — but nothing was saved.`,
       );
       await reload();
     } catch (err) {
@@ -58,8 +59,8 @@ export default function PendingOptionsPage() {
   return (
     <>
       <PageHead
-        title="Tap lists"
-        intro="Free-text answers waiting to become official options. Until one is promoted it can't be matched on — so a long queue here quietly weakens matching."
+        title="Names & places"
+        intro="Things parents typed in themselves because they weren't on the list. Add the real ones so the next parent can just tap them — and so Pando can connect the families who named the same thing."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -105,7 +106,7 @@ export default function PendingOptionsPage() {
                       </span>
                     )}
                   </Td>
-                  <Td>{slugLabel(row.category)}</Td>
+                  <Td>{CATEGORY_LABEL[row.category] ?? slugLabel(row.category)}</Td>
                   <Td className="text-right">{row.occurrences}</Td>
                   <Td className="text-[13px]">{row.submitted_by?.name ?? "—"}</Td>
                   <Td className="text-muted">{when(row.created_at)}</Td>
@@ -115,7 +116,7 @@ export default function PendingOptionsPage() {
                         tone="primary"
                         disabled={busy}
                         onClick={() =>
-                          void run("Promoted", async () =>
+                          void run("Added — parents can tap it now.", async () =>
                             adminAction({
                               action: "option.promote",
                               id: row.id,
@@ -127,18 +128,18 @@ export default function PendingOptionsPage() {
                           )
                         }
                       >
-                        Promote
+                        Add to the list
                       </Button>
                       <Button
                         tone="secondary"
                         disabled={busy}
                         onClick={() =>
-                          void run("Rejected", async () =>
+                          void run("Set aside.", async () =>
                             adminAction({ action: "option.reject", id: row.id }),
                           )
                         }
                       >
-                        Not a real option
+                        Not a real one
                       </Button>
                     </div>
                   </Td>
@@ -150,13 +151,11 @@ export default function PendingOptionsPage() {
       </Card>
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        Promoting adds the value to <code>market_options</code>, and the
-        questionnaire reads that table — so it becomes a chip for the next parent
-        <strong> straight away</strong>, with no deploy. Anyone else who typed the
-        same thing is approved in the same step,
-        and everyone who did gets the matching edge they were missing while it sat
-        here unreviewed. Retiring an existing option sets <code>active = false</code>{" "}
-        rather than deleting it — profiles already point at it.
+        Adding one makes it tappable for the next parent{" "}
+        <strong>straight away</strong>. Everyone who typed the same thing is
+        counted in one go, and they all get connected to it — until then, nobody
+        who named it was matched on it. Taking an old one off the list only hides
+        it; the parents who already picked it keep it.
       </p>
     </>
   );

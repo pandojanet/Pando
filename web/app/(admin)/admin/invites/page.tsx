@@ -82,7 +82,7 @@ export default function InvitesPage() {
     try {
       const result = await fn();
       setMessage(
-        result.persisted ? `${text} — done.` : `${text} — not stored (no database).`,
+        result.persisted ? text : `${text} — but nothing was saved.`,
       );
       await reload();
     } catch (err) {
@@ -114,7 +114,7 @@ export default function InvitesPage() {
     <>
       <PageHead
         title="Invites"
-        intro="One link per group, so you can see which group actually brought contributors — not just which group was sent a link. A code identifies a group and a market, never a person."
+        intro="One link per group, so you can see which groups actually brought people in — not just which ones were sent a link. A link is never tied to one person, so it's safe to forward."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -129,7 +129,7 @@ export default function InvitesPage() {
         <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
           <Field
             label="Group name"
-            hint="What the parent reads back: “You joined through …”"
+            hint="How you'll recognise this group in the queues and on a contributor's record."
           >
             <input
               className={inputClass}
@@ -148,7 +148,7 @@ export default function InvitesPage() {
           </Field>
           <Field
             label="Matches which group in the tap lists?"
-            hint="Optional. When set, the profile asks the parent to confirm that group instead of picking it from a list — and only their yes writes the match."
+            hint="Optional, and attribution only. It records which group a contributor came through — it does not claim they belong to it, and the profile no longer asks them to confirm it."
           >
             <select
               className={inputClass}
@@ -198,10 +198,10 @@ export default function InvitesPage() {
           ) : live.length === 0 ? (
             <Empty
               title="No invites yet"
-              body="Until there is one, the built-in codes from SEED_INVITE_CODES still work."
+              body="Make one above, and the link works straight away."
             />
           ) : (
-            <InviteTable rows={live} busy={busy} onAction={run} />
+            <InviteTable rows={live} busy={busy} onAction={run} groups={groups} />
           )}
         </Card>
       </div>
@@ -209,7 +209,7 @@ export default function InvitesPage() {
       {retired.length > 0 && (
         <div className="mt-4">
           <Card title={`No longer shared (${retired.length})`}>
-            <InviteTable rows={retired} busy={busy} onAction={run} />
+            <InviteTable rows={retired} busy={busy} onAction={run} groups={groups} />
             <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
               A stopped code still lets a parent in — it just records no group. The
               link was already forwarded; making it a dead end punishes the wrong
@@ -226,9 +226,12 @@ function InviteTable({
   rows,
   busy,
   onAction,
+  groups,
 }: {
   rows: InviteRow[];
   busy: boolean;
+  /** The live chip list, so the column shows the group's real name and not its id. */
+  groups: Array<{ id: string; label: string }>;
   onAction: (
     text: string,
     fn: () => Promise<{ persisted: boolean }>,
@@ -243,8 +246,16 @@ function InviteTable({
           <Th>Group</Th>
           <Th>Link</Th>
           <Th>Matches</Th>
-          <Th>Arrived</Th>
-          <Th>Delivered</Th>
+          {/* "Arrived" and "Delivered" — the second of which read as if the
+              *link* had been delivered, which is the opposite of what it counts.
+              The pair only means anything read together, so both now say what
+              they count and the second says what makes a group worth a link. */}
+          <Th title="People who opened this link and filled in a profile.">
+            Joined
+          </Th>
+          <Th title="How many of those went on to share something you added to Pando. A group with thirty joins and two of these is telling you something.">
+            Gave something
+          </Th>
           <Th>Created</Th>
           <Th />
         </tr>
@@ -277,11 +288,12 @@ function InviteTable({
             </Td>
             <Td className="text-[13px]">
               {row.group_option_value ? (
-                slugLabel(row.group_option_value)
+                (groups.find((g) => g.id === row.group_option_value)?.label ??
+                  slugLabel(row.group_option_value))
               ) : (
                 <span
                   className="text-muted"
-                  title="The profile will ask which group, instead of confirming this one"
+                  title="Nothing is recorded about which group these contributors came from"
                 >
                   not linked
                 </span>
@@ -290,8 +302,12 @@ function InviteTable({
             <Td className="tabular-nums">{row.contributors}</Td>
             <Td className="tabular-nums">
               {row.delivered}
+              {/* "out of", not a bare percentage butted against the count: the
+                  two numbers ran together as "2100%" with nothing saying which
+                  was which. */}
               {row.contributors > 0 && (
-                <span className="ml-1.5 text-[12px] text-muted">
+                <span className="block text-[12px] text-muted">
+                  of {row.contributors} ·{" "}
                   {Math.round((row.delivered / row.contributors) * 100)}%
                 </span>
               )}

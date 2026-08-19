@@ -500,6 +500,7 @@ async function contributions(db: Db) {
     status: r.status,
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,
+    needs_detail_note: (r.needs_detail_note as string | null) ?? null,
     provenance: r.provenance,
     contributor: r.contributor_id
       ? { id: r.contributor_id, name: fullName(r.first_name, r.last_name) }
@@ -658,13 +659,37 @@ async function pendingOptions(db: Db) {
 
 /* ── 2.7 Flags and demand ────────────────────────────────────────────────── */
 
+/**
+ * The review queue — and **the text being reviewed**, which it used to leave out.
+ *
+ * `flags.excerpt` holds the model's reason for raising the flag, never the
+ * parent's sentence (invariant 8 keeps those apart on purpose). That was right
+ * for the row and wrong for the screen: an admin asked to decide about a note
+ * naming a person cannot decide without reading the note. `subject.text` is that
+ * sentence, joined here, and this read is the only path it takes — it is shown to
+ * a human reviewing it and never published to a parent, which is exactly the
+ * review invariant 8 exists to require.
+ *
+ * `subject.title` used to be the reason string repeated, which told nobody
+ * anything. It is now what the flag is actually about: the class, or the question.
+ */
 async function flagRows(db: Db) {
   const list = await rows(
     db,
     sql`
-      select f.*, p.id as person_id, p.first_name, p.last_name
+      select f.*, p.id as person_id, p.first_name, p.last_name,
+             sh.name as share_name,
+             sc.what_makes_it_great, sc.caveat, sc.tip_text,
+             sc.who_for, sc.who_not_for,
+             ds.question_text
       from flags f
       left join people p on p.id = f.person_id
+      left join share_contributions sc
+        on sc.id = f.subject_id
+       and f.subject_kind in ('share_contribution', 'place_contribution')
+      left join shares sh on sh.id = sc.share_id
+      left join demand_signals ds
+        on ds.id = f.subject_id and f.subject_kind = 'demand_signal'
       order by
         case f.severity when 'escalation' then 0 when 'review' then 1 else 2 end,
         f.created_at desc
@@ -672,22 +697,48 @@ async function flagRows(db: Db) {
     `,
   );
 
-  return list.map((r) => ({
-    id: r.id,
-    severity: r.severity,
-    reason: r.reason,
-    excerpt: r.excerpt ?? "",
-    field: r.field,
-    subject: r.subject_kind
-      ? { kind: r.subject_kind, id: r.subject_id, title: String(r.reason) }
-      : null,
-    contributor: r.person_id
-      ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
-      : null,
-    status: r.status,
-    confidence: r.confidence === null ? null : Number(r.confidence),
-    created_at: r.created_at,
-  }));
+  return list.map((r) => {
+    /**
+     * Field by field, never concatenated. Running "what they liked" into "who it
+     * would not suit" with a dash made two different answers read as one
+     * sentence — the admin then cannot tell which part of it named a person.
+     * The field name travels, and the screen supplies the English.
+     */
+    const wrote = (
+      [
+        ["question_text", r.question_text],
+        ["what_makes_it_great", r.what_makes_it_great],
+        ["caveat", r.caveat],
+        ["tip_text", r.tip_text],
+        ["who_for", r.who_for],
+        ["who_not_for", r.who_not_for],
+      ] as const
+    )
+      .filter(([, v]) => typeof v === "string" && v.trim() !== "")
+      .map(([field, v]) => ({ field, body: (v as string).trim() }));
+
+    return {
+      id: r.id,
+      severity: r.severity,
+      reason: r.reason,
+      excerpt: r.excerpt ?? "",
+      field: r.field,
+      subject: r.subject_kind
+        ? {
+            kind: r.subject_kind as string,
+            id: r.subject_id as string,
+            title: (r.share_name as string | null) ?? "",
+            wrote,
+          }
+        : null,
+      contributor: r.person_id
+        ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
+        : null,
+      status: r.status,
+      confidence: r.confidence === null ? null : Number(r.confidence),
+      created_at: r.created_at,
+    };
+  });
 }
 
 async function demandRows(db: Db) {

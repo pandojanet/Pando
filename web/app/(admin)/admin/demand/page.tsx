@@ -108,8 +108,8 @@ export default function DemandPage() {
       const result = await fn();
       setMessage(
         result.persisted
-          ? `${label} — done.`
-          : `${label} — not stored (no admin_write hook).`,
+          ? label
+          : `${label} — but nothing was saved.`,
       );
       setNoteFor(null);
       setNote("");
@@ -125,7 +125,7 @@ export default function DemandPage() {
     <>
       <PageHead
         title="What parents asked for"
-        intro="The closing question, in their own words. Health, legal and safety questions need a person today — everything else is the launch inventory."
+        intro="What parents asked at the end, in their own words. Health, legal and safety questions need a person today; the rest is what Pando should have answers ready for."
         right={
           <div
             ref={filterRef}

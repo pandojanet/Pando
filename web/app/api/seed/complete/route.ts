@@ -104,12 +104,17 @@ export async function POST(request: Request) {
       // the workflow must not treat it as reachable.
       reachable: optedIn && phone !== null,
     },
-    /** The cap Pando must honour, not a preference. */
+    /**
+     * The cap Pando must honour, not a preference. 5/10 (18 Aug — supersedes
+     * 1/3/5, same allow-list as `/api/seed/profile` and the same DB-level
+     * `allowance_shape` CHECK): all three have to agree, or a value one of
+     * them accepts aborts the write at whichever of the other two runs it.
+     */
     monthly_contact_allowance:
       typeof raw.monthly_contact_allowance === "number" &&
-      [1, 3, 5].includes(raw.monthly_contact_allowance)
+      [5, 10].includes(raw.monthly_contact_allowance)
         ? raw.monthly_contact_allowance
-        : 3,
+        : 5,
     /**
      * D1. Three things the client asked for, none of which the browser is trusted
      * with: the classification is re-derived here, a peer-support question is only

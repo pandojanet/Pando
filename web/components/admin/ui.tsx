@@ -205,9 +205,20 @@ export function TableWrap({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children, className }: { children?: ReactNode; className?: string }) {
+export function Th({
+  children,
+  className,
+  title,
+}: {
+  children?: ReactNode;
+  className?: string;
+  /** Hover explanation, same as `Td` — a column heading has to fit in two words
+      more often than it can explain itself in two words. */
+  title?: string;
+}) {
   return (
     <th
+      title={title}
       className={cn(
         "border-b border-bark/70 bg-paper/60 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted",
         className,
@@ -378,6 +389,24 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 
 export function slugLabel(value: string): string {
   return value.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * The **real** label for a stored option id, from the same list the capture card
+ * offered — falling back to `slugLabel` for anything not in it rather than
+ * rendering nothing.
+ *
+ * Use this, not `slugLabel`, wherever the value came from a fixed option list.
+ * `slugLabel` turns every underscore into a space, which is right for a status
+ * enum (`pending_review` → "Pending Review") and wrong for anything whose
+ * underscore stood in for punctuation: `50_100` became "50 100" and `18_22`
+ * became "18 22", when both lists already held "$50–100" and "$18–22/hr".
+ */
+export function optionLabel(
+  options: readonly { id: string; label: string }[],
+  value: string,
+): string {
+  return options.find((o) => o.id === value)?.label ?? slugLabel(value);
 }
 
 export function ageList(ages: number[]): string {

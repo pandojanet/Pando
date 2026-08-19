@@ -26,7 +26,7 @@ export interface ActionContext {
 
 export type ActionOutcome =
   | { applied: true; resource: string; resource_id: string | null }
-  | { applied: false; reason: "not_implemented" };
+  | { applied: false; reason: "not_implemented" | "referral_cap_reached" };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -104,8 +104,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "contribution.needs_detail": {
       const target = id(b.id);
+      /**
+       * There is nowhere to send this yet — no SMS reply pipeline exists — so
+       * this is an internal note, not an outbound message, whatever the screen
+       * used to imply. Stored rather than discarded (it used to survive only in
+       * `audit_log.after`), so the reviewer who set this status still has the
+       * question in front of them next time the queue is opened.
+       */
       await tx.execute(
-        sql`update share_contributions set status = 'needs_detail' where id = ${target}::uuid`,
+        sql`update share_contributions
+            set status = 'needs_detail', needs_detail_note = ${text(b.question)}
+            where id = ${target}::uuid`,
       );
       return { applied: true, resource: "share_contribution", resource_id: target };
     }
@@ -692,6 +701,23 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const referred = id(b.referred);
       if (!referrer || !referred || referrer === referred) {
         return { applied: false, reason: "not_implemented" };
+      }
+      /**
+       * The strategy's "up to three" cap (18 Aug), never enforced before this —
+       * `referral.link` would insert an unlimited number of rows for the same
+       * referrer. Counted rather than stored as a running total: three rows are
+       * cheap to count and can never drift from what actually exists, which a
+       * cached counter could. Re-linking the same pair (handled below) must not
+       * be blocked by its own cap, so this only counts *other* referreds.
+       */
+      const [{ count }] = (await tx.execute(
+        sql`select count(*)::int as count from referrals
+            where referrer_id = ${referrer}::uuid
+              and referred_id <> ${referred}::uuid
+              and status <> 'void'`,
+      )) as unknown as Array<{ count: number }>;
+      if (count >= 3) {
+        return { applied: false, reason: "referral_cap_reached" };
       }
       /**
        * `profile_complete`, not `credited`: the parent is here and finished, but
