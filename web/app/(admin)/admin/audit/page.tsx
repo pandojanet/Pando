@@ -34,7 +34,7 @@ export default function AuditPage() {
     <>
       <PageHead
         title="Audit log"
-        intro="Who did what, and when. Written by itself every time somebody records a consent, adds a recommendation or edits a profile — nobody can turn it off."
+        intro="Who did what, and when. Written by itself — nobody can turn it off."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

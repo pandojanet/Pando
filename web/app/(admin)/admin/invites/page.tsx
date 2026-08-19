@@ -62,6 +62,8 @@ export default function InvitesPage() {
   const [label, setLabel] = useState("");
   const [group, setGroup] = useState("");
   const [note, setNote] = useState("");
+  /** The create form is folded away until asked for — see below. */
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -108,13 +110,14 @@ export default function InvitesPage() {
     setLabel("");
     setGroup("");
     setNote("");
+    setCreating(false);
   }
 
   return (
     <>
       <PageHead
         title="Invites"
-        intro="One link per group, so you can see which groups actually brought people in — not just which ones were sent a link. A link is never tied to one person, so it's safe to forward."
+        intro="One link per group, so you can see which groups actually brought people in. A link is never tied to one person."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -125,7 +128,25 @@ export default function InvitesPage() {
         </div>
       )}
 
-      <Card title="New invite">
+      {/**
+       * Folded away by default (19 Aug). This form has four fields and four
+       * hints, and it sat permanently above the table — so the usual visit,
+       * which is *reading* how the groups are doing, began by scrolling past a
+       * form. Making a link is the rarer job of the two.
+       */}
+      {!creating ? (
+        <Button tone="secondary" onClick={() => setCreating(true)}>
+          New invite link
+        </Button>
+      ) : (
+      <Card
+        title="New invite"
+        right={
+          <Button tone="secondary" onClick={() => setCreating(false)}>
+            Cancel
+          </Button>
+        }
+      >
         <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
           <Field
             label="Group name"
@@ -148,7 +169,7 @@ export default function InvitesPage() {
           </Field>
           <Field
             label="Matches which group in the tap lists?"
-            hint="Optional, and attribution only. It records which group a contributor came through — it does not claim they belong to it, and the profile no longer asks them to confirm it."
+            hint="Optional. Records which group somebody came through — it never claims they belong to it."
           >
             <select
               className={inputClass}
@@ -186,6 +207,7 @@ export default function InvitesPage() {
           )}
         </div>
       </Card>
+      )}
 
       <div className="mt-4">
         <Card title={`Live (${live.length})`}>
@@ -210,10 +232,11 @@ export default function InvitesPage() {
         <div className="mt-4">
           <Card title={`No longer shared (${retired.length})`}>
             <InviteTable rows={retired} busy={busy} onAction={run} groups={groups} />
+            {/* Kept: this is genuinely surprising behaviour, so one line stays.
+                The reasoning behind it — a forwarded link must not become a dead
+                end — is a decision, and decisions live in CLAUDE.md. */}
             <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
-              A stopped code still lets a parent in — it just records no group. The
-              link was already forwarded; making it a dead end punishes the wrong
-              person.
+              A stopped link still lets a parent in — it just records no group.
             </p>
           </Card>
         </div>

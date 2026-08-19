@@ -125,7 +125,7 @@ export default function DemandPage() {
     <>
       <PageHead
         title="What parents asked for"
-        intro="What parents asked at the end, in their own words. Health, legal and safety questions need a person today; the rest is what Pando should have answers ready for."
+        intro="What parents asked, in their own words. Health, legal and safety ones need a person today."
         right={
           <div
             ref={filterRef}
@@ -380,8 +380,7 @@ export default function DemandPage() {
           <div className="px-4 py-3">
             <h2 className="text-[14px] font-semibold">Where the demand is</h2>
             <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-              Questions by the asker&apos;s own neighborhood — the signal for which
-              area to open next, and which category to have answers ready for.
+              Where the parents asking actually live.
             </p>
             <ul className="mt-3 space-y-1.5">
               {byArea.rows.map((r) => (
@@ -408,10 +407,8 @@ export default function DemandPage() {
         </Card>
       )}
 
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        These are a parent&apos;s own words about their own family. Nothing on this page
-        is ever published, quoted in an answer, or sent to a model.
-      </p>
+      {/* A guarantee the page has no way to break, stated under it on every
+          visit. Enforced in the routing code, which is where it belongs. */}
     </>
   );
 }

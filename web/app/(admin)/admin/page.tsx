@@ -114,7 +114,7 @@ export default function AdminOverviewPage() {
     <>
       <PageHead
         title="Overview"
-        intro="Where the pilot stands. Every number here is real — nothing on this page is a placeholder."
+        intro="Where the pilot stands."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

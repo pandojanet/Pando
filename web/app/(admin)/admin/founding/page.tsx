@@ -71,7 +71,7 @@ export default function FoundingQueuePage() {
     <>
       <PageHead
         title="Founding queue"
-        intro="Everyone who finished their profile waits here until you confirm they really are from the group. Nobody becomes a Founding parent automatically, and once you've said yes it never gets taken away."
+        intro="Confirm each one really is from the group. Nothing happens automatically, and a yes is never taken back."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -94,7 +94,7 @@ export default function FoundingQueuePage() {
         <Card>
           <Empty
             title="Nobody waiting"
-            body="Everyone who finished has been reviewed. New arrivals show up here as soon as they complete the flow."
+            body="New arrivals appear here as they finish a profile."
           />
         </Card>
       ) : (
@@ -112,11 +112,11 @@ export default function FoundingQueuePage() {
                       void act(
                         "founding.approve",
                         group.map((r) => r.id),
-                        `Approved all ${group.length} from this link`,
+                        `Confirmed all ${group.length} from this link.`,
                       )
                     }
                   >
-                    Approve all {group.length}
+                    Confirm all {group.length}
                   </Button>
                 ) : null
               }
@@ -176,19 +176,20 @@ export default function FoundingQueuePage() {
                             tone="primary"
                             disabled={busy !== null}
                             onClick={() =>
-                              void act("founding.approve", [row.id], "Approved as founding")
+                              void act("founding.approve", [row.id], "Confirmed as a Founding parent.")
                             }
                           >
-                            Approve
+                            Confirm
                           </Button>
                           <Button
                             tone="secondary"
                             disabled={busy !== null}
+                            title="Not a rejection — they keep everything they shared and become an ordinary user at launch."
                             onClick={() =>
                               void act(
                                 "founding.request_invite",
                                 [row.id],
-                                "Moved to request-an-invite",
+                                "Marked as not from the group.",
                               )
                             }
                           >
@@ -203,11 +204,11 @@ export default function FoundingQueuePage() {
             </Card>
           ))}
 
-          <p className="text-[12.5px] leading-relaxed text-muted">
-            &quot;Not from the group&quot; is not a rejection: the person keeps their
-            submissions and becomes an ordinary user at launch. Whether their cards
-            enter the graph before approval is still an open question for the client.
-          </p>
+          {/* This footnote explained that "not from the group" is not a
+              rejection, and then raised an open question *for the client* about
+              when cards enter the graph — which is a thing to settle in a call,
+              not a paragraph under Janet's queue. The first half is now the
+              button's own tooltip, where it is read at the moment it matters. */}
         </div>
       )}
     </>

@@ -73,7 +73,7 @@ export default function AccountPage() {
     <>
       <PageHead
         title="Your account"
-        intro="Change your own password. Adding or removing someone else isn't done here — ask a developer, so that giving somebody access is always a deliberate act."
+        intro="Change your own password. Adding or removing someone else — ask a developer."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -85,8 +85,7 @@ export default function AccountPage() {
               Password changed.
             </p>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
-              You&apos;re still signed in here. Anywhere else you were signed in is
-              now signed out — that is what rotating a password is for.
+              You&apos;re still signed in here. Anywhere else has been signed out.
             </p>
             <Button
               tone="secondary"
@@ -141,11 +140,8 @@ export default function AccountPage() {
               {busy ? "Changing…" : "Change password"}
             </Button>
             <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-              Pando stores a scrypt record, never the password itself — not here,
-              not in the audit log, not in a server log. If you forget it, an
-              operator rotates it with{" "}
-              <code>npm run admin:user -- password &lt;name&gt;</code>; nobody can
-              read the old one back.
+              Your password is never stored anywhere it could be read back. If you
+              forget it, a developer can set a new one — nobody can recover the old.
             </p>
           </div>
         </Card>

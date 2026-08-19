@@ -76,7 +76,7 @@ export default function ContributorsPage() {
     <>
       <PageHead
         title="Contributors"
-        intro="Everyone who has filled in a profile. Open one to see what they told Pando, everything they shared, and how much of it you have used."
+        intro="Everyone who filled in a profile. Open one to see what they shared."
         right={
           <>
             <input

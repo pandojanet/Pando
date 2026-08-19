@@ -123,7 +123,7 @@ export default function CaregiversPage() {
     <>
       <PageHead
         title="Caregivers"
-        intro="Everyone a family has put forward. Nobody reaches a parent until she has said yes herself and you have switched her on — until both are true she is invisible, whatever else is set here."
+        intro="Everyone a family has put forward. Nobody reaches a parent until she says yes herself and you switch her on."
       />
 
       {(caregivers.error || duplicates.error) && (
@@ -356,13 +356,30 @@ export default function CaregiversPage() {
                               ),
                             )}
 
+                            {/**
+                             * Two switches that had four labels between them —
+                             * "Set active"/"Set inactive" and "Make
+                             * discoverable"/"Not discoverable", with the
+                             * confirmations saying "Switched on"/"Hidden" instead.
+                             * Nobody could tell what the difference between
+                             * "active" and "discoverable" was, because both words
+                             * describe the column and neither describes the effect.
+                             *
+                             * They are two steps of one thing, so they now say what
+                             * each step does: switching her on lets Pando use her at
+                             * all; the second step is whether a family may see her
+                             * in an answer.
+                             */}
                             {row.consent_status === "consented" && (
                               <Button
                                 tone="secondary"
                                 disabled={busy}
+                                title="Whether Pando may use her at all. Nothing shows a family until the next step too."
                                 onClick={() =>
                                   void run(
-                                    row.active ? "Switched off" : "Switched on",
+                                    row.active
+                                      ? "Switched off."
+                                      : "Switched on.",
                                     async () =>
                                       adminAction({
                                         action: "caregiver.visibility",
@@ -373,19 +390,22 @@ export default function CaregiversPage() {
                                   )
                                 }
                               >
-                                {row.active ? "Set inactive" : "Set active"}
+                                {row.active ? "Switch off" : "Switch on"}
                               </Button>
                             )}
 
-                            {/* Only offered once they are answerable. Being
-                                introducible is a further step, and theirs to give. */}
+                            {/* Only offered once she is switched on. Being
+                                introduced is a further step, and hers to give. */}
                             {row.consent_status === "consented" && row.active && (
                               <Button
                                 tone="secondary"
                                 disabled={busy}
+                                title="Whether a family asking about care may be shown her at all."
                                 onClick={() =>
                                   void run(
-                                    row.discoverable ? "Hidden" : "Discoverable",
+                                    row.discoverable
+                                      ? "Hidden from families."
+                                      : "Families can see her now.",
                                     async () =>
                                       adminAction({
                                         action: "caregiver.visibility",
@@ -397,8 +417,8 @@ export default function CaregiversPage() {
                                 }
                               >
                                 {row.discoverable
-                                  ? "Not discoverable"
-                                  : "Make discoverable"}
+                                  ? "Hide from families"
+                                  : "Let families see her"}
                               </Button>
                             )}
 
@@ -551,8 +571,7 @@ export default function CaregiversPage() {
                               {noteBody ?? "Loading…"}
                             </p>
                             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                              Never shown to a family or to the caregiver, and never
-                              summarized by a model. Opening it is recorded.
+                              Never shown to anyone else. Opening it is recorded.
                             </p>
                             <Button
                               tone="secondary"
@@ -628,10 +647,11 @@ export default function CaregiversPage() {
                       </li>
                     ))}
                   </ul>
+                  {/* Kept, unlike the other footnotes cut in this pass: this one
+                      is about an action that cannot be undone, and it is short. */}
                   <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                    Merging the wrong two people attributes someone else&apos;s vouches and
-                    caveats to a real person. Two rows for one person is only
-                    redundancy — prefer that when unsure.
+                    If you&apos;re not sure, leave them as two. Merging the wrong
+                    people puts someone else&apos;s caveats on a real person.
                   </p>
                 </li>
               ))}

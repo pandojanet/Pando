@@ -140,7 +140,7 @@ export default function ClaimsPage() {
     <>
       <PageHead
         title="Caregiver sign-ups"
-        intro="Caregivers who followed an invite a family sent them and filled in their own profile. Your job is to say which family put each one forward — Pando never guesses, because two people can share a name. Matching her records her yes; it does not put her in front of anyone."
+        intro="Caregivers who signed themselves up. Say which family put each one forward — Pando never guesses, because two people can share a name."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -163,7 +163,7 @@ export default function ClaimsPage() {
         <Card>
           <Empty
             title="No sign-ups yet"
-            body="A caregiver appears here after a family sends them the invite and they set up their own profile."
+            body="They appear here once a family invites them and they fill in a profile."
           />
         </Card>
       ) : (
@@ -230,10 +230,9 @@ export default function ClaimsPage() {
                   </p>
                   {claim.candidates.length === 0 ? (
                     <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
-                      No nomination matches that name in this market. Either a family
-                      hasn&apos;t put them forward, or they gave a different name — the
-                      right move is usually to decline and let the family re-send the
-                      invite, not to attach them to somebody else.
+                      No family has put this name forward. Usually best to decline
+                      and let the family send the invite again — never attach her to
+                      somebody else.
                     </p>
                   ) : (
                     <ul className="mt-1.5 space-y-2">

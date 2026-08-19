@@ -193,7 +193,7 @@ export default function FlagsPage() {
     <>
       <PageHead
         title="Flags"
-        intro="Anything a parent wrote that a person should read before Pando uses it. Your notes are saved with your name and never shown to a parent — and nothing here is ever repeated to another parent word for word."
+        intro="What a parent wrote, for you to read before Pando uses it. Your notes stay between admins."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

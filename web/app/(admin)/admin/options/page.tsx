@@ -60,7 +60,7 @@ export default function PendingOptionsPage() {
     <>
       <PageHead
         title="Names & places"
-        intro="Things parents typed in themselves because they weren't on the list. Add the real ones so the next parent can just tap them — and so Pando can connect the families who named the same thing."
+        intro="Things parents typed because they weren't on the list. Add the real ones so the next parent can tap them."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -79,7 +79,7 @@ export default function PendingOptionsPage() {
         ) : pending.length === 0 ? (
           <Empty
             title="Nothing waiting"
-            body="Every 'other' answer has been dealt with. New ones appear as parents type them."
+            body="New ones appear as parents type them."
           />
         ) : (
           <TableWrap>
@@ -139,7 +139,7 @@ export default function PendingOptionsPage() {
                           )
                         }
                       >
-                        Not a real one
+                        Ignore this one
                       </Button>
                     </div>
                   </Td>
@@ -151,11 +151,7 @@ export default function PendingOptionsPage() {
       </Card>
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        Adding one makes it tappable for the next parent{" "}
-        <strong>straight away</strong>. Everyone who typed the same thing is
-        counted in one go, and they all get connected to it — until then, nobody
-        who named it was matched on it. Taking an old one off the list only hides
-        it; the parents who already picked it keep it.
+        Adding one connects everyone who typed it, straight away.
       </p>
     </>
   );

@@ -116,7 +116,7 @@ export default function ContributionsPage() {
     <>
       <PageHead
         title="Contributions"
-        intro="What parents have shared. Add the ones you'd be happy for Pando to pass on, and hold the ones missing something."
+        intro="Add the ones you'd be happy for Pando to pass on. Hold the ones missing something."
         right={
           <div
             ref={filterRef}
@@ -393,7 +393,7 @@ export default function ContributionsPage() {
                               setQuestion(open ? "" : row.needs_detail_note ?? "");
                             }}
                           >
-                            {open ? "Cancel" : "Edit / ask"}
+                            {open ? "Close" : "Edit"}
                           </Button>
                           {/**
                            * Golden answers (§17.1). Only offered on an approved
@@ -406,14 +406,14 @@ export default function ContributionsPage() {
                               disabled={busy}
                               title={
                                 row.share.answer_ready
-                                  ? "Take it back out of the answer-ready set"
-                                  : "This record could answer a real question as it stands"
+                                  ? "Stop treating it as good enough to answer with"
+                                  : "Good enough to answer a parent on its own, with nobody asked"
                               }
                               onClick={() =>
                                 void run(
                                   row.share.answer_ready
-                                    ? "Unmarked"
-                                    : "Marked answer-ready",
+                                    ? "No longer marked ready."
+                                    : "Marked ready to answer with.",
                                   async () =>
                                     adminAction({
                                       action: "share.answer_ready",
@@ -424,8 +424,8 @@ export default function ContributionsPage() {
                               }
                             >
                               {row.share.answer_ready
-                                ? "Not ready"
-                                : "Answer-ready"}
+                                ? "Not ready after all"
+                                : "Ready to answer with"}
                             </Button>
                           )}
                           {row.status !== "rejected" && (
@@ -496,11 +496,9 @@ export default function ContributionsPage() {
                               />
                             </Field>
                           </div>
-                          <p className="mb-3 text-[12px] leading-relaxed text-muted">
-                            Editing tidies the parent&apos;s wording. It never changes
-                            who said it, whether it was firsthand, the trust label, or
-                            the freshness date — those are provenance.
-                          </p>
+                          {/* "…those are provenance" — a word from the data model,
+                              explaining that editing a text box does not rewrite
+                              history. Nobody was confused about that. */}
                           <div className="flex flex-wrap items-end gap-2">
                             <Button
                               tone="primary"
@@ -554,9 +552,7 @@ export default function ContributionsPage() {
                               Hold for this detail
                             </Button>
                             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                              Keeps the card out of approve/reject and in "To review" —
-                              there's no way to text the parent yet, so this is a note
-                              for the queue, not a message that reaches them.
+                              Stays in your queue. Nothing is sent to the parent.
                             </p>
                           </div>
                         </Td>

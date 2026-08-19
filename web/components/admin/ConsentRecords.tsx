@@ -65,10 +65,8 @@ export function ConsentRecords() {
     <>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-[40rem] text-[13.5px] leading-relaxed text-muted">
-          Every yes and every no, with the version of the wording it was given
-          under. This is the file that answers a TCPA complaint, so it is exported
-          as it stands — including test rows, clearly marked, and with the number
-          in full.
+          Every yes and every no, with the wording it was given under. Numbers are
+          shown in full here — this is the record that answers a complaint.
         </p>
         <div className="flex flex-wrap gap-1">
             {scopes.map((key) => (
@@ -170,12 +168,11 @@ export function ConsentRecords() {
         )}
       </Card>
 
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        A version number is not the wording. `lib/consent.ts` and
-        `lib/sms-templates.ts` hold the text each version refers to, and an old
-        version is never edited in place — otherwise a stored record would resolve to
-        words nobody ever saw.
-      </p>
+      {/* The footnote here named two source files and explained that an old
+          wording version is never edited in place. Both true; neither is
+          something an admin can do anything about, and it sat under the table on
+          every visit. The guarantee is enforced in code, which is where a
+          guarantee belongs. */}
     </>
   );
 }
