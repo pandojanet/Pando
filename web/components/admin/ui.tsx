@@ -465,12 +465,29 @@ export function ConfidenceBadge({
       </Badge>
     );
   }
+  /**
+   * A word first, the number second — the same treatment the Flags page uses,
+   * and for the same reason: a bare `38%` says nothing about whether to act, and
+   * an admin reading two surfaces should not have to learn two scales. The bands
+   * are the ones the contributions queue already filters on, 0.6 being the
+   * low-confidence line.
+   */
   const pct = Math.round(value * 100);
+  const band =
+    value < 0.4
+      ? { label: "Thin", tone: "red" as const }
+      : value < 0.6
+        ? { label: "Some use", tone: "gold" as const }
+        : value < 0.85
+          ? { label: "Useful", tone: "neutral" as const }
+          : { label: "Very useful", tone: "green" as const };
+
   return (
     <div className="flex flex-col items-start gap-1">
-      <Badge tone={value < 0.6 ? "gold" : value < 0.85 ? "neutral" : "green"}>
-        {pct}%
-      </Badge>
+      <span className="inline-flex shrink-0 items-center gap-1.5">
+        <Badge tone={band.tone}>{band.label}</Badge>
+        <span className="text-[12px] tabular-nums text-muted">{pct}%</span>
+      </span>
       {note && (
         <p className="max-w-[16rem] text-[12px] leading-snug text-muted">{note}</p>
       )}

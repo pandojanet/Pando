@@ -177,11 +177,27 @@ export default function ContributorsPage() {
                     whose, because a column of bare years reads as theirs. Matches
                     the wording on the detail page rather than inventing a second. */}
                 <Th>Children born</Th>
-                <Th className="text-right">Cards</Th>
-                <Th className="text-right">Qualifying</Th>
-                <Th>Reward</Th>
-                <Th>Founding</Th>
-                <Th>Follow-ups</Th>
+                <Th className="text-right" title="Everything they shared, whether or not you have looked at it yet.">
+                  Shared
+                </Th>
+                {/* "Qualifying" is the word the estimate and the checklist both
+                    use, so it stays — but it is the one heading here nobody can
+                    infer, and the two thresholds behind it look alike and are
+                    not: reward is one, Founding is two. */}
+                {/* "Counts towards it" had no antecedent — "it" was whichever of
+                    the next two columns you happened to be looking at. The
+                    heading has to stand on its own, so it names the bigger of the
+                    two thresholds and the tooltip carries both. */}
+                <Th className="text-right" title="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding.">
+                  Counts for Founding
+                </Th>
+                <Th title="Paid for one qualifying contribution.">Reward</Th>
+                <Th title="Activates on the second qualifying contribution, and never automatically — you confirm it.">
+                  Founding
+                </Th>
+                <Th title="Whether they agreed another parent may come back to them about something they shared.">
+                  Open to questions
+                </Th>
                 <Th>Joined</Th>
               </tr>
             </thead>
@@ -215,9 +231,12 @@ export default function ContributorsPage() {
                     {row.caregiver_approved > 0 && (
                       <span
                         className="ml-1 text-[12px] font-normal text-muted"
-                        title="Approved caregiver nominations, not on hold"
+                        title="Caregivers this family put forward that you have accepted and that are not on hold"
                       >
-                        +{row.caregiver_approved} cg
+                        {/* Was "+3 cg". Nobody expands that on sight, and this
+                            column already has room for the word. */}
+                        + {row.caregiver_approved}{" "}
+                        {row.caregiver_approved === 1 ? "caregiver" : "caregivers"}
                       </span>
                     )}
                   </Td>
@@ -231,12 +250,17 @@ export default function ContributorsPage() {
                     )}
                   </Td>
                   <Td>
+                    {/* "Pending" reads as "the system is working on it", and
+                        Founding is never granted automatically — somebody has to
+                        confirm it. The label says whose move it is. */}
                     {row.founding_status === "founding" ? (
-                      <Badge tone="green">Founding</Badge>
+                      <Badge tone="green">Confirmed</Badge>
                     ) : row.founding_status === "request_invite" ? (
-                      <Badge tone="muted">Not from group</Badge>
+                      <Badge tone="muted" title="Not a rejection — they keep everything they shared and become an ordinary user at launch.">
+                        Not from the group
+                      </Badge>
                     ) : (
-                      <Badge tone="gold">Pending</Badge>
+                      <Badge tone="gold">Waiting on you</Badge>
                     )}
                   </Td>
                   <Td>

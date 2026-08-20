@@ -24,7 +24,12 @@ import {
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { ContributionRow } from "@/lib/admin/types";
-import { REVIEW_STATUS } from "@/lib/admin/labels";
+import {
+  FRESHNESS,
+  RECOMMENDATION,
+  REVIEW_STATUS,
+  sentence,
+} from "@/lib/admin/labels";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 
 /**
@@ -254,15 +259,20 @@ export default function ContributionsPage() {
                           : row.share.neighborhoods.map(slugLabel).join(", ")}
                       </Td>
                       <Td>
-                        {/* R2 — the label reads the source, never who typed it. */}
+                        {/* R2 — the label reads the source, never who typed it.
+                            "firsthand"/"secondhand" are the stored words and the
+                            filter above already says the readable version, so
+                            two names for one thing sat on one screen. */}
                         {row.firsthand ? (
-                          <Badge tone="green">firsthand</Badge>
+                          <Badge tone="green" title="This family used it themselves.">
+                            They went themselves
+                          </Badge>
                         ) : (
                           <Badge
                             tone="gold"
-                            title="Welcome, labelled, and never counted toward Founding"
+                            title="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
                           >
-                            secondhand
+                            Heard from a friend
                           </Badge>
                         )}
                         <span className="mt-0.5 block text-[12.5px] text-muted">
@@ -274,15 +284,10 @@ export default function ContributionsPage() {
                       <Td>
                         {row.recommendation ? (
                           <Badge
-                            tone={
-                              row.recommendation.startsWith("yes")
-                                ? "green"
-                                : row.recommendation === "no"
-                                  ? "red"
-                                  : "gold"
-                            }
+                            tone={RECOMMENDATION[row.recommendation]?.tone ?? "gold"}
                           >
-                            {slugLabel(row.recommendation)}
+                            {RECOMMENDATION[row.recommendation]?.label ??
+                              sentence(row.recommendation)}
                           </Badge>
                         ) : (
                           "—"
@@ -290,9 +295,9 @@ export default function ContributionsPage() {
                         {row.follow_up_ok && (
                           <span
                             className="mt-1 block text-[12px] text-muted"
-                            title="Costs one of their monthly questions"
+                            title="They agreed another parent may come back to them about this one. It costs one of their monthly questions."
                           >
-                            follow-ups ok
+                            happy to be asked more
                           </span>
                         )}
                       </Td>
@@ -317,22 +322,33 @@ export default function ContributionsPage() {
                         )}
                       </Td>
                       <Td className="text-[13px]">
-                        {slugLabel(row.share.freshness_state)}
+                        <span title={FRESHNESS[row.share.freshness_state]?.meaning}>
+                          {FRESHNESS[row.share.freshness_state]?.label ??
+                            sentence(row.share.freshness_state)}
+                        </span>
                         <span className="mt-0.5 block text-muted">
                           {when(row.share.last_confirmed_at)}
                         </span>
                       </Td>
                       <Td className="text-[12.5px]">
+                        {/* Answers the column heading, rather than restating the
+                            rule: "qualifies" made the reader carry the question
+                            up to the header and back. */}
                         {!row.firsthand ? (
-                          <span className="text-muted">never qualifies</span>
+                          <span
+                            className="text-muted"
+                            title="Only a family's own experience counts toward Founding. This one is still welcome."
+                          >
+                            No — heard from a friend
+                          </span>
                         ) : missing.length === 0 ? (
-                          <Badge tone="green">qualifies</Badge>
+                          <Badge tone="green">Yes</Badge>
                         ) : (
                           <span
                             className="text-gold-ink"
-                            title="What this contribution would need to count"
+                            title="They skipped these questions. It counts as soon as they are answered."
                           >
-                            missing {missing.join(", ")}
+                            Not yet — they didn&apos;t say {missing.join(", ")}
                           </span>
                         )}
                       </Td>
@@ -573,12 +589,21 @@ export default function ContributionsPage() {
  * What this contribution still needs to count toward Founding, in the client's terms.
  * Shown per row so "why is she stuck at one?" has an answer on the screen.
  */
+/**
+ * What this contribution would still need to count towards Founding, in the
+ * words a parent was actually asked.
+ *
+ * These read out on screen as "missing a strength, fit, caveat asked" — which
+ * were the *column* names and not questions anybody recognises. Each one now
+ * names the question the parent skipped, so an admin can tell at a glance
+ * whether it is worth asking for.
+ */
 function missingForFounding(row: ContributionRow): string[] {
   const missing: string[] = [];
-  if (row.child_age_at_time.length === 0) missing.push("child age");
-  if (!row.last_there) missing.push("recency");
-  if (!row.what_makes_it_great) missing.push("a strength");
-  if (!row.who_for && !row.who_not_for) missing.push("fit");
-  if (!row.caveat_answered) missing.push("caveat asked");
+  if (row.child_age_at_time.length === 0) missing.push("how old their child was");
+  if (!row.last_there) missing.push("when they were last there");
+  if (!row.what_makes_it_great) missing.push("what they liked about it");
+  if (!row.who_for && !row.who_not_for) missing.push("who it suits");
+  if (!row.caveat_answered) missing.push("whether there's a catch");
   return missing;
 }

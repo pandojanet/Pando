@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  Badge,
   Button,
   Card,
   Empty,
@@ -87,7 +86,9 @@ export default function PendingOptionsPage() {
               <tr>
                 <Th>What they typed</Th>
                 <Th>Category</Th>
-                <Th className="text-right">Times</Th>
+                <Th className="text-right" title="How many parents typed this. More than one is the strongest reason to add it.">
+                  Parents who typed it
+                </Th>
                 <Th>First from</Th>
                 <Th>When</Th>
                 <Th />
@@ -97,17 +98,25 @@ export default function PendingOptionsPage() {
               {pending.map((row) => (
                 <tr key={row.id}>
                   <Td>
+                    {/* The badge here said "asked for 3×" and the column three
+                        cells along said "3" — the same number twice on one row.
+                        The badge is the half that goes: a column is scannable
+                        down the table, and the badge only repeated it. */}
                     <span className="font-semibold">{row.submitted_value}</span>
-                    {row.occurrences > 1 && (
-                      <span className="ml-2">
-                        <Badge tone="green" title="More than one parent typed this">
-                          asked for {row.occurrences}×
-                        </Badge>
-                      </span>
-                    )}
                   </Td>
                   <Td>{CATEGORY_LABEL[row.category] ?? slugLabel(row.category)}</Td>
-                  <Td className="text-right">{row.occurrences}</Td>
+                  <Td className="text-right">
+                    {row.occurrences > 1 ? (
+                      <span
+                        className="font-semibold text-green-deep"
+                        title="More than one parent typed this, which is the strongest reason to add it."
+                      >
+                        {row.occurrences}
+                      </span>
+                    ) : (
+                      row.occurrences
+                    )}
+                  </Td>
                   <Td className="text-[13px]">{row.submitted_by?.name ?? "—"}</Td>
                   <Td className="text-muted">{when(row.created_at)}</Td>
                   <Td>

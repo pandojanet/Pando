@@ -220,9 +220,13 @@ export default function ClaimsPage() {
                         : "No references"}
                     </Badge>
                   </div>
+                  {/* The version string stays verbatim — it is what a complaint
+                      would be answered with, so it must be the exact stored
+                      value. What changed is that the line now says why it is
+                      here, instead of the word "Wording" and an id. */}
                   <p className="mt-1.5 text-[12px] text-muted">
-                    Wording {claim.consent_text_version} · signed up{" "}
-                    {when(claim.created_at)}
+                    Signed up {when(claim.created_at)} · agreed to consent wording{" "}
+                    <span className="font-mono">{claim.consent_text_version}</span>
                   </p>
 
                   <p className="mt-4 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">

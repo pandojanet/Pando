@@ -99,10 +99,13 @@ export default function FoundingQueuePage() {
         </Card>
       ) : (
         <div className="space-y-5">
+          {/* `link` is the invite code they clicked. `Card` upper-cases its
+              title, so a raw code was shouting `MOPS-ALTADENA`; slugged, it
+              reads as the group an admin knows it by. */}
           {byLink.map(([link, group]) => (
             <Card
               key={link}
-              title={`Arrived via ${link}`}
+              title={`Arrived on the ${slugLabel(link)} link`}
               right={
                 group.length > 1 ? (
                   <Button
@@ -135,9 +138,16 @@ export default function FoundingQueuePage() {
                         <div className="min-w-0">
                           <p className="flex flex-wrap items-center gap-2 text-[15.5px] font-semibold">
                             {row.name ?? "Unknown name"}
+                            {/* "off-list" was jargon; "nobody vouched for them"
+                                was worse, because it read as a judgement about
+                                the person. What it actually means is that no
+                                group was recorded against their arrival. */}
                             {offList && (
-                              <Badge tone="gold" title="No 'who invited you' answer">
-                                off-list
+                              <Badge
+                                tone="gold"
+                                title="No group was recorded when they arrived — they came on a link that is not tied to one, or on no link at all. Not a mark against them; it just means there is nothing to check them against."
+                              >
+                                no group recorded
                               </Badge>
                             )}
                           </p>
@@ -156,15 +166,25 @@ export default function FoundingQueuePage() {
                               .filter(Boolean)
                               .join(" · ")}
                           </p>
-                          {/* The field Janet actually decides on. */}
-                          <p className="mt-1.5 text-[14px]">
-                            <span className="text-muted">Invited by: </span>
-                            {row.invited_by ? (
-                              <span className="font-medium">{row.invited_by}</span>
-                            ) : (
-                              <span className="italic text-muted">not answered</span>
-                            )}
-                          </p>
+                          {/**
+                           * There used to be an "Invited by: …" line here, and it
+                           * went for two reasons.
+                           *
+                           * It was **mislabelled**: the value is
+                           * `people.invited_via_group`, which names a parent
+                           * group and never a person. The "who invited you?"
+                           * question was removed on 12 Aug when one invite per
+                           * group started carrying the attribution instead — so
+                           * the label promised a fact the app no longer collects,
+                           * and its empty state ("not answered") blamed a parent
+                           * for skipping a question that no longer exists.
+                           *
+                           * And once corrected it was **redundant**: these cards
+                           * are already grouped by the link somebody arrived on,
+                           * so every row repeated its own heading. The only thing
+                           * the heading cannot say is when no group was recorded
+                           * at all, and that is the badge beside the name.
+                           */}
                           <p className="mt-1 text-[13px] text-muted">
                             Shared {total} {total === 1 ? "card" : "cards"} ·{" "}
                             {row.phone_masked ?? "no number"}

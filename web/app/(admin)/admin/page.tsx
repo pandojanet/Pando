@@ -10,6 +10,7 @@ import {
   Stat,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
+import { CONSENT_STATE, DEMAND_SENSITIVITY } from "@/lib/admin/labels";
 import type { Overview } from "@/lib/admin/types";
 
 /**
@@ -220,19 +221,31 @@ export default function AdminOverviewPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Card title="Where the caregivers are">
               <ul className="divide-y divide-bark/50 text-[14px]">
-                <Row label="Put forward by a family" value={o.caregivers.mentioned} />
-                <Row label="Sent an invite" value={o.caregivers.invited} />
-                <Row label="Said yes" value={o.caregivers.consented} />
-                <Row label="Said no" value={o.caregivers.declined} />
+                {/* Same rule as the block below: the ladder is named in one
+                    place. "Sent an invite" here vs "Family sent the invite" on
+                    the caregivers page was the same drift, one rung down. */}
+                {(["mentioned", "invited", "consented", "declined"] as const).map((k) => (
+                  <Row key={k} label={CONSENT_STATE[k].label} value={o.caregivers[k]} />
+                ))}
               </ul>
             </Card>
 
             <Card title="What parents asked about">
               <ul className="divide-y divide-bark/50 text-[14px]">
-                <Row label="Ordinary questions" value={o.demand.ordinary} />
-                <Row label="Wanting to hear from others" value={o.demand.peer_support} />
-                <Row label="Health, legal or safety" value={o.demand.high_stakes} />
-                <Row label="About a named person" value={o.demand.named_allegation} />
+                {/* Read from `labels.ts` rather than written out here. These four
+                    had their own wording ("Wanting to hear from others", "About a
+                    named person") while the demand queue itself said something
+                    else — one thing under two names, on two pages an admin sees
+                    minutes apart, which is exactly what that file exists to stop. */}
+                {(["ordinary", "peer_support", "high_stakes", "named_allegation"] as const).map(
+                  (k) => (
+                    <Row
+                      key={k}
+                      label={DEMAND_SENSITIVITY[k].label}
+                      value={o.demand[k]}
+                    />
+                  ),
+                )}
               </ul>
             </Card>
           </div>

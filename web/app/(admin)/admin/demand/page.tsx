@@ -20,6 +20,12 @@ import {
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import {
+  DEMAND_CATEGORY,
+  DEMAND_SENSITIVITY,
+  DEMAND_STATUS,
+  sentence,
+} from "@/lib/admin/labels";
 import type { DemandRow } from "@/lib/admin/types";
 
 /**
@@ -214,8 +220,15 @@ export default function DemandPage() {
                 <Th>What they asked</Th>
                 <Th>About</Th>
                 <Th>Where from</Th>
-                <Th>Routing</Th>
-                <Th>Status</Th>
+                {/* "Routing" named the mechanism. What an admin needs from this
+                    column is what kind of question it is and therefore what
+                    Pando already said back to the parent. */}
+                <Th title="What kind of question this is — which decides what Pando said back to them, and what you may do with it.">
+                  Kind of question
+                </Th>
+                <Th title="Yours to track. Nothing here is sent to the parent — there is no channel until Phase 2.">
+                  Where you got to
+                </Th>
                 <Th>From</Th>
                 <Th>When</Th>
                 <Th />
@@ -238,7 +251,11 @@ export default function DemandPage() {
                       {row.question_text}
                     </span>
                   </Td>
-                  <Td>{row.category ? slugLabel(row.category) : "—"}</Td>
+                  <Td>
+                    {row.category
+                      ? (DEMAND_CATEGORY[row.category] ?? sentence(row.category))
+                      : "—"}
+                  </Td>
                   <Td className="text-[13px]">
                     {row.neighborhood ? (
                       slugLabel(row.neighborhood)
@@ -249,36 +266,42 @@ export default function DemandPage() {
                     )}
                   </Td>
                   <Td>
-                    <Badge
-                      tone={
-                        row.sensitivity === "named_allegation" ||
-                        row.sensitivity === "high_stakes"
-                          ? "red"
-                          : row.sensitivity === "peer_support"
-                            ? "gold"
-                            : "neutral"
-                      }
-                      title={
-                        row.sensitivity === "named_allegation"
-                          ? "A claim about a named person. Human review only — never circulated, never an answer"
-                          : row.sensitivity === "high_stakes"
-                            ? "Professional resources were shown in the flow"
-                            : row.sensitivity === "peer_support"
-                              ? "Stored only because the parent agreed to keep it"
-                              : "Ordinary local question"
-                      }
-                    >
-                      {slugLabel(row.sensitivity)}
-                    </Badge>
-                    {row.requires_human_review && (
-                      <span className="mt-1 block text-[12px] text-muted">
-                        not usable until read
-                      </span>
-                    )}
+                    {(() => {
+                      const kind = DEMAND_SENSITIVITY[row.sensitivity];
+                      return (
+                        <>
+                          <Badge
+                            tone={kind?.tone ?? "neutral"}
+                            title={
+                              kind
+                                ? `What they saw: ${kind.said}\nWhat you may do: ${kind.allowed}`
+                                : undefined
+                            }
+                          >
+                            {kind?.label ?? sentence(row.sensitivity)}
+                          </Badge>
+                          {/**
+                           * The line under the badge used to read "not usable
+                           * until read" for every row `requires_human_review`
+                           * was set on — which is every non-ordinary row, and
+                           * **nothing ever clears that column**. So a question
+                           * you had read, followed up and answered still said it
+                           * was unread, forever. The sentence is now tied to the
+                           * thing that does change: while it is open it is
+                           * waiting, and once you have moved it on it isn't.
+                           */}
+                          {row.requires_human_review && row.status === "open" && (
+                            <span className="mt-1 block text-[12px] text-muted">
+                              waiting for you to read it
+                            </span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </Td>
                   <Td>
-                    <Badge tone={row.status === "open" ? "gold" : "green"}>
-                      {slugLabel(row.status)}
+                    <Badge tone={DEMAND_STATUS[row.status]?.tone ?? "neutral"}>
+                      {DEMAND_STATUS[row.status]?.label ?? sentence(row.status)}
                     </Badge>
                   </Td>
                   <Td className="text-[13px]">{row.contributor?.name ?? "—"}</Td>
@@ -289,18 +312,20 @@ export default function DemandPage() {
                         <Button
                           tone="primary"
                           disabled={busy}
+                          title="Writes a note against this question, with your name on it. Nothing goes to the parent."
                           onClick={() => setNoteFor(row.id)}
                         >
                           {row.sensitivity === "high_stakes" ||
                           row.sensitivity === "named_allegation"
-                            ? "Record follow-up…"
-                            : "Mark matched…"}
+                            ? "I've dealt with this…"
+                            : "I know who could answer…"}
                         </Button>
                       )}
                       {row.status !== "closed" && (
                         <Button
                           tone="secondary"
                           disabled={busy}
+                          title="Takes it off the list without a note — for a question that needs nothing from you."
                           onClick={() =>
                             void run("Closed", async () =>
                               adminAction({
@@ -312,7 +337,7 @@ export default function DemandPage() {
                             )
                           }
                         >
-                          Close
+                          Nothing to do
                         </Button>
                       )}
                     </div>
@@ -323,10 +348,10 @@ export default function DemandPage() {
                           label={
                             row.sensitivity === "high_stakes" ||
                             row.sensitivity === "named_allegation"
-                              ? "What was done"
-                              : "What matched it"
+                              ? "What you did about it"
+                              : "Who or what could answer this"
                           }
-                          hint="Stored with your name. Never sent to the parent from here."
+                          hint="Saved with your name, for other admins. It never reaches the parent."
                         >
                           <input
                             className={inputClass}
@@ -391,7 +416,9 @@ export default function DemandPage() {
                   <span className="tabular-nums font-semibold">{r.total}</span>
                   {r.categories.length > 0 && (
                     <span className="text-[12.5px] text-muted">
-                      {r.categories.map(slugLabel).join(" · ")}
+                      {r.categories
+                        .map((c) => DEMAND_CATEGORY[c] ?? sentence(c))
+                        .join(" · ")}
                     </span>
                   )}
                 </li>

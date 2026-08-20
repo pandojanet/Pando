@@ -474,7 +474,18 @@ export interface FoundingRow {
   neighborhood: string | null;
   child_birth_years: number[];
   school: string | null;
+  /**
+   * **Which group, not which person.** Read from `people.invited_via_group`,
+   * which the server sets from the invite code it validated — so it names a
+   * parent group ("mops"), never an individual.
+   *
+   * The name is a leftover from the profile question "who invited you?", which
+   * was removed on 12 Aug when one invite per group started carrying the
+   * attribution instead. Nothing asks for a person's name any more, so a screen
+   * labelling this "Invited by" is claiming a fact that is no longer collected.
+   */
   invited_by: string | null;
+  /** The invite code they arrived on, or the bare `source` when there was none. */
   arrived_via: string | null;
   submissions: { activities: number; caregivers: number; places: number; tips: number };
   /** The client's rule, as facts rather than a verdict. */

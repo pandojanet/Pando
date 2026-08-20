@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Badge,
   Card,
   Empty,
   ErrorNote,
@@ -11,9 +10,19 @@ import {
   TableWrap,
   Td,
   Th,
-  slugLabel,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
+import {
+  AUDIT_ACTION,
+  AUDIT_FIELD,
+  AUDIT_RESOURCE,
+  CONSENT_STATE,
+  DEMAND_SENSITIVITY,
+  DEMAND_STATUS,
+  RECOMMENDATION,
+  REVIEW_STATUS,
+  sentence,
+} from "@/lib/admin/labels";
 import type { AuditRow } from "@/lib/admin/types";
 
 /**
@@ -56,8 +65,8 @@ export default function AuditPage() {
               <tr>
                 <Th>When</Th>
                 <Th>Who</Th>
-                <Th>Action</Th>
-                <Th>Record</Th>
+                <Th>What they did</Th>
+                <Th>To what</Th>
                 <Th>Change</Th>
               </tr>
             </thead>
@@ -73,11 +82,16 @@ export default function AuditPage() {
                     })}
                   </Td>
                   <Td className="font-semibold">{row.user}</Td>
-                  <Td>
-                    <Badge tone="neutral">{row.action}</Badge>
+                  <Td className="text-[13.5px]">
+                    {/* Was `<Badge>{row.action}</Badge>`, i.e.
+                        `nomination.release_hold` in a pill. This is the one page
+                        whose whole job is to be readable months later, so it is
+                        the worst place to print an identifier. Not a badge
+                        either: a sentence in a pill reads as a status. */}
+                    {AUDIT_ACTION[row.action] ?? sentence(row.action)}
                   </Td>
                   <Td className="text-[13px]">
-                    {slugLabel(row.resource)}
+                    {AUDIT_RESOURCE[row.resource] ?? sentence(row.resource)}
                     {row.resource_id && (
                       <span className="mt-0.5 block font-mono text-[12px] text-muted">
                         {row.resource_id}
@@ -104,14 +118,22 @@ function Diff({
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
 }) {
-  const keys = [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])];
+  const keys = [
+    ...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]),
+  ]
+    /* `id` is the row's own identifier, already printed in the column to the
+       left — so every created record showed the same uuid twice, side by side,
+       and the eye had to check whether they differed. They never do. */
+    .filter((key) => key !== "id");
   if (keys.length === 0) return <span className="text-muted">—</span>;
 
   return (
     <ul className="space-y-0.5">
       {keys.map((key) => (
         <li key={key}>
-          <span className="text-muted">{key}: </span>
+          <span className="text-muted">
+            {AUDIT_FIELD[key] ?? sentence(key)}:{" "}
+          </span>
           <span className="line-through decoration-alert/40">
             {format(before?.[key])}
           </span>
@@ -123,9 +145,32 @@ function Diff({
   );
 }
 
+/**
+ * One stored value, readable.
+ *
+ * The three cases that mattered: `true`/`false` — which nobody says out loud —
+ * an enum this app already has words for, and a JSON blob that used to be
+ * printed as `{"a":1}`. The enum lookup deliberately runs through the same maps
+ * every other page uses, so a status reads the same here as it does where it was
+ * changed; two names for one value is worse than either.
+ */
 function format(value: unknown): string {
   if (value === undefined || value === null) return "—";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "object") {
+    /* Objects here are small (a consent evidence record, a set of flags). Keys
+       and values, not braces and quotes. */
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${sentence(k)}: ${format(v)}`)
+      .join(", ");
+  }
+  const s = String(value);
+  return (
+    REVIEW_STATUS[s]?.label ??
+    CONSENT_STATE[s]?.label ??
+    DEMAND_STATUS[s]?.label ??
+    DEMAND_SENSITIVITY[s]?.label ??
+    RECOMMENDATION[s]?.label ??
+    s
+  );
 }

@@ -496,9 +496,26 @@ sweep rather than page by page. Read each screen as somebody who has never seen 
 schema:
 
 - **No stored ids on screen.** Not `possible_named_person`, not `stale_at_capture`,
-  not `share_contribution`, not `pending_review`, not `mid_range`. If one appears,
-  its label is missing from `lib/admin/labels.ts` — and note that a title-cased id
+  not `share_contribution`, not `pending_review`, not `mid_range`, not `firsthand`,
+  not `yes_with_caveats`, not `nomination.release_hold`. If one appears, its label
+  is missing from `lib/admin/labels.ts` — and note that a title-cased id
   ("Possible Named Person") does not count as fixed.
+- **One value, one wording, everywhere.** Open the overview and the demand queue
+  side by side: `peer_support` must read identically on both. Same for the
+  caregiver ladder on the overview vs the caregivers page. Two names for one thing
+  is the failure this file exists to prevent, and it is invisible on any single
+  page.
+- **No two adjacent columns saying the same words.** The demand queue's "About"
+  and "Kind of question" both used to read "Health, legal or safety" on a
+  high-stakes row, which told the reader nothing about the difference.
+- **Every heading stands on its own.** If a column heading contains "it" or
+  "these", check what it refers to — from the heading alone, not from the row
+  beneath it.
+- **Every stated condition has a write behind it.** This is the one worth doing
+  slowly. "not usable until read" was printed from a column nothing ever cleared,
+  so it never went away; "Invited by" named a question removed on 12 Aug. For each
+  claim on screen, ask which action makes it false — and if there is none, it is a
+  bug in the same class, not a wording nit.
 - **Nothing said twice.** No hint under an input repeating the page intro, no
   paragraph under a card repeating the heading, no sentence in the sidebar repeating
   the page's own first line. The nav hints live on the links' tooltips for exactly

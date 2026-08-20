@@ -26,7 +26,12 @@ import {
   useAdminRows,
 } from "@/lib/admin/client";
 import type { CaregiverRow, ConsentStatus, DuplicateCandidate } from "@/lib/admin/types";
-import { CONSENT_STATE, HOLD_REASON, sentence } from "@/lib/admin/labels";
+import {
+  CONSENT_STATE,
+  HOLD_REASON,
+  REFERENCE_WILLING,
+  sentence,
+} from "@/lib/admin/labels";
 import {
   CAREGIVER_AGE_BANDS,
   CAREGIVER_BENEFITS,
@@ -204,34 +209,71 @@ export default function CaregiversPage() {
                             row.pay_band ||
                             row.benefits.length > 0) && (
                             <span className="mt-1 block text-[12px] leading-relaxed text-muted">
+                              {/**
+                                 * Hours and schedule share the option `varied`,
+                                 * so a job that was irregular in both ways read
+                                 * "It varied · It varied" and the reader could
+                                 * not tell which answer was which. Each half now
+                                 * says what it is about — only when the value
+                                 * alone would be ambiguous, so the common case
+                                 * ("10–20 a week · Weekday mornings") is
+                                 * untouched.
+                                 */}
                               {[
                                 row.hours_per_week &&
-                                  optionLabel(CAREGIVER_HOURS, row.hours_per_week),
+                                  (row.hours_per_week === "varied"
+                                    ? "Hours varied"
+                                    : optionLabel(CAREGIVER_HOURS, row.hours_per_week)),
                                 row.schedule_pattern
-                                  .map((v) => optionLabel(CAREGIVER_SCHEDULE, v))
+                                  .map((v) =>
+                                    v === "varied"
+                                      ? "days varied"
+                                      : optionLabel(CAREGIVER_SCHEDULE, v),
+                                  )
                                   .join(", ") || null,
                                 row.pay_band &&
                                   optionLabel(CAREGIVER_PAY_BANDS, row.pay_band),
                               ]
                                 .filter(Boolean)
                                 .join(" · ")}
-                              {row.benefits.length > 0 &&
-                                row.benefits[0] !== "none" && (
-                                  <span className="mt-0.5 block">
-                                    with{" "}
-                                    {row.benefits
-                                      .map((v) => optionLabel(CAREGIVER_BENEFITS, v))
-                                      .join(", ")}
-                                  </span>
-                                )}
-                              {row.pay_band && !row.pay_benchmark_consent && (
-                                <span
-                                  className="mt-0.5 block"
-                                  title="Stored for context, but the parent did not agree to it being pooled"
-                                >
-                                  not poolable
+                              {/**
+                                 * `none` was already skipped; `prefer_not_to_say`
+                                 * was not, so the line read "with Prefer not to
+                                 * say" — a refusal rendered as a benefit. Both
+                                 * are `exclusive` options in the same list and
+                                 * both mean "there is nothing to list here", so
+                                 * both suppress the clause.
+                                 */}
+                              {row.benefits.filter(
+                                (b) => b !== "none" && b !== "prefer_not_to_say",
+                              ).length > 0 && (
+                                <span className="mt-0.5 block">
+                                  plus{" "}
+                                  {row.benefits
+                                    .filter(
+                                      (b) => b !== "none" && b !== "prefer_not_to_say",
+                                    )
+                                    .map((v) => optionLabel(CAREGIVER_BENEFITS, v))
+                                    .join(", ")}
                                 </span>
                               )}
+                              {/* "not poolable" was our word for it. What the
+                                  admin needs to know is what they may do with
+                                  the number, which is: look at it, not publish
+                                  an average from it. */}
+                              {/* And only when there *is* a rate: on a row where
+                                  the family preferred not to say, this line was
+                                  guarding a number that does not exist. */}
+                              {row.pay_band &&
+                                row.pay_band !== "prefer_not_to_say" &&
+                                !row.pay_benchmark_consent && (
+                                  <span
+                                    className="mt-0.5 block"
+                                    title="They were happy to tell you, but did not agree to it being used in a published pay average. It is here for your context only."
+                                  >
+                                    rate is for your eyes only
+                                  </span>
+                                )}
                             </span>
                           )}
                         </Td>
@@ -251,7 +293,7 @@ export default function CaregiversPage() {
                             }
                           >
                             {CONSENT_STATE[row.consent_status]?.label ??
-                              slugLabel(row.consent_status)}
+                              sentence(row.consent_status)}
                           </Badge>
                           <span className="mt-1 block">
                             {answerable ? (
@@ -266,7 +308,11 @@ export default function CaregiversPage() {
                         <Td className="text-[13px]">
                           {row.consent_evidence ? (
                             <>
-                              {slugLabel(row.consent_evidence.method)}
+                              {/* `METHODS` already carries the wording the admin
+                                  chose from, so read it back rather than
+                                  title-casing the stored id into a second name
+                                  for the same thing. */}
+                              {optionLabel(METHODS, row.consent_evidence.method)}
                               <span className="mt-0.5 block text-muted">
                                 {when(row.consent_evidence.at)}
                                 {row.consent_evidence.note
@@ -285,7 +331,7 @@ export default function CaregiversPage() {
                                 tone="gold"
                                 title="Nothing happens with this one until you clear it"
                               >
-                                held
+                                On hold
                               </Badge>
                               <span className="mt-1 block text-muted">
                                 {row.hold_reasons
@@ -294,7 +340,7 @@ export default function CaregiversPage() {
                               </span>
                             </>
                           ) : (
-                            <span className="text-muted">clear</span>
+                            <span className="text-muted">Nothing held</span>
                           )}
                           {row.has_restricted_notes && (
                             <span className="mt-1 block">
@@ -314,9 +360,15 @@ export default function CaregiversPage() {
                         </Td>
                         <Td className="text-[13px]">
                           {row.contributor_reference_opt_in
-                            ? slugLabel(row.contributor_reference_opt_in)
+                            ? (REFERENCE_WILLING[row.contributor_reference_opt_in] ??
+                              sentence(row.contributor_reference_opt_in))
                             : "—"}
-                          <span className="mt-0.5 block text-muted">from the parent</span>
+                          {/* Whose willingness this is, because it is the one
+                              column here that is not about the caregiver: it is
+                              the family offering to vouch for her. */}
+                          <span className="mt-0.5 block text-muted">
+                            the family who put her forward
+                          </span>
                         </Td>
                         <Td>
                           <div className="flex flex-col gap-1.5">
@@ -609,8 +661,20 @@ export default function CaregiversPage() {
               {(duplicates.rows ?? []).map((group) => (
                 <li key={group.key} className="px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{group.members.length} records</span>
-                    <Badge tone="gold">score {Math.round(group.score * 100)}%</Badge>
+                    <span className="font-semibold">
+                      {group.members.length} records
+                    </span>
+                    {/* "score 87%" told the reader a number and not what to do
+                        with it. A word first, the number in the tooltip — same
+                        treatment as the usefulness score on Flags. */}
+                    <Badge
+                      tone={group.score >= 0.8 ? "gold" : "neutral"}
+                      title={`How alike they look: ${Math.round(group.score * 100)}%. Pando will not merge two people on a first name and an initial, so this is your call.`}
+                    >
+                      {group.score >= 0.8
+                        ? "Probably the same person"
+                        : "Possibly the same person"}
+                    </Badge>
                     <span className="text-[12.5px] text-muted">
                       {group.reason.join(" · ")}
                     </span>
@@ -624,7 +688,7 @@ export default function CaregiversPage() {
                         <span>
                           {m.first_name}
                           {m.last_initial ? ` ${m.last_initial}.` : ""} ·{" "}
-                          {m.type ? slugLabel(m.type) : "—"} ·{" "}
+                          {m.type ? optionLabel(CAREGIVER_TYPES, m.type) : "—"} ·{" "}
                           {m.neighborhood ? slugLabel(m.neighborhood) : "—"}
                         </span>
                         <Button
