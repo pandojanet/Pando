@@ -16,6 +16,7 @@
     "admin:credential": "node scripts/admin-credential.mjs",
     "icons": "node scripts/make-icons.mjs",
     "test:auth": "node --experimental-strip-types --no-warnings scripts/test-admin-auth.mts",
+    "test:phone": "node --experimental-strip-types --no-warnings scripts/test-phone.mts",
     "test:e2e": "node scripts/test-e2e.mjs"
   },
   "dependencies": {

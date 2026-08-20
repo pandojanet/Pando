@@ -1,5 +1,5 @@
 import { AGE_OPTIONS } from "../questions";
-import { formatUsPhone } from "../phone";
+import { formatPhone } from "../phone";
 import { EXPECTING } from "../types";
 import type {
   ChatDraft,
@@ -101,7 +101,7 @@ export function formatAnswer(step: Step, value: FieldValue): string {
   }
 
   if (step.widget === "phone" && typeof value === "string") {
-    return formatUsPhone(value);
+    return formatPhone(value);
   }
 
   if (typeof value === "string") {

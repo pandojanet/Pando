@@ -6,7 +6,7 @@ import { ChipGroup } from "@/components/ui/ChipGroup";
 import { cn } from "@/lib/cn";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { AGE_OPTIONS } from "@/lib/questions";
-import { formatUsPhone, toE164 } from "@/lib/phone";
+import { formatPhone, toE164 } from "@/lib/phone";
 import { progressOf } from "@/lib/seed-chat/engine";
 import type { FieldValue, Fields, Script, Step } from "@/lib/seed-chat/types";
 
@@ -348,7 +348,7 @@ function PhoneEntry({
   onAnswer: (value: FieldValue) => void;
   onSkip: () => void;
 }) {
-  const [phone, setPhone] = useState(() => formatUsPhone(initialText(initial)));
+  const [phone, setPhone] = useState(() => formatPhone(initialText(initial)));
   const e164 = toE164(phone);
 
   return (

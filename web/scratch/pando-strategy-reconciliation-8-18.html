@@ -1,0 +1,489 @@
+<title>Strategy Reconciliation — 8.18</title>
+<style>
+  :root {
+    --paper: #f7f6f0;
+    --paper-soft: #efece2;
+    --card: #ffffff;
+    --border: #e2ddc9;
+    --border-soft: #ebe7db;
+    --ink: #223018;
+    --ink-soft: #4a5240;
+    --muted: #767a63;
+
+    --green: #3c5733;
+    --green-deep: #2b4025;
+    --green-wash: #eef2ea;
+
+    --gold: #b8860f;
+    --gold-ink: #8a6510;
+    --gold-wash: #fbf4de;
+    --gold-line: #ebdcae;
+
+    --gap: #6e5a63;
+    --gap-wash: #f1eaec;
+    --gap-line: #ddc9d0;
+
+    --decision: #4a5b8a;
+    --decision-wash: #eaedf6;
+    --decision-line: #cdd4e8;
+
+    --font-display: ui-sans-serif, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-body: ui-sans-serif, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #171d13;
+      --paper-soft: #1f2618;
+      --card: #1c2216;
+      --border: #33402a;
+      --border-soft: #29331f;
+      --ink: #eef1e6;
+      --ink-soft: #c7cdb9;
+      --muted: #8d9480;
+
+      --green: #7ea86e;
+      --green-deep: #9bc98a;
+      --green-wash: #212e1c;
+
+      --gold: #e0b23a;
+      --gold-ink: #f0cd6f;
+      --gold-wash: #2e2712;
+      --gold-line: #4a3d16;
+
+      --gap: #c99aad;
+      --gap-wash: #2b1f26;
+      --gap-line: #4a3540;
+
+      --decision: #9db2e6;
+      --decision-wash: #1c2333;
+      --decision-line: #34406b;
+
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #171d13;
+    --paper-soft: #1f2618;
+    --card: #1c2216;
+    --border: #33402a;
+    --border-soft: #29331f;
+    --ink: #eef1e6;
+    --ink-soft: #c7cdb9;
+    --muted: #8d9480;
+
+    --green: #7ea86e;
+    --green-deep: #9bc98a;
+    --green-wash: #212e1c;
+
+    --gold: #e0b23a;
+    --gold-ink: #f0cd6f;
+    --gold-wash: #2e2712;
+    --gold-line: #4a3d16;
+
+    --gap: #c99aad;
+    --gap-wash: #2b1f26;
+    --gap-line: #4a3540;
+
+    --decision: #9db2e6;
+    --decision-wash: #1c2333;
+    --decision-line: #34406b;
+
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15.5px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 3.5rem 1.5rem 6rem;
+  }
+
+  .cover {
+    margin-bottom: 3rem;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 0.9rem;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    font-size: clamp(1.7rem, 4vw, 2.35rem);
+    line-height: 1.12;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .dek {
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 38rem;
+    margin: 0;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.3rem;
+    letter-spacing: -0.005em;
+    margin: 3rem 0 1.1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink);
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.02rem;
+    margin: 1.8rem 0 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  h3.section-head {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    font-weight: 700;
+    margin: 1.9rem 0 0.7rem;
+  }
+
+  p { margin: 0 0 1rem; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--paper-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    padding: 0.1em 0.35em;
+    color: var(--ink-soft);
+  }
+
+  strong { color: var(--ink); font-weight: 700; }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2.8rem 0;
+  }
+
+  /* Q&A block */
+  .qa-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .qa {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.1rem 1.25rem 1.2rem;
+  }
+
+  .qa .q {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 0.98rem;
+    color: var(--ink);
+    margin: 0 0 0.55rem;
+  }
+
+  .qa .q::before {
+    content: "“";
+    color: var(--muted);
+  }
+  .qa .q::after {
+    content: "”";
+    color: var(--muted);
+  }
+
+  .qa .a {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 0.95rem;
+  }
+
+  /* Findings */
+  .finding {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border-radius: 12px;
+    padding: 1rem 1.2rem;
+    margin: 0 0 0.9rem;
+    border: 1px solid transparent;
+  }
+  .finding.good { background: var(--green-wash); border-color: color-mix(in oklab, var(--green) 30%, transparent); }
+  .finding.gap { background: var(--gap-wash); border-color: var(--gap-line); }
+
+  .finding .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 0;
+    font-weight: 600;
+  }
+  .finding.good .tag { color: var(--green-deep); }
+  .finding.gap .tag { color: var(--gap); }
+  .finding p:last-child { margin: 0; font-size: 0.95rem; color: var(--ink-soft); }
+  .finding strong { color: var(--ink); }
+
+  /* Status rows */
+  .row {
+    display: grid;
+    grid-template-columns: 6.6rem 1fr;
+    gap: 0.9rem;
+    align-items: start;
+    padding: 0.65rem 0;
+    border-bottom: 1px solid var(--border-soft);
+    font-size: 0.93rem;
+  }
+  .row:last-of-type { border-bottom: none; }
+  .row > div { color: var(--ink-soft); }
+  .row strong { color: var(--ink); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 0.28em 0.6em;
+    border-radius: 999px;
+    white-space: nowrap;
+    width: fit-content;
+  }
+  .chip::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .chip.built { background: var(--green-wash); color: var(--green-deep); }
+  .chip.built::before { background: var(--green); }
+  .chip.partial { background: var(--gold-wash); color: var(--gold-ink); }
+  .chip.partial::before { background: var(--gold); }
+  .chip.gap { background: var(--gap-wash); color: var(--gap); }
+  .chip.gap::before { background: var(--gap); }
+  .chip.decision { background: var(--decision-wash); color: var(--decision); }
+  .chip.decision::before { background: var(--decision); }
+  .chip.pull { background: var(--green-wash); color: var(--green-deep); }
+  .chip.pull::before { background: var(--green); }
+  .chip.stays { background: var(--paper-soft); color: var(--muted); }
+  .chip.stays::before { background: var(--muted); }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.1rem;
+    margin: 1.6rem 0 0;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  @media (max-width: 30rem) {
+    .row { grid-template-columns: 1fr; gap: 0.35rem; }
+  }
+</style>
+
+<div class="page">
+
+  <div class="cover">
+    <p class="eyebrow">Pando × QuitCode — internal read</p>
+    <h1>Where the build actually stands against the 8.18 strategy</h1>
+    <p class="dek">A verified pass over the Reconciliation Worksheet and the new strategy doc — every status below was checked against the repository, not assumed. Nothing has been built or changed from this; it's the read, waiting on the word to act on any of it.</p>
+    <div class="legend">
+      <span class="legend-item"><span class="chip built">Built</span></span>
+      <span class="legend-item"><span class="chip partial">Partial</span></span>
+      <span class="legend-item"><span class="chip gap">Not built</span></span>
+      <span class="legend-item"><span class="chip decision">Needs a decision</span></span>
+      <span class="legend-item"><span class="chip pull">Worth pulling forward</span></span>
+    </div>
+  </div>
+
+  <h2>For Janet, first — the four quick ones</h2>
+  <div class="qa-list">
+
+    <div class="qa">
+      <p class="q">Not sure I understand the rewards for contributions — how is that set up?</p>
+      <p class="a">Two separate thresholds, on purpose. The <strong>$15 seed payout</strong> triggers on the <strong>first approved</strong> contribution — an activity, place, tip, or caregiver nomination — the moment one clears review. <strong>Founding status</strong> is a second, higher bar: a <strong>second</strong> approved contribution. Both read the same underlying count, so they can't disagree about what "approved" means. Payouts are still sent by hand — no payment rail is wired up, deliberately, since volume is low enough that automating it would be premature.</p>
+    </div>
+
+    <div class="qa">
+      <p class="q">What does a contributor see when we press Reject?</p>
+      <p class="a"><strong>Nothing at all</strong> — not blunt, not friendly, silent. Rejecting flips an internal status column; there's no channel back to a parent yet in any form, because Phase 1 has never needed one. This is the honest state of a real gap: "friendly-ask / hold, never rejected" describes something worth building, but today it's a plain approve/reject with no contributor-facing message either way. Worth deciding if that's fine for the pilot or needs a loop before real numbers arrive.</p>
+    </div>
+
+    <div class="qa">
+      <p class="q">Paid column looks off — should be $50-$100 vs 50 100?</p>
+      <p class="a">Confirmed, and the cause is narrow. The data is stored cleanly as an id like <code>50_100</code>; the admin table's generic formatter turns every underscore into a space and title-cases it — exactly right for <code>per_month</code> → "Per Month," exactly wrong for a price range, where the underscore stood in for a dash. The proper label ("$50–100") already exists in the question definition; the admin display just isn't using it. One clean fix, not a data problem.</p>
+    </div>
+
+    <div class="qa">
+      <p class="q">Can I try the front end, or still in progress?</p>
+      <p class="a">Yes, today — there's a live invite you can use right now. One thing worth knowing going in: verification codes currently show on-screen instead of being texted (Twilio isn't provisioned yet), so the flow runs end to end, but the "a real text arrives" moment won't happen until that's live.</p>
+    </div>
+
+  </div>
+
+  <hr>
+
+  <h2>1 · Is the worksheet's own guess accurate?</h2>
+  <p>Checked every row the worksheet marked "Unclear," plus anything it guessed about something already built. Two corrections go each way.</p>
+
+  <h3 class="section-head">Ahead of the worksheet's guess</h3>
+
+  <div class="finding good">
+    <p class="tag">Resolved, not unclear</p>
+    <p><strong>Reward trigger on ADDED, not submitted.</strong> The worksheet flags this "Unclear," citing reward-earned showing 0 vs. 2 approved. Checked the query directly: <code>reward_status</code> keys off <code>qualifying_approved &gt;= 1</code> — an <em>approved</em> row — completely independent of Founding's own <code>&gt;= 2</code>. The 0-vs-2 seen was almost certainly two different numbers correctly answering two different questions, not a bug.</p>
+  </div>
+
+  <div class="finding good">
+    <p class="tag">Already built</p>
+    <p><strong>Lived-experience topics, including the sensitive lanes.</strong> Marked "later strategy addition; QC build showed gaps" — it's live today. The second topic cluster on the profile (sleep, feeding, marriage strain, return-to-work, and the rest) is exactly this, with its own opt-out. Whatever gap the worksheet saw predates the current build.</p>
+  </div>
+
+  <h3 class="section-head">Behind the worksheet's guess</h3>
+
+  <div class="finding gap">
+    <p class="tag">Not instructed, not built</p>
+    <p><strong>Five-question minimum.</strong> The profile still offers <code>1 / 3 / 5 / "as relevant"</code>, 3 as default, 1 labelled "Basic access" — the exact scheme the strategy explicitly supersedes. The worksheet already flags this correctly, but worth surfacing loudly: it's a five-minute edit to one array once the copy is confirmed (see §2).</p>
+  </div>
+
+  <div class="finding gap">
+    <p class="tag">Foreclosed two weeks ago, quietly</p>
+    <p><strong>School-affiliation matching boost.</strong> The invites system can absolutely tag which link a parent arrived on. But on 14 Aug the "Parent groups" profile question was removed entirely — it read as the same question the invite link already answered — and with it went the <em>only</em> mechanism that ever wrote a group-membership edge. Today a school-specific invite records attribution ("came through the Poly link") and writes <strong>zero</strong> affinity edge to that school — "same-school parents rank higher" doesn't fire. Not a missing feature so much as fallout from a different, reasonable decision. Reopening it means an invite link now asserts membership, which was deliberately left undecided last time.</p>
+  </div>
+
+  <hr>
+
+  <h2>2 · What the strategy doc implies that spec doesn't yet cover</h2>
+
+  <h3 class="section-head">Small — copy, config, one field</h3>
+
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Allowance tiers → 5 / 10 / "anytime relevant."</strong> Replace the <code>1/3/5</code> array and its labels. One array in the questions file.</div></div>
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Price-band admin display.</strong> Map the stored id back through its own label list instead of the generic slug formatter — the fix confirmed above.</div></div>
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Listening-ear opt-in at signup.</strong> "Would you answer a hard question, anonymously?" doesn't exist yet. One more tap screen, one boolean, spends the same monthly allowance already specified.</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div><strong>Referral cap of 3.</strong> The mechanism — admin-recorded, activation-based, unique per pair — exists; nothing stops one parent being credited more than three times. Low stakes today since no reward auto-issues yet, worth capping before one does.</div></div>
+
+  <h3 class="section-head">Medium — real but contained build</h3>
+
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Two-reference gate for caregiver listings.</strong> Today a nomination has exactly one implicit reference — the nominating parent. Nothing tracks a second, independent one, or holds a single-reference caregiver for review. Sits upstream of "discoverable," so it's a real gate, not a display change.</div></div>
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Six caregiver need-types as intake framing.</strong> Worth building as capture only, per the worksheet's own note — one classification field on the nomination, routed nowhere yet since most of the six products are legal-gated regardless.</div></div>
+  <div class="row"><span class="chip gap">Not built</span><div><strong>Asker-description preview + approval.</strong> Genuinely new since this prompt. Needs the Phase 2 answer pipeline to exist first — nothing to preview yet.</div></div>
+
+  <h3 class="section-head">Large — needs a decision before it needs a build</h3>
+
+  <div class="row"><span class="chip decision">Confirm first</span><div><strong>Contribution-first flow order (v4.1).</strong> The one to raise directly rather than quietly schedule. The worksheet marks it "instructed Aug," but nothing in the build's own decision history reflects it — the whole seed flow, and where the verification code sits, were built the other way round on purpose, with real trade-offs argued through more than once this month. Either the instruction happened somewhere this record doesn't capture, or it's a v4.1 idea never actually relayed as a build instruction. Worth finding out which before it's treated as a backlog item — reordering the flow stops being cheap once real usage exists.</div></div>
+  <div class="row"><span class="chip decision">Confirm first</span><div><strong>Priority rule — scarce contributor, free sensitive question vs. paid Ask.</strong> The strategy doc already calls this undecided. Flagging only because it's the kind of thing that's cheap to decide on paper and expensive to discover live.</div></div>
+
+  <hr>
+
+  <h2>3 · What from "Later" is worth pulling forward</h2>
+  <p>Read the whole later-column for two things at once: cheap to build, and disproportionate to the parent's actual day-to-day. Three qualify.</p>
+
+  <div class="row"><span class="chip pull">Pull forward</span><div><strong>The manual three-item Digest.</strong> The strategy doc argues for this itself — "zero build beyond send/reply/opt-out" — and it's the highest-leverage item in the whole later column: the only thing that shows up <em>between</em> needs, which is what turns a Q&A tool into a habit. Everything else about it — personalization, engagement learning — should stay later exactly as planned.</div></div>
+  <div class="row"><span class="chip pull">Pull forward</span><div><strong>School-Facts contributor type.</strong> Cheap because it reuses the existing contribution shape with one new source label. High visible impact for a school pitch specifically — the one thing that makes the partnership tangible to a principal in the room.</div></div>
+  <div class="row"><span class="chip pull">Pull forward</span><div><strong>Caregiver availability text opt-in, no calendar.</strong> "Reply with the days you're usually free" is a text capture, closer in size to the profile questions already built than to the caregiver infrastructure it's filed under. Also the thing that makes a caregiver's own onboarding feel like it does something immediately, rather than submit-and-wait.</div></div>
+  <div class="row"><span class="chip stays">Correctly later</span><div><strong>Everything payments-adjacent</strong> — gated on the California legal review by the strategy doc's own account, not on build effort. Building ahead of that clearance would be wasted, or worse, wrong.</div></div>
+  <div class="row"><span class="chip stays">Correctly later</span><div><strong>Relay numbers, the marketplace, sponsored school accounts.</strong> Each wraps a core that doesn't exist yet — a real answer pipeline, a proven pilot, a formed habit. Building the wrapper first is the "three companies" risk the strategy doc names in its own open questions.</div></div>
+
+  <hr>
+
+  <h2>The reconciliation table, by section</h2>
+  <p>Grouped as the worksheet groups it. <strong>Seed Tool</strong> rows are checked against the codebase directly; <strong>Pilot</strong> and <strong>Later</strong> rows are almost uniformly unbuilt by design — Phase 2 hasn't started — so those are marked once per section, with the real exceptions called out by name.</p>
+
+  <h3 class="section-head">Accounts / onboarding</h3>
+  <div class="row"><span class="chip built">Built</span><div>Phone + OTP at submit, consent record, resumable autosave</div></div>
+  <div class="row"><span class="chip decision">See §2</span><div>Contribution-first flow order</div></div>
+  <div class="row"><span class="chip stays">Phase 2</span><div>Seed account into pilot, progressive ordinary-user onboarding — both depend on the SMS product existing; the identity model underneath (one person, one phone) is already the right shape for it</div></div>
+
+  <h3 class="section-head">Parent profile</h3>
+  <div class="row"><span class="chip built">Built</span><div>Birth years, tenure/family/childcare context, logistics + spending preference, trust circles, lived-experience topics</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Neighborhood / schools / communities — the runtime list is live; still serving placeholder Pasadena data pending Janet's sheet</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Privacy/display controls — P13 and the standing disclosure exist; the literal "text PRIVACY" keyword is Phase 2, no SMS channel to text it to yet</div></div>
+
+  <h3 class="section-head">Community Access</h3>
+  <div class="row"><span class="chip gap">Gap — see §2</span><div>Five-question minimum, old scheme still live</div></div>
+  <div class="row"><span class="chip stays">Phase 2</span><div>Everything else — unified allowance, board/Digest exclusions, eligibility gating — no proactive request types exist yet for an allowance to govern</div></div>
+
+  <h3 class="section-head">Recommendations (capture)</h3>
+  <div class="row"><span class="chip built">Built</span><div>Structured record types, firsthand flag, child age at experience, strengths/caveats/fit, recommend-again + follow-up willingness, AI extraction with confirm-back and low-confidence critique</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Price + value + benchmark consent — captured correctly; display bug fixed above</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Admin review states — approve/reject/hold exist; "friendly-ask" as a contributor message doesn't, since nothing is sent to a contributor at all yet</div></div>
+  <div class="row"><span class="chip built">Built</span><div>Reward triggers on approved, not submitted</div></div>
+
+  <h3 class="section-head">Ask-anything intake</h3>
+  <div class="row"><span class="chip built">Built</span><div>Free-text classification, named-person detection to restricted review, the universal demand record</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Banked-question states — modeled as four (open / matched / answered / closed), not the worksheet's three; worth aligning the language before Phase 2 build starts, since nothing auto-sends today only because there's no send pipeline, not because a hold gate enforces it</div></div>
+
+  <h3 class="section-head">Answers, Network Asks, Sensitive questions, Digest, live Schools pipeline, Payments</h3>
+  <div class="row"><span class="chip stays">Phase 2</span><div>All of it, as designed — this is the SMS-answering product, and Phase 1 is deliberately the knowledge base underneath it. Two exceptions already live ahead of schedule: <strong>demand capture</strong> (every question saved, classified, routed) and the <strong>2C caregiver claim flow</strong> (consent → profile → admin-linked, first cut).</div></div>
+
+  <h3 class="section-head">Founding Contributors</h3>
+  <div class="row"><span class="chip built">Built</span><div>Qualification, referral capture, async approval copy, the seed $15 payout on approval, the hidden per-contributor ledger, "no public scores anywhere"</div></div>
+  <div class="row"><span class="chip partial">Partial</span><div>Referral cap of 3 — not enforced</div></div>
+
+  <h3 class="section-head">Caregivers</h3>
+  <div class="row"><span class="chip built">Built</span><div>Private firsthand-only nomination with the under-18 gate, the restricted concern channel that never reaches AI summarization, rehire/review-hold state, needs-change + check-back consent, the six-state consent ladder</div></div>
+  <div class="row"><span class="chip gap">Not built</span><div>Two-reference gate</div></div>
+  <div class="row"><span class="chip stays">Later, correctly</span><div>Masked messaging, references-as-a-service, payroll — legal-gated per the strategy doc itself</div></div>
+
+  <h3 class="section-head">Schools / B2B</h3>
+  <div class="row"><span class="chip partial">Partial</span><div>Invite links exist as a general mechanism; the affiliation → matching boost doesn't fire (see §1)</div></div>
+  <div class="row"><span class="chip built">Built</span><div>The privacy firewall — nothing in the invite path exposes anything back to the school</div></div>
+
+  <h3 class="section-head">Instrumentation</h3>
+  <div class="row"><span class="chip built">Built</span><div>Activation/question-count/category-spread, contributor response by ordinal, usefulness/action/reuse tracking, founder-rescue tagging</div></div>
+  <div class="row"><span class="chip stays">Phase 2</span><div>Digest engagement, "felt less alone" — both need the features they measure to exist first</div></div>
+
+  <hr>
+
+  <h2>On the worksheet's own five open questions</h2>
+
+  <p><strong>1. Pre-commit the five-question fallback trigger.</strong> Agreed, and cheap before the copy ships — a sentence in a decision log, not a build task.</p>
+  <p><strong>2. One front door for six caregiver products.</strong> Already how the nomination flow is shaped: one form, kind captured as a field, never a six-tile menu. The framing from §2 should stay internal routing, consistent with this.</p>
+  <p><strong>3. Pay-to-connect wording.</strong> A copy/legal question, not a build one — flagging only that whoever writes the pricing page should have this rule in front of them, not just in a strategy doc.</p>
+  <p><strong>4. Digest: manual-only, let reply rate decide.</strong> Matches the §3 recommendation exactly.</p>
+  <p><strong>5. Is Pando still one product?</strong> Not something a codebase can answer, but worth noting the current build already reflects the "one front door" instinct — one profile, one identity keyed by phone, one trust graph. Nothing built so far forces the three-company split the strategy doc warns against.</p>
+
+</div>

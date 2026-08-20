@@ -340,6 +340,56 @@ head("honesty and health");
 const sql = postgres(process.env.DATABASE_URL, { max: 2, prepare: false, onnotice: () => {} });
 await new Promise((r) => setTimeout(r, 9000)); // extraction runs after the response
 
+/* A Ukrainian number, end to end (20 Aug).
+ *
+ * `scripts/test-phone.mts` proves the parsing in isolation; this proves the two
+ * things it cannot reach — that the *national* form the field emits survives the
+ * whole request chain, and that what lands in `people.phone` is E.164. Written as
+ * its own walk because the number is the identity (invariant 10): a `+380` that
+ * arrived as anything else would silently be a second person.
+ *
+ * `AuditUa`, not `Audit`: the assertions below this one find the walk's parent
+ * with `first_name = 'Audit' order by created_at desc`, so a second row sharing
+ * that first name is newer and wins — which failed eighteen checks that had
+ * nothing to do with phone numbers. The prefix still matches the `like 'Audit%'`
+ * cleanup. */
+head("1.10  a Ukrainian number, from the field to the row");
+{
+  const s = session();
+  const uaNational = `067 555 ${RUN.slice(0, 2)} ${RUN.slice(2)}1`;
+  const uaE164 = `+38067555${RUN}1`;
+
+  const st = await s.post("/api/seed/verify/start", { phone: uaNational, sms_consent: true });
+  ok("a code is issued for a +380 number", st.status === 200 && typeof st.json.dev_code === "string", "-> " + st.text);
+  ok("the code confirms", ((await s.post("/api/seed/verify/check", { code: st.json.dev_code })).json || {}).ok === true);
+
+  /* The browser sends what the field holds — the national form, not E.164. The
+     route has to normalise it, or the profile lands under a different key than
+     the verification did. */
+  const profile = {
+    invite_code: "sgv-founding", source: "link",
+    wants_founding: true, first_name: "AuditUa", last_name: "Kyiv",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    monthly_contact_allowance: 5, allowance_mode: "fixed",
+    children: [{ birth_year: 2019 }], child_ages_at_capture: [6],
+    attribution: "first_name_safe", aggregate_display: true,
+    answers: { neighborhood: "altadena", child_ages: [6] },
+  };
+  const res = await s.post("/api/seed/profile", { ...profile, phone: uaNational });
+  ok("the profile persists on a +380 number", res.status === 200 && res.json.persisted === true, "-> " + res.text);
+
+  const row = (await sql`select phone, phone_verified_at from people where first_name = 'AuditUa'`)[0];
+  ok("stored in E.164, not as it was typed", row && row.phone === uaE164, "-> " + (row && row.phone));
+  ok("and verified", Boolean(row && row.phone_verified_at));
+
+  /* The same number written the other way must reach the same row rather than a
+     second one — which is the whole reason `toE164` is idempotent. */
+  const again = await s.post("/api/seed/profile", { ...profile, phone: uaE164 });
+  ok("re-sending it in E.164 is accepted", again.status === 200);
+  const count = Number((await sql`select count(*)::int as n from people where phone = ${uaE164}`)[0].n);
+  ok("one number, one person — not two", count === 1, `${count} rows`);
+}
+
 head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
 {
   /* The 1/3/5 scheme is gone — 3 must no longer validate, and must fall back

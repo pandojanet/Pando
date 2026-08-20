@@ -9,6 +9,7 @@ import {
   type VerifyStartResult,
 } from "@/lib/api-client";
 import { SMS_CONSENT_REASSURANCE } from "@/lib/consent";
+import { maskPhoneRecognisable } from "@/lib/phone";
 import { VERIFICATION_TTL_MINUTES } from "@/lib/sms-templates";
 
 /**
@@ -29,12 +30,15 @@ import { VERIFICATION_TTL_MINUTES } from "@/lib/sms-templates";
  * showing a code box that can never be satisfied.
  */
 
-/** +16265550143 → (626) •••‑0143 — enough to recognise, not enough to publish. */
-function maskPhone(e164: string): string {
-  const digits = e164.replace(/\D/g, "").slice(-10);
-  if (digits.length !== 10) return e164;
-  return `(${digits.slice(0, 3)}) •••‑${digits.slice(6)}`;
-}
+/**
+ * +16265550143 → (626) •••‑0143 — enough to recognise, not enough to publish.
+ *
+ * Shared with `lib/phone.ts` rather than kept local, because the local copy took
+ * the last ten digits and wrapped them in US parentheses: a Ukrainian number came
+ * out as `(067) •••‑4567`, which is a trunk zero and an operator code dressed as
+ * an area code.
+ */
+const maskPhone = maskPhoneRecognisable;
 
 interface Props {
   phone: string;

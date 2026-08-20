@@ -22,7 +22,7 @@ import {
   SMS_CONSENT_REASSURANCE,
   SMS_CONSENT_TERMS,
 } from "@/lib/consent";
-import { formatUsPhone, isPhoneComplete, toE164 } from "@/lib/phone";
+import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import {
   hasResumableProgress,
   loadSession,
@@ -98,7 +98,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
      * and this was the only one not being restored. Their own number, on their own
      * device, formatted the way they typed it.
      */
-    if (existing?.phone) setPhone(formatUsPhone(existing.phone));
+    if (existing?.phone) setPhone(formatPhone(existing.phone));
     if (existing?.sms_consent?.status === "opted_in") setSmsConsent(true);
     if (existing && existing.wants_founding === false) setAnonymous(true);
   }, []);

@@ -37,7 +37,10 @@ export async function POST(request: Request) {
       : null;
 
   if (!phone) {
-    return NextResponse.json({ error: "A complete US mobile number is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "A complete mobile number is required" },
+      { status: 400 },
+    );
   }
 
   // The checkbox is the permission. Without it there is no lawful send.

@@ -242,8 +242,9 @@ has the setup walkthrough.
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 232 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 239 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
+| `npm run test:phone` | 35 checks on `lib/phone.ts`: the US/Ukraine disambiguation, the near-collisions, idempotence and the masks. |
 
 The write paths, and what each guarantees atomically:
 
@@ -327,8 +328,8 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (232 checks, needs a dev server and a database),
-`npm run test:auth` (45), `npm run check`, `npm run typecheck`, `npm run build`.
+Tests: `npm run test:e2e` (239 checks, needs a dev server and a database),
+`npm run test:auth` (45), `npm run test:phone` (35), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at
 migration time on top of that.
