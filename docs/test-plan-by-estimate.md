@@ -24,6 +24,22 @@ result reads like a bug.
 | `ANTHROPIC_API_KEY` | cards get a confidence score | `confidence` stays **null** — not 0, not a guess |
 | `admin_users` (or, while it is empty, `ADMIN_CREDENTIALS` / the deprecated `ADMIN_PASSWORD`+`ADMIN_USERS`) | `/admin` exists | `/admin` is dark, not open. Configured but unreadable ⇒ "temporarily unavailable", which is also not open |
 | `SEED_REQUIRE_VERIFICATION` | the OTP gate is enforced | nothing is gated, and contributors are stored with no confirmed number |
+| `SEED_VERIFY_DEV_CODES` + the three `TWILIO_*` | see the table below — the pair has four states, not two | |
+
+**The Twilio pair, because getting it backwards is what takes the tool offline.**
+Dev codes do not replace the send: `/api/seed/verify/start` calls `sendSms`
+regardless and the flag only *adds* `dev_code` to the response. So:
+
+| dev codes | Twilio | What happens |
+|---|---|---|
+| on | unset | nothing sends, code on screen, everything stores — **today** |
+| on | set | a real text goes out **and** the code is on screen ⇒ anyone can confirm any number. Pass through, don't sit here |
+| off | set | the destination |
+| off | unset | `sendable: false` ⇒ every founding parent falls to the deferred path and **nothing reaches the database**. Never ship this |
+
+So provision Twilio **first**, then remove the flag — never the flag alone. Both
+variables fail safe when deleted: `SEED_REQUIRE_VERIFICATION` is on unless it is
+literally `"0"`, `SEED_VERIFY_DEV_CODES` is off unless it is literally `"1"`.
 
 Check the current state first — this one command answers all of it:
 
@@ -47,12 +63,18 @@ screen.
 cd web
 npm run typecheck     # the admin read/write contract compiles against every page
 npm run test:auth     # 45 checks on admin sign-in and the credential store (see 2.1)
+npm run test:phone    # 35 checks on US/Ukraine number parsing (see 1.10)
 npm run check         # row counts, extraction coverage, invariants 1 and 2
 npm run build         # every route compiles
 
 npm run dev           # in another terminal, then:
-npm run test:e2e      # 223 checks: the whole of Phase 1, end to end
+npm run test:e2e      # 239 checks: the whole of Phase 1, end to end
 ```
+
+`test:phone` is the fastest of them and needs nothing running. It is separate
+because a phone number *is* an identity here (invariant 10), so the near-collisions
+are worth asserting on their own: `380` is a real US area code, which is why a
+ten-digit `380…` must stay American and only a twelve-digit one Ukrainian.
 
 `test:e2e` is the one that would catch a regression the others cannot. It signs up
 a parent, answers the profile, shares cards, finishes, registers a caregiver and
@@ -173,6 +195,29 @@ the market falling back — a typo in a forwarded link is not a dead end.
   `localStorage.setItem('pando.seed', '{"answers":{"child_ages":null}}')` and
   reload. The screen must survive; a stored `null` overwriting a default `[]` is
   what `normaliseAnswers` exists to stop.
+
+### The 18 Aug reciprocity screens
+
+- **P14 allowance** offers **Now and then (5) · Happy to help more (10) · Ask me
+  anytime it's genuinely relevant**, and 5 is pre-selected. If you see 1 or 3, the
+  build predates 18 Aug. The failure mode worth provoking: pick each option, finish,
+  and confirm the row landed — `select allowance_mode, monthly_contact_allowance
+  from people order by created_at desc limit 1`. `as_relevant` must store **null**,
+  not 0. A 200 from the route is not proof; the CHECK is a second gate and the two
+  disagreeing is exactly the bug 0013 fixed.
+- **The listening-ear screen** comes straight after it: "Some parents ask Pando the
+  things they can't ask anywhere else." Two options, both explicit. Answering yes
+  must write a `consents` row with `scope = 'listening_ear'` and a wording version —
+  not a boolean on `people`. Declining, or skipping, must write **nothing**:
+
+  ```sql
+  select scope, status, text_version from consents
+   where person_id = (select id from people order by created_at desc limit 1);
+  ```
+
+  The copy makes two promises to check against the product: the answer is anonymous
+  to whoever asked, and it **spends the same monthly allowance** — so a parent on 5
+  who opts in is still on 5, not 5 plus an unstated extra.
 
 **Pass:** every screen advances, nothing is lost on reload, and no screen requires
 an answer the client marked optional.
@@ -384,10 +429,40 @@ curl -s -X POST localhost:3000/api/seed/save -H 'content-type: application/json'
 # {"error":"Phone verification required","reason":...}
 ```
 
-**Blocked:** real SMS delivery. Twilio needs the A2P campaign approved and a
-Messaging Service SID. Until then `sendSms` answers
+### A Ukrainian number (20 Aug)
+
+The field takes `+1` and `+380`, and the picker is inside the input's border on the
+left. `npm run test:phone` covers the parsing; what is worth doing by hand is the
+part a unit test cannot see.
+
+- Type a US number, then switch the picker to `+380`. The digits **re-group rather
+  than clearing** — nobody should have to retype after a mis-pick.
+- Clear the field and type a single `0`. It must **stay on screen.** The trunk zero
+  is stripped for storage, so an earlier version showed nothing until the second
+  digit, which reads as a broken field.
+- Type `067 123 45 67`, then try to force the picker to `+1`. It must **snap back to
+  +380**: the number is what it is, and a field asserting a country its own digits
+  contradict is worse than no picker. (The digits do re-group to `(067) 123-4567` —
+  that part is expected.)
+- Walk the whole flow on the Ukrainian number and check what landed:
+
+  ```sql
+  select phone, phone_verified_at from people order by created_at desc limit 1;
+  -- +380671234567 — E.164, never the national form
+  ```
+
+- On the confirm screen the masked number must read `067 •••‑4567`, **not**
+  `(067) •••‑4567`. The second is a trunk zero dressed as a US area code, and it was
+  the bug that made the shared mask worth having.
+
+**Blocked:** real SMS delivery. Twilio needs the A2P campaign approved and the three
+`TWILIO_*` values; until then `sendSms` answers
 `{sent:false, reason:"not_provisioned"}` and the screen says text verification isn't
-switched on yet — which is itself worth confirming reads honestly.
+switched on yet — which is itself worth confirming reads honestly. **A Ukrainian
+number needs more than that**: Geo Permissions for Ukraine on the account and a
+sender the Messaging Service can use outside the US, because A2P 10DLC is a US
+registration. So `+380` will fail as `provider_error` on the day `+1` starts
+sending, and that is configuration rather than a regression.
 
 ---
 
@@ -395,6 +470,43 @@ switched on yet — which is itself worth confirming reads honestly.
 
 Sign in at `http://localhost:3000/admin`. Every page must work on a phone too: nav
 and tables scroll **inside themselves**, never the page.
+
+### Fill it first
+
+An empty admin cannot be reviewed — half the things below are about how a populated
+table reads.
+
+```bash
+cd web
+npm run seed:demo            # 24 contributors, shares, caregivers, claims, flags
+npm run seed:demo -- --clear # removes exactly it, and nothing else
+```
+
+These rows are **not** `is_test`, deliberately: every admin count filters test rows
+out, so a demo cohort marked that way would render a dashboard of zeros. The marker
+is `people.source = 'demo'`, which shows honestly as "Arrived via: demo" on the
+contributor page. Before demoing to the client, run `--clear` and confirm your own
+walkthrough rows are still there — that is the check that the marker is doing its
+job rather than deleting by date.
+
+### The language test, on every page (19 Aug)
+
+This is the pass the client failed the admin on, so it is worth doing as its own
+sweep rather than page by page. Read each screen as somebody who has never seen the
+schema:
+
+- **No stored ids on screen.** Not `possible_named_person`, not `stale_at_capture`,
+  not `share_contribution`, not `pending_review`, not `mid_range`. If one appears,
+  its label is missing from `lib/admin/labels.ts` — and note that a title-cased id
+  ("Possible Named Person") does not count as fixed.
+- **Nothing said twice.** No hint under an input repeating the page intro, no
+  paragraph under a card repeating the heading, no sentence in the sidebar repeating
+  the page's own first line. The nav hints live on the links' tooltips for exactly
+  this reason.
+- **Every button says what happens**, and its tooltip says what else it does. "Done"
+  and "Submit" describe the click, not the consequence.
+- **No open questions for us** in a surface Janet reads. A footnote wondering when
+  cards enter the graph belongs in a call, not under her queue.
 
 ## 2.1 · Auth and shell
 
@@ -472,10 +584,30 @@ never self-granted, and it activates on the **second** approved contribution.
 
 Approve, ask for more detail, reject, edit a field.
 
-**Pass:** approving a contribution is also the moment its **place** becomes usable —
-`places.status` goes `approved`, `validated_count` increments, `freshness_state`
-becomes `fresh`. A place with no approved contribution behind it must never reach an
-answer. "Needs more detail" requires an actual question.
+**Pass:** approving a contribution is also the moment its **share** becomes usable —
+`shares.status` goes `approved`, `validated_count` increments, `freshness_state`
+becomes `fresh`. A share with no approved contribution behind it must never reach an
+answer.
+
+**"Needs more detail" stores the question** (18 Aug). It requires an actual question,
+and that question must survive where the queue can see it — the button's own copy
+promises the card "stays in the queue until they answer", which is only true if the
+question was kept:
+
+```sql
+select status, needs_detail_note from share_contributions
+ where status = 'needs_detail' order by created_at desc limit 1;
+```
+
+Before 0011 it lived only inside `audit_log.after`, where nobody working the queue
+would look. There is still no channel to send it — that is Phase 2 — so this is the
+record of what will be asked, not evidence it was.
+
+**One concept, one button** (19 Aug). Every row offers the forward action whenever it
+would change something — so a card that is **on hold or awaiting detail is still
+approvable.** If a held card shows no way forward, that is the regression: the gate
+used to be `status === "pending_review"`, which let the queue fill with cards nobody
+could act on. The status belongs in a pill, never as a third button.
 
 **Golden answers (§17.1).** The "golden" filter lists approved records and offers a
 one-tap **answer-ready** flag. Try it on a record that is *not* approved: nothing
@@ -636,6 +768,24 @@ demand queue shows it first, with the high-stakes ones.
 the parent's profile inside the same insert — never from the request body. It is
 the number that decides which market Pando opens next (v3.2 §9), so the anonymous
 path leaves it null rather than guessing.
+
+**How the card reads** (19 Aug, the page the client called hardest to take in). Each
+one must be four labelled blocks and no more: the flag's plain-English name plus
+where it came from · **What they wrote / What they asked** with the parent's own
+words as the largest text · **Why it came up** · **Admin comment** with the controls.
+Three things to check specifically:
+
+- **The reason appears once.** The specific stored sentence, or the generic meaning
+  of that kind of flag — never both. Both is what made twelve cards unreadable.
+- **`Admin comment` is a real label**, not just placeholder text. A placeholder
+  disappears the moment you type, which is exactly when you might want to check what
+  the box is for.
+- **Confidence reads as a word first**, then the number, and it is coloured. A bare
+  `0.35` says nothing about whether to act.
+
+Then the semantics worth a query: a card naming a teacher **must** be flagged
+`possible_named_person` **and must not** score below 0.6. Naming a person is a
+review trigger, not a defect in the writing — and it used to be penalised twice.
 
 ## 2.x · The consent file
 

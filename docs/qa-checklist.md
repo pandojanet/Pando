@@ -25,18 +25,25 @@ completed run really does write rows. Check `/api/health` first — `db.reachabl
 `true`. If it isn't, stop: everything below will answer "received, not stored" and you
 will be testing the honesty path instead of the real one.
 
-**The number is confirmed at the start, and after that everything saves as it happens.**
-Moved there on 12 Aug. Tap Start on `/join` and the next screen is the six-digit code,
-not the first question — because until it is confirmed nothing about you exists on our
-side, and once it is, the profile and each card are written as you finish them. A card
-that says "Received. Not in the network yet" has genuinely arrived.
+**The number is confirmed at the end of the profile, and after that everything saves as
+it happens.** It spent one day on the entry screen (12 Aug) and moved off it again on
+13 Aug: proving a phone number before seeing a single question is exactly the friction
+the client asked us to keep off the front door. So Start takes you to the first
+question; the six-digit step comes after the last one, before anything is sent. Until it
+is confirmed nothing about you exists on our side; the profile is written the moment it
+is, and each card as you finish it. A card that says "Received. Not in the network yet"
+has genuinely arrived.
 
-**Except where no code can be sent.** With Twilio unprovisioned *and* dev codes off,
-entry skips the step and the old shape applies: everything waits on the phone, each card
-says "Kept on this phone until you finish", and `/done/ask` asks for the code and sends
-it all in one pass. `persisted: false` mid-flow is then correct, not a failure. Same
-fallback if a confirmation expires mid-visit — a confirmed number is good for 12 hours,
-and the container restarting ends it early.
+**The consequence to expect while testing:** verify, then abandon mid-*sharing*, and a
+profile row is left behind. That is the price of "saved" meaning saved, and it is why
+your own runs need clearing out afterwards.
+
+**Except where no code can be sent.** With Twilio unprovisioned *and* dev codes off, the
+whole visit waits on the phone: each card says "Kept on this phone until you finish",
+and `/done/ask` asks for the code and sends it all in one pass. `persisted: false`
+mid-flow is then correct, not a failure. Same fallback if a confirmation expires
+mid-visit — a confirmed number is good for 12 hours, and the container restarting ends
+it early.
 
 **The verification screen is live, and the code is on it.** Twilio still isn't wired —
 no real text is sent — but with `SEED_REQUIRE_VERIFICATION=1` and
@@ -47,8 +54,24 @@ walkable exactly as a parent will meet it. Confirm the current state with
 completes without the step and those contributors are stored with no confirmed number,
 so they cannot reach Founding until they confirm one later.
 
+**The number can be American or Ukrainian** (20 Aug). The field has a `+1` / `+380`
+picker inside its left edge. A US number is typed `(626) 555-0143`, a Ukrainian one
+`067 123 45 67` — each as it is written at home — and both are stored as E.164. Two
+behaviours that look like bugs and are not: typing a lone `0` on `+380` leaves the `0`
+on screen (it is the trunk prefix), and forcing the picker back to `+1` on a complete
+Ukrainian number **snaps it back to +380**, because the number is what it is. Sending to
+`+380` needs Twilio console work that is not done, so Ukrainian numbers are walkable
+today only because the dev code is on screen.
+
 **There is no test mode.** No query parameter changes behaviour. You are a parent — so
 clear your runs out of the database afterwards rather than relying on a flag.
+
+**If you are checking the admin, fill it first.** `cd web && npm run seed:demo` puts a
+realistic Pasadena cohort in — 24 contributors, shares, caregivers across the ladder,
+claims, flags. `npm run seed:demo -- --clear` removes exactly it. Those rows are
+deliberately **not** marked as test data (every admin count filters test rows out, so
+they would show a dashboard of zeros); the marker is `source = 'demo'`, which reads
+honestly as "Arrived via: demo" on the contributor page.
 
 So a passing test looks like: the screen does what it says, the wording is true, nothing
 claims something happened that didn't — and the row is actually in the table.
@@ -71,16 +94,18 @@ claims something happened that didn't — and the row is actually in the table.
 | Type a 9-digit phone | Start stays disabled |
 | Tap "I'd rather share anonymously" | A card appears saying what you give up — Founding status, the thank-you, the reserved pilot place. Start enables with no details filled in |
 | Open `/join` with no code | "This link needs its code." with a field. Type nonsense → "That code isn't one of ours." Type `sgv-founding` → the normal screen |
-| Tap Start with the details filled in | **The six-digit code, not the profile** — "Let's confirm your number first." The button below it says *Confirm*, not "Confirm and submit": there is nothing to submit yet |
-| Tap "Use a different number" | Straight back to the form with everything still typed in. Nothing has been sent, so this is a real exit and not a trap |
-| Enter the code, then check the database | Still empty. Confirming stores nothing by itself — it opens the gate for what comes next |
+| Tap Start with the details filled in | **The first question, not a code.** The six-digit step moved to the *end* of the profile on 13 Aug: asking a parent to prove a number before they have seen a single question is the friction the client asked us to keep off the front door. If a code box appears here, the build predates that |
+| Answer the profile, reach the last screen | *Now* the code — "Let's confirm your number first." The button says *Confirm*, not "Confirm and submit" |
+| Tap "Use a different number" | Straight back with everything still typed in. Nothing has been sent, so this is a real exit and not a trap |
+| Check the database **before** entering the code | Empty. Not the profile, not a `people` row, nothing |
+| Enter the code, then check again | The profile is there — it is written in the same moment the code is confirmed. Everything *after* it saves as it happens, so "saved" on a card means saved |
 
-## 1.2 Profile — 15 screens
+## 1.2 Profile — 16 screens
 
 Screens in order: neighborhood · birth years · schools · communities · **privacy
 statement** · time in the area · family structure · current childcare · logistics · how
 you choose · trust circles · what you know · how Pando may describe you · **the Pando
-promise** · monthly allowance.
+promise** · monthly allowance · **listening ear** (the last one added 18 Aug).
 
 | Try this | Expect |
 | --- | --- |
@@ -96,7 +121,9 @@ promise** · monthly allowance.
 | Any single-select chip, tap it twice | It stays selected. (Tapping the chosen one used to clear it, which wiped the pre-set allowance) |
 | "Prefer not to say" on a sensitive list | Clears the other picks in **that** list only |
 | Any list with "Other" | A sheet opens, the field is focused, Escape closes it **without** saving, submitting shows it as a chip |
-| Allowance screen | "3 a month" is already selected and labelled Default |
+| Allowance screen | Three options — **Now and then** (up to 5 a month · Community Access) · **Happy to help more** (up to 10) · **Ask me anytime it's genuinely relevant**. The first is already selected. If you see 1 or 3, the build predates 18 Aug |
+| Listening-ear screen (right after it) | "Some parents ask Pando the things they can't ask anywhere else." Two options, and the help text promises two things: the answer is anonymous to whoever asked, and it spends the **same** monthly allowance — not a second, hidden budget |
+| Pick "Not for me right now", finish | No `listening_ear` row in `consents`. Declining writes nothing; only a yes is a record |
 | The review screen | Every question with your answer. Schools show their status: "Walden School (Former)". Skipped rows are italic "Skipped" |
 | Tap Edit on any row | Goes back to that one screen with your answer still selected |
 | Reload the page mid-profile | Same screen, answers intact |

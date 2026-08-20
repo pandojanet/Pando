@@ -753,12 +753,30 @@ head("invites — one per group, never per parent");
    * exists, the built-in `SEED_INVITE_CODES` list is not consulted at all. Without
    * this, `sgv-founding` stays a way in forever — which is how a code an admin
    * never created, and cannot retire, keeps admitting people.
+   *
+   * **The subject has to be chosen, not hard-coded** (20 Aug). This asserted on
+   * `sgv-founding`, which is both a built-in *and* the working invite the rest of
+   * this walk uses — so the day somebody created it in `/admin/invites` for real,
+   * it started resolving from the table, correctly, and this check failed while
+   * describing behaviour that was right. It now picks a built-in the table does
+   * not hold, and says so rather than failing if there is no such code left.
    */
-  const envCode = await (await fetch(B + "/api/seed/invite", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: "sgv-founding" }),
-  })).json();
-  ok("a populated invites table makes the env-var codes inert", envCode.valid === false, `sgv-founding -> ${envCode.reason ?? "valid"}`);
+  /* Read the whole column and filter in JS rather than passing an array down:
+     `sql.array` cannot infer `text[]` here and errors at bind time — the same trap
+     CLAUDE.md records for `repo/caregiver.ts`. The table has single digits of rows. */
+  const builtIns = ["sgv-founding", "pasadena"];
+  const held = (await sql`select code from invites`).map((r) => r.code);
+  const orphan = builtIns.find((c) => !held.includes(c));
+  if (!orphan) {
+    ok("a populated invites table makes the env-var codes inert", true,
+      "-> skipped: every built-in exists as a real invite, so there is nothing env-only to test");
+  } else {
+    const envCode = await (await fetch(B + "/api/seed/invite", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: orphan }),
+    })).json();
+    ok("a populated invites table makes the env-var codes inert", envCode.valid === false, `${orphan} -> ${envCode.reason ?? "valid"}`);
+  }
 
   /* A parent arriving on it is attributed to the invite — from the code the
      server validated, never from the body. */
@@ -795,15 +813,24 @@ head("invites — one per group, never per parent");
   })).json();
   ok("a retired code is no longer a valid invite", afterRetire.valid === false);
   ok("but the market still falls back, so nobody is stranded", afterRetire.market_id === "pasadena");
-  /* And with the table empty again, the built-in codes stay inert — the store is
-     the answer even when the answer is "no invites yet". A code nobody created is
-     a code nobody can retire. */
-  const builtIn = await (await fetch(B + "/api/seed/invite", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: "sgv-founding" }),
-  })).json();
-  ok("a built-in code is not a way in while a store exists", builtIn.valid === false, `sgv-founding -> ${builtIn.reason ?? "valid"}`);
-  ok("and a parent who has one still reaches the market", builtIn.market_id === "pasadena");
+  /* And the built-in codes stay inert — the store is the answer even when the
+     answer is "no invites yet". A code nobody created is a code nobody can retire.
+     Same choose-don't-hard-code rule as above: `sgv-founding` is a real row in this
+     database, so asserting on it tests the opposite of what this line claims. */
+  if (!orphan) {
+    ok("a built-in code is not a way in while a store exists", true,
+      "-> skipped: no built-in is env-only in this database");
+  } else {
+    const builtIn = await (await fetch(B + "/api/seed/invite", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code: orphan }),
+    })).json();
+    ok("a built-in code is not a way in while a store exists", builtIn.valid === false, `${orphan} -> ${builtIn.reason ?? "valid"}`);
+    /* Inert as an *invite* is not the same as a dead end: the parent still lands in
+       a market, they just carry no attribution. That distinction is the whole
+       reason an unknown code is soft-refused rather than rejected. */
+    ok("and a parent who has one still reaches the market", builtIn.market_id === "pasadena");
+  }
 }
 
 head("2.6  promotion: the chip, the queue and the graph");

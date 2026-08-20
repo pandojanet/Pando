@@ -100,6 +100,8 @@ forwarded around parent group chats still land in the right place.
 | `scripts/import-market-options.mjs` | Janet's sheet → `market_options`. Dry run by default; `--commit` writes. |
 | `lib/demand.ts`         | D1 routing, including the named-allegation class the Strategy paper adds. |
 | `lib/consent.ts` · `lib/sms-templates.ts` | Consent wording + registered SMS copy, both versioned. |
+| `lib/phone.ts`          | The only thing that decides which country a number is (US or UA) and the only thing that produces E.164. Held to `npm run test:phone`. |
+| `lib/admin/labels.ts`   | Every stored id → the sentence an admin reads. One file, because the same `review_status` shows on four pages. |
 | `lib/caregiver-flow.ts` · `lib/caregiver-options.ts` | 2C's questions, and the option lists both caregiver surfaces share. |
 | `lib/derive.ts`         | Answers → `social_affinities` / `life_relevance` / `pending_options`.     |
 | `lib/storage.ts`        | Autosave + resume (localStorage, versioned key).                         |
@@ -111,7 +113,7 @@ forwarded around parent group chats still land in the right place.
 | `lib/server/extract.ts` | 1.8 — the only file that talks to an AI provider.                        |
 | `lib/seed-chat/scripts.ts` | The capture conversations: steps, widgets, fields, recap order.        |
 | `lib/seed-chat/engine.ts`  | Pure turn logic: next step, answer formatting, recap, submission.      |
-| `components/ui/*`       | Chips, dock, sheet, progress, desktop frame — the primitives.             |
+| `components/ui/*`       | Chips, dock, sheet, progress, desktop frame — the primitives. `PhoneField` holds the `+1`/`+380` picker in local state; the country is never a prop, because the formatted value already says which it is. |
 | `components/seed/*`     | Landing, profile flow, completion.                                       |
 | `components/seed/chat/*`| Transcript, share menu, step widgets, card recaps.                       |
 | `components/site/*`     | Public-site shell (header, footer, wrap, buttons) and the hero phone mock. |
