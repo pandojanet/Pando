@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   char,
+  date,
   check,
   index,
   integer,
@@ -400,6 +401,67 @@ export const personSchools = pgTable(
 
 /* ── 3. Taxonomy (estimate 2.6) ──────────────────────────────────────────── */
 
+/**
+ * Per-affiliation visibility — the client's Privacy Guidance §A (24 Aug).
+ *
+ * One row per (person, connection): may Pando say "a parent at your golf club"
+ * about them for *this* connection. Her rule is that the permission is per
+ * affiliation, not per person — share the school, keep the club private.
+ *
+ * **Not re-derived.** Every other derived table here is deleted and rewritten on
+ * each profile save, because an affinity is a computed fact. This one is a
+ * recorded consent with a wording version and a timestamp, so rewriting it would
+ * reset the evidence §I asks us to keep. `repo/profile.ts` upserts grants and
+ * *revokes* what is no longer granted, stamping `revoked_at` — §G: "Record the
+ * effective time of the change."
+ *
+ * Deliberately not a foreign key to `social_affinities`: that table *is*
+ * re-derived, and a permission must outlive our copy of the graph.
+ */
+export const affiliationVisibility = pgTable(
+  "affiliation_visibility",
+  {
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    /** Same vocabulary as `social_affinities.affinity_type`. */
+    affiliationType: text("affiliation_type").notNull(),
+    affiliationValue: text("affiliation_value").notNull(),
+    /** `private` | `shared_anonymously`. Identity sharing is never stored here. */
+    visibility: text("visibility").notNull().default("private"),
+    consentTextVersion: text("consent_text_version"),
+    consentedAt: timestamp("consented_at", { withTimezone: true }),
+    /** Kept, never deleted: the audit question is "what was allowed, when". */
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.personId, t.affiliationType, t.affiliationValue],
+    }),
+    check(
+      "affiliation_visibility_state_check",
+      sql`${t.visibility} in ('private','shared_anonymously')`,
+    ),
+    /* Sharing needs evidence — which words, and when — exactly as caregiver
+       consent does. A shared row with neither could not be defended. */
+    check(
+      "affiliation_visibility_consent_evidence",
+      sql`${t.visibility} <> 'shared_anonymously'
+          or (${t.consentTextVersion} is not null and ${t.consentedAt} is not null)`,
+    ),
+    /* Revoking returns it to private, in the same row. Otherwise every reader
+       would have to remember to check two columns — which is how a revoked
+       permission gets used once. */
+    check(
+      "affiliation_visibility_revoked_is_private",
+      sql`${t.revokedAt} is null or ${t.visibility} = 'private'`,
+    ),
+  ],
+);
+
 export const marketOptions = pgTable(
   "market_options",
   {
@@ -409,7 +471,28 @@ export const marketOptions = pgTable(
     optionValue: text("option_value").notNull(),
     label: text("label").notNull(),
     bands: text("bands").array(),
+    /**
+     * May this option be *selected* at all. Distinct from `status` and
+     * `starter` on purpose — see drizzle/0014. A closed school stays `active`
+     * because a former pupil's stored answer resolves against this row.
+     */
     active: boolean("active").notNull().default(true),
+    /** Search tolerance: "Poly", "LCHS", "CPG". Never displayed. */
+    aliases: text("aliases").array().notNull().default(sql`'{}'`),
+    /** City or area. Ranking only — never an eligibility filter (client, 24 Aug). */
+    area: text("area"),
+    /** "K-12 school", "Preschool", "Activity provider", "Church"… Metadata. */
+    entityType: text("entity_type"),
+    /** Clubs only: the two visible groups inside the one question. */
+    section: text("section"),
+    /** Curated into the 8-12 tap-first set. Only a live record may be one. */
+    starter: boolean("starter").notNull().default(false),
+    /** active | paused | closed | unverified. Gates starter eligibility. */
+    status: text("status").notNull().default("active"),
+    sourceUrl: text("source_url"),
+    lastVerifiedAt: date("last_verified_at"),
+    /** Typed by a human, so a periodic refresh must not drop it. */
+    userAdded: boolean("user_added").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

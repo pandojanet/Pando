@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
+  cleanAffiliationRef,
   cleanAges,
   cleanE164,
   cleanId,
@@ -100,9 +101,14 @@ function normaliseListeningEarConsent(
 type ListKey = Extract<
   QuestionId,
   | "budget"
+  | "travel_time"
   | "logistics"
   | "family_structure"
+  | "work_setup"
   | "childcare_now"
+  | "childcare_backup"
+  | "previous_places"
+  | "shared_affiliations"
   | "trust_circles"
   | "topics"
   | "topics_lived"
@@ -115,9 +121,14 @@ type ListKey = Extract<
 
 const ID_LIST_KEYS: ListKey[] = [
   "budget",
+  "travel_time",
   "logistics",
   "family_structure",
+  "work_setup",
   "childcare_now",
+  "childcare_backup",
+  "previous_places",
+  "shared_affiliations",
   "trust_circles",
   "topics",
   "topics_lived",
@@ -144,10 +155,70 @@ export async function POST(request: Request) {
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
   );
 
-  // The only two required answers in the whole flow (spec §8.5).
-  if (!neighborhood || childAges.length === 0) {
+  /**
+   * A neighborhood the parent **typed** rather than tapped.
+   *
+   * P3 sets `allowOther`, and `isQuestionAnswered` counts a typed entry — so
+   * the screen lets them past, the review screen prints what they wrote, and the
+   * flow tells them it is saved. The route then asked `cleanId` for a canonical
+   * id, got null, and refused the entire profile with "Neighborhood and child age
+   * are required" — for a question the parent had plainly answered.
+   *
+   * That is how a real founding contributor lost a completed session: they added
+   * their own neighborhood, verified their phone with a correct code, and every
+   * save came back 422. Nothing on screen could suggest the fix, because from
+   * where they sat the answer was right there.
+   *
+   * A typed answer **is** an answer for the purpose of §8.5's two required
+   * questions. Where it is not enough is matching — invariant 9: an "other"
+   * answer is not matchable until an admin promotes it — and that is already
+   * handled without this route's help. `derivePendingOptions` files the text
+   * under `neighborhoods` for `/admin/options`, `people.neighborhood` is
+   * nullable and stays null, and promoting it writes the affinity rows for
+   * everyone who typed it (the 12 Aug decision). So the hole closes itself.
+   *
+   * Only the presence check is relaxed. Nothing invents an id from the text —
+   * storing their words as a neighborhood would be the unmatchable state that
+   * promotion exists to end, and would put a value in the record that no
+   * taxonomy contains.
+   */
+  const typedNeighborhood = (
+    Array.isArray(raw.answers?.other?.neighborhood)
+      ? raw.answers.other.neighborhood
+      : []
+  ).some((v) => typeof v === "string" && v.trim().length > 0);
+
+  /**
+   * The only two required answers in the whole flow (spec §8.5).
+   *
+   * **Named individually, and it matters.** One message for two failures is what
+   * made a real 422 undiagnosable: the client finished the whole flow, entered a
+   * correct code, and got "Neighborhood and child age are required" for a review
+   * screen that plainly showed both — and neither we nor they could tell which
+   * of the two the server had rejected, or that it had rejected a *value* rather
+   * than an absence. `cleanAges` takes ages in -1..25, so a session carrying a
+   * birth year (2025) is refused exactly like an empty one.
+   *
+   * `reason` is a machine-readable code so the client can act on it; the
+   * offending value is deliberately **not** echoed, because it is a stored
+   * answer and this response is a log line somewhere.
+   */
+  if ((!neighborhood && !typedNeighborhood) || childAges.length === 0) {
+    const missing = [
+      !neighborhood && !typedNeighborhood ? "neighborhood" : null,
+      childAges.length === 0 ? "child_ages" : null,
+    ].filter(Boolean);
     return NextResponse.json(
-      { error: "Neighborhood and child age are required" },
+      {
+        error:
+          missing.length === 2
+            ? "Neighborhood and child age are required"
+            : missing[0] === "neighborhood"
+              ? "The neighborhood is missing or is not one Pando recognises"
+              : "The children's ages are missing, or are not ages Pando recognises",
+        reason: "invalid_required_answers",
+        fields: missing,
+      },
       { status: 422 },
     );
   }
@@ -157,7 +228,10 @@ export async function POST(request: Request) {
     ID_LIST_KEYS.map((key) => [
       key,
       (Array.isArray(answersIn?.[key]) ? answersIn[key] : [])
-        .map(cleanId)
+        /* One list holds `type:value` refs rather than plain ids, and `cleanId`
+           refuses a colon — so routing it through the default cleaner dropped
+           every privacy grant a parent made, silently. */
+        .map(key === "shared_affiliations" ? cleanAffiliationRef : cleanId)
         .filter((v): v is string => v !== null)
         .slice(0, MAX_PER_LIST),
     ]),
@@ -216,7 +290,12 @@ export async function POST(request: Request) {
     child_of: childOf as ProfileAnswers["child_of"],
     allowance: cleanId(answersIn?.allowance),
     attribution: cleanId(answersIn?.attribution),
+    /* Item 18's second half. Sanitised like every other scalar id: a value the
+       server does not name never reaches the database, so leaving this out would
+       have silently dropped the answer. */
+    shared_connections: cleanId(answersIn?.shared_connections),
     time_in_area: cleanId(answersIn?.time_in_area),
+    grew_up_here: cleanId(answersIn?.grew_up_here),
     moved_from: cleanId(answersIn?.moved_from),
     ...lists,
     other,
@@ -433,6 +512,17 @@ export async function POST(request: Request) {
       moved_from: payload.moved_from,
       invited_via_group: payload.invited_via_group,
       answers: payload.answers,
+      /**
+       * The privacy grants, taken from the **server-sanitised** answers rather
+       * than from anywhere in the payload the client shapes.
+       *
+       * Same rule as the affinity graph (11 Aug): a permission decides who may be
+       * told something about this parent, so the browser does not get to assert
+       * one. `answers.shared_affiliations` has already been through
+       * `cleanAffiliationRef`, and `resolveAffiliations` drops any ref that does
+       * not name a real connection type.
+       */
+      shared_affiliations: answers.shared_affiliations,
       social_affinities: payload.social_affinities as never,
       life_relevance: payload.life_relevance as never,
       pending_options: payload.pending_options as never,

@@ -35,6 +35,21 @@ const EMPTY: Record<AdminResource, unknown> = {
   founding: [],
   invites: [],
   consents: [],
+  /**
+   * 6.7's harness. Not `[]` and not `null`: the page reads `asker`, `ranked` and
+   * `people`, so a bare null would make an unconfigured deployment throw where
+   * every other page shows an honest empty state.
+   */
+  matching: {
+    asker: null,
+    ranked: [],
+    cold: false,
+    wanted: 0,
+    found: 0,
+    weights: [],
+    adjacency_pairs: 0,
+    people: [],
+  },
   audit: [],
 };
 
@@ -53,6 +68,19 @@ const SAMPLE: Record<AdminResource, unknown> = {
   founding: sample.sampleFounding,
   invites: sample.sampleInvites,
   consents: sample.sampleConsents,
+  /* Deliberately empty rather than fabricated: a made-up ranking is the one thing
+     this page must never show, because its whole purpose is judging whether the
+     real ranking is any good. The page says so when there is no database. */
+  matching: {
+    asker: null,
+    ranked: [],
+    cold: false,
+    wanted: 0,
+    found: 0,
+    weights: [],
+    adjacency_pairs: 0,
+    people: [],
+  },
   audit: sample.sampleAudit,
 };
 

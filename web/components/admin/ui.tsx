@@ -377,9 +377,60 @@ export function NotConfigured({
   );
 }
 
+/**
+ * Something went wrong. `role="alert"` because it interrupts: the admin was
+ * mid-task and the thing they tried did not happen.
+ */
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-4 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert">
+    <div
+      role="alert"
+      className="mb-4 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The result of an action — "Added to Pando", "Marked as read", "Invite created".
+ *
+ * ## Why this is a component and was not
+ *
+ * This exact block was **hand-copied into seven admin pages**, and the cost was
+ * not the duplication: it was that none of them said anything out loud. Every
+ * admin action ends by painting a green line the reader may not be looking at,
+ * so somebody using a screen reader tapped "Add to Pando" and got silence —
+ * indistinguishable from a click that missed.
+ *
+ * `role="status"` rather than `alert`: the action succeeded, so it is worth
+ * announcing at the next pause rather than interrupting a sentence. And the whole
+ * region is live rather than the text alone, so replacing one message with
+ * another (approve, then approve again) is announced both times.
+ */
+export function ResultNote({
+  children,
+  inline = false,
+}: {
+  children: ReactNode;
+  /**
+   * Sits under the control that produced it, rather than at the top of the page.
+   * Quieter on purpose — the reader is already looking at the button they just
+   * pressed, so a full banner beside it would be shouting. It is the same
+   * component because it is the same concept: what happened, announced.
+   */
+  inline?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={
+        inline
+          ? "mt-2 text-[12.5px] text-muted"
+          : "mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep"
+      }
+    >
       {children}
     </div>
   );

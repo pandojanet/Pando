@@ -6,6 +6,45 @@ import { withDb } from "@/lib/server/db";
 import { cacheOptions, cachedOptions } from "@/lib/server/market-cache";
 
 /**
+ * Categories that became a *directory* on 24 Aug and are no longer a chip list.
+ *
+ * The master list carries 357 schools, 96 activities, 84 faith communities and 39
+ * clubs for this one market. Rendering those as chips is not a long screen, it is
+ * an unusable one — and the client's instruction for all four is the same
+ * sentence: "tap first, search second". So this endpoint serves only the curated
+ * starter set (8-12 per area, `starter = true`), and everything else is reached
+ * through `GET /api/market/search`.
+ *
+ * The other categories — neighborhoods, camps, parent_groups — are short enough
+ * to stay complete lists, and none has a starter curated for it, so filtering
+ * them here would empty the screen.
+ */
+const SEARCHABLE = new Set([
+  "schools",
+  "baby_activities",
+  "clubs",
+  "worship",
+  /**
+   * Item 11's previous places. It has **no starters at all**, deliberately —
+   * there is no plausible set of 8-12 familiar previous cities — so listing it
+   * here is what makes the chips absent and the search box the whole control.
+   *
+   * Missing it was a real bug for one build: the category was added after this
+   * filter was written, so all 182 places were served and the screen showed the
+   * first twelve alphabetically ("Abu Dhabi, Accra, Albuquerque…") as if they
+   * were suggestions for where a Pasadena parent used to live.
+   */
+  "previous_places",
+  /**
+   * Item 5's autopopulate made this a directory too: seventeen suggested cities
+   * (`starter = true`) and sixty-odd more towns and Pasadena neighbourhoods
+   * reachable by search. Without it here, all seventy-nine would render as chips
+   * — which is the wall this whole pattern exists to avoid.
+   */
+  "neighborhoods",
+]);
+
+/**
  * GET /api/market/options?market_id=pasadena — the tap lists (spec §16.2, §8.5).
  *
  * This is what makes the questionnaire *data*: an admin promoting an "other"
@@ -55,9 +94,19 @@ export async function GET(request: Request) {
       // Bound as a parameter, not interpolated — the regex above is a shape check,
       // never the thing standing between a URL and the database.
       // Ordered by label so the chip list reads the same on every render.
-      sql`select category, option_value, label, bands
+      /* The starter filter is in the WHERE, not applied after: a query that
+         returned 357 schools so the server could throw 224 away would pay the
+         transfer for nothing, and this read is on the critical path of the first
+         screen a parent sees. `area` comes back so a starter can be ranked
+         against where the parent said they live — she is explicit that the home
+         area affects ranking and never eligibility. */
+      sql`select category, option_value, label, bands, area, area_slug, section
             from market_options
-           where market_id = ${marketId} and active
+           where market_id = ${marketId}
+             and active
+             and (category not in ('schools', 'baby_activities', 'clubs',
+                                   'worship', 'previous_places', 'neighborhoods')
+                  or (starter and status = 'active'))
            order by label`,
     )) as unknown as Array<Record<string, unknown>>;
     return rows;
@@ -83,10 +132,23 @@ export async function GET(request: Request) {
     if (!MARKET_CATEGORIES.includes(category)) continue;
 
     const bands = Array.isArray(row.bands) ? (row.bands as string[]) : null;
+    const area = row.area ? String(row.area) : null;
+    const areaSlug = row.area_slug ? String(row.area_slug) : null;
     (options[category] ??= []).push({
       id: String(row.option_value),
       label: String(row.label ?? row.option_value),
       ...(bands && bands.length > 0 ? { bands: bands as Option["bands"] } : {}),
+      /* Only for the searchable categories, and only as a hint: two records can
+         share a name (three "Willard Elementary School"s across districts), so
+         the screen needs somewhere to say which. */
+      ...(area && SEARCHABLE.has(category) ? { area } : {}),
+      /* And the same value as a slug, which is what the chip list filters on.
+         `area` is for reading; `area_slug` is for matching. */
+      ...(areaSlug && SEARCHABLE.has(category) ? { area_slug: areaSlug } : {}),
+      /* Clubs use this to render her two visible groups; faith carries the
+         tradition, which is metadata and must never become the displayed
+         identity — so it is passed only where a screen groups by it. */
+      ...(row.section && category === "clubs" ? { section: String(row.section) } : {}),
     });
   }
 

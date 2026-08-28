@@ -126,4 +126,18 @@ export interface ChatState {
   submissions: Submission[];
   /** "menu" between cards, "card" mid-card, "closed" once they're done. */
   mode: "menu" | "card" | "closed";
+  /**
+   * Estimate 1.8's confirm-back, when one is being asked.
+   *
+   * Its own state rather than a script step: the trigger is a property of the
+   * *finished* card, and a step would have to exist in every script and be
+   * skipped in most of them. The card is not persisted while this is set — the
+   * whole point is to save it once, with the fuller answer, rather than to save
+   * a thin one and patch it.
+   */
+  confirm_back?: {
+    submission_id: string;
+    field: string;
+    question: string;
+  } | null;
 }

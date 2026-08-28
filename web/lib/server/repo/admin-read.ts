@@ -2,7 +2,12 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
-import type { AdminResource } from "@/lib/admin/types";
+import { matchesFor } from "@/lib/server/repo/matching";
+import type {
+  AdminResource,
+  MatchCandidateRow,
+  MatchingResult,
+} from "@/lib/admin/types";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -54,6 +59,8 @@ export async function readResource(
       return duplicates(db);
     case "options":
       return pendingOptions(db);
+    case "matching":
+      return matchingHarness(db, params);
     case "flags":
       return flagRows(db);
     case "demand":
@@ -149,7 +156,15 @@ async function overview(db: Db) {
              and not is_test)                                                     as demand_allegation,
         -- §17.1. Not a queue: this one counts *up* as the golden-answer pass
         -- progresses, which is why it is not one of the quality numbers.
-        (select count(*) from shares where answer_ready and not is_test)           as answer_ready
+        (select count(*) from shares where answer_ready and not is_test)           as answer_ready,
+        -- Estimate 2.2's funnel. Four counts, each a real row rather than an
+        -- event: opens come from the invite counter, the rest from what landed.
+        (select coalesce(sum(opens), 0) from invites)                              as funnel_opens,
+        (select count(*) from people where not is_test)                            as funnel_arrived,
+        (select count(*) from people
+          where not is_test and phone_verified_at is not null)                     as funnel_verified,
+        (select count(*) from founding_checklist
+          where qualifying_approved > 0 or caregiver_approved > 0)                 as funnel_delivered
       from reward r
     `,
   );
@@ -200,8 +215,38 @@ async function overview(db: Db) {
       named_allegation: n("demand_allegation"),
     },
     answer_ready: n("answer_ready"),
-    /** Funnels live in PostHog; this page does not invent its own. */
-    drop_off: [],
+    /**
+     * Estimate 2.2's funnel, and it used to be a hardcoded `[]` under a comment
+     * saying funnels live in PostHog.
+     *
+     * That was half right and wholly unhelpful: PostHog is the place to *analyse*
+     * a funnel, but the admin has to work with PostHog unconfigured — the same
+     * honesty rule as `persisted: false` — and the overview cannot ask a third
+     * party a question it needs in order to render. The page already had the
+     * component to draw this; the server simply never sent anything, so the block
+     * never appeared and nobody could tell whether that meant "no drop-off" or
+     * "not built".
+     *
+     * Four steps, each a **stored row** rather than a client event, so the numbers
+     * survive an ad-blocker and a parent who never loaded analytics:
+     *
+     *  - **opened** the invite counter (see drizzle/0016 — it counts opens, not
+     *    people, and is honest about that);
+     *  - **arrived** a `people` row exists, i.e. they finished the profile;
+     *  - **confirmed a number** the point after which anything is stored at all;
+     *  - **shared something we could use** at least one qualifying contribution.
+     *
+     * Steps two and three can invert — a number is confirmed in the same moment
+     * the profile is written, but an older row may predate that — and the bar
+     * chart handles it, because a widening step is itself worth seeing rather
+     * than smoothing away.
+     */
+    drop_off: [
+      { step: "Opened the link", reached: n("funnel_opens") },
+      { step: "Finished the profile", reached: n("funnel_arrived") },
+      { step: "Confirmed their number", reached: n("funnel_verified") },
+      { step: "Shared something usable", reached: n("funnel_delivered") },
+    ],
     posthog_url: process.env.POSTHOG_DASHBOARD_URL ?? null,
   };
 }
@@ -307,6 +352,16 @@ async function contributorDetail(db: Db, id: string) {
                   'dimension', l.dimension, 'value', l.value)), '[]'::json)
            from life_relevance l where l.person_id = p.id)              as relevance,
         (select coalesce(json_agg(json_build_object(
+                  'affiliation_type', v.affiliation_type,
+                  'affiliation_value', v.affiliation_value,
+                  'visibility', v.visibility,
+                  'consent_text_version', v.consent_text_version,
+                  'consented_at', v.consented_at,
+                  'revoked_at', v.revoked_at)
+                  order by v.affiliation_type, v.affiliation_value), '[]'::json)
+           from affiliation_visibility v
+          where v.person_id = p.id)                                    as visibility,
+        (select coalesce(json_agg(json_build_object(
                   'option_value', sc.option_value, 'status', sc.status)), '[]'::json)
            from person_schools sc where sc.person_id = p.id)            as schools,
         (select coalesce(json_agg(json_build_object(
@@ -408,6 +463,17 @@ async function contributorDetail(db: Db, id: string) {
     school_status: Object.fromEntries(
       schools.map((s) => [s.option_value as string, s.status as string]),
     ),
+    affiliation_visibility: list<Row>(p.visibility).map((v) => ({
+      affiliation_type: String(v.affiliation_type ?? ""),
+      affiliation_value: String(v.affiliation_value ?? ""),
+      visibility: String(v.visibility ?? "private"),
+      consent_text_version: v.consent_text_version ? String(v.consent_text_version) : null,
+      /* Serialised by Postgres inside `json_build_object` (`…+00:00`) rather
+         than by the driver (`…Z`) — both parse to the same instant, and nothing
+         may string-compare them. Recorded in CLAUDE.md's 10 Aug row. */
+      consented_at: v.consented_at ? String(v.consented_at) : null,
+      revoked_at: v.revoked_at ? String(v.revoked_at) : null,
+    })),
     affinities: affinities.map((a) => ({
       affinity_type: a.affinity_type,
       affinity_value: a.affinity_value,
@@ -956,6 +1022,7 @@ async function inviteRows(db: Db) {
     group_option_value: r.group_option_value,
     active: r.active === true,
     note: r.note,
+    opens: Number(r.opens ?? 0),
     contributors: Number(r.contributors ?? 0),
     delivered: Number(r.delivered ?? 0),
     created_at: r.created_at,
@@ -1031,4 +1098,130 @@ function fullName(first: unknown, last: unknown): string | null {
   const l = typeof last === "string" ? last : "";
   const name = `${f} ${l}`.trim();
   return name === "" ? null : name;
+}
+
+/**
+ * 6.7 — the matching harness.
+ *
+ * Runs the real scorer against real seed data and hands back the ranking *with
+ * its reasons*, so matching can be argued with before anything is ever sent.
+ *
+ * ## Why it reuses `matchesFor` rather than scoring here
+ *
+ * Because a harness that scored differently from the thing it validates is worse
+ * than no harness. Every number on the page comes from the same
+ * `lib/server/repo/matching.ts` call a live Ask will make, including the weights
+ * and the approval gate — the page's only additions are names, so a human can
+ * recognise who came back.
+ *
+ * ## The one thing it deliberately does not do
+ *
+ * Send. There is no write action for this resource. The estimate's own framing is
+ * "validated **before** any live outreach", and a page that could both score and
+ * message would make the pilot's first blast one mis-click away.
+ */
+async function matchingHarness(db: Db, params: Record<string, unknown>) {
+  /* Who can be asked about, and who can be asked. Contributors first, so the
+     picker leads with the people whose graph is actually populated. */
+  const people = (await rows(
+    db,
+    sql`select p.id, p.first_name, p.last_name, p.neighborhood,
+               (select count(*)::int from social_affinities sa where sa.person_id = p.id) as edges
+          from people p
+         where not p.is_test
+           and p.first_name is not null
+         order by edges desc, p.first_name
+         limit 200`,
+  )).map((r: Row) => ({
+    person_id: String(r.id),
+    name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+    neighborhood: r.neighborhood ? String(r.neighborhood) : null,
+  }));
+
+  const askerId = String(params.asker ?? "");
+  const wanted = Math.min(20, Math.max(1, Number(params.wanted ?? 5) || 5));
+
+  if (!askerId) {
+    return {
+      asker: null,
+      ranked: [],
+      cold: false,
+      wanted,
+      found: 0,
+      weights: [],
+      adjacency_pairs: 0,
+      people,
+    } satisfies MatchingResult;
+  }
+
+  const outcome = await matchesFor({ askerId, wanted });
+
+  /* Names for the ids the scorer returned — one query, not one per row. */
+  const ids = outcome.ranked.map((r) => r.person_id);
+  const named = new Map<string, Row>();
+  if (ids.length > 0) {
+    /* An array literal, not `sql.array`: drizzle expands a JS array into a record
+       and `unnest` then fails — the same trap `repo/caregiver.ts` and
+       `option.promote` already carry a comment about. */
+    const literal = `{${ids.map((id: string) => `"${id}"`).join(",")}}`;
+    for (const r of await rows(
+      db,
+      sql`select p.id, p.first_name, p.last_name, p.phone,
+                 (select count(*)::int
+                    from share_contributions sc
+                    join shares s on s.id = sc.share_id
+                   where sc.person_id = p.id
+                     and sc.status = 'approved' and s.status = 'approved') as approved
+            from people p
+           where p.id = any(${literal}::uuid[])`,
+    )) {
+      named.set(String(r.id), r);
+    }
+  }
+
+  const askerRow = outcome.asker
+    ? (
+        await rows(
+          db,
+          sql`select first_name, last_name from people where id = ${outcome.asker.person_id}::uuid`,
+        )
+      )[0]
+    : null;
+
+  return {
+    asker: outcome.asker
+      ? {
+          person_id: outcome.asker.person_id,
+          name: askerRow
+            ? [askerRow.first_name, askerRow.last_name].filter(Boolean).join(" ") || null
+            : null,
+          neighborhood: outcome.asker.neighborhood,
+          child_birth_years: outcome.asker.child_birth_years,
+          edges: outcome.asker.edges.length,
+          relevance: outcome.asker.relevance.length,
+        }
+      : null,
+    ranked: outcome.ranked.map((r): MatchCandidateRow => {
+      const p = named.get(r.person_id);
+      return {
+        person_id: r.person_id,
+        name: p ? [p.first_name, p.last_name].filter(Boolean).join(" ") || null : null,
+        neighborhood: null,
+        phone_masked: maskPhone(p?.phone ? String(p.phone) : null),
+        score: r.score,
+        affinity: r.affinity,
+        relevance: r.relevance,
+        reasons: r.reasons,
+        approved_contributions: Number(p?.approved ?? 0),
+      };
+    }),
+    cold: outcome.cold,
+    wanted: outcome.wanted,
+    found: outcome.found,
+    weights: Object.entries(outcome.config.weights)
+      .map(([affinity_type, weight]) => ({ affinity_type, weight: Number(weight) }))
+      .sort((a, b) => b.weight - a.weight || a.affinity_type.localeCompare(b.affinity_type)),
+    adjacency_pairs: outcome.config.adjacency.length,
+    people,
+  } satisfies MatchingResult;
 }

@@ -99,6 +99,41 @@
       "when": 1786572000000,
       "tag": "0013_allowance_shape_5_10",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786575600000,
+      "tag": "0014_taxonomy_search_and_starters",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786579200000,
+      "tag": "0015_affiliation_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786582800000,
+      "tag": "0016_invite_opens",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786669200000,
+      "tag": "0017_area_slug",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786755600000,
+      "tag": "0018_neighborhood_adjacency",
+      "breakpoints": true
     }
   ]
 }

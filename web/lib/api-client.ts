@@ -1,6 +1,6 @@
 "use client";
 
-import type { InviteResult, ProfilePayload } from "./types";
+import type { InviteResult, Option, ProfilePayload } from "./types";
 
 /**
  * The browser only ever talks to our own route handlers. They do the work
@@ -181,4 +181,45 @@ export function saveSubmission(payload: {
   submission: { id: string; kind: string; fields: Record<string, unknown>; created_at: string };
 }): Promise<SaveSubmissionResult> {
   return postJson<SaveSubmissionResult>("/api/seed/save", payload);
+}
+
+/**
+ * Search one market directory (item 7 — "tap first, search second").
+ *
+ * A GET, unlike everything else in this file, because it is public reference data
+ * with no body and no side effect: the same taxonomy `/api/market/options` serves,
+ * reached by query instead of by category. That also makes it cacheable by the
+ * browser between keystrokes on the same term.
+ *
+ * `area` is a ranking hint and never a filter — Pasadena families routinely cross
+ * city lines for school, classes, clubs and worship, so a Alhambra parent must
+ * still find a Pasadena preschool.
+ */
+export async function searchMarketOptions(input: {
+  category: string;
+  market: string;
+  /** Free-text search. Omit when resolving `ids`. */
+  q?: string;
+  /**
+   * Resolve these exact records instead of searching. Used on mount to name a
+   * selection the parent made by searching in an earlier visit — the starters do
+   * not contain it, and there is no query left to find it with.
+   */
+  ids?: string[];
+  area?: string;
+}): Promise<Option[]> {
+  const params = new URLSearchParams({
+    category: input.category,
+    market_id: input.market,
+  });
+  if (input.ids && input.ids.length > 0) params.set("ids", input.ids.join(","));
+  else params.set("q", input.q ?? "");
+  if (input.area) params.set("area", input.area);
+
+  const res = await fetch(`/api/market/search?${params.toString()}`, {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new ApiError("Search is unavailable", res.status);
+  const body = (await res.json()) as { results?: Option[] };
+  return Array.isArray(body.results) ? body.results : [];
 }

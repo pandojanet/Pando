@@ -165,6 +165,26 @@ export const sampleContributorDetail: ContributorDetail = {
     { affinity_type: "activity", affinity_value: "music-together", weight: 4 },
     { affinity_type: "neighborhood", affinity_value: "south-pasadena", weight: 3 },
   ],
+  /* One granted, one revoked — the two states worth seeing side by side, because
+     a revoked row staying visible is the point of §G. */
+  affiliation_visibility: [
+    {
+      affiliation_type: "school",
+      affiliation_value: "walden-school",
+      visibility: "shared_anonymously",
+      consent_text_version: "seed-affiliation-2026-08-24",
+      consented_at: "2026-08-24T18:20:00.000Z",
+      revoked_at: null,
+    },
+    {
+      affiliation_type: "social_group",
+      affiliation_value: "valley-hunt-club",
+      visibility: "private",
+      consent_text_version: "seed-affiliation-2026-08-24",
+      consented_at: "2026-08-24T18:20:00.000Z",
+      revoked_at: "2026-08-25T09:05:00.000Z",
+    },
+  ],
   relevance: [
     { dimension: "budget", value: "compare_value" },
     { dimension: "logistics", value: "close_to_home" },
@@ -840,6 +860,7 @@ export const sampleInvites: InviteRow[] = [
     group_option_value: "school-pta",
     active: true,
     note: "Posted in the Tuesday newsletter",
+    opens: 63,
     contributors: 14,
     delivered: 9,
     created_at: now,
@@ -853,6 +874,7 @@ export const sampleInvites: InviteRow[] = [
     group_option_value: "pasadena-moms-fb",
     active: true,
     note: null,
+    opens: 131,
     contributors: 31,
     delivered: 4,
     created_at: now,
@@ -866,6 +888,7 @@ export const sampleInvites: InviteRow[] = [
     group_option_value: null,
     active: false,
     note: "Retired once each group had its own",
+    opens: 95,
     contributors: 22,
     delivered: 12,
     created_at: now,

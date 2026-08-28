@@ -11,6 +11,7 @@ import {
   Field,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   inputClass,
   slugLabel,
@@ -18,7 +19,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { sentence } from "@/lib/admin/labels";
+import { AFFILIATION_KIND, sentence } from "@/lib/admin/labels";
 import { profileValueLabel } from "@/lib/questions";
 import type { ContributorDetail, ContributorRow } from "@/lib/admin/types";
 
@@ -227,6 +228,82 @@ export default function ContributorDetailPage({
               </div>
             </Card>
 
+            {/**
+              * Privacy Guidance §A — what this parent has allowed, connection by
+              * connection.
+              *
+              * Its own card rather than a line on the profile, because it is the
+              * only place an admin can answer "may Pando say 'a parent at your
+              * golf club' about them" — and §I asks that an attributed statement
+              * be reconstructable from its supporting records, which means the
+              * wording version and the timestamp have to be readable, not just
+              * stored.
+              *
+              * **Revoked rows stay listed.** A withdrawn permission is part of
+              * the answer to "what was allowed, and when", and hiding it would
+              * make the card look like a current-state view of something that is
+              * really a history.
+              */}
+            {c.affiliation_visibility.length > 0 && (
+              <Card
+                title="Connections Pando may mention"
+                right={
+                  <span className="text-[12px] text-muted">
+                    {
+                      c.affiliation_visibility.filter(
+                        (v) => v.visibility === "shared_anonymously",
+                      ).length
+                    }{" "}
+                    of {c.affiliation_visibility.length} allowed
+                  </span>
+                }
+              >
+                <ul className="divide-y divide-bark/50">
+                  {c.affiliation_visibility.map((v) => {
+                    const shared = v.visibility === "shared_anonymously";
+                    return (
+                      <li
+                        key={`${v.affiliation_type}/${v.affiliation_value}`}
+                        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3"
+                      >
+                        <span className="min-w-0">
+                          <span className="text-[14.5px] font-medium">
+                            {slugLabel(v.affiliation_value)}
+                          </span>
+                          <span className="ml-2 text-[12.5px] text-muted">
+                            {AFFILIATION_KIND[v.affiliation_type] ??
+                              sentence(v.affiliation_type)}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <Badge tone={shared ? "green" : "muted"}>
+                            {shared ? "May be mentioned" : "Private"}
+                          </Badge>
+                          {/* The evidence, in the order it reads: when they
+                              agreed, and — if it happened — when they took it
+                              back. */}
+                          <span className="text-[12px] text-muted">
+                            {shared
+                              ? `since ${when(v.consented_at)}`
+                              : v.revoked_at
+                                ? `withdrawn ${when(v.revoked_at)}`
+                                : "never shared"}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
+                  A mention never carries their name. Wording version{" "}
+                  <span className="font-mono">
+                    {c.affiliation_visibility[0].consent_text_version ?? "—"}
+                  </span>
+                  .
+                </p>
+              </Card>
+            )}
+
             <Card title={`Submitted (${c.cards.length})`}>
               {c.cards.length === 0 ? (
                 <Empty title="Nothing shared yet" />
@@ -320,9 +397,7 @@ export default function ContributorDetailPage({
                 >
                   {saving ? "Saving…" : "Save note"}
                 </Button>
-                {message && (
-                  <p className="mt-2 text-[12.5px] text-muted">{message}</p>
-                )}
+                {message && <ResultNote inline>{message}</ResultNote>}
               </div>
             </Card>
 

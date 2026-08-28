@@ -34,6 +34,8 @@ import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import type { SeedSession } from "@/lib/types";
 import { Bubble, CardRecap, TypingDots } from "./Bubble";
 import { InviteMessage } from "./InviteMessage";
+import { confirmBackFor } from "@/lib/seed-chat/confirm-back";
+import { ConfirmBackWidget } from "./ConfirmBackWidget";
 import { ShareMenu } from "./ShareMenu";
 import { StepWidget } from "./StepWidget";
 
@@ -452,7 +454,110 @@ export function ChatSeeding() {
       ],
     }));
 
+    /**
+     * Estimate 1.8's confirm-back, asked **before** the card is sent.
+     *
+     * Order matters: asking after the save would mean saving a thin card and then
+     * patching it, so the admin queue would briefly hold a version the parent had
+     * already improved. Asked here, the card is written once, with whatever they
+     * added.
+     *
+     * A card that triggers one is not persisted yet — `answerConfirmBack` and
+     * `skipConfirmBack` are the only two ways out, and both end in `persist`.
+     */
+    const ask = confirmBackFor(submission);
+    if (ask) {
+      patchChat((c) => ({
+        ...c,
+        confirm_back: {
+          submission_id: submission.id,
+          field: ask.field,
+          question: ask.question,
+        },
+        messages: [
+          ...c.messages,
+          { id: uid(), role: "pando" as const, text: ask.question },
+        ],
+      }));
+      track("seed_confirm_back_shown", {
+        kind: submission.kind,
+        field: ask.field,
+      });
+      return;
+    }
+
     void persist(submission);
+  }
+
+  /**
+   * They said more. Merge it into the field and send the card.
+   *
+   * Appended rather than replacing: what they wrote first was still their answer,
+   * and a follow-up usually adds to it ("good" + "the teacher is why") rather than
+   * correcting it. `__confirm_back_asked` is what stops it ever being asked twice
+   * for this card — and it is stripped before the card is sent, because it is a
+   * fact about the conversation and not about the recommendation.
+   */
+  function answerConfirmBack(text: string) {
+    const pending = chat?.confirm_back;
+    if (!pending) return;
+    const addition = text.trim();
+
+    let updated: Submission | undefined;
+    patchChat((c) => {
+      const submissions = c.submissions.map((sub) => {
+        if (sub.id !== pending.submission_id) return sub;
+        const existing = String(
+          (sub.fields as Record<string, unknown>)[pending.field] ?? "",
+        ).trim();
+        const merged =
+          addition === ""
+            ? existing
+            : existing === ""
+              ? addition
+              : `${existing} — ${addition}`;
+        updated = {
+          ...sub,
+          fields: {
+            ...sub.fields,
+            [pending.field]: merged,
+            /* A string, not a boolean: `FieldValue` is what a card field may
+               hold, and widening it for one internal marker would let every
+               other field hold a boolean too. Stripped before the card is sent
+               — see `persist`. */
+            __confirm_back_asked: "yes",
+          },
+        };
+        return updated;
+      });
+      return {
+        ...c,
+        submissions,
+        confirm_back: null,
+        messages: [
+          ...c.messages,
+          ...(addition
+            ? [{ id: uid(), role: "parent" as const, text: addition }]
+            : []),
+          /* Re-render the recap so the parent sees what the card now says. */
+          ...(updated ? [{ id: uid(), role: "pando" as const, card: updated }] : []),
+        ],
+      };
+    });
+
+    track("seed_confirm_back_answered", {
+      field: pending.field,
+      added: addition.length > 0,
+    });
+    if (updated) void persist(updated);
+  }
+
+  /** They would rather not. The card goes as it is — skipping is an answer. */
+  function skipConfirmBack() {
+    const pending = chat?.confirm_back;
+    if (!pending) return;
+    track("seed_confirm_back_answered", { field: pending.field, added: false });
+    answerConfirmBack("");
   }
 
   async function persist(submission: Submission) {
@@ -476,7 +581,16 @@ export function ChatSeeding() {
         submission: {
           id: submission.id,
           kind: submission.kind,
-          fields: submission.fields as Record<string, unknown>,
+          /* `__confirm_back_asked` is a fact about the conversation, not about
+             the recommendation, and `/api/seed/save` would have no field to put
+             it in. Stripped here rather than never stored, because it has to
+             survive a reload — a parent who refreshes mid-card must not be asked
+             the same follow-up again. */
+          fields: Object.fromEntries(
+            Object.entries(submission.fields as Record<string, unknown>).filter(
+              ([key]) => !key.startsWith("__"),
+            ),
+          ),
           created_at: submission.created_at,
         },
       });
@@ -569,6 +683,16 @@ export function ChatSeeding() {
     chat.messages.some((m) => m.role === "parent" && m.step_id) &&
     draft!.step_index > nextIndex(script!, {}, 0);
 
+  /* The latest thing Pando said, for the live region below the transcript. */
+  const lastFromPando = (() => {
+    for (let i = chat.messages.length - 1; i >= 0; i -= 1) {
+      const m = chat.messages[i];
+      if (m.role !== "pando" || m.card || m.invite) continue;
+      return [m.text, m.aside].filter(Boolean).join(" ");
+    }
+    return "";
+  })();
+
   return (
     <Screen>
       {/* No running "N cards ready" counter: the saved cards are already on the
@@ -610,6 +734,26 @@ export function ChatSeeding() {
             ),
           )}
           {typing && <TypingDots />}
+
+          {/**
+            * What Pando is saying, for a reader who cannot see the transcript.
+            *
+            * A live region has to be **in the document before its content
+            * changes**, so this is always rendered and only its text moves —
+            * which is precisely why the `aria-live` that used to sit on
+            * `TypingDots` never fired: that element mounted together with its
+            * one and only message.
+            *
+            * It carries only Pando's side. The transcript itself is not a live
+            * region on purpose: it also holds the parent's own answers, which
+            * they just gave and do not need read back, and the card recaps,
+            * which are twenty lines each — announcing all of it on every turn
+            * is noisier than announcing none of it.
+            */}
+          <p className="sr-only" role="status" aria-live="polite">
+            {typing ? "Pando is typing" : lastFromPando}
+          </p>
+
           <div ref={bottomRef} className="h-px" />
         </div>
       </ScreenBody>
@@ -617,6 +761,22 @@ export function ChatSeeding() {
       <ScreenDock>
         {typing ? (
           <div className="min-h-[60px]" />
+        ) : chat.confirm_back ? (
+          /**
+           * The confirm-back turn. A plain text field and two ways out, because
+           * this is a *request* rather than a question the flow depends on — the
+           * card is already complete and will be sent either way.
+           *
+           * "It's fine as it is" is deliberately as easy to reach as the input.
+           * A follow-up a parent cannot decline stops being a follow-up and
+           * becomes a required field, which is the opposite of what a two-minute
+           * tap-first flow promised them.
+           */
+          <ConfirmBackWidget
+            key={chat.confirm_back.submission_id + chat.confirm_back.field}
+            onAnswer={answerConfirmBack}
+            onSkip={skipConfirmBack}
+          />
         ) : chat.mode === "card" && draft && script && step ? (
           <StepWidget
             key={`${draft.id}-${step.id}-${draft.editing ? "edit" : "ask"}`}

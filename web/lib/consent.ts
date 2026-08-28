@@ -35,6 +35,37 @@ export const LISTENING_EAR_CONSENT_TEXT =
   "Yes — Pando may occasionally match me to another parent's hard question, anonymously on both sides. It spends the same monthly allowance as everything else, and I can say no to any single one.";
 
 /**
+ * Per-affiliation sharing — the client's Privacy Guidance §A (24 Aug).
+ *
+ * This is the wording she supplied, and both halves of it are load-bearing:
+ *
+ *  - the control says what Pando *may* do and states plainly that the name and
+ *    contact details are not shown;
+ *  - the line under it admits what the control cannot promise — in a small
+ *    community, members may work out who you are. Her own text, and it is the
+ *    sentence that makes this consent informed rather than merely obtained.
+ *
+ * **Its own version string, never shared with another scope.** A parent agreeing
+ * that "a parent at your golf club" may be said about them has agreed to one
+ * thing; the follow-up consent, the Blast consent and the listening ear are
+ * different amounts of exposure and different decisions. Sharing a version would
+ * make it impossible to answer "which words did they see" for either.
+ *
+ * §A's other three rules are enforced in code rather than in this text, and are
+ * repeated here because they are what the wording assumes: a new affiliation
+ * defaults to `private`; reading the privacy explainer changes nothing; and
+ * **"Continue" is not consent** — only the toggle is.
+ */
+export const AFFILIATION_CONSENT_TEXT_VERSION = "seed-affiliation-2026-08-24";
+
+export const AFFILIATION_CONSENT_TEXT =
+  "Pando may tell another parent with this same connection that a parent from the community made a recommendation. Your name and contact information will not be shown.";
+
+/** Shown immediately underneath, in her words. Never as a tooltip. */
+export const AFFILIATION_CONSENT_CAVEAT =
+  "Members may sometimes be able to guess who you are, particularly in a small community.";
+
+/**
  * SMS consent at the phone field.
  *
  * ⚠️ **This is not word for word the text in the client's documents, and that is

@@ -48,7 +48,7 @@ export function Thanks() {
       <ScreenBody className="pt-8">
         <div className="animate-rise">
           {/* The entry screen told the anonymous path, in so many words, that it
-              gives up Founding status. Showing them this badge anyway would be the
+              gives up Founding Status. Showing them this badge anyway would be the
               app contradicting its own promise on the last screen they see. */}
           <span
             className={cn(
@@ -83,7 +83,7 @@ export function Thanks() {
             ) : (
               <>
                 {" "}
-                Founding status activates when your second contribution is approved
+                Founding Status activates when your second contribution is approved
                 — we&apos;ll text you the moment it does, with a link to reserve
                 your place.
               </>

@@ -1,7 +1,13 @@
+import {
+  AFFILIATION_CONSENT_CAVEAT,
+  AFFILIATION_CONSENT_TEXT,
+} from "./consent";
+import { bandsForAge } from "./matching";
 import { marketOptions, optionsForBands } from "./market-options";
 import {
   EXPECTING,
   type AgeBand,
+  type MarketCategory,
   type MarketId,
   type Option,
   type ProfileAnswers,
@@ -44,9 +50,14 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   faith: [],
   clubs: [],
   time_in_area: null,
+  grew_up_here: null,
+  previous_places: [],
   moved_from: null,
   family_structure: [],
+  work_setup: [],
   childcare_now: [],
+  childcare_backup: [],
+  travel_time: [],
   logistics: [],
   budget: [],
   trust_circles: [],
@@ -54,6 +65,12 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   topics_lived: [],
   /** P13. Null until they choose; nothing is shown until they do. */
   attribution: null,
+  /* Off by default. Her rule: skipping this page keeps the name private and
+     shared connections off — "Continue" is not consent. */
+  shared_connections: null,
+  /* Empty, and that is the consent model: an affiliation is private until it
+     appears in this list. Nothing a parent skips can grant anything. */
+  shared_affiliations: [],
   /** P14 — 5 by default (18 Aug: supersedes 3). A real control, not a preference. */
   allowance: "5",
   listening_ear: null,
@@ -89,6 +106,20 @@ export const BIRTH_YEAR_OPTIONS: Option[] = [
   })),
 ];
 
+/**
+ * Whether a club membership is current — her instruction for the clubs question
+ * (24 Aug): "default to Current and allow Former".
+ *
+ * Two options rather than four: a club has no "not yet" or "homeschool"
+ * equivalent, and offering the school list here would ask a question that has no
+ * answer. Weighting former membership lower is the matching side of it, which
+ * belongs in Phase 2's scoring rather than in the tap.
+ */
+const CLUB_STATUS: Option[] = [
+  { id: "current", label: "Current" },
+  { id: "former", label: "Former" },
+];
+
 /** P5. Each school the parent taps gets one of these. */
 const SCHOOL_STATUS: Option[] = [
   { id: "current", label: "Current" },
@@ -97,90 +128,285 @@ const SCHOOL_STATUS: Option[] = [
   { id: "homeschool", label: "Homeschool" },
 ];
 
+/**
+ * Item 11 — her four bands, and note the boundaries moved: 4-9 rather than 3-10.
+ *
+ * "I grew up here" **came out of this list**, and that is the substance of the
+ * change rather than a tidy-up. As an option here it was mutually exclusive with
+ * every tenure answer, so a parent who grew up in Pasadena, moved away and came
+ * back could not say so — they had to pick one truth and drop the other. Local
+ * roots are now their own question, below.
+ */
 const TIME_IN_AREA: Option[] = [
-  { id: "under_year", label: "Under a year" },
+  { id: "under_year", label: "Less than 1 year" },
   { id: "1_3_years", label: "1–3 years" },
-  { id: "3_10_years", label: "3–10 years" },
+  { id: "4_9_years", label: "4–9 years" },
   { id: "10_plus_years", label: "10+ years" },
-  { id: "grew_up_here", label: "I grew up here" },
 ];
 
-/** P8b. Structure first, free text for the specifics. */
+/**
+ * Local roots, as a single yes — the client asked for "a separate checkbox".
+ *
+ * One option rather than yes/no: an unticked box already means no, and offering
+ * an explicit "No, I moved here" would ask a parent to state the absence of a
+ * thing, which is the pattern the rest of this questionnaire avoids.
+ */
+const GREW_UP_HERE: Option[] = [
+  { id: "grew_up_here", label: "I grew up in this area", wide: true },
+];
+
+/**
+ * The coarse tenure values. **No longer asked** — item 11's instruction is that
+ * "Pando can derive 'elsewhere in California,' 'another state' or 'another
+ * country' from the actual location. The parent shouldn't have to provide both."
+ *
+ * So these are what `derive.ts` *computes* from the canonical place the parent
+ * named, and the list stays here because it is still the vocabulary of the
+ * `tenure` rows and of every profile already stored against it.
+ */
 const MOVED_FROM: Option[] = [
   { id: "elsewhere_in_california", label: "Elsewhere in California" },
   { id: "another_us_state", label: "Another US state" },
   { id: "another_country", label: "Another country" },
 ];
 
-const FAMILY_STRUCTURE: Option[] = [
-  { id: "two_parents_both_working", label: "Two parents, both working" },
-  { id: "two_parents_one_home", label: "Two parents, one at home" },
-  { id: "work_from_home", label: "Parent(s) work from home" },
-  { id: "solo_parent", label: "Solo parent" },
+/**
+ * Item 12, first half. The old list mixed four different facts — household
+ * structure, co-parenting, employment and work location — and two of its options
+ * could not be read:
+ *
+ *  - "Two parents, one at home" meant either a stay-at-home parent or one working
+ *    from home, which are different lives.
+ *  - "Solo parent" implied no co-parent, when many single parents co-parent
+ *    across two households.
+ *
+ * So structure is asked here and work is asked next. "Parenting on my own" is
+ * `exclusive` against the partner options — you cannot both have a partner in the
+ * household and be parenting alone — while "Blended family" and "Grandparent
+ * involved" combine freely with either.
+ */
+const PARENTING_SETUP: Option[] = [
+  { id: "partner_in_household", label: "Parenting with a partner in my household" },
+  { id: "co_parenting_across_households", label: "Co-parenting across households" },
+  { id: "parenting_on_my_own", label: "Parenting on my own" },
+  { id: "blended_family", label: "Blended family" },
+  { id: "family_caregiver_involved", label: "Grandparent or family caregiver involved" },
+  { id: "something_else", label: "Something else" },
   { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
 ];
 
-const CHILDCARE_NOW: Option[] = [
-  { id: "nanny_or_sitter", label: "Nanny or regular sitter" },
-  { id: "daycare_preschool", label: "Daycare / preschool" },
-  { id: "family_nearby", label: "Family nearby helps" },
-  { id: "no_regular_childcare", label: "No regular childcare" },
-  { id: "limited_backup", label: "Limited backup support" },
+/** Item 12, second half: how the household works, not who is in it. */
+const WORK_SETUP: Option[] = [
+  { id: "work_outside_home", label: "Parent(s) work mainly outside the home" },
+  { id: "work_from_home", label: "Parent(s) work mainly from home" },
+  { id: "full_time_caregiver", label: "A parent is a full-time caregiver" },
+  { id: "variable_hours", label: "Variable or nontraditional work hours" },
+  { id: "frequent_travel", label: "Frequent work travel" },
+  { id: "something_else", label: "Something else" },
   { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
 ];
 
-const LOGISTICS: Option[] = [
-  { id: "close_to_home", label: "Close to home" },
-  { id: "easy_parking", label: "Easy parking / low hassle" },
-  { id: "weekend_friendly", label: "Weekend-friendly" },
-  { id: "weekday_flexibility", label: "Weekday flexibility" },
-  { id: "working_parent_hours", label: "Working-parent hours" },
-  { id: "sibling_friendly", label: "Sibling-friendly" },
-  { id: "stroller_friendly", label: "Stroller-friendly" },
-  { id: "will_drive", label: "Will drive for the right thing" },
+/**
+ * Item 13, first half: a child's *regular* arrangement.
+ *
+ * Three things the old five-option list ran together, and each is a materially
+ * different experience to be asked about: "Nanny or regular sitter" (a nanny, a
+ * nanny share, an au pair and a Saturday-night sitter are not one thing),
+ * "Daycare / preschool", and "family provides regular care" versus "family
+ * nearby can help when something falls through" — which is the backup question
+ * and now lives on its own screen.
+ *
+ * The two school-age options are age-gated: an after-school programme is not an
+ * answer for a one-year-old.
+ */
+const CHILDCARE_REGULAR: Option[] = [
+  { id: "parent_provides_care", label: "Parent or guardian provides most daytime care" },
+  { id: "nanny", label: "Nanny" },
+  { id: "nanny_share", label: "Nanny share" },
+  { id: "au_pair", label: "Au pair" },
+  { id: "regular_babysitter", label: "Regular babysitter" },
+  { id: "family_regular_care", label: "Family member provides regular care" },
+  { id: "daycare", label: "Daycare" },
+  { id: "preschool", label: "Preschool" },
+  {
+    id: "after_school_program",
+    label: "After-school program",
+    /* Her instruction: the regular-care options adapt to the child's age. An
+       after-school programme is not an answer for a one-year-old. */
+    bands: ["grade", "tween", "teen"],
+  },
+  {
+    id: "after_school_sitter",
+    label: "Regular after-school sitter",
+    bands: ["grade", "tween", "teen"],
+  },
+  { id: "something_else", label: "Something else" },
+  { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
+];
+
+/**
+ * Item 13, second half: what the household falls back on. Asked once, not per
+ * child — a grandmother who can come over covers everybody.
+ *
+ * Both "No reliable backup childcare" and "Prefer not to say" clear the rest:
+ * the first is a statement that none of the others apply, and it is the most
+ * useful answer on the screen for matching.
+ */
+const CHILDCARE_BACKUP: Option[] = [
+  { id: "family_nearby", label: "Family nearby who can help" },
+  { id: "friends_or_parents", label: "Friends or other parents" },
+  { id: "backup_sitter", label: "Backup sitter or nanny" },
+  { id: "employer_or_school_backup", label: "Employer, school or agency backup care" },
+  { id: "a_parent_can_cover", label: "A parent can usually cover" },
+  { id: "no_reliable_backup", label: "No reliable backup childcare", exclusive: true },
+  { id: "something_else", label: "Something else" },
+  { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
+];
+
+/**
+ * Item 14, first half. "Close to home" and "Will drive for the right thing" were
+ * two options in a list of eight, which made distance a *preference* competing
+ * with parking. It is a threshold, so it is its own single-select question.
+ */
+const TRAVEL_TIME: Option[] = [
+  { id: "under_10_min", label: "10 minutes or less" },
+  { id: "under_20_min", label: "Up to 20 minutes" },
+  { id: "under_30_min", label: "Up to 30 minutes" },
+  { id: "over_30_for_fit", label: "More than 30 minutes for the right fit" },
+];
+
+/**
+ * Item 14, second half: capped at three, on the client's instruction. Ten ticks
+ * is not a set of priorities — the cap is what turns this into one.
+ */
+const PRACTICAL_PRIORITIES: Option[] = [
+  { id: "easy_parking", label: "Easy parking or drop-off" },
+  { id: "weekday_flexibility", label: "Flexible weekday scheduling" },
+  { id: "weekend_friendly", label: "Weekend availability" },
+  { id: "working_parent_hours", label: "Early drop-off or late pickup" },
+  { id: "sibling_friendly", label: "Siblings can attend together" },
+  { id: "stroller_friendly", label: "Easy with a baby or stroller" },
+  { id: "flexible_booking", label: "Flexible booking or make-ups" },
+  { id: "budget_friendly", label: "Budget-friendly" },
+  { id: "something_else", label: "Something else" },
+  { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
 ];
 
 /* P11. The word "budget" stays out of the UI; the stored dimension keeps its name
    so nothing downstream has to change. */
-const HOW_YOU_CHOOSE: Option[] = [
-  { id: "free_low_cost", label: "I look for free / low-cost options" },
-  { id: "compare_value", label: "I compare carefully — value matters" },
-  { id: "mid_range", label: "Mid-range is fine" },
-  { id: "pay_more_for_quality", label: "I'll pay more when quality is clear" },
-  { id: "best_available", label: "I look for the best available" },
+/**
+ * How Pando should weigh cost. Rewritten to the client's list, 24 Aug (item 15),
+ * and the *shape* changed as much as the words.
+ *
+ * The old options overlapped so badly that they could not be an instruction: a
+ * parent can compare carefully, care about value, pay more for quality and look
+ * for the best available all at once, so a multi-select produced five ticks and
+ * no ranking rule. Hers are mutually exclusive, so **single-select** — Pando now
+ * receives an actual default.
+ *
+ * Four of her notes are constraints on how this value may be used, and they
+ * belong here rather than in a ticket:
+ *
+ *  - It **improves ranking only.** It must never infer income, and never exclude
+ *    a parent from seeing an option.
+ *  - "Free or low-cost" **never lowers the safety or quality baseline.**
+ *  - A request inside a specific question **always overrides** this default.
+ *  - Skipped, or "prefer not to say", means *show good options across price
+ *    points* — which is why that is an option in its own right rather than a
+ *    fallback nobody can see.
+ *
+ * Gone with the old list: "Mid-range is fine" (means something different in every
+ * category) and the screen's "Pando never asks about income" (her note: it reads
+ * as defensive and makes parents wonder why we said it).
+ */
+const COST_PREFERENCE: Option[] = [
+  { id: "prioritize_low_cost", label: "Prioritize free or low-cost options" },
+  { id: "prioritize_value", label: "Prioritize the best value for the price" },
+  { id: "across_price_points", label: "Show me good options across price points" },
+  { id: "prioritize_fit", label: "Prioritize the best fit, even if it costs more" },
+  { id: "ask_each_time", label: "Ask me each time" },
+  { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
 ];
 
 /**
- * Retained from the client's 3 Aug feedback round, which asked for it explicitly
- * ("ranking, never a filter"). It isn't in the July question set — flagged in
- * docs/spec-compliance-review.md rather than quietly dropped.
+ * Item 16 — reframed, not just relisted. The client's correction goes to what
+ * this question *is*:
+ *
+ * The old screen said Pando weighs shared affiliations first. That was wrong.
+ * **Relevant, firsthand, recent-enough experience always comes first**, and these
+ * choices only break the tie between parents who are already relevant. The help
+ * text now says exactly that, and it is the one sentence on this screen that
+ * matters.
+ *
+ * Four changes to the list: "Clubs / community group" and "Religious or community
+ * group" overlapped, so parent groups, private clubs and faith communities are
+ * now three separate things; "Similar family or work setup" was added, because we
+ * have just asked for that context and it may matter more than a shared club; and
+ * "No fixed preference" is `exclusive` **and the default when the screen is
+ * skipped** — so skipping means "use the best available match", which is the
+ * honest reading of no answer.
+ *
+ * Capped at three (`maxSelections`). Ten ranking hints rank nothing.
+ *
+ * Two rules that are not visible on the screen and must hold anyway: these are
+ * ranking signals and **never hard filters**, and picking one here does **not**
+ * give Pando permission to display that affiliation — visibility is a separate
+ * decision (item 18).
  */
 const TRUST_CIRCLES: Option[] = [
-  { id: "same_school", label: "Same preschool / school" },
-  { id: "same_classes", label: "Same classes or activities" },
+  { id: "same_school", label: "Same preschool or school" },
   { id: "same_neighborhood", label: "Same neighborhood" },
-  { id: "parent_group", label: "Parent WhatsApp / group chat" },
-  { id: "clubs", label: "Clubs / community group" },
-  { id: "religious", label: "Religious or community group" },
-  { id: "friends_of_friends", label: "Friends of friends" },
-  { id: "similar_ages", label: "Parents with similar-age children" },
+  { id: "same_classes", label: "Same classes or activities" },
+  { id: "parent_group", label: "Same parent group or group chat" },
+  { id: "private_club", label: "Same private or social club" },
+  { id: "faith_community", label: "Same faith community" },
+  { id: "friends_of_friends", label: "Friend of a friend" },
+  { id: "similar_ages", label: "Children of a similar age" },
+  { id: "similar_setup", label: "Similar family or work setup" },
+  {
+    id: "no_fixed_preference",
+    label: "No fixed preference — use the best available match",
+    exclusive: true,
+    wide: true,
+  },
 ];
 
 /** P12, first cluster: local knowledge. */
+/**
+ * Item 17, first cluster: **local knowledge**, and it is now its own screen.
+ *
+ * Three of the client's corrections are in this list rather than in the copy:
+ *
+ *  - "Pediatric / health recommendations" was too broad and read as an offer of
+ *    medical advice. It is now firsthand experience **with providers** —
+ *    "Pediatricians and children's health providers".
+ *  - "Special-needs resources" became "Developmental, learning or disability
+ *    support", which is what parents actually call it.
+ *  - "Daycare" is separated from preschools, matching the childcare split above.
+ *
+ * The opt-out is exclusive and per screen: declining local questions must not
+ * also decline the parenting ones, which are a different kind of exposure.
+ */
 const TOPICS_LOCAL: Option[] = [
-  { id: "activities", label: "Activities" },
-  { id: "preschools_schools", label: "Preschools & schools" },
+  { id: "activities", label: "Activities and classes" },
+  { id: "preschools_schools", label: "Preschools and schools" },
   { id: "camps", label: "Camps" },
+  { id: "daycare", label: "Daycare" },
   { id: "babysitters", label: "Babysitters" },
   { id: "nannies", label: "Nannies" },
-  { id: "newborn_care", label: "Newborn care" },
-  { id: "special_needs_resources", label: "Special-needs resources" },
-  { id: "working_parent_logistics", label: "Working-parent logistics" },
-  { id: "outings", label: "Outings" },
+  { id: "newborn_care", label: "Newborn and postpartum providers" },
+  { id: "pediatric_health", label: "Pediatricians and children’s health providers" },
+  { id: "special_needs_resources", label: "Developmental, learning or disability support" },
+  { id: "outings", label: "Parks, outings and family-friendly places" },
   { id: "sports", label: "Sports" },
-  { id: "arts_music", label: "Arts & music" },
-  { id: "pediatric_health", label: "Pediatric / health recommendations" },
-  { id: "new_to_area_help", label: "New-to-area help" },
+  { id: "arts_music", label: "Arts and music" },
+  { id: "new_to_area_help", label: "Moving to or getting settled in the area" },
+  {
+    id: "no_local_questions",
+    label: "I don’t want local questions right now",
+    exclusive: true,
+    wide: true,
+  },
 ];
 
 /**
@@ -188,17 +414,40 @@ const TOPICS_LOCAL: Option[] = [
  * about willingness to help — never about whether they went through it — and it
  * always offers a way out.
  */
+/**
+ * Item 17, second cluster: **lived parenting experience**, on its own screen.
+ *
+ * "Newborn care" and "postpartum" overlapped across the two clusters, so the
+ * personal side is now one thing — "Pregnancy, postpartum and the first year" —
+ * and the provider side sits in the local list above. "Co-parenting or parenting
+ * on your own" was added, because the setup screen now asks about it and a parent
+ * who lives it is exactly who another needs.
+ *
+ * Four rules that hold whatever is ticked here, none of them visible on screen:
+ * selecting a category means *open to being asked*, never a claim of expertise
+ * and never permission for Pando to answer on their behalf; Pando must still
+ * confirm relevant firsthand experience before routing a real question; every
+ * request can be declined without penalty; and **skipping opts into nothing**.
+ * Sensitive experience is never inferred from the rest of the profile.
+ */
 const TOPICS_LIVED: Option[] = [
-  { id: "sleep_routines", label: "Sleep & routines" },
-  { id: "feeding_picky_eating", label: "Feeding & picky eating" },
-  { id: "development_milestones", label: "Development & milestones" },
-  { id: "postpartum_first_year", label: "Postpartum & the first year" },
+  { id: "postpartum_first_year", label: "Pregnancy, postpartum and the first year" },
+  { id: "sleep_routines", label: "Sleep and routines" },
+  { id: "feeding_picky_eating", label: "Feeding and picky eating" },
+  { id: "development_milestones", label: "Development and milestones" },
   { id: "returning_to_work", label: "Returning to work" },
-  { id: "identity_after_parenthood", label: "Identity after becoming a parent" },
+  { id: "working_parent_logistics", label: "Working-parent logistics" },
   { id: "limited_nearby_support", label: "Parenting with limited nearby support" },
-  { id: "loneliness_emotional", label: "Loneliness & the emotional side" },
-  { id: "relationship_changes", label: "Relationship changes after children" },
-  { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
+  { id: "co_parenting_or_solo", label: "Co-parenting or parenting on your own" },
+  { id: "identity_after_parenthood", label: "Emotional adjustment to parenthood" },
+  { id: "loneliness_emotional", label: "Loneliness and isolation" },
+  { id: "relationship_changes", label: "Relationships after children" },
+  {
+    id: "no_parenting_questions",
+    label: "I don’t want parenting questions right now",
+    exclusive: true,
+    wide: true,
+  },
 ];
 
 /**
@@ -206,16 +455,76 @@ const TOPICS_LIVED: Option[] = [
  * answer. Both options are private by default; the second one is bounded by a
  * promise we have to keep at query time, so the wording says it out loud.
  */
+/**
+ * Item 18 — rewritten, and every one of the client's four objections was to
+ * something the old two options *claimed* rather than to their wording:
+ *
+ *  - **"Anonymous, but verified" was a contradiction.** Pando knows exactly who
+ *    the parent is. What we meant is that their name is not shown. And she is
+ *    explicit: do not use the word "verified" at all unless a documented
+ *    verification standard has actually been met.
+ *  - **"First name — only where it can't identify me" was a promise we cannot
+ *    keep.** A first name can be enough to identify somebody in a small school.
+ *    Deciding on the parent's behalf whether it is safe is not ours to do — so
+ *    the parent chooses, and Pando does not second-guess it.
+ *  - **Name and shared connection are two different decisions**, so they are two
+ *    questions (below). A shared connection is shown *instead of* a name by
+ *    default, never combined with it — combining requires separate approval of
+ *    the exact wording, which is Phase 2 work.
+ *  - **Skipping defaults to private**, with connections off. Silence is never
+ *    consent to be named.
+ */
 const ATTRIBUTION: Option[] = [
   {
-    id: "anonymous_verified",
-    label: "Anonymous, but verified",
-    hint: "“A verified local parent”",
+    id: "name_private",
+    label: "Keep my name private",
+    hint: "“A local parent recommends this.”",
   },
   {
-    id: "first_name_safe",
-    label: "First name — only where it can't identify me",
-    hint: "Never combined with details that would give you away",
+    id: "first_name",
+    label: "Use my first name",
+    hint: "“Janet recommends this.”",
+  },
+  {
+    id: "ask_each_time",
+    label: "Ask me each time",
+    hint: "Pando checks with you before each recommendation is shared",
+  },
+];
+
+/**
+ * The second half of item 18, and deliberately its own question.
+ *
+ * Saying yes here lets Pando tell another parent who shares one of your
+ * connections that "a parent at your golf club" recommends something — without
+ * your name. Three constraints from her Privacy Guidance that the *screen* cannot
+ * enforce and the answering path must:
+ *
+ *  - Only a connection the recipient **also** has, resolved to the same canonical
+ *    record — "Valley Hunt" free text does not match Annandale.
+ *  - **One** affiliation per anonymous mention, never stacked with an age, a
+ *    neighborhood or a school ("a mother of a two-year-old at Valley Hunt" is
+ *    forbidden).
+ *  - Counts are of distinct **households**, exclude anyone whose visibility is
+ *    private, and are recalculated the moment somebody turns sharing off.
+ *
+ * **What is not built yet:** her model is a visibility state *per affiliation* —
+ * share the school, keep the club private. This question is one answer for all of
+ * them, which is the honest limit of today's data model and the open item behind
+ * it.
+ */
+const SHARED_CONNECTIONS: Option[] = [
+  {
+    id: "share_connection",
+    label: "Show a shared connection instead of my name when relevant",
+    hint: "“A parent at your golf club recommends this.” Only parents who share that connection see it.",
+    wide: true,
+  },
+  {
+    id: "no_connection",
+    label: "Don’t mention my connections",
+    exclusive: true,
+    wide: true,
   },
 ];
 
@@ -248,8 +557,12 @@ export const SCREENS: Screen[] = [
   {
     id: "neighborhood",
     eyebrow: "Where you are",
-    title: "Which neighborhood do you call home?",
-    help: "This is how Pando finds parents whose local world actually overlaps with yours.",
+    /* Client's wording, 24 Aug (item 5). Her list is *cities*, not neighborhoods
+       inside Pasadena — a Bungalow Heaven parent picks Pasadena, or types their
+       own into "Other nearby area". The nine intra-Pasadena values were retired
+       rather than deleted, so an existing answer still resolves. */
+    title: "Where do you live?",
+    help: "This helps Pando find parents whose local world overlaps with yours.",
     questions: [
       {
         id: "neighborhood",
@@ -259,7 +572,7 @@ export const SCREENS: Screen[] = [
         source: { type: "market", category: "neighborhoods" },
         affinity: { type: "neighborhood", weight: 3 },
         allowOther: true,
-        otherLabel: "Another neighborhood",
+        otherLabel: "Other nearby area",
       },
     ],
   },
@@ -282,8 +595,15 @@ export const SCREENS: Screen[] = [
   {
     id: "schools",
     eyebrow: "Your circles",
-    title: "Schools, preschools or daycares your family attends — or has attended.",
-    help: "The strongest matching signal there is. Former counts: a parent who's been through admissions is exactly who someone needs.",
+    /* The helper here said "The strongest matching signal there is. Former
+       counts: a parent who's been through admissions is exactly who someone
+       needs." Removed on the client's instruction (24 Aug, item 6) — it explained
+       our matching to a parent who has not asked, and "the strongest signal"
+       reads as pressure to answer a question that is optional. Her own screen
+       title for this is below; "or has attended" is what still invites a former
+       school, without the sales pitch. */
+    title: "Where does your child go to school, preschool or daycare?",
+    help: "This stays private. It helps Pando find parents whose experience may be especially relevant to you.",
     questions: [
       {
         id: "schools",
@@ -349,6 +669,11 @@ export const SCREENS: Screen[] = [
         kind: "multi",
         source: { type: "market", category: "clubs" },
         affinity: { type: "social_group", weight: 3 },
+        /* Her instruction: after selection, ask Current or Former. A current
+           shared membership is the strong shared-circle signal; a former one is
+           still worth having, weighted lower. Reuses the same mechanism as the
+           per-school status, so nothing new stores it. */
+        perSelectionStatus: { label: "For each one", options: CLUB_STATUS },
         allowOther: true,
         otherLabel: "Another club",
       },
@@ -393,21 +718,63 @@ export const SCREENS: Screen[] = [
      */
     id: "privacy_disclosure",
     eyebrow: "Privacy",
-    title: "How Pando uses this",
+    /**
+     * Rewritten to the client's wording, 24 Aug (item 8). Three substantive
+     * changes, not just phrasing:
+     *
+     *  - **Per-connection control replaces a blanket promise.** The old text said
+     *    shared groups are mentioned anonymously "in groups of five parents or
+     *    more". Hers says the parent decides *for each* school, club or faith
+     *    community — which is a different data model (a visibility state per
+     *    affiliation, not one setting per person) and is not built yet. The copy
+     *    is what she approved; the model behind it is the open item.
+     *  - **The threshold is gone.** "Five parents or more" was our floor; her
+     *    wording examples start at one ("A parent at your golf club…"), and her
+     *    counting rules spell out 1 / 2 / 3+ explicitly.
+     *  - **The examples are shown, not described.** "An anonymous
+     *    shared-connection mention" is meaningless until you read the sentence.
+     *
+     * Her block also opened with a line repeating the heading ("How Pando uses
+     * your connections."). Dropped — the same words twice, one under the other,
+     * is the duplication that makes a screen read as filler.
+     */
+    title: "How Pando uses your answers",
     statement: {
       body: [
-        "Pando uses your connections and context privately, to find parents whose experience fits your family. They're never shown to anyone automatically.",
-        "Pando may mention shared groups only in anonymous form, and only in groups of five parents or more — “five parents at Oakwood recommend this”.",
+        "Pando uses your connections and context to find parents whose experience fits your family. You decide whether each school, club, faith community or other connection stays private or can be shown with your recommendations.",
+        "If you choose to share it, another parent with the same connection may see:",
       ],
-      note: "You can turn group mentions off any time by texting PRIVACY.",
+      examples: [
+        "“A parent at your golf club recommends this.”",
+        "“Three parents at your golf club recommend this.”",
+      ],
+      link: { href: "/privacy", label: "Learn more about privacy" },
+      /* Her wording. Both halves of it are Phase 2 promises: there is no Privacy
+         Settings screen yet, and no channel to text PRIVACY into. Kept verbatim
+         because she approved it, and flagged so it is not mistaken for built. */
+      note: "You’re always in control. Change what Pando can show at any time in Privacy Settings or by texting PRIVACY.",
     },
     questions: [],
   },
   {
+    /**
+     * Item 11. One screen, **three distinct matching signals** — which is the
+     * client's own summary of why it needed changing: current tenure, local
+     * roots, and previous places were tangled into one list and one follow-up.
+     *
+     * They stay on one screen rather than three: all three answer "how local are
+     * you", and a parent reads them together. What changed is that each is now
+     * separately answerable.
+     *
+     * Note "Where did you move from?" is **gone as a question**. It used to be
+     * asked only of parents under three years here, which meant a family who
+     * moved from London twelve years ago had nowhere to say so — and it asked for
+     * a coarse band that `derive.ts` now computes from the city itself.
+     */
     id: "time_in_area",
     eyebrow: "Life context",
-    title: "How long have you been in the area?",
-    help: "Newer families and long-timers need different answers to the same question.",
+    title: "How long have you lived in the Pasadena area?",
+    help: "Your local experience helps Pando tailor answers and find the right parents to ask.",
     questions: [
       {
         id: "time_in_area",
@@ -417,29 +784,62 @@ export const SCREENS: Screen[] = [
         relevance: "tenure",
       },
       {
-        id: "moved_from",
-        label: "Where did you move from?",
+        id: "grew_up_here",
+        label: "Local roots",
+        /* Single, and the one option toggles — which is what a checkbox is. */
         kind: "single",
-        source: { type: "static", options: MOVED_FROM },
+        source: { type: "static", options: GREW_UP_HERE },
+        relevance: "tenure",
+      },
+      {
+        id: "previous_places",
+        label: "Where have you lived before?",
+        kind: "multi",
+        /* Search-only: this category has no starter set, so the chips are absent
+           and the search box is the whole control. */
+        source: { type: "market", category: "previous_places" },
+        /* Their own answer if Pando does not have the place — her instruction:
+           "Users can add a missing location." It lands in `pending_options` for
+           an admin, exactly like a school. */
         allowOther: true,
-        otherLabel: "Say where",
-        /** Transplant parents love finding each other — but only ask the new ones. */
-        when: (answers) =>
-          answers.time_in_area === "under_year" || answers.time_in_area === "1_3_years",
+        otherLabel: "Optional — anywhere that's part of your experience",
       },
     ],
   },
   {
     id: "family_structure",
     eyebrow: "Life context",
-    title: "Your family structure",
-    help: "Tap all that apply. This is how a solo parent gets answers from parents who understand solo logistics.",
+    title: "Your parenting setup",
+    help: "This helps Pando find parents who understand your family’s day-to-day. Select all that apply.",
     questions: [
       {
         id: "family_structure",
         label: "Family",
         kind: "multi",
-        source: { type: "static", options: FAMILY_STRUCTURE },
+        source: { type: "static", options: PARENTING_SETUP },
+        relevance: "family_setup",
+        /* "Something else" is an option in her list now, so the free-text
+           fallback is what it opens rather than a second route to the same
+           idea. */
+        allowOther: true,
+        otherLabel: "Something else",
+      },
+    ],
+  },
+  {
+    /* Item 12, second screen. Same `family_setup` dimension as the one above —
+       the split is about what a parent is asked, not about how it is stored, so
+       nothing downstream and no migration. */
+    id: "work_setup",
+    eyebrow: "Life context",
+    title: "Your family’s work setup",
+    help: "This helps Pando tailor answers to your schedule and logistics. Select all that apply.",
+    questions: [
+      {
+        id: "work_setup",
+        label: "Work",
+        kind: "multi",
+        source: { type: "static", options: WORK_SETUP },
         relevance: "family_setup",
         allowOther: true,
         otherLabel: "Something else",
@@ -447,46 +847,107 @@ export const SCREENS: Screen[] = [
     ],
   },
   {
+    /**
+     * Item 13, first screen: the *regular* arrangement.
+     *
+     * `perChild` because siblings genuinely differ — a toddler in daycare and a
+     * nine-year-old in an after-school programme is one household with two
+     * answers, and the old single household answer could not say that. The client
+     * asked whether to repeat the question per child or offer "same for all
+     * kids"; this keeps the developer's existing shape (one list, each selection
+     * attributed to the children it belongs to) rather than adding a screen per
+     * child, which is the same decision taken on 13 Aug for schools.
+     *
+     * No `perChildLimit` — unlike a school, a child can genuinely have several
+     * arrangements at once (preschool in the morning, a sitter after).
+     */
     id: "childcare_now",
     eyebrow: "Life context",
-    title: "Your current childcare",
-    help: "Tap all that apply. It changes which recommendations are realistic for you.",
+    title: "Your child’s current care",
+    help: "This helps Pando make recommendations that work for your family. Select all that apply.",
     questions: [
       {
         id: "childcare_now",
-        label: "Childcare now",
+        label: "Regular care",
         kind: "multi",
-        source: { type: "static", options: CHILDCARE_NOW },
+        source: { type: "static", options: CHILDCARE_REGULAR },
         relevance: "childcare",
+        perChild: true,
+        allowOther: true,
+        otherLabel: "Something else",
       },
     ],
   },
   {
+    /* Item 13, second screen. Asked once, at household level: a grandmother who
+       can come over covers every child, so attributing it per child would be
+       inventing a distinction the parent did not make. */
+    id: "childcare_backup",
+    eyebrow: "Life context",
+    title: "Your backup childcare",
+    help: "What can you usually rely on when regular childcare falls through?",
+    questions: [
+      {
+        id: "childcare_backup",
+        label: "Backup",
+        kind: "multi",
+        source: { type: "static", options: CHILDCARE_BACKUP },
+        relevance: "childcare",
+        allowOther: true,
+        otherLabel: "Something else",
+      },
+    ],
+  },
+  {
+    /**
+     * Item 14. Her layout keeps both questions on one screen with two headings,
+     * which is right: distance is a threshold and the rest are preferences, and
+     * reading them together is how a parent decides. Splitting them into two
+     * screens would separate a question from its own context.
+     */
     id: "logistics",
     eyebrow: "Life context",
-    title: "When you're picking classes, camps or care — what makes something actually work for your family?",
-    help: "Tap as many as apply.",
+    title: "What makes an option work for your family?",
+    help: "Tell Pando what matters when comparing classes, camps or childcare.",
     questions: [
+      {
+        id: "travel_time",
+        label: "Usual travel time",
+        kind: "single",
+        source: { type: "static", options: TRAVEL_TIME },
+        relevance: "logistics",
+      },
       {
         id: "logistics",
         label: "Logistics",
         kind: "multi",
-        source: { type: "static", options: LOGISTICS },
+        source: { type: "static", options: PRACTICAL_PRIORITIES },
         relevance: "logistics",
+        /* Her number. Three is what makes this a priority list rather than a
+           description of everything a parent would like. */
+        maxSelections: 3,
+        allowOther: true,
+        otherLabel: "Something else",
       },
     ],
   },
   {
     id: "budget",
-    eyebrow: "Life context",
-    title: "Which of these usually describe you?",
-    help: "So “worth it” means the same thing to both of you. Pando never asks about income.",
+    /* Her point, and it is a real one: this is a recommendation *preference*, not
+       life context. "Which describes you?" also made a spending preference sound
+       like a personal identity, which is why the title is now about Pando's
+       behaviour rather than about the parent. */
+    eyebrow: "Preferences",
+    title: "How should Pando weigh cost?",
+    help: "Choose the approach you’d usually like Pando to take. You can change it for any specific question.",
     questions: [
       {
         id: "budget",
-        label: "How you choose",
-        kind: "multi",
-        source: { type: "static", options: HOW_YOU_CHOOSE },
+        label: "Cost preference",
+        /* Single, not multi — see COST_PREFERENCE. A default instruction cannot
+           be five simultaneous answers. */
+        kind: "single",
+        source: { type: "static", options: COST_PREFERENCE },
         relevance: "budget",
       },
     ],
@@ -494,52 +955,124 @@ export const SCREENS: Screen[] = [
   {
     id: "trust_circles",
     eyebrow: "Trust",
-    title: "Whose answers would you trust most?",
-    /* The client's exact framing: this ranks, it never filters. */
-    help: "Pando weighs these first — and always finds the best available match. Tap all that apply.",
+    /**
+     * Item 16, and the help text is the correction. The old line said Pando
+     * weighs these *first*, which was wrong and was the client's main objection:
+     * relevant, firsthand, recent-enough experience always comes first, and these
+     * only choose between parents who are already relevant.
+     */
+    title: "What should Pando prioritize?",
+    help: "Relevant firsthand experience always comes first. Choose up to three other things that matter to you.",
     questions: [
       {
         id: "trust_circles",
         label: "Trust circles",
         kind: "multi",
         source: { type: "static", options: TRUST_CIRCLES },
+        maxSelections: 3,
         relevance: "trust_circle",
       },
     ],
   },
   {
+    /**
+     * Item 17, first of two. The client's judgement was that one screen holding
+     * both clusters is too dense, and that two screens probably do not cost time
+     * because each is clearer — so they are split.
+     *
+     * They are also two different **routing** categories, which is the reason
+     * that outlives the density argument: local knowledge and lived parenting
+     * experience are asked for differently, and the opt-out has to be per
+     * category. Declining local questions must not silently decline the
+     * emotional ones.
+     */
     id: "topics",
     eyebrow: "What you know",
-    title: "What kinds of parent questions would you be comfortable helping with?",
-    help: "Lived experience, not expertise — and you decide per question whether to answer. Tap as many as you like.",
+    title: "What local questions could you help with?",
+    help: "Choose anything you have firsthand experience with. You’ll always decide whether to answer.",
     questions: [
       {
         id: "topics",
-        label: "Local",
         kind: "multi",
         source: { type: "static", options: TOPICS_LOCAL },
       },
+    ],
+  },
+  {
+    /* Item 17, second of two. "Comfortable sharing" rather than "could help
+       with": this list is about experience a parent lived, and the wording should
+       not imply they are offering advice. */
+    id: "topics_lived",
+    eyebrow: "What you know",
+    title: "Which parenting experiences would you be comfortable sharing?",
+    help: "Choose anything you’d be open to being asked about. You can decline every request.",
+    questions: [
       {
         id: "topics_lived",
-        label: "Lived experience",
         kind: "multi",
         source: { type: "static", options: TOPICS_LIVED },
       },
     ],
   },
   {
+    /* "Ordinary recommendations" meant nothing to a parent — her word. The
+       question is what credit they get, so that is what the title asks. */
     id: "attribution",
     eyebrow: "Privacy",
-    title: "How may Pando describe your ordinary recommendations?",
-    help: "Pando never combines your name with details — a small group, a rare circumstance — that would give you away.",
+    title: "How should Pando credit your recommendations?",
+    help: "Choose a default. You’ll see it and can change it each time before your recommendation is shared.",
     questions: [
       {
         id: "attribution",
-        label: "How you're described",
+        label: "Your name",
         kind: "single",
         source: { type: "static", options: ATTRIBUTION },
       },
+      {
+        id: "shared_connections",
+        label: "Shared connections",
+        kind: "single",
+        source: { type: "static", options: SHARED_CONNECTIONS },
+      },
     ],
+  },
+  {
+    /**
+     * Privacy Guidance §A — one decision per connection.
+     *
+     * **Only asked when the master switch above is on.** A parent who said "don't
+     * mention my connections" has answered this screen already, and asking which
+     * ones anyway would be asking them to repeat themselves in more detail.
+     *
+     * **Nothing here is pre-selected**, and that is the consent model rather than
+     * a default: §A says new affiliations default to `private`, the privacy
+     * explainer changes nothing, and "Continue" is not consent — only the toggle
+     * is. So skipping this screen grants exactly nothing, which is why it needs
+     * no "none of them" option.
+     */
+    id: "connection_visibility",
+    eyebrow: "Privacy",
+    title: "Which connections may Pando mention?",
+    help: AFFILIATION_CONSENT_TEXT,
+    questions: [
+      {
+        id: "shared_affiliations",
+        kind: "multi",
+        source: { type: "affiliations" },
+      },
+    ],
+    /* Her caveat, immediately underneath and never as a tooltip: the one thing
+       this control cannot promise. */
+    footnote: AFFILIATION_CONSENT_CAVEAT,
+    /* Nothing to decide if they named no connections at all. */
+    when: (answers) =>
+      answers.shared_connections === "share_connection" &&
+      answers.schools.length +
+        answers.classes.length +
+        answers.camps.length +
+        answers.clubs.length +
+        answers.faith.length >
+        0,
   },
   {
     id: "promise",
@@ -593,27 +1126,56 @@ export const SCREENS: Screen[] = [
 ];
 
 /** Questions whose chip lists are sensitive enough to always offer an out. */
-const SENSITIVE: QuestionId[] = ["faith", "clubs"];
-
-const PREFER_NOT: Option = {
-  id: "prefer_not_to_say",
-  label: "None / prefer not to say",
-  exclusive: true,
+/**
+ * The options the client requires on each of the four searchable questions, over
+ * and above the records in the directory ("Required special options" on all four
+ * of her 24 Aug sheets).
+ *
+ * These are not data and never could be: no directory contains "Homeschool" or
+ * "Not doing any yet", and the taxonomy importer strips rows she marked
+ * `Special option` for exactly that reason. They belong to the question.
+ *
+ * **"None" and "Prefer not to say" are two options, not one.** They were a single
+ * chip reading "None / prefer not to say", which conflates a fact with a refusal:
+ * a family in no clubs at all is a useful thing to know, and a family declining
+ * to say is not the same answer. She lists them separately on both sheets that
+ * have them, and matching should never treat the second as the first.
+ *
+ * Both are `exclusive`, so either clears the named selections — and selecting a
+ * named community clears them back, which `ChipGroup` already does.
+ */
+const SPECIAL_OPTIONS: Partial<Record<QuestionId, Option[]>> = {
+  schools: [
+    /* Her list. A homeschooling family had nothing to select: "Homeschool"
+       existed only as a per-school *status*, which cannot apply to a school they
+       do not attend. */
+    { id: "homeschool", label: "Homeschool", exclusive: true, wide: true },
+    {
+      id: "not_in_school_yet",
+      label: "Not in school or daycare yet",
+      exclusive: true,
+      wide: true,
+    },
+  ],
+  classes: [
+    { id: "not_doing_any_yet", label: "Not doing any yet", exclusive: true, wide: true },
+  ],
+  clubs: [
+    { id: "none", label: "None", exclusive: true },
+    { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
+  ],
+  faith: [
+    { id: "none", label: "None", exclusive: true },
+    { id: "prefer_not_to_say", label: "Prefer not to say", exclusive: true },
+  ],
 };
 
 export function ageBandsOf(ages: number[]): AgeBand[] {
+  /* The boundaries live in `lib/age-bands.ts` — one definition, because the
+     matching side needs the same ladder from birth years, and a second copy here
+     would drift the first time either was edited. */
   const bands = new Set<AgeBand>();
-  for (const age of ages) {
-    if (age === EXPECTING) {
-      bands.add("expecting");
-      bands.add("baby");
-    } else if (age < 1) bands.add("baby");
-    else if (age < 3) bands.add("toddler");
-    else if (age < 5) bands.add("preschool");
-    else if (age < 11) bands.add("grade");
-    else if (age < 14) bands.add("tween");
-    else bands.add("teen");
-  }
+  for (const age of ages) for (const band of bandsForAge(age)) bands.add(band);
   return [...bands];
 }
 
@@ -643,9 +1205,13 @@ export function visibleQuestions(
 
 /** A screen disappears if child age hid every question on it. */
 export function visibleScreens(answers: ProfileAnswers): Screen[] {
-  return SCREENS.filter(
-    (s) => isStatementScreen(s) || visibleQuestions(s, answers).length > 0,
-  );
+  return SCREENS.filter((s) => {
+    /* A screen-level gate, checked before anything else: the per-affiliation
+       privacy screen is only asked of a parent who said connections may be
+       mentioned at all, and only if they named any. */
+    if (s.when && !s.when(answers)) return false;
+    return isStatementScreen(s) || visibleQuestions(s, answers).length > 0;
+  });
 }
 
 export function optionsFor(
@@ -656,11 +1222,20 @@ export function optionsFor(
   const base =
     question.source.type === "static"
       ? question.source.options
-      : optionsForBands(
-          marketOptions(market, question.source.category),
-          ageBandsOf(answers.child_ages),
-        );
-  return SENSITIVE.includes(question.id) ? [...base, PREFER_NOT] : base;
+      : question.source.type === "affiliations"
+        ? /* The parent's own connections. No age banding and no "prefer not to
+             say": this is a list of *their* answers, and declining is what an
+             untoggled row already means. */
+          affiliationOptions(market, answers)
+        : optionsForBands(
+            marketOptions(market, question.source.category),
+            ageBandsOf(answers.child_ages),
+          );
+  /* Appended rather than merged into the directory, so they sit at the end of the
+     list where a refusal belongs — and so an importer can never introduce or
+     remove one. */
+  const special = SPECIAL_OPTIONS[question.id];
+  return special ? [...base, ...special] : base;
 }
 
 /**
@@ -688,8 +1263,14 @@ function rawSelectionsFor(
       return answers.time_in_area ? [answers.time_in_area] : [];
     case "moved_from":
       return answers.moved_from ? [answers.moved_from] : [];
+    case "grew_up_here":
+      return answers.grew_up_here ? [answers.grew_up_here] : [];
     case "attribution":
       return answers.attribution ? [answers.attribution] : [];
+    case "shared_connections":
+      return answers.shared_connections ? [answers.shared_connections] : [];
+    case "shared_affiliations":
+      return answers.shared_affiliations;
     case "allowance":
       return answers.allowance ? [answers.allowance] : [];
     case "listening_ear":
@@ -730,16 +1311,180 @@ export function childOptions(answers: ProfileAnswers): Option[] {
  * Undefined means no cap, which is every other question on the flow: parent
  * groups, logistics and the topic clusters take as many as genuinely apply.
  */
+/**
+ * The four questions that became searchable directories on 24 Aug, and the search
+ * label the client wrote for each.
+ *
+ * Keyed on the *question*, not the category, because the same category can be
+ * asked twice with different framing — and because the decision is about how many
+ * records exist behind it, which is a property of the market data rather than of
+ * the screen.
+ *
+ * A question not listed here keeps the plain chip list. That is deliberate for
+ * neighborhoods, camps and parent groups: all three are short enough to read
+ * whole, and none has a starter set curated, so a search box over them would
+ * find only what is already on screen.
+ */
+const SEARCHABLE_QUESTIONS: Partial<
+  Record<
+    QuestionId,
+    { category: MarketCategory; searchLabel: string; footnote?: string }
+  >
+> = {
+  schools: {
+    category: "schools",
+    searchLabel: "Search all schools, preschools and daycares",
+    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+  },
+  classes: {
+    category: "baby_activities",
+    searchLabel: "Search all activities and classes",
+    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+  },
+  clubs: {
+    category: "clubs",
+    searchLabel: "Search all private clubs and member organizations",
+    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+  },
+  faith: {
+    category: "worship",
+    searchLabel: "Search all faith communities and places of worship",
+    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+  },
+  neighborhood: {
+    category: "neighborhoods",
+    /**
+     * Item 5's autopopulate, in her words: *"we need a field for other, where
+     * they can type and it should autopopulate with other towns/neighborhoods."*
+     *
+     * Her seventeen cities are the taps; this reaches the rest — Pasadena's own
+     * neighbourhoods and the towns families cross into. Same mechanism as the
+     * schools, so the free-text sheet is no longer the only way out of a fixed
+     * list.
+     */
+    searchLabel: "Somewhere else? Search towns and neighborhoods",
+  },
+  previous_places: {
+    category: "previous_places",
+    /* Her label, and it is doing real work: it says what a valid answer looks
+       like (a city, a state, a country) for a field with no chips above it to
+       demonstrate the shape. */
+    searchLabel: "Add a city, state or country",
+  },
+};
+
+/**
+ * The parent's own named connections, as options they can grant one by one.
+ *
+ * Privacy Guidance §A: "Permission must be available separately for each
+ * affiliation. A parent may share their school but keep their golf club or faith
+ * community private."
+ *
+ * ## Which connections, and which deliberately not
+ *
+ * The five questions that produce a *named, shared place or group* — schools,
+ * classes, camps, clubs, faith communities. Her own copy on the privacy screen
+ * names the same set: "each school, club, faith community or other connection".
+ *
+ * **Neighborhood and child age are excluded on purpose.** Both are affinities and
+ * neither is a connection a sentence can name without narrowing the recommender:
+ * §F forbids exactly that combination — "A parent from the Oak Grove neighborhood
+ * who belongs to Valley Hunt recommends this" is the example she rules out. A
+ * neighborhood mention would also be a different product decision, not a finer
+ * grain of this one.
+ *
+ * The id is prefixed with the question it came from, because two different kinds
+ * of connection can share a slug and the grant has to name exactly one edge.
+ */
+const AFFILIATION_QUESTIONS: QuestionId[] = [
+  "schools",
+  "classes",
+  "camps",
+  "clubs",
+  "faith",
+];
+
+/** The heading each group sits under, in the parent's own terms. */
+const AFFILIATION_SECTION: Partial<Record<QuestionId, string>> = {
+  schools: "Schools & preschools",
+  classes: "Classes & activities",
+  camps: "Camps",
+  clubs: "Clubs & leagues",
+  faith: "Faith communities",
+};
+
+export function affiliationOptions(
+  market: MarketId,
+  answers: ProfileAnswers,
+): Option[] {
+  const out: Option[] = [];
+
+  for (const screen of SCREENS) {
+    for (const question of screen.questions) {
+      if (!AFFILIATION_QUESTIONS.includes(question.id)) continue;
+
+      const chosen = selectionsFor(question, answers);
+      for (const optionId of chosen) {
+        out.push({
+          id: `${question.id}:${optionId}`,
+          label: labelForOption(question, market, answers, optionId),
+          section: AFFILIATION_SECTION[question.id],
+          /* Long names — "All Souls World Language Catholic School" — and this
+             screen is a list of decisions rather than a grid of taps. */
+          wide: true,
+        });
+      }
+
+      /**
+       * **Typed connections are deliberately not offered here.**
+       *
+       * The first cut listed them, and two things were wrong with it. A typed
+       * answer is unmatchable until an admin promotes it (invariant 9), so there
+       * is nothing for the permission to act on — the toggle would be a decision
+       * with no effect, which is the kind of control this codebase keeps deleting
+       * elsewhere. And the grant is keyed on `affiliation_value` so it names one
+       * edge in the graph; free text has no edge, so the row could never be
+       * joined to anything.
+       *
+       * The parent is not losing the choice, only its timing: once an admin
+       * promotes the answer it becomes a canonical connection like any other, and
+       * the standing default applies — private until they say otherwise.
+       */
+    }
+  }
+
+  return out;
+}
+
+export function searchableCategory(
+  question: Question,
+): { category: MarketCategory; searchLabel: string; footnote?: string } | null {
+  /* Only a market-sourced question can be searched — a static list has nothing
+     behind it to find. */
+  if (question.source.type !== "market") return null;
+  return SEARCHABLE_QUESTIONS[question.id] ?? null;
+}
+
 export function maxSelectionsFor(
   question: Question,
   answers: ProfileAnswers,
 ): number | undefined {
+  /* A flat ceiling, for a question that is a ranking instruction: three trust
+     circles, three practical priorities (24 Aug). Checked first because it does
+     not depend on the family — and a question could in principle carry both, in
+     which case the tighter one has to win. */
+  if (question.maxSelections !== undefined && !question.perChild) {
+    return question.maxSelections;
+  }
   if (!question.perChild) return undefined;
   const children = new Set(answers.child_ages).size;
   /* No cap before P4 is answered. It is required, so this is the corrupted-session
      case — and a screen that refuses every tap is worse than an uncapped one. */
   if (children === 0) return undefined;
-  return children * (question.perChildLimit ?? 1);
+  const perChild = children * (question.perChildLimit ?? 1);
+  return question.maxSelections !== undefined
+    ? Math.min(perChild, question.maxSelections)
+    : perChild;
 }
 
 /**
@@ -755,6 +1500,13 @@ export function maxSelectionHint(
 ): string | undefined {
   const max = maxSelectionsFor(question, answers);
   if (max === undefined) return undefined;
+
+  /* A flat cap has nothing to do with how many children there are, so it gets
+     its own sentence — "one for each of your 2 kids" beside a cap of three
+     would be describing a different rule. */
+  if (!question.perChild) {
+    return `Up to ${max}. Tap one off to choose a different one.`;
+  }
 
   const kids = new Set(answers.child_ages).size;
   const each = question.perChildLimit ?? 1;
@@ -867,14 +1619,18 @@ const PROFILE_VALUE_LABELS: Record<string, string> = Object.fromEntries(
   [
     TIME_IN_AREA,
     MOVED_FROM,
-    HOW_YOU_CHOOSE,
-    LOGISTICS,
-    FAMILY_STRUCTURE,
-    CHILDCARE_NOW,
+    COST_PREFERENCE,
+    TRAVEL_TIME,
+    PRACTICAL_PRIORITIES,
+    PARENTING_SETUP,
+    WORK_SETUP,
+    CHILDCARE_REGULAR,
+    CHILDCARE_BACKUP,
     TRUST_CIRCLES,
     TOPICS_LOCAL,
     TOPICS_LIVED,
     ATTRIBUTION,
+    SHARED_CONNECTIONS,
     SCHOOL_STATUS,
   ]
     .flat()

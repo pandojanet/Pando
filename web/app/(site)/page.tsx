@@ -289,7 +289,7 @@ export default function HomePage() {
                     rest: "— founding contributions are rewarded, and inviting parents who join in earns you free Network Asks for when your neighborhood goes live.",
                   },
                   {
-                    lead: "Founding status, permanently",
+                    lead: "Founding Status, permanently",
                     rest: "— priority for your own questions and first access as Pando grows.",
                   },
                   {

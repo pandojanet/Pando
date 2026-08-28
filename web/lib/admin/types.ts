@@ -24,7 +24,59 @@ export type AdminResource =
   | "founding"
   | "invites"
   | "consents"
+  | "matching"
   | "audit";
+
+/**
+ * 6.7 — the matching harness.
+ *
+ * The estimate's reason for it, verbatim: "so matching quality can be validated
+ * before any live outreach … the cheap way to de-risk matching early without
+ * building a consumer web channel". So the shape is built for *reading a
+ * ranking*, not for acting on one — there is no write action, and there is
+ * deliberately no way to send anything from this page.
+ */
+export interface MatchCandidateRow {
+  person_id: string;
+  name: string | null;
+  neighborhood: string | null;
+  phone_masked: string | null;
+  score: number;
+  affinity: number;
+  relevance: number;
+  /** Every contribution to the score, so a ranking can be argued with. */
+  reasons: Array<{ kind: string; value: string; points: number }>;
+  approved_contributions: number;
+}
+
+export interface MatchingResult {
+  /** Null when the id was not a person, or when there is no database. */
+  asker: {
+    person_id: string;
+    name: string | null;
+    neighborhood: string | null;
+    child_birth_years: number[];
+    edges: number;
+    relevance: number;
+  } | null;
+  /** Who could be asked, best first. */
+  ranked: MatchCandidateRow[];
+  /** 6.6 — reported rather than left to be inferred from a short list. */
+  cold: boolean;
+  wanted: number;
+  found: number;
+  /**
+   * The weights the run used, from `affinity_weights` at query time.
+   *
+   * On screen on purpose: the harness exists to answer "did my weight change do
+   * anything", and that question is unanswerable if the page does not say what it
+   * scored with.
+   */
+  weights: Array<{ affinity_type: string; weight: number }>;
+  adjacency_pairs: number;
+  /** Contributors to choose between, so the page needs no second request. */
+  people: Array<{ person_id: string; name: string | null; neighborhood: string | null }>;
+}
 
 /** Where a record came from. A parent-trust label is only ever allowed on the first. */
 export type Provenance = "parent_submitted" | "admin_entered" | "migrated";
@@ -165,6 +217,23 @@ export interface ContributorDetail extends ContributorRow {
     weight: number | null;
   }>;
   relevance: Array<{ dimension: string; value: string }>;
+  /**
+   * Privacy Guidance §A — which of their connections may be mentioned, one
+   * decision each.
+   *
+   * Revoked rows are included on purpose. The question this record answers is
+   * "what was allowed, and when", and a permission that has been withdrawn is
+   * part of that answer — §G asks for the effective time of the change rather
+   * than for the row to disappear.
+   */
+  affiliation_visibility: Array<{
+    affiliation_type: string;
+    affiliation_value: string;
+    visibility: string;
+    consent_text_version: string | null;
+    consented_at: string | null;
+    revoked_at: string | null;
+  }>;
   cards: Array<{
     id: string;
     kind: "activity" | "caregiver" | "place" | "tip";
@@ -608,6 +677,17 @@ export interface InviteRow {
   active: boolean;
   note: string | null;
   /** Everyone who arrived on this code. */
+  /**
+   * How many times the link was opened — estimate 2.2's per-link funnel needs a
+   * denominator, or "four contributors" cannot be read as good or bad.
+   *
+   * Not a headcount: it counts server renders of the join page, so it includes
+   * bots, link previews and a parent reopening the link. De-duplicating would
+   * need an identifier before consent, and nothing about a person may be stored
+   * before their number is verified (invariant 11). The inflation is roughly
+   * uniform across channels, which is what makes comparing them usable.
+   */
+  opens: number;
   contributors: number;
   /** Of those, how many gave at least one approved contribution. */
   delivered: number;

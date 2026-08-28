@@ -250,6 +250,35 @@ export default function AdminOverviewPage() {
             </Card>
           </div>
 
+          {/**
+            * What parents agreed to — two counts the estimate names (2.2:
+            * "reference-willing and opt-in counts") and which were queried,
+            * serialised and sent to this page for weeks without ever being
+            * rendered. Dead payload on the one screen whose job is to say where
+            * the pilot stands.
+            *
+            * They belong together and apart from the rest: both are permissions
+            * rather than volumes, and both are what makes Phase 2 possible at
+            * all — a network of contributions nobody agreed to be asked about
+            * cannot answer a question.
+            */}
+          <Card title="What parents agreed to">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-[14px]">
+              <Count
+                label="Open to a follow-up question"
+                n={o.consent.follow_up_opt_in}
+              />
+              <Count
+                label="Willing to be a reference"
+                n={o.consent.reference_willing}
+              />
+            </dl>
+            <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] leading-relaxed text-muted">
+              A reference is the <em>parent</em> vouching for a caregiver they
+              employed — never the caregiver agreeing to anything.
+            </p>
+          </Card>
+
           {/* The funnel, only when there is one. It used to render as an empty
               card with a line about PostHog under it, which is a card that says
               nothing occupying half the screen. */}

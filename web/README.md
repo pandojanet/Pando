@@ -39,7 +39,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/privacy`               | Privacy policy.                                                             |
 | `/terms`                 | Text messaging terms.                                                       |
 | `/join?i=<code>&src=qr`  | Invite landing. Validates the shared code server-side; optional name/phone. |
-| `/profile`               | The tap-first profile (P3–P14, 15 screens in the client's order) + review.   |
+| `/profile`               | The tap-first profile + review. **20 screens since the 24 Aug feedback round** (was 16): family/work, regular/backup childcare, travel/priorities and local/lived topics each split in two. |
 | `/share`                 | Chat-seeding: share menu, capture cards, add-another loop.                  |
 | `/done`                  | 1.7 screen 1 of 3 — badge, thank-you, what they shared. Tells only.          |
 | `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
@@ -69,7 +69,8 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/admin/action` | One write endpoint → `admin-write.ts`; the audit row is written in the same transaction as the change. |
 | `POST /api/admin/password` | A signed-in admin changes their **own** password. Needs the current one; re-issues the cookie, because rotating a hash retires the old session. |
 | `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
-| `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. |
+| `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. **Since 24 Aug it serves only the curated starters** for schools, activities, clubs and faith — those four are directories of hundreds now, not chip lists. |
+| `GET /api/market/search` | The other half of "tap first, search second": alias- and typo-tolerant search across one category. Home area ranks, never filters. A closed record stays findable, because a former pupil's affiliation is real. |
 
 Flow: `/join` → profile → review → **confirm the number** → **chat** → done. A
 parent can leave at any point and pick up where they left off on the same phone.
@@ -101,6 +102,7 @@ forwarded around parent group chats still land in the right place.
 | `lib/demand.ts`         | D1 routing, including the named-allegation class the Strategy paper adds. |
 | `lib/consent.ts` · `lib/sms-templates.ts` | Consent wording + registered SMS copy, both versioned. |
 | `lib/phone.ts`          | The only thing that decides which country a number is (US or UA) and the only thing that produces E.164. Held to `npm run test:phone`. |
+| `lib/affiliations.ts`   | A privacy grant (`schools:walden-school`) → the graph edge it names (`school`/`walden-school`). Imported by both the screen and the repo — a second copy is how a permission gets filed under a word nothing reads. |
 | `lib/admin/labels.ts`   | Every stored id → the sentence an admin reads. One file, because the same `review_status` shows on four pages. |
 | `lib/caregiver-flow.ts` · `lib/caregiver-options.ts` | 2C's questions, and the option lists both caregiver surfaces share. |
 | `lib/derive.ts`         | Answers → `social_affinities` / `life_relevance` / `pending_options`.     |
@@ -241,11 +243,15 @@ has the setup walkthrough.
 | `npm run migrate` | Applies `drizzle/*.sql`. Safe to re-run — already-applied files are skipped. |
 | `npm run seed` | Loads `../supabase/seed.sql`: affinity weights, freshness policy, the placeholder taxonomy. |
 | `npm run seed:demo` | A realistic Pasadena founding cohort, so no admin page is empty in front of the client. `-- --clear` removes exactly it. Not `is_test` — see the decision in `../CLAUDE.md`. |
+| `npm run seed:places` | The 182 canonical previous places item 11 searches. Refuses the batch if any id could be misclassified. |
+| `npm run taxonomy:import -- "Seed Master Data List - .xlsx"` | Janet 24 Aug master workbook: 357 schools, 96 activities, 84 faith communities, 39 clubs, with aliases and her curated starter sets. Reads the xlsx directly; prints a diff and needs `--commit`. |
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 239 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 271 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
+| `npm run test:confirm` | 9 checks on estimate 1.8&apos;s confirm-back trigger — mostly about when *not* to ask. |
+| `npm run test:derive` | 21 checks on `lib/places.ts`: a previous place → the coarse tenure signal, including every country/state code collision in both directions. |
 | `npm run test:phone` | 35 checks on `lib/phone.ts`: the US/Ukraine disambiguation, the near-collisions, idempotence and the masks. |
 
 The write paths, and what each guarantees atomically:
@@ -330,7 +336,7 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (239 checks, needs a dev server and a database),
+Tests: `npm run test:e2e` (271 checks, needs a dev server and a database),
 `npm run test:auth` (45), `npm run test:phone` (35), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at

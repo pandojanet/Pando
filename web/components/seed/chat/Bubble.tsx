@@ -62,9 +62,19 @@ export function Bubble({
   );
 }
 
+/**
+ * Purely visual.
+ *
+ * This used to carry `aria-live="polite"` and `aria-label="Pando is typing"`,
+ * which reads as the right thing and does not work: a live region has to be in
+ * the document *before* its content changes, and this one mounts together with
+ * the only content it will ever have. The announcement it was meant to make now
+ * comes from the stable region in `ChatSeeding`, which is always present and
+ * carries what Pando actually said — so the dots are decoration.
+ */
 export function TypingDots() {
   return (
-    <div className="flex animate-fade justify-start" aria-live="polite" aria-label="Pando is typing">
+    <div className="flex animate-fade justify-start" aria-hidden="true">
       <div className="rounded-3xl rounded-bl-lg border border-bark bg-card px-4 py-3">
         <span className="flex items-center gap-1">
           {[0, 1, 2].map((i) => (

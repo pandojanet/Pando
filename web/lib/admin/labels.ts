@@ -379,6 +379,20 @@ export const AUDIT_FIELD: Record<string, string> = {
 };
 
 /**
+ * What kind of connection an affiliation is, for the per-affiliation privacy
+ * card. The stored words are the graph's (`social_group`, `faith_community`);
+ * these are what a parent would call them.
+ */
+export const AFFILIATION_KIND: Record<string, string> = {
+  school: "school or preschool",
+  activity: "class, activity or camp",
+  social_group: "club or group",
+  faith_community: "faith community",
+  neighborhood: "neighborhood",
+  age_range: "children of a similar age",
+};
+
+/**
  * A readable fallback for an id nothing above names.
  *
  * Deliberately not `slugLabel`, which title-cases every word and produces
@@ -388,4 +402,51 @@ export const AUDIT_FIELD: Record<string, string> = {
 export function sentence(value: string): string {
   const words = value.replace(/[-_]/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Why one contributor came out where they did (6.7).
+ *
+ * The scorer's `reasons` carry stored ids — `social_group`,
+ * `adjacent_neighborhood`, `age_range_near`, `relevance:tenure` — and the
+ * harness exists to be *argued with*, which nobody can do against a column of
+ * slugs. Same rule as everything else here: the words live in one file, and no
+ * page writes its own.
+ *
+ * `age_range_near` is its own entry rather than a variant of `age_range`,
+ * because "nearly the same stage" is the thing a reader most needs to see
+ * distinguished — it is worth half, and a shared label would hide that.
+ */
+const MATCH_REASON: Record<string, string> = {
+  school: "Same school",
+  activity: "Same class or activity",
+  faith_community: "Same faith community",
+  neighborhood: "Same area",
+  adjacent_neighborhood: "Next-door area",
+  social_group: "Same club or group",
+  age_range: "Children the same stage",
+  age_range_near: "Children a stage apart",
+};
+
+const RELEVANCE_DIMENSION: Record<string, string> = {
+  budget: "Similar spending posture",
+  logistics: "Similar practical constraints",
+  family_setup: "Similar family setup",
+  childcare: "Similar childcare setup",
+  tenure: "Here about as long",
+  trust_circle: "Wants the same kind of match",
+};
+
+/** One reason from a match score → the sentence an admin reads. */
+export function matchReason(kind: string): string {
+  if (kind.startsWith("relevance:")) {
+    const dimension = kind.slice("relevance:".length);
+    return RELEVANCE_DIMENSION[dimension] ?? sentence(dimension);
+  }
+  return MATCH_REASON[kind] ?? sentence(kind);
+}
+
+/** An `affinity_weights` row → what that weight is for. */
+export function affinityLabel(type: string): string {
+  return MATCH_REASON[type] ?? sentence(type);
 }

@@ -1,9 +1,12 @@
+import { resolveAffiliations } from "@/lib/affiliations";
+import { AFFILIATION_CONSENT_TEXT_VERSION } from "@/lib/consent";
 import "server-only";
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import {
   children,
+  affiliationVisibility,
   consents,
   lifeRelevance,
   pendingOptions,
@@ -72,7 +75,20 @@ export interface ProfileInput {
   /** 18 Aug — willingness to occasionally answer another parent's hard question. */
   listening_ear_consent: { status: string; text_version: string; source?: string } | null;
   wants_founding: boolean;
-  neighborhood: string;
+  /**
+   * Null when the parent **typed** their neighborhood instead of tapping one.
+   *
+   * The column is nullable and stays null on purpose: their words are not a
+   * taxonomy value, and storing them here would be the unmatchable state that
+   * admin promotion exists to end (invariant 9). The text travels in
+   * `pending_options` instead, and promoting it writes the affinity row for
+   * everyone who typed it.
+   *
+   * This was `string` while the route refused any profile without a canonical
+   * id — which is what made a typed neighborhood cost a founding contributor
+   * their entire completed session.
+   */
+  neighborhood: string | null;
   children: ChildInput[];
   child_ages_at_capture: number[];
   profile_captured_at: string;
@@ -87,6 +103,12 @@ export interface ProfileInput {
   moved_from: string | null;
   invited_via_group: string | null;
   answers: unknown;
+  /**
+   * Privacy Guidance §A: the connections the parent has said may be mentioned,
+   * as `type:value` refs. **Absence is a revocation, not a no-op** — see the
+   * write below.
+   */
+  shared_affiliations: string[];
   social_affinities: AffinityInput[];
   life_relevance: RelevanceInput[];
   pending_options: PendingOptionInput[];
@@ -226,6 +248,83 @@ export async function writeProfile(
         })),
       );
     }
+
+    /**
+     * Per-affiliation visibility (Privacy Guidance §A) — and the **one derived
+     * table here that is not deleted and rewritten.**
+     *
+     * Everything above is a computed fact, so re-deriving it is free. This is a
+     * recorded consent carrying the wording version and the moment it was given,
+     * and §I asks that an attributed statement be reconstructable from its
+     * supporting records. Rewriting the row on every save would reset
+     * `consented_at` to whenever the parent last edited anything, which makes
+     * that impossible.
+     *
+     * So three cases, and the third is the one a delete-and-rewrite would lose:
+     *
+     *  1. **Newly granted** — insert as `shared_anonymously`, stamped now.
+     *  2. **Still granted** — leave it entirely. Not even a touched timestamp:
+     *     the parent decided once, and re-confirming it is not a new decision.
+     *  3. **No longer granted** — a **revocation**. Back to `private` with
+     *     `revoked_at = now()`, because §G says to record the effective time of
+     *     the change rather than quietly stop honouring it.
+     */
+    const granted = resolveAffiliations(input.shared_affiliations);
+
+    if (granted.length > 0) {
+      await tx
+        .insert(affiliationVisibility)
+        .values(
+          granted.map((a) => ({
+            personId,
+            affiliationType: a.type,
+            affiliationValue: a.value,
+            visibility: "shared_anonymously",
+            consentTextVersion: AFFILIATION_CONSENT_TEXT_VERSION,
+            consentedAt: new Date(),
+          })),
+        )
+        /* Re-granting something already granted must not restamp it, so the
+           update only ever moves a row *into* the shared state. */
+        .onConflictDoUpdate({
+          target: [
+            affiliationVisibility.personId,
+            affiliationVisibility.affiliationType,
+            affiliationVisibility.affiliationValue,
+          ],
+          set: {
+            visibility: "shared_anonymously",
+            consentTextVersion: AFFILIATION_CONSENT_TEXT_VERSION,
+            consentedAt: sql`coalesce(${affiliationVisibility.consentedAt}, now())`,
+            /* Granting again after a revocation clears it: the row's state is
+               "shared", and the CHECK refuses a revoked row that is shareable. */
+            revokedAt: null,
+          },
+          setWhere: sql`${affiliationVisibility.visibility} <> 'shared_anonymously'`,
+        });
+    }
+
+    /* The revocation half. Written as one statement rather than a read-then-write
+       so a concurrent save cannot slip between them. */
+    const grantedValues = granted.map((a) => `${a.type}/${a.value}`);
+    await tx.execute(
+      sql`update affiliation_visibility
+             set visibility = 'private',
+                 revoked_at = now()
+           where person_id = ${personId}::uuid
+             and visibility = 'shared_anonymously'
+             and (affiliation_type || '/' || affiliation_value) <> all(
+               ${sql.raw(
+                 grantedValues.length > 0
+                   ? "ARRAY[" +
+                     grantedValues
+                       .map((v) => "'" + v.replace(/'/g, "''") + "'")
+                       .join(",") +
+                     "]::text[]"
+                   : "ARRAY[]::text[]",
+               )}
+             )`,
+    );
 
     await tx.delete(lifeRelevance).where(eq(lifeRelevance.personId, personId));
     const relevanceRows = dedupeRelevance(

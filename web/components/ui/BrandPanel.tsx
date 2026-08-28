@@ -128,7 +128,7 @@ const PANELS: Record<
     ),
     lead: "Pando answers from what parents like you put in. When your neighborhood goes live, that knowledge comes back to you first.",
     points: [
-      "Founding status is permanent — it never downgrades.",
+      "Founding Status is permanent — it never downgrades.",
       "A human reads every submission; messy answers get cleaned up, not guessed at.",
       "Caregivers are asked for consent before anyone sees them.",
     ],

@@ -9,6 +9,7 @@ import {
   ErrorNote,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   inputClass,
   when,
@@ -230,11 +231,7 @@ export default function FlagsPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
-      {message && (
-        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
-          {message}
-        </div>
-      )}
+      {message && <ResultNote>{message}</ResultNote>}
 
       <div className="space-y-5">
         <Card

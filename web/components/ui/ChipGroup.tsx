@@ -55,6 +55,27 @@ export function ChipGroup({
      out would make the cap trivially avoidable by the one path that produces the
      least matchable data. */
   const atMax = max !== undefined && selected.length + custom.length >= max;
+
+  /**
+   * Split into the options that carry a `section` and those that do not.
+   *
+   * Order is preserved rather than sorted: the taxonomy importer writes clubs in
+   * her order — private clubs first, then service leagues — and the two special
+   * options ("None", "Prefer not to say") carry no section, so they stay above
+   * the headings where a refusal reads as belonging to the whole question rather
+   * than to one group.
+   */
+  const ungrouped = options.filter((o) => !o.section);
+  const grouped = (() => {
+    const bySection = new Map<string, Option[]>();
+    for (const o of options) {
+      if (!o.section) continue;
+      const list = bySection.get(o.section) ?? [];
+      list.push(o);
+      bySection.set(o.section, list);
+    }
+    return [...bySection.entries()];
+  })();
   /* "None / prefer not to say" clears the group, so it can never take it over the
      limit — and refusing to answer must stay reachable at any count. */
   const blocked = (option: Option) =>
@@ -109,7 +130,7 @@ export function ChipGroup({
             : "flex flex-wrap gap-2",
         )}
       >
-        {options.map((option) => (
+        {ungrouped.map((option) => (
           <Chip
             key={option.id}
             label={option.label}
@@ -120,6 +141,39 @@ export function ChipGroup({
             disabled={blocked(option)}
             onToggle={() => toggle(option)}
           />
+        ))}
+
+        {/**
+          * Visible sections inside one question — the client's instruction for
+          * clubs (24 Aug): "Keep one multi-select question but separate the
+          * options into: (1) Private, recreational & social clubs; and (2)
+          * Service leagues & member organizations. These are both valid shared
+          * circles but should not be presented as the same kind of affiliation."
+          *
+          * Grouped here rather than by splitting the question, exactly as she
+          * asked: one answer, two headings. Options with no `section` render
+          * above, ungrouped, which is what keeps every other question unchanged.
+          */}
+        {grouped.map(([section, list]) => (
+          <div key={section} className="w-full">
+            <p className="mb-1.5 mt-1 text-[12px] font-semibold uppercase tracking-[0.09em] text-muted">
+              {section}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {list.map((option) => (
+                <Chip
+                  key={option.id}
+                  label={option.label}
+                  hint={option.hint}
+                  mode={mode}
+                  compact={layout === "grid"}
+                  selected={selected.includes(option.id)}
+                  disabled={blocked(option)}
+                  onToggle={() => toggle(option)}
+                />
+              ))}
+            </div>
+          </div>
         ))}
 
         {custom.map((value) => (

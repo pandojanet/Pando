@@ -112,6 +112,17 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         count: (o) => o.quality.pending_options,
       },
       {
+        /**
+         * 6.7. Under Records rather than "Waiting on you", and with **no count**:
+         * the nav's numbers mean "there is something here for you to clear" (10
+         * Aug), and this is a tool you open when you want it, not a queue that
+         * fills. A badge here would make the nav cry wolf.
+         */
+        href: "/admin/matching",
+        label: "Who Pando would ask",
+        hint: "Try a question against the real data: who Pando would go to, and why. Nothing is sent.",
+      },
+      {
         href: "/admin/audit",
         label: "Audit log",
         hint: "Who changed what, and when.",

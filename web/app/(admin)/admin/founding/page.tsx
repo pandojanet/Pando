@@ -9,6 +9,7 @@ import {
   ErrorNote,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   ageList,
   slugLabel,
@@ -76,11 +77,7 @@ export default function FoundingQueuePage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
-      {note && (
-        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
-          {note}
-        </div>
-      )}
+      {note && <ResultNote>{note}</ResultNote>}
 
       {loading && pending.length === 0 ? (
         <Card>

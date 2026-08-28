@@ -79,7 +79,7 @@ export function WhatsNext() {
             <Next
               n={count === 0 ? "5" : "4"}
               title="Pasadena goes live"
-              body="Founding parents get first access, permanent founding status, and their first Network Ask on us."
+              body="Founding parents get first access, permanent Founding Status, and their first Network Ask on us."
             />
           </ol>
 

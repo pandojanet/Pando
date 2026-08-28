@@ -1,9 +1,13 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
+import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
+import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import { Progress } from "@/components/ui/Progress";
 import {
   Eyebrow,
@@ -27,6 +31,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  searchableCategory,
   selectionsFor,
   statusLabel,
   visibleQuestions,
@@ -126,7 +131,15 @@ export function ProfileFlow() {
   const questions = visibleQuestions(screen, answers);
   const unlocked = canAdvance(screen, answers);
   const isLast = index === screens.length - 1;
-  const optionalScreen = questions.every((q) => !q.required);
+  /**
+   * `questions.every(…)` on an empty array is `true`, so the two screens that
+   * *state* rather than ask — the privacy explainer and the Pando promise — were
+   * offering a Skip. There is nothing on them to skip, and the client asked for
+   * it gone from the privacy one specifically (24 Aug, item 8). Continue is the
+   * only action a statement screen has.
+   */
+  const optionalScreen =
+    questions.length > 0 && questions.every((q) => !q.required);
 
   function setSelections(question: Question, next: string[]) {
     update((s) => {
@@ -146,8 +159,14 @@ export function ProfileFlow() {
         case "moved_from":
           a.moved_from = next[0] ?? null;
           break;
+        case "grew_up_here":
+          a.grew_up_here = next[0] ?? null;
+          break;
         case "attribution":
           a.attribution = next[0] ?? null;
+          break;
+        case "shared_connections":
+          a.shared_connections = next[0] ?? null;
           break;
         case "allowance":
           a.allowance = next[0] ?? null;
@@ -434,10 +453,12 @@ export function ProfileFlow() {
           />
 
           {saving && (
-            <p className="mt-4 text-[13.5px] text-muted">Saving your answers…</p>
+            <p role="status" className="mt-4 text-[13.5px] text-muted">
+              Saving your answers…
+            </p>
           )}
           {saveError && (
-            <p className="mt-4 text-[13.5px] font-medium text-alert">{saveError}</p>
+            <Note className="mt-4">{saveError}</Note>
           )}
         </ScreenBody>
       </Screen>
@@ -538,9 +559,7 @@ export function ProfileFlow() {
         </ScreenBody>
         <ScreenDock>
           {saveError && (
-            <p className="mb-3 animate-rise rounded-2xl border border-gold-line bg-gold-wash p-3 text-[14px] font-medium text-gold-ink">
-              {saveError}
-            </p>
+            <Note className="mb-3">{saveError}</Note>
           )}
           <Button full onClick={() => void save()} disabled={saving}>
             {saving ? "Saving…" : "Save my profile"}
@@ -608,6 +627,37 @@ export function ProfileFlow() {
                   {paragraph}
                 </p>
               ))}
+              {/* Quoted, indented and in the reading face: these are sentences
+                  another parent would actually receive, and the whole point of
+                  showing them is that they read as a message rather than as our
+                  description of one. */}
+              {screen.statement.examples && (
+                <ul className="mt-3 space-y-2 border-l-2 border-green/30 pl-3.5">
+                  {screen.statement.examples.map((example) => (
+                    <li
+                      key={example.slice(0, 24)}
+                      className="text-[15.5px] leading-relaxed text-ink"
+                    >
+                      {example}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {screen.statement.link && (
+                <p className="mt-3.5">
+                  <Link
+                    href={screen.statement.link.href}
+                    /* A new tab, deliberately: this screen sits mid-flow and the
+                       answers are held on the phone, so navigating away and back
+                       is a resume the parent did not ask for. */
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 items-center text-[14.5px] font-semibold text-green-deep underline underline-offset-2"
+                  >
+                    {screen.statement.link.label}
+                  </Link>
+                </p>
+              )}
               {screen.statement.note && (
                 <p className="mt-4 rounded-2xl border border-green/20 bg-green-wash p-3 text-[14px] font-medium leading-relaxed text-green-deep">
                   {screen.statement.note}
@@ -616,25 +666,37 @@ export function ProfileFlow() {
             </div>
           )}
 
+          {/* Under the questions, not over them: the client's caveat on the
+              per-affiliation control belongs *after* the decision it qualifies.
+              Rendered as text rather than a tooltip, because it is the one thing
+              the control cannot promise. */}
           <div className="mt-6 space-y-8">
             {questions.map((question) => {
               /* One per child, for the questions that belong to a child. See
                  `maxSelectionsFor` — the cap is what makes the "whose is it?"
                  picker below answerable instead of a guess. */
               const max = maxSelectionsFor(question, answers);
-              return (
-              <div key={`${question.id}-group`}>
-              <ChipGroup
-                key={question.id}
-                label={questions.length > 1 ? question.label : undefined}
-                groupLabel={question.label ?? screen.title}
-                mode={question.kind === "single" ? "single" : "multi"}
-                layout={question.kind === "ages" ? "grid" : "wrap"}
-                options={optionsFor(question, market, answers)}
-                selected={selectionsFor(question, answers)}
-                max={max}
-                maxHint={maxSelectionHint(question, answers)}
-                onChange={(next, changed) => {
+              /**
+               * Whether this question is a *directory* or a chip list (item 7).
+               *
+               * Four categories carry hundreds of records now, so the chips are
+               * a curated starter set and the rest is reached by search. The
+               * others — neighborhoods, camps, parent groups — are short enough
+               * to show whole, and have no starters curated, so searching them
+               * would offer a box that finds only what is already on screen.
+               */
+              const directory = searchableCategory(question);
+              const shared = {
+                label: questions.length > 1 ? question.label : undefined,
+                groupLabel: question.label ?? screen.title,
+                mode: (question.kind === "single" ? "single" : "multi") as
+                  | "single"
+                  | "multi",
+                options: optionsFor(question, market, answers),
+                selected: selectionsFor(question, answers),
+                max,
+                maxHint: maxSelectionHint(question, answers),
+                onChange: (next: string[], changed: { id: string; on: boolean }) => {
                   setSelections(question, next);
                   if (changed.on) {
                     track("seed_question_answered", {
@@ -642,16 +704,35 @@ export function ProfileFlow() {
                       option: changed.id,
                     });
                   }
-                }}
-                custom={customEntriesFor(question, answers)}
-                otherLabel={question.allowOther ? question.otherLabel : undefined}
-                onAddCustom={
-                  question.allowOther
-                    ? (value) => addCustom(question, value)
-                    : undefined
-                }
-                onRemoveCustom={(value) => removeCustom(question, value)}
+                },
+                custom: customEntriesFor(question, answers),
+                otherLabel: question.allowOther ? question.otherLabel : undefined,
+                onAddCustom: question.allowOther
+                  ? (value: string) => addCustom(question, value)
+                  : undefined,
+                onRemoveCustom: (value: string) => removeCustom(question, value),
+              };
+              return (
+              <div key={`${question.id}-group`}>
+              {directory ? (
+                <SearchableChipGroup
+                  key={question.id}
+                  {...shared}
+                  category={directory.category}
+                  market={market}
+                  /* Ranking hint only. Null before P3 is answered, which simply
+                     ranks nothing higher. */
+                  area={answers.neighborhood}
+                  searchLabel={directory.searchLabel}
+                  footnote={directory.footnote}
+                />
+              ) : (
+              <ChipGroup
+                key={question.id}
+                {...shared}
+                layout={question.kind === "ages" ? "grid" : "wrap"}
               />
+              )}
 
               {/* Per selection, two follow-ups on the same card.
                   P5 — each school gets its own status. "Former" is a real signal:
@@ -761,6 +842,25 @@ export function ProfileFlow() {
               optional — it just sharpens who Pando asks on your behalf.
             </p>
           )}
+
+          {/**
+           * Under the questions, not over them.
+           *
+           * The per-affiliation privacy screen carries the client's caveat —
+           * "Members may sometimes be able to guess who you are, particularly in
+           * a small community." It belongs *after* the decision it qualifies,
+           * and as text: it is the one thing that control cannot promise, so
+           * hiding it in a tooltip would make the consent less informed than she
+           * asked for.
+           *
+           * Neutral styling, deliberately. In green it reads as reassurance and
+           * in gold as a warning; it is neither, it is the honest limit.
+           */}
+          {screen.footnote && (
+            <p className="mt-7 rounded-2xl border border-bark bg-paper px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft">
+              {screen.footnote}
+            </p>
+          )}
         </div>
       </ScreenBody>
 
@@ -770,11 +870,11 @@ export function ProfileFlow() {
           <ArrowRight />
         </Button>
         <p className="py-3 text-center text-[12.5px] text-muted">
-          {!unlocked
-            ? "Pick one to keep going"
-            : optionalScreen && !questions.some((q) => isQuestionAnswered(q, answers))
-              ? "Nothing here fits? Skip it — no harm done."
-              : "Autosaved. You can close this and come back."}
+          {/* "Nothing here fits? Skip it — no harm done." was removed on the
+              client's instruction (24 Aug, item 9). The Skip control in the
+              header already says it, and a line inviting a parent to skip the
+              screen they are currently reading works against the screen. */}
+          {!unlocked ? "Pick one to keep going" : "Autosaved. You can close this and come back."}
         </p>
       </ScreenDock>
     </Screen>

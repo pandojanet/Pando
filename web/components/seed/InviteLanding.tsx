@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
+import { InfoDot } from "@/components/ui/InfoDot";
 import { PhoneField } from "@/components/ui/PhoneField";
 import {
   Container,
@@ -14,7 +15,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { Wordmark } from "@/components/ui/Logo";
-import { track } from "@/lib/analytics";
+import { identifyArrival, track } from "@/lib/analytics";
 import { validateInvite, verifyStatus, type VerifyStatus } from "@/lib/api-client";
 import {
   buildConsentRecord,
@@ -49,7 +50,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [smsConsent, setSmsConsent] = useState(false);
-  /** The anonymous path: contribute without founding status. */
+  /** The anonymous path: contribute without Founding Status. */
   const [anonymous, setAnonymous] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
@@ -71,11 +72,24 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const canBegin = anonymous || identityComplete;
 
   useEffect(() => {
+    /**
+     * Before the first capture, so `seed_link_opened` carries it too.
+     *
+     * This is what makes estimate 3.1's "segmented by which shared link the
+     * parent arrived from" possible at all: a PostHog funnel can only break down
+     * by a property present on its steps, and until now no event carried the
+     * code — `source` says `qr` or `link`, never *which group*.
+     */
+    identifyArrival({
+      invite_code: inviteCode,
+      invite_group: invite.group_option_value ?? null,
+      source,
+    });
     track("seed_link_opened", { source, invite_valid: invite.valid });
     track(invite.valid ? "seed_invite_valid" : "seed_invite_invalid", {
       reason: invite.reason ?? null,
     });
-  }, [invite.valid, invite.reason, source]);
+  }, [invite.valid, invite.reason, invite.group_option_value, inviteCode, source]);
 
   /* Whether a code can reach this parent at all. Left null on failure, which the
      branch in `begin` treats as "no" — the flow still works, held on the phone. */
@@ -112,6 +126,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       const result = await validateInvite(trimmed);
       if (result.valid) {
         setResolved(result);
+        /* A typed code is the same arrival by a slower route — re-registered, or
+           every event after it would be attributed to the empty link they
+           landed on. */
+        identifyArrival({
+          invite_code: trimmed,
+          invite_group: result.group_option_value ?? null,
+          source,
+        });
         track("seed_invite_valid", { reason: "manual_entry" });
       } else {
         setCodeError("That code isn't one of ours. Check the message it came in?");
@@ -309,7 +331,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           />
           <PromiseRow
             icon={<TapIcon />}
-            title="Taps, not typing"
+            /* Client's wording, 24 Aug — not "Taps, not typing". */
+            title="Tap, not type"
             body="Your neighborhood's schools, classes and groups are already in the list."
           />
           <PromiseRow
@@ -319,7 +342,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           />
         </ul>
 
-        {/* Founding status needs a real, reachable person: a name we can recognise
+        {/* Founding Status needs a real, reachable person: a name we can recognise
             and a number we can verify. The anonymous path stays open, and says
             plainly what it costs. */}
         {anonymous ? (
@@ -329,10 +352,49 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             </h2>
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
               Your recommendations still count and still help your neighborhood.
-              What you give up: <strong>Founding status</strong>, the thank-you, a
-              reserved place in the pilot, and any way for us to tell you when a
-              parent used what you shared.
+              What you give up:
             </p>
+            {/**
+             * The client asked for an "i" next to each of these (24 Aug, item 3),
+             * and the prose sentence they used to be could not carry one. Three
+             * named things a parent can interrogate beats one sentence listing
+             * them — and each of these is a promise, so each is worth a line
+             * saying what it actually means.
+             */}
+            <ul className="mt-2.5 space-y-2 text-[14.5px] leading-relaxed text-ink-soft">
+              <li>
+                <strong>Founding Status</strong>
+                <InfoDot label="Founding Status">
+                  The permanent standing of a parent who helped start the network
+                  here. It activates once a second contribution of yours is
+                  approved, and it never downgrades.
+                </InfoDot>
+              </li>
+              <li>
+                the thank-you
+                <InfoDot label="the thank-you">
+                  Founding contributors are paid for their first qualifying
+                  contribution. Sharing anonymously means there is no one for us
+                  to pay.
+                </InfoDot>
+              </li>
+              <li>
+                a reserved place in the pilot
+                <InfoDot label="a reserved place in the pilot">
+                  The pilot opens to a limited number of parents. Founding
+                  contributors are in it by right, without waiting for their
+                  neighborhood to reach the front of the queue.
+                </InfoDot>
+              </li>
+              <li>
+                any way for us to tell you when a parent used what you shared
+                <InfoDot label="any way for us to tell you when a parent used what you shared">
+                  When a recommendation of yours answers somebody&apos;s question,
+                  we text you to say so. That needs a number, so it cannot happen
+                  on the anonymous path.
+                </InfoDot>
+              </li>
+            </ul>
             <button
               type="button"
               onClick={() => setAnonymous(false)}
@@ -346,10 +408,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             <h2 className="font-display text-[1.1rem] font-semibold">
               Your details
             </h2>
+            {/* "…confirm you're really from the group" removed on the client's
+                instruction (24 Aug, item 4). Her reason is upstream of the
+                wording: she is moving away from a link that belongs to a group,
+                so telling a parent we are checking they belong to one reads as a
+                door being guarded. The other two reasons are the real ones. */}
             <p className="mt-1 text-[14px] leading-relaxed text-muted">
-              Needed for founding status — it&apos;s how we confirm you&apos;re
-              really from the group, hold your place in the pilot, and thank you
-              when a parent uses what you shared.
+              Needed for Founding Status — it&apos;s how we hold your place in
+              the pilot, and thank you when a parent uses what you shared.
             </p>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2">

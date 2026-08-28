@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Note } from "@/components/ui/Note";
 import { track } from "@/lib/analytics";
 import {
   checkVerification,
@@ -165,7 +166,7 @@ export function VerifyPhone({
           </>
         ) : (
           <>
-            {"Founding status is tied to a real, reachable parent — so we text "}
+            {"Founding Status is tied to a real, reachable parent — so we text "}
             <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
             {" a six-digit code. Until you confirm it, nothing you write reaches us at all."}
           </>
@@ -265,9 +266,7 @@ export function VerifyPhone({
       )}
 
       {error && (
-        <p className="mt-3 animate-rise rounded-2xl border border-gold-line bg-gold-wash p-3 text-[14px] font-medium text-gold-ink">
-          {error}
-        </p>
+        <Note>{error}</Note>
       )}
     </div>
   );

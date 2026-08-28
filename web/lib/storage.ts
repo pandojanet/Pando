@@ -1,6 +1,7 @@
 "use client";
 
 import { EMPTY_ANSWERS } from "./questions";
+import { childAgeFromStored, cleanId } from "./sanitize";
 import type { MarketId, ProfileAnswers, SeedSession } from "./types";
 
 /**
@@ -68,7 +69,13 @@ export function newSession(init: {
  * is taken on its own terms and anything unrecognisable falls back to the default rather
  * than being trusted.
  */
-function normaliseAnswers(stored: unknown): ProfileAnswers {
+/**
+ * Exported for . It is the whole of the 4 Aug decision
+ * that a stored session is untrusted input, it has produced two permanent-422
+ * bugs, and it had no test — so it is worth reaching directly rather than only
+ * through , which needs a browser.
+ */
+export function normaliseAnswers(stored: unknown): ProfileAnswers {
   const out: ProfileAnswers = {
     ...EMPTY_ANSWERS,
     other: {},
@@ -86,8 +93,32 @@ function normaliseAnswers(stored: unknown): ProfileAnswers {
     if (value === undefined || value === null) continue; // keep the default
 
     if (key === "child_ages") {
+      /**
+       * Ages, in the same range the server accepts — not merely "a finite
+       * number".
+       *
+       * `cleanAges` in `lib/sanitize.ts` takes integers in -1..25
+       * (`EXPECTING` through 25 years old) and this kept anything finite, so the
+       * two layers disagreed about what an age is. A stored value outside that
+       * range would pass the shape check, survive every reload, and be refused
+       * by the route every time — with nothing on screen to say why, because a
+       * value that fails `cleanId`/`cleanAges` still renders as an answer.
+       *
+       * Dropping it leaves the question visibly unanswered instead, and
+       * `required: true` then blocks the screen — so the parent is asked rather
+       * than handed a save that cannot work. That is the 4 Aug decision (a stored
+       * session is untrusted input) applied to the **domain** and not only to the
+       * shape.
+       */
       out.child_ages = Array.isArray(value)
-        ? value.filter((v): v is number => typeof v === "number" && Number.isFinite(v))
+        ? [
+            ...new Set(
+              value.filter(
+                (v): v is number =>
+                  typeof v === "number" && Number.isInteger(v) && v >= -1 && v <= 25,
+              ),
+            ),
+          ].sort((a, b) => a - b)
         : [];
       continue;
     }
@@ -142,6 +173,33 @@ function normaliseAnswers(stored: unknown): ProfileAnswers {
               ) as Array<[string, string]>,
             )
           : {};
+      continue;
+    }
+
+    if (key === "neighborhood") {
+      /**
+       * The other required answer, and the other half of the same 422.
+       *
+       * `cleanId` on the server refuses anything outside
+       * `/^[a-z0-9_-]{1,64}$/i`, so a stored neighborhood carrying a space, a
+       * colon or a label instead of an id is rejected exactly like a missing
+       * one — and the review screen shows it as answered either way, because it
+       * prints the value when no option matches. Same shape as `child_ages`
+       * above: guard the domain here, or the session hands back a value that can
+       * never be saved.
+       *
+       * No recovery is possible for this one — a label cannot be turned back
+       * into an id without the market's option list, which is loaded
+       * asynchronously and may not be there yet. So it is dropped, and P3 asks
+       * again; it is the first screen and one tap.
+       *
+       * The other single-value answers are deliberately not treated this way:
+       * they are optional, and a value the server does not recognise is simply
+       * not stored rather than refusing the whole write.
+       */
+      /* `cleanId` is the route's own check, imported rather than copied — a
+         second regex here is how the two drift apart again. */
+      out.neighborhood = cleanId(value);
       continue;
     }
 

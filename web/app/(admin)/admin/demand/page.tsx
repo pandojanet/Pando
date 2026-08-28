@@ -10,6 +10,7 @@ import {
   Field,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   TableWrap,
   Td,
@@ -158,11 +159,7 @@ export default function DemandPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
-      {message && (
-        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
-          {message}
-        </div>
-      )}
+      {message && <ResultNote>{message}</ResultNote>}
 
       {/**
        * Above the high-stakes banner on purpose: this is the only class where Pando

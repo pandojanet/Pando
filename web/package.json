@@ -17,7 +17,14 @@
     "icons": "node scripts/make-icons.mjs",
     "test:auth": "node --experimental-strip-types --no-warnings scripts/test-admin-auth.mts",
     "test:phone": "node --experimental-strip-types --no-warnings scripts/test-phone.mts",
-    "test:e2e": "node scripts/test-e2e.mjs"
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "taxonomy:import": "node scripts/import-taxonomy.mjs",
+    "seed:places": "node scripts/seed-places.mjs",
+    "test:derive": "node --experimental-strip-types --no-warnings scripts/test-derive-places.mts",
+    "seed:neighborhoods": "node scripts/seed-neighborhoods.mjs",
+    "test:confirm": "node --experimental-strip-types --no-warnings scripts/test-confirm-back.mts",
+    "test:matching": "node --experimental-strip-types --no-warnings scripts/test-matching.mts",
+    "test:trust": "node --experimental-strip-types --no-warnings scripts/test-trust.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

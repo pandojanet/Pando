@@ -170,3 +170,49 @@ export async function validateInviteCode(
     market_label: MARKET_LABELS[market] ?? market,
   };
 }
+
+/**
+ * Records that a link was opened — estimate 2.2's per-link funnel.
+ *
+ * ## Why it is a separate call rather than part of `validateInviteCode`
+ *
+ * That function runs on every profile save and every card save, because the
+ * server re-resolves the code rather than trusting the body. Counting there would
+ * make "opens" mean "requests", and a parent who shares six recommendations would
+ * register seven opens. This is called from **one** place: the `/join` page's
+ * server render, which is the thing an open actually is.
+ *
+ * ## Three properties it needs, and none of them is exactness
+ *
+ * **It never blocks or breaks the page.** A failed increment loses a metric; a
+ * thrown error loses the parent. So it swallows everything and returns nothing —
+ * the same rule the analytics calls follow.
+ *
+ * **It does not de-duplicate.** Doing so needs an identifier before consent, and
+ * nothing about a person may be stored before their number is verified
+ * (invariant 11). So a reopened link counts twice, bots count, and link previews
+ * count. That inflation is roughly uniform across channels, which is what makes
+ * comparing them usable even though no single figure is a headcount.
+ *
+ * **It does not create a row.** An unknown or retired code still admits the
+ * parent (see the decisions in CLAUDE.md), and inventing an invite for it would
+ * turn a typo into a channel.
+ */
+export async function recordInviteOpen(code: string | null | undefined): Promise<void> {
+  const normalized = normalizeCode(code);
+  if (!normalized) return;
+
+  try {
+    await withDb(async (db) => {
+      await db.execute(
+        sql`update invites
+               set opens = opens + 1,
+                   last_opened_at = now()
+             where code = ${normalized}`,
+      );
+      return null;
+    });
+  } catch {
+    /* A metric is not worth a 500 on the first screen a parent sees. */
+  }
+}

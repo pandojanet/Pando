@@ -9,6 +9,7 @@ import {
   ErrorNote,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   inputClass,
   optionLabel,
@@ -145,11 +146,7 @@ export default function ClaimsPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
-      {message && (
-        <p className="mb-4 rounded-lg border border-bark bg-card px-3 py-2 text-[13px] text-ink-soft">
-          {message}
-        </p>
-      )}
+      {message && <ResultNote>{message}</ResultNote>}
 
       {loading && all.length === 0 ? (
         <Card>

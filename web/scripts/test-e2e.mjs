@@ -353,6 +353,133 @@ await new Promise((r) => setTimeout(r, 9000)); // extraction runs after the resp
  * that first name is newer and wins — which failed eighteen checks that had
  * nothing to do with phone numbers. The prefix still matches the `like 'Audit%'`
  * cleanup. */
+/* Per-affiliation visibility — the client's Privacy Guidance §A (24 Aug).
+ *
+ * The three cases below are the whole design, and the third is the one a
+ * delete-and-rewrite would silently lose: a grant that disappears from the
+ * payload is a **revocation with a timestamp**, not an absence. §G asks for the
+ * effective time of the change, and this is the only derived table in the profile
+ * write that is upserted rather than rebuilt, for exactly that reason. */
+head("24 Aug  per-affiliation privacy: grant, keep, revoke");
+{
+  const s = session();
+  const phone = `+1626557${RUN}1`;
+  const st = await s.post("/api/seed/verify/start", { phone, sms_consent: true });
+  await s.post("/api/seed/verify/check", { code: st.json.dev_code });
+
+  const base = {
+    invite_code: "sgv-founding", source: "link", phone,
+    wants_founding: true, first_name: "AuditPriv", last_name: "Grant",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    monthly_contact_allowance: 5, allowance_mode: "fixed",
+    children: [{ birth_year: 2019 }], child_ages_at_capture: [6],
+    attribution: "name_private", aggregate_display: true,
+  };
+  const answers = (granted) => ({
+    neighborhood: "altadena",
+    child_ages: [6],
+    schools: ["walden-school"],
+    clubs: ["audit-priv-club"],
+    shared_connections: "share_connection",
+    shared_affiliations: granted,
+  });
+
+  /* Scoped by **phone**, not by first name.
+     `= (select …)` on a name blew up with "more than one row returned by a
+     subquery" the moment a previous run left a row behind — which is exactly when
+     a suite should still be readable. The phone carries `RUN`, so it is unique to
+     this run and matches exactly one person. */
+  const rows = async () =>
+    sql`select affiliation_type, affiliation_value, visibility,
+               consent_text_version, consented_at, revoked_at
+          from affiliation_visibility
+         where person_id in (select id from people where phone = ${phone})
+         order by affiliation_type`;
+
+  /* 1 — granted. Both halves of the evidence are required by a CHECK, so a row
+        that reached the table at all has them; assert them anyway, because the
+        point of the column is that it can be produced later. */
+  const a = await s.post("/api/seed/profile", {
+    ...base,
+    answers: answers(["schools:walden-school", "clubs:audit-priv-club"]),
+  });
+  ok("a profile with grants persists", a.status === 200 && a.json.persisted === true, "-> " + a.text);
+
+  let got = await rows();
+  ok("both grants are stored as shared", got.length === 2 && got.every((r) => r.visibility === "shared_anonymously"), `${got.length} row(s)`);
+  ok("each carries the wording version it was given under", got.every((r) => r.consent_text_version === "seed-affiliation-2026-08-24"));
+  ok("and the moment it was given", got.every((r) => r.consented_at !== null));
+  /* The question ids are `schools` / `clubs`; the graph's are `school` /
+     `social_group`. A grant filed under the questionnaire's word would name an
+     edge nothing looks for. */
+  ok(
+    "stored in the graph's vocabulary, not the questionnaire's",
+    got.some((r) => r.affiliation_type === "school") &&
+      got.some((r) => r.affiliation_type === "social_group"),
+    got.map((r) => r.affiliation_type).join(", "),
+  );
+
+  const firstGrantedAt = got.find((r) => r.affiliation_type === "school").consented_at;
+
+  /* 2 — one kept, one dropped. The kept row must not be re-stamped: the parent
+        decided once, and re-confirming is not a new decision. */
+  const b = await s.post("/api/seed/profile", {
+    ...base,
+    answers: answers(["schools:walden-school"]),
+  });
+  ok("re-saving with one grant removed goes through", b.status === 200);
+
+  got = await rows();
+  const school = got.find((r) => r.affiliation_type === "school");
+  const club = got.find((r) => r.affiliation_type === "social_group");
+
+  ok("the kept grant is still shared", school.visibility === "shared_anonymously");
+  ok(
+    "and its original consent time is untouched",
+    String(school.consented_at) === String(firstGrantedAt),
+    `${firstGrantedAt} -> ${school.consented_at}`,
+  );
+  /* The case the whole design turns on. */
+  ok("the dropped grant became private", club.visibility === "private");
+  ok("and the revocation is timestamped, not silent", club.revoked_at !== null);
+  ok("the row is kept rather than deleted", got.length === 2);
+
+  /* 3 — granting it again clears the revocation. The CHECK refuses a row that is
+        both revoked and shareable, so this would 500 if it did not. */
+  const c = await s.post("/api/seed/profile", {
+    ...base,
+    answers: answers(["schools:walden-school", "clubs:audit-priv-club"]),
+  });
+  ok("re-granting a revoked connection goes through", c.status === 200, "-> " + c.text);
+  got = await rows();
+  const regranted = got.find((r) => r.affiliation_type === "social_group");
+  ok("it is shared again", regranted.visibility === "shared_anonymously");
+  ok("and no longer carries a revocation", regranted.revoked_at === null);
+
+  /* Nothing a parent skips may grant anything — §A: "Continue is not consent." */
+  const d = await s.post("/api/seed/profile", { ...base, answers: answers([]) });
+  ok("an empty grant list revokes everything", d.status === 200);
+  got = await rows();
+  ok(
+    "and leaves nothing shared",
+    got.every((r) => r.visibility === "private" && r.revoked_at !== null),
+    got.map((r) => r.visibility).join(", "),
+  );
+
+  /* A ref the client invented must not become a permission. */
+  const e = await s.post("/api/seed/profile", {
+    ...base,
+    answers: answers(["topics:sleep_routines", "not-a-ref", "schools:walden-school"]),
+  });
+  ok("a ref for a question that is not a connection is refused", e.status === 200);
+  got = await rows();
+  ok(
+    "only the real connection was granted",
+    got.filter((r) => r.visibility === "shared_anonymously").length === 1,
+    got.filter((r) => r.visibility === "shared_anonymously").map((r) => r.affiliation_type).join(", "),
+  );
+}
+
 head("1.10  a Ukrainian number, from the field to the row");
 {
   const s = session();
@@ -388,6 +515,101 @@ head("1.10  a Ukrainian number, from the field to the row");
   ok("re-sending it in E.164 is accepted", again.status === 200);
   const count = Number((await sql`select count(*)::int as n from people where phone = ${uaE164}`)[0].n);
   ok("one number, one person — not two", count === 1, `${count} rows`);
+}
+
+head("27 Aug  a neighborhood the parent typed is still an answer");
+{
+  /**
+   * The bug this holds shut cost a real founding contributor a completed
+   * session.
+   *
+   * P3 sets `allowOther`, and `isQuestionAnswered` counts a typed entry — so
+   * the screen let them past, the review screen printed what they wrote, and the
+   * flow told them it was saved. The route then asked `cleanId` for a canonical
+   * id, got null, and refused the **entire profile** with "Neighborhood and child
+   * age are required" for a question they had plainly answered. They verified
+   * their phone with a correct code and watched three saves fail, with nothing on
+   * screen that could suggest going back and tapping a listed area instead.
+   *
+   * A typed answer is an answer for §8.5's two required questions. What it is not
+   * is matchable — invariant 9 — and that is handled without the route's help:
+   * the text goes to `pending_options` for an admin, and `people.neighborhood`
+   * stays null rather than holding words no taxonomy contains.
+   */
+  /* 626556 suffix 8: the D1 loop owns 3-7 on 626555, the allowance block takes
+     626556 1-2, the referral block inserts 626556 3-6 directly and 7 is spoken
+     for. Borrowing one of those inserts a second person on a number that is
+     already a person, and the failure is a unique-violation forty checks later. */
+  const typedPhone = `+1626556${RUN}8`;
+  const s = session();
+  const st = await s.post("/api/seed/verify/start", { phone: typedPhone, sms_consent: true });
+  await s.post("/api/seed/verify/check", { code: st.json.dev_code });
+
+  const res = await s.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: typedPhone, wants_founding: true,
+    first_name: "AuditTypedHood", last_name: "Parent",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    monthly_contact_allowance: 5, children: [{ birth_year: 2021 }], child_ages_at_capture: [4],
+    answers: {
+      /* Exactly what the flow stores when they add their own: nothing in the
+         canonical field, the words in `other`. */
+      neighborhood: null,
+      child_ages: [4],
+      other: { neighborhood: ["Bungalow Heaven"] },
+    },
+  });
+  ok(
+    "a typed neighborhood no longer refuses the whole profile",
+    res.status === 200 && res.json.persisted === true,
+    "-> " + res.status + " " + res.text,
+  );
+
+  const [row] = await sql`select neighborhood from people where first_name = 'AuditTypedHood'`;
+  ok("the person is stored", Boolean(row));
+  ok(
+    "and their neighborhood is null, not their own words",
+    row && row.neighborhood === null,
+    "-> " + JSON.stringify(row && row.neighborhood),
+  );
+
+  /* Invariant 9's half: unmatchable until an admin promotes it, and promotion
+     then writes the affinity row for everyone who typed it (12 Aug). */
+  const pending = await sql`select category, submitted_value, status
+                              from pending_options
+                             where submitted_value = 'Bungalow Heaven'`;
+  ok(
+    "the words are queued for an admin instead",
+    pending.length === 1 && pending[0].category === "neighborhoods",
+    "-> " + JSON.stringify(pending),
+  );
+
+  /* The presence check is only relaxed for a real answer — an empty string and a
+     genuine absence must still be refused, or "required" means nothing. */
+  const blank = await s.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: typedPhone, wants_founding: true,
+    first_name: "AuditBlankHood",
+    answers: { neighborhood: null, child_ages: [4], other: { neighborhood: ["   "] } },
+  });
+  ok(
+    "whitespace is not an answer",
+    blank.status === 422 && blank.json.fields.includes("neighborhood"),
+    "-> " + blank.status + " " + blank.text,
+  );
+  const none = await s.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: typedPhone, wants_founding: true,
+    first_name: "AuditNoHood",
+    answers: { neighborhood: null, child_ages: [4], other: {} },
+  });
+  ok(
+    "and no answer at all is still refused, naming the field",
+    none.status === 422 && none.json.fields.includes("neighborhood"),
+    "-> " + none.status + " " + none.text,
+  );
+  ok(
+    "the 422 names which of the two failed, rather than blaming both",
+    none.json.error.includes("neighborhood") && !none.json.error.includes("child age"),
+    "-> " + none.json.error,
+  );
 }
 
 head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
@@ -487,6 +709,36 @@ const nCards = await sql`select count(*)::int as n from share_contributions wher
 /* Three cards, four saves — the activity was re-saved once as a fix-a-field. */
 ok("one contribution per card, not per save", nCards[0].n === 3, `${nCards[0].n} rows`);
 
+/* Estimate 1.8's confirm-back leaves a marker on the card so it is never asked
+   twice, and the client strips every `__`-prefixed key before sending. This is
+   the belt: a build that forgot to strip must not break the save, and the marker
+   must not reach a column. */
+{
+  const withMarker = await parent.post("/api/seed/save", {
+    invite_code: "sgv-founding",
+    contributor_phone: PHONE,
+    submission: {
+      id: "audit-cb-marker",
+      kind: "tip",
+      fields: {
+        topic: "costs",
+        tip: "good — book the park shelters through the city website",
+        best_for: ["grade"],
+        __confirm_back_asked: "yes",
+      },
+    },
+  });
+  ok("an internal marker does not break the save", withMarker.status === 200);
+  const [row] = await sql`
+    select tip_text from share_contributions
+     where person_id = ${p.id} and tip_text like 'good — book the park%'`;
+  ok("the card landed with the merged answer", Boolean(row), row ? "" : "no row");
+  const leaked = await sql`
+    select count(*)::int as n from submissions
+     where person_id = ${p.id} and fields::text like '%__confirm_back_asked%'`;
+  ok("and the marker is nowhere in what was stored", leaked[0].n === 0, `${leaked[0].n} row(s)`);
+}
+
 head("1.6  the nomination, holds and restricted notes");
 const [n] = await sql`select cn.id as nomination_id, cn.*, c.consent_status, c.active, c.discoverable, c.introducible from caregiver_nominations cn join caregivers c on c.id = cn.caregiver_id where c.first_name = 'Auditcarer'`;
 ok("worked_for_family forced true", n && n.worked_for_family === true);
@@ -527,7 +779,15 @@ ok("it raised its own escalation, under its own reason", (await sql`select 1 fro
 
 head("1.8 / 1.9  extraction and flags");
 const scored = await sql`select confidence, confidence_note from share_contributions where person_id = ${p.id} and confidence is not null`;
-ok("cards were scored by the model", scored.length === 3, `${scored.length} of 3`);
+const shareCards = await sql`select count(*)::int as n from share_contributions where person_id = ${p.id}`;
+/* Every share card this walk made, not a hardcoded three: the count moved the
+   moment a card was added above, and an assertion that has to be edited whenever
+   the fixtures grow will eventually be edited to match whatever the code did. */
+ok(
+  "every card was scored by the model",
+  scored.length === shareCards[0].n,
+  `${scored.length} of ${shareCards[0].n}`,
+);
 ok("the corrected card was re-scored, not left stale", a && Number(a.confidence) > 0.4, a ? String(a.confidence) : "");
 ok("stale_at_capture raised without the model", (await sql`select 1 from flags where reason = 'stale_at_capture' and status = 'open'`).length > 0);
 
@@ -862,9 +1122,163 @@ head("2.6  promotion: the chip, the queue and the graph");
      this endpoint did not exist at all. */
   const live = await (await fetch(B + "/api/market/options?market_id=pasadena")).json();
   ok("the options endpoint serves the database", live.configured === true);
-  ok("the promoted option is served immediately", (live.options.clubs ?? []).some((o) => o.id === "audit-test-club"));
+  /**
+   * **What promotion means changed on 24 Aug**, and this is where it shows.
+   *
+   * Clubs, schools, activities and faith are now directories of hundreds of
+   * records, so `/options` serves only the 8-12 curated starters per category and
+   * everything else is reached by search. A promoted "other" answer is therefore
+   * *findable*, not *featured*: putting it in the starter set would grow that set
+   * unboundedly, one typed answer at a time, which is the opposite of the
+   * client's "about 8-12 familiar choices".
+   */
+  ok(
+    "a promotion does not force its way into the curated starter set",
+    !(live.options.clubs ?? []).some((o) => o.id === "audit-test-club"),
+    `${(live.options.clubs ?? []).length} starter club(s)`,
+  );
+  const found = await (
+    await fetch(B + "/api/market/search?category=clubs&q=Audit%20Test%20Club")
+  ).json();
+  ok(
+    "but it is immediately findable by search",
+    (found.results ?? []).some((o) => o.id === "audit-test-club"),
+    `${(found.results ?? []).length} result(s)`,
+  );
+  /* `active` is what stops an option being offered, and it has to hold on both
+     paths — a search that reached a retired option would be a second door into
+     something an admin closed. */
   ok("bands survive the round trip", (live.options.schools ?? []).some((o) => Array.isArray(o.bands) && o.bands.length > 0));
   ok("categories the questionnaire can't render are excluded", live.options.focus === undefined);
+
+  /* ── "Tap first, search second" (24 Aug) ─────────────────────────────────
+     Three of the client's rules for the four searchable directories, each of
+     which the query has to implement rather than the screen. */
+  const search = async (params) =>
+    (await (await fetch(`${B}/api/market/search?${new URLSearchParams(params)}`)).json())
+      .results ?? [];
+
+  /* Only starters are served as chips — the whole reason search exists. */
+  const starters = (live.options.schools ?? []).length;
+  ok(
+    "the options endpoint serves starters, not the whole directory",
+    starters > 0 && starters < 200,
+    `${starters} starter school(s)`,
+  );
+
+  /* An alias is a way *in*, never a label: "LCHS" has to reach the school and
+     the parent has to see its real name. */
+  const byAlias = await search({ category: "schools", q: "LCHS" });
+  ok(
+    "an alias finds the canonical record",
+    byAlias.some((o) => /La Ca.ada High School/.test(o.label)),
+    byAlias.map((o) => o.label).join(", ") || "none",
+  );
+  ok(
+    "and the alias itself is never shown as the label",
+    !byAlias.some((o) => o.label.toUpperCase() === "LCHS"),
+  );
+
+  /* Trigram, not just LIKE. A parent typing from memory misspells things. */
+  ok(
+    "a misspelling still finds it",
+    (await search({ category: "schools", q: "polytecnic" })).some((o) =>
+      /Polytechnic/.test(o.label),
+    ),
+  );
+
+  /* Her closing note on all four sheets: the home area ranks and must never
+     filter, because SGV families cross city lines for school. */
+  const crossCity = await search({
+    category: "schools",
+    q: "La Cañada High",
+    area: "alhambra",
+  });
+  ok(
+    "the home area ranks but never filters",
+    crossCity.some((o) => /La Ca.ada High School/.test(o.label)),
+    `searched as an Alhambra parent, found ${crossCity.length}`,
+  );
+
+  /**
+   * And the other half of that sentence, which had never been asserted — which
+   * is exactly why it was broken for nine of the seventeen areas.
+   *
+   * `market_options.area` is the client's display name ("La Cañada
+   * Flintridge") and the parameter is the neighborhood option id
+   * ("la-canada-flintridge"). The comparison was `lower(area) = $area`, which
+   * bridges a single-word name and nothing else — so Altadena and Arcadia
+   * ranked, while La Cañada Flintridge, Highland Park, South Pasadena, Sierra
+   * Madre, Monterey Park, San Marino, San Gabriel, Eagle Rock and Temple City
+   * silently did not. The test above passed throughout, because it only ever
+   * checked that the *other* areas were still present.
+   *
+   * A multi-word area on purpose: a single-word one passes either way.
+   */
+  const ownArea = await search({
+    category: "schools",
+    q: "elementary",
+    area: "la-canada-flintridge",
+  });
+  const firstThree = ownArea.slice(0, 3);
+  ok(
+    "a multi-word home area actually ranks its own schools first",
+    firstThree.length === 3 &&
+      firstThree.every((o) => o.area_slug === "la-canada-flintridge"),
+    `top three were ${firstThree.map((o) => `${o.label} [${o.area_slug}]`).join(", ")}`,
+  );
+  ok(
+    "and the slug comes back, since that is what the chip list filters on",
+    ownArea.every((o) => !o.area || typeof o.area_slug === "string"),
+  );
+
+  /* Resolve-by-id, which is what stops a searched selection losing its chip on
+     reload — and it must obey `active` exactly as the search does. */
+  const resolved = await search({
+    category: "schools",
+    ids: "polytechnic-school,not-a-real-school",
+  });
+  ok(
+    "ids resolve to their records",
+    resolved.length === 1 && /Polytechnic/.test(resolved[0].label),
+    `${resolved.length} resolved`,
+  );
+  ok(
+    "and an unknown id resolves to nothing rather than erroring",
+    !resolved.some((o) => o.id === "not-a-real-school"),
+  );
+  /* One character is not a search — it would match most of the directory. */
+  ok(
+    "a one-character query returns nothing rather than everything",
+    (await search({ category: "schools", q: "a" })).length === 0,
+  );
+
+  /**
+   * The subject is an option this run created and now retires, rather than a
+   * fixture from the taxonomy.
+   *
+   * It was `bungalow-heaven`, which stopped being retired the moment item 5's
+   * autopopulate brought Pasadena's own neighbourhoods back as searchable
+   * non-starters — so the check began failing while testing nothing. A test that
+   * depends on reference data staying retired is a test that breaks when the data
+   * becomes right.
+   */
+  await sql`update market_options set active = false
+             where market_id = 'pasadena' and category = 'clubs'
+               and option_value = 'audit-test-club'`;
+  const afterRetire = await search({ category: "clubs", q: "Audit Test Club" });
+  ok(
+    "a retired option is not offered by search either",
+    !afterRetire.some((o) => o.id === "audit-test-club"),
+    `${afterRetire.length} result(s)`,
+  );
+  /* Both doors, and this one is the easier to forget: resolve-by-id exists so a
+     selection keeps its chip on reload, which makes it a second path into the
+     table — it has to honour `active` exactly as the search does. */
+  ok(
+    "a retired option cannot be reached by id either",
+    (await search({ category: "clubs", ids: "audit-test-club" })).length === 0,
+  );
 }
 ok("an unknown action is rejected", (await act({ action: "not.a.real.action", id: "x" })).status === 400);
 
@@ -1025,6 +1439,7 @@ await sql`delete from demand_signals where person_id = any(${ids}::uuid[])`;
 await sql`delete from pending_options where submitted_by = any(${ids}::uuid[])`;
 await sql`delete from market_options where option_value = 'audit-test-club'`;
 await sql`delete from invites where code = 'audit-group'`;
+await sql`delete from affiliation_visibility where person_id = any(${ids}::uuid[])`;
 await sql`delete from consents where person_id = any(${ids}::uuid[])`;
 await sql`delete from person_schools where person_id = any(${ids}::uuid[])`;
 await sql`delete from social_affinities where person_id = any(${ids}::uuid[])`;

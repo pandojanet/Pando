@@ -26,6 +26,37 @@ import { PostHogProvider as Provider } from "posthog-js/react";
  * with structured props — see the `SeedEvent` union in `lib/analytics.ts`, none
  * of which carry free text.
  */
+/**
+ * How long a gap in activity ends a session, and therefore ends a recording.
+ *
+ * PostHog's own default is 30 minutes, and its absolute ceiling is 24 hours from
+ * the session's *start* — so one session id can legitimately span a whole day,
+ * and a replay of it spans the same. That is useless here: the seed flow takes
+ * about two minutes, so a recording measured in hours is a tab somebody left
+ * open, not a parent we can learn anything from.
+ *
+ * Ten minutes is the client's number. The mechanism is worth knowing, because it
+ * is better than "the next event starts a new session": posthog-js runs a timer
+ * at 1.1x this value, and when it fires on an idle session it resets the session
+ * id and emits `forcedIdleReset`, which the recorder listens for. So an idle tab
+ * rotates on its own, with no event needed to trigger it.
+ */
+const SESSION_IDLE_MINUTES = 10;
+
+/**
+ * And a ceiling on an *active* session, which the idle timeout cannot give.
+ *
+ * Somebody who touches the page every few minutes for three hours never goes
+ * idle, so nothing above splits their recording — posthog-js would carry it to
+ * its own 24-hour cap. There is no config option for this, so we do it
+ * ourselves: once a session id has been alive this long, reset it and start a
+ * new one.
+ */
+const SESSION_MAX_MINUTES = 30;
+
+/** Our own record of when the current session id first appeared. */
+const SESSION_START_KEY = "pando.ph_session_start";
+
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   /**
@@ -61,6 +92,10 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
       disable_session_recording: !recordScreens,
       // We don't need exit/bounce timing — one less background request per visit.
       capture_pageleave: false,
+      /* See SESSION_IDLE_MINUTES. Clamped by posthog-js to [60, 36000] seconds,
+         so this value is inside the supported range rather than silently
+         falling back to the 1800 default. */
+      session_idle_timeout_seconds: SESSION_IDLE_MINUTES * 60,
     });
     /* `lib/analytics.ts`'s `track()` predates this provider and was written
        against the snippet-install pattern, where PostHog's own bootstrap script
@@ -70,8 +105,83 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
     window.posthog = posthog;
   }, [key, recordScreens]);
 
+  useSessionLengthCap(Boolean(key));
+
   if (!key) return <>{children}</>;
   return <Provider client={posthog}>{children}</Provider>;
+}
+
+/**
+ * Ends a session that has been running too long, however active it is.
+ *
+ * `session_idle_timeout_seconds` only fires on a *gap*. A parent who is on the
+ * page on and off all afternoon never has one, so their recording keeps growing
+ * — which is how a replay ends up measured in hours for a flow that takes two
+ * minutes. posthog-js has no max-session-length option, so this is the ceiling.
+ *
+ * Two things worth not "simplifying":
+ *
+ * **The start time is in `sessionStorage`, not a ref.** A reload would reset a
+ * ref and the cap would never fire on anyone who refreshes — which is exactly
+ * the long-lived tab this exists for. `sessionStorage` is per-tab and survives a
+ * reload, which is the right scope: a genuinely new tab *is* a new visit.
+ *
+ * **It is keyed by session id.** posthog-js rotates the id for its own reasons
+ * (idle, its 24-hour cap, a cross-tab refresh). Storing a bare timestamp would
+ * mean the next session inherits the previous one's clock and gets cut short.
+ */
+function useSessionLengthCap(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+
+    const check = () => {
+      if (!posthog.__loaded) return;
+      const id = posthog.get_session_id();
+      if (!id) return;
+
+      let startedAt = 0;
+      try {
+        const raw = window.sessionStorage.getItem(SESSION_START_KEY);
+        const saved = raw ? (JSON.parse(raw) as { id?: string; at?: number }) : null;
+        if (saved?.id === id && typeof saved.at === "number") startedAt = saved.at;
+      } catch {
+        /* Private mode, or a value from an older build. Treat as unknown and
+           re-stamp below rather than failing — this is analytics, not the app. */
+      }
+
+      if (startedAt === 0) {
+        try {
+          window.sessionStorage.setItem(
+            SESSION_START_KEY,
+            JSON.stringify({ id, at: Date.now() }),
+          );
+        } catch {
+          /* Nothing to do: without storage the cap cannot be enforced, and a
+             broken cap must not break the page. */
+        }
+        return;
+      }
+
+      if (Date.now() - startedAt >= SESSION_MAX_MINUTES * 60_000) {
+        /* Public and typed on the client (`sessionManager?: SessionIdManager`).
+           Resetting the id is what the recorder watches for, so this starts a
+           fresh recording rather than merely relabelling events. */
+        posthog.sessionManager?.resetSessionId();
+        try {
+          window.sessionStorage.removeItem(SESSION_START_KEY);
+        } catch {
+          /* see above */
+        }
+      }
+    };
+
+    check();
+    /* A minute is fine: the cap is 30, so the worst case is a session running
+       31 minutes rather than 30. Cheap, and no listener on user activity —
+       nothing here should add work to a tap. */
+    const timer = window.setInterval(check, 60_000);
+    return () => window.clearInterval(timer);
+  }, [enabled]);
 }
 
 /**

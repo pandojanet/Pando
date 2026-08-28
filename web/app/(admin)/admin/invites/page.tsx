@@ -10,6 +10,7 @@ import {
   Field,
   NotConfigured,
   PageHead,
+  ResultNote,
   SampleBanner,
   TableWrap,
   Td,
@@ -122,11 +123,7 @@ export default function InvitesPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
-      {message && (
-        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
-          {message}
-        </div>
-      )}
+      {message && <ResultNote>{message}</ResultNote>}
 
       {/**
        * Folded away by default (19 Aug). This form has four fields and four
@@ -273,6 +270,12 @@ function InviteTable({
               *link* had been delivered, which is the opposite of what it counts.
               The pair only means anything read together, so both now say what
               they count and the second says what makes a group worth a link. */}
+          {/* The denominator estimate 2.2 asks for. Without it "four joined" is
+              unreadable: four out of six is a good channel and four out of two
+              hundred is a bad one, and the page could not tell them apart. */}
+          <Th title="How many times the link was opened. Not a headcount — it counts opens, so a parent who came back twice counts twice, and link previews count. Read it against the next column rather than on its own.">
+            Opened
+          </Th>
           <Th title="People who opened this link and filled in a profile.">
             Joined
           </Th>
@@ -322,7 +325,20 @@ function InviteTable({
                 </span>
               )}
             </Td>
-            <Td className="tabular-nums">{row.contributors}</Td>
+            <Td className="tabular-nums text-muted">{row.opens}</Td>
+            <Td className="tabular-nums">
+              {row.contributors}
+              {/* The conversion, where there is one to state. Opens can lag a
+                  join — a link opened before this counter existed, or a parent
+                  who arrived by a route that did not record one — so a ratio over
+                  100% is possible and is shown rather than clamped: a clamped
+                  number would hide the very inconsistency worth noticing. */}
+              {row.opens > 0 && (
+                <span className="block text-[12px] text-muted">
+                  of {row.opens} opens · {Math.round((row.contributors / row.opens) * 100)}%
+                </span>
+              )}
+            </Td>
             <Td className="tabular-nums">
               {row.delivered}
               {/* "out of", not a bare percentage butted against the count: the

@@ -36,6 +36,14 @@ export type SeedEvent =
   | "seed_card_aborted"
   | "seed_card_review_hold"
   | "seed_card_saved"
+  /**
+   * Estimate 1.8's confirm-back, and estimate 3.1 lists "confirm-back shown" by
+   * name among the funnel events. The pair is what makes it measurable: how often
+   * a card was thin enough to ask about, and how often asking actually produced
+   * something.
+   */
+  | "seed_confirm_back_shown"
+  | "seed_confirm_back_answered"
   | "seed_card_held"
   | "seed_verify_requested"
   | "seed_verify_send_blocked"
@@ -75,6 +83,12 @@ type Props = Record<string, string | number | boolean | null | undefined>;
 
 interface PostHogLike {
   capture: (event: string, props?: Props) => void;
+  /**
+   * Optional because `window.posthog` is whatever the provider put there, and a
+   * stale bundle or a stub in a test may only have `capture`. Called through
+   * `?.` for the same reason — a missing method must not break the flow.
+   */
+  register?: (props: Props) => void;
 }
 
 declare global {
@@ -96,6 +110,46 @@ export function track(event: SeedEvent, props?: Props): void {
   if (process.env.NODE_ENV !== "production") {
     console.debug("[pando:event]", event, props ?? {});
   }
+}
+
+/**
+ * Which shared link this parent arrived on, attached to **every** event from
+ * here on.
+ *
+ * ## Why a super-property and not a prop
+ *
+ * Estimate 3.1 asks for the funnel to be "segmented by which shared link the
+ * parent arrived from", and 2.2 for drop-off as a per-link funnel. Neither was
+ * reachable: the code appeared in no event at all — `seed_link_opened` carried
+ * `source` (`qr` vs `link`), which says the *channel* and never *which group*,
+ * and every event after it carried nothing about the arrival. A PostHog funnel
+ * can only break down by a property present on its steps, so "which link brought
+ * contributors" was answerable in our own admin (`invites.opens` plus the
+ * completion counts) and nowhere in PostHog.
+ *
+ * `register` puts it in PostHog's own persisted store, so it rides on every
+ * subsequent capture — including the ones fired on later pages, which is the
+ * whole point: the drop-off worth measuring happens three screens after the
+ * link was opened.
+ *
+ * **Safe under invariant 7.** An invite code is one per *group*, never per
+ * parent (12 Aug) — `mops-altadena`, not a person — so this is an enum, not an
+ * identifier. Nothing here carries a name, a number or free text.
+ *
+ * Overwritten rather than merged when a parent arrives on a second link: the
+ * most recent arrival is the one whose funnel they are in.
+ */
+export function identifyArrival(props: {
+  invite_code: string | null;
+  invite_group: string | null;
+  source: string | null;
+}): void {
+  if (typeof window === "undefined") return;
+  window.posthog?.register?.({
+    invite_code: props.invite_code,
+    invite_group: props.invite_group,
+    arrival_source: props.source,
+  });
 }
 
 /**

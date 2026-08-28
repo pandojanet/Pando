@@ -73,6 +73,22 @@ function cleanFields(fields: RawFields): Record<string, unknown> {
   for (const [key, value] of Object.entries(fields)) {
     if (RESERVED_FIELDS.has(key)) continue;
 
+    /**
+     * Anything the client uses to track the *conversation* rather than the
+     * recommendation. `__confirm_back_asked` is the one today (estimate 1.8): it
+     * stops the same follow-up being asked twice and has to survive a reload, so
+     * it lives on the card in local storage.
+     *
+     * The chat strips these before sending, and this is the belt rather than a
+     * duplicate — `submissions.fields` is the verbatim record of what the parent
+     * typed, kept so that "did they actually say that" has an answer. An internal
+     * marker sitting in it is a small lie about what they said, and the server is
+     * the only place that can guarantee it never gets in.
+     *
+     * A prefix rather than a list, so the next one needs no change here.
+     */
+    if (key.startsWith("__")) continue;
+
     if (typeof value === "string") {
       out[key] = TEXT_FIELDS.has(key)
         ? cleanText(value, MAX_TEXT)

@@ -10,6 +10,7 @@ import {
   Field,
   NotConfigured,
   PageHead,
+  ResultNote,
   ProvenanceBadge,
   SampleBanner,
   TableWrap,
@@ -135,11 +136,7 @@ export default function CaregiversPage() {
         <ErrorNote>{caregivers.error ?? duplicates.error}</ErrorNote>
       )}
       {caregivers.sample && <SampleBanner />}
-      {message && (
-        <div className="mb-4 rounded-xl border border-green/25 bg-green-wash px-4 py-2.5 text-[13.5px] font-medium text-green-deep">
-          {message}
-        </div>
-      )}
+      {message && <ResultNote>{message}</ResultNote>}
 
       <div className="space-y-5">
         <Card title="Nominations">

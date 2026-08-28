@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
@@ -457,7 +458,7 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
         />
 
         {error && (
-          <p className="mt-4 text-[14px] font-medium text-alert">{error}</p>
+          <Note className="mt-4">{error}</Note>
         )}
       </ScreenBody>
     </Screen>

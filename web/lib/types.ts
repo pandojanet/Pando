@@ -53,6 +53,18 @@ export const MARKET_CATEGORIES = [
   "parent_groups",
   "baby_activities",
   "camps",
+  /**
+   * Item 11 (24 Aug): where a parent lived *before* here — "San Francisco, CA",
+   * "London, UK". Canonical records, never free text, because the coarse signal
+   * ("elsewhere in California" / "another state" / "another country") is
+   * **derived** from the place rather than asked for separately.
+   *
+   * It sits in `market_options` with the rest so that search, the "add it"
+   * fallback and an admin's promotion all work unchanged. It carries **no
+   * starter set**, deliberately: there is no sensible list of 8-12 familiar
+   * previous cities, so this question is search-only.
+   */
+  "previous_places",
 ] as const;
 
 export type MarketCategory = (typeof MARKET_CATEGORIES)[number];
@@ -81,6 +93,32 @@ export interface Option {
   exclusive?: boolean;
   /** In grid layouts, take two columns (long labels next to short ones). */
   wide?: boolean;
+  /**
+   * The city or area this record belongs to. Only the searchable directories
+   * carry it, and only because two records can share a name — there are three
+   * "Willard Elementary School"s across districts, and her rule is not to merge
+   * them, so the screen has to be able to say which one this is.
+   */
+  area?: string;
+  /**
+   * `area` as a slug, for comparing against the neighborhood id the parent
+   * tapped — never compare against `area` itself.
+   *
+   * They are different vocabularies: `area` is the client's display name ("La
+   * Cañada Flintridge") and the answer is an option id
+   * ("la-canada-flintridge"). Comparing them with `toLowerCase()` bridged
+   * single-word names and nothing else, so nine of seventeen areas silently
+   * never matched and the parents in them were shown twelve schools in
+   * alphabetical order, none in their own city.
+   */
+  area_slug?: string;
+  /**
+   * A visible grouping inside one question. Clubs use it for the two she asked
+   * for ("Private, recreational & social clubs" vs "Service leagues & member
+   * organizations"); faith carries the tradition, which is metadata and must
+   * never become the displayed identity.
+   */
+  section?: string;
 }
 
 export type QuestionId =
@@ -92,9 +130,34 @@ export type QuestionId =
   | "faith"
   | "clubs"
   | "time_in_area"
+  /**
+   * Item 11 split current tenure from local roots. Somebody can have grown up
+   * here, moved away and come back — which the old single list could not say,
+   * because "I grew up here" was one of the tenure options and therefore
+   * mutually exclusive with all of them.
+   */
+  | "grew_up_here"
+  | "previous_places"
+  /**
+   * Superseded by `previous_places` and no longer asked. Kept because stored
+   * profiles point at it, and it is still what the coarse tenure signal is
+   * *derived into* — "elsewhere in California" is now computed from the city the
+   * parent actually named.
+   */
   | "moved_from"
   | "family_structure"
+  /**
+   * The 24 Aug splits. Each was one screen mixing two different facts, and the
+   * client's objection was not length — it was that the answers were not
+   * comparable. "Two parents, one at home" could mean a stay-at-home parent or
+   * one working from home; "solo parent" does not mean there is no co-parent.
+   * Both halves keep the *same* `life_relevance` dimension as the screen they
+   * came from, so no migration and nothing downstream changes shape.
+   */
+  | "work_setup"
   | "childcare_now"
+  | "childcare_backup"
+  | "travel_time"
   | "logistics"
   | "budget"
   | "trust_circles"
@@ -102,6 +165,19 @@ export type QuestionId =
   | "topics_lived"
   /** P13 — the one control over how this parent is named in an answer. */
   | "attribution"
+  /**
+   * Item 18's second half: whether a *shared connection* may stand in for the
+   * name. Separate from `attribution` because it is a different amount of
+   * exposure, and because the client's model shows a connection **instead of** a
+   * name rather than alongside it.
+   */
+  | "shared_connections"
+  /**
+   * Privacy Guidance §A: which of the parent's own named connections may be
+   * mentioned, one decision each. Its options are built from their earlier
+   * answers, which is why `Question.source` has an `affiliations` kind.
+   */
+  | "shared_affiliations"
   | "allowance"
   | "listening_ear";
 
@@ -112,7 +188,20 @@ export interface Question {
   kind: "single" | "multi" | "ages";
   required?: boolean;
   /** Where the chips come from. */
-  source: { type: "static"; options: Option[] } | { type: "market"; category: MarketCategory };
+  source:
+    | { type: "static"; options: Option[] }
+    | { type: "market"; category: MarketCategory }
+    /**
+     * The parent's **own named connections**, built from what they already
+     * tapped — schools, classes, camps, clubs, faith communities.
+     *
+     * A third kind rather than a static list, because the options are different
+     * for every parent and cannot be written down in advance. It exists for one
+     * question: the client's Privacy Guidance §A, which requires permission to
+     * be available *separately for each affiliation* ("A parent may share their
+     * school but keep their golf club or faith community private").
+     */
+    | { type: "affiliations" };
   /** Writes a social_affinities row per selection, at this weight. */
   affinity?: { type: AffinityType; weight: number };
   /** Writes a life_relevance row per selection. */
@@ -120,6 +209,17 @@ export interface Question {
   /** Offer a free-text fallback → pending_options for admin review. */
   allowOther?: boolean;
   otherLabel?: string;
+  /**
+   * A hard ceiling on selections, for the questions that are a *ranking
+   * instruction* rather than a description. The client asked for "up to three"
+   * on both trust circles and practical priorities, and the reason is the same
+   * in both: ten ticks is not a priority order, so an uncapped multi-select
+   * produces no usable signal.
+   *
+   * Distinct from `perChildLimit`, which derives its cap from how many children
+   * the family has. This one is a flat number.
+   */
+  maxSelections?: number;
   /** Hide the question entirely unless the child ages make it relevant. */
   showForBands?: AgeBand[];
   /** Hide it unless an earlier answer makes it worth asking (P8b). */
@@ -158,11 +258,38 @@ export interface Screen {
   title: string;
   help?: string;
   /**
+   * A line under the questions rather than above them — for a caveat that belongs
+   * *after* the decision, not before it. The client's per-affiliation control has
+   * one: "Members may sometimes be able to guess who you are, particularly in a
+   * small community." It is the thing the control cannot promise, so it must be
+   * read and not hidden in a tooltip.
+   */
+  footnote?: string;
+  /**
+   * Skip the whole screen unless an earlier answer makes it worth asking.
+   *
+   * `Question.when` already gates one question; this gates a screen, which is
+   * different: a screen whose only question is hidden would otherwise render as
+   * a title with nothing under it and a Continue button.
+   */
+  when?: (answers: ProfileAnswers) => boolean;
+  /**
    * A screen that states something instead of asking it — the privacy disclosure
    * and the Pando promise. `questions` is empty; the parent reads and continues,
    * and the opt-out named in `note` is a standing one (texting PRIVACY).
    */
-  statement?: { body: string[]; note?: string };
+  /**
+   * A screen that states rather than asks. `examples` renders as quoted lines —
+   * the privacy explainer needs to *show* the sentence another parent would see,
+   * because "an anonymous shared-connection mention" means nothing until you read
+   * "A parent at your golf club recommends this."
+   */
+  statement?: {
+    body: string[];
+    examples?: string[];
+    note?: string;
+    link?: { href: string; label: string };
+  };
   questions: Question[];
 }
 
@@ -192,11 +319,29 @@ export interface ProfileAnswers {
   faith: string[];
   clubs: string[];
   time_in_area: string | null;
+  /** Item 11: local roots, separate from tenure. Null means they didn't say. */
+  grew_up_here: string | null;
+  /** Item 11: canonical places, multi-select and optional. */
+  previous_places: string[];
+  /** No longer asked — derived from `previous_places`. See QuestionId. */
   moved_from: string | null;
+  /** Who is in the household and how they parent. */
   family_structure: string[];
+  /** How that household works — separated from the above on 24 Aug. */
+  work_setup: string[];
+  /** Each child's *regular* arrangement. */
   childcare_now: string[];
+  /** What the household falls back on when the regular arrangement fails. */
+  childcare_backup: string[];
+  /** How far they will usually travel. Single-select, capped at one value. */
+  travel_time: string[];
   logistics: string[];
-  /** "How you choose" — multi-select: one label per human is what we avoid. */
+  /**
+   * How Pando should weigh cost. Single-select since 24 Aug, so this holds at
+   * most one value — kept as an array because the relevance derivation, the route
+   * sanitiser and the stored `life_relevance` rows all take lists, and a
+   * one-element list needs none of them to change.
+   */
   budget: string[];
   trust_circles: string[];
   /** P12, split into the two clusters the client's list shows. */
@@ -204,6 +349,18 @@ export interface ProfileAnswers {
   topics_lived: string[];
   /** P13 — anonymous_verified | first_name_safe. */
   attribution: string | null;
+  /**
+   * Item 18's second half. Null means off, and that is the client's rule rather
+   * than a convenience: skipping the page keeps the name private and shared
+   * connections off, because "Continue" is not consent.
+   */
+  shared_connections: string | null;
+  /**
+   * Privacy Guidance §A: which named connections may be mentioned. Absence *is*
+   * the private default — an affiliation is never shareable unless it appears
+   * here, so nothing a parent skips can grant anything.
+   */
+  shared_affiliations: string[];
   /** P14 — monthly community-question allowance. A consent control, default 5. */
   allowance: string | null;
   /**

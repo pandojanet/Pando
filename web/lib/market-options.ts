@@ -29,6 +29,16 @@ export const MARKET_LABELS: Record<MarketId, string> = {
 type MarketOptions = Record<MarketCategory, Option[]>;
 
 const pasadena: MarketOptions = {
+  /**
+   * **Empty on purpose, and it is the only category that is.**
+   *
+   * There is no plausible list of 8-12 familiar *previous* cities to put in front
+   * of a parent, so item 11's question is search-only: the chips are absent and
+   * the search box is the whole control. `marketOptions()` falls back to this
+   * when the table has nothing, which is the intended state rather than a
+   * missing-data one.
+   */
+  previous_places: [],
   neighborhoods: [
     { id: "bungalow-heaven", label: "Bungalow Heaven" },
     { id: "madison-heights", label: "Madison Heights" },
@@ -186,6 +196,43 @@ export function setRuntimeOptions(
   table: Partial<Record<MarketCategory, Option[]>>,
 ): void {
   runtime.set(market, table);
+  version += 1;
+  for (const listener of listeners) listener();
+}
+
+/**
+ * Adds records the parent reached by **search** to the runtime table.
+ *
+ * Why this has to exist, and why it belongs here rather than in the component:
+ * `/api/market/options` serves only the curated starters for the four big
+ * categories, so a school found by searching is not in this table. Keeping it in
+ * component state was enough to render the chip *until the page reloaded* — after
+ * which the id was still in `answers.schools` with nothing on screen
+ * representing it, and `labelForOption` fell back to printing the raw slug
+ * (`starkids-preschool`) in the "For each one" follow-up.
+ *
+ * Registering it here fixes both at once, because every reader — `optionsFor`,
+ * `labelForOption`, the review screen, the chat's own recap — goes through
+ * `marketOptions()`. A component-level fix would have had to be repeated in each
+ * of them, and forgotten in one.
+ *
+ * **Append-only, and the existing entry wins.** A starter carries curation the
+ * search result does not, and a record that arrives twice must not appear twice.
+ */
+export function registerFoundOptions(
+  market: MarketId,
+  category: MarketCategory,
+  found: Option[],
+): void {
+  if (found.length === 0) return;
+
+  const table = runtime.get(market) ?? {};
+  const current = table[category] ?? MARKETS[market][category];
+  const known = new Set(current.map((o) => o.id));
+  const fresh = found.filter((o) => !known.has(o.id));
+  if (fresh.length === 0) return;
+
+  runtime.set(market, { ...table, [category]: [...current, ...fresh] });
   version += 1;
   for (const listener of listeners) listener();
 }

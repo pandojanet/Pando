@@ -1,3 +1,4 @@
+import { movedFromPlaces } from "./places";
 import { buildConsentRecord } from "./consent";
 import {
   ageBandsOf,
@@ -129,10 +130,51 @@ export function deriveLifeRelevance(session: DerivationInput): RelevanceRow[] {
   };
 
   push("budget", answers.budget);
+  /**
+   * Item 11: local roots, and it is a `tenure` row of its own rather than one of
+   * the tenure *bands*. Somebody can have grown up here, moved away and come
+   * back — the old single list forced them to pick one of those and drop the
+   * other.
+   */
+  if (answers.grew_up_here) push("grew_up_here", [answers.grew_up_here]);
+  /* The 24 Aug splits. Each new question carries the *same* `relevance`
+     dimension as the screen it came out of, so `life_relevance` gains rows and
+     never a new dimension — which is why none of this needed a migration. */
+  push("travel_time", answers.travel_time);
   push("logistics", answers.logistics);
   if (answers.time_in_area) push("time_in_area", [answers.time_in_area]);
+  /**
+   * The coarse "where from" signal, **derived** rather than asked.
+   *
+   * Her instruction, verbatim: "Pando can derive 'elsewhere in California,'
+   * 'another state' or 'another country' from the actual location. The parent
+   * shouldn't have to provide both."
+   *
+   * The place ids are canonical slugs from `market_options.previous_places`, and
+   * the **prefix** carries the geography: `us-san-francisco-ca`,
+   * `intl-london-uk`.
+   *
+   * **It was the suffix first, and `seed-places.mjs`'s own check refused that.**
+   * Country codes collide with US state codes across the board — DE is Germany
+   * and Delaware, IN India and Indiana, IL Israel and Illinois, MA Morocco and
+   * Massachusetts — so twelve seeded cities would have filed a Berlin family as
+   * domestic. The ambiguity is in the vocabulary itself, so no special-casing
+   * fixes it; a prefix we own does.
+   *
+   * **Why the slug and not a lookup:** `derive.ts` is pure and runs on the server
+   * over answers it has already sanitised, with no access to the options table
+   * (see the 11 Aug decision — the graph is derived from the answers, never taken
+   * from the request). Encoding the geography in the id is what keeps that true.
+   * The cost is that the importer must produce ids in this shape, which is why it
+   * is asserted rather than assumed.
+   */
+  for (const value of movedFromPlaces(answers.previous_places)) {
+    rows.push({ dimension: "tenure", value });
+  }
   push("family_structure", answers.family_structure);
+  push("work_setup", answers.work_setup);
   push("childcare_now", answers.childcare_now);
+  push("childcare_backup", answers.childcare_backup);
   push("trust_circles", answers.trust_circles);
 
   return rows;
