@@ -15,6 +15,7 @@ import {
   optionLabel,
   when,
 } from "@/components/admin/ui";
+import { Spec, SpecList } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { CaregiverClaimRow } from "@/lib/admin/types";
 import {
@@ -172,29 +173,30 @@ export default function ClaimsPage() {
               right={<Badge tone="gold">Waiting to be matched</Badge>}
             >
               <div className="grid gap-4 px-4 py-3 lg:grid-cols-2">
-                <dl className="space-y-2.5 text-[13.5px]">
-                  <Pair label="Number" value={claim.phone_masked ?? "—"} />
-                  <Pair label="Looking for" value={labels(CAREGIVER_TYPES, claim.roles_wanted)} />
-                  <Pair label="Ages" value={labels(CAREGIVER_AGE_BANDS, claim.age_experience)} />
-                  <Pair label="Says they're good at" value={labels(CAREGIVER_STRENGTHS, claim.strengths)} />
-                  <Pair label="Areas" value={labels([], claim.areas_served)} />
-                  <Pair
-                    label="Drives"
-                    value={claim.drives === null ? "—" : claim.drives ? "Yes" : "No"}
-                  />
-                  <Pair label="Days" value={labels(CAREGIVER_DAYS, claim.days_available)} />
-                  <Pair
-                    label="Can start"
-                    value={claim.available_from ? optionLabel(CAREGIVER_AVAILABLE_FROM, claim.available_from) : "—"}
-                  />
-                  <Pair
-                    label="Rate"
-                    value={claim.rate_band ? optionLabel(CAREGIVER_PAY_BANDS, claim.rate_band) : "—"}
-                  />
+                <SpecList>
+                  <Spec label="Number">{claim.phone_masked}</Spec>
+                  <Spec label="Looking for">{labels(CAREGIVER_TYPES, claim.roles_wanted)}</Spec>
+                  <Spec label="Ages">{labels(CAREGIVER_AGE_BANDS, claim.age_experience)}</Spec>
+                  <Spec label="Says they're good at">{labels(CAREGIVER_STRENGTHS, claim.strengths)}</Spec>
+                  <Spec label="Areas">{labels([], claim.areas_served)}</Spec>
+                  <Spec label="Drives">
+                    {claim.drives === null ? null : claim.drives ? "Yes" : "No"}
+                  </Spec>
+                  <Spec label="Days">{labels(CAREGIVER_DAYS, claim.days_available)}</Spec>
+                  <Spec label="Can start">
+                    {claim.available_from
+                      ? optionLabel(CAREGIVER_AVAILABLE_FROM, claim.available_from)
+                      : null}
+                  </Spec>
+                  <Spec label="Rate">
+                    {claim.rate_band
+                      ? optionLabel(CAREGIVER_PAY_BANDS, claim.rate_band)
+                      : null}
+                  </Spec>
                   {claim.hours_note && (
-                    <Pair label="On their hours" value={claim.hours_note} />
+                    <Spec label="On their hours">{claim.hours_note}</Spec>
                   )}
-                </dl>
+                </SpecList>
 
                 <div>
                   <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
@@ -413,17 +415,6 @@ function DeleteRequest({
           Keep it
         </Button>
       </div>
-    </div>
-  );
-}
-
-function Pair({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="w-[9.5rem] shrink-0 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
-        {label}
-      </dt>
-      <dd className="min-w-0">{value}</dd>
     </div>
   );
 }

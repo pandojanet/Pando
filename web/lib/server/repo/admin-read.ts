@@ -1153,14 +1153,28 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
   const wanted = Math.min(20, Math.max(1, Number(params.wanted ?? 5) || 5));
 
   if (!askerId) {
+    /**
+     * The coefficients come back even with nobody picked, and that is not
+     * padding: since 2 Sep they are editable on this page, and configuration a
+     * reader can only reach by first choosing a parent to score is
+     * configuration hidden behind an unrelated step. One extra round trip on a
+     * page that has not run a scoring query at all.
+     */
     return {
       asker: null,
       ranked: [],
       cold: false,
       wanted,
       found: 0,
-      weights: [],
-      adjacency_pairs: 0,
+      weights: sortWeights(
+        (await rows(
+          db,
+          sql`select affinity_type, weight from affinity_weights`,
+        )).map((r: Row) => ({
+          affinity_type: String(r.affinity_type),
+          weight: Number(r.weight),
+        })),
+      ),
       people,
     } satisfies MatchingResult;
   }
@@ -1229,12 +1243,29 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
     cold: outcome.cold,
     wanted: outcome.wanted,
     found: outcome.found,
-    weights: Object.entries(outcome.config.weights)
-      .map(([affinity_type, weight]) => ({ affinity_type, weight: Number(weight) }))
-      .sort((a, b) => b.weight - a.weight || a.affinity_type.localeCompare(b.affinity_type)),
-    adjacency_pairs: outcome.config.adjacency.length,
+    weights: sortWeights(
+      Object.entries(outcome.config.weights).map(([affinity_type, weight]) => ({
+        affinity_type,
+        weight: Number(weight),
+      })),
+    ),
     people,
   } satisfies MatchingResult;
+}
+
+/**
+ * One order for the coefficients, and it is **not** by weight.
+ *
+ * They used to come back heaviest first, which reads well in a list and is
+ * wrong for a set of inputs: now that each one is an editable field, sorting by
+ * value means a row jumps to a different place in the list the moment somebody
+ * changes it — under the cursor of the person who just typed. Sorted by name,
+ * the field an admin is editing stays where they found it.
+ */
+function sortWeights(
+  weights: Array<{ affinity_type: string; weight: number }>,
+): Array<{ affinity_type: string; weight: number }> {
+  return [...weights].sort((a, b) => a.affinity_type.localeCompare(b.affinity_type));
 }
 
 /**

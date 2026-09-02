@@ -338,7 +338,33 @@ head("honesty and health");
 /* ── Part 2 · what actually landed in Postgres ───────────────────────────── */
 
 const sql = postgres(process.env.DATABASE_URL, { max: 2, prepare: false, onnotice: () => {} });
-await new Promise((r) => setTimeout(r, 9000)); // extraction runs after the response
+
+/**
+ * Extraction runs *after* the save response, so this waits for it — by polling
+ * for the work rather than sleeping for a guessed nine seconds.
+ *
+ * The guess was the problem: when the model provider is briefly overloaded (529),
+ * the SDK's own retries take longer than the sleep, and three checks that are
+ * about *this app* went red for something upstream and temporary. Trained on
+ * that, a red suite stops meaning anything.
+ *
+ * The bound is still real. If nothing is scored inside it, the checks below fail
+ * exactly as they did — which is the honest answer when the provider is down.
+ */
+{
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    const [{ waiting }] = await sql`
+      select count(*)::int as waiting
+      from share_contributions pc
+      join submissions s on s.id = pc.submission_id
+      where s.client_id like ${'audit-%' + RUN} and s.kind <> 'caregiver'
+        and pc.confidence is null
+    `;
+    if (waiting === 0 || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
 
 /* A Ukrainian number, end to end (20 Aug).
  *

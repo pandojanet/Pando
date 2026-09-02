@@ -71,12 +71,13 @@ export interface MatchingResult {
   /**
    * The weights the run used, from `affinity_weights` at query time.
    *
-   * On screen on purpose: the harness exists to answer "did my weight change do
-   * anything", and that question is unanswerable if the page does not say what it
-   * scored with.
+   * On screen on purpose, and since 2 Sep **editable there** (see
+   * `matching.weight`): the harness exists to answer "did my weight change do
+   * anything", which needs the page to say what it scored with *and* to be
+   * where the change is made. Returned even with no asker chosen, because the
+   * coefficients are configuration rather than a property of one run.
    */
   weights: Array<{ affinity_type: string; weight: number }>;
-  adjacency_pairs: number;
   /** Contributors to choose between, so the page needs no second request. */
   people: Array<{ person_id: string; name: string | null; neighborhood: string | null }>;
 }
@@ -722,6 +723,20 @@ export type AdminAction =
    * everything (19) and because this is the one path that reaches five
    * strangers' phones unprompted. It refuses a blast still marked for review.
    */
+  /**
+   * 6.7 — one matching weight, changed from the harness.
+   *
+   * The page still cannot send anything, and that separation is the point: this
+   * writes configuration, never an outreach. Weights are read from
+   * `affinity_weights` on every scoring run (§18.1 over §8.1), so a change lands
+   * on the next question with no deploy and no backfill — which also means it
+   * changes who gets asked for real, hence an audited action rather than a knob.
+   *
+   * `affinity_type` names an existing row: the update is conditional and creates
+   * nothing, so a weight for a kind of connection the scorer does not read
+   * cannot be invented from a screen.
+   */
+  | { action: "matching.weight"; affinity_type: string; weight: number }
   | { action: "blast.send"; id: string }
   | { action: "answer.approve"; id: string }
   | { action: "answer.send"; id: string }

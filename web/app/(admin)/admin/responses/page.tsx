@@ -285,12 +285,19 @@ export default function BlastResponsesPage() {
         )}
       </div>
 
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        Nothing here reaches an answer directly. A record created from a reply enters
+      {/* Only when there is something to explain. An instruction about how to
+          judge a queue, printed under an empty queue, is a paragraph asking the
+          reader to hold a rule for work that does not exist — the "say it once,
+          where it is needed" rule from the 19 Aug pass, applied to *when* as
+          well as where. */}
+      {all.length > 0 && (
+        <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
+          Nothing here reaches an answer directly. A record created from a reply enters
         the contributions queue and is read again — this page judges the reply, not the
         claim about a place. A reply that names a caregiver adds nothing on its own:
-        a caregiver only ever appears through her own consent.
-      </p>
+          a caregiver only ever appears through her own consent.
+        </p>
+      )}
     </>
   );
 }

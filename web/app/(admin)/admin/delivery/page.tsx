@@ -10,6 +10,7 @@ import {
   NotConfigured,
   PageHead,
 } from "@/components/admin/ui";
+import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
 import type { DeliveryHealthRow } from "@/lib/admin/types";
 
@@ -48,17 +49,19 @@ export default function DeliveryPage() {
         title="Message delivery"
         intro="Whether the texts actually arrived, and the carrier errors worth doing something about."
         right={
-          <div className="flex gap-1">
-            {[1, 7, 30].map((d) => (
-              <Button
-                key={d}
-                tone={days === d ? "primary" : "secondary"}
-                onClick={() => setDays(d)}
-              >
-                {d === 1 ? "Today" : `${d} days`}
-              </Button>
-            ))}
-          </div>
+          /* The shared control, not a row of primary buttons. A window picker
+             changes what you are looking at; it is not the loudest thing on a
+             page that reports carrier failures. */
+          <SegmentedFilter
+            label="How far back to look"
+            value={days}
+            onChange={setDays}
+            options={[
+              { id: 1, label: "Today" },
+              { id: 7, label: "7 days" },
+              { id: 30, label: "30 days" },
+            ]}
+          />
         }
       />
 

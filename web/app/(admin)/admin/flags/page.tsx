@@ -14,6 +14,7 @@ import {
   inputClass,
   when,
 } from "@/components/admin/ui";
+import { Quote, RecordGroup } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { FIELD_LABEL, flagMeaning, flagTitle, sentence } from "@/lib/admin/labels";
 import type { FlagRow } from "@/lib/admin/types";
@@ -34,17 +35,31 @@ import type { FlagRow } from "@/lib/admin/types";
  *
  *  - **it explained itself twice.** Each card printed the specific stored reason
  *    *and* a generic paragraph about that kind of flag. Now: the specific one, or
- *    the generic one when there is no specific one, never both. The generic
- *    sentence lives on the heading's tooltip instead of taking up space.
+ *    the generic one when there is no specific one, never both.
  *  - **the same instruction, twelve times.** "Saved with your name, visible to
  *    admins only" was under every note box. It is true once, at the top.
  *  - **nothing was scannable.** Every card was a stack of six labelled blocks, so
- *    twelve of them had no shape. The card is now four lines: what and where, the
- *    words, why in one line, and one row of controls.
+ *    twelve of them had no shape.
  *
  * What did not move: the parent's own text is still the biggest thing on the card,
  * because reading it *is* the task, and it is still shown field by field so two
  * answers never read as one sentence.
+ *
+ * ## 2 Sep — the third pass, and the same fault one level out
+ *
+ * Walked in a browser, and the repetition was back — not because that pass was
+ * undone, but because it was per-card and the duplication is not. "The specific
+ * reason, or the generic one" is right for one card and still means that when no
+ * specific reason exists, **the identical paragraph appears on all twelve**, with
+ * the identical heading above it. On the demo cohort that is exactly what
+ * happened: five cards reading "Health, legal or safety question" over five
+ * copies of the same sentence.
+ *
+ * So the flags are grouped by reason and the reason is stated **once, in the
+ * group's heading** (`RecordGroup`). What is left on a card is what differs
+ * between cards: the words the parent wrote, which specific record they are on,
+ * and the controls. It also makes the page answer a question it could not
+ * before — "how many of these are the same thing?" — at a glance.
  */
 export default function FlagsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
@@ -82,26 +97,38 @@ export default function FlagsPage() {
     const note = notes[flag.id] ?? "";
     const isQuestion = flag.subject?.kind === "demand_signal";
     const wrote = flag.subject?.wrote ?? [];
-    /* One reason, never two. The specific sentence if the review pass wrote one,
-       otherwise the general meaning of this kind of flag. */
-    const why = flag.excerpt || flagMeaning(flag.reason);
 
     return (
-      <li className="px-4 py-4">
-        {/* One line: what it is, and where it came from. */}
+      <article className="px-4 py-3.5">
+        {/* Which record this is on, and who it came from. The *kind* of flag is
+            no longer here — it is the group heading above, once. */}
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3
-            className="text-[14.5px] font-semibold text-ink"
-            title={flagMeaning(flag.reason) ?? undefined}
-          >
-            {flagTitle(flag.reason)}
-          </h3>
-          {/* Three bare values separated by dots left it to the reader to work
-              out which was the class and which was the parent. One word fixes
-              it, and only the ambiguous one is labelled. */}
+          {/**
+           * An empty `subject.title` is not a missing record — the type says
+           * so: *"Empty for a question, which is its own text."* Two wrong
+           * answers were tried before this one, and both are worth recording
+           * because they are the two obvious ones. Printing "No record
+           * attached" states something false on every flag raised from a demand
+           * signal, which is the entire urgent section. Printing the *kind*
+           * instead ("A question a parent asked") is true and useless: the group
+           * heading above already says what these are, so it was the same
+           * duplication this pass removed, reappearing one level down.
+           *
+           * So the line appears only when it **identifies** something. A flag
+           * with no subject at all is the one case worth saying out loud, since
+           * that is odd data rather than an ordinary question.
+           */}
+          {flag.subject?.title ? (
+            <p className="text-[13.5px] font-semibold text-ink">
+              {flag.subject.title}
+            </p>
+          ) : !flag.subject ? (
+            <p className="text-[13.5px] text-muted">No record attached</p>
+          ) : (
+            <span />
+          )}
           <p className="text-[12.5px] text-muted">
             {[
-              flag.subject?.title || null,
               flag.contributor?.name ? `from ${flag.contributor.name}` : null,
               when(flag.created_at),
             ]
@@ -110,32 +137,25 @@ export default function FlagsPage() {
           </p>
         </div>
 
-        {/* The words. The per-answer field label sits under each quote, not over
-            it, so the eye lands on what the parent said first — but the block as
-            a whole is named, because otherwise nothing on the card says whose
-            words these are. */}
+        {/* The words — the reason this page exists. Field by field, so two
+            answers never read as one sentence. */}
         {wrote.length > 0 ? (
-          <div className="mt-3">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
-              {isQuestion ? "What they asked" : "What they wrote"}
-            </p>
-            <div className="mt-1 space-y-1.5">
-              {wrote.map((w) => (
-                <div key={w.field}>
-                  <p className="text-[15px] leading-relaxed text-ink">
-                    “{w.body}”
-                  </p>
-                  {!isQuestion && (
-                    <p className="text-[11.5px] text-muted">
-                      {FIELD_LABEL[w.field] ?? sentence(w.field)}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
+          <div className="mt-2.5 space-y-2">
+            {wrote.map((w) => (
+              <Quote
+                key={w.field}
+                label={
+                  isQuestion
+                    ? "What they asked"
+                    : (FIELD_LABEL[w.field] ?? sentence(w.field))
+                }
+              >
+                “{w.body}”
+              </Quote>
+            ))}
           </div>
         ) : (
-          <p className="mt-2 text-[13.5px] text-muted">
+          <p className="mt-2 text-[13px] text-muted">
             They wrote nothing — this came from what they tapped
             {flag.field
               ? `, on ${FIELD_LABEL[flag.field] ?? sentence(flag.field)}`
@@ -144,16 +164,14 @@ export default function FlagsPage() {
           </p>
         )}
 
-        {why && (
-          <div className="mt-3">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
-              Why it came up
-            </p>
-            <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-[13px] leading-relaxed text-ink-soft">
-              <span>{why}</span>
-              {flag.confidence !== null && <Usefulness value={flag.confidence} />}
-            </p>
-          </div>
+        {/* Only the *specific* reason the review pass wrote, if it wrote one.
+            The generic meaning of this kind of flag is in the group heading, so
+            printing it here would be the duplication this pass removed. */}
+        {(flag.excerpt || flag.confidence !== null) && (
+          <p className="mt-2.5 flex flex-wrap items-baseline gap-x-2 text-[12.5px] leading-relaxed text-muted">
+            {flag.excerpt && <span>{flag.excerpt}</span>}
+            {flag.confidence !== null && <Usefulness value={flag.confidence} />}
+          </p>
         )}
 
         {/**
@@ -168,7 +186,7 @@ export default function FlagsPage() {
         <div className="mt-3">
           <label
             htmlFor={`note-${flag.id}`}
-            className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+            className="block text-[11px] font-semibold uppercase tracking-[0.07em] text-muted"
           >
             Admin comment
           </label>
@@ -218,7 +236,27 @@ export default function FlagsPage() {
             )}
           </div>
         </div>
-      </li>
+      </article>
+    );
+  }
+
+  /** The flags of one section, in runs that share a reason. */
+  function Grouped({ flags }: { flags: FlagRow[] }) {
+    return (
+      <>
+        {groupByReason(flags).map((group) => (
+          <RecordGroup
+            key={group.reason}
+            title={flagTitle(group.reason)}
+            count={group.flags.length}
+            meaning={flagMeaning(group.reason)}
+          >
+            {group.flags.map((flag) => (
+              <FlagCard key={flag.id} flag={flag} />
+            ))}
+          </RecordGroup>
+        ))}
+      </>
     );
   }
 
@@ -247,28 +285,36 @@ export default function FlagsPage() {
           ) : urgent.length === 0 ? (
             <Empty title="Nothing urgent" body="This is the one you want empty." />
           ) : (
-            <ul className="divide-y divide-bark/50">
-              {urgent.map((flag) => (
-                <FlagCard key={flag.id} flag={flag} />
-              ))}
-            </ul>
+            <Grouped flags={urgent} />
           )}
         </Card>
 
         <Card title={`When you have a minute (${rest.length})`}>
-          {rest.length === 0 ? (
-            <Empty title="Nothing waiting" />
-          ) : (
-            <ul className="divide-y divide-bark/50">
-              {rest.map((flag) => (
-                <FlagCard key={flag.id} flag={flag} />
-              ))}
-            </ul>
-          )}
+          {rest.length === 0 ? <Empty title="Nothing waiting" /> : <Grouped flags={rest} />}
         </Card>
       </div>
     </>
   );
+}
+
+/**
+ * Flags in runs that share a reason, biggest run first.
+ *
+ * Order is by size rather than by time because the question this grouping
+ * answers is "what is going on here" — five copies of one thing is one problem
+ * to work through, and a single outlier below them is a second. Inside a run
+ * the server's order (newest first) is untouched.
+ */
+function groupByReason(flags: FlagRow[]): Array<{ reason: string; flags: FlagRow[] }> {
+  const byReason = new Map<string, FlagRow[]>();
+  for (const flag of flags) {
+    const existing = byReason.get(flag.reason);
+    if (existing) existing.push(flag);
+    else byReason.set(flag.reason, [flag]);
+  }
+  return [...byReason.entries()]
+    .map(([reason, list]) => ({ reason, flags: list }))
+    .sort((a, b) => b.flags.length - a.flags.length);
 }
 
 /**

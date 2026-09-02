@@ -451,6 +451,38 @@ export function matchReason(kind: string): string {
   return MATCH_REASON[kind] ?? sentence(kind);
 }
 
+/**
+ * The kinds of match whose *value* is the interesting fact.
+ *
+ * "Same school" is a category; "Chandler School" is the thing a reader can
+ * agree or disagree with — and 6.7 exists to be argued with. Age bands and
+ * relevance dimensions are deliberately absent: their labels already say
+ * everything the value would ("Children the same stage" and `grade+tween`
+ * carry the same information, one of them readably).
+ */
+const NAMED_MATCH_KINDS = new Set([
+  "school",
+  "activity",
+  "faith_community",
+  "social_group",
+  "neighborhood",
+  "adjacent_neighborhood",
+]);
+
+/**
+ * *Which* school, class, club or area a match was on — or null when naming it
+ * would add nothing.
+ *
+ * Title-cased rather than run through `sentence`, because these are proper
+ * nouns: "Chandler School", not "Chandler school".
+ */
+export function matchReasonValue(kind: string, value: string): string | null {
+  if (!NAMED_MATCH_KINDS.has(kind)) return null;
+  const words = value.replace(/[-_]/g, " ").trim();
+  if (words === "") return null;
+  return words.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /** An `affinity_weights` row → what that weight is for. */
 export function affinityLabel(type: string): string {
   return MATCH_REASON[type] ?? sentence(type);

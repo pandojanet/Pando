@@ -336,17 +336,26 @@ ok(
   questionById("topics_lived")?.required === true,
   "her instruction: Continue activates once a topic or the opt-out is chosen",
 );
+/**
+ * 2 Sep — the descriptive box is off the profile pages, on the client's
+ * instruction, and on this screen that box was the topic-level consent she
+ * dictated on 1 Sep. So the assertion inverts: it is no longer on the screen,
+ * and this check exists to make sure a future session does not put it back
+ * without her asking, or remove the screen's own `help` line as well.
+ */
 ok(
-  "and the topic-level consent is stated on the screen",
-  /Pando may occasionally ask you a relevant question/.test(
-    screenById("topics_lived")?.footnote ?? "",
-  ),
+  "the descriptive box is gone from the parenting-experiences screen",
+  screenById("topics_lived")?.footnote === undefined,
+  "her 2 Sep instruction — the consent is now made by selecting a topic",
 );
 ok(
-  "in the words that say names are not shared, never “anonymous”",
-  /name will not be shared/.test(screenById("topics_lived")?.footnote ?? "") &&
-    !/anonymous/i.test(screenById("topics_lived")?.footnote ?? ""),
-  "Pando knows exactly who both parents are",
+  "and the screen still says the parent decides whether to answer",
+  /decide whether to answer/.test(screenById("topics_lived")?.help ?? ""),
+  "the one part of the removed footnote a parent acted on",
+);
+ok(
+  "the local-topics screen has no box either",
+  screenById("topics")?.footnote === undefined,
 );
 
 console.log("\n=== the listening-ear page is gone ===");
@@ -356,8 +365,9 @@ ok(
   "her recommendation: unnecessary once the topics page is the opt-in",
 );
 ok(
-  "and the parenting-experiences page carries what it used to ask",
-  (screenById("topics_lived")?.footnote ?? "").length > 0,
+  "and the parenting-experiences page is what asks it now",
+  optionsOf("topics_lived").length > 0 && questionById("topics_lived")?.required === true,
+  "selecting a topic is the opt-in; the screen no longer explains that in a box",
 );
 
 console.log("\n=== item 18: participation is chosen, never assumed ===");

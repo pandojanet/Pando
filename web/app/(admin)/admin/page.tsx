@@ -68,47 +68,87 @@ export default function AdminOverviewPage() {
     ? [
         {
           label: "need you today — a parent is waiting",
+          where: "Flags",
           n: o.quality.escalations,
           href: "/admin/flags",
           urgent: true,
         },
         {
           label: "other flags to read",
+          where: "Flags",
           n: readQueue,
           href: "/admin/flags",
           urgent: false,
         },
+        /**
+         * 2 Sep — the demand queue was missing from this list entirely, and it
+         * is the largest one on the page: 27 open questions, of which 14 are
+         * owed a person today. A page whose whole job is "is there anything for
+         * me" was answering no about the queue the sidebar was painting red.
+         *
+         * Split exactly the way the flags rows above are, and for the same
+         * reason recorded there: both halves point at the one page that clears
+         * them, and the two numbers add up to the badge the sidebar shows — so
+         * no number here can disagree with any number there.
+         */
+        {
+          label: "questions that need a person",
+          where: "Asked for",
+          n: o.demand.high_stakes + o.demand.named_allegation,
+          href: "/admin/demand",
+          urgent: true,
+        },
+        {
+          label: "other questions parents asked",
+          where: "Asked for",
+          n: o.demand.ordinary + o.demand.peer_support,
+          href: "/admin/demand",
+          urgent: false,
+        },
         {
           label: "recommendations to look at",
+          where: "Contributions",
           n: o.quality.pending_contributions,
           href: "/admin/activities",
           urgent: false,
         },
         {
           label: "contributors to confirm",
+          where: "Founding queue",
           n: o.founding.pending,
           href: "/admin/founding",
           urgent: false,
         },
         {
           label: "caregivers held for you",
+          where: "Caregivers",
           n: o.quality.review_holds,
           href: "/admin/caregivers",
           urgent: false,
         },
         {
           label: "caregiver sign-ups to match",
+          where: "Caregiver sign-ups",
           n: o.quality.pending_claims,
           href: "/admin/claims",
           urgent: false,
         },
         {
           label: "new names to approve",
+          where: "Names & places",
           n: o.quality.pending_options,
           href: "/admin/options",
           urgent: false,
         },
-      ].filter((t) => t.n > 0)
+      ]
+        .filter((t) => t.n > 0)
+        /* Urgent first, and **stable** within each half, so the order below is
+           the order this file declares. Needed the moment a second urgent row
+           existed: the list is written queue by queue, so without this the
+           demand escalations sat three rows below a flag queue that can wait,
+           and the rule drawn between the two halves would have landed in the
+           middle of the urgent ones. */
+        .sort((a, b) => Number(b.urgent) - Number(a.urgent))
     : [];
 
   return (
@@ -144,26 +184,60 @@ export default function AdminOverviewPage() {
                 Nothing right now — every queue is clear.
               </p>
             ) : (
+              /**
+               * 2 Sep — three things, all of them about a list of seven rows
+               * that had no shape.
+               *
+               * **The numbers are in a fixed column.** They were inline before a
+               * `gap-3`, so a 13 and a 2 pushed their labels to different
+               * positions and seven rows read as a ragged left edge — the one
+               * alignment a worklist has to get right, because scanning down
+               * the labels *is* how it is used.
+               *
+               * **Each row says where it goes.** An admin who has not yet
+               * learned this nav could not tell that "caregivers held for you"
+               * and "caregiver sign-ups to match" are two different pages. The
+               * destination on the right is also what makes the row read as a
+               * link rather than as a table cell.
+               *
+               * **And the urgent row is separated, not just coloured.** Red text
+               * alone put it in the same rhythm as the rest; a rule under it
+               * says the thing this page exists to say — these are owed a person
+               * today, those can wait.
+               */
               <ul className="divide-y divide-bark/50">
-                {todo.map((t) => (
-                  <li key={t.href + t.label}>
+                {todo.map((t, i) => (
+                  <li
+                    key={t.href + t.label}
+                    className={
+                      /* The boundary between "today" and "when you can" — drawn
+                         once, on the last urgent row, and only when both kinds
+                         are present. */
+                      t.urgent && todo[i + 1] && !todo[i + 1].urgent
+                        ? "border-b-2 border-alert-line"
+                        : undefined
+                    }
+                  >
                     <Link
                       href={t.href}
-                      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-paper/70"
+                      className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-paper/70"
                     >
                       <span
-                        className={`font-display text-[1.35rem] font-bold tabular-nums ${
+                        className={`w-9 shrink-0 text-right font-display text-[1.35rem] font-bold tabular-nums ${
                           t.urgent ? "text-alert" : "text-ink"
                         }`}
                       >
                         {t.n}
                       </span>
                       <span
-                        className={`text-[14.5px] ${
+                        className={`flex-1 text-[14.5px] ${
                           t.urgent ? "font-medium text-alert" : "text-ink-soft"
                         }`}
                       >
                         {t.label}
+                      </span>
+                      <span className="shrink-0 whitespace-nowrap text-[12.5px] text-muted group-hover:text-green-deep">
+                        {t.where} <span aria-hidden="true">→</span>
                       </span>
                     </Link>
                   </li>

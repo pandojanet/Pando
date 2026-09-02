@@ -116,6 +116,8 @@ forwarded around parent group chats still land in the right place.
 | `lib/seed-chat/scripts.ts` | The capture conversations: steps, widgets, fields, recap order.        |
 | `lib/seed-chat/engine.ts`  | Pure turn logic: next step, answer formatting, recap, submission.      |
 | `components/ui/*`       | Chips, dock, sheet, progress, desktop frame — the primitives. `PhoneField` holds the `+1`/`+380` picker in local state; the country is never a prop, because the formatted value already says which it is. |
+| `components/admin/kit.tsx` | The admin's interaction mechanics — hint, select, filter, menu, modal — on `<dialog>`, the Popover API and a native `<select>` rather than a component library. Radix did this first and cost 34 KB gzipped on every admin page; the trade is written down at the top of the file. |
+| `components/admin/ui.tsx` | The admin's look: badges, cards, tables, notes. `Badge`'s `hint` is the reachable replacement for a `title`. |
 | `components/seed/*`     | Landing, profile flow, completion.                                       |
 | `components/seed/chat/*`| Transcript, share menu, step widgets, card recaps.                       |
 | `components/site/*`     | Public-site shell (header, footer, wrap, buttons) and the hero phone mock. |
@@ -248,7 +250,7 @@ has the setup walkthrough.
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
-| `npm run test:e2e` | 271 checks against a running dev server and a real database. Cleans up after itself. |
+| `npm run test:e2e` | 280 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
 | `npm run test:confirm` | 9 checks on estimate 1.8&apos;s confirm-back trigger — mostly about when *not* to ask. |
 | `npm run test:derive` | 21 checks on `lib/places.ts`: a previous place → the coarse tenure signal, including every country/state code collision in both directions. |
@@ -336,7 +338,7 @@ hours, delivery monitoring), freshness pings, blast credits and graph write-back
 the forwardable share line, and the matching query itself. 2C's DELETE-by-text is
 the one Phase 1 promise still outstanding — the consent copy offers it.
 
-Tests: `npm run test:e2e` (271 checks, needs a dev server and a database),
+Tests: `npm run test:e2e` (280 checks, needs a dev server and a database),
 `npm run test:auth` (45), `npm run test:phone` (35), `npm run check`, `npm run typecheck`, `npm run build`.
 Roughly half of the e2e suite asserts a **refusal**, and it lies to the server on
 purpose. The eight invariant assertions in `drizzle/0002_rls.sql` still run at

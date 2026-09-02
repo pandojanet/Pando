@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
-import { cleanText } from "@/lib/sanitize";
+import { cleanId, cleanText } from "@/lib/sanitize";
 import { withDb } from "@/lib/server/db";
 import { invalidateOptions } from "@/lib/server/market-cache";
 import { invalidateInvites } from "@/lib/server/invite-cache";
@@ -52,6 +52,7 @@ const ACTIONS = new Set([
   "flag.resolve",
   "flag.escalate",
   "demand.status",
+  "matching.weight",
   "founding.approve",
   "founding.request_invite",
   "contributor.note",
@@ -243,6 +244,37 @@ export async function POST(request: Request) {
     if (!via) {
       return NextResponse.json(
         { error: "Record how they asked — a text, an email, a call" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * A matching weight is a whole number, at least 1.
+   *
+   * The database refuses both halves of that already, and differently — which
+   * is the reason to check here rather than let it: `weight > 0` is a CHECK
+   * violation, while a fraction against an `integer` column comes back from the
+   * driver as `invalid input syntax for type integer` (walked against the live
+   * database, because the plausible guess was that Postgres would round it and
+   * hand the page back a number nobody chose). Both reach the admin as a bare
+   * 502 "that didn't go through"; this turns them into a sentence that says what
+   * to type instead.
+   *
+   * The ceiling is arbitrary but not pointless — the seeded weights run 1–5, and
+   * a stray keystroke turning "5" into "55" would make one kind of connection
+   * outrank every other put together, silently.
+   */
+  if (action === "matching.weight") {
+    const weight = Number(body?.weight);
+    if (
+      !cleanId(body?.affinity_type) ||
+      !Number.isInteger(weight) ||
+      weight < 1 ||
+      weight > 20
+    ) {
+      return NextResponse.json(
+        { error: "A weight is a whole number between 1 and 20" },
         { status: 422 },
       );
     }

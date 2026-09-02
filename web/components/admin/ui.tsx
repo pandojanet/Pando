@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Hint } from "@/components/admin/kit";
 import { cn } from "@/lib/cn";
 
 /**
@@ -157,14 +158,27 @@ export function Stat({
 
 type BadgeTone = "neutral" | "green" | "gold" | "red" | "muted";
 
+/**
+ * A stored state, in words.
+ *
+ * `hint` is how the second sentence about it reaches a reader: it draws a
+ * `Hint` inside the pill, which opens on hover, on focus **and** on tap. The
+ * older `title` prop still works and is still wrong for anything a reader
+ * needs — a `title` is invisible on a touch device and to a keyboard, which is
+ * how two client reports of "this screen is unexplained" happened while the
+ * explanation was already written.
+ */
 export function Badge({
   children,
   tone = "neutral",
   title,
+  hint,
 }: {
   children: ReactNode;
   tone?: BadgeTone;
+  /** Deprecated: reachable by a mouse and nothing else. Prefer `hint`. */
   title?: string;
+  hint?: ReactNode;
 }) {
   const tones: Record<BadgeTone, string> = {
     neutral: "border-bark bg-paper text-ink-soft",
@@ -182,6 +196,7 @@ export function Badge({
       )}
     >
       {children}
+      {hint && <Hint label="What this means">{hint}</Hint>}
     </span>
   );
 }
@@ -283,7 +298,14 @@ export function Button({
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        /* `whitespace-nowrap` is a correctness fix, not a style preference. In a
+           narrow table cell the label wrapped mid-phrase ("Add to Pando" over
+           three lines) and — on `/admin/demand`, where an ancestor set
+           `truncate` — the primary button rendered as **"I've dealt with
+           this…"**: an ellipsis eating the label of the button somebody is
+           meant to press. A button is now as wide as its words; if that is too
+           wide for its container, the container is wrong. */
+        "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         tones[tone],
         className,
       )}
@@ -313,8 +335,25 @@ export function Field({
   );
 }
 
-export const inputClass =
-  "w-full rounded-lg border border-bark bg-card px-3 py-2 text-[14px] outline-none focus:border-green";
+/**
+ * The look of a control, without a width.
+ *
+ * Split out because appending `w-auto` to `inputClass` **does not work**, and
+ * the reason is the trap `Chip.tsx` already records: two utilities for the same
+ * property in the same layer are resolved by Tailwind's own output order, not by
+ * where they sit in the string. So `${inputClass} w-auto` kept `w-full`, and
+ * three toolbar controls that were meant to sit in a row stacked full-width down
+ * the page instead — visible only in a browser, since the class list reads
+ * exactly as intended.
+ *
+ * Use this in a toolbar, where a control should be as wide as it needs to be;
+ * use `inputClass` in a form, where filling the column is right.
+ */
+export const controlClass =
+  "rounded-lg border border-bark bg-card px-3 py-2 text-[14px] outline-none focus:border-green";
+
+/** A control that fills its column — the form case. One definition of the look. */
+export const inputClass = `w-full ${controlClass}`;
 
 export function Empty({
   title,
@@ -436,6 +475,76 @@ export function ResultNote({
   );
 }
 
+/**
+ * The row of controls beside a page title — search, a sort, a checkbox.
+ *
+ * It exists because of one specific defect, and the defect is instructive:
+ * `/admin/contributors` put four controls into `PageHead`'s `right` slot, which
+ * is a `flex` with `shrink-0` items, and the last of them — a checkbox with the
+ * label "Hide 2 test" — **wrapped into three lines, one word each**, because a
+ * label is the one thing in that row with no intrinsic width to defend. A
+ * toolbar has to let its controls wrap as *whole controls*, and keep a text
+ * label in one piece.
+ *
+ * On a phone it drops below the title rather than fighting it for the row,
+ * which is what `PageHead` already does — this only fixes the inside.
+ */
+export function Toolbar({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 [&_label]:whitespace-nowrap">
+      {children}
+    </div>
+  );
+}
+
+/**
+ * How something on this page works, in prose, on the page.
+ *
+ * ## Why a component and not a tooltip
+ *
+ * The client has now twice reported an admin screen as unexplained — the second
+ * time about the matching harness, in the words *"the scoring logic is not
+ * entirely clear"* — and both times the explanation existed, in a `title`
+ * attribute. A tooltip is not an explanation: it is invisible until hovered,
+ * unreachable on a touch device, and unfindable by somebody who does not
+ * already suspect there is something to find. `labels.ts` fixed the *words* an
+ * admin reads; this fixes where the sentences behind them live.
+ *
+ * It is a real `<details>` so the browser owns the disclosure: keyboard
+ * operable, findable by the browser's own find-in-page (Chrome expands a closed
+ * `details` to reveal a hit), and no state for a page to get wrong.
+ *
+ * **Open by default**, deliberately. A collapsed explainer is a tooltip with a
+ * bigger target — the reader still has to know to look. Anyone who has read it
+ * can fold it away, and the summary stays as the reminder.
+ */
+export function Explainer({
+  title,
+  children,
+  open = true,
+}: {
+  title: string;
+  children: ReactNode;
+  open?: boolean;
+}) {
+  return (
+    <details open={open} className="group border-b border-bark/70 last:border-b-0">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.07em] text-muted hover:text-ink">
+        <span
+          aria-hidden="true"
+          className="text-[10px] transition-transform group-open:rotate-90"
+        >
+          ▶
+        </span>
+        {title}
+      </summary>
+      <div className="px-4 pb-3.5 text-[13px] leading-relaxed text-muted [&_strong]:font-semibold [&_strong]:text-ink">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 /* ── Shared value formatters ──────────────────────────────────────────────── */
 
 export function slugLabel(value: string): string {
@@ -511,7 +620,10 @@ export function ConfidenceBadge({
 }) {
   if (value === null) {
     return (
-      <Badge tone="muted" title="Not reviewed yet — no score, rather than a guessed one">
+      <Badge
+        tone="muted"
+        hint="Not reviewed yet. A card of pure taps has no free text to judge, and a wrong score would sort a card out of the very queue meant to catch it — so this stays empty rather than becoming a guess."
+      >
         —
       </Badge>
     );

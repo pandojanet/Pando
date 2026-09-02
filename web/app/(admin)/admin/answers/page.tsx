@@ -304,13 +304,20 @@ export default function AnswersPage() {
         )}
       </div>
 
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        You are checking the claim, not the wording: the labels say what the records
+      {/* Only when there is something to explain. An instruction about how to
+          judge a queue, printed under an empty queue, is a paragraph asking the
+          reader to hold a rule for work that does not exist — the "say it once,
+          where it is needed" rule from the 19 Aug pass, applied to *when* as
+          well as where. */}
+      {all.length > 0 && (
+        <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
+          You are checking the claim, not the wording: the labels say what the records
         support. If a label looks wrong, the fix is in the contributions queue — the
         labels are not editable here, because they describe the records rather than
         the sentence. {sentence("send")} goes through the same layer as every other
-        message, so somebody who texted STOP still cannot be reached.
-      </p>
+          message, so somebody who texted STOP still cannot be reached.
+        </p>
+      )}
     </>
   );
 }

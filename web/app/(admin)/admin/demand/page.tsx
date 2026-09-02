@@ -12,14 +12,18 @@ import {
   PageHead,
   ResultNote,
   SampleBanner,
-  TableWrap,
-  Td,
-  Th,
   inputClass,
   slugLabel,
-  useEdgeFade,
   when,
 } from "@/components/admin/ui";
+import { SegmentedFilter } from "@/components/admin/kit";
+import {
+  Fact,
+  FactGrid,
+  RecordCard,
+  RecordDrawer,
+  RecordList,
+} from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import {
   DEMAND_CATEGORY,
@@ -56,7 +60,6 @@ export default function DemandPage() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const { ref: filterRef, maskStyle: filterMask } = useEdgeFade<HTMLDivElement>();
 
   const all = rows ?? [];
   const visible = useMemo(() => {
@@ -67,13 +70,28 @@ export default function DemandPage() {
     return list;
   }, [all, filter]);
 
+  /**
+   * The counts, and each is computed with **the same predicate as the tab it
+   * sits on** — which is a fix, not a refactor. The old badge read "Needs a
+   * person · {high + peer}" while the tab it labelled shows everything with
+   * requires_human_review, and that includes the allegation class. So on this
+   * cohort the tab promised 14 and listed 19: the five questions the page
+   * treats as the most serious of all were the five its own counter omitted.
+   *
+   * The rule that prevents the next one: a count and the list it describes come
+   * from one expression, never from two that happen to agree.
+   */
   const counts = useMemo(() => {
-    const open = all.filter((r) => !r.is_test && r.status === "open");
+    const real = all.filter((r) => !r.is_test);
+    const open = real.filter((r) => r.status === "open");
     return {
       allegation: open.filter((r) => r.sensitivity === "named_allegation").length,
       high: open.filter((r) => r.sensitivity === "high_stakes").length,
       peer: open.filter((r) => r.sensitivity === "peer_support").length,
       ordinary: open.filter((r) => r.sensitivity === "ordinary").length,
+      urgent: open.filter((r) => r.requires_human_review).length,
+      open: open.length,
+      all: real.length,
     };
   }, [all]);
 
@@ -133,29 +151,24 @@ export default function DemandPage() {
       <PageHead
         title="What parents asked for"
         intro="What parents asked, in their own words. Health, legal and safety ones need a person today."
-        right={
-          <div
-            ref={filterRef}
-            style={filterMask}
-            className="flex gap-1 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible"
-          >
-            {(["urgent", "open", "all"] as const).map((key) => (
-              <Button
-                key={key}
-                className="shrink-0"
-                tone={filter === key ? "primary" : "secondary"}
-                onClick={() => setFilter(key)}
-              >
-                {key === "urgent"
-                  ? `Needs a person${counts.high + counts.peer > 0 ? ` · ${counts.high + counts.peer}` : ""}`
-                  : key === "open"
-                    ? "All open"
-                    : "Everything"}
-              </Button>
-            ))}
-          </div>
-        }
       />
+
+      <div className="mb-4">
+        <SegmentedFilter
+          label="Which questions to show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            {
+              id: "urgent",
+              label: "Needs a person",
+              count: counts.urgent,
+            },
+            { id: "open", label: "All open", count: counts.open },
+            { id: "all", label: "Everything", count: counts.all },
+          ]}
+        />
+      </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -211,111 +224,80 @@ export default function DemandPage() {
             }
           />
         ) : (
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>What they asked</Th>
-                <Th>About</Th>
-                <Th>Where from</Th>
-                {/* "Routing" named the mechanism. What an admin needs from this
-                    column is what kind of question it is and therefore what
-                    Pando already said back to the parent. */}
-                <Th title="What kind of question this is — which decides what Pando said back to them, and what you may do with it.">
-                  Kind of question
-                </Th>
-                <Th title="Yours to track. Nothing here is sent to the parent — there is no channel until Phase 2.">
-                  Where you got to
-                </Th>
-                <Th>From</Th>
-                <Th>When</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((row) => (
-                <tr
+          <RecordList>
+            {visible.map((row) => {
+              const kind = DEMAND_SENSITIVITY[row.sensitivity];
+              const needsNote =
+                row.sensitivity === "high_stakes" ||
+                row.sensitivity === "named_allegation";
+              return (
+                <RecordCard
                   key={row.id}
-                  className={
-                    row.sensitivity === "named_allegation"
-                      ? "bg-alert-wash/60"
-                      : row.sensitivity === "high_stakes"
-                        ? "bg-gold-wash/40"
-                        : undefined
-                  }
-                >
-                  <Td className="max-w-[26rem]">
-                    <span className="block text-[14px] leading-snug">
-                      {row.question_text}
+                  /**
+                   * Only the allegation class gets a wash, and that is a change.
+                   * Every non-ordinary row used to carry one, so in the "needs a
+                   * person" view the whole page was pink or gold — and two
+                   * banners above it were making the same point in words. One
+                   * accent that means something beats a page-wide tint: an
+                   * allegation is the single class where Pando does *nothing at
+                   * all* until a person has read it. High-stakes keeps its badge,
+                   * which is where the distinction belongs.
+                   */
+                  tone={row.sensitivity === "named_allegation" ? "urgent" : "plain"}
+                  /* The question in the parent's own words is the record. */
+                  title={
+                    <span className="font-normal leading-relaxed">
+                      “{row.question_text}”
                     </span>
-                  </Td>
-                  <Td>
-                    {row.category
-                      ? (DEMAND_CATEGORY[row.category] ?? sentence(row.category))
-                      : "—"}
-                  </Td>
-                  <Td className="text-[13px]">
-                    {row.neighborhood ? (
-                      slugLabel(row.neighborhood)
-                    ) : (
-                      <span className="text-muted" title="Anonymous session — no profile to read it from">
-                        not known
-                      </span>
-                    )}
-                  </Td>
-                  <Td>
-                    {(() => {
-                      const kind = DEMAND_SENSITIVITY[row.sensitivity];
-                      return (
-                        <>
-                          <Badge
-                            tone={kind?.tone ?? "neutral"}
-                            title={
-                              kind
-                                ? `What they saw: ${kind.said}\nWhat you may do: ${kind.allowed}`
-                                : undefined
-                            }
-                          >
-                            {kind?.label ?? sentence(row.sensitivity)}
-                          </Badge>
-                          {/**
-                           * The line under the badge used to read "not usable
-                           * until read" for every row `requires_human_review`
-                           * was set on — which is every non-ordinary row, and
-                           * **nothing ever clears that column**. So a question
-                           * you had read, followed up and answered still said it
-                           * was unread, forever. The sentence is now tied to the
-                           * thing that does change: while it is open it is
-                           * waiting, and once you have moved it on it isn't.
-                           */}
-                          {row.requires_human_review && row.status === "open" && (
-                            <span className="mt-1 block text-[12px] text-muted">
-                              waiting for you to read it
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </Td>
-                  <Td>
-                    <Badge tone={DEMAND_STATUS[row.status]?.tone ?? "neutral"}>
-                      {DEMAND_STATUS[row.status]?.label ?? sentence(row.status)}
-                    </Badge>
-                  </Td>
-                  <Td className="text-[13px]">{row.contributor?.name ?? "—"}</Td>
-                  <Td className="text-[13px] text-muted">{when(row.created_at)}</Td>
-                  <Td>
-                    <div className="flex flex-col gap-1.5">
+                  }
+                  aside={
+                    <>
+                      {row.contributor?.name ?? "No profile"}
+                      <span className="mt-0.5 block">{when(row.created_at)}</span>
+                    </>
+                  }
+                  badges={
+                    <>
+                      <Badge
+                        tone={kind?.tone ?? "neutral"}
+                        title={
+                          kind
+                            ? `What they saw: ${kind.said}\nWhat you may do: ${kind.allowed}`
+                            : undefined
+                        }
+                      >
+                        {kind?.label ?? sentence(row.sensitivity)}
+                      </Badge>
+                      <Badge tone={DEMAND_STATUS[row.status]?.tone ?? "neutral"}>
+                        {DEMAND_STATUS[row.status]?.label ?? sentence(row.status)}
+                      </Badge>
+                      {/**
+                       * The line under the badge used to read "not usable until
+                       * read" for every row `requires_human_review` was set on —
+                       * which is every non-ordinary row, and **nothing ever
+                       * clears that column**. So a question you had read,
+                       * followed up and answered still said it was unread,
+                       * forever. It is now tied to the thing that does change:
+                       * while it is open it is waiting, and once you have moved
+                       * it on it isn't.
+                       */}
+                      {row.requires_human_review && row.status === "open" && (
+                        <Badge tone="muted">Waiting for you to read it</Badge>
+                      )}
+                    </>
+                  }
+                  actions={
+                    <>
                       {row.status === "open" && (
                         <Button
                           tone="primary"
                           disabled={busy}
                           title="Writes a note against this question, with your name on it. Nothing goes to the parent."
-                          onClick={() => setNoteFor(row.id)}
+                          onClick={() => setNoteFor(noteFor === row.id ? null : row.id)}
                         >
-                          {row.sensitivity === "high_stakes" ||
-                          row.sensitivity === "named_allegation"
-                            ? "I've dealt with this…"
-                            : "I know who could answer…"}
+                          {needsNote
+                            ? "I've dealt with this"
+                            : "I know who could answer"}
                         </Button>
                       )}
                       {row.status !== "closed" && (
@@ -337,63 +319,78 @@ export default function DemandPage() {
                           Nothing to do
                         </Button>
                       )}
-                    </div>
-
-                    {noteFor === row.id && (
-                      <div className="mt-2 rounded-xl border border-bark bg-paper p-2.5">
-                        <Field
-                          label={
-                            row.sensitivity === "high_stakes" ||
-                            row.sensitivity === "named_allegation"
-                              ? "What you did about it"
-                              : "Who or what could answer this"
-                          }
-                          hint="Saved with your name, for other admins. It never reaches the parent."
+                    </>
+                  }
+                >
+                  <FactGrid>
+                    <Fact label="About">
+                      {row.category
+                        ? (DEMAND_CATEGORY[row.category] ?? sentence(row.category))
+                        : null}
+                    </Fact>
+                    <Fact label="Where from">
+                      {row.neighborhood ? (
+                        slugLabel(row.neighborhood)
+                      ) : (
+                        <span
+                          className="text-muted"
+                          title="Anonymous session — no profile to read it from"
                         >
-                          <input
-                            className={inputClass}
-                            value={note}
-                            onChange={(e) => setNote(e.target.value.slice(0, 300))}
-                          />
-                        </Field>
-                        <div className="mt-2 flex gap-2">
-                          <Button
-                            tone="primary"
-                            disabled={busy || note.trim().length < 3}
-                            onClick={() =>
-                              void run("Recorded", async () =>
-                                adminAction({
-                                  action: "demand.status",
-                                  id: row.id,
-                                  to:
-                                    row.sensitivity === "high_stakes" ||
-                                    row.sensitivity === "named_allegation"
-                                      ? "answered"
-                                      : "matched",
-                                  note: note.trim(),
-                                }),
-                              )
-                            }
-                          >
-                            Save
-                          </Button>
-                          <Button
-                            tone="secondary"
-                            onClick={() => {
-                              setNoteFor(null);
-                              setNote("");
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
+                          Not known
+                        </span>
+                      )}
+                    </Fact>
+                  </FactGrid>
+
+                  {noteFor === row.id && (
+                    <RecordDrawer>
+                      <Field
+                        label={
+                          needsNote
+                            ? "What you did about it"
+                            : "Who or what could answer this"
+                        }
+                        hint="Saved with your name, for other admins. It never reaches the parent."
+                      >
+                        <input
+                          className={inputClass}
+                          value={note}
+                          onChange={(e) => setNote(e.target.value.slice(0, 300))}
+                        />
+                      </Field>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          tone="primary"
+                          disabled={busy || note.trim().length < 3}
+                          onClick={() =>
+                            void run("Recorded", async () =>
+                              adminAction({
+                                action: "demand.status",
+                                id: row.id,
+                                to: needsNote ? "answered" : "matched",
+                                note: note.trim(),
+                              }),
+                            )
+                          }
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          tone="secondary"
+                          onClick={() => {
+                            setNoteFor(null);
+                            setNote("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
                       </div>
-                    )}
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
+                    </RecordDrawer>
+                  )}
+                </RecordCard>
+              );
+            })}
+          </RecordList>
         )}
       </Card>
 

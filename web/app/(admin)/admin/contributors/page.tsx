@@ -14,11 +14,13 @@ import {
   TableWrap,
   Td,
   Th,
-  inputClass,
+  Toolbar,
+  controlClass,
   slugLabel,
   yearList,
   when,
 } from "@/components/admin/ui";
+import { SegmentedFilter, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { useAdminRows } from "@/lib/admin/client";
 import type { ContributorRow } from "@/lib/admin/types";
@@ -77,38 +79,59 @@ export default function ContributorsPage() {
       <PageHead
         title="Contributors"
         intro="Everyone who filled in a profile. Open one to see what they shared."
-        right={
+      />
+
+      {/**
+       * 2 Sep — the controls moved out of `PageHead`'s `right` slot, and this is
+       * a defect fix rather than a rearrangement. That slot is a `flex` of
+       * `shrink-0` items, and the last control here is a **checkbox with a text
+       * label** — the one thing in a row with no intrinsic width to defend. So
+       * "Hide 2 test" rendered as three lines of one word each, wedged against
+       * the page title.
+       *
+       * `Toolbar` lets the controls wrap as whole controls and keeps a label in
+       * one piece. Below the title rather than beside it, because four controls
+       * are not an afterthought to a heading — they are how this page is used.
+       */}
+      <Toolbar>
+        <SegmentedFilter
+          label="Which question to answer about these contributors"
+          value={view}
+          onChange={setView}
+          options={[
+            { id: "people", label: "What they shared" },
+            { id: "consents", label: "What they agreed to" },
+          ]}
+        />
+        {view === "people" && (
           <>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Name, neighborhood…"
-              className={`${inputClass} w-[13rem]`}
+              aria-label="Search contributors"
+              className={`${controlClass} w-[13rem]`}
             />
-            <select
-              aria-label="Reward"
+            <Select
+              label="Reward"
               value={reward}
-              onChange={(e) =>
-                setReward(e.target.value as "all" | ContributorRow["reward_status"])
-              }
-              className={inputClass}
-            >
-              <option value="all">Every contributor</option>
-              <option value="eligible">Reward earned</option>
-              <option value="started">Waiting on review</option>
-              <option value="none">Gave nothing</option>
-            </select>
-            <select
-              aria-label="Sort"
+              onChange={setReward}
+              options={[
+                { id: "all", label: "Every contributor" },
+                { id: "eligible", label: "Reward earned" },
+                { id: "started", label: "Waiting on review" },
+                { id: "none", label: "Gave nothing" },
+              ]}
+            />
+            <Select
+              label="Sort"
               value={sort}
-              onChange={(e) =>
-                setSort(e.target.value as "recent" | "contributions")
-              }
-              className={inputClass}
-            >
-              <option value="recent">Newest first</option>
-              <option value="contributions">Most contributions</option>
-            </select>
+              onChange={setSort}
+              options={[
+                { id: "recent", label: "Newest first" },
+                { id: "contributions", label: "Most contributions" },
+              ]}
+            />
             {testCount > 0 && (
               <label className="flex items-center gap-2 text-[13px] text-muted">
                 <input
@@ -119,32 +142,14 @@ export default function ContributorsPage() {
                 Hide {testCount} test
               </label>
             )}
+            <span className="text-[12.5px] tabular-nums text-muted">
+              {filtered.length} shown
+            </span>
           </>
-        }
-      />
+        )}
+      </Toolbar>
 
-      <div className="mb-4 flex gap-1.5">
-        {(
-          [
-            ["people", "What they shared"],
-            ["consents", "What they agreed to"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setView(key)}
-            aria-pressed={view === key}
-            className={
-              view === key
-                ? "min-h-10 rounded-full border border-green bg-green-wash px-3.5 text-[13.5px] font-semibold text-green-deep"
-                : "min-h-10 rounded-full border border-bark px-3.5 text-[13.5px] font-medium text-muted hover:text-ink"
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <div className="mb-4" />
 
       {view === "consents" && <ConsentRecords />}
 
@@ -260,7 +265,21 @@ export default function ContributorsPage() {
                         Not from the group
                       </Badge>
                     ) : (
-                      <Badge tone="gold">Waiting on you</Badge>
+                      /**
+                       * Neutral, not gold, and only on this page. Gold means
+                       * "pending, not finished" and it is the right colour for
+                       * this state — but nearly every row on a *directory* of 29
+                       * contributors is unconfirmed, so twenty gold pills down
+                       * one column is the failure the design system names in so
+                       * many words: two golds on a screen and neither means
+                       * anything. The work itself lives on the founding queue,
+                       * which counts it in the sidebar and paints it there. Here
+                       * the pill is a fact about a row, and what a reader needs
+                       * to spot is the row that *differs*.
+                       */
+                      <Badge tone="neutral" title="Founding is never granted automatically — somebody has to confirm it, on the founding queue.">
+                        Waiting on you
+                      </Badge>
                     )}
                   </Td>
                   <Td>

@@ -771,6 +771,38 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "market_option", resource_id: target };
     }
 
+    /* ── 6.7 Matching weights ────────────────────────────────────────────── */
+
+    /**
+     * One coefficient, changed from the harness.
+     *
+     * **A conditional UPDATE, never an upsert.** `matching.ts` reads a weight
+     * with `config.weights[type] ?? 0`, so a row for a kind of connection the
+     * scorer never looks up would be a number on a screen that does nothing —
+     * and an admin who typed it would have no way to tell. Zero rows updated
+     * comes back as `not_found`, which is the honest answer to "change the
+     * weight of something that isn't scored".
+     *
+     * The value is validated in the route (a whole number, at least 1). The
+     * database says `weight > 0` as well, and both are deliberate: the CHECK is
+     * what makes it impossible, the route is what makes it readable.
+     *
+     * No cache to clear. Weights are read from this table inside the scoring
+     * query on every run (§18.1 over §8.1), so the next ranking uses the new
+     * number — that immediacy is exactly why the change is audited.
+     */
+    case "matching.weight": {
+      const type = id(b.affinity_type);
+      const weight = Number(b.weight);
+      const [row] = (await tx.execute(
+        sql`update affinity_weights set weight = ${weight}
+             where affinity_type = ${type}
+         returning affinity_type`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (!row) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "affinity_weight", resource_id: type };
+    }
+
     /* ── 2.7 Flags and demand ────────────────────────────────────────────── */
 
     case "flag.resolve": {

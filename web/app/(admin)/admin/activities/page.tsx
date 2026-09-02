@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -14,15 +14,21 @@ import {
   ResultNote,
   ProvenanceBadge,
   SampleBanner,
-  TableWrap,
-  Td,
-  Th,
   inputClass,
   optionLabel,
   slugLabel,
-  useEdgeFade,
   when,
 } from "@/components/admin/ui";
+import { SegmentedFilter } from "@/components/admin/kit";
+import {
+  Fact,
+  FactGrid,
+  Quote,
+  RecordCard,
+  RecordDrawer,
+  RecordList,
+  RecordNotes,
+} from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { ContributionRow } from "@/lib/admin/types";
 import {
@@ -52,6 +58,25 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
  *    question is a note for whoever reviews the queue next, and the row stays in
  *    "To review" rather than disappearing into "All" the moment it's set.
  *  - **low confidence first.** That queue is what improves the extraction prompt.
+ *
+ * ## 2 Sep — this stopped being a table, and that was overdue
+ *
+ * It had **ten columns**, and walking it in a browser is what settled the
+ * argument: "Counts toward Founding" rendered as six lines of one word each
+ * down a 90px column, the three action buttons wrapped their own labels
+ * ("Add to Pando" over three lines), and the free text a reviewer is actually
+ * here to read — the caveat, the tip, the question we asked — was crammed
+ * under the name in 12.5px italics.
+ *
+ * A table promises that a column means the same thing on every row and can be
+ * scanned down. This queue never kept that promise, because half its columns
+ * hold sentences. It is `RecordCard` now: the facts get a line each, the
+ * parent's own words get a quote treatment that distinguishes them from the
+ * system's prose (which is invariant 8's distinction, on screen), and every
+ * action gets its whole label.
+ *
+ * `/admin/contributors` is deliberately **still a table** — its values are all
+ * short. The layout follows the data, not a preference.
  */
 export default function ContributionsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
@@ -60,7 +85,6 @@ export default function ContributionsPage() {
   const [filter, setFilter] = useState<
     "pending" | "low" | "secondhand" | "incomplete" | "golden" | "all"
   >("pending");
-  const { ref: filterRef, maskStyle: filterMask } = useEdgeFade<HTMLDivElement>();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<ContributionRow>>({});
   const [question, setQuestion] = useState("");
@@ -68,8 +92,10 @@ export default function ContributionsPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   const all = rows ?? [];
+  const real = useMemo(() => all.filter((r) => !r.is_test), [all]);
+
   const visible = useMemo(() => {
-    const list = all.filter((r) => !r.is_test);
+    const list = real;
     if (filter === "low")
       return list.filter((r) => r.confidence !== null && r.confidence < 0.6);
     if (filter === "secondhand") return list.filter((r) => !r.firsthand);
@@ -98,7 +124,28 @@ export default function ContributionsPage() {
           (a, b) => Number(b.share.answer_ready) - Number(a.share.answer_ready),
         );
     return list;
-  }, [all, filter]);
+  }, [real, filter]);
+
+  /**
+   * The counts live on the filters, so "is there anything in the other views"
+   * is answerable without clicking through all six. The nav already does this
+   * for the queue as a whole; this is the same idea one level in.
+   */
+  const counts = useMemo(
+    () => ({
+      pending: real.filter(
+        (r) => r.status === "pending_review" || r.status === "needs_detail",
+      ).length,
+      low: real.filter((r) => r.confidence !== null && r.confidence < 0.6).length,
+      incomplete: real.filter(
+        (r) => r.firsthand && missingForFounding(r).length > 0,
+      ).length,
+      secondhand: real.filter((r) => !r.firsthand).length,
+      golden: real.filter((r) => r.share.answer_ready).length,
+      all: real.length,
+    }),
+    [real],
+  );
 
   async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
     setBusy(true);
@@ -123,39 +170,23 @@ export default function ContributionsPage() {
       <PageHead
         title="Contributions"
         intro="Add the ones you'd be happy for Pando to pass on. Hold the ones missing something."
-        right={
-          <div
-            ref={filterRef}
-            style={filterMask}
-            className="flex gap-1 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible"
-          >
-            {(
-              ["pending", "low", "incomplete", "secondhand", "golden", "all"] as const
-            ).map(
-              (key) => (
-                <Button
-                  key={key}
-                  className="shrink-0"
-                  tone={filter === key ? "primary" : "secondary"}
-                  onClick={() => setFilter(key)}
-                >
-                  {key === "pending"
-                    ? "To review"
-                    : key === "low"
-                      ? "Needs a read"
-                      : key === "incomplete"
-                        ? "Missing a detail"
-                        : key === "secondhand"
-                          ? "Heard from a friend"
-                          : key === "golden"
-                            ? "Ready to answer with"
-                            : "Everything"}
-                </Button>
-              ),
-            )}
-          </div>
-        }
       />
+
+      <div className="mb-4">
+        <SegmentedFilter
+          label="Which contributions to show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { id: "pending", label: "To review", count: counts.pending },
+            { id: "low", label: "Needs a read", count: counts.low },
+            { id: "incomplete", label: "Missing a detail", count: counts.incomplete },
+            { id: "secondhand", label: "Heard from a friend", count: counts.secondhand },
+            { id: "golden", label: "Ready to answer with", count: counts.golden },
+            { id: "all", label: "Everything", count: counts.all },
+          ]}
+        />
+      </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -174,418 +205,418 @@ export default function ContributionsPage() {
             body="Switch the filter, or wait for new submissions."
           />
         ) : (
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>What</Th>
-                <Th>Where</Th>
-                <Th>Who it was for</Th>
-                <Th>Would recommend</Th>
-                <Th>Paid</Th>
-                <Th>How recent</Th>
-                <Th>Counts toward Founding</Th>
-                {/* Named for what it measures, not for the column it lives in
-                    — the number below it is the only thing sorting this queue. */}
-                <Th title="How much another parent could act on what this one wrote. Their taps aren't scored, only their own words.">
-                  How useful
-                </Th>
-                <Th>From</Th>
-                <Th />
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map((row) => {
-                const open = editing === row.id;
-                const missing = missingForFounding(row);
-                return (
-                  <Fragment key={row.id}>
-                    <tr className={row.firsthand ? undefined : "bg-gold-wash/30"}>
-                      <Td>
-                        <span className="font-semibold">{row.share.name}</span>
-                        <span className="ml-1.5 text-[12px] uppercase tracking-[0.06em] text-muted">
-                          {row.kind}
-                        </span>
-                        {/* Where this row stands. The buttons on the right are
-                            derived from it, so without it they read as random. */}
-                        <span className="ml-1.5">
-                          <Badge
-                            tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}
-                            title={REVIEW_STATUS[row.status]?.meaning}
-                          >
-                            {REVIEW_STATUS[row.status]?.label ?? row.status}
-                          </Badge>
-                        </span>
-                        {row.share.answer_ready && (
-                          <span className="ml-1.5">
-                            <Badge
-                              tone="green"
-                              title="Good enough to answer a parent's question on its own, without asking anyone"
-                            >
-                              ready to answer with
-                            </Badge>
-                          </span>
-                        )}
-                        {row.status === "needs_detail" && row.needs_detail_note && (
-                          <span className="mt-1 block text-[12.5px] italic text-muted">
-                            You asked: “{row.needs_detail_note}”
-                          </span>
-                        )}
-                        {row.share.venue && (
-                          <span className="mt-0.5 block text-[12.5px] text-muted">
-                            {row.share.venue}
-                          </span>
-                        )}
-                        {row.tip_text && (
-                          <span className="mt-1 block text-[12.5px] italic text-muted">
-                            “{row.tip_text}”
-                          </span>
-                        )}
-                        {row.caveat ? (
-                          <span className="mt-1 block text-[12.5px] italic text-muted">
-                            Know first: “{row.caveat}”
-                          </span>
-                        ) : row.caveat_answered ? (
-                          <span className="mt-1 block text-[12.5px] text-muted">
-                            Caveat: nothing came to mind
-                          </span>
-                        ) : null}
-                      </Td>
-                      <Td>
-                        {row.share.neighborhoods.length === 0
-                          ? "—"
-                          : row.share.neighborhoods.map(slugLabel).join(", ")}
-                      </Td>
-                      <Td>
-                        {/* R2 — the label reads the source, never who typed it.
-                            "firsthand"/"secondhand" are the stored words and the
-                            filter above already says the readable version, so
-                            two names for one thing sat on one screen. */}
-                        {row.firsthand ? (
-                          <Badge tone="green" title="This family used it themselves.">
-                            They went themselves
-                          </Badge>
-                        ) : (
-                          <Badge
-                            tone="gold"
-                            title="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
-                          >
-                            Heard from a friend
-                          </Badge>
-                        )}
-                        <span className="mt-0.5 block text-[12.5px] text-muted">
-                          {row.child_age_at_time.length
-                            ? `age ${row.child_age_at_time.join(", ")}`
-                            : "no age given"}
-                        </span>
-                      </Td>
-                      <Td>
-                        {row.recommendation ? (
-                          <Badge
-                            tone={RECOMMENDATION[row.recommendation]?.tone ?? "gold"}
-                          >
-                            {RECOMMENDATION[row.recommendation]?.label ??
-                              sentence(row.recommendation)}
-                          </Badge>
-                        ) : (
-                          "—"
-                        )}
-                        {row.follow_up_ok && (
-                          <span
-                            className="mt-1 block text-[12px] text-muted"
-                            title="They agreed another parent may come back to them about this one. It costs one of their monthly questions."
-                          >
-                            happy to be asked more
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="text-[13px]">
-                        {row.price_band ? (
-                          <>
-                            {optionLabel(PRICE_BAND, row.price_band)}
-                            {row.price_unit && (
-                              <span className="text-muted">
-                                {" "}
-                                / {optionLabel(PRICE_UNIT, row.price_unit).toLowerCase()}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                        {row.worth_it && (
-                          <span className="mt-0.5 block text-muted">
-                            {optionLabel(WORTH_IT, row.worth_it)}
-                          </span>
-                        )}
-                      </Td>
-                      <Td className="text-[13px]">
-                        <span title={FRESHNESS[row.share.freshness_state]?.meaning}>
-                          {FRESHNESS[row.share.freshness_state]?.label ??
-                            sentence(row.share.freshness_state)}
-                        </span>
-                        <span className="mt-0.5 block text-muted">
-                          {when(row.share.last_confirmed_at)}
-                        </span>
-                      </Td>
-                      <Td className="text-[12.5px]">
-                        {/* Answers the column heading, rather than restating the
-                            rule: "qualifies" made the reader carry the question
-                            up to the header and back. */}
-                        {!row.firsthand ? (
-                          <span
-                            className="text-muted"
-                            title="Only a family's own experience counts toward Founding. This one is still welcome."
-                          >
-                            No — heard from a friend
-                          </span>
-                        ) : missing.length === 0 ? (
-                          <Badge tone="green">Yes</Badge>
-                        ) : (
-                          <span
-                            className="text-gold-ink"
-                            title="They skipped these questions. It counts as soon as they are answered."
-                          >
-                            Not yet — they didn&apos;t say {missing.join(", ")}
-                          </span>
-                        )}
-                      </Td>
-                      <Td>
-                        <ConfidenceBadge
-                          value={row.confidence}
-                          note={row.confidence_note}
-                        />
-                      </Td>
-                      <Td className="text-[13px]">
-                        {row.contributor?.name ?? "—"}
-                        <span className="mt-1 block">
-                          <ProvenanceBadge provenance={row.provenance} />
-                        </span>
-                      </Td>
-                      <Td>
-                        <div className="flex flex-col gap-1.5">
-                          {/**
-                           * The action set is derived from one rule — "offer what
-                           * this row is not already" — rather than from a list of
-                           * statuses, which is how a card held for a detail ended
-                           * up with no way to be added at all: the old condition
-                           * was `status === "pending_review"`, so asking for a
-                           * detail quietly removed the only button that mattered.
-                           *
-                           * The status pill in the row is the other half. Without
-                           * it the buttons changing between rows reads as random;
-                           * with it, "this one is already added, so there is
-                           * nothing to add" is obvious at a glance.
-                           */}
-                          {row.status !== "approved" && (
-                            <Button
-                              tone="primary"
-                              disabled={busy}
-                              title="Make this usable in an answer to a parent"
-                              onClick={() =>
-                                void run("Added to Pando.", async () =>
-                                  adminAction({
-                                    action: "contribution.approve",
-                                    id: row.id,
-                                  }),
-                                )
-                              }
-                            >
-                              Add to Pando
-                            </Button>
+          <RecordList>
+            {visible.map((row) => {
+              const open = editing === row.id;
+              const missing = missingForFounding(row);
+              return (
+                <RecordCard
+                  key={row.id}
+                  /* A secondhand card stays visibly different — it is welcome,
+                     labelled, and can never count toward Founding — but the
+                     shade is the card's, not a whole row of table cells. */
+                  tone={row.firsthand ? "plain" : "pending"}
+                  title={row.share.name}
+                  kind={row.kind}
+                  aside={
+                    <>
+                      {row.contributor?.name ?? "—"}
+                      <span className="mt-0.5 block">{when(row.created_at)}</span>
+                    </>
+                  }
+                  badges={
+                    <>
+                      <Badge
+                        tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}
+                        title={REVIEW_STATUS[row.status]?.meaning}
+                      >
+                        {REVIEW_STATUS[row.status]?.label ?? row.status}
+                      </Badge>
+                      {/* R2 — the label reads the source, never who typed it. */}
+                      {row.firsthand ? (
+                        <Badge tone="green" title="This family used it themselves.">
+                          They went themselves
+                        </Badge>
+                      ) : (
+                        <Badge
+                          tone="gold"
+                          title="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
+                        >
+                          Heard from a friend
+                        </Badge>
+                      )}
+                      <ProvenanceBadge provenance={row.provenance} />
+                      {row.share.answer_ready && (
+                        <Badge
+                          tone="green"
+                          title="Good enough to answer a parent's question on its own, without asking anyone"
+                        >
+                          Ready to answer with
+                        </Badge>
+                      )}
+                    </>
+                  }
+                  actions={
+                    <>
+                      {/**
+                       * The action set is derived from one rule — "offer what
+                       * this row is not already" — rather than from a list of
+                       * statuses, which is how a card held for a detail ended
+                       * up with no way to be added at all: the old condition
+                       * was `status === "pending_review"`, so asking for a
+                       * detail quietly removed the only button that mattered.
+                       *
+                       * The status pill above is the other half. Without it the
+                       * buttons changing between cards reads as random; with
+                       * it, "this one is already added, so there is nothing to
+                       * add" is obvious at a glance.
+                       */}
+                      {row.status !== "approved" && (
+                        <Button
+                          tone="primary"
+                          disabled={busy}
+                          title="Make this usable in an answer to a parent"
+                          onClick={() =>
+                            void run("Added to Pando.", async () =>
+                              adminAction({
+                                action: "contribution.approve",
+                                id: row.id,
+                              }),
+                            )
+                          }
+                        >
+                          Add to Pando
+                        </Button>
+                      )}
+                      <Button
+                        tone="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditing(open ? null : row.id);
+                          setDraft(open ? {} : { ...row });
+                          /* Otherwise a question typed for one row and left
+                             unsent reappears in the next row's box — and a row
+                             already asked something should show what, not a
+                             blank field. */
+                          setQuestion(open ? "" : row.needs_detail_note ?? "");
+                        }}
+                      >
+                        {open ? "Close" : "Edit or hold"}
+                      </Button>
+                      {/**
+                       * Golden answers (§17.1). Only offered on an approved
+                       * record, because that is the only state the flag can be
+                       * true in — the database says so too.
+                       */}
+                      {row.status === "approved" && (
+                        <Button
+                          tone="secondary"
+                          disabled={busy}
+                          title={
+                            row.share.answer_ready
+                              ? "Stop treating it as good enough to answer with"
+                              : "Good enough to answer a parent on its own, with nobody asked"
+                          }
+                          onClick={() =>
+                            void run(
+                              row.share.answer_ready
+                                ? "No longer marked ready."
+                                : "Marked ready to answer with.",
+                              async () =>
+                                adminAction({
+                                  action: "share.answer_ready",
+                                  id: row.share.id,
+                                  to: !row.share.answer_ready,
+                                }),
+                            )
+                          }
+                        >
+                          {row.share.answer_ready
+                            ? "Not ready after all"
+                            : "Ready to answer with"}
+                        </Button>
+                      )}
+                      {row.status !== "rejected" && (
+                        <Button
+                          tone="danger"
+                          disabled={busy}
+                          title="Set it aside. Nothing is sent to the parent."
+                          onClick={() =>
+                            void run("Set aside.", async () =>
+                              adminAction({
+                                action: "contribution.reject",
+                                id: row.id,
+                                reason: "not usable",
+                              }),
+                            )
+                          }
+                        >
+                          Don&apos;t use
+                        </Button>
+                      )}
+                    </>
+                  }
+                >
+                  <FactGrid>
+                    <Fact label="Where">
+                      {row.share.neighborhoods.length === 0
+                        ? null
+                        : row.share.neighborhoods.map(slugLabel).join(", ")}
+                    </Fact>
+                    <Fact label="Who it was for">
+                      {row.child_age_at_time.length
+                        ? `Age ${row.child_age_at_time.join(", ")} at the time`
+                        : null}
+                    </Fact>
+                    <Fact label="Would recommend">
+                      {row.recommendation ? (
+                        <Badge
+                          tone={RECOMMENDATION[row.recommendation]?.tone ?? "gold"}
+                        >
+                          {RECOMMENDATION[row.recommendation]?.label ??
+                            sentence(row.recommendation)}
+                        </Badge>
+                      ) : null}
+                    </Fact>
+                    <Fact
+                      label="Paid"
+                      hint={row.worth_it ? optionLabel(WORTH_IT, row.worth_it) : undefined}
+                    >
+                      {row.price_band ? (
+                        <>
+                          {optionLabel(PRICE_BAND, row.price_band)}
+                          {row.price_unit && (
+                            <span className="text-muted">
+                              {" / "}
+                              {optionLabel(PRICE_UNIT, row.price_unit).toLowerCase()}
+                            </span>
                           )}
+                        </>
+                      ) : null}
+                    </Fact>
+                    <Fact
+                      label="How recent"
+                      /* Only when there is a date. `when(null)` is an em dash,
+                         and an em dash under a filled value reads as a second,
+                         missing answer rather than as "no date recorded". */
+                      hint={
+                        row.share.last_confirmed_at
+                          ? `Last confirmed ${when(row.share.last_confirmed_at)}`
+                          : undefined
+                      }
+                    >
+                      <span title={FRESHNESS[row.share.freshness_state]?.meaning}>
+                        {FRESHNESS[row.share.freshness_state]?.label ??
+                          sentence(row.share.freshness_state)}
+                      </span>
+                    </Fact>
+                    {/* R11 — a permission, so it belongs with the recommendation
+                        it applies to rather than in the badge row, where it was
+                        a fourth pill competing with the review status. */}
+                    <Fact
+                      label="Follow-up"
+                      hint={
+                        row.follow_up_ok
+                          ? "Costs one of their monthly questions"
+                          : undefined
+                      }
+                    >
+                      {row.follow_up_ok
+                        ? "Happy to be asked more about this one"
+                        : "Not offered"}
+                    </Fact>
+                    <Fact label="Counts toward Founding">
+                      {/* Answers the label, rather than restating the rule. */}
+                      {!row.firsthand ? (
+                        <span
+                          className="text-muted"
+                          title="Only a family's own experience counts toward Founding. This one is still welcome."
+                        >
+                          No — heard from a friend
+                        </span>
+                      ) : missing.length === 0 ? (
+                        <Badge tone="green">Yes</Badge>
+                      ) : (
+                        <span
+                          className="text-gold-ink"
+                          title="They skipped these questions. It counts as soon as they are answered."
+                        >
+                          Not yet — they didn&apos;t say {missing.join(", ")}
+                        </span>
+                      )}
+                    </Fact>
+                    <Fact label="How useful their words are">
+                      <ConfidenceBadge
+                        value={row.confidence}
+                        note={row.confidence_note}
+                      />
+                    </Fact>
+                    {row.share.venue && <Fact label="Venue">{row.share.venue}</Fact>}
+                  </FactGrid>
+
+                  {(row.what_makes_it_great ||
+                    row.tip_text ||
+                    row.caveat ||
+                    row.caveat_answered ||
+                    row.who_for ||
+                    row.who_not_for ||
+                    (row.status === "needs_detail" && row.needs_detail_note)) && (
+                    <RecordNotes>
+                      {row.what_makes_it_great && (
+                        <Quote label="What they liked">
+                          {row.what_makes_it_great}
+                        </Quote>
+                      )}
+                      {row.tip_text && <Quote label="Their tip">{row.tip_text}</Quote>}
+                      {row.caveat ? (
+                        <Quote label="Know first">{row.caveat}</Quote>
+                      ) : row.caveat_answered ? (
+                        <p className="text-[12.5px] text-muted">
+                          Asked what to know first — nothing came to mind.
+                        </p>
+                      ) : null}
+                      {(row.who_for || row.who_not_for) && (
+                        <p className="text-[13px] leading-relaxed text-ink-soft">
+                          {row.who_for && (
+                            <>
+                              <span className="font-semibold">Perfect for</span>{" "}
+                              {row.who_for}.{" "}
+                            </>
+                          )}
+                          {row.who_not_for && (
+                            <>
+                              <span className="font-semibold">Might not suit</span>{" "}
+                              {row.who_not_for}.
+                            </>
+                          )}
+                        </p>
+                      )}
+                      {row.status === "needs_detail" && row.needs_detail_note && (
+                        <p className="rounded-lg border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
+                          You asked: “{row.needs_detail_note}” — nothing has been
+                          sent to the parent.
+                        </p>
+                      )}
+                    </RecordNotes>
+                  )}
+
+                  {open && (
+                    <>
+                      <RecordDrawer title="Tidy up what they wrote">
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="What makes it good">
+                            <textarea
+                              className={inputClass}
+                              rows={2}
+                              value={draft.what_makes_it_great ?? ""}
+                              onChange={(e) =>
+                                setDraft({
+                                  ...draft,
+                                  what_makes_it_great: e.target.value,
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="Know first (caveat)">
+                            <textarea
+                              className={inputClass}
+                              rows={2}
+                              value={draft.caveat ?? ""}
+                              onChange={(e) =>
+                                setDraft({ ...draft, caveat: e.target.value })
+                              }
+                            />
+                          </Field>
+                          <Field label="Perfect for">
+                            <input
+                              className={inputClass}
+                              value={draft.who_for ?? ""}
+                              onChange={(e) =>
+                                setDraft({ ...draft, who_for: e.target.value })
+                              }
+                            />
+                          </Field>
+                          <Field label="Might not suit">
+                            <input
+                              className={inputClass}
+                              value={draft.who_not_for ?? ""}
+                              onChange={(e) =>
+                                setDraft({ ...draft, who_not_for: e.target.value })
+                              }
+                            />
+                          </Field>
+                        </div>
+                        <div className="mt-3">
+                          <Button
+                            tone="primary"
+                            disabled={busy}
+                            onClick={() =>
+                              void run("Saved", async () =>
+                                adminAction({
+                                  action: "contribution.edit",
+                                  id: row.id,
+                                  patch: {
+                                    what_makes_it_great:
+                                      draft.what_makes_it_great ?? null,
+                                    caveat: draft.caveat ?? null,
+                                    who_for: draft.who_for ?? null,
+                                    who_not_for: draft.who_not_for ?? null,
+                                  },
+                                }),
+                              )
+                            }
+                          >
+                            Save changes
+                          </Button>
+                        </div>
+                      </RecordDrawer>
+
+                      {/* "Needs more detail" is a held state, not a rejection
+                          — the client's words. It is *not* a message the parent
+                          receives: there's no SMS reply pipeline yet, so this
+                          note is for whoever reviews the queue next. */}
+                      <RecordDrawer title="Hold it for one missing detail">
+                        <Field
+                          label="What's missing?"
+                          hint="Stays in your queue. Nothing is sent to the parent."
+                        >
+                          <input
+                            className={inputClass}
+                            placeholder="Quick one — could you add roughly what age your child was?"
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                          />
+                        </Field>
+                        <div className="mt-3">
                           <Button
                             tone="secondary"
-                            disabled={busy}
-                            onClick={() => {
-                              setEditing(open ? null : row.id);
-                              setDraft(open ? {} : { ...row });
-                              /* Otherwise a question typed for one row and left
-                                 unsent reappears in the next row's box — and a
-                                 row already asked something should show what,
-                                 not a blank field. */
-                              setQuestion(open ? "" : row.needs_detail_note ?? "");
-                            }}
+                            disabled={busy || question.trim().length === 0}
+                            onClick={() =>
+                              void run("Held — noted", async () =>
+                                adminAction({
+                                  action: "contribution.needs_detail",
+                                  id: row.id,
+                                  question: question.trim(),
+                                }),
+                              )
+                            }
                           >
-                            {open ? "Close" : "Edit"}
+                            Hold for this detail
                           </Button>
-                          {/**
-                           * Golden answers (§17.1). Only offered on an approved
-                           * record, because that is the only state the flag can be
-                           * true in — the database says so too.
-                           */}
-                          {row.status === "approved" && (
-                            <Button
-                              tone="secondary"
-                              disabled={busy}
-                              title={
-                                row.share.answer_ready
-                                  ? "Stop treating it as good enough to answer with"
-                                  : "Good enough to answer a parent on its own, with nobody asked"
-                              }
-                              onClick={() =>
-                                void run(
-                                  row.share.answer_ready
-                                    ? "No longer marked ready."
-                                    : "Marked ready to answer with.",
-                                  async () =>
-                                    adminAction({
-                                      action: "share.answer_ready",
-                                      id: row.share.id,
-                                      to: !row.share.answer_ready,
-                                    }),
-                                )
-                              }
-                            >
-                              {row.share.answer_ready
-                                ? "Not ready after all"
-                                : "Ready to answer with"}
-                            </Button>
-                          )}
-                          {row.status !== "rejected" && (
-                            <Button
-                              tone="danger"
-                              disabled={busy}
-                              title="Set it aside. Nothing is sent to the parent."
-                              onClick={() =>
-                                void run("Set aside.", async () =>
-                                  adminAction({
-                                    action: "contribution.reject",
-                                    id: row.id,
-                                    reason: "not usable",
-                                  }),
-                                )
-                              }
-                            >
-                              Don&apos;t use
-                            </Button>
-                          )}
                         </div>
-                      </Td>
-                    </tr>
-
-                    {open && (
-                      <tr>
-                        <Td className="bg-paper/70" colSpan={10}>
-                          <div className="grid gap-3 py-1 sm:grid-cols-2">
-                            <Field label="What makes it good">
-                              <textarea
-                                className={inputClass}
-                                rows={2}
-                                value={draft.what_makes_it_great ?? ""}
-                                onChange={(e) =>
-                                  setDraft({
-                                    ...draft,
-                                    what_makes_it_great: e.target.value,
-                                  })
-                                }
-                              />
-                            </Field>
-                            <Field label="Know first (caveat)">
-                              <textarea
-                                className={inputClass}
-                                rows={2}
-                                value={draft.caveat ?? ""}
-                                onChange={(e) =>
-                                  setDraft({ ...draft, caveat: e.target.value })
-                                }
-                              />
-                            </Field>
-                            <Field label="Perfect for">
-                              <input
-                                className={inputClass}
-                                value={draft.who_for ?? ""}
-                                onChange={(e) =>
-                                  setDraft({ ...draft, who_for: e.target.value })
-                                }
-                              />
-                            </Field>
-                            <Field label="Might not suit">
-                              <input
-                                className={inputClass}
-                                value={draft.who_not_for ?? ""}
-                                onChange={(e) =>
-                                  setDraft({ ...draft, who_not_for: e.target.value })
-                                }
-                              />
-                            </Field>
-                          </div>
-                          {/* "…those are provenance" — a word from the data model,
-                              explaining that editing a text box does not rewrite
-                              history. Nobody was confused about that. */}
-                          <div className="flex flex-wrap items-end gap-2">
-                            <Button
-                              tone="primary"
-                              disabled={busy}
-                              onClick={() =>
-                                void run("Saved", async () =>
-                                  adminAction({
-                                    action: "contribution.edit",
-                                    id: row.id,
-                                    patch: {
-                                      what_makes_it_great:
-                                        draft.what_makes_it_great ?? null,
-                                      caveat: draft.caveat ?? null,
-                                      who_for: draft.who_for ?? null,
-                                      who_not_for: draft.who_not_for ?? null,
-                                    },
-                                  }),
-                                )
-                              }
-                            >
-                              Save changes
-                            </Button>
-                          </div>
-
-                          {/* "Needs more detail" is a held state, not a rejection
-                              — the client's words. It is *not* a message the
-                              parent receives: there's no SMS reply pipeline yet,
-                              so this note is for whoever reviews the queue next. */}
-                          <div className="mt-4 rounded-xl border border-bark bg-card p-3">
-                            <Field label="What's missing?">
-                              <input
-                                className={inputClass}
-                                placeholder="Quick one — could you add roughly what age your child was?"
-                                value={question}
-                                onChange={(e) => setQuestion(e.target.value)}
-                              />
-                            </Field>
-                            <Button
-                              tone="secondary"
-                              disabled={busy || question.trim().length === 0}
-                              onClick={() =>
-                                void run("Held — noted", async () =>
-                                  adminAction({
-                                    action: "contribution.needs_detail",
-                                    id: row.id,
-                                    question: question.trim(),
-                                  }),
-                                )
-                              }
-                            >
-                              Hold for this detail
-                            </Button>
-                            <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                              Stays in your queue. Nothing is sent to the parent.
-                            </p>
-                          </div>
-                        </Td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </TableWrap>
+                      </RecordDrawer>
+                    </>
+                  )}
+                </RecordCard>
+              );
+            })}
+          </RecordList>
         )}
       </Card>
     </>
   );
 }
 
-/**
- * What this contribution still needs to count toward Founding, in the client's terms.
- * Shown per row so "why is she stuck at one?" has an answer on the screen.
- */
 /**
  * What this contribution would still need to count towards Founding, in the
  * words a parent was actually asked.

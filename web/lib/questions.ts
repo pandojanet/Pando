@@ -1169,21 +1169,24 @@ export const SCREENS: Screen[] = [
       },
     ],
     /**
-     * 1 Sep, item 15 — the two rules this screen has to make true.
+     * 1 Sep, item 15 — the two rules this screen has to make true. Both are
+     * still in force; **neither is stated on the screen any more.**
      *
-     * *"Skipping must not opt the parent into any topic"* is already how the
-     * screen works: nothing is preselected and the answer starts empty, so
-     * Continue grants nothing. It is stated here because it is a promise rather
-     * than an accident of the default.
+     * The footnote that said them out loud went on 2 Sep, on the client's
+     * instruction to take the descriptive box off the profile pages. What it
+     * carried, and what is now code-only:
      *
-     * The second is the one with teeth: selecting *"Pediatricians and
-     * children's health providers"* permits **firsthand provider
-     * recommendations only — not medical advice.** That is a Phase 2 routing
-     * constraint, and it is the same line `classifyDemand` already draws
-     * between a recommendation and a health question.
+     *  - *"Skipping must not opt the parent into any topic"* — which is how the
+     *    screen already works. Nothing is preselected and the answer starts
+     *    empty, so Continue grants nothing.
+     *  - Selecting *"Pediatricians and children's health providers"* permits
+     *    **firsthand provider recommendations only — not medical advice.** A
+     *    Phase 2 routing constraint, and the same line `classifyDemand` already
+     *    draws between a recommendation and a health question.
+     *
+     * `help` above still tells the parent they decide whether to answer, which
+     * is the one part of it they act on.
      */
-    footnote:
-      "Choosing a topic means Pando may occasionally ask you about your own experience with it. Health topics mean provider recommendations only — never medical advice.",
   },
   {
     /* Item 17, second of two. "Comfortable sharing" rather than "could help
@@ -1217,28 +1220,29 @@ export const SCREENS: Screen[] = [
       },
     ],
     /**
-     * **This footnote is the listening-ear consent.** Her words, verbatim, and
-     * the reason the separate page below it is gone:
+     * **This screen is the listening-ear consent, and it no longer says so.**
      *
-     * > "This page is unnecessary if the Parenting Experiences page already acts
-     * > as the topic-level opt-in. Add the following directly beneath the
-     * > topics…"
+     * On 1 Sep the client removed the separate listening-ear page in favour of a
+     * footnote here — her words, verbatim: *"This page is unnecessary if the
+     * Parenting Experiences page already acts as the topic-level opt-in. Add the
+     * following directly beneath the topics…"* On **2 Sep** she asked for the
+     * descriptive box to come off the profile pages, and on this screen that box
+     * was the footnote. So the opt-in is now made by *selecting a topic* and is
+     * stated nowhere the parent can read it. Raised with her rather than
+     * quietly absorbed, because what went is her own consent copy.
      *
-     * Three constraints ride with it, and none is visible on screen. *Only
-     * route questions within topics the parent explicitly selected* — opting
-     * into one sensitive topic is not blanket permission for every sensitive
-     * question. *Never infer* pregnancy loss, fertility treatment,
-     * mental-health history, relationship problems or disability from anything
-     * else in the profile. And *urgent* medical issues, self-harm, abuse,
-     * immediate safety concerns and legal emergencies are **never** routed as
-     * peer questions — that is `classifyDemand`'s high-stakes branch, which
-     * answers with professional resources instead.
-     *
-     * Note the word she chose: names are **not shared**, and the exchange is
-     * never called anonymous, because Pando knows exactly who both parents are.
+     * The four constraints it carried are unchanged, and all four are now
+     * code-only. Only route questions within topics the parent explicitly
+     * selected — opting into one sensitive topic is not blanket permission for
+     * every sensitive question. *Never infer* pregnancy loss, fertility
+     * treatment, mental-health history, relationship problems or disability
+     * from anything else in the profile. *Urgent* medical issues, self-harm,
+     * abuse, immediate safety concerns and legal emergencies are **never**
+     * routed as peer questions — that is `classifyDemand`'s high-stakes branch,
+     * which answers with professional resources instead. And when a question is
+     * routed, names are **not shared**: the exchange is never called anonymous,
+     * because Pando knows exactly who both parents are.
      */
-    footnote:
-      "Selecting a topic means Pando may occasionally ask you a relevant question about it. Your name will not be shared with the parent asking, and you can decline any request or change your choices later.",
   },
   {
     /* "Ordinary recommendations" meant nothing to a parent — her word. The
