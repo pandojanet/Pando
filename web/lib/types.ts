@@ -264,6 +264,51 @@ export interface Question {
    * are things a child is doing, not a history.
    */
   perChildLimit?: number;
+  /**
+   * **Ask this question once per child**, each with its own heading and its own
+   * chip list — rather than once for the household with a "whose is it?" row
+   * underneath every selection.
+   *
+   * 1 Sep, items 4 and 10: *"Repeat or associate the question separately for
+   * each child"* and *"Capture care separately for each child."* The subject of
+   * both sentences is **separately for each child**, which the old shape did
+   * not do: it asked once and attributed *backwards*.
+   *
+   * Two things that were wrong with attributing backwards, and the second is
+   * the one a parent actually felt. The screen asked a household question and
+   * then made the parent do the sorting — six chips and six "which child?" rows
+   * to fill in. And the chip list was the **union of every age band the family
+   * covers**, so a family with a toddler and a teenager was shown preschools
+   * and high schools together: her *"безліч опцій"* from 24 Aug, one level down
+   * from where it was fixed.
+   *
+   * Per child, the list is filtered to *that* child's band, so each block is
+   * short and every chip is plausible.
+   *
+   * **The storage does not change.** `answers[id]` stays the union of option
+   * ids and `child_of[id][optionId]` stays the attribution, written forward
+   * instead of backward — so `derive.ts`, the payload, the review screen and
+   * the admin are all untouched, and there is no migration.
+   *
+   * Only for a family with more than one child; with one there is nothing to
+   * repeat and the question renders exactly as it always did.
+   */
+  perChildRepeat?: boolean;
+  /**
+   * The heading over one child's block. `{year}` is replaced by their birth
+   * year — her own suggested wording, so it is a template rather than prose
+   * assembled in the component.
+   */
+  childHeading?: string;
+  /**
+   * Offer "use the same answers for every child".
+   *
+   * Item 10's own suggestion: *"If useful, offer 'Use the same care
+   * arrangements for all children' to reduce repetition."* Only on the care
+   * question — a school is the one thing siblings genuinely do not share, so
+   * offering it there would invite a wrong answer.
+   */
+  sameForAll?: string;
 }
 
 export interface Screen {

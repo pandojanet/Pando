@@ -731,6 +731,18 @@ export const SCREENS: Screen[] = [
            the school they are in now. */
         perChild: true,
         perChildLimit: 2,
+        /**
+         * Item 4: *"Repeat or associate the question separately for each child.
+         * Suggested heading: 'Where does your child born in 2025 currently
+         * go?' Siblings may attend different places."*
+         *
+         * Her heading, verbatim, and it is the sentence that makes the
+         * repetition worth the screen: it names the child, so a parent with a
+         * toddler and a teenager is never asked to sort one list of preschools
+         * and high schools afterwards.
+         */
+        perChildRepeat: true,
+        childHeading: "Where does your child born in {year} currently go?",
         /* Expecting-only families have nothing to answer here yet, and a screen
            with no chips on it is a dead end (spec §8.5 gates whole questions). */
         showForBands: ["baby", "toddler", "preschool", "grade", "tween", "teen"],
@@ -1014,6 +1026,18 @@ export const SCREENS: Screen[] = [
         source: { type: "static", options: CHILDCARE_REGULAR },
         relevance: "childcare",
         perChild: true,
+        /**
+         * Item 10: *"Capture care separately for each child."* Together with
+         * that item's last bullet — the options adapt to the child's age — this
+         * is what stops a one-year-old's block offering an after-school
+         * programme, because the block is filtered to that child's band rather
+         * than to the family's union.
+         */
+        perChildRepeat: true,
+        childHeading: "Care for your child born in {year}",
+        /* Her own suggestion, and only here: siblings genuinely share a
+           daycare or a nanny, and genuinely do not share a school. */
+        sameForAll: "Use the same care arrangements for all children",
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
       },
@@ -1530,6 +1554,118 @@ function rawSelectionsFor(
  * One child is not a question: there is only one possible answer, so the UI does
  * not ask and `childrenFor` below attributes it silently.
  */
+/** One child's block on a `perChildRepeat` question. */
+export interface ChildBlock {
+  /** The stored age, which is the key `child_of` uses. */
+  age: number;
+  /** The birth year, as the parent tapped it. */
+  year: string;
+  /** Her heading, with the year filled in. */
+  heading: string;
+  /** Only what suits this child's age band — the point of the repetition. */
+  options: Option[];
+  /** What is currently attributed to this child. */
+  selected: string[];
+}
+
+/**
+ * The per-child blocks for a repeated question.
+ *
+ * Pure, so the whole of items 4 and 10 can be asserted without a browser — the
+ * attribution arithmetic is where this would go wrong silently, and it did once
+ * before in the other direction.
+ *
+ * Returns an **empty list** when the question is not repeated or the family has
+ * one child, which is the caller's signal to render the ordinary single list.
+ */
+export function childBlocks(
+  question: Question,
+  market: MarketId,
+  answers: ProfileAnswers,
+): ChildBlock[] {
+  if (!question.perChildRepeat) return [];
+  const ages = [...new Set(answers.child_ages)].sort((a, b) => a - b);
+  if (ages.length <= 1) return [];
+
+  const attribution = answers.child_of[question.id] ?? {};
+
+  return ages.map((age) => {
+    const year = age === EXPECTING ? "Expecting" : String(CURRENT_YEAR - age);
+    return {
+      age,
+      year,
+      heading: (question.childHeading ?? "For your child born in {year}").replace(
+        "{year}",
+        year,
+      ),
+      /* One child's bands, not the family's union. `optionsFor` takes the whole
+         answers object, so it is handed a copy with just this child in it. */
+      options: optionsFor(question, market, { ...answers, child_ages: [age] }),
+      selected: Object.entries(attribution)
+        .filter(([, owners]) => owners.includes(age))
+        .map(([optionId]) => optionId),
+    };
+  });
+}
+
+/**
+ * Apply one child's selections, and rebuild the question's answer from them.
+ *
+ * The direction is what changed on 1 Sep: attribution is written **forward**,
+ * from the block the parent is looking at, rather than derived afterwards from
+ * a household list. The stored shape is identical either way — which is what
+ * made this a rendering change and not a migration.
+ *
+ * Two rules worth keeping:
+ *
+ *  - **An option nobody owns is removed.** Untapping the last child holding a
+ *    school takes the school off the answer, because "selected by no child" is
+ *    not a state this question has.
+ *  - **The other children are untouched.** A block only ever adds or removes
+ *    its own age, so two children sharing a daycare keep it when one of them
+ *    stops.
+ */
+export function applyChildSelections(
+  question: Question,
+  answers: ProfileAnswers,
+  age: number,
+  next: string[],
+): { values: string[]; attribution: Record<string, number[]> } {
+  const current = answers.child_of[question.id] ?? {};
+  const map: Record<string, number[]> = {};
+
+  for (const [optionId, owners] of Object.entries(current)) {
+    const kept = next.includes(optionId)
+      ? owners
+      : owners.filter((owner) => owner !== age);
+    if (kept.length > 0) map[optionId] = kept;
+  }
+  for (const optionId of next) {
+    const owners = map[optionId] ?? [];
+    if (!owners.includes(age)) map[optionId] = [...owners, age];
+  }
+
+  return { values: Object.keys(map), attribution: map };
+}
+
+/**
+ * Item 10's shortcut: give every child the same answers.
+ *
+ * Built from the union rather than from one child, so a parent who filled two
+ * blocks differently and *then* tapped it gets everything they had named — the
+ * alternative is silently discarding half of what they typed.
+ */
+export function sameForAllChildren(
+  question: Question,
+  answers: ProfileAnswers,
+): { values: string[]; attribution: Record<string, number[]> } {
+  const ages = [...new Set(answers.child_ages)];
+  const values = selectionsFor(question, answers);
+  const attribution: Record<string, number[]> = {};
+  for (const optionId of values) attribution[optionId] = [...ages];
+  return { values, attribution };
+}
+
 export function childOptions(answers: ProfileAnswers): Option[] {
   return [...new Set(answers.child_ages)]
     .sort((a, b) => a - b)

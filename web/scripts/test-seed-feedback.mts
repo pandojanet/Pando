@@ -135,6 +135,116 @@ ok(
   ) === undefined,
 );
 
+console.log("\n=== items 4 and 10: asked separately for each child ===");
+/**
+ * The old shape asked once for the household and attributed **backwards** — a
+ * "whose is it?" row under every selection. Her instruction's subject is
+ * *"separately for each child"*, which that did not do, and the chip list was
+ * the union of every age band the family covered: a toddler and a teenager
+ * produced one list of preschools and high schools.
+ */
+const family: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [1, 9] };
+const schoolBlocks = q.childBlocks(questionById("schools")!, "pasadena", family);
+ok("there is a block per child", schoolBlocks.length === 2, `${schoolBlocks.length}`);
+ok(
+  "each names the child by birth year, in her words",
+  schoolBlocks.every((b) => /Where does your child born in \d{4} currently go\?/.test(b.heading)),
+  schoolBlocks.map((b) => b.heading).join(" | "),
+);
+const careBlocks = q.childBlocks(questionById("childcare_now")!, "pasadena", family);
+ok(
+  "the one-year-old's care block offers no after-school program",
+  !careBlocks[0].options.some((o) => o.id === "after_school_program"),
+  careBlocks[0].options.map((o) => o.id).join(","),
+);
+ok(
+  "the nine-year-old's does",
+  careBlocks[1].options.some((o) => o.id === "after_school_program"),
+  "which is the whole reason the repetition is worth a screen",
+);
+ok(
+  "a one-child family is not repeated",
+  q.childBlocks(questionById("schools")!, "pasadena", {
+    ...q.EMPTY_ANSWERS,
+    child_ages: [4],
+  }).length === 0,
+  "there is nothing to repeat, so it renders as it always did",
+);
+ok(
+  "and no other question is",
+  q.childBlocks(questionById("classes")!, "pasadena", family).length === 0,
+  "item 5 declined extra work on the circles page in so many words",
+);
+
+console.log("\n=== the attribution arithmetic ===");
+/* Written forward now. The storage shape is unchanged, which is what made this
+   a rendering change rather than a migration. */
+const step1 = q.applyChildSelections(questionById("childcare_now")!, family, 1, ["daycare"]);
+ok("one child's choice lands", step1.values.join(",") === "daycare");
+ok("owned by that child only", JSON.stringify(step1.attribution.daycare) === "[1]");
+
+const afterStep1: ProfileAnswers = {
+  ...family,
+  childcare_now: step1.values,
+  child_of: { childcare_now: step1.attribution },
+};
+const step2 = q.applyChildSelections(questionById("childcare_now")!, afterStep1, 9, [
+  "daycare",
+  "after_school_program",
+]);
+ok(
+  "the other child can share it",
+  JSON.stringify(step2.attribution.daycare) === "[1,9]",
+  JSON.stringify(step2.attribution),
+);
+ok("and add their own", step2.attribution.after_school_program?.join(",") === "9");
+
+const afterStep2: ProfileAnswers = {
+  ...family,
+  childcare_now: step2.values,
+  child_of: { childcare_now: step2.attribution },
+};
+const step3 = q.applyChildSelections(questionById("childcare_now")!, afterStep2, 1, []);
+ok(
+  "untapping one child leaves the other's answer standing",
+  step3.attribution.daycare?.join(",") === "9",
+  JSON.stringify(step3.attribution),
+);
+ok(
+  "and an option nobody owns is removed entirely",
+  !step3.values.includes("nanny") &&
+    Object.values(step3.attribution).every((owners) => owners.length > 0),
+);
+const step4 = q.applyChildSelections(questionById("childcare_now")!, afterStep2, 9, []);
+ok(
+  "clearing the last owner drops the option",
+  !step4.values.includes("after_school_program"),
+  step4.values.join(","),
+);
+ok(
+  "a block never touches a sibling it does not mention",
+  step4.attribution.daycare?.includes(1) === true,
+  "the 1-year-old still has daycare after the 9-year-old's block was cleared",
+);
+
+console.log("\n=== item 10's shortcut ===");
+ok(
+  "only the care question offers it",
+  typeof questionById("childcare_now")?.sameForAll === "string" &&
+    questionById("schools")?.sameForAll === undefined,
+  "siblings share a nanny; they do not share a school",
+);
+const shared = q.sameForAllChildren(questionById("childcare_now")!, afterStep2);
+ok(
+  "it gives every child everything already named",
+  Object.values(shared.attribution).every((owners) => owners.length === 2),
+  JSON.stringify(shared.attribution),
+);
+ok(
+  "built from the union, so nothing a parent typed is discarded",
+  shared.values.includes("daycare") && shared.values.includes("after_school_program"),
+);
+
 console.log("\n=== items 12 and 14: three is a hard maximum ===");
 ok("practical priorities cap at 3", q.maxSelectionsFor(questionById("logistics")!, twoKids) === 3);
 ok("trust priorities cap at 3", q.maxSelectionsFor(questionById("trust_circles")!, twoKids) === 3);

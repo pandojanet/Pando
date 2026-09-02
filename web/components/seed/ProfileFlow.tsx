@@ -22,7 +22,9 @@ import { saveProfile, verifyStatus, type VerifyStatus } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
 import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import {
+  applyChildSelections,
   canAdvance,
+  childBlocks,
   childOptions,
   customEntriesFor,
   isQuestionAnswered,
@@ -31,6 +33,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  sameForAllChildren,
   searchableCategory,
   selectionsFor,
   statusLabel,
@@ -228,6 +231,60 @@ export function ProfileFlow() {
           child_of: { ...s.answers.child_of, [question.id]: forQuestion },
         },
       };
+    });
+  }
+
+  /**
+   * One child's block changed (1 Sep, items 4 and 10).
+   *
+   * The arithmetic is in `applyChildSelections`, deliberately: it decides which
+   * options survive and which children keep them, and getting that wrong would
+   * silently re-attribute a school to the wrong sibling. A rule like that
+   * belongs somewhere a test can reach it without a browser.
+   *
+   * The status map is trimmed with it, on the same rule the household path
+   * follows: a Current/Former for a school nobody attends any more is a fact
+   * about nothing.
+   */
+  function setChildSelections(question: Question, age: number, next: string[]) {
+    update((s) => {
+      const { values, attribution } = applyChildSelections(
+        question,
+        s.answers,
+        age,
+        next,
+      );
+      const a: ProfileAnswers = {
+        ...s.answers,
+        child_of: { ...s.answers.child_of, [question.id]: attribution },
+        skipped: s.answers.skipped.filter((id) => id !== screen.id),
+      };
+      (a as unknown as Record<string, string[]>)[question.id] = values;
+      if (question.id === "schools") {
+        a.school_status = Object.fromEntries(
+          Object.entries(s.answers.school_status).filter(([id]) =>
+            values.includes(id),
+          ),
+        );
+      }
+      return { ...s, answers: a };
+    });
+  }
+
+  /** Item 10's shortcut: every child gets what the family has named so far. */
+  function applySameForAll(question: Question) {
+    update((s) => {
+      const { values, attribution } = sameForAllChildren(question, s.answers);
+      const a: ProfileAnswers = {
+        ...s.answers,
+        child_of: { ...s.answers.child_of, [question.id]: attribution },
+      };
+      (a as unknown as Record<string, string[]>)[question.id] = values;
+      return { ...s, answers: a };
+    });
+    track("seed_question_answered", {
+      question: question.id,
+      option: "same_for_all_children",
     });
   }
 
@@ -723,6 +780,139 @@ export function ProfileFlow() {
                   : undefined,
                 onRemoveCustom: (value: string) => removeCustom(question, value),
               };
+              /**
+               * 1 Sep, items 4 and 10 — one block per child.
+               *
+               * Empty for every other question and for a one-child family, and
+               * then this whole branch is skipped and nothing about the
+               * ordinary rendering below changes.
+               *
+               * **The typed fallback stays at question level.** A parent can
+               * add from any block and the answer is stored unattributed —
+               * which is not a regression, because a typed school has never
+               * carried a child either. Only the last block renders the list of
+               * typed answers, so it appears once.
+               */
+              const blocks = childBlocks(question, market, answers);
+              if (blocks.length > 0) {
+                return (
+                  <div key={`${question.id}-perchild`} className="space-y-6">
+                    {question.sameForAll && (
+                      <button
+                        type="button"
+                        onClick={() => applySameForAll(question)}
+                        disabled={selectionsFor(question, answers).length === 0}
+                        className="min-h-11 text-[14px] font-semibold text-green-deep underline underline-offset-2 disabled:text-muted disabled:no-underline"
+                      >
+                        {question.sameForAll}
+                      </button>
+                    )}
+                    {blocks.map((block, blockIndex) => {
+                      const last = blockIndex === blocks.length - 1;
+                      const perChild = {
+                        ...shared,
+                        label: undefined,
+                        groupLabel: block.heading,
+                        options: block.options,
+                        selected: block.selected,
+                        /* The cap is a family total; per block it would refuse a
+                           tap that the question actually allows. */
+                        max: undefined,
+                        maxHint: undefined,
+                        custom: last ? customEntriesFor(question, answers) : [],
+                        onChange: (
+                          next: string[],
+                          changed: { id: string; on: boolean },
+                        ) => {
+                          setChildSelections(question, block.age, next);
+                          if (changed.on) {
+                            track("seed_question_answered", {
+                              question: question.id,
+                              option: changed.id,
+                            });
+                          }
+                        },
+                      };
+                      return (
+                        <div key={`${question.id}-${block.age}`}>
+                          <h3 className="mb-2.5 text-[15px] font-semibold text-ink">
+                            {block.heading}
+                          </h3>
+                          {directory ? (
+                            <SearchableChipGroup
+                              {...perChild}
+                              category={directory.category}
+                              market={market}
+                              area={answers.neighborhood}
+                              wholeList={directory.wholeList}
+                              searchLabel={directory.searchLabel}
+                              footnote={last ? directory.footnote : undefined}
+                            />
+                          ) : (
+                            <ChipGroup {...perChild} layout="wrap" />
+                          )}
+                        </div>
+                      );
+                    })}
+                    {/* Per selection, not per child: a school's Current/Former
+                        belongs to the school. Rendered once, under all the
+                        blocks, over the union of what they chose. */}
+                    {question.perSelectionStatus &&
+                      selectionsFor(question, answers).length > 0 && (
+                        <div className="space-y-2.5">
+                          <p className="text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
+                            {question.perSelectionStatus.label}
+                          </p>
+                          {selectionsFor(question, answers).map((optionId) => {
+                            const optionLabel = labelForOption(
+                              question,
+                              market,
+                              answers,
+                              optionId,
+                            );
+                            return (
+                              <div
+                                key={optionId}
+                                className="rounded-2xl border border-bark bg-card p-3"
+                              >
+                                <p className="text-[14.5px] font-semibold">
+                                  {optionLabel}
+                                </p>
+                                <div
+                                  role="radiogroup"
+                                  aria-label={`Status for ${optionLabel}`}
+                                  className="mt-2 flex flex-wrap gap-2"
+                                >
+                                  {question.perSelectionStatus!.options.map((status) => {
+                                    const on =
+                                      answers.school_status[optionId] === status.id;
+                                    return (
+                                      <button
+                                        key={status.id}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={on}
+                                        onClick={() => setStatus(optionId, status.id)}
+                                        className={
+                                          on
+                                            ? "min-h-[44px] rounded-full border border-green bg-green-wash px-3.5 text-[14px] font-semibold text-green-deep"
+                                            : "min-h-[44px] rounded-full border border-bark px-3.5 text-[14px] font-medium text-ink-soft"
+                                        }
+                                      >
+                                        {status.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                  </div>
+                );
+              }
+
               return (
               <div key={`${question.id}-group`}>
               {directory ? (
