@@ -643,6 +643,17 @@ export function ProfileFlow() {
                   ))}
                 </ul>
               )}
+              {/* After the examples, because it answers the question they
+                  raise: they show a connection being named and say nothing
+                  about what stays private. */}
+              {screen.statement.bodyAfter?.map((paragraph) => (
+                <p
+                  key={paragraph.slice(0, 24)}
+                  className="mt-3 text-[15.5px] leading-relaxed text-ink-soft"
+                >
+                  {paragraph}
+                </p>
+              ))}
               {screen.statement.link && (
                 <p className="mt-3.5">
                   <Link
@@ -723,6 +734,9 @@ export function ProfileFlow() {
                   /* Ranking hint only. Null before P3 is answered, which simply
                      ranks nothing higher. */
                   area={answers.neighborhood}
+                  /* The neighborhood question sets the area, so it cannot be
+                     filtered by it — see `wholeList`. */
+                  wholeList={directory.wholeList}
                   searchLabel={directory.searchLabel}
                   footnote={directory.footnote}
                 />

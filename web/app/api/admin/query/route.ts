@@ -21,6 +21,7 @@ import { readResource } from "@/lib/server/repo/admin-read";
  */
 
 const EMPTY: Record<AdminResource, unknown> = {
+  answers: [],
   overview: null,
   contributors: [],
   contributor: null,
@@ -35,6 +36,21 @@ const EMPTY: Record<AdminResource, unknown> = {
   founding: [],
   invites: [],
   consents: [],
+  /* 7.6. An empty list, never a fabricated reply: a made-up blast response
+     would be text nobody wrote entering the review queue. */
+  blast_responses: [],
+  /* 12.5. `configured: false` rather than a zero rate: a page that cannot reach
+     the database must say so, not report perfect delivery. */
+  delivery: {
+    configured: false,
+    window_days: 7,
+    rate: null,
+    below_floor: false,
+    settled: 0,
+    delivered: 0,
+    in_flight: 0,
+    alerts: [],
+  },
   /**
    * 6.7's harness. Not `[]` and not `null`: the page reads `asker`, `ranked` and
    * `people`, so a bare null would make an unconfigured deployment throw where
@@ -54,6 +70,8 @@ const EMPTY: Record<AdminResource, unknown> = {
 };
 
 const SAMPLE: Record<AdminResource, unknown> = {
+  answers: [],
+  blast_responses: [],
   overview: sample.sampleOverview,
   contributors: sample.sampleContributors,
   contributor: sample.sampleContributorDetail,
@@ -68,6 +86,18 @@ const SAMPLE: Record<AdminResource, unknown> = {
   founding: sample.sampleFounding,
   invites: sample.sampleInvites,
   consents: sample.sampleConsents,
+  /* 12.5. `configured: false` rather than a zero rate: a page that cannot reach
+     the database must say so, not report perfect delivery. */
+  delivery: {
+    configured: false,
+    window_days: 7,
+    rate: null,
+    below_floor: false,
+    settled: 0,
+    delivered: 0,
+    in_flight: 0,
+    alerts: [],
+  },
   /* Deliberately empty rather than fabricated: a made-up ranking is the one thing
      this page must never show, because its whole purpose is judging whether the
      real ranking is any good. The page says so when there is no database. */

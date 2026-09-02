@@ -287,6 +287,8 @@ export const smsOptOuts = pgTable("sms_opt_outs", {
   optedOutAt: timestamp("opted_out_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /** 12.3 — START. Opted out unless this is later than optedOutAt. */
+  optedInAt: timestamp("opted_in_at", { withTimezone: true }),
 });
 
 /* ── 2. Children and matching (estimate 1.3) ─────────────────────────────── */

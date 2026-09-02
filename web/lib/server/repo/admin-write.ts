@@ -1,8 +1,15 @@
 import "server-only";
+import { sendSms } from "@/lib/server/sms";
+import { sendBlast } from "@/lib/server/repo/blast";
 
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
+import {
+  insertContributionImpact,
+  insertImpact,
+  updateImpactQuality,
+} from "@/lib/server/repo/impact";
 
 /**
  * Estimates 2.4–2.8 — every sensitive admin write.
@@ -26,7 +33,16 @@ export interface ActionContext {
 
 export type ActionOutcome =
   | { applied: true; resource: string; resource_id: string | null }
-  | { applied: false; reason: "not_implemented" | "referral_cap_reached" };
+  | {
+      applied: false;
+      /**
+       * `not_found` is its own reason rather than being folded into
+       * `not_implemented`: a stale admin screen acting on a row that has since
+       * been rejected is an ordinary race, not a missing feature, and the two
+       * deserve different words on screen.
+       */
+      reason: "not_implemented" | "referral_cap_reached" | "not_found";
+    };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -99,6 +115,15 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                 freshness_state = 'fresh'
             where id = (select share_id from share_contributions where id = ${target}::uuid)`,
       );
+      /**
+       * 9.3 — and this is also the moment the contributor earned something.
+       *
+       * In the same transaction as the approval, for the same reason the audit
+       * row is (6 Aug): a ledger entry that can be lost separately from the
+       * decision it records is a ledger that quietly disagrees with the truth.
+       * Idempotent, so approving twice does not count twice.
+       */
+      await insertContributionImpact(tx, target);
       return { applied: true, resource: "share_contribution", resource_id: target };
     }
 
@@ -182,6 +207,281 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
               and (${to} = false or status = 'approved')`,
       );
       return { applied: true, resource: "share", resource_id: target };
+    }
+
+    /**
+     * 7.8 — send a blast to its matched pool.
+     *
+     * The one code path in Pando that reaches several strangers' phones
+     * unprompted, so it is an admin action rather than an automatic step: the
+     * pilot reads everything (§19), and a mis-scored pool caught by a person
+     * costs a glance while one that is sent costs five parents' goodwill.
+     *
+     * Like `answer.send`, this holds the audit transaction across the sends —
+     * acceptable at pilot volume, where a pool is five, and noted here because
+     * it wants moving after the commit if that ever changes. `sendSms` never
+     * throws, so a refused send cannot roll back the audit row.
+     */
+    case "blast.send": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+
+      const outcome = await sendBlast(target);
+      if (!outcome.ok) {
+        /* Not an error the admin caused: a blast still marked for review, or one
+           whose pool came back short, is the system refusing on purpose. The
+           audit row is skipped because nothing changed that is worth attributing. */
+        console.info("[blast] send refused", { reason: outcome.reason });
+        return { applied: false, reason: "not_found" };
+      }
+      return { applied: true, resource: "blast", resource_id: target };
+    }
+
+    /* ── 14.2 The answer queue ───────────────────────────────────────────── */
+
+    case "answer.approve": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      /* A conditional UPDATE rather than a validation — the 11 Aug rule: a stale
+         screen approving something already rejected is a no-op, not an aborted
+         transaction that takes the audit row with it. */
+      await tx.execute(sql`
+        update answers
+           set status = 'approved', reviewed_by = ${ctx.actor}, reviewed_at = now()
+         where id = ${target}::uuid and status = 'pending_review'
+      `);
+      return { applied: true, resource: "answer", resource_id: target };
+    }
+
+    case "answer.reject": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      await tx.execute(sql`
+        update answers
+           set status = 'rejected', reviewed_by = ${ctx.actor}, reviewed_at = now()
+         where id = ${target}::uuid and status = 'pending_review'
+      `);
+      return { applied: true, resource: "answer", resource_id: target };
+    }
+
+    /**
+     * Rewriting before it goes out.
+     *
+     * The text is **replaced**, not patched: an admin who rewrites an answer is
+     * taking responsibility for the new sentence, and a diff would leave it
+     * unclear which words were Pando's claim and which were theirs. The labels
+     * are untouched — they are the claim about where the answer came from, and
+     * disagreeing with one is a fix in the contributions queue.
+     */
+    case "answer.edit": {
+      const target = id(b.id);
+      const body = text(b.text);
+      if (!target || !body) return { applied: false, reason: "not_implemented" };
+      await tx.execute(sql`
+        update answers
+           set answer_text = ${body.slice(0, 2000)}, reviewed_by = ${ctx.actor}
+         where id = ${target}::uuid and status = 'pending_review'
+      `);
+      return { applied: true, resource: "answer", resource_id: target };
+    }
+
+    /**
+     * The delivery attempt, and its own audit row.
+     *
+     * Separate from approving because they are different events — and because a
+     * retry after a carrier failure must not write a second approval.
+     *
+     * It runs inside the audit transaction, which holds a connection across one
+     * HTTP call to Twilio. Acceptable at pilot volume (one admin, a handful of
+     * answers) and worth knowing: `sendSms` never throws, so a refused send
+     * cannot roll back the audit row for a decision that was made. If this ever
+     * runs at scale it wants moving after the commit.
+     */
+    case "answer.send": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+
+      const rows = (await tx.execute(sql`
+        select phone, answer_text, person_id, status
+          from answers where id = ${target}::uuid
+      `)) as unknown as Array<Record<string, unknown>>;
+      const row = rows[0];
+      if (!row) return { applied: false, reason: "not_found" };
+      if (row.status === "sent") return { applied: false, reason: "not_found" };
+
+      /* Through the single send layer, which re-runs opt-out, quiet hours and the
+         protection rules. An admin approving an answer for somebody who texted
+         STOP an hour ago is refused by the same code that refuses everything. */
+      const result = await sendSms({
+        to: String(row.phone),
+        body: String(row.answer_text),
+        category: "transactional",
+        personId: row.person_id ? String(row.person_id) : undefined,
+        template: "answer",
+      });
+
+      /* `sent` only when it actually went. A row marked sent for a message the
+         carrier refused would hide the commonest refusal — an opt-out. */
+      await tx.execute(sql`
+        update answers
+           set status = ${result.sent ? "sent" : "approved"},
+               reviewed_by = ${ctx.actor},
+               reviewed_at = now(),
+               sent_at = ${result.sent ? sql`now()` : sql`null`}
+         where id = ${target}::uuid
+      `);
+
+      return result.sent
+        ? { applied: true, resource: "answer", resource_id: target }
+        : { applied: false, reason: "not_found" };
+    }
+
+    /* ── 7.6 / 7.9 Blast responses ───────────────────────────────────────── */
+
+    case "blast_response.rate": {
+      const blastId = id(b.blast_id);
+      const personId = id(b.person_id);
+      const quality = Math.min(5, Math.max(1, Math.trunc(Number(b.quality) || 0)));
+      if (!blastId || !personId || quality < 1) {
+        return { applied: false, reason: "not_implemented" };
+      }
+      await tx.execute(
+        sql`update blast_recipients set quality = ${quality}
+             where blast_id = ${blastId}::uuid and person_id = ${personId}::uuid`,
+      );
+      /* Rating and approving are two actions in either order, so the ledger has
+         to be able to learn a rating after the fact. A no-op when the reply has
+         not been approved yet — the insert below will carry it. */
+      await updateImpactQuality(tx, personId, blastId, quality);
+      return { applied: true, resource: "blast_response", resource_id: blastId };
+    }
+
+    case "blast_response.reject": {
+      const blastId = id(b.blast_id);
+      const personId = id(b.person_id);
+      if (!blastId || !personId) return { applied: false, reason: "not_implemented" };
+      await tx.execute(
+        sql`update blast_recipients set review_status = 'rejected'
+             where blast_id = ${blastId}::uuid and person_id = ${personId}::uuid`,
+      );
+      return { applied: true, resource: "blast_response", resource_id: blastId };
+    }
+
+    /**
+     * 7.9 — approve, and write back into the graph.
+     *
+     * "Every paid question permanently enriches the free answer base." So an
+     * approved reply does not merely change a status: it becomes a record other
+     * parents can be answered from.
+     *
+     * ## Four rules, and none of them is convenience
+     *
+     * **It enters as `pending_review`, not approved.** The admin is judging the
+     * *reply*; the record it creates is still a claim about a place, and the
+     * normal queue is where that is read. Approving both at once would put text
+     * into the answer base that only one person has ever looked at, which is
+     * invariant 8 with an extra step.
+     *
+     * **Provenance travels with it.** `parent_submitted`, the contributor's own
+     * id, and the submission carries the blast — so "who said this, when, and
+     * which paid question produced it" is answerable from the row itself.
+     *
+     * **Merging is the default when a record already exists.** `merge_into` adds
+     * this parent's experience to that share rather than creating a second copy —
+     * which is what turns a paid answer into a *validation* (two firsthand parents
+     * is the `Validated by multiple parents` label) instead of a duplicate.
+     *
+     * **A caregiver is never created here.** The estimate is explicit that
+     * caregivers "go through the full consent workflow and are never
+     * auto-activated", and this action cannot express that workflow — a caregiver
+     * needs a nomination with a firsthand employment claim (invariant 14), an 18+
+     * gate (invariant 2) and consent evidence. So a reply that names one is
+     * approved as a response and flagged for the caregiver flow; nothing is
+     * written to `caregivers`.
+     */
+    case "blast_response.approve": {
+      const blastId = id(b.blast_id);
+      const personId = id(b.person_id);
+      if (!blastId || !personId) return { applied: false, reason: "not_implemented" };
+
+      const rows = (await tx.execute(sql`
+        select br.response_text, br.quality, b.market_id, b.category, b.neighborhood
+          from blast_recipients br
+          join blasts b on b.id = br.blast_id
+         where br.blast_id = ${blastId}::uuid
+           and br.person_id = ${personId}::uuid
+           and br.response_text is not null
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      const reply = rows[0];
+
+      await tx.execute(
+        sql`update blast_recipients set review_status = 'approved'
+             where blast_id = ${blastId}::uuid and person_id = ${personId}::uuid`,
+      );
+
+      /**
+       * 9.3 — an answered Ask enters the ledger here and not when it arrived.
+       *
+       * An unread reply is not yet a contribution to anything, so counting it on
+       * receipt would let somebody climb the ladder by texting back "no idea".
+       * Approval is the moment a person said it was worth something.
+       */
+      await insertImpact(tx, {
+        personId,
+        kind: "blast_answered",
+        blastId,
+        quality: reply.quality === null || reply.quality === undefined
+          ? null
+          : Number(reply.quality),
+      });
+
+      const mergeInto = id(b.merge_into);
+      const name = text(b.share_name);
+      const kind = id(b.share_kind) ?? "activity";
+
+      /* Nothing named means the reply was useful without recommending a specific
+         place — an opinion, a caveat, a "we tried that and it was fine". Worth
+         approving and worth nothing to the graph, so it stops here rather than
+         creating an empty record. */
+      if (!mergeInto && !name) {
+        return { applied: true, resource: "blast_response", resource_id: blastId };
+      }
+
+      let shareId = mergeInto;
+      if (!shareId) {
+        const created = (await tx.execute(sql`
+          insert into shares (market_id, kind, name, neighborhoods, status, provenance)
+          values (${String(reply.market_id ?? "pasadena")}, ${kind}::share_kind,
+                  ${name},
+                  case when ${reply.neighborhood}::text is null then null
+                       else array[${reply.neighborhood}::text] end,
+                  'pending_review', 'parent_submitted')
+          returning id
+        `)) as unknown as Array<Record<string, unknown>>;
+        shareId = String(created[0]?.id ?? "");
+      }
+      if (!shareId) return { applied: false, reason: "not_implemented" };
+
+      /**
+       * The contribution, with the reply as its text.
+       *
+       * `firsthand` is **false**: a blast reply is what this parent says about a
+       * place, and nothing in it establishes that they used it themselves. The
+       * seed flow asks that question explicitly (R1); a text message does not, and
+       * assuming yes would manufacture the one signal every trust label rests on.
+       * An admin can correct it in the ordinary contributions queue.
+       */
+      await tx.execute(sql`
+        insert into share_contributions
+          (share_id, person_id, firsthand, what_makes_it_great, status, source_blast_id)
+        values (${shareId}::uuid, ${personId}::uuid, false,
+                ${String(reply.response_text ?? "")}, 'pending_review',
+                ${blastId}::uuid)
+        on conflict do nothing
+      `);
+
+      return { applied: true, resource: "share", resource_id: shareId };
     }
 
     /* ── 2.5 Caregivers ──────────────────────────────────────────────────── */

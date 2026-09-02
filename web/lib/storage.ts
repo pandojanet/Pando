@@ -1,6 +1,6 @@
 "use client";
 
-import { EMPTY_ANSWERS } from "./questions";
+import { EMPTY_ANSWERS, pruneAnswers } from "./questions";
 import { childAgeFromStored, cleanId } from "./sanitize";
 import type { MarketId, ProfileAnswers, SeedSession } from "./types";
 
@@ -225,7 +225,12 @@ export function loadSession(): SeedSession | null {
     // Tolerate answer-shape changes between deploys mid-pilot.
     return {
       ...parsed,
-      answers: normaliseAnswers(parsed.answers),
+      /* Shape first, then the question rules. `normaliseAnswers` only ever
+         checked that a value still *looked* right; `pruneAnswers` is what
+         drops an option that no longer exists and a selection over the cap —
+         1 Sep's "clear or migrate any saved test data that already violates
+         these limits". */
+      answers: pruneAnswers(normaliseAnswers(parsed.answers)),
       chat: parsed.chat ?? null,
       is_test: parsed.is_test === true,
       first_name: parsed.first_name ?? null,

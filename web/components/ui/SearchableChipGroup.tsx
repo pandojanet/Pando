@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { searchMarketOptions } from "@/lib/api-client";
 import { registerFoundOptions } from "@/lib/market-options";
+import { visibleStarters } from "@/lib/starters";
 import type { MarketCategory, MarketId, Option } from "@/lib/types";
 
 interface Props {
@@ -25,6 +26,33 @@ interface Props {
   market: string;
   /** The parent's own area, for ranking. Never a filter. */
   area?: string | null;
+  /**
+   * Show every starter, unfiltered, uncapped and in its own order.
+   *
+   * **For the question that establishes the area.** The area logic below exists
+   * so a parent sees their own city's schools; applied to "where do you live?"
+   * it is circular — it filters the list of cities by the city you just picked
+   * — and on 1 Sep the client reported both halves of what that did.
+   *
+   * *Five approved cities were never shown.* Seventeen starters against
+   * `STARTER_LIMIT = 12`, sliced alphabetically before the question was
+   * answered, cut exactly San Gabriel, San Marino, Sierra Madre, South Pasadena
+   * and Temple City — the five she listed as missing. Verified against the live
+   * table: all seventeen are curated starters, so nothing was wrong with the
+   * data.
+   *
+   * *And the list shrank once she tapped one.* With `area = "pasadena"`,
+   * `isHome` matched Pasadena **and its nine sub-neighborhoods** (Old Pasadena,
+   * Linda Vista, San Rafael…), which clears `AREA_FLOOR` on its own — so the
+   * other sixteen cities disappeared. Picking Sierra Madre instead left one
+   * match, and the list was topped back up to eight by area size. Either way
+   * options vanished and the order changed, which is what she saw.
+   *
+   * The escape is per question rather than "no area passed", because a curated
+   * set of seventeen that the client requires shown whole must not be capped
+   * either — and an empty `area` still hits the twelve-item slice.
+   */
+  wholeList?: boolean;
   /** "Search all schools, preschools and daycares" — her wording per category. */
   searchLabel: string;
   /**
@@ -72,6 +100,7 @@ export function SearchableChipGroup({
   category,
   market,
   area,
+  wholeList,
   searchLabel,
   footnote,
   options,
@@ -192,76 +221,18 @@ export function SearchableChipGroup({
    *    rare, but a parent who skipped it gets the old alphabetical twelve rather
    *    than an empty screen.
    */
-  const STARTER_LIMIT = 12;
-  const AREA_FLOOR = 8;
-
-  const visibleStarters = useMemo(() => {
-    const home = (area ?? "").trim();
-    const chosen = new Set(selected);
-
-    const special = options.filter((o) => o.exclusive);
-    const records = options.filter((o) => !o.exclusive);
-
-    /* On the slug, never on `area` — that is the display name, and comparing it
-       to a neighborhood id matched single-word names only. */
-    const isHome = (o: Option) => home !== "" && o.area_slug === home;
-
-    /* How many starters each area contributes, so the top-up can prefer the
-       areas a family in a thin one would actually travel to. */
-    const perArea = new Map<string, number>();
-    for (const o of records) {
-      const key = o.area_slug ?? "";
-      perArea.set(key, (perArea.get(key) ?? 0) + 1);
-    }
-
-    const rank = (a: Option, b: Option) => {
-      /* A selected option outranks everything, so it survives every slice. */
-      const aPicked = chosen.has(a.id) ? 0 : 1;
-      const bPicked = chosen.has(b.id) ? 0 : 1;
-      if (aPicked !== bPicked) return aPicked - bPicked;
-
-      const aHome = isHome(a) ? 0 : 1;
-      const bHome = isHome(b) ? 0 : 1;
-      if (aHome !== bHome) return aHome - bHome;
-
-      /* Bigger areas first among the fill — Pasadena before Alhambra. */
-      const size = (perArea.get(b.area_slug ?? "") ?? 0) - (perArea.get(a.area_slug ?? "") ?? 0);
-      if (aHome === 1 && size !== 0) return size;
-
-      return a.label.localeCompare(b.label);
-    };
-
-    const ranked = [...records].sort(rank);
-    const ownArea = ranked.filter((o) => isHome(o) || chosen.has(o.id));
-
-    /* Own area alone when it carries enough; otherwise top up to the floor. */
-    const kept =
-      home === ""
-        ? ranked.slice(0, STARTER_LIMIT)
-        : ownArea.length >= AREA_FLOOR
-          ? ownArea.slice(0, STARTER_LIMIT)
-          : [
-              ...ownArea,
-              ...ranked
-                .filter((o) => !ownArea.includes(o))
-                .slice(0, AREA_FLOOR - ownArea.length),
-            ];
-
-    /* Belt: a selection must never be dropped, whichever branch ran. */
-    for (const o of ranked) {
-      if (chosen.has(o.id) && !kept.includes(o)) kept.push(o);
-    }
-    /* After the records, where a refusal belongs. */
-    return [...kept, ...special];
-  }, [options, area, selected]);
+  const visible = useMemo(
+    () => visibleStarters({ options, area, selected, wholeList }),
+    [options, area, selected, wholeList],
+  );
 
   /* The visible starters plus anything searched up, de-duplicated by id with the
      starter winning — a starter carries the curation and should not be replaced
      by the same record arriving from search. */
   const merged = useMemo(() => {
-    const seen = new Set(visibleStarters.map((o) => o.id));
-    return [...visibleStarters, ...found.filter((o) => !seen.has(o.id))];
-  }, [visibleStarters, found]);
+    const seen = new Set(visible.map((o) => o.id));
+    return [...visible, ...found.filter((o) => !seen.has(o.id))];
+  }, [visible, found]);
 
   const timer = useRef<number | null>(null);
 

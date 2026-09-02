@@ -89,6 +89,21 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         urgent: (o) => o.demand.high_stakes + o.demand.named_allegation,
       },
       {
+        /* 7.6. In "Waiting on you" and it DOES carry a count: unlike the
+           matching harness or the delivery gauge, this is a queue — every row is
+           a parent who answered and is waiting to hear that it mattered. */
+        /* 14.2. A queue, so it counts — and during the pilot it counts every
+           answer, because 19 says every one is read by a person. */
+        href: "/admin/answers",
+        label: "Answers to send",
+        hint: "What Pando would reply, waiting for you to read it. Nothing goes out unread.",
+      },
+      {
+        href: "/admin/responses",
+        label: "Network answers",
+        hint: "Replies to Network Asks. Rate them, and decide what enters the knowledge base.",
+      },
+      {
         href: "/admin/flags",
         label: "Flags",
         hint: "Anything a parent wrote that you should read before Pando uses it.",
@@ -121,6 +136,17 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         href: "/admin/matching",
         label: "Who Pando would ask",
         hint: "Try a question against the real data: who Pando would go to, and why. Nothing is sent.",
+      },
+      {
+        /**
+         * 12.5. No count, same reason as the matching harness: the sidebar's
+         * numbers mean "something here is waiting for you", and a delivery rate
+         * is a gauge rather than a queue. The alarm for a bad one is the
+         * container log, which fires the minute it happens.
+         */
+        href: "/admin/delivery",
+        label: "Message delivery",
+        hint: "Did the texts arrive? The rate, and the carrier errors worth acting on.",
       },
       {
         href: "/admin/audit",

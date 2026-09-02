@@ -129,7 +129,22 @@ export function deriveLifeRelevance(session: DerivationInput): RelevanceRow[] {
     }
   };
 
-  push("budget", answers.budget);
+  /**
+   * 1 Sep, item 13: *"If the parent skips or selects 'Prefer not to say',
+   * default to 'Show me good options across price points.'"*
+   *
+   * Applied **here, on the server**, and not by preselecting the chip — the
+   * screen must still show nothing chosen, because a preselected answer is the
+   * app asserting a preference nobody expressed, and her third universal
+   * comment is that skipping opts a parent into nothing. Ranking preferences
+   * are the one place a default is harmless: it improves an ordering and
+   * *"must never be used to infer income"*, which nothing here does.
+   *
+   * `prefer_not_to_say` reaches this as an empty list, because `NON_ANSWERS`
+   * already drops it — so both of her cases are the same case.
+   */
+  const budget = answers.budget.filter((v) => !NON_ANSWERS.has(v));
+  push("budget", budget.length > 0 ? budget : ["across_price_points"]);
   /**
    * Item 11: local roots, and it is a `tenure` row of its own rather than one of
    * the tenure *bands*. Somebody can have grown up here, moved away and come
@@ -175,7 +190,18 @@ export function deriveLifeRelevance(session: DerivationInput): RelevanceRow[] {
   push("work_setup", answers.work_setup);
   push("childcare_now", answers.childcare_now);
   push("childcare_backup", answers.childcare_backup);
-  push("trust_circles", answers.trust_circles);
+  /**
+   * 1 Sep, item 14: *"'No fixed preference — use the best available match' …
+   * should be the default when the page is skipped."*
+   *
+   * Same treatment as cost, and the same reason it is safe: these are ranking
+   * signals only, and she says so twice — they *"must never override stronger
+   * firsthand experience, become hard filters or authorize Pando to display an
+   * affiliation."* Recording "no fixed preference" is the weakest of the ten
+   * answers, so defaulting to it asserts nothing the parent did not.
+   */
+  const trust = answers.trust_circles.filter((v) => !NON_ANSWERS.has(v));
+  push("trust_circles", trust.length > 0 ? trust : ["no_fixed_preference"]);
 
   return rows;
 }
@@ -283,6 +309,14 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
      * Consent control, not a preference: the cap Pando must honour. Five,
      * not three — 18 Aug's reciprocity agreement replaced the 1/3/5 scheme,
      * and the server validates against the same 5/10 allow-list.
+     *
+     * **Null lands on five, never on `as_relevant`** — and that matters more
+     * since 1 Sep, because the screen no longer preselects a level, so null is
+     * now reachable. Five is the community minimum she named as required; the
+     * open-ended option is the *most* permissive answer on the screen, and
+     * falling into it from a missing answer would grant Pando more access than
+     * anybody agreed to. The screen itself makes the choice `required`, so this
+     * branch only ever runs for a request that skipped the screen.
      */
     monthly_contact_allowance:
       answers.allowance === "as_relevant"

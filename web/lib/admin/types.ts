@@ -25,6 +25,9 @@ export type AdminResource =
   | "invites"
   | "consents"
   | "matching"
+  | "blast_responses"
+  | "answers"
+  | "delivery"
   | "audit";
 
 /**
@@ -76,6 +79,88 @@ export interface MatchingResult {
   adjacency_pairs: number;
   /** Contributors to choose between, so the page needs no second request. */
   people: Array<{ person_id: string; name: string | null; neighborhood: string | null }>;
+}
+
+/**
+ * 7.6 — a blast response waiting to be read.
+ *
+ * The reply, who wrote it, what was asked, and — the part that matters most —
+ * **records it might already be about**. 7.9 asks for "likely-duplicate
+ * candidates surfaced so it can be merged as a validation instead of creating a
+ * second copy of the same place", and a merge that is one click harder than
+ * creating is a merge that stops happening.
+ */
+export interface BlastResponseRow {
+  blast_id: string;
+  person_id: string;
+  /** What the parent asked, so the reply can be judged against it. */
+  question: string;
+  tier: string;
+  category: string | null;
+  neighborhood: string | null;
+  responder: string | null;
+  responder_phone_masked: string | null;
+  /** How many approved contributions they already have — a track record. */
+  responder_contributions: number;
+  response_text: string;
+  responded_at: string | null;
+  quality: number | null;
+  review_status: string;
+  /** Existing shares this reply might be about, best guess first. */
+  merge_candidates: Array<{
+    share_id: string;
+    name: string;
+    kind: string;
+    firsthand_count: number;
+  }>;
+}
+
+/** 14.2 — one answer waiting for a person. */
+export interface AnswerRow {
+  id: string;
+  question: string;
+  answer_text: string;
+  /** Why it is in the queue — the specific rule, not "because everything is". */
+  hold_reason: string;
+  /** The trust labels it carries, so the reviewer checks the claim not the prose. */
+  labels: string[];
+  public_only: boolean;
+  next_step: string;
+  status: string;
+  asker: string | null;
+  asker_phone_masked: string | null;
+  /** Null for a cold inbound — 5.9's subject, and they still get an answer. */
+  known_person: boolean;
+  created_at: string;
+  sent_at: string | null;
+}
+
+/**
+ * 12.5 — delivery health.
+ *
+ * The estimate asks for "a daily delivery-rate check surfacing anything below
+ * 95%, and an admin view of delivery health". This is that view's payload:
+ * the rate, what is still in flight, and the carrier errors that carry an
+ * action rather than a number.
+ */
+export interface DeliveryHealthRow {
+  /** False with no database — the page then says so rather than showing 0%. */
+  configured: boolean;
+  window_days: number;
+  /** Null when nothing has settled yet: 0 out of 0 is not a failure. */
+  rate: number | null;
+  below_floor: boolean;
+  settled: number;
+  delivered: number;
+  /** Accepted and not yet reported on. Neither a success nor a failure. */
+  in_flight: number;
+  alerts: Array<{
+    code: number;
+    count: number;
+    severity: "alert" | "warn";
+    title: string;
+    action: string;
+  }>;
 }
 
 /** Where a record came from. A parent-trust label is only ever allowed on the first. */
@@ -593,6 +678,56 @@ export type AdminAction =
    * "this record could answer a question", and the record is the place.
    */
   | { action: "share.answer_ready"; id: string; to: boolean }
+  /**
+   * 7.6 — the admin rates a blast response, 1–5.
+   *
+   * Separate from approving it, because they are different judgements: a reply
+   * can be genuinely useful and still be about something Pando already knows, and
+   * a rating that only ever accompanied an approval could never say so. The
+   * rating is what feeds credits and tiers (M9).
+   */
+  | { action: "blast_response.rate"; blast_id: string; person_id: string; quality: number }
+  /**
+   * 7.9 — approve a blast response, and let it into the graph.
+   *
+   * "Every paid question permanently enriches the free answer base." Approving
+   * creates a **pending** share pre-filled from the reply, carrying who said it,
+   * when, and which blast — or, when `merge_into` names an existing record, adds
+   * this parent's experience to that one instead of making a second copy.
+   */
+  | {
+      action: "blast_response.approve";
+      blast_id: string;
+      person_id: string;
+      /** What the reply recommends, as the admin read it. */
+      share_name?: string;
+      share_kind?: string;
+      /** Merge rather than create: this reply is about a record Pando already has. */
+      merge_into?: string;
+    }
+  | { action: "blast_response.reject"; blast_id: string; person_id: string; reason: string }
+  /**
+   * 14.2 — the answer queue.
+   *
+   * **Approving and sending are two actions on purpose.** They are different
+   * events: the first is a judgement, durable and audited; the second is a
+   * delivery attempt that can fail transiently and be retried. Folding them
+   * together would mean a carrier hiccup either lost the approval or wrote a
+   * second one, and would hold the audit transaction open across an HTTP call.
+   */
+  /**
+   * 7.8 — send a blast to its matched pool.
+   *
+   * An admin action rather than an automatic step, because the pilot reads
+   * everything (19) and because this is the one path that reaches five
+   * strangers' phones unprompted. It refuses a blast still marked for review.
+   */
+  | { action: "blast.send"; id: string }
+  | { action: "answer.approve"; id: string }
+  | { action: "answer.send"; id: string }
+  | { action: "answer.reject"; id: string; reason: string }
+  /** The labels are never editable — see `repo/answers.ts`. Only the prose. */
+  | { action: "answer.edit"; id: string; text: string }
   /* Caregivers — 2.5 */
   | { action: "nomination.approve"; id: string }
   | { action: "nomination.reject"; id: string; reason: string }

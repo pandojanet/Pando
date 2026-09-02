@@ -40,6 +40,11 @@ const FLAG_REASONS: Record<string, { title: string; meaning: string }> = {
     meaning:
       "The parent said themselves it was over a year ago. Still usable, but it should be labelled as old — prices and teachers change.",
   },
+  recommendation_withdrawn: {
+    title: "A parent took it back",
+    meaning:
+      "Someone who recommended this said it is no longer worth recommending. It is marked as out of date, not removed — other parents may still stand behind it, and one changed mind is evidence rather than a verdict.",
+  },
   possible_duplicate_share: {
     title: "Might be a duplicate",
     meaning:
@@ -449,4 +454,24 @@ export function matchReason(kind: string): string {
 /** An `affinity_weights` row → what that weight is for. */
 export function affinityLabel(type: string): string {
   return MATCH_REASON[type] ?? sentence(type);
+}
+
+/**
+ * 5.8 — why an answer is waiting.
+ *
+ * The distinction the reviewer needs is between "held because everything is" and
+ * "held because of what is in it", so the words carry it: the blanket pilot rule
+ * reads as a routine, the specific ones read as a reason.
+ */
+const ANSWER_HOLD_REASON: Record<string, string> = {
+  pilot_review_all: "Routine — every answer is read",
+  sensitive: "Health, legal or safety",
+  caregiver: "Mentions a caregiver",
+  public_only: "No parent behind it",
+  low_evidence: "Thin — one record or none",
+  generator_asked: "Pando asked for a person",
+};
+
+export function holdReasonLabel(reason: string): string {
+  return ANSWER_HOLD_REASON[reason] ?? sentence(reason);
 }

@@ -91,6 +91,21 @@ export interface Option {
   bands?: AgeBand[];
   /** "None / prefer not to say" — selecting it clears every other choice. */
   exclusive?: boolean;
+  /**
+   * Selecting this clears **these** options, and only these.
+   *
+   * The middle ground `exclusive` could not express, and the 1 Sep feedback
+   * asked for it by name: *"'Parenting on my own' must clear 'Parenting with a
+   * partner' and 'Co-parenting across households'"* — while "Blended family"
+   * and "Grandparent involved" combine with it perfectly well. `exclusive`
+   * would have cleared those too, which is a different and wrong answer.
+   *
+   * One direction only, deliberately. Tapping a partner option does **not**
+   * clear "on my own": a parent correcting themselves taps the wrong one off,
+   * and a rule that fired both ways would make the two chips fight each other
+   * as the parent worked along the row.
+   */
+  clears?: string[];
   /** In grid layouts, take two columns (long labels next to short ones). */
   wide?: boolean;
   /**
@@ -287,6 +302,16 @@ export interface Screen {
   statement?: {
     body: string[];
     examples?: string[];
+    /**
+     * Paragraphs that come **after** the examples.
+     *
+     * The privacy screen needed one (1 Sep, item 6): "your name and contact
+     * information stay private unless you separately agree to an introduction"
+     * is the answer to the question the examples raise, so it has to follow
+     * them. Appending it to `body` would have put it above the sentences it
+     * qualifies.
+     */
+    bodyAfter?: string[];
     note?: string;
     link?: { href: string; label: string };
   };

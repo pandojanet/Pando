@@ -2,9 +2,14 @@ import "server-only";
 
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
+import { deliveryHealth } from "@/lib/delivery";
 import { matchesFor } from "@/lib/server/repo/matching";
+import { deliveryCounts } from "@/lib/server/repo/outreach";
 import type {
   AdminResource,
+  AnswerRow,
+  BlastResponseRow,
+  DeliveryHealthRow,
   MatchCandidateRow,
   MatchingResult,
 } from "@/lib/admin/types";
@@ -61,6 +66,12 @@ export async function readResource(
       return pendingOptions(db);
     case "matching":
       return matchingHarness(db, params);
+    case "answers":
+      return answerQueue(db);
+    case "blast_responses":
+      return blastResponses(db);
+    case "delivery":
+      return deliveryHealthRow(params);
     case "flags":
       return flagRows(db);
     case "demand":
@@ -1224,4 +1235,156 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
     adjacency_pairs: outcome.config.adjacency.length,
     people,
   } satisfies MatchingResult;
+}
+
+/**
+ * 14.2 — answers waiting for a person.
+ *
+ * The queue leads with what is still unread, because that is the worklist; sent
+ * and rejected ones follow so a reviewer can see what they decided this morning
+ * without leaving the page.
+ *
+ * `known_person` is carried because it changes what the reviewer is looking at:
+ * an answer to somebody with no profile is a **cold inbound** (5.9), typically
+ * from a forwarded answer, and the first reply they get is the whole of their
+ * first impression.
+ */
+async function answerQueue(db: Db): Promise<AnswerRow[]> {
+  const found = await rows(
+    db,
+    sql`
+      select a.id, a.question_text, a.answer_text, a.hold_reason, a.labels,
+             a.public_only, a.next_step, a.status, a.created_at, a.sent_at,
+             a.phone, p.first_name, p.last_name, p.id as person_id
+        from answers a
+        left join people p on p.id = a.person_id
+       where not a.is_test
+       order by
+         case when a.status = 'pending_review' then 0 else 1 end,
+         a.created_at desc
+       limit 100
+    `,
+  );
+
+  return found.map((r) => ({
+    id: String(r.id),
+    question: String(r.question_text ?? ""),
+    answer_text: String(r.answer_text ?? ""),
+    hold_reason: String(r.hold_reason ?? ""),
+    labels: (r.labels as string[] | null) ?? [],
+    public_only: r.public_only === true,
+    next_step: String(r.next_step ?? "none"),
+    status: String(r.status ?? "pending_review"),
+    asker: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+    asker_phone_masked: maskPhone(r.phone ? String(r.phone) : null),
+    known_person: r.person_id !== null,
+    created_at: String(r.created_at ?? ""),
+    sent_at: (r.sent_at as string | null) ?? null,
+  }));
+}
+
+/**
+ * 7.6 — blast responses waiting to be read, with their merge candidates.
+ *
+ * ## The candidates are the point
+ *
+ * 7.9 asks for "likely-duplicate candidates surfaced so it can be merged as a
+ * validation instead of creating a second copy of the same place". That sentence
+ * is the difference between a knowledge base that compounds and one that
+ * fragments: two parents saying the same class is good is the
+ * `Validated by multiple parents` label, while two records each with one parent
+ * is nothing at all.
+ *
+ * A merge that is one click harder than creating is a merge that stops happening,
+ * so the candidates arrive with the row rather than behind a search.
+ *
+ * Matching is by trigram similarity against the share name, restricted to the
+ * blast's own market. Deliberately loose: this is a suggestion for a human, and a
+ * near-miss that gets ignored costs a glance, while a miss costs a duplicate that
+ * nobody will ever notice.
+ */
+async function blastResponses(db: Db): Promise<BlastResponseRow[]> {
+  const found = await rows(
+    db,
+    sql`
+      select
+        br.blast_id, br.person_id, br.response_text, br.responded_at,
+        br.quality, br.review_status,
+        b.question_text, b.tier, b.category, b.neighborhood, b.market_id,
+        p.first_name, p.last_name, p.phone,
+        (select count(*)::int
+           from share_contributions sc
+           join shares s on s.id = sc.share_id
+          where sc.person_id = p.id
+            and sc.status = 'approved' and s.status = 'approved')  as approved_count,
+        coalesce((
+          select json_agg(c) from (
+            select s.id as share_id, s.name, s.kind::text as kind,
+                   (select count(*)::int from share_contributions x
+                     where x.share_id = s.id and x.firsthand)      as firsthand_count
+              from shares s
+             where s.market_id = b.market_id
+               and not s.is_test
+               and s.status <> 'rejected'
+               -- Loose on purpose: a suggestion for a human. pg_trgm is already
+               -- installed for the taxonomy search.
+               and similarity(s.name, br.response_text) > 0.12
+             order by similarity(s.name, br.response_text) desc
+             limit 4) c), '[]'::json)                              as candidates
+      from blast_recipients br
+      join blasts b on b.id = br.blast_id
+      join people p on p.id = br.person_id
+      where br.response_text is not null
+        and not b.is_test
+      order by
+        -- Unread first, then newest: the queue is a worklist, not an archive.
+        case when br.review_status = 'pending_review' then 0 else 1 end,
+        br.responded_at desc nulls last
+      limit 100
+    `,
+  );
+
+  return found.map((r) => ({
+    blast_id: String(r.blast_id),
+    person_id: String(r.person_id),
+    question: String(r.question_text ?? ""),
+    tier: String(r.tier ?? ""),
+    category: r.category ? String(r.category) : null,
+    neighborhood: r.neighborhood ? String(r.neighborhood) : null,
+    responder: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+    responder_phone_masked: maskPhone(r.phone ? String(r.phone) : null),
+    responder_contributions: Number(r.approved_count ?? 0),
+    response_text: String(r.response_text ?? ""),
+    responded_at: (r.responded_at as string | null) ?? null,
+    quality: r.quality === null ? null : Number(r.quality),
+    review_status: String(r.review_status ?? "pending_review"),
+    merge_candidates: (r.candidates ?? []) as BlastResponseRow["merge_candidates"],
+  }));
+}
+
+/**
+ * 12.5 — the delivery picture, for the admin view.
+ *
+ * Thin on purpose: `deliveryCounts` does the one query and `deliveryHealth`
+ * turns it into the rate and the alerts. Both are used by the daily check too,
+ * so the page and the alarm can never disagree about what 95% means.
+ */
+async function deliveryHealthRow(
+  params: Record<string, unknown>,
+): Promise<DeliveryHealthRow> {
+  const windowDays = Math.min(90, Math.max(1, Number(params.days ?? 7) || 7));
+  const counts = await deliveryCounts(windowDays);
+  if (!counts) {
+    return {
+      configured: false,
+      window_days: windowDays,
+      rate: null,
+      below_floor: false,
+      settled: 0,
+      delivered: 0,
+      in_flight: 0,
+      alerts: [],
+    };
+  }
+  return { configured: true, window_days: windowDays, ...deliveryHealth(counts) };
 }

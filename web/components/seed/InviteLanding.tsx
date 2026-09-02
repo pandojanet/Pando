@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
-import { InfoDot } from "@/components/ui/InfoDot";
 import { PhoneField } from "@/components/ui/PhoneField";
 import {
   Container,
@@ -300,11 +299,22 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
 
   return (
     <Screen>
+      {/**
+       * 1 Sep, items 1 and 16: *"Remove the contradictory Founding parent badge
+       * until Founding Status has actually been earned. Use 'Founding
+       * contributor' before then if a label is needed."*
+       *
+       * The badge said a parent already held a status the very next paragraph
+       * explained they would earn on their second approved contribution — the
+       * screen contradicting itself in two places a thumb apart. "Founding
+       * contributor" is what they are the moment they start, and it is the word
+       * `/done` has used since 6 Aug.
+       */}
       <ScreenHeader
         left={<Wordmark />}
         right={
-          <span className="rounded-full border border-gold-line bg-gold-wash px-3 py-1.5 text-[12px] font-semibold text-gold-ink">
-            Founding parent
+          <span className="rounded-full border border-bark bg-card px-3 py-1.5 text-[12px] font-semibold text-muted">
+            Founding contributor
           </span>
         }
       />
@@ -337,77 +347,116 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           />
           <PromiseRow
             icon={<ShieldIcon />}
-            title="Your name is never shown"
-            body="Other parents see the recommendation. Never who shared it."
+            /**
+             * 1 Sep, items 1 and 16. *"Change 'Your name is never shown' to:
+             * 'Private by default. Your name and contact information are not
+             * shown unless you explicitly choose otherwise.'"*
+             *
+             * The old line was a promise the product does not keep: P13 lets a
+             * parent choose to be named, and the privacy screen offers to show
+             * a shared connection. "Never" was therefore false on the one
+             * screen a parent decides to trust — and it also made the founding
+             * route look like the *less* private of the two, which is item 16's
+             * central objection.
+             */
+            title="Private by default"
+            body="Your name and contact information are not shown unless you explicitly choose otherwise."
           />
         </ul>
 
-        {/* Founding Status needs a real, reachable person: a name we can recognise
-            and a number we can verify. The anonymous path stays open, and says
-            plainly what it costs. */}
+        {/**
+         * 1 Sep, items 1 and 16 — the whole block rewritten, and the reframing
+         * is the point rather than the copy.
+         *
+         * **"Sharing anonymously" was inaccurate.** Her words: recommendations
+         * *are already* private from other parents by default, so calling one
+         * route anonymous implied the other was not — and the founding route is
+         * the one this network runs on. Worse, Pando can tie a "share without
+         * joining" contribution to a device and a session, so *"do not describe
+         * the contribution as anonymous if Pando can associate it with a phone
+         * number, account, device or other identifier. Use 'private' or 'not
+         * shown to other parents.'"*
+         *
+         * **"What you give up" led with a punishment.** *"Lead with what joining
+         * enables rather than 'what you give up.' The current framing feels
+         * punitive and may imply that joining reduces privacy."* So the list is
+         * the same four facts, stated as what joining is for, and the sentence
+         * that closes it is hers: joining does not change what other parents
+         * see.
+         *
+         * **The four InfoDots are gone**, on her instruction to *"remove the
+         * multiple information icons and expanded explanation boxes"* and keep
+         * one privacy link. They were added on 24 Aug at her own request and
+         * she has now seen them on a phone: four dots down one short list is
+         * four things to tap before you can read a paragraph.
+         *
+         * **And the thank-you claim is conditional.** *"Only say Pando cannot
+         * send the thank-you if the non-joining route genuinely leaves Pando
+         * without a usable payment or contact method."* It does — that route
+         * stores no name and no number at all — so the sentence stands, and it
+         * is stated once, in the secondary route's own words rather than as a
+         * penalty in a list.
+         */}
         {anonymous ? (
           <div className="mt-7 rounded-3xl border border-bark bg-card p-5">
             <h2 className="font-display text-[1.1rem] font-semibold">
-              Sharing anonymously
+              Share without joining for now
             </h2>
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
-              Your recommendations still count and still help your neighborhood.
-              What you give up:
+              Your recommendations can still help the network. They will not be
+              connected to a founding profile, and founding benefits will not
+              apply — including the thank-you, which needs a name and a number
+              to send.
             </p>
-            {/**
-             * The client asked for an "i" next to each of these (24 Aug, item 3),
-             * and the prose sentence they used to be could not carry one. Three
-             * named things a parent can interrogate beats one sentence listing
-             * them — and each of these is a promise, so each is worth a line
-             * saying what it actually means.
-             */}
-            <ul className="mt-2.5 space-y-2 text-[14.5px] leading-relaxed text-ink-soft">
-              <li>
-                <strong>Founding Status</strong>
-                <InfoDot label="Founding Status">
-                  The permanent standing of a parent who helped start the network
-                  here. It activates once a second contribution of yours is
-                  approved, and it never downgrades.
-                </InfoDot>
-              </li>
-              <li>
-                the thank-you
-                <InfoDot label="the thank-you">
-                  Founding contributors are paid for their first qualifying
-                  contribution. Sharing anonymously means there is no one for us
-                  to pay.
-                </InfoDot>
-              </li>
-              <li>
-                a reserved place in the pilot
-                <InfoDot label="a reserved place in the pilot">
-                  The pilot opens to a limited number of parents. Founding
-                  contributors are in it by right, without waiting for their
-                  neighborhood to reach the front of the queue.
-                </InfoDot>
-              </li>
-              <li>
-                any way for us to tell you when a parent used what you shared
-                <InfoDot label="any way for us to tell you when a parent used what you shared">
-                  When a recommendation of yours answers somebody&apos;s question,
-                  we text you to say so. That needs a number, so it cannot happen
-                  on the anonymous path.
-                </InfoDot>
-              </li>
-            </ul>
+            <p className="mt-2.5 text-[14.5px] leading-relaxed text-ink-soft">
+              Either way, what other parents see is the same: the
+              recommendation, not who shared it.
+            </p>
             <button
               type="button"
               onClick={() => setAnonymous(false)}
               className="mt-3 min-h-11 text-[14.5px] font-semibold text-green-deep underline underline-offset-2"
             >
-              Actually, count me as founding
+              Join the founding network
             </button>
           </div>
         ) : (
           <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
+            {/**
+             * Her suggested page, in her order: what joining *enables*, then the
+             * fields it needs. One privacy link at the end of the screen, and no
+             * information icons — see the block comment above.
+             */}
             <h2 className="font-display text-[1.1rem] font-semibold">
-              Your details
+              Join the founding network
             </h2>
+            <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
+              Joining allows Pando to recognize your contribution, reserve your
+              place in the pilot, and let you know when something you shared
+              helps another family. As a founding contributor, you can:
+            </p>
+            <ul className="mt-2.5 space-y-1.5 text-[14.5px] leading-relaxed text-ink-soft">
+              <li>Receive a thank-you for your first qualifying contribution</li>
+              <li>
+                Earn permanent Founding Status after your second approved
+                contribution
+              </li>
+              <li>Have a reserved place in the Pasadena pilot</li>
+              <li>
+                Receive private updates when your recommendations help other
+                parents
+              </li>
+            </ul>
+            {/* Her line, and it is the one that answers item 16's objection
+                outright: joining is not the less private route. */}
+            <p className="mt-3 rounded-2xl border border-green/20 bg-green-wash p-3 text-[14px] font-medium leading-relaxed text-green-deep">
+              Joining does not change what other parents see. Your
+              recommendations remain private by default.
+            </p>
+
+            <h3 className="mt-5 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
+              Your details
+            </h3>
             {/* "…confirm you're really from the group" removed on the client's
                 instruction (24 Aug, item 4). Her reason is upstream of the
                 wording: she is moving away from a link that belongs to a group,
@@ -515,13 +564,34 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 : "We'll send a 6-digit code to confirm the number when you finish."}
             </p>
 
-            <button
-              type="button"
-              onClick={() => setAnonymous(true)}
-              className="mt-2 min-h-11 text-[13.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
-            >
-              I&apos;d rather share anonymously
-            </button>
+            {/**
+             * The secondary route, in her exact words. *"Use 'Share without
+             * joining for now' as the secondary action. Do not use 'Continue
+             * anonymously,' because that implies the founding route is not
+             * private."*
+             *
+             * It only switches which block is shown; the saved answers are
+             * untouched either way, which is her *"both routes must preserve
+             * saved answers and continue from the same point."*
+             */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4">
+              <button
+                type="button"
+                onClick={() => setAnonymous(true)}
+                className="min-h-11 text-[13.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
+              >
+                Share without joining for now
+              </button>
+              {/* The one privacy link she asked to keep. */}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-11 self-center text-[13.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
+              >
+                Learn more about privacy
+              </a>
+            </div>
           </div>
         )}
 
@@ -554,14 +624,32 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             disabled={!canBegin}
             onClick={() => begin(canResume ? "resume" : "new")}
           >
-            {canResume ? "Continue where you left off" : "Start — about two minutes"}
+            {/**
+             * 1 Sep, items 1 and 16: the primary action is *"Join the founding
+             * network"*, and the secondary is the link inside the card. Resume
+             * still says so, because it is the same route continued — *"both
+             * routes must preserve saved answers and continue from the same
+             * point."*
+             */}
+            {canResume
+              ? "Continue where you left off"
+              : anonymous
+                ? "Start — about two minutes"
+                : "Join the founding network"}
             <ArrowRight />
           </Button>
         )}
+        {/**
+         * *"The footer must not create a third competing action."*
+         *
+         * It never was one — it is a line of text — but it did read as a third
+         * offer when the card above already held two, so it now says only what
+         * the button needs, and nothing when the button is ready.
+         */}
         <p className="py-3 text-center text-[12.5px] text-muted">
           {canBegin
             ? "No app. No account. No password."
-            : "Add your name and number, and tick the box, to continue as a founding parent."}
+            : "Add your name and number, and tick the box, to join."}
         </p>
       </ScreenDock>
     </Screen>

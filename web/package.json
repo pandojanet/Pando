@@ -24,7 +24,22 @@
     "seed:neighborhoods": "node scripts/seed-neighborhoods.mjs",
     "test:confirm": "node --experimental-strip-types --no-warnings scripts/test-confirm-back.mts",
     "test:matching": "node --experimental-strip-types --no-warnings scripts/test-matching.mts",
-    "test:trust": "node --experimental-strip-types --no-warnings scripts/test-trust.mts"
+    "test:trust": "node --experimental-strip-types --no-warnings scripts/test-trust.mts",
+    "test:outreach": "node --experimental-strip-types --no-warnings scripts/test-outreach.mts",
+    "test:inbound": "node --experimental-strip-types --no-warnings scripts/test-inbound.mts",
+    "test:compliance": "node --experimental-strip-types --no-warnings scripts/test-compliance.mts",
+    "test:blast": "node --experimental-strip-types --no-warnings scripts/test-blast.mts",
+    "test:intent": "node --experimental-strip-types --no-warnings scripts/test-intent.mts",
+    "test:answer": "node --experimental-strip-types --no-warnings scripts/test-answer.mts",
+    "test:routing": "node --experimental-strip-types --no-warnings scripts/test-routing.mts",
+    "test:onboarding": "node --experimental-strip-types --no-warnings scripts/test-onboarding.mts",
+    "test:jobs": "node --experimental-strip-types --no-warnings scripts/test-jobs.mts",
+    "test:tiers": "node --experimental-strip-types --no-warnings scripts/test-tiers.mts",
+    "test:thanks": "node --experimental-strip-types --no-warnings scripts/test-thanks.mts",
+    "test:vouch": "node --experimental-strip-types --no-warnings scripts/test-vouch.mts",
+    "test:feedback": "tsx scripts/test-seed-feedback.mts",
+    "test:starters": "node --experimental-strip-types --no-warnings scripts/test-starters.mts",
+    "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -102,8 +102,20 @@ export function ChipGroup({
       // "None / prefer not to say" clears everything else.
       next = on ? [option.id] : [];
     } else {
+      /**
+       * 1 Sep — an option may clear *named* others without being exclusive.
+       *
+       * "Parenting on my own" clears the two partner answers and leaves
+       * "Blended family" alone. Applied only when switching **on**: turning it
+       * off restores nothing, because the parent removed a claim rather than
+       * making a different one.
+       */
+      const cleared = on ? new Set(option.clears ?? []) : new Set<string>();
       next = on
-        ? [...selected.filter((id) => !exclusiveIds.includes(id)), option.id]
+        ? [
+            ...selected.filter((id) => !exclusiveIds.includes(id) && !cleared.has(id)),
+            option.id,
+          ]
         : selected.filter((id) => id !== option.id);
     }
     onChange(next, { id: option.id, on });

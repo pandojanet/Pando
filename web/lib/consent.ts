@@ -93,6 +93,21 @@ export const AFFILIATION_CONSENT_CAVEAT =
  */
 export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-08-01";
 
+/**
+ * 5.9 — consent given by texting first, where no wording was shown at all.
+ *
+ * A cold inbound parent never saw `SMS_CONSENT_TEXT`: they were forwarded an
+ * answer and texted the number. 5.9 says "their first text counts as their opt-in
+ * and is recorded as such", and **as such** is the operative phrase — recording
+ * it under the seed wording's version would claim they read a paragraph they were
+ * never shown, on the one record a TCPA complaint actually tests.
+ *
+ * So it has its own version, which says what happened rather than which text was
+ * displayed. The defence for this consent is the inbound message itself, and the
+ * `message_log` row that carries it.
+ */
+export const INBOUND_CONSENT_VERSION = "inbound-text-2026-08";
+
 export const SMS_CONSENT_TEXT =
   "I agree to receive text messages from Pando Systems, Inc. at the number provided — including answers to my questions, occasional requests from the parent network, and account notifications. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
 
