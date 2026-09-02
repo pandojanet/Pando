@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -44,10 +44,34 @@ import type { MatchingResult } from "@/lib/admin/types";
  * anything", and that is unanswerable if the page does not say what it scored
  * with. They come from `affinity_weights` on every run — a config edit shows up
  * here on the next reload, with no deploy and no backfill.
+ *
+ * ## 1 Sep — search, and an honest results header
+ *
+ * The client's report: "there is no search now, and the scoring logic is not
+ * entirely clear." Two real faults, and neither was a missing feature so much
+ * as something this page had stopped telling the truth about.
+ *
+ * **The picker had no search.** A plain `<select>` over every contributor works
+ * at the 26-person demo cohort and stops working long before the pilot's
+ * ~350. Fixed the way `/admin/contributors` already does it — a text filter
+ * over the same rows, client-side, because the endpoint already returns every
+ * contributor in one query and a second round trip would only add latency to
+ * typing.
+ *
+ * **The results header implied a selection this page never makes.** "Pando
+ * would ask (8 of 5 wanted)" reads as a decision — as if the eight rows shown
+ * were already the short list a live Ask would contact. They are not:
+ * `rankCandidates` returns everyone who scored above zero, the *entire* ranked
+ * graph, while `selectPool` (M7.3) is what actually selects — it asks for
+ * `wanted × 4` candidates and only then removes anyone opted out or inside
+ * their 48-hour gap, neither of which this harness does. The header now says
+ * what is actually on screen, and a line above the table says what a live Ask
+ * would additionally exclude.
  */
 export default function MatchingPage() {
   const [asker, setAsker] = useState("");
   const [wanted, setWanted] = useState(5);
+  const [pickerQuery, setPickerQuery] = useState("");
 
   const { rows, configured, loading, error, demo, setDemo } = useAdminRows<MatchingResult>(
     "matching",
@@ -56,6 +80,28 @@ export default function MatchingPage() {
 
   const data = rows;
   const people = data?.people ?? [];
+
+  /**
+   * The picker's own filter, over rows the page already has.
+   *
+   * The currently chosen asker is kept in the list even when a later query
+   * would exclude them, so typing a search after picking someone cannot
+   * silently blank the select out from under them.
+   */
+  const visiblePeople = useMemo(() => {
+    const q = pickerQuery.trim().toLowerCase();
+    if (!q) return people;
+    const matched = people.filter((p) =>
+      [p.name, p.neighborhood ? slugLabel(p.neighborhood) : null]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q)),
+    );
+    if (asker && !matched.some((p) => p.person_id === asker)) {
+      const current = people.find((p) => p.person_id === asker);
+      if (current) return [current, ...matched];
+    }
+    return matched;
+  }, [people, pickerQuery, asker]);
 
   return (
     <>
@@ -70,25 +116,40 @@ export default function MatchingPage() {
         <div className="flex flex-wrap items-end gap-3 px-4 py-3.5">
           <div className="min-w-[16rem] flex-1">
             <label
-              htmlFor="asker"
+              htmlFor="asker-search"
               className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
             >
               Asking on behalf of
             </label>
+            <input
+              id="asker-search"
+              type="search"
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              placeholder="Search name or neighborhood…"
+              className={`${inputClass} mt-1 w-full`}
+              aria-controls="asker"
+            />
             <select
               id="asker"
-              className={`${inputClass} mt-1 w-full`}
+              aria-label="Choose the parent to ask on behalf of"
+              className={`${inputClass} mt-1.5 w-full`}
               value={asker}
               onChange={(e) => setAsker(e.target.value)}
             >
               <option value="">Choose a parent…</option>
-              {people.map((p) => (
+              {visiblePeople.map((p) => (
                 <option key={p.person_id} value={p.person_id}>
                   {p.name ?? "Unnamed"}
                   {p.neighborhood ? ` · ${slugLabel(p.neighborhood)}` : ""}
                 </option>
               ))}
             </select>
+            {pickerQuery.trim() !== "" && (
+              <p className="mt-1 text-[12px] text-muted">
+                {visiblePeople.length} of {people.length} match “{pickerQuery.trim()}”.
+              </p>
+            )}
           </div>
 
           <div>
@@ -110,33 +171,52 @@ export default function MatchingPage() {
             />
           </div>
 
-          {asker !== "" && (
-            <Button tone="secondary" onClick={() => setAsker("")}>
+          {(asker !== "" || pickerQuery !== "") && (
+            <Button
+              tone="secondary"
+              onClick={() => {
+                setAsker("");
+                setPickerQuery("");
+              }}
+            >
               Clear
             </Button>
           )}
         </div>
 
         {data?.asker && (
-          <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] text-muted">
-            {data.asker.name ?? "This parent"} ·{" "}
-            {data.asker.neighborhood ? slugLabel(data.asker.neighborhood) : "no area recorded"} ·{" "}
-            {data.asker.child_birth_years.length > 0
-              ? `kids born ${data.asker.child_birth_years.join(", ")}`
-              : "no children recorded"}{" "}
-            · {data.asker.edges} connection{data.asker.edges === 1 ? "" : "s"} ·{" "}
-            {data.asker.relevance} context answer{data.asker.relevance === 1 ? "" : "s"}
-          </p>
+          <div className="border-t border-bark/70 px-4 py-2.5 text-[13px] text-muted">
+            <p>
+              {data.asker.name ?? "This parent"} ·{" "}
+              {data.asker.neighborhood ? slugLabel(data.asker.neighborhood) : "no area recorded"} ·{" "}
+              {data.asker.child_birth_years.length > 0
+                ? `kids born ${data.asker.child_birth_years.join(", ")}`
+                : "no children recorded"}{" "}
+              · {data.asker.edges} connection{data.asker.edges === 1 ? "" : "s"} ·{" "}
+              {data.asker.relevance} context answer{data.asker.relevance === 1 ? "" : "s"}
+            </p>
+            {/**
+             * 1 Sep — spelled out, because it explains every "+ 0" in the score
+             * column below before a reader has to work it out for themselves.
+             * Zero context answers is a fact about *this parent's own profile*;
+             * the relevance boost needs both sides to have answered something,
+             * so nobody can score any relevance points against them until they
+             * do — no candidate is "worse" for it.
+             */}
+            {data.asker.relevance === 0 && (
+              <p className="mt-1 text-gold-ink">
+                They haven't answered any of the context questions yet, so
+                every score below is shared connections alone — the "+ 0" is a
+                gap in their own profile, not a judgement on the candidates.
+              </p>
+            )}
+          </div>
         )}
       </Card>
 
       <div className="mt-5">
         <Card
-          title={
-            data?.asker
-              ? `Pando would ask (${data.found} of ${data.wanted} wanted)`
-              : "Pando would ask"
-          }
+          title={data?.asker ? `Ranked by relevance (${data.found})` : "Who would Pando ask?"}
           className={data?.asker && data.cold ? "border-gold-line" : undefined}
         >
           {loading && !data ? (
@@ -158,6 +238,21 @@ export default function MatchingPage() {
           ) : (
             <>
               {/**
+               * 1 Sep — what this list is, and what it is not, said before the
+               * table rather than left to be inferred from a header. This is
+               * the whole ranked graph, not a selection: a live Ask still has
+               * to exclude anyone opted out or inside their 48-hour gap, and
+               * widens the pool once it does. Saying so here is what stops "8
+               * shown" from reading as "8 chosen".
+               */}
+              <p className="border-b border-bark/70 bg-paper px-4 py-2.5 text-[13px] leading-relaxed text-muted">
+                Everyone Pando's graph connects to this parent, best match
+                first. A live Ask narrows this further — anyone opted out or
+                asked in the last 48 hours is skipped — so who is actually
+                contacted is a subset of this list, not all of it.
+              </p>
+
+              {/**
                * 6.6 — cold start, said plainly.
                *
                * The estimate asks the mechanism to "tell the parent honestly" when
@@ -172,13 +267,31 @@ export default function MatchingPage() {
                 </p>
               )}
 
+              {/**
+               * 1 Sep — a flat tail, named rather than left to look like an
+               * order. Numbering rows 2 through 8 implies each is a step down
+               * from the last; when several share one identical score and one
+               * identical reason, that implication is false — the network
+               * genuinely cannot distinguish between them yet, and the table's
+               * own numbering would otherwise be the only thing suggesting it
+               * can.
+               */}
+              {tiedTailCount(data.ranked) >= 3 && (
+                <p className="border-b border-bark/70 px-4 py-2.5 text-[13px] leading-relaxed text-muted">
+                  The last {tiedTailCount(data.ranked)} rows score exactly the
+                  same, for the same reason — the network doesn't yet
+                  distinguish between them. Their order below is a tiebreaker,
+                  not a ranking.
+                </p>
+              )}
+
               <TableWrap>
                 <thead>
                   <tr>
                     <Th>Parent</Th>
                     <Th
                       className="text-right"
-                      title="Connection plus context. Connection is a shared school, area, class, group, faith community or child's stage; context is a similar setup."
+                      title="Shared connections plus a small boost for similar context."
                     >
                       Score
                     </Th>
@@ -204,10 +317,14 @@ export default function MatchingPage() {
                       </Td>
                       <Td className="text-right tabular-nums">
                         <span className="font-semibold">{round(row.score)}</span>
-                        {/* The split, because the two layers mean different things
-                            and a single number hides which one carried the row. */}
+                        {/* The split, because the two layers mean different
+                            things and a single number hides which one carried
+                            the row. Named "connections" / "context" (1 Sep)
+                            rather than the internal field names, so the split
+                            reads without needing the header's tooltip — which
+                            a touch device cannot even reach. */}
                         <span className="ml-1.5 text-[12px] text-muted">
-                          {round(row.affinity)} + {round(row.relevance)}
+                          {round(row.affinity)} connections + {round(row.relevance)} context
                         </span>
                       </Td>
                       <Td>
@@ -279,4 +396,22 @@ function shortfall(found: number, wanted: number): string {
 /** 7.5 rather than 7.5000000001, and 7 rather than 7.0. */
 function round(n: number): string {
   return String(Math.round(n * 100) / 100);
+}
+
+/**
+ * How many rows at the bottom of the ranking share one identical score.
+ *
+ * Specifically the tail below the leader, because that is the shape a cold,
+ * newly-seeded network actually produces: one clear top match, then a long
+ * flat run at whatever the smallest nonzero weight in the graph is. `ranked`
+ * is already sorted best-first (`rankCandidates`), so the tail is read from
+ * the end. Fewer than three sharing a score is an ordinary tie, not a pattern
+ * worth a banner over.
+ */
+function tiedTailCount(ranked: Array<{ score: number }>): number {
+  if (ranked.length < 4) return 0;
+  const tailScore = ranked[ranked.length - 1].score;
+  let count = 0;
+  for (let i = ranked.length - 1; i >= 0 && ranked[i].score === tailScore; i--) count++;
+  return count >= 3 ? count : 0;
 }
