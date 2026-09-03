@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, buttonClass } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { Wordmark } from "@/components/ui/Logo";
 import {
   Eyebrow,
@@ -266,7 +268,7 @@ export function FinishAsks() {
               everything: no code was sendable at entry, or the confirmation ran
               out on the way here. */}
           {session?.phone && needsVerify && !done && gate?.sendable === false && (
-            <div className="mt-7 rounded-3xl border border-gold-line bg-gold-wash p-5">
+            <Panel tone="warning" className="mt-7">
               <h2 className="font-display text-[1.15rem] font-semibold text-gold-ink">
                 We can&apos;t confirm your number yet.
               </h2>
@@ -279,7 +281,7 @@ export function FinishAsks() {
               <p className="mt-2 text-[13.5px] leading-relaxed text-gold-ink/80">
                 Nothing has been sent anywhere, and nothing has been lost.
               </p>
-            </div>
+            </Panel>
           )}
 
           {session?.phone && needsVerify && !done && gate?.sendable !== false && (
@@ -344,13 +346,10 @@ function FollowUpCard({
   onAnswer: (value: boolean) => void;
 }) {
   if (done && answer !== null) {
+    /* The tone carries the answer: green when they said yes to follow-ups,
+       neutral when they didn't — neither is a warning, so neither is gold. */
     return (
-      <div
-        className={cn(
-          "mt-7 rounded-3xl border p-5",
-          answer ? "border-green/25 bg-green-wash" : "border-bark bg-card",
-        )}
-      >
+      <Panel tone={answer ? "positive" : "card"} className="mt-7">
         <p
           className={cn(
             "text-[15.5px] font-semibold",
@@ -366,20 +365,15 @@ function FollowUpCard({
             ? `At most ${allowance} a month — the limit you set — and never a marketing message. Reply STOP any time once we're live.`
             : "You'll still be a founding parent. We just won't text you about what you shared."}
         </p>
-        <button
-          type="button"
-          onClick={() => onAnswer(!answer)}
-          disabled={saving}
-          className="mt-3 min-h-11 text-[14px] font-semibold text-green-deep underline underline-offset-2 disabled:text-muted"
-        >
+        <TextAction className="mt-3" onClick={() => onAnswer(!answer)} disabled={saving}>
           {answer ? "Actually, don't text me" : "Actually, follow-ups are fine"}
-        </button>
-      </div>
+        </TextAction>
+      </Panel>
     );
   }
 
   return (
-    <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
+    <Panel raised className="mt-7">
       <h2 className="font-display text-[1.15rem] font-semibold">
         One permission, then you&apos;re done
       </h2>
@@ -416,6 +410,6 @@ function FollowUpCard({
         Separate from paid Blasts and from being a reference — those are their own
         questions, later.
       </p>
-    </div>
+    </Panel>
   );
 }

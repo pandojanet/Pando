@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
@@ -546,7 +547,9 @@ export function ProfileFlow() {
               with yours. None of it is shown to anyone.
             </p>
 
-            <dl className="mt-6 divide-y divide-bark/70 overflow-hidden rounded-3xl border border-bark bg-card">
+            {/* `as="dl"`: the review screen is a definition list, and the rows
+                supply their own dividers — hence `flush`. */}
+            <Panel as="dl" flush className="mt-6 divide-y divide-bark/70">
               {screens.flatMap((s) =>
                 visibleQuestions(s, answers).map((q) => {
                   const values = [
@@ -606,7 +609,7 @@ export function ProfileFlow() {
                   );
                 }),
               )}
-            </dl>
+            </Panel>
 
             <p className="mt-5 text-[13.5px] leading-relaxed text-muted">
               You can change any of this later — just text Pando once your
@@ -675,7 +678,7 @@ export function ProfileFlow() {
 
           {/* Stated, not asked: the privacy disclosure and the Pando promise. */}
           {screen.statement && (
-            <div className="mt-6 rounded-3xl border border-bark bg-card p-5">
+            <Panel className="mt-6">
               {screen.statement.body.map((paragraph) => (
                 <p
                   key={paragraph.slice(0, 24)}
@@ -713,17 +716,12 @@ export function ProfileFlow() {
               ))}
               {screen.statement.link && (
                 <p className="mt-3.5">
-                  <Link
-                    href={screen.statement.link.href}
-                    /* A new tab, deliberately: this screen sits mid-flow and the
-                       answers are held on the phone, so navigating away and back
-                       is a resume the parent did not ask for. */
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center text-[14.5px] font-semibold text-green-deep underline underline-offset-2"
-                  >
+                  {/* A new tab, deliberately: this screen sits mid-flow and the
+                      answers are held on the phone, so navigating away and back
+                      is a resume the parent did not ask for. */}
+                  <TextAction href={screen.statement.link.href} external>
                     {screen.statement.link.label}
-                  </Link>
+                  </TextAction>
                 </p>
               )}
               {screen.statement.note && (
@@ -731,7 +729,7 @@ export function ProfileFlow() {
                   {screen.statement.note}
                 </p>
               )}
-            </div>
+            </Panel>
           )}
 
           {/* Under the questions, not over them: the client's caveat on the
@@ -798,14 +796,12 @@ export function ProfileFlow() {
                 return (
                   <div key={`${question.id}-perchild`} className="space-y-6">
                     {question.sameForAll && (
-                      <button
-                        type="button"
+                      <TextAction
                         onClick={() => applySameForAll(question)}
                         disabled={selectionsFor(question, answers).length === 0}
-                        className="min-h-11 text-[14px] font-semibold text-green-deep underline underline-offset-2 disabled:text-muted disabled:no-underline"
                       >
                         {question.sameForAll}
-                      </button>
+                      </TextAction>
                     )}
                     {blocks.map((block, blockIndex) => {
                       const last = blockIndex === blocks.length - 1;

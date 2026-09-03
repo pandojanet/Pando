@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { TextAction } from "@/components/ui/TextAction";
 
 /**
  * The one extra turn estimate 1.8 asks for: a parent's thin answer, and a chance
@@ -43,13 +44,14 @@ export function ConfirmBackWidget({
         </Button>
         {/* As reachable as the primary action, on purpose — see the component
             comment. A 44px target, not a text link squeezed under the button. */}
-        <button
-          type="button"
+        <TextAction
+          tone="quiet"
+          underline={false}
+          className="shrink-0 px-2"
           onClick={onSkip}
-          className="min-h-11 shrink-0 px-2 text-[14.5px] font-semibold text-muted transition-colors hover:text-green-deep"
         >
           It&apos;s fine as it is
-        </button>
+        </TextAction>
       </div>
     </div>
   );

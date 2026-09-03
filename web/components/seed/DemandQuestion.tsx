@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { Chip } from "@/components/ui/Chip";
 import { track } from "@/lib/analytics";
 import {
@@ -71,7 +73,7 @@ export function DemandQuestion({
 
   if (stage === "done") {
     return (
-      <div className="mt-7 rounded-3xl border border-green/25 bg-green-wash p-5">
+      <Panel tone="positive" className="mt-7">
         <p className="text-[15.5px] font-semibold text-green-deep">
           Noted — that&apos;s yours.
         </p>
@@ -83,14 +85,10 @@ export function DemandQuestion({
         <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
           You&apos;ll hear the moment the network can answer it — not before.
         </p>
-        <button
-          type="button"
-          onClick={() => setStage("asking")}
-          className="mt-2 min-h-11 text-[14px] font-semibold text-green-deep underline underline-offset-2"
-        >
+        <TextAction className="mt-2" onClick={() => setStage("asking")}>
           Change it
-        </button>
-      </div>
+        </TextAction>
+      </Panel>
     );
   }
 
@@ -117,7 +115,7 @@ export function DemandQuestion({
   }
 
   return (
-    <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
+    <Panel raised className="mt-7">
       <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-green">
         One last thing — this bit&apos;s for you
       </p>
@@ -172,7 +170,7 @@ export function DemandQuestion({
         We&apos;ll text you when Pando can actually help — we&apos;re not promising an
         answer today.
       </p>
-    </div>
+    </Panel>
   );
 }
 
@@ -197,10 +195,7 @@ function Response({
 }) {
   if (sensitivity === "named_allegation") {
     return (
-      <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
-        <h2 className="font-display text-[1.15rem] font-semibold">
-          A person will read this one.
-        </h2>
+      <Panel raised className="mt-7" title="A person will read this one.">
         <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
           When something involves a specific person, Pando doesn&apos;t pass it
           around and doesn&apos;t turn it into an answer for anyone else. It goes to
@@ -223,22 +218,28 @@ function Response({
           &ldquo;Don&apos;t keep it&rdquo; deletes what you typed, here and on our
           side.
         </p>
-      </div>
+      </Panel>
     );
   }
 
   if (sensitivity === "high_stakes") {
     return (
-      <div className="mt-7 rounded-3xl border border-gold-line bg-gold-wash p-5">
-        <h2 className="font-display text-[1.15rem] font-semibold text-gold-ink">
-          This one shouldn&apos;t wait for us.
-        </h2>
+      <Panel tone="warning" className="mt-7" title="This one shouldn’t wait for us.">
         <p className="mt-2 text-[15px] leading-relaxed text-gold-ink/90">
           Pando is a parent network, not a professional service — and for anything
           touching health, legal questions or safety, the right answer is someone
           qualified, today.
         </p>
-        <ul className="mt-3 space-y-1.5 text-[14.5px] leading-relaxed text-gold-ink/90">
+        {/**
+         * `list-disc` explicitly, or this renders unmarked: Tailwind v4's
+         * preflight zeroes `list-style` on every `ul`, and nothing here
+         * restores it by default (the one place that does, `.legal` in
+         * globals.css, is scoped to the legal pages). Four resources read as
+         * one run-on paragraph without a mark to separate them — the failure
+         * mode is worst here, on the one card that has to be scannable in a
+         * moment of actual urgency.
+         */}
+        <ul className="mt-3 list-disc space-y-1.5 pl-5 text-[14.5px] leading-relaxed text-gold-ink/90 marker:text-gold-ink/50">
           <li>
             <strong>Immediate danger:</strong> 911.
           </li>
@@ -266,15 +267,12 @@ function Response({
             Don&apos;t keep it
           </Button>
         </div>
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div className="mt-7 rounded-3xl border border-green/25 bg-green-wash p-5">
-      <h2 className="font-display text-[1.15rem] font-semibold text-green-deep">
-        You&apos;re not the only one.
-      </h2>
+    <Panel tone="positive" className="mt-7" title="You’re not the only one.">
       <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
         Thank you for trusting Pando with that. It&apos;s the kind of question
         parents almost never post in a group chat — which is exactly why it goes
@@ -296,6 +294,6 @@ function Response({
           No — just needed to say it
         </Button>
       </div>
-    </div>
+    </Panel>
   );
 }

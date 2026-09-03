@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
 import { Wordmark } from "@/components/ui/Logo";
 import {
   Screen,
@@ -91,7 +92,7 @@ export function Thanks() {
           </p>
 
           {count > 0 && (
-            <div className="mt-6 overflow-hidden rounded-3xl border border-bark bg-card shadow-card">
+            <Panel raised flush className="mt-6">
               <p className="border-b border-bark/70 bg-green-wash px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.09em] text-green-deep">
                 {count === 1 ? "What you shared" : `What you shared · ${count}`}
               </p>
@@ -117,7 +118,7 @@ export function Thanks() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </Panel>
           )}
 
           {loaded && !session && <NoSession />}

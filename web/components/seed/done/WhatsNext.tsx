@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
+import { InlineAction } from "@/components/ui/TextAction";
 import { Wordmark } from "@/components/ui/Logo";
 import {
   Eyebrow,
@@ -43,12 +44,7 @@ export function WhatsNext() {
           {loaded && session && !completed && (
             <p className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4 text-[14.5px] leading-relaxed text-gold-ink">
               One thing is still open — the follow-up permission on the{" "}
-              <Link
-                href="/done/ask"
-                className="font-semibold underline underline-offset-2"
-              >
-                previous step
-              </Link>
+              <InlineAction href="/done/ask">previous step</InlineAction>
               . Until that&apos;s answered, nothing below has started.
             </p>
           )}

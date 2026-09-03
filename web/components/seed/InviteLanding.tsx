@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
+import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { PhoneField } from "@/components/ui/PhoneField";
 import {
   Container,
@@ -398,10 +400,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
          * penalty in a list.
          */}
         {anonymous ? (
-          <div className="mt-7 rounded-3xl border border-bark bg-card p-5">
-            <h2 className="font-display text-[1.1rem] font-semibold">
-              Share without joining for now
-            </h2>
+          <Panel raised className="mt-7" title="Share without joining for now">
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
               Your recommendations can still help the network. They will not be
               connected to a founding profile, and founding benefits will not
@@ -412,37 +411,48 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               Either way, what other parents see is the same: the
               recommendation, not who shared it.
             </p>
-            <button
-              type="button"
-              onClick={() => setAnonymous(false)}
-              className="mt-3 min-h-11 text-[14.5px] font-semibold text-green-deep underline underline-offset-2"
-            >
+            <TextAction className="mt-3" onClick={() => setAnonymous(false)}>
               Join the founding network
-            </button>
-          </div>
+            </TextAction>
+          </Panel>
         ) : (
-          <div className="mt-7 rounded-3xl border border-bark bg-card p-5 shadow-card">
+          <Panel raised className="mt-7" title="Join the founding network">
             {/**
              * Her suggested page, in her order: what joining *enables*, then the
              * fields it needs. One privacy link at the end of the screen, and no
              * information icons — see the block comment above.
              */}
-            <h2 className="font-display text-[1.1rem] font-semibold">
-              Join the founding network
-            </h2>
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
               Joining allows Pando to recognize your contribution, reserve your
               place in the pilot, and let you know when something you shared
               helps another family. As a founding contributor, you can:
             </p>
-            <ul className="mt-2.5 space-y-1.5 text-[14.5px] leading-relaxed text-ink-soft">
-              <li>Receive a thank-you for your first qualifying contribution</li>
-              <li>
+            {/**
+             * A plain `<ul>` renders as unmarked, unspaced text here — Tailwind
+             * v4's preflight zeroes `list-style` globally, and `.legal`'s own
+             * `list-style: disc` (globals.css) is scoped to that class and
+             * doesn't reach this card. Four benefits read as one run-on sentence
+             * without a marker. `Dot` is the same device `CaregiverFlow.tsx`
+             * already uses for this exact kind of list on a light card — a small
+             * green mark, not the gold checkmark `BrandPanel` uses on the dark
+             * panel, because this sits on `bg-card`.
+             */}
+            <ul className="mt-2.5 space-y-2 text-[14.5px] leading-relaxed text-ink-soft">
+              <li className="flex gap-2.5">
+                <Dot />
+                Receive a thank-you for your first qualifying contribution
+              </li>
+              <li className="flex gap-2.5">
+                <Dot />
                 Earn permanent Founding Status after your second approved
                 contribution
               </li>
-              <li>Have a reserved place in the Pasadena pilot</li>
-              <li>
+              <li className="flex gap-2.5">
+                <Dot />
+                Have a reserved place in the Pasadena pilot
+              </li>
+              <li className="flex gap-2.5">
+                <Dot />
                 Receive private updates when your recommendations help other
                 parents
               </li>
@@ -537,23 +547,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 {SMS_CONSENT_TERMS} See our{" "}
                 {/* New tab on purpose: the form isn't saved until Start, so
                     navigating away here used to lose a typed name and number. */}
-                <a
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="-my-1 inline-block py-1 font-semibold text-green-deep underline underline-offset-2"
-                >
+                <InlineAction href="/privacy" external tone="green">
                   Privacy Policy
-                </a>{" "}
+                </InlineAction>{" "}
                 and{" "}
-                <a
-                  href="/terms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="-my-1 inline-block py-1 font-semibold text-green-deep underline underline-offset-2"
-                >
+                <InlineAction href="/terms" external tone="green">
                   Terms
-                </a>
+                </InlineAction>
                 .
               </p>
             </div>
@@ -574,25 +574,24 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
              * untouched either way, which is her *"both routes must preserve
              * saved answers and continue from the same point."*
              */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4">
-              <button
-                type="button"
-                onClick={() => setAnonymous(true)}
-                className="min-h-11 text-[13.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
-              >
+            {/**
+             * A button and a link side by side, and they used to sit on
+             * different lines: a browser centres a button's own label inside its
+             * box while a blockified anchor leaves the text at the top, so two
+             * 44px boxes aligned by `items-center` still had their labels
+             * 11.5px apart (measured in the DOM, not guessed). Both come from
+             * `TextAction` now, which owns the box for either element.
+             */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+              <TextAction tone="quiet" onClick={() => setAnonymous(true)}>
                 Share without joining for now
-              </button>
+              </TextAction>
               {/* The one privacy link she asked to keep. */}
-              <a
-                href="/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="min-h-11 self-center text-[13.5px] font-semibold text-muted underline underline-offset-2 hover:text-green-deep"
-              >
+              <TextAction tone="quiet" href="/privacy" external>
                 Learn more about privacy
-              </a>
+              </TextAction>
             </div>
-          </div>
+          </Panel>
         )}
 
         {(canResume || alreadySaved) && (
@@ -600,13 +599,9 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             {alreadySaved
               ? "Your profile is already saved on this phone."
               : "You have answers saved on this phone from earlier."}{" "}
-            <button
-              type="button"
-              onClick={startOver}
-              className="font-semibold underline underline-offset-2"
-            >
+            <InlineAction onClick={startOver}>
               {alreadySaved ? "Start a fresh one" : "Start over instead"}
-            </button>
+            </InlineAction>
             .
           </p>
         )}
@@ -723,5 +718,22 @@ function ShieldIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+/**
+ * The list marker for the "what joining enables" card — the same device as
+ * `CaregiverFlow.tsx`'s `Tick`: a small dot, not a checkmark svg, because on a
+ * light card four short claims read better as a plain list than as four ticked
+ * boxes (a checkmark reads as "done", and nothing here has been completed yet).
+ * `mt-[0.45rem]` lines it up with the first line of text rather than the
+ * vertical centre of a wrapped one.
+ */
+function Dot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-green"
+    />
   );
 }

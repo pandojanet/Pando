@@ -70,6 +70,11 @@ Reach for the existing primitives before writing new markup:
 ```
 components/ui/Screen.tsx    Screen · Container · ScreenHeader · ScreenBody · ScreenDock · Eyebrow
 components/ui/Button.tsx    primary | gold | secondary | ghost, min 52px tall
+components/ui/TextAction.tsx TextAction (the quiet 44px action beside the loud
+                             one) · InlineAction (a link inside a sentence)
+components/ui/Panel.tsx     the block on a flow screen: card | positive | warning,
+                             `raised` for the one card the screen is about
+components/ui/Note.tsx      something didn't work, said out loud (`role="alert"`)
 components/ui/Chip.tsx      Chip · CustomChip · AddOtherChip
 components/ui/ChipGroup.tsx selection semantics, exclusive options, "other" sheet
 components/ui/Progress.tsx  segmented step progress
@@ -104,6 +109,33 @@ Every screen is: `Screen > ScreenHeader + ScreenBody + ScreenDock`. One column,
 `max-w-[27rem]`, `px-5`. The primary action always lives in the dock. On desktop
 the same markup is framed as a card on moss — see `mobile-first-ui` for why.
 
+### A control's box is the component's business, never the call site's
+
+The parent flow had eleven hand-written copies of "the quiet action" and fourteen
+of "the panel", and both sets had drifted on axes nobody was choosing: three font
+sizes, two tones, three disabled treatments, and — on `/join` — a card that lost
+its shadow in one of the two branches that share its slot.
+
+The fault that forced the components out is worth knowing, because no care at the
+call site prevents it. A `<button>` and an `<a>` **do not put their label in the
+same place**: a browser centres a button's own label vertically, while a
+blockified anchor leaves its text at the top of the box. So two 44px targets in
+one `items-center` row still had their labels **11.5px apart** — `items-center`
+aligns the boxes, which was never the problem. Both now come from `TextAction`,
+which renders either element from one box.
+
+- **A 44px control in a layout → `TextAction`.** Never hand-roll `min-h-11`
+  again: without `inline-flex items-center` it is a tall box with text at the
+  top of it.
+- **A link inside a sentence → `InlineAction`.** 44px is *not* the target here
+  and WCAG 2.5.8 exempts it; the rule is as large as the line allows, via
+  `-my-1 py-1` (padding for the hit area, negative margin to give the space
+  back). Measured: exactly neutral on one paragraph, 2px on another.
+- **A block on a screen → `Panel`.** `tone` says what it means (neutral /
+  reassurance / gold-for-pending), `raised` is the one card the screen is about,
+  `flush` is for a panel whose children divide themselves, and `title` derives
+  the heading's colour from the tone so the two cannot come apart.
+
 Chat surfaces: Pando speaks in `bg-card` bubbles with a `border-bark` and a
 squared bottom-left corner; the parent answers in `bg-green-deep` with a squared
 bottom-right. Structured recaps are white cards with a `green-wash` header, and a
@@ -113,6 +145,73 @@ recap always means "not finished yet", never decoration.
 Selected state is a **fill**, not a border change: `bg-green-deep text-white`.
 Multi-select chips carry a circle→check tick so a parent knows they can pick
 several *before* tapping.
+
+## The admin surface
+
+The one place that is desktop-first, and a denser register than the phone flow:
+smaller type, `rounded-xl` cards, 36px controls. It still has to work on a
+phone — nav and tables scroll inside themselves, never the page.
+
+```
+components/admin/ui.tsx      PageHead · Card · Stat · Badge · Button · Field
+                             TableWrap/Th/Td · Empty · NotConfigured
+                             ResultNote · ErrorNote · Explainer
+                             SegmentedFilter · Toolbar
+                             inputClass (fills its column) · controlClass (no width)
+components/admin/Record.tsx  RecordList · RecordCard · RecordGroup · RecordDrawer
+                             FactGrid/Fact · SpecList/Spec · Quote · RecordNotes
+components/admin/PersonPicker.tsx  find one parent among hundreds (a real combobox)
+```
+
+**Reach for a primitive before writing markup.** Every one of these exists
+because the same thing had been hand-written on three to nine pages, and the
+cost each time was not the duplication — it was that the copies drifted, so one
+control looked like three different things on pages an admin sees minutes apart.
+
+### Table or cards?
+
+**A property of the data, never a preference.**
+
+- **A table** when every value is short: `/admin/options`, `/admin/contributors`,
+  `/admin/audit`. A column means the same thing on every row and can be scanned
+  down.
+- **Record cards** when a row is a *record* — eight to ten attributes, some of
+  them whole sentences a parent wrote, plus three or four actions:
+  `/admin/activities`, `/admin/caregivers`, `/admin/demand`. Once a cell holds a
+  sentence, a table's contract is void and the column is a narrow box with prose
+  in it.
+- Inside a card: **`FactGrid`** for a handful of mixed-length facts scanned
+  across; **`SpecList`** for a long run of short values scanned down and compared
+  between records.
+
+### Rules that keep it honest
+
+- **A button is as wide as its words** (`whitespace-nowrap`). If that is too wide
+  for its container, the container is wrong — never let a label truncate. The
+  page that broke this rendered its primary action as "I've dealt with this…".
+- **`Quote` is only ever a parent's words.** Invariant 8 turns on the difference
+  between what a parent wrote and what the system says about it, and a reviewer
+  has to see it without checking. The admin's own sentences never wear it.
+- **A filter is not a primary action.** `SegmentedFilter`, not a row of green
+  `primary` buttons beside real primary buttons that change the data.
+- **A count and the list it describes come from one expression.** Two that
+  happen to agree will stop agreeing — a tab once read 14 and listed 19.
+- **A wash marks the exception, never the rule.** A tint on every row is a
+  page-wide tint, and then it says nothing.
+- **An empty value is an em dash**, so a gap reads as "they skipped this" rather
+  than as a layout bug — unless the absence is itself the point, in which case
+  say it ("None recorded").
+- **Explanations go on the page, once.** `Explainer` for how something works,
+  `RecordGroup` for a fact true of a whole run of records. A `title` attribute is
+  not an explanation: invisible until hovered, unreachable on a touch device, and
+  unfindable by anyone who does not already suspect there is something to find.
+  A footnote about how to judge a queue does not belong under an empty queue.
+- **Never append a conflicting width utility.** `` `${inputClass} w-auto` `` keeps
+  `w-full`: two utilities for one property in one layer are resolved by
+  Tailwind's output order, not by the string. Use `controlClass` for a toolbar
+  and `inputClass` for a form, and measure in the DOM.
+- **Every stored value goes through `lib/admin/labels.ts`.** An admin never reads
+  a database value, and the same value reads the same on every page.
 
 ## Motion
 

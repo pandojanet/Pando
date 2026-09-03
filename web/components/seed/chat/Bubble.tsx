@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/cn";
 import { PandoMark } from "@/components/ui/Logo";
+import { Panel } from "@/components/ui/Panel";
 import { recapRows } from "@/lib/seed-chat/engine";
 import type { Script, Submission } from "@/lib/seed-chat/types";
 
@@ -119,8 +120,10 @@ export function CardRecap({
      filled in before an update. An empty card reads as broken, so say what it is. */
   const fromAnOlderVersion = rows.length === 0;
 
+  /* The chat recap is the same box as any raised flow panel; what makes it a
+     recap is the green-wash header and the divided rows inside it. */
   return (
-    <div className="animate-rise overflow-hidden rounded-3xl border border-bark bg-card shadow-card">
+    <Panel raised flush className="animate-rise">
       <div className="flex items-center gap-2 border-b border-bark/70 bg-green-wash px-4 py-2.5">
         <PandoMark className="h-4" />
         <span className="text-[13px] font-semibold uppercase tracking-[0.09em] text-green-deep">
@@ -185,6 +188,6 @@ export function CardRecap({
           )}
         </div>
       )}
-    </div>
+    </Panel>
   );
 }

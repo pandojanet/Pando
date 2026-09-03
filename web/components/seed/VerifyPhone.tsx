@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
 import { Note } from "@/components/ui/Note";
 import { track } from "@/lib/analytics";
 import {
@@ -153,7 +154,7 @@ export function VerifyPhone({
   const resendsLeft = start ? Math.max(0, start.max_sends - start.sends) : null;
 
   return (
-    <div className="mt-7 rounded-3xl border border-green/25 bg-green-wash p-5">
+    <Panel tone="positive" className="mt-7">
       <h2 className="font-display text-[1.15rem] font-semibold text-green-deep">
         Confirm it&apos;s your number
       </h2>
@@ -268,7 +269,7 @@ export function VerifyPhone({
       {error && (
         <Note>{error}</Note>
       )}
-    </div>
+    </Panel>
   );
 }
 

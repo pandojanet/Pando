@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
+import { TextAction } from "@/components/ui/TextAction";
 import { searchMarketOptions } from "@/lib/api-client";
 import { registerFoundOptions } from "@/lib/market-options";
 import { visibleStarters } from "@/lib/starters";
@@ -440,8 +441,8 @@ export function SearchableChipGroup({
                 are matches, because the right answer may be the one Pando does
                 not know yet. */}
             {onAddCustom && (
-              <button
-                type="button"
+              <TextAction
+                className="mt-2"
                 disabled={atCap}
                 onClick={() => {
                   onAddCustom(query.trim());
@@ -449,10 +450,9 @@ export function SearchableChipGroup({
                   setResults([]);
                   setResultsFor("");
                 }}
-                className="mt-2 min-h-11 text-[14.5px] font-semibold text-green-deep underline underline-offset-2 disabled:opacity-50"
               >
                 Can&apos;t find it? Add “{query.trim()}”
-              </button>
+              </TextAction>
             )}
           </div>
         )}

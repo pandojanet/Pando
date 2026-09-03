@@ -68,7 +68,7 @@ npm run check         # row counts, extraction coverage, invariants 1 and 2
 npm run build         # every route compiles
 
 npm run dev           # in another terminal, then:
-npm run test:e2e      # 239 checks: the whole of Phase 1, end to end
+npm run test:e2e      # 280 checks: the whole of Phase 1, end to end
 ```
 
 `test:phone` is the fastest of them and needs nothing running. It is separate
@@ -565,6 +565,25 @@ ends on the same ground against the live server and the real table.
    `curl -si localhost:3000/admin/contributors | head -1` → `307` to
    `/admin/login?next=…`. And `POST /api/admin/query` with no cookie → **401**, not
    a redirect.
+
+## 2.x · The admin's controls
+
+Five primitives shared by every page (`components/admin/kit.tsx`), all on
+platform mechanics rather than a component library. Worth one pass with the mouse
+put away:
+
+| Try this | Expect |
+| --- | --- |
+| Tab to a filter row | **One** tab stop for the whole row. Arrows move between options and change the filter as they go; Home/End jump to the ends |
+| Tab to the ⓘ next to a badge, then press Enter | The explanation opens — and it opens on hover and on tap too. It is a real button, not a `title`, which is why it is reachable at all |
+| Open **More** on a caregiver card | A menu, focus on its first item, arrows to move, Escape to close and focus back on the trigger. Clicking anywhere else closes it |
+| Open **Read private note** | A modal: the page behind it is inert, Tab cannot leave it, Escape closes it, and the scroll behind does not move. Close it and open it again — it must reopen |
+| All of the above at 375px | Every panel stays inside the viewport. A menu opened from a card near the bottom flips above its trigger rather than off the screen |
+
+**The two failures worth aiming at**, because both have happened: a panel measured
+before it is shown positions itself as though it had no height (off-screen on a
+phone), and a modal closed by Escape that does not tell React can never be
+reopened.
 
 ## 2.2 · Founding queue
 

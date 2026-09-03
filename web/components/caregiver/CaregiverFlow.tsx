@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
@@ -183,7 +185,7 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
             worked for put your name forward — nothing about you is listed until you
             set this up and say yes.
           </p>
-          <div className="mt-6 rounded-3xl border border-bark bg-card p-5">
+          <Panel className="mt-6">
             <p className="text-[15px] leading-relaxed text-ink-soft">
               {CAREGIVER_CONSENT_TEXT.profile}
             </p>
@@ -202,7 +204,7 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
                 Every permission after this is a separate yes.
               </li>
             </ul>
-          </div>
+          </Panel>
         </ScreenBody>
         <ScreenDock stickyOnDesktop>
           <Button
@@ -214,13 +216,9 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
           >
             Set up my profile
           </Button>
-          <button
-            type="button"
-            onClick={() => setDeclined(true)}
-            className="mt-3 min-h-11 w-full text-[14px] font-semibold text-muted underline underline-offset-2"
-          >
+          <TextAction tone="quiet" full className="mt-3" onClick={() => setDeclined(true)}>
             No thanks — don&apos;t keep anything
-          </button>
+          </TextAction>
         </ScreenDock>
       </Screen>
     );
@@ -489,14 +487,12 @@ function Header({
               {progress}
             </span>
           )}
+          {/* No underline: it sits in the header rail beside the step count,
+              where a rule reads as noise rather than as an affordance. */}
           {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="min-h-11 px-2 text-[14px] font-semibold text-green-deep"
-            >
+            <TextAction underline={false} className="px-2" onClick={onBack}>
               Back
-            </button>
+            </TextAction>
           )}
         </>
       }
