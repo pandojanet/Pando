@@ -15,6 +15,8 @@ import type { RoutingInput } from "../lib/answer-routing.ts";
  */
 
 const r = (await import(`../lib/answer-routing.ts?v=${Date.now()}`)) as typeof import("../lib/answer-routing.ts");
+const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+const onb = (await import(`../lib/onboarding.ts?v=${Date.now()}`)) as typeof import("../lib/onboarding.ts");
 
 let pass = 0;
 let fail = 0;
@@ -138,6 +140,40 @@ ok(
   r.mentionsCaregiver("NANNY") && !r.mentionsCaregiver("nan bread"),
   "a false positive costs one extra read; a miss costs a caregiver named to a parent unchecked",
 );
+
+console.log("\n=== what the parent hears while a person reads it ===");
+{
+  /* Every answer is held in the pilot, and until 4 Sep nothing said so: a
+     parent texted a question and got silence until an admin opened the queue.
+     On a stranger's first message that is indistinguishable from a dead
+     number, which is the one thing 5.9 exists to prevent. */
+  ok("it names a person rather than a system", r.HELD_ACK.includes("Someone at Pando"));
+  ok(
+    "and promises no time",
+    !/shortly|soon|minutes|hour/i.test(r.HELD_ACK),
+    "nobody can keep one during a pilot worked by hand",
+  );
+  ok(
+    "the clarifying question rides along when there is one",
+    r.heldReply("How old is your child?").endsWith("How old is your child?"),
+  );
+  ok("and nothing is appended when there is not", r.heldReply(null) === r.HELD_ACK);
+
+  /* One character outside GSM-7 cuts the budget from 160 to 70, so the
+     acknowledgement is written inside it deliberately. `sms-segments.ts` is
+     the measurement; these two are what keep it true. */
+  ok(
+    "written in GSM-7, so it costs one segment on its own",
+    seg.planSegments(r.HELD_ACK).encoding === "gsm7" &&
+      seg.planSegments(r.HELD_ACK).segments === 1,
+    JSON.stringify(seg.planSegments(r.HELD_ACK)),
+  );
+  ok(
+    "and two with the age question, not three",
+    seg.planSegments(r.heldReply(onb.CLARIFYING_COPY.child_age)).segments === 2,
+    "an em dash in that question used to make it three",
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

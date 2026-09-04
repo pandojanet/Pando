@@ -61,10 +61,22 @@ export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
  *
  * Each explains why it is being asked. A bare "how old is your child?" from a
  * phone number reads as a form; the reason is what makes it read as a person.
+ *
+ * ## And it is written in GSM-7, which cost a punctuation mark
+ *
+ * The age question carried an em dash, which is the house voice and is **not in
+ * GSM-7** — so the message it rides in fell to UCS-2 and the budget from 160
+ * characters to 70. Measured with `planSegments`: the acknowledgement plus this
+ * question is 194 characters and **three** segments with the dash, and 193
+ * characters and **two** with a comma. That is a third of the cost of the most
+ * frequently sent message in the onboarding path, for one character nobody will
+ * miss. Safe to change precisely because this copy is *not* registered — the
+ * paragraph above says so — where `sms-templates.ts` would have needed the
+ * carrier sample re-registered instead.
  */
 export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
   child_age:
-    "One thing that'll make my answers much better — how old is your child? (Just the age is fine.)",
+    "One thing that'll make my answers much better, how old is your child? (Just the age is fine.)",
   neighborhood:
     "And roughly where are you? I'll look for parents nearby rather than across town.",
 };

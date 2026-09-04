@@ -25,7 +25,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes, scryptSync } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { existsSync } from "node:fs";
 import postgres from "postgres";
@@ -65,6 +65,38 @@ const APP_PORT = 4187;
 const STUB_PORT = 4188;
 const SECRET = "relay-walk-signing-secret";
 const PHONE = "+16265559481";
+/**
+ * The walk signs in as an admin it creates itself, and removes afterwards.
+ *
+ * The first version used the pilot's starter pair and failed with a 401 — which
+ * is the *right* failure, because rotating that password is on the pre-pilot
+ * list and a suite that breaks when somebody finally does it is a suite that
+ * teaches people not to. A credential in the repository would have been worse
+ * still. So the record is built here with the same scrypt parameters
+ * `lib/admin/auth.ts` uses, in the same self-describing format, and the row is
+ * deleted in the cleanup — `admin_users` being authoritative once populated
+ * (12 Aug) is exactly what makes this work without touching any env var.
+ */
+const ADMIN_NAME = "relay-walk";
+const ADMIN_PASSWORD = "relay-walk-password";
+const SCRYPT = { N: 65536, r: 8, p: 1, keylen: 32 } as const;
+const adminRecord = (() => {
+  const salt = randomBytes(16);
+  const hash = scryptSync(ADMIN_PASSWORD, salt, SCRYPT.keylen, {
+    N: SCRYPT.N,
+    r: SCRYPT.r,
+    p: SCRYPT.p,
+    maxmem: 256 * 1024 * 1024,
+  });
+  return [
+    "scrypt",
+    SCRYPT.N,
+    SCRYPT.r,
+    SCRYPT.p,
+    salt.toString("base64url"),
+    hash.toString("base64url"),
+  ].join(":");
+})();
 
 const sql = postgres(process.env.DATABASE_URL, { prepare: false, ssl: "require" });
 
@@ -200,6 +232,7 @@ const message = (text: string, extra: Record<string, unknown> = {}) => ({
   event: { type: "message", user: "U0TESTER", channel: "C0RELAYWALK", ts: "1788401111.1", text, ...extra },
 });
 
+await sql`delete from answers where phone = ${PHONE}`;
 await sql`delete from people where phone = ${PHONE}`;
 await sql`delete from sms_opt_outs where phone = ${PHONE}`;
 
@@ -263,6 +296,50 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
     select m.category from message_log m join people p on p.id = m.person_id
      where p.phone = ${PHONE} and m.direction = 'in'`;
   ok("and the inbound itself is logged", inbound.length >= 1);
+
+  /**
+   * 5.5 -> 5.6 -> 5.7 -> 5.8, which until 4 Sep ended at a log line: the chain
+   * was built, tested and reachable from nothing, so a question was read,
+   * classified and answered with silence. These four are the wiring.
+   */
+  const [queued] = await sql`
+    select id, hold_reason, next_step, public_only, answer_text, status
+      from answers where phone = ${PHONE}`;
+  ok("the question reached the answer queue", Boolean(queued), "5.8");
+  ok(
+    "held for a person, because the pilot holds everything",
+    queued && queued.status === "pending_review" && Boolean(queued.hold_reason),
+    JSON.stringify({ status: queued?.status, hold: queued?.hold_reason }),
+  );
+  ok(
+    "with text composed from records rather than left empty",
+    Boolean(queued?.answer_text && String(queued.answer_text).length > 0),
+  );
+
+  /**
+   * And the parent hears something. A held answer used to mean silence until an
+   * admin opened the queue, which is indistinguishable from a dead number on the
+   * one message that is a stranger's whole first impression of Pando.
+   */
+  const ack = posted[posted.length - 1];
+  ok(
+    "the parent is told a person is on it",
+    Boolean(ack?.text.includes("Someone at Pando")),
+    ack?.text.slice(0, 90),
+  );
+  ok(
+    "and 5.4's clarifying question finally rides along",
+    Boolean(ack?.text.includes("how old is your child")),
+    "nothing had ever sent one, so pendingClarification could never find one",
+  );
+  const clarify = await sql`
+    select m.template from message_log m join people p on p.id = m.person_id
+     where p.phone = ${PHONE} and m.direction = 'out' and m.template like 'clarify_%'`;
+  ok(
+    "logged under the clarify template, which is what makes the reply findable",
+    clarify.length === 1 && clarify[0].template === "clarify_child_age",
+    JSON.stringify(clarify),
+  );
 }
 
 console.log("\n=== a keyword is answered, and the reply is addressed ===");
@@ -341,6 +418,77 @@ console.log("\n=== a threaded reply resolves back to that parent ===");
   );
 }
 
+/**
+ * The other half of the loop, and the reason it is walked rather than assumed.
+ *
+ * The wiring queues an answer; nothing in this suite proved a person could then
+ * *send* it, or that it would land in the parent's own thread rather than as a
+ * loose post in the channel. Threading is the relay's whole addressing scheme —
+ * `relayTargetFor` looks up the first outbound row for that person — and an
+ * answer sent through `approveAndSend` carries a `personId`, which is a
+ * different path from the keyword replies above.
+ *
+ * ⚠ **It has to run before the STOP section**, and the first version did not:
+ * that section opts this number out, `sendSms` refused the answer exactly as it
+ * should, and the row honestly stayed `approved` rather than `sent`. Three
+ * failures that were the suite's ordering rather than the product — worth
+ * keeping as a note, because the fix is not to weaken the assertion.
+ */
+console.log("\n=== an admin approves it, and it lands in the parent's thread ===");
+{
+  const [queued] = await sql`
+    select id, status from answers where phone = ${PHONE} order by created_at desc limit 1`;
+
+  await sql`
+    insert into admin_users (name, password_hash, active)
+    values (${ADMIN_NAME}, ${adminRecord}, true)
+    on conflict (name) do update set password_hash = excluded.password_hash, active = true`;
+  /* `adminCredentials()` caches for a minute (12 Aug), and the app has been up
+     for less than that with an empty store — so the read that matters is the one
+     the sign-in itself does, which always re-reads. */
+
+  const session = await fetch(`http://127.0.0.1:${APP_PORT}/api/admin/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user: ADMIN_NAME, password: ADMIN_PASSWORD }),
+  });
+  const cookie = session.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+  ok("an admin can sign in", session.status === 200, `status ${session.status}`);
+
+  const before = posted.length;
+  const sent = await fetch(`http://127.0.0.1:${APP_PORT}/api/admin/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ action: "answer.send", id: queued?.id }),
+  });
+  ok("answer.send is accepted", sent.status === 200, `status ${sent.status}`);
+  await new Promise((r) => setTimeout(r, 1500));
+
+  ok("the answer reached the channel", posted.length > before, `${posted.length} posts`);
+  const answer = posted[posted.length - 1];
+  ok(
+    "in the parent's own thread, not as a loose post",
+    Boolean(answer?.thread_ts),
+    "threading is how a reply resolves back to a person",
+  );
+  ok(
+    "and the number is still masked in it",
+    !answer?.text.includes("6265559481"),
+    answer?.text.split("\n")[0],
+  );
+
+  const [after] = await sql`select status, sent_at, reviewed_by from answers where id = ${queued?.id}`;
+  ok(
+    "the row says sent only because the send layer said so",
+    after?.status === "sent" && after?.sent_at !== null,
+    JSON.stringify({ status: after?.status, sent: after?.sent_at !== null }),
+  );
+  ok("and it carries who decided", Boolean(after?.reviewed_by), String(after?.reviewed_by));
+}
+
 console.log("\n=== STOP still stops, relay or not ===");
 {
   const [outbound] = await sql`
@@ -371,8 +519,11 @@ console.log("\n=== STOP still stops, relay or not ===");
 }
 
 /* ── cleanup ───────────────────────────────────────────────────────────────── */
+await sql`delete from answers where phone = ${PHONE}`;
 await sql`delete from people where phone = ${PHONE}`;
 await sql`delete from sms_opt_outs where phone = ${PHONE}`;
+await sql`delete from audit_log where actor = ${ADMIN_NAME}`;
+await sql`delete from admin_users where name = ${ADMIN_NAME}`;
 ok("cleaned up after itself", true);
 
 teardown();

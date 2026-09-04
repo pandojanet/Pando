@@ -8,7 +8,18 @@ import {
   caregiverDeletedSms,
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
-import { fallbackIntent } from "@/lib/intent";
+import { classifyIntent } from "@/lib/server/intent";
+import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
+import {
+  heldReply,
+  routeAnswer,
+  mentionsCaregiver as answerMentionsCaregiver,
+} from "@/lib/answer-routing";
+import { classifyDemand } from "@/lib/demand";
+import { bandsForBirthYears } from "@/lib/matching";
+import { CLARIFYING_COPY, clarifyTemplate, nextQuestion } from "@/lib/onboarding";
+import { retrieveFor } from "@/lib/server/repo/retrieval";
+import { queueAnswer } from "@/lib/server/repo/answers";
 import {
   isSettingsCommand,
   parseAllowanceChoice,
@@ -51,6 +62,7 @@ import {
   pendingClarification,
   saveClarification,
   setAllowance,
+  type ColdPerson,
 } from "@/lib/server/repo/onboarding";
 import { recordInbound, setOptOut } from "@/lib/server/repo/outreach";
 import { sendSms } from "@/lib/server/sms";
@@ -500,6 +512,7 @@ export async function handleInboundMessage(input: {
    * refusal is a parent who did not want to answer, and asking twice is how a
    * helpful service becomes a form.
    */
+  let clarified = false;
   if (person && !attached.attached && !answeredSomething) {
     const pending = await pendingClarification(person.person_id);
     if (pending) {
@@ -510,18 +523,24 @@ export async function handleInboundMessage(input: {
         areas: pending === "neighborhood" ? await marketAreas() : undefined,
       });
       console.info("[sms:inbound] clarification", { question: pending, saved });
+      /* Only a reply that *was* an answer is spent. An unreadable one stores
+         nothing and is not asked again — and it may well be a question, which is
+         what the step below is for. */
+      clarified = saved;
     }
   }
 
   /**
-   * 5.3 — a first reading, from the free half only.
+   * 5.3 — the reading, and it is the model's now.
    *
-   * `fallbackIntent` is rules: context, then shape. **The model is deliberately
-   * not called here yet**, because nothing consumes the answer — 5.7 is the
-   * consumer and it does not exist. An API call per inbound message to produce a
-   * log line is money for nothing, and the classifier is already tested
-   * (`npm run test:intent`). When 5.7 lands, this becomes `classifyIntent` and
-   * the fallback stays underneath it unchanged.
+   * The comment this replaces said the model was deliberately not called
+   * "because nothing consumes the answer — 5.7 is the consumer and it does not
+   * exist", and promised that when 5.7 landed this would become
+   * `classifyIntent` with the fallback unchanged underneath. That is exactly what
+   * happened: `classifyIntent` answers from **context first and without a round
+   * trip** when Pando is already waiting on this person, falls back to the same
+   * rules when `ANTHROPIC_API_KEY` is unset, and `applyThreshold` drops a
+   * low-confidence or invented intent back to them too.
    *
    * `awaiting_blast_reply` comes from whether the reply actually attached to an
    * open blast, which is the records answering rather than the words — the
@@ -529,12 +548,15 @@ export async function handleInboundMessage(input: {
    *
    * Logged as an enum. Never the message (invariant 7).
    */
-  const reading = fallbackIntent(body, {
-    awaiting_blast_reply: attached.attached,
-    /* Not hardcoded: `created` is true only for a number Pando had never seen,
-       and the fallback treats a stranger's short message as unreadable rather
-       than as small talk — guessing at a first message costs the most. */
-    known_person: person !== null && !person.created,
+  const reading = await classifyIntent({
+    text: body,
+    context: {
+      awaiting_blast_reply: attached.attached,
+      /* Not hardcoded: `created` is true only for a number Pando had never seen,
+         and the fallback treats a stranger's short message as unreadable rather
+         than as small talk — guessing at a first message costs the most. */
+      known_person: person !== null && !person.created,
+    },
   });
   console.info("[sms:inbound] read as", {
     intent: reading.intent,
@@ -542,5 +564,172 @@ export async function handleInboundMessage(input: {
     attached: attached.attached,
   });
 
-  return;
+  /**
+   * 5.5 → 5.6 → 5.7 → 5.8, finally joined to the door they come in through.
+   *
+   * Every one of those was built and tested and **reachable from nothing**: the
+   * chain ended at the log line above, so a parent who texted Pando a question
+   * was read, classified, and answered with silence. It was never a
+   * Slack-versus-Twilio difference — both transports call this function, so
+   * Twilio was exactly as quiet.
+   *
+   * Only a message nothing else has claimed gets here. A blast reply, a freshness
+   * "yes", a settings choice and a clarifying answer were each a reply to
+   * something Pando asked, and treating one as a fresh question is the mistake
+   * the whole ordering above exists to prevent.
+   */
+  if (attached.attached || answeredSomething || clarified) return;
+  if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
+    return;
+  }
+
+  await answerQuestion({
+    from,
+    body,
+    person,
+    caregiverIntent: reading.intent === "ask_caregiver",
+  });
+}
+
+/**
+ * Compose an answer from records, put it in the queue, and say so.
+ *
+ * ## It never sends the answer itself, and that is the design rather than a stub
+ *
+ * `PILOT_HOLD_EVERYTHING` is true, so `routeAnswer` holds everything today and an
+ * auto-send path would be a code path nothing exercises — this codebase's own
+ * most expensive repeated lesson (`bands`, `area_slug`, the starter list: each
+ * written, reviewed, and silently never run). The answer goes to
+ * `/admin/answers`, where 14.2's approve-then-send already works and a person
+ * decides. The day the flag comes off is a deliberate decision with somebody
+ * watching, and wiring the send then is a small change.
+ *
+ * What the parent gets instead of silence is `heldReply`.
+ *
+ * ## The area and the ages come from the person, never from the message
+ *
+ * That is the 11 Aug rule that the graph is derived server-side, and here it is
+ * also the difference between ranking Sierra Madre first and ranking whatever
+ * somebody happened to type. `bandsForBirthYears` recomputes the band at query
+ * time for the reason `matching.ts` gives: a stored band goes stale.
+ *
+ * A cold number has neither, and that is fine — `retrieveFor` ranks by area and
+ * never filters by it, so a stranger gets the market's best-supported records
+ * rather than nothing.
+ */
+async function answerQuestion(input: {
+  from: string;
+  body: string;
+  person: ColdPerson | null;
+  caregiverIntent: boolean;
+}): Promise<void> {
+  const { from, body, person } = input;
+  const profile = person?.profile;
+
+  const retrieved = await retrieveFor({
+    area: profile?.neighborhood ?? null,
+    bands: profile ? bandsForBirthYears(profile.child_birth_years, new Date()) : [],
+  });
+
+  /* No database is not an empty answer. Saying "nothing from local parents yet"
+     when the truth is that Pando could not look is the `persisted: false` rule
+     one surface along. */
+  if (!retrieved.configured) {
+    console.warn("[sms:answer] not configured");
+    return;
+  }
+
+  /**
+   * A caregiver is a candidate like any other, and `display` is the only shape
+   * `caregivers` can hold — a first name and a last initial, by CHECK. Invariant
+   * 1's four conditions are already in `retrieveFor`'s WHERE clause, so anything
+   * here has consented, is active, is discoverable and is an adult.
+   */
+  const candidates: AnswerCandidate[] = [
+    ...retrieved.shares.map((share) => ({
+      name: share.name,
+      venue: share.venue,
+      kind: share.kind,
+      trust: share.trust,
+      firsthand_count: share.firsthand_count,
+      answer_ready: share.answer_ready,
+    })),
+    ...retrieved.caregivers.map((caregiver) => ({
+      name: caregiver.display,
+      kind: "caregiver",
+      trust: caregiver.trust,
+      firsthand_count: caregiver.firsthand_count,
+    })),
+  ];
+
+  const composed = composeAnswer({ candidates, has_question: true });
+
+  /**
+   * Read three ways, and any one of them is enough: what the classifier decided,
+   * what the words say, and whether a caregiver actually reached the answer. The
+   * cost of missing it is the highest-stakes sentence Pando sends going out with
+   * nobody having read it.
+   */
+  const caregiverRelated =
+    input.caregiverIntent ||
+    answerMentionsCaregiver(body) ||
+    retrieved.caregivers.length > 0;
+
+  const verdict = routeAnswer({
+    /* Rules only, and they may only ever escalate. There is no category tap on
+       an SMS, so the text is all there is. */
+    sensitivity: classifyDemand(body, null),
+    caregiver_related: caregiverRelated,
+    public_only: composed.public_only,
+    used: composed.used,
+    next_step: composed.next_step,
+  });
+
+  const answerId = await queueAnswer({
+    personId: person?.person_id ?? null,
+    phone: from,
+    question: body,
+    answerText: composed.text,
+    nextStep: composed.next_step,
+    labels: composed.labels,
+    publicOnly: composed.public_only,
+    holdReason: verdict.reason,
+  });
+
+  /* Counts and enums only (invariant 7) — never the question, never the answer. */
+  console.info("[sms:answer] queued", {
+    queued: answerId !== null,
+    used: composed.used,
+    next_step: composed.next_step,
+    hold: verdict.reason,
+    permanent: verdict.permanent,
+  });
+
+  if (answerId === null) return;
+
+  /**
+   * 5.4's question, finally sent.
+   *
+   * Asked **only when nothing is already pending**, which is the "one refusal is
+   * a parent who did not want to answer" rule read forward: `pendingClarification`
+   * is what `saveClarification` keys on, so asking again while one is open would
+   * both nag and make the next reply ambiguous.
+   *
+   * The template is what makes the answer findable, so it is the clarify one
+   * whenever a question rides along — otherwise `pendingClarification` could
+   * never see it, which is precisely how this half stayed dead.
+   */
+  const asking =
+    person && (await pendingClarification(person.person_id)) === null
+      ? nextQuestion(person.profile)
+      : null;
+
+  await sendSms({
+    to: from,
+    body: heldReply(asking ? CLARIFYING_COPY[asking] : null),
+    category: "transactional",
+    personId: person?.person_id,
+    template: asking ? clarifyTemplate(asking) : "answer_queued",
+    templateVersion: SMS_TEMPLATE_VERSION,
+  });
 }

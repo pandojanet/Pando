@@ -137,3 +137,48 @@ const CAREGIVER_WORDS =
 export function mentionsCaregiver(text: string): boolean {
   return CAREGIVER_WORDS.test(text);
 }
+
+/**
+ * What Pando says while a person reads the answer.
+ *
+ * ## Why this exists at all
+ *
+ * `PILOT_HOLD_EVERYTHING` means every composed answer waits for a human, and
+ * until now nothing told the parent that. They texted a question and got
+ * **silence** — for as long as it took somebody to open `/admin/answers`. That
+ * is indistinguishable from a dead number, on the one message that is a
+ * stranger's entire first impression of Pando (5.9).
+ *
+ * ## Two rules in the wording
+ *
+ * **It names a person, not a system.** The wait is a person reading, which is
+ * the product's own promise (§19), so saying so is both true and the reason a
+ * parent should be willing to wait at all.
+ *
+ * **It promises no time.** Nobody can keep one during a pilot worked by hand,
+ * and a broken "shortly" costs more than an unspecified wait.
+ *
+ * ## And it carries the clarifying question when there is one
+ *
+ * 5.4's question had a parser and a writer and **nothing that ever sent it**, so
+ * `pendingClarification` could never find one. This is where it goes: one
+ * outbound per inbound, and the acknowledgement is the natural place to ask the
+ * one thing that makes the *next* answer better. Still one question at a time —
+ * `nextQuestion` returns at most one, and the caller does not ask again while an
+ * earlier one is still unanswered.
+ *
+ * ⚠ **New user-facing copy, on the list for the client.** Deliberately not in
+ * `sms-templates.ts`: that file is registered A2P samples where a reword is a
+ * compliance event, and this is conversational — the same call `CLARIFYING_COPY`
+ * already makes, for the same reason.
+ *
+ * Written in GSM-7 on purpose (no em dash, no curly quotes): one character
+ * outside it cuts the segment budget from 160 to 70, so the punctuation this
+ * house style prefers would make a two-line reply cost three segments.
+ */
+export const HELD_ACK =
+  "Got it. Someone at Pando is putting an answer together from local parents, and will text it to you.";
+
+export function heldReply(clarifying: string | null): string {
+  return clarifying ? `${HELD_ACK} ${clarifying}` : HELD_ACK;
+}
