@@ -164,6 +164,32 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
       }
       continue;
     }
+    if (key === "child_months") {
+      /**
+       * Age id → month, 1–12 (3 Sep).
+       *
+       * Its own branch for the same reason `child_of` has one: the generic
+       * branch below expects a list and would drop the whole map. And the
+       * **domain** is checked here, not only the shape — `children_birth_month_check`
+       * refuses anything outside 1–12, so a stored 0 or 13 would survive every
+       * reload and abort the profile write with nothing on screen to explain it.
+       * That is the `child_ages` lesson above, and this map is written by the
+       * same screen.
+       */
+      out.child_months =
+        typeof value === "object" && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value as Record<string, unknown>).filter(
+                (entry): entry is [string, number] =>
+                  typeof entry[1] === "number" &&
+                  Number.isInteger(entry[1]) &&
+                  entry[1] >= 1 &&
+                  entry[1] <= 12,
+              ),
+            )
+          : {};
+      continue;
+    }
     if (key === "school_status") {
       out.school_status =
         typeof value === "object" && !Array.isArray(value)

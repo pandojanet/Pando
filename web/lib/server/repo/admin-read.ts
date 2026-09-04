@@ -5,14 +5,26 @@ import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
+import { EVENT_WEIGHT, nextTier, tierFor } from "@/lib/tiers";
+import { RESPONSE_MIN_SAMPLE, RESPONSE_RATE_FLOOR } from "@/lib/outreach-policy";
 import type {
   AdminResource,
   AnswerRow,
+  BlastPoolResult,
   BlastResponseRow,
+  BlastRow,
+  PaymentRow,
+  PaymentsResult,
+  ConversationDetail,
+  ConversationsResult,
+  FreshnessOutcomeRow,
+  ImpactResult,
+  StandingRow,
   DeliveryHealthRow,
   MatchCandidateRow,
   MatchingResult,
 } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -70,6 +82,12 @@ export async function readResource(
       return answerQueue(db);
     case "blast_responses":
       return blastResponses(db);
+    case "blasts":
+      return blastRows(db);
+    case "blast_pool":
+      return blastPool(db, params);
+    case "payments":
+      return paymentRows(db);
     case "delivery":
       return deliveryHealthRow(params);
     case "flags":
@@ -82,6 +100,16 @@ export async function readResource(
       return inviteRows(db);
     case "consents":
       return consentRows(db);
+    case "freshness":
+      return freshnessOutcomes(db);
+    case "standing":
+      return contributorStanding(db);
+    case "impact":
+      return impactRows(db);
+    case "conversations":
+      return conversationRows(db);
+    case "conversation":
+      return conversationDetail(db, String(params.person_id ?? params.id ?? ""));
     case "audit":
       return auditRows(db);
   }
@@ -142,6 +170,10 @@ async function overview(db: Db) {
         (select count(*) from flags where status = 'open')                         as open_flags,
         (select count(*) from flags
            where status = 'open' and severity = 'escalation')                      as escalations,
+        /* 14.9 — a subset of open_flags, counted separately because it is the
+           one flag reason with its own decision rather than a read-and-resolve. */
+        (select count(*) from flags
+           where status = 'open' and reason = 'recommendation_withdrawn')          as withdrawn_records,
         (select count(*) from pending_options where status = 'pending')            as pending_options,
         (select count(*) from caregiver_nominations where review_hold and not is_test) as review_holds,
         (select count(*) from caregiver_claims
@@ -168,6 +200,14 @@ async function overview(db: Db) {
         -- §17.1. Not a queue: this one counts *up* as the golden-answer pass
         -- progresses, which is why it is not one of the quality numbers.
         (select count(*) from shares where answer_ready and not is_test)           as answer_ready,
+        -- 14.3 / 14.5. Two numbers about Network Asks, and the second is the one
+        -- painted red in two places: a refund an admin flagged and nobody has
+        -- made yet is money owed to a parent.
+        (select count(*) from blasts
+          where not is_test
+            and status in ('draft', 'pending_review', 'active'))               as blasts_open,
+        (select count(*) from blasts
+          where not is_test and payment_status = 'refund_due')                    as refunds_owed,
         -- Estimate 2.2's funnel. Four counts, each a real row rather than an
         -- event: opens come from the invite counter, the rest from what landed.
         (select coalesce(sum(opens), 0) from invites)                              as funnel_opens,
@@ -212,6 +252,7 @@ async function overview(db: Db) {
       pending_contributions: n("pending_contributions"),
       escalations: n("escalations"),
       pending_claims: n("pending_claims"),
+      withdrawn_records: n("withdrawn_records"),
     },
     founding: { pending: n("founding_pending"), approved: n("founding_approved") },
     reward: {
@@ -225,6 +266,7 @@ async function overview(db: Db) {
       high_stakes: n("demand_high"),
       named_allegation: n("demand_allegation"),
     },
+    blasts: { open: n("blasts_open"), refunds_owed: n("refunds_owed") },
     answer_ready: n("answer_ready"),
     /**
      * Estimate 2.2's funnel, and it used to be a hardcoded `[]` under a comment
@@ -1090,7 +1132,7 @@ async function consentRows(db: Db) {
 async function auditRows(db: Db) {
   const list = await rows(
     db,
-    sql`select * from audit_log order by at desc limit 500`,
+    sql`select * from audit_log order by at desc limit ${AUDIT_PAGE_SIZE}`,
   );
   return list.map((r) => ({
     id: r.id,
@@ -1418,4 +1460,624 @@ async function deliveryHealthRow(
     };
   }
   return { configured: true, window_days: windowDays, ...deliveryHealth(counts) };
+}
+/* ── 14.1 Conversations ──────────────────────────────────────────────────── */
+
+/**
+ * Every parent Pando has exchanged a message with, newest first.
+ *
+ * **No message bodies, because `message_log` holds none** — see
+ * `ConversationRow`. What this answers instead is the set of questions an admin
+ * actually arrives with: did Pando text her, did it arrive, did she reply, and
+ * how often has she been asked lately. The last two are the same arithmetic the
+ * response-rate governor acts on (8.4), so a contributor whose tier is about to
+ * drop is visible here before it does.
+ *
+ * One statement, and the counters are `filter (where …)` aggregates rather than
+ * separate reads — the 10 Aug rule that against the pooler the round trips are
+ * the cost and the query itself is single digits.
+ */
+async function conversationRows(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select
+        p.id, p.first_name, p.last_name, p.phone, p.is_test,
+        max(m.sent_at)                                                as last_at,
+        count(*) filter (where m.direction = 'out')::int              as sent,
+        count(*) filter (where m.direction = 'in')::int               as received,
+        count(*) filter (where m.direction = 'out'
+                           and m.category = 'outreach'
+                           and m.sent_at > now() - interval '30 days')::int as outreach_30,
+        count(*) filter (where m.direction = 'in'
+                           and m.responded_to is not null
+                           and m.sent_at > now() - interval '30 days')::int as answered_30,
+        count(*) filter (where m.status in ('failed', 'undelivered'))::int  as failed,
+        (array_agg(m.direction order by m.sent_at desc))[1]           as last_direction,
+        (array_agg(m.template order by m.sent_at desc))[1]            as last_template
+      from message_log m
+      join people p on p.id = m.person_id
+      group by p.id, p.first_name, p.last_name, p.phone, p.is_test
+      order by max(m.sent_at) desc
+      limit 200`,
+  );
+
+  /**
+   * Messages with nobody attached, counted rather than listed.
+   *
+   * Two things produce them and both are legitimate: a cold inbound from a
+   * number Pando had not yet made a person for, and a caregiver who texted
+   * DELETE — `message_log.person_id` is `on delete set null`, so the row
+   * survives them (11.3). A count says the history is not the whole story
+   * without pretending there is somebody to open.
+   */
+  const [orphans] = await rows(
+    db,
+    sql`select count(*)::int as n from message_log where person_id is null`,
+  );
+
+  return {
+    rows: list.map((r: Row) => ({
+      person_id: String(r.id),
+      name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+      phone_masked: maskPhone(r.phone as string | null),
+      last_at: String(r.last_at),
+      last_direction: r.last_direction === "in" ? "in" : "out",
+      last_template: r.last_template ? String(r.last_template) : null,
+      sent: Number(r.sent ?? 0),
+      received: Number(r.received ?? 0),
+      outreach_30: Number(r.outreach_30 ?? 0),
+      answered_30: Number(r.answered_30 ?? 0),
+      failed: Number(r.failed ?? 0),
+      is_test: r.is_test === true,
+    })),
+    unattributed: Number(orphans?.n ?? 0),
+  } satisfies ConversationsResult;
+}
+
+/**
+ * One parent's history, oldest first — the order a conversation happened in.
+ *
+ * Their own agreement rides along (allowance, and whether they have opted out),
+ * because the history only means anything read against what they permitted:
+ * eight outbound messages is either well inside "ask me anytime" or a bug,
+ * and the page cannot tell without it.
+ */
+async function conversationDetail(db: Db, personId: string) {
+  if (!personId) return null;
+
+  const [person] = await rows(
+    db,
+    sql`
+      select p.id, p.first_name, p.last_name, p.phone,
+             p.monthly_contact_allowance, p.allowance_mode::text as allowance_mode,
+             exists (
+               select 1 from sms_opt_outs o
+                where o.phone = p.phone
+                  and o.opted_out_at is not null
+                  and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)
+             ) as opted_out
+        from people p
+       where p.id = ${personId}::uuid
+       limit 1`,
+  );
+  if (!person) return null;
+
+  const messages = await rows(
+    db,
+    sql`
+      select id, direction, category, template, sent_at, status, error_code,
+             responded_to
+        from message_log
+       where person_id = ${personId}::uuid
+       order by sent_at asc
+       limit 500`,
+  );
+
+  return {
+    person_id: String(person.id),
+    name: [person.first_name, person.last_name].filter(Boolean).join(" ") || null,
+    phone_masked: maskPhone(person.phone as string | null),
+    monthly_contact_allowance:
+      person.monthly_contact_allowance === null
+        ? null
+        : Number(person.monthly_contact_allowance),
+    allowance_mode: person.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
+    opted_out: person.opted_out === true,
+    messages: messages.map((m: Row) => ({
+      id: String(m.id),
+      direction: m.direction === "in" ? "in" : "out",
+      category: String(m.category),
+      template: m.template ? String(m.template) : null,
+      sent_at: String(m.sent_at),
+      status: m.status ? String(m.status) : null,
+      error_code: m.error_code === null || m.error_code === undefined ? null : Number(m.error_code),
+      /* 8.4's signal: an inbound that named an outbound is what the governor
+         counts as a response. Carried as a boolean because the id itself is of
+         no use on screen. */
+      answered_something: m.responded_to !== null && m.responded_to !== undefined,
+    })),
+  } satisfies ConversationDetail;
+}
+
+/* ── 14.9 Freshness outcomes ─────────────────────────────────────────────── */
+
+/**
+ * Records a contributor said are no longer worth recommending.
+ *
+ * 10.2 marks such a record stale and raises `recommendation_withdrawn` — and
+ * deliberately does **not** reject it, because one parent's changed mind is
+ * evidence rather than a verdict. This is the queue where somebody decides, and
+ * the two numbers that make it a decision rather than a formality are
+ * `firsthand_count` and `recommending_count`: a record three other parents still
+ * stand behind is a different case from one nobody else has used.
+ *
+ * Driven from the open flag rather than from `freshness_pings.still_good`, so
+ * clearing this queue and clearing the flag are the same act — a row that
+ * disappeared from here while its flag stayed open would leave the Flags page
+ * insisting on something this page had already dealt with.
+ */
+async function freshnessOutcomes(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select
+        s.id, s.name, s.kind::text as kind, s.neighborhoods,
+        s.last_confirmed_at, s.freshness_state, s.status::text as status, s.is_test,
+        p.first_name                                                  as said_no_by,
+        max(fp.answered_at)                                           as said_no_at,
+        count(sc.id) filter (where sc.firsthand and sc.status = 'approved')::int
+                                                                      as firsthand_count,
+        count(sc.id) filter (where sc.firsthand and sc.status = 'approved'
+                               and sc.recommendation in ('yes','yes_with_caveats'))::int
+                                                                      as recommending_count
+      from flags f
+      join shares s on s.id = f.subject_id
+      left join people p on p.id = f.person_id
+      left join freshness_pings fp on fp.share_id = s.id and fp.still_good = false
+      left join share_contributions sc on sc.share_id = s.id and not sc.is_test
+      where f.reason = 'recommendation_withdrawn'
+        and f.status = 'open'
+      group by s.id, s.name, s.kind, s.neighborhoods, s.last_confirmed_at,
+               s.freshness_state, s.status, s.is_test, p.first_name
+      order by max(fp.answered_at) desc nulls last
+      limit 200`,
+  );
+
+  return list.map((r: Row) => ({
+    share_id: String(r.id),
+    name: String(r.name),
+    kind: String(r.kind),
+    neighborhoods: (r.neighborhoods as string[] | null) ?? [],
+    said_no_by: r.said_no_by ? String(r.said_no_by) : null,
+    said_no_at: r.said_no_at ? String(r.said_no_at) : null,
+    firsthand_count: Number(r.firsthand_count ?? 0),
+    recommending_count: Number(r.recommending_count ?? 0),
+    last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
+    freshness_state: String(r.freshness_state),
+    status: String(r.status),
+    is_test: r.is_test === true,
+  })) satisfies FreshnessOutcomeRow[];
+}
+
+/* ── 14.4 Contributor standing ───────────────────────────────────────────── */
+
+/**
+ * Counters, response rate, tier and limits — the four things the row names.
+ *
+ * The tier is **computed here from the events**, never read from a column:
+ * `tierFor` recomputes on every call precisely so there is no second copy to go
+ * stale (9.4), and this page is the first thing that has ever consumed it.
+ *
+ * The response rate is null below `RESPONSE_MIN_SAMPLE`, deliberately — one
+ * unanswered request out of one is a 0% rate, and putting that on screen would
+ * show a contributor's very first missed message as a verdict. `governed` is
+ * what the send layer would actually do about it, so the page reports the
+ * consequence rather than leaving a reader to infer it from a percentage.
+ */
+async function contributorStanding(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select
+        p.id, p.first_name, p.last_name, p.phone, p.is_test,
+        p.founding::text as founding,
+        p.monthly_contact_allowance, p.allowance_mode::text as allowance_mode,
+        count(e.id) filter (where e.kind = 'contribution_approved')::int as contributions_approved,
+        count(e.id) filter (where e.kind = 'blast_answered')::int        as asks_answered,
+        count(e.id) filter (where e.kind = 'freshness_confirmed')::int   as freshness_confirmed,
+        count(e.id) filter (where e.kind = 'answer_used')::int           as answers_used,
+        count(e.id) filter (where e.kind = 'blast_answered'
+                              and e.quality is null)::int                as asks_unrated,
+        count(e.id) filter (where e.kind = 'blast_answered'
+                              and e.quality >= 3)::int                   as asks_good,
+        (select count(*) from message_log m
+          where m.person_id = p.id and m.direction = 'out'
+            and m.category = 'outreach'
+            and m.sent_at > now() - interval '30 days')::int             as asked_30,
+        (select count(*) from message_log m
+          where m.person_id = p.id and m.direction = 'in'
+            and m.responded_to is not null
+            and m.sent_at > now() - interval '30 days')::int             as answered_30
+      from people p
+      left join impact_events e on e.person_id = p.id and not e.is_test
+      where p.first_name is not null
+      group by p.id, p.first_name, p.last_name, p.phone, p.is_test, p.founding,
+               p.monthly_contact_allowance, p.allowance_mode
+      order by p.first_name
+      limit 300`,
+  );
+
+  return list.map((r: Row) => {
+    const contributions = Number(r.contributions_approved ?? 0);
+    const confirmed = Number(r.freshness_confirmed ?? 0);
+    const unrated = Number(r.asks_unrated ?? 0);
+    const good = Number(r.asks_good ?? 0);
+
+    /**
+     * The same arithmetic `lib/tiers.ts` does, fed the counts this query already
+     * grouped rather than a row per event — rebuilding the events one by one to
+     * hand to `responseEquivalents` would be a loop to undo a `group by`. The
+     * weights are **imported**, never restated, so the two cannot drift.
+     */
+    const equivalents =
+      contributions * EVENT_WEIGHT.contribution_approved +
+      good * EVENT_WEIGHT.blast_answered +
+      unrated * (EVENT_WEIGHT.blast_answered / 2) +
+      confirmed * EVENT_WEIGHT.freshness_confirmed;
+
+    const tier = tierFor({ founding: r.founding === "founding", equivalents });
+    const next = nextTier(tier);
+    const asked = Number(r.asked_30 ?? 0);
+    const answered = Number(r.answered_30 ?? 0);
+    const rate = asked >= RESPONSE_MIN_SAMPLE ? answered / asked : null;
+
+    return {
+      person_id: String(r.id),
+      name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+      phone_masked: maskPhone(r.phone as string | null),
+      tier,
+      next_tier: next?.id ?? null,
+      equivalents: Math.round(equivalents * 100) / 100,
+      contributions_approved: contributions,
+      asks_answered: Number(r.asks_answered ?? 0),
+      freshness_confirmed: confirmed,
+      answers_used: Number(r.answers_used ?? 0),
+      asked_30: asked,
+      answered_30: answered,
+      response_rate: rate,
+      monthly_contact_allowance:
+        r.monthly_contact_allowance === null
+          ? null
+          : Number(r.monthly_contact_allowance),
+      allowance_mode: r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
+      governed: rate !== null && rate < RESPONSE_RATE_FLOOR,
+      is_test: r.is_test === true,
+    };
+  }) satisfies StandingRow[];
+}
+
+/* ── 14.6 Thanks and impact ──────────────────────────────────────────────── */
+
+/**
+ * The 9.1/9.2 loop, as one row per answer.
+ *
+ * Read as a pair on purpose. The interesting case is invisible from either half
+ * alone: a parent who said **yes** and whose contributors have *not* been
+ * thanked. From the answers side that is an ordinary answered prompt; from the
+ * thanks side it is simply an absence. Together it is a loop that stopped.
+ *
+ * `share_ids` is what makes this possible at all — before `drizzle/0026` an
+ * answer knew what it said and never which records it said it from, so there was
+ * no path from "we booked it" back to the person who earned the thanks.
+ */
+async function impactRows(db: Db) {
+  const list = await rows(
+    db,
+    sql`
+      select
+        a.id, a.question_text, a.sent_at, a.helped_asked_at, a.helped, a.is_test,
+        ask.first_name                                                as asker,
+        coalesce(
+          (select json_agg(json_build_object('share_id', s.id::text, 'name', s.name))
+             from shares s where s.id = any(a.share_ids)),
+          '[]'::json
+        )                                                             as records,
+        coalesce(
+          (select json_agg(distinct jsonb_build_object(
+                    'person_id', cp.id::text,
+                    'name', cp.first_name,
+                    'last_thanked_at', (
+                      select max(m.sent_at) from message_log m
+                       where m.person_id = cp.id and m.template = 'thanks'
+                    )))
+             from share_contributions sc
+             join people cp on cp.id = sc.person_id
+            where sc.share_id = any(a.share_ids)
+              and sc.status = 'approved'),
+          '[]'::json
+        )                                                             as contributors
+      from answers a
+      left join people ask on ask.id = a.person_id
+      where a.status = 'sent'
+      order by a.sent_at desc nulls last
+      limit 200`,
+  );
+
+  const mapped = list.map((r: Row) => ({
+    answer_id: String(r.id),
+    question: String(r.question_text ?? ""),
+    asker: r.asker ? String(r.asker) : null,
+    sent_at: r.sent_at ? String(r.sent_at) : null,
+    helped_asked_at: r.helped_asked_at ? String(r.helped_asked_at) : null,
+    helped: r.helped === null || r.helped === undefined ? null : r.helped === true,
+    records: (r.records as Array<{ share_id: string; name: string }> | null) ?? [],
+    contributors:
+      (r.contributors as Array<{
+        person_id: string;
+        name: string | null;
+        last_thanked_at: string | null;
+      }> | null) ?? [],
+    is_test: r.is_test === true,
+  }));
+
+  return {
+    rows: mapped,
+    totals: {
+      answered_yes: mapped.filter((r) => r.helped === true).length,
+      answered_no: mapped.filter((r) => r.helped === false).length,
+      awaiting: mapped.filter((r) => r.helped_asked_at !== null && r.helped === null)
+        .length,
+      /* Sent and never asked. Not necessarily a fault — 9.1's window may not
+         have opened, or may have closed — but it is the one state nobody can
+         see from either half of the loop. */
+      unasked: mapped.filter((r) => r.helped_asked_at === null).length,
+    },
+  } satisfies ImpactResult;
+}
+
+/**
+ * 14.3 — every Network Ask, with its money, its pool and its replies.
+ *
+ * One statement, and the reason is the 10 Aug measurement recorded in
+ * CLAUDE.md: against the pooler a round trip is ~200ms and the query itself
+ * costs single digits, so four scalar sub-selects in one statement beat four
+ * `Promise.all` reads by an order of magnitude — the parallel version opens four
+ * sockets and pays the TLS handshake on three of them.
+ *
+ * `approved_responses` is here rather than derived on the page because it is
+ * what 7.7's guarantee turns on: an Ask with replies but none approved is still
+ * owed something, and a page counting `responded` would say the opposite.
+ */
+async function blastRows(db: Db): Promise<BlastRow[]> {
+  const rows = (await db.execute(sql`
+    select b.id::text                                        as id,
+           b.question_text                                   as question_text,
+           b.category                                        as category,
+           b.neighborhood                                    as neighborhood,
+           b.tier                                            as tier,
+           b.status                                          as status,
+           b.human_review                                    as human_review,
+           b.pool_target                                     as pool_target,
+           b.expires_at                                      as expires_at,
+           b.fulfilled_at                                    as fulfilled_at,
+           b.created_at                                      as created_at,
+           b.payment_status                                  as payment_status,
+           b.price_cents                                     as price_cents,
+           b.paid_at                                         as paid_at,
+           b.refunded_at                                     as refunded_at,
+           b.refund_reason                                   as refund_reason,
+           b.credit_id is not null                           as credit_funded,
+           b.is_test                                         as is_test,
+           p.id::text                                        as asker_id,
+           p.first_name                                      as asker_first,
+           p.last_name                                       as asker_last,
+           p.phone                                           as asker_phone,
+           (select count(*)::int from blast_recipients r
+             where r.blast_id = b.id and r.sent_at is not null)      as recipients,
+           (select count(*)::int from blast_recipients r
+             where r.blast_id = b.id and r.responded_at is not null) as responded,
+           (select count(*)::int from blast_recipients r
+             where r.blast_id = b.id and r.passed_at is not null)    as passed,
+           (select count(*)::int from blast_recipients r
+             where r.blast_id = b.id
+               and r.review_status = 'approved')                     as approved_responses
+      from blasts b
+      left join people p on p.id = b.asker_id
+     order by b.created_at desc
+     limit 200
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  return rows.map((r) => ({
+    id: String(r.id),
+    question_text: String(r.question_text ?? ""),
+    category: (r.category as string | null) ?? null,
+    neighborhood: (r.neighborhood as string | null) ?? null,
+    tier: String(r.tier),
+    status: String(r.status),
+    human_review: r.human_review === true,
+    pool_target: Number(r.pool_target ?? 0),
+    expires_at: (r.expires_at as string | null) ?? null,
+    fulfilled_at: (r.fulfilled_at as string | null) ?? null,
+    created_at: String(r.created_at),
+    asker: r.asker_id
+      ? {
+          id: String(r.asker_id),
+          name: fullName(r.asker_first, r.asker_last),
+          phone_masked: maskPhone(r.asker_phone as string | null),
+        }
+      : null,
+    payment_status: String(r.payment_status ?? "not_required"),
+    price_cents: Number(r.price_cents ?? 0),
+    paid_at: (r.paid_at as string | null) ?? null,
+    refunded_at: (r.refunded_at as string | null) ?? null,
+    refund_reason: (r.refund_reason as string | null) ?? null,
+    credit_funded: r.credit_funded === true,
+    recipients: Number(r.recipients ?? 0),
+    responded: Number(r.responded ?? 0),
+    passed: Number(r.passed ?? 0),
+    approved_responses: Number(r.approved_responses ?? 0),
+    is_test: r.is_test === true,
+  }));
+}
+
+/**
+ * 14.3's pool preview — who would be asked, and who would be refused.
+ *
+ * It calls **the same `selectPool` a live send calls**, which is the only thing
+ * that makes it a preview rather than a second opinion: matcher first, then the
+ * opt-out list in the WHERE clause, then the M8 protection rules per person. A
+ * preview that scored differently from the send would be worse than none.
+ *
+ * Nothing is sent, and there is deliberately no action here that does — the
+ * send is `blast.send`, which re-runs all of it anyway.
+ */
+async function blastPool(
+  db: Db,
+  params: Record<string, unknown>,
+): Promise<BlastPoolResult | null> {
+  const blastId = typeof params.id === "string" ? params.id : null;
+  if (!blastId) return null;
+
+  const rows = (await db.execute(sql`
+    select b.id::text as id, b.tier, b.asker_id::text as asker_id,
+           b.market_id, b.pool_target
+      from blasts b where b.id = ${blastId}::uuid
+  `)) as unknown as Array<Record<string, unknown>>;
+  const blast = rows[0];
+  if (!blast?.asker_id) return null;
+
+  const { selectPool } = await import("@/lib/server/repo/blast");
+  const pool = await selectPool({
+    askerId: String(blast.asker_id),
+    tier: String(blast.tier) as never,
+    marketId: String(blast.market_id ?? "pasadena"),
+  });
+
+  /* Names for the ids the pool came back with. One statement, and only for the
+     people actually in it — the matcher already bounded that to a few. */
+  const ids = [
+    ...pool.chosen.map((m) => m.person_id),
+    ...pool.held.map((m) => m.person_id),
+  ];
+  const names = new Map<string, { name: string | null; phone: string | null }>();
+  if (ids.length > 0) {
+    const people = (await db.execute(sql`
+      select id::text as id, first_name, last_name, phone
+        from people
+       where id = any(${sql.raw(`ARRAY['${ids.join("','")}']::uuid[]`)})
+    `)) as unknown as Array<Record<string, unknown>>;
+    for (const row of people) {
+      names.set(String(row.id), {
+        name: fullName(row.first_name, row.last_name),
+        phone: (row.phone as string | null) ?? null,
+      });
+    }
+  }
+
+  return {
+    blast_id: String(blast.id),
+    wanted: Number(blast.pool_target ?? 0),
+    chosen: pool.chosen.map((m) => ({
+      person_id: m.person_id,
+      name: names.get(m.person_id)?.name ?? null,
+      phone_masked: maskPhone(names.get(m.person_id)?.phone ?? null),
+      score: m.score,
+      reasons: m.reasons,
+    })),
+    held: pool.held.map((m) => ({
+      person_id: m.person_id,
+      name: names.get(m.person_id)?.name ?? null,
+      score: m.score,
+      reason: m.reason,
+    })),
+    cold: pool.cold,
+    human_review: {
+      required: pool.human_review.required,
+      reason: pool.human_review.reason ?? null,
+    },
+  };
+}
+
+/**
+ * 14.5 — paid Asks, credit-funded Asks, status, and refund needs.
+ *
+ * Only rows that involve money at all: a free tier has nothing to say here, and
+ * including them would bury the handful that matter under every passive
+ * question ever logged. The partial index in `drizzle/0029` matches this WHERE
+ * clause exactly.
+ *
+ * The totals are computed here rather than on the page for the reason the demand
+ * counter taught: **a number and the list it describes come from one
+ * expression.** A page summing its own rows and a query filtering them will
+ * disagree the first time one of them changes.
+ */
+async function paymentRows(db: Db): Promise<PaymentsResult> {
+  const { stripeStatus } = await import("@/lib/server/stripe");
+
+  const rows = (await db.execute(sql`
+    select b.id::text                                    as blast_id,
+           b.question_text                               as question_text,
+           b.tier                                        as tier,
+           b.status                                      as status,
+           b.payment_status                              as payment_status,
+           b.price_cents                                 as price_cents,
+           b.paid_at                                     as paid_at,
+           b.refunded_at                                 as refunded_at,
+           b.refund_reason                               as refund_reason,
+           b.credit_id is not null                       as credit_funded,
+           b.expires_at                                  as expires_at,
+           b.is_test                                     as is_test,
+           p.id::text                                    as asker_id,
+           p.first_name                                  as asker_first,
+           p.last_name                                   as asker_last,
+           case when b.paid_at is null then null
+                else (extract(epoch from (now() - b.paid_at)) / 86400)::int
+           end                                           as age_days,
+           (select count(*)::int from blast_recipients r
+             where r.blast_id = b.id
+               and r.review_status = 'approved')          as approved_responses
+      from blasts b
+      left join people p on p.id = b.asker_id
+     where b.payment_status <> 'not_required' or b.credit_id is not null
+     order by b.created_at desc
+     limit 200
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  const mapped: PaymentRow[] = rows.map((r) => ({
+    blast_id: String(r.blast_id),
+    question_text: String(r.question_text ?? ""),
+    tier: String(r.tier),
+    status: String(r.status),
+    payment_status: String(r.payment_status ?? "not_required"),
+    price_cents: Number(r.price_cents ?? 0),
+    paid_at: (r.paid_at as string | null) ?? null,
+    refunded_at: (r.refunded_at as string | null) ?? null,
+    refund_reason: (r.refund_reason as string | null) ?? null,
+    credit_funded: r.credit_funded === true,
+    asker: r.asker_id
+      ? { id: String(r.asker_id), name: fullName(r.asker_first, r.asker_last) }
+      : null,
+    approved_responses: Number(r.approved_responses ?? 0),
+    expires_at: (r.expires_at as string | null) ?? null,
+    age_days: r.age_days === null ? null : Number(r.age_days),
+    is_test: r.is_test === true,
+  }));
+
+  const real = mapped.filter((r) => !r.is_test);
+  return {
+    rows: mapped,
+    stripe: stripeStatus(),
+    totals: {
+      paid_cents: real
+        .filter((r) => r.payment_status === "paid" || r.payment_status === "refund_due")
+        .reduce((sum, r) => sum + r.price_cents, 0),
+      refunded_cents: real
+        .filter((r) => r.payment_status === "refunded")
+        .reduce((sum, r) => sum + r.price_cents, 0),
+      refund_due_cents: real
+        .filter((r) => r.payment_status === "refund_due")
+        .reduce((sum, r) => sum + r.price_cents, 0),
+    },
+  };
 }

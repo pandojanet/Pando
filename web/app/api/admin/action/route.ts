@@ -37,6 +37,32 @@ const ACTIONS = new Set([
   "contribution.reject",
   "contribution.edit",
   "share.answer_ready",
+  /* 14.9 — the two ways out of the freshness queue. */
+  "share.retire",
+  "share.keep",
+  /**
+   * M5's answer queue and M7's blast loop (2 Sep).
+   *
+   * All eight were implemented in `admin-write.ts` and wired to buttons on
+   * `/admin/answers` and `/admin/responses`, and **none of them was in this
+   * set** — so every one of those buttons answered `400 Unknown action`, and
+   * the two queues could not be worked at all. Found by diffing the switch
+   * against this list; the fix is the list, since the implementations were
+   * already there and already audited.
+   */
+  "answer.approve",
+  "answer.send",
+  "answer.reject",
+  "answer.edit",
+  "blast.send",
+  /* 14.3 / 13.5–13.7 — the blast manager's three verbs and the money. */
+  "blast.checkout",
+  "blast.fulfil",
+  "blast.refund_due",
+  "blast.refund",
+  "blast_response.rate",
+  "blast_response.approve",
+  "blast_response.reject",
   "nomination.approve",
   "nomination.reject",
   "nomination.release_hold",
@@ -73,6 +99,14 @@ const CONSENT_TARGETS = new Set([
 ]);
 
 const DEMAND_STATES = new Set(["open", "matched", "answered", "closed"]);
+
+/**
+ * The four members of `share_kind`, and the list is the enum rather than a
+ * guess: a camp is a first-class *taxonomy* category (§8.4/§15.3) and has never
+ * been a share kind, which is the trap `lib/capture.ts` already paid for once —
+ * it would fail on the enum at runtime with a clean typecheck.
+ */
+const SHARE_KINDS = new Set(["activity", "caregiver", "place", "tip"]);
 
 const CONSENT_METHODS = new Set([
   "sms_reply",
@@ -250,6 +284,137 @@ export async function POST(request: Request) {
   }
 
   /**
+   * Rejecting an answer or a reply is a decision, so it carries a reason — the
+   * same rule as `claim.decline` above. It lands in the audit row, which is the
+   * only place a later reader can find out why a queue was cleared the way it
+   * was.
+   */
+  /**
+   * 14.9 — retiring or keeping a withdrawn record is a decision about something
+   * other parents recommended, so it carries a reason for exactly the same
+   * reason a rejection does: the audit row is the only place a later reader can
+   * find out why the record stopped answering, or why it kept going after a
+   * contributor said it should not.
+   */
+  if (action === "share.retire" || action === "share.keep") {
+    if (!cleanText(body?.reason, 300)) {
+      return NextResponse.json(
+        { error: "Say why — the audit row is the only record of this decision" },
+        { status: 422 },
+      );
+    }
+  }
+
+  if (action === "answer.reject" || action === "blast_response.reject") {
+    if (!cleanText(body?.reason, 300)) {
+      return NextResponse.json(
+        { error: "Say why — the audit row is the only record of this decision" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * An edited answer is still an answer, so it cannot be edited to nothing.
+   *
+   * 5.8's rule is that `answer_text` is sent **verbatim** on approval, never
+   * recomposed — so whatever passes here is exactly what a parent will read, and
+   * an empty string would be a message with no content sent to somebody waiting.
+   */
+  if (action === "answer.edit" && !cleanText(body?.text, 1600)) {
+    return NextResponse.json(
+      { error: "An answer needs text — reject it instead if it should not go" },
+      { status: 422 },
+    );
+  }
+
+  /**
+   * A rating is 1–5, refused rather than clamped.
+   *
+   * `admin-write.ts` clamps with `Math.min(5, Math.max(1, …))`, which is right
+   * as a last line of defence and wrong as the only one: an admin who typed 9
+   * would get a stored 5 and no indication that the number they chose was not
+   * the number recorded. Same class as the matching weight below — a value the
+   * database or the code quietly changes is worse than one it refuses.
+   */
+  if (action === "blast_response.rate") {
+    const quality = Number(body?.quality);
+    if (!Number.isInteger(quality) || quality < 1 || quality > 5) {
+      return NextResponse.json(
+        { error: "A rating is a whole number from 1 to 5" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * Approving a reply either creates a record or merges into one, and it has to
+   * say which.
+   *
+   * 7.9's whole point is that merging is offered *beside* creating, because two
+   * parents on one record is "Validated by multiple parents" while two records
+   * with one parent each is nothing. Neither given means the action does not
+   * know what it is doing — and `admin-write.ts` would default the kind to
+   * `activity` and create a record named after nothing.
+   */
+  /**
+   * 13.7 — a refund carries a reason, and so does marking one due.
+   *
+   * The same rule as `claim.decline` and `share.retire`: the audit row is the
+   * only record of why money moved, and 13.7 is explicitly a *manual* flow for
+   * the pilot's first sixty days, so the judgement is the artefact. Refused here
+   * rather than in `admin-write.ts` so the admin gets a sentence instead of a
+   * generic "not implemented".
+   */
+  if (action === "blast.refund" || action === "blast.refund_due") {
+    if (!cleanText(body?.reason, 300)) {
+      return NextResponse.json(
+        {
+          error:
+            action === "blast.refund"
+              ? "Say why this is being refunded — it is the only record of the decision."
+              : "Say why a refund is owed, so whoever makes it knows what they are agreeing to.",
+        },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * 14.3 — fulfilment is a judgement, so it carries the judgement.
+   *
+   * 7.7's guarantee is about whether an answer was *useful*, which is why this
+   * is a person's decision rather than a count of replies. A note is what makes
+   * it reviewable afterwards.
+   */
+  if (action === "blast.fulfil" && !cleanText(body?.note, 300)) {
+    return NextResponse.json(
+      { error: "Say what the parent actually got — three replies is not the same as an answer." },
+      { status: 422 },
+    );
+  }
+
+  if (action === "blast_response.approve") {
+    const merge = typeof body?.merge_into === "string" && body.merge_into !== "";
+    const name = cleanText(body?.share_name, 200);
+    if (!merge && !name) {
+      return NextResponse.json(
+        {
+          error:
+            "Name the record this reply is about, or pick the existing one to merge it into",
+        },
+        { status: 422 },
+      );
+    }
+    if (!merge && !SHARE_KINDS.has(String(body?.share_kind))) {
+      return NextResponse.json(
+        { error: "Say what kind of record this is" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
    * A matching weight is a whole number, at least 1.
    *
    * The database refuses both halves of that already, and differently — which
@@ -354,5 +519,16 @@ export async function POST(request: Request) {
      open the link and check it works. */
   if (action.startsWith("invite.")) invalidateInvites();
 
-  return NextResponse.json({ ok: true, persisted: true, actor: session.user });
+  /**
+   * `detail` is whatever the action needs to hand back that is not part of the
+   * record — today only `blast.checkout`, whose output is a one-time Stripe
+   * payment link. It is deliberately absent from the audit row: that is read by
+   * every admin and kept forever, and this is useful for thirty seconds.
+   */
+  return NextResponse.json({
+    ok: true,
+    persisted: true,
+    actor: session.user,
+    ...(result.data.detail ? { detail: result.data.detail } : {}),
+  });
 }

@@ -24,7 +24,8 @@ export type JobName =
   | "freshness_ping"
   | "impact_sync"
   | "thanks_prompt"
-  | "thanks_delivery";
+  | "thanks_delivery"
+  | "retry_failed";
 
 export interface JobSpec {
   name: JobName;
@@ -87,6 +88,37 @@ export const JOBS: Record<JobName, JobSpec> = {
     min_interval_minutes: 20 * 60,
     sends: true,
     what: "Ask a few contributors whether an ageing recommendation still holds.",
+  },
+
+  /**
+   * 13.4 — the retry sweep.
+   *
+   * **Every ten minutes, and it sends**, which makes it the most frequent
+   * sending job here — so the reasons it is safe are worth stating rather than
+   * inferring.
+   *
+   * The window is what bounds it: `RETRY_GIVE_UP_MINUTES` is 60, so a run can
+   * only ever see failures from the last hour, and `RETRY_LIMIT` is 1, so each
+   * of those can be tried exactly once. Past the hour the honest thing is to
+   * leave it failed and let the loop that owns the message ask again on its own
+   * schedule — a freshness ping arriving two days late is a message the parent
+   * cannot place.
+   *
+   * It is frequent because the thing it reacts to is: a status callback arrives
+   * seconds to minutes after the send, and the delay before a retry is five
+   * minutes. A nightly sweep would only ever find messages it had already given
+   * up on.
+   *
+   * Nothing here re-implements a rule. Each retry goes through `sendSms`, so
+   * opt-out, quiet hours and the whole of invariant 5 are re-checked — which
+   * matters most for exactly this job, because the minutes since the original
+   * send are long enough for somebody to have texted STOP.
+   */
+  retry_failed: {
+    name: "retry_failed",
+    min_interval_minutes: 10,
+    sends: true,
+    what: "Send again the handful of messages that failed for a reason that might not repeat.",
   },
 
   /**

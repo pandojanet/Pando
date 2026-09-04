@@ -16,8 +16,10 @@ import {
   SMS_TEMPLATE_VERSION,
   thanksPromptSms,
   thanksSms,
+  freshnessPingSms,
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
+import { runRetrySweep } from "@/lib/server/repo/retry";
 
 /**
  * M9.5 — running a scheduled job, and the three jobs themselves.
@@ -124,7 +126,45 @@ const BODIES: Record<JobName, () => Promise<JobResult>> = {
   impact_sync,
   thanks_prompt,
   thanks_delivery,
+  retry_failed,
 };
+
+/**
+ * 13.4 — the retry sweep's body.
+ *
+ * Thin on purpose: the policy is in `lib/delivery.ts` and the rebuild in
+ * `repo/retry.ts`, so this only translates one shape into the other. A refusal
+ * counts as a **skip**, not a failure — a message the policy declined to retry
+ * is the policy working, and the commonest skip of all is a permanent carrier
+ * error, which is the answer being right rather than something going wrong.
+ */
+async function retry_failed(): Promise<JobResult> {
+  const sweep = await runRetrySweep();
+  /* A refusal by the policy is `skipped`, and only a send that was attempted
+     and did not go is `failed` — the same split every other sending job here
+     uses, so `outcomeFor` reports "partial" for the case that deserves a look
+     rather than for the ordinary one. */
+  return {
+    outcome: outcomeFor({
+      processed: sweep.retried,
+      skipped: sweep.skipped,
+      failed: sweep.failed,
+    }),
+    processed: sweep.retried,
+    skipped: sweep.skipped,
+    failed: sweep.failed,
+    note:
+      sweep.considered === 0
+        ? "Nothing failed recently."
+        : `${sweep.retried} sent again, ${sweep.skipped} left alone${
+            Object.keys(sweep.reasons).length > 0
+              ? ` (${Object.entries(sweep.reasons)
+                  .map(([reason, n]) => `${reason}: ${n}`)
+                  .join(", ")})`
+              : ""
+          }.`,
+  };
+}
 
 /**
  * 9.1 — ask the parent who got an answer whether it helped.
@@ -352,7 +392,7 @@ async function freshness_ping(): Promise<JobResult> {
   for (const row of candidates.data) {
     const result = await sendSms({
       to: String(row.phone),
-      body: `Quick one — is ${String(row.name)} still worth recommending? Reply yes, no, or PASS to skip.`,
+      body: freshnessPingSms({ name: String(row.name) }),
       category: "outreach",
       personId: String(row.person_id),
       outreachKind: "ping",

@@ -1,7 +1,14 @@
 import "server-only";
 
 import { type OutreachKind } from "@/lib/outreach-policy";
+import { planSegments } from "@/lib/sms-segments";
 import { isOptedOut, outreachAllowed, recordSend } from "@/lib/server/repo/outreach";
+import {
+  isSlackRelayEnabled,
+  postToSlack,
+  recipientLabel,
+} from "@/lib/server/slack";
+import { relayTargetFor } from "@/lib/server/repo/relay";
 
 /**
  * The single outbound SMS layer (invariant 6 — spec §14, §21).
@@ -40,6 +47,16 @@ export interface SendResult {
   policy_reason?: string;
   /** Provider message id, when there is one. */
   message_id?: string;
+  /**
+   * 13.3 — how many SMS segments this body occupies, and in which encoding.
+   *
+   * Returned because the caller is the only one who can do anything about it,
+   * and because the number is not `length / 160`: one character outside GSM-7
+   * moves the whole message to UCS-2 and cuts the per-segment budget from 160 to
+   * 70. See `lib/sms-segments.ts`.
+   */
+  segments?: number;
+  encoding?: "gsm7" | "ucs2";
 }
 
 interface SendInput {
@@ -80,6 +97,32 @@ interface SendInput {
    * before this comment existed.
    */
   inReplyTo?: string;
+  /**
+   * 13.4 — the `message_log` id this attempt is retrying.
+   *
+   * Set only by the retry sweep (`repo/retry.ts`). It is threaded to
+   * `message_log.retry_of`, and **every contributor-protection counter excludes
+   * rows that carry it** — one message received once must not spend a parent's
+   * monthly allowance twice, or restart their 48-hour gap.
+   */
+  retryOf?: string;
+  /** How many attempts preceded this one. Capped by `RETRY_LIMIT`. */
+  retryCount?: number;
+  /**
+   * What this message *is*, where that changes which transport carries it.
+   *
+   * Only `"verification"` means anything today, and it means one thing: **never
+   * the Slack relay.** A code posted into a test channel is a code the parent
+   * never receives, so verification is pinned to the real provider whatever the
+   * relay is set to (see `transportFor`).
+   *
+   * It is an explicit marker rather than a guess from `category`, because
+   * `transactional` covers most of what the relay exists to exercise — HELP,
+   * the settings reply, every capture prompt — and routing on the category would
+   * have sent all of those to Twilio and the code to Slack, i.e. exactly
+   * backwards.
+   */
+  purpose?: "verification";
 }
 
 function provisioning() {
@@ -128,8 +171,128 @@ export function isQuietHours(now = new Date()): boolean {
   return hour < 8 || hour >= 21;
 }
 
+/**
+ * Which transport carries this message.
+ *
+ * **Verification is pinned to the real provider**, always. Everything else goes
+ * to the Slack relay while it is enabled — the temporary test channel described
+ * in `lib/server/slack.ts` — and to Twilio otherwise.
+ *
+ * The relay is a swap of the *provider step only*: every rule in `sendSms`
+ * above step 4 runs first either way, which is what keeps invariant 6 true while
+ * the channel is standing in for SMS.
+ */
+export function transportFor(input: Pick<SendInput, "purpose">): "sms" | "slack" {
+  if (input.purpose === "verification") return "sms";
+  return isSlackRelayEnabled() ? "slack" : "sms";
+}
+
+/**
+ * The relay's provider step.
+ *
+ * Two things it does that the Twilio block does not have to. It **labels the
+ * recipient**, because one channel holding every message would otherwise not
+ * say who any of them was for; and it **threads**, so a conversation with one
+ * parent stays in one thread and a reply is resolvable back to them — the
+ * events route reads `thread_ts` and finds the person through
+ * `message_log.provider_message_id`.
+ *
+ * A person with no thread yet starts one, and its `ts` becomes the thread every
+ * later message to them joins. That is why the `message_log` write below is not
+ * optional for the relay the way it is for SMS: without the row there is no
+ * thread key, so the next reply could not be attributed and the channel would
+ * degrade into a flat list.
+ */
+async function sendViaSlack(input: SendInput): Promise<SendResult> {
+  /**
+   * Addressed **by number when there is no person id**, which is how SMS
+   * addresses everything.
+   *
+   * A keyword reply (HELP, the START confirmation) is sent before the pipeline
+   * has ensured a person, so it carries no `personId`. On a phone that is
+   * invisible; in one channel it made the post read "unknown recipient" and sit
+   * outside every thread, so the parent's next reply had nothing to resolve
+   * against. Found by walking it — `npm run test:relay-live`.
+   */
+  const target = await relayTargetFor({ personId: input.personId, phone: input.to });
+
+  const result = await postToSlack({
+    body: input.body,
+    label: recipientLabel({ name: target?.name, phoneMasked: target?.phone_masked }),
+    threadTs: target?.thread_ts ?? null,
+    category: input.category,
+    template: input.template ?? null,
+  });
+
+  if (!result.ok) {
+    console.error("[sms] relay refused", {
+      category: input.category,
+      error: result.error,
+    });
+    return { sent: false, reason: "provider_error" };
+  }
+
+  console.info("[sms] sent via relay", {
+    category: input.category,
+    threaded: Boolean(target?.thread_ts),
+  });
+
+  /**
+   * Logged against whoever the message was addressed to — including somebody the
+   * *caller* could not name, which the SMS path skips.
+   *
+   * The divergence is deliberate and it is what makes the channel usable: this
+   * row carries the thread key, so without it a keyword reply is unthreaded and
+   * the reply to it is unattributable. It cannot inflate anybody's limits —
+   * every counter in `outreachAllowed` filters `category = 'outreach'` and these
+   * are `transactional`. Checked, not assumed.
+   *
+   * Awaited, unlike the SMS path: there the row is a counter and losing one
+   * costs a counter, here it is the address of the conversation.
+   */
+  const logAgainst = input.personId ?? target?.person_id ?? null;
+  if (logAgainst) {
+    await recordSend({
+      personId: logAgainst,
+      direction: "out",
+      category: input.category,
+      template: input.template ?? null,
+      templateVersion: input.templateVersion ?? null,
+      providerMessageId: result.ts ?? null,
+      respondedTo: input.inReplyTo ?? null,
+    });
+  }
+
+  return { sent: true, message_id: result.ts };
+}
+
 export async function sendSms(input: SendInput): Promise<SendResult> {
   const { to, body, category } = input;
+
+  /**
+   * 13.3 — what this body will actually cost, worked out once.
+   *
+   * It is **reported, never rewritten**. `lib/sms-templates.ts` holds copy
+   * registered with the carrier as A2P samples, and A2P §3.7's rule is that what
+   * is registered and what is sent must match — so "correctly handles
+   * segmentation" cannot mean quietly swapping the client's em dash for a hyphen
+   * on the way out. What it means is that nobody is surprised by the bill.
+   *
+   * The warning fires on `ucs2`, because that is the case where the number on
+   * screen and the number a carrier charges for diverge: 150 characters of plain
+   * English is one segment, and the same 150 with one curly apostrophe in them is
+   * three. Enums and counts only — the offending characters are named, which is
+   * safe (they are punctuation, not content) and is the only thing that makes the
+   * warning actionable.
+   */
+  const plan = planSegments(body);
+  if (plan.encoding === "ucs2") {
+    console.warn("[sms] non-GSM characters raise the segment count", {
+      category,
+      segments: plan.segments,
+      offenders: plan.offenders.join(""),
+    });
+  }
   /**
    * 1. Opt-out — a hard block with no exceptions, including scheduled jobs.
    *
@@ -177,10 +340,21 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
     }
   }
 
-  // 4. Provider.
+  /**
+   * 4. Provider — or the relay standing in for it.
+   *
+   * Below this line the transport differs; everything above it does not, which
+   * is the whole design: the test channel is subject to opt-out, quiet hours and
+   * contributor protection exactly as a real send is, so what gets exercised in
+   * Slack is the behaviour that will ship.
+   */
+  if (transportFor(input) === "slack") {
+    return sendViaSlack(input);
+  }
+
   if (!isSmsProvisioned()) {
     // Counts and enums only — never the number, never the body.
-    console.warn("[sms] not provisioned", { category, length: body.length });
+    console.warn("[sms] not provisioned", { category, segments: plan.segments });
     return { sent: false, reason: "not_provisioned" };
   }
 
@@ -267,10 +441,17 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
         templateVersion: input.templateVersion ?? null,
         providerMessageId: data?.sid ?? null,
         respondedTo: input.inReplyTo ?? null,
+        retryOf: input.retryOf ?? null,
+        retryCount: input.retryCount ?? 0,
       });
     }
 
-    return { sent: true, message_id: data?.sid };
+    return {
+      sent: true,
+      message_id: data?.sid,
+      segments: plan.segments,
+      encoding: plan.encoding,
+    };
   } catch (error) {
     console.error(
       "[sms] provider unreachable",

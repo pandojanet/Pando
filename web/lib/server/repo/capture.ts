@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { withDb, type Db } from "@/lib/server/db";
 import { cardFrom, nextStep, type CaptureStep } from "@/lib/capture";
 
@@ -163,6 +164,22 @@ export async function saveCapturedCard(
 
       const shareId = created[0] ? String(created[0].share_id) : "";
       if (!shareId) return null;
+
+      /**
+       * 11.4 — belt, behind the braces.
+       *
+       * `handleInboundMessage` already refuses a *strongly* person-shaped name
+       * over SMS ("Ms. Diane") and sends the caregiver link instead. This
+       * catches the weak shape it deliberately does not refuse on — "Diane
+       * Kovalenko" — so an admin is asked the caregiver questions before the
+       * record can be answered with. Never throws; the card saving is the
+       * important half.
+       */
+      await flagNamedPersonRecord(tx, {
+        shareId,
+        name: card.name,
+        personId: capture.person_id,
+      });
 
       await tx.execute(sql`
         insert into share_contributions

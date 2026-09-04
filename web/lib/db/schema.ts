@@ -305,6 +305,9 @@ export const children = pgTable(
       .notNull()
       .references(() => people.id, { onDelete: "cascade" }),
     birthYear: integer("birth_year"),
+    /* 3 Sep, drizzle/0031. Optional: the year is the required tap and this
+       sharpens the age band at a year boundary. */
+    birthMonth: integer("birth_month"),
     expecting: boolean("expecting").notNull().default(false),
     dueYear: integer("due_year"),
     dueYearPrecision: text("due_year_precision"),

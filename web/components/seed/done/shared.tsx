@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { InlineAction } from "@/components/ui/TextAction";
+import { Panel } from "@/components/ui/Panel";
 import { loadSession } from "@/lib/storage";
 import type { SeedSession } from "@/lib/types";
 import type { ShareKind } from "@/lib/seed-chat/types";
@@ -51,17 +52,12 @@ export function isAnonymous(session: SeedSession | null): boolean {
 
 export function NoSession() {
   return (
-    <p className="mt-7 rounded-2xl border border-bark bg-card p-4 text-[14.5px] leading-relaxed text-muted">
+    <Panel as="p" size="inset" className="mt-7 leading-relaxed text-muted text-help">
       We don&apos;t have a session on this phone — nothing was lost, but to be
       counted as a founding parent,{" "}
-      <Link
-        href="/join"
-        className="font-semibold text-green-deep underline underline-offset-2"
-      >
-        start from your invite link
-      </Link>
+      <InlineAction href="/join">start from your invite link</InlineAction>
       .
-    </p>
+    </Panel>
   );
 }
 
@@ -76,7 +72,7 @@ export function Next({
   body: string;
 }) {
   return (
-    <li className="flex gap-3.5 rounded-2xl border border-bark/70 bg-card/60 p-4">
+    <Panel as="li" size="inset" className="flex gap-3.5">
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-green-wash text-[13px] font-bold text-green-deep">
         {n}
       </span>
@@ -86,6 +82,6 @@ export function Next({
           {body}
         </span>
       </span>
-    </li>
+    </Panel>
   );
 }

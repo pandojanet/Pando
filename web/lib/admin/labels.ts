@@ -40,6 +40,11 @@ const FLAG_REASONS: Record<string, { title: string; meaning: string }> = {
     meaning:
       "The parent said themselves it was over a year ago. Still usable, but it should be labelled as old — prices and teachers change.",
   },
+  named_person_record: {
+    title: "This record is a person",
+    meaning:
+      "The name looks like an individual — a tutor, a coach, a teacher — rather than a place or a programme. That matters because a caregiver gets protections this record does not: nobody asked whether they are 18, and nobody asked them anything at all. If it is a business, approve it and this goes away. If it is a person, it belongs in the caregiver flow with its own consent, and should not be answered with until it is.",
+  },
   recommendation_withdrawn: {
     title: "A parent took it back",
     meaning:
@@ -151,6 +156,35 @@ export const HOLD_REASON: Record<string, string> = {
 };
 
 /** Where a caregiver is on the consent ladder. */
+/**
+ * What kind of thing a contributed card is about — the `share_kind` enum.
+ *
+ * Four members and camp is deliberately not among them: a camp is a first-class
+ * *taxonomy* category (§8.4/§15.3) and has never been a share kind. `lib/capture.ts`
+ * already paid for that confusion once.
+ */
+export const CARD_KIND: Record<string, string> = {
+  activity: "Activity or class",
+  caregiver: "Caregiver",
+  place: "Place",
+  tip: "Tip",
+};
+
+/**
+ * Where a caregiver's **self-registration** has got to — `caregiver_claims.status`.
+ *
+ * Deliberately not `CONSENT_STATE`, which is the caregiver *ladder* (mentioned →
+ * invited → consented → …). That is a different vocabulary about a different
+ * thing: the ladder says how visible somebody is, this says whether an admin has
+ * matched their sign-up to a nomination yet. Reusing one for the other would put
+ * "She said yes" on a claim nobody has looked at.
+ */
+export const CLAIM_STATUS: Record<string, string> = {
+  pending: "Waiting to be matched",
+  linked: "Matched to a nomination",
+  declined: "Not matched",
+};
+
 export const CONSENT_STATE: Record<string, { label: string; meaning: string }> = {
   mentioned: {
     label: "Put forward by a family",
@@ -483,6 +517,35 @@ export function matchReasonValue(kind: string, value: string): string | null {
   return words.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * A consent scope → what the person actually agreed to.
+ *
+ * `/admin/consents` is the A2P §3.3 defence file, and it had been printing these
+ * through `slugLabel`, which title-cases the stored id: "Sms", "Follow up",
+ * "Caregiver introduction" — and, once the recurring opt-in landed, **"Sms
+ * recurring"**, which is the jargon-with-capitals failure this file exists to
+ * end. A file that answers a TCPA complaint has to say which permission a row
+ * is, in words, and the two SMS-shaped scopes are the pair most worth telling
+ * apart: one authorises texting the number at all, the other the recurring
+ * SMS/RCS volume the parent chose.
+ */
+const CONSENT_SCOPE: Record<string, string> = {
+  sms: "Texting this number (taken at the phone field)",
+  sms_recurring: "Recurring SMS & RCS (taken with the participation level)",
+  follow_up: "Follow-ups about what they shared",
+  blast: "Questions from other parents",
+  listening_ear: "Answering a stranger's hard question",
+  reference: "Being a reference for a caregiver",
+  caregiver_profile: "Caregiver: Pando may keep my profile",
+  caregiver_listing: "Caregiver: may appear in an answer",
+  caregiver_introduction: "Caregiver: may be introduced to a family",
+  caregiver_reference: "Caregiver: a former family may vouch for me",
+};
+
+export function consentScopeLabel(scope: string): string {
+  return CONSENT_SCOPE[scope] ?? sentence(scope);
+}
+
 /** An `affinity_weights` row → what that weight is for. */
 export function affinityLabel(type: string): string {
   return MATCH_REASON[type] ?? sentence(type);
@@ -506,4 +569,76 @@ const ANSWER_HOLD_REASON: Record<string, string> = {
 
 export function holdReasonLabel(reason: string): string {
   return ANSWER_HOLD_REASON[reason] ?? sentence(reason);
+}
+
+/**
+ * 14.3 — the four tiers, in the words the strategy uses.
+ *
+ * The stored value is a tier id (`board`, `last_minute`), and on screen it has
+ * to read as the thing a parent bought. Taken from `blast-tiers.ts`'s own
+ * `label` where possible — but that file is a *runtime* module and this one is
+ * deliberately importable from anywhere, so the words are here and
+ * `npm run test:payments` asserts they match.
+ */
+export const BLAST_TIER: Record<string, string> = {
+  passive: "Passive — free, contacts nobody",
+  board: "Board Ask — $5",
+  targeted: "Targeted Ask — $15",
+  last_minute: "Last-Minute Care — free in the pilot",
+};
+
+/** The state of the *question*. See `PAYMENT_STATUS` for the money. */
+export const BLAST_STATUS: Record<
+  string,
+  { label: string; tone: "green" | "gold" | "red" | "neutral" | "muted" }
+> = {
+  draft: { label: "Not sent yet", tone: "neutral" },
+  pending_review: { label: "Waiting for you to read it", tone: "gold" },
+  active: { label: "Out with parents", tone: "green" },
+  fulfilled: { label: "Answered", tone: "green" },
+  expired: { label: "Window closed", tone: "red" },
+  refunded: { label: "Refunded", tone: "muted" },
+  cancelled: { label: "Cancelled", tone: "muted" },
+};
+
+/**
+ * The state of the *money*, and the two vocabularies are deliberately separate:
+ * a blast can be answered and still owe a refund, because 7.7's guarantee is
+ * about whether an answer was *useful*.
+ *
+ * `refund_due` is the one worth reading carefully — it means a person decided
+ * one is owed and nobody has made it yet, which is the only row on the payments
+ * page that is somebody's outstanding task.
+ */
+export const PAYMENT_STATUS: Record<
+  string,
+  { label: string; tone: "green" | "gold" | "red" | "neutral" | "muted" }
+> = {
+  not_required: { label: "Nothing to pay", tone: "muted" },
+  pending: { label: "Checkout open", tone: "gold" },
+  paid: { label: "Paid", tone: "green" },
+  refund_due: { label: "Refund owed", tone: "red" },
+  refunded: { label: "Refunded", tone: "neutral" },
+  failed: { label: "Payment did not go through", tone: "gold" },
+};
+
+/**
+ * Why a contributor was not asked, from `selectPool`'s own reasons.
+ *
+ * Every one of these is the system working rather than a fault, which is why
+ * they read as facts about the contributor's agreement rather than as errors.
+ */
+export const POOL_HELD_REASON: Record<string, string> = {
+  monthly_cap: "Already at their monthly limit",
+  too_soon: "Asked in the last 48 hours",
+  ping_this_month: "Already had a freshness ping this month",
+  ping_same_day_as_blast: "Already asked something today",
+  opted_out: "Asked Pando to stop texting",
+  no_phone: "No number on record",
+  counters_unavailable: "Their limits could not be read — refused rather than guessed",
+  unknown_person: "No profile to check limits against",
+};
+
+export function poolHeldReason(reason: string): string {
+  return POOL_HELD_REASON[reason] ?? sentence(reason);
 }

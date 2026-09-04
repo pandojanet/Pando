@@ -45,7 +45,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
 | `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
 | `POST /api/seed/invite`  | Validates a hand-typed code.                                                |
-| `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. |
+| `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. Since 3 Sep the `children` rows are **derived here** from `answers.child_ages` and the optional `answers.child_months` (age id → 1–12) rather than read from the body — a month outside 1–12, or one against a child nobody tapped, is dropped instead of aborting the write on a CHECK. |
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
@@ -64,9 +64,14 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |
 | `/admin/demand`          | D1 queue: high-stakes and named-allegation questions first.                 |
 | `/admin/flags`           | Escalations first, then review queue.                                       |
+| `/admin/blasts`          | 14.3 — every Network Ask, its pool before it goes out, and the two verbs nobody could reach: mark it answered, flag a refund. Previewing calls the same `selectPool` a live send calls, and **sends nothing**. |
+| `/admin/payments`        | 14.5 — what was paid, what is owed, and the refund itself (13.7). Leads with whether Stripe is switched on at all; test mode is called out as loudly as unconfigured. |
 | `/admin/audit`           | Who changed what, with a before → after diff.                               |
 | `POST /api/admin/query`  | One read endpoint for every admin page → `lib/server/repo/admin-read.ts`.    |
 | `POST /api/admin/action` | One write endpoint → `admin-write.ts`; the audit row is written in the same transaction as the change. |
+| `POST /api/slack/events` | The **temporary** Slack relay's inbound door (2 Sep): the same pipeline `/api/sms/inbound` runs, reached from one test channel. Signed like the Twilio webhook and refused unconfigured, plus a five-minute replay window. A reply *in a thread* is from whoever that thread was addressed to; a top-level `+1626…: hello` is how 5.9's cold inbound is tested. 404 unless `MESSAGING_RELAY=slack`. |
+| `POST /api/stripe/webhook` | 13.6 — the **only** evidence of payment this app accepts. A success page cannot activate a blast: a return URL is a link the browser follows. Verifies the signature over the **raw** body before anything parses it, refuses an unset secret (fail-closed), and rejects a timestamp outside a five-minute tolerance so a captured webhook cannot be replayed forever. Idempotent by a unique index rather than by a check, because Stripe retries until it gets a 2xx. An unknown event type is 200 and ignored. |
+| `POST /api/sms/inbound` | Every inbound text (13.2). Proves the request is Twilio's, works out the number, and hands to `lib/server/inbound.ts` — STOP/START/HELP are handled there before anything else reads the message. |
 | `POST /api/admin/password` | A signed-in admin changes their **own** password. Needs the current one; re-issues the cookie, because rotating a hash retires the old session. |
 | `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
 | `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. **Since 24 Aug it serves only the curated starters** for schools, activities, clubs and faith — those four are directories of hundreds now, not chip lists. |

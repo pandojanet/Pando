@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { TIERS, expiryFor, needsHumanReview, type BlastTier } from "@/lib/blast-tiers";
+import {
+  TIERS,
+  expiryFor,
+  needsHumanReview,
+  paymentFor,
+  type BlastTier,
+} from "@/lib/blast-tiers";
 import { decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
 import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-templates";
 import { withDb, type Db } from "@/lib/server/db";
@@ -328,6 +334,8 @@ export interface SendBlastResult {
   skipped: number;
   reason?:
     | "not_found"
+    /** 13.5 — a paid tier whose checkout has not completed. */
+    | "unpaid"
     | "not_ready"
     | "needs_human_review"
     | "already_sent"
@@ -368,7 +376,7 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   const loaded = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select b.id, b.tier, b.status, b.human_review, b.question_text,
-             b.asker_id, b.market_id,
+             b.asker_id, b.market_id, b.payment_status, b.credit_id,
              (select count(*)::int from blast_recipients r
                where r.blast_id = b.id and r.sent_at is not null) as already
         from blasts b where b.id = ${blastId}::uuid
@@ -388,6 +396,30 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   }
   if (blast.status !== "draft" && blast.status !== "active") {
     return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
+  }
+
+  /**
+   * 13.5 — a paid tier that has not been paid does not send.
+   *
+   * This was a real hole the moment payments existed, and it is worth naming
+   * because nothing looked wrong: `createBlast` starts a blast at `draft`, and
+   * the status check above admits `draft` — deliberately, because a free tier
+   * has nothing to pay and must be sendable straight away. So a `targeted` Ask
+   * whose checkout was never completed sat in exactly the state `blast.send`
+   * accepts, and an admin pressing the button would have texted five parents on
+   * behalf of somebody who had not paid.
+   *
+   * The question is asked of `lib/payments.ts` rather than of the column, so
+   * "does this owe anything" has one definition: a free tier and a
+   * credit-funded Ask both owe nothing, and the credit was already redeemed
+   * inside `createBlast`'s transaction.
+   */
+  const owed = paymentFor({
+    tier: String(blast.tier) as BlastTier,
+    creditRedeemed: blast.credit_id !== null,
+  });
+  if (owed.charge && blast.payment_status !== "paid") {
+    return { ok: false, sent: 0, skipped: 0, reason: "unpaid" };
   }
   if (!blast.asker_id) return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
 

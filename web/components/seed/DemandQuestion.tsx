@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { TextAction } from "@/components/ui/TextAction";
 import { Chip } from "@/components/ui/Chip";
+import { Field } from "@/components/ui/Field";
 import { track } from "@/lib/analytics";
 import {
   classifyDemand,
@@ -128,13 +129,18 @@ export function DemandQuestion({
         parent group.
       </p>
 
-      <textarea
+      {/* `on="card"` because this sits inside a white panel — a field is always
+          the opposite surface to the thing it sits on. The heading above is the
+          question, so a second visible label would be it asked twice. */}
+      <Field
+        label="What would you want to ask Pando?"
+        labelHidden
+        on="card"
+        className="mt-3"
+        rows={2}
         value={text}
         onChange={(e) => setText(e.target.value.slice(0, 300))}
-        rows={2}
         placeholder="e.g. summer camps for a 5-year-old that aren't a fortune"
-        aria-label="What would you want to ask Pando?"
-        className="mt-3 w-full resize-none rounded-2xl border border-bark bg-paper px-4 py-3 text-[16px] leading-snug outline-none placeholder:text-muted/60 focus:border-green"
       />
 
       <p className="mt-3 text-[13.5px] font-semibold">What&apos;s it about?</p>

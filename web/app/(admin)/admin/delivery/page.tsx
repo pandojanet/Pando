@@ -7,8 +7,10 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
+  Stat,
 } from "@/components/admin/ui";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
@@ -69,11 +71,15 @@ export default function DeliveryPage() {
 
       {loading && !data ? (
         <Card>
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         </Card>
       ) : !data?.configured ? (
         <Card>
-          <NotConfigured demo={demo} onDemo={setDemo} />
+          <NotConfigured
+              demo={demo}
+              onDemo={setDemo}
+              noSample="There is no sample delivery rate on purpose — a page that cannot reach the database must say so rather than report perfect delivery."
+            />
         </Card>
       ) : (
         <div className="space-y-5">
@@ -115,35 +121,26 @@ export default function DeliveryPage() {
               />
             ) : (
               <>
-                <div className="flex flex-wrap gap-x-10 gap-y-4 px-4 py-4">
-                  <div>
-                    <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
-                      Delivered
-                    </p>
-                    <p
-                      className={`mt-0.5 text-[26px] font-semibold tabular-nums ${
-                        data.below_floor ? "text-alert" : "text-ink"
-                      }`}
-                    >
-                      {data.rate === null ? "—" : pct(data.rate)}
-                    </p>
-                    <p className="text-[12.5px] text-muted">
-                      {data.delivered} of {data.settled} that have a final answer
-                    </p>
-                  </div>
-
-                  <div>
-                    <p
-                      className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
-                      title="Twilio accepted these and has not reported back yet. They are neither delivered nor failed, so they are left out of the rate rather than counted against it."
-                    >
-                      Still in flight
-                    </p>
-                    <p className="mt-0.5 text-[26px] font-semibold tabular-nums text-ink">
-                      {data.in_flight}
-                    </p>
-                    <p className="text-[12.5px] text-muted">not counted either way</p>
-                  </div>
+                {/* `Stat`, not two hand-written blocks. These were
+                    `text-[26px] font-semibold` in the sans face while the same
+                    kind of number on Payments and Overview is `font-display
+                    text-[1.7rem] font-bold` — so the two headline figures on
+                    this page were set differently from every other headline
+                    figure in the admin. The explanation on "Still in flight"
+                    was a `title=`, which is unreachable by touch and keyboard. */}
+                <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
+                  <Stat
+                    label="Delivered"
+                    tone={data.below_floor ? "alert" : "plain"}
+                    value={data.rate === null ? "—" : pct(data.rate)}
+                    hint={`${data.delivered} of ${data.settled} that have a final answer`}
+                  />
+                  <Stat
+                    label="Still in flight"
+                    value={data.in_flight}
+                    hint="not counted either way"
+                    explain="Twilio accepted these and has not reported back yet. They are neither delivered nor failed, so they are left out of the rate rather than counted against it."
+                  />
                 </div>
 
                 {/**

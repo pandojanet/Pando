@@ -9,17 +9,23 @@ import {
   Empty,
   ErrorNote,
   Field,
+  inputClass,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
-  inputClass,
   slugLabel,
-  yearList,
   when,
+  yearList,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { AFFILIATION_KIND, sentence } from "@/lib/admin/labels";
+import {
+  AFFILIATION_KIND,
+  CARD_KIND,
+  REVIEW_STATUS,
+  sentence,
+} from "@/lib/admin/labels";
 import { profileValueLabel } from "@/lib/questions";
 import type { ContributorDetail, ContributorRow } from "@/lib/admin/types";
 
@@ -146,7 +152,7 @@ export default function ContributorDetailPage({
 
       {loading && !c ? (
         <Card>
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         </Card>
       ) : !configured && !c ? (
         <Card>
@@ -210,7 +216,7 @@ export default function ContributorDetailPage({
                   <ul className="flex flex-wrap gap-1.5">
                     {c.affinities.map((a) => (
                       <li key={`${a.affinity_type}-${a.affinity_value}`}>
-                        <Badge tone="neutral" title={sentence(a.affinity_type)}>
+                        <Badge tone="neutral" hint={sentence(a.affinity_type)}>
                           {profileValueLabel(a.affinity_value) ??
                             slugLabel(a.affinity_value)}
                         </Badge>
@@ -218,7 +224,7 @@ export default function ContributorDetailPage({
                     ))}
                     {c.relevance.map((r) => (
                       <li key={`${r.dimension}-${r.value}`}>
-                        <Badge tone="neutral" title={sentence(r.dimension)}>
+                        <Badge tone="neutral" hint={sentence(r.dimension)}>
                           {profileValueLabel(r.value) ?? slugLabel(r.value)}
                         </Badge>
                       </li>
@@ -315,11 +321,11 @@ export default function ContributorDetailPage({
                       className="flex items-center justify-between gap-3 px-4 py-2.5 text-[14px]"
                     >
                       <span>
-                        <Badge tone="muted">{card.kind}</Badge>
+                        <Badge tone="muted">{CARD_KIND[card.kind] ?? sentence(card.kind)}</Badge>
                         <span className="ml-2">{card.title}</span>
                       </span>
                       <span className="flex items-center gap-2 text-[13px] text-muted">
-                        {card.status.replace(/_/g, " ")}
+                        {REVIEW_STATUS[card.status]?.label ?? sentence(card.status)}
                         <Link
                           href={
                             card.kind === "caregiver"

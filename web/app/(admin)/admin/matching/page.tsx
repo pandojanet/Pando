@@ -5,16 +5,17 @@ import {
   Badge,
   Button,
   Card,
+  controlClass,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
+  slugLabel,
   TableWrap,
   Td,
   Th,
-  controlClass,
-  slugLabel,
 } from "@/components/admin/ui";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
@@ -108,7 +109,7 @@ export default function MatchingPage() {
   return (
     <>
       <PageHead
-        title="Who would Pando ask?"
+        title="Who Pando would ask"
         intro="Pick a parent and see who Pando would go to with their question, and why each of them scored where they did. Nothing is sent from this page."
       />
 
@@ -198,9 +199,13 @@ export default function MatchingPage() {
           className={data?.asker && data.cold ? "border-gold-line" : undefined}
         >
           {loading && !data ? (
-            <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+            <Loading />
           ) : !configured ? (
-            <NotConfigured demo={demo} onDemo={setDemo} />
+            <NotConfigured
+              demo={demo}
+              onDemo={setDemo}
+              noSample="There is no sample ranking on purpose: judging whether the real ranking is any good is this page's whole purpose, so a made-up one is the single thing it must never show."
+            />
           ) : !asker ? (
             <Empty
               title="Choose a parent above"
@@ -251,7 +256,7 @@ export default function MatchingPage() {
                 </p>
               )}
 
-              <TableWrap>
+              <TableWrap label="Ranked candidates">
                 <thead>
                   <tr>
                     <Th>Parent</Th>
@@ -414,9 +419,14 @@ function WeightsCard({
       {weights.length === 0 ? (
         <Empty
           title={configured ? "No weights recorded" : "No database connected"}
+          /* Was "Nothing has been seeded into affinity_weights yet" — a table
+             name, on an empty state read by a non-technical admin. That is the
+             fault `labels.ts` exists to end, surviving in prose rather than in a
+             value. `DATABASE_URL` stays: it names a thing whoever reads that
+             branch has to go and set, and there is no other word for it. */
           body={
             configured
-              ? "Nothing has been seeded into affinity_weights yet, so every connection is currently worth nothing."
+              ? "No weights have been set up yet, so no kind of shared connection counts for anything and nobody can be ranked."
               : "There is nothing to change until DATABASE_URL is set."
           }
         />
@@ -557,7 +567,7 @@ function ReasonBadge({
   return (
     <Badge
       tone={isContext ? "neutral" : "green"}
-      title={`Stored as ${reason.kind} · ${reason.value}`}
+      hint={`Stored as ${reason.kind} · ${reason.value}`}
     >
       {matchReason(reason.kind)}
       {named && <span className="font-normal">: {named}</span>}

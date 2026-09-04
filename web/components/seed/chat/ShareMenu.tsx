@@ -1,5 +1,6 @@
 "use client";
 
+import { TextAction } from "@/components/ui/TextAction";
 import { SHARE_ORDER } from "@/lib/seed-chat/scripts";
 import type { Script, ShareKind } from "@/lib/seed-chat/types";
 
@@ -27,7 +28,7 @@ export function ShareMenu({
             key={kind}
             type="button"
             onClick={() => onPick(kind)}
-            className="flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-bark bg-card p-3 text-center transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.98]"
+            className="flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-bark bg-card p-3 text-center transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.97]"
           >
             <span className="text-green">{ICONS[kind]}</span>
             <span className="text-[14px] font-semibold leading-tight">
@@ -37,13 +38,9 @@ export function ShareMenu({
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={onDone}
-        className="mt-2 flex min-h-[48px] w-full items-center justify-center rounded-full text-[14.5px] font-semibold text-muted transition-colors hover:text-green-deep"
-      >
-        {savedCount === 0 ? "I'll do this later" : "That's me for now"}
-      </button>
+      <TextAction tone="quiet" underline={false} full className="mt-2" onClick={onDone}>
+        {savedCount === 0 ? "I’ll do this later" : "That’s me for now"}
+      </TextAction>
     </div>
   );
 }

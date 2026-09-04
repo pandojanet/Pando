@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
-import { Panel } from "@/components/ui/Panel";
-import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { PhoneField } from "@/components/ui/PhoneField";
 import {
   Container,
@@ -16,6 +14,10 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { Wordmark } from "@/components/ui/Logo";
+import { Panel } from "@/components/ui/Panel";
+import { Field } from "@/components/ui/Field";
+import { Consent } from "@/components/ui/Consent";
+import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { identifyArrival, track } from "@/lib/analytics";
 import { validateInvite, verifyStatus, type VerifyStatus } from "@/lib/api-client";
 import {
@@ -241,15 +243,16 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             QR again.
           </p>
 
-          <label
-            htmlFor="invite-code"
-            className="mt-8 block text-[15px] font-semibold"
-          >
-            Invite code
-          </label>
-          <input
+          {/* The error rides on the field rather than under it as a bare line:
+              that gets it `aria-invalid` and an `aria-describedby` link, so it
+              is read when focus lands. As a loose `<p>` it had no role at all —
+              on the one screen where somebody has just typed something wrong. */}
+          <Field
             id="invite-code"
+            label="Invite code"
+            className="mt-8"
             value={code}
+            error={codeError ?? undefined}
             onChange={(e) => {
               setCode(e.target.value);
               setCodeError(null);
@@ -262,25 +265,20 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             spellCheck={false}
             enterKeyHint="go"
             placeholder="sgv-founding"
-            className="mt-2.5 min-h-[52px] w-full rounded-2xl border border-bark bg-card px-4 text-[16px] outline-none placeholder:text-muted/60 focus:border-green"
           />
-          {codeError && (
-            <p className="mt-2.5 animate-rise text-[14px] font-medium text-gold-ink">
-              {codeError}
-            </p>
-          )}
 
-          <p className="mt-8 rounded-2xl border border-bark bg-card p-4 text-[14px] leading-relaxed text-muted">
+          <Panel as="p" size="inset" className="mt-8 leading-relaxed text-muted text-help">
             Got here by accident? Pando is a text line for San Gabriel Valley
             parents, launching this fall.{" "}
-            <Link
-              href="/"
-              className="font-semibold text-green-deep underline decoration-gold decoration-2 underline-offset-2"
-            >
+            {/* Was a bare `<Link>` at ~22px. `InlineAction` is `-my-1 py-1`,
+                which WCAG 2.5.8 exempts from 44px as an inline target and
+                which takes it to 31.6px. The gold underline rides through:
+                it is the site's highlighter idiom and does not conflict. */}
+            <InlineAction href="/" className="decoration-gold decoration-2">
               Read the story
-            </Link>
+            </InlineAction>
             .
-          </p>
+          </Panel>
         </ScreenBody>
         <ScreenDock stickyOnDesktop>
           <Button
@@ -322,190 +320,99 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       />
 
       <ScreenBody className="pt-7">
+        {/**
+         * 3 Sep, her instruction: *"Проміжну сторінку «Join the founding
+         * Network» вирішено видалити. Користувачі повинні потрапляти за
+         * загальним посиланням/QR-кодом безпосередньо на екран введення номера
+         * телефону."*
+         *
+         * ## What was here, and why it going is a real change rather than a trim
+         *
+         * A hero, three promise rows, and a card explaining what joining
+         * enables — four benefits, a green reassurance box and a privacy link.
+         * Most of it was built on **1 Sep from her own suggested page** (items 1
+         * and 16), so this reverses that round deliberately: the newer
+         * instruction wins, which is this file's own rule for her feedback.
+         *
+         * What it costs, stated rather than discovered later: a parent arriving
+         * cold now reads three lines instead of a page before being asked for a
+         * number. The four founding benefits she dictated on 1 Sep ("earn
+         * permanent Founding Status after your second approved contribution",
+         * "a reserved place in the Pasadena pilot") are **no longer anywhere in
+         * the flow** — `/done` still names Founding Status, but only after the
+         * fact. If she wants them back, the place is a tooltip on the badge
+         * rather than a page.
+         *
+         * What survives, and each for a reason she gave earlier:
+         *
+         *  - **"Private by default"** — one line, because it is the promise the
+         *    parent is deciding on (1 Sep item 1: her exact replacement for
+         *    "Your name is never shown", which was false).
+         *  - **"Tap, not type"** — her wording, 24 Aug item 2, and it sets the
+         *    expectation that makes the next screen make sense.
+         *  - **The secondary route**, "Share without joining for now" (1 Sep
+         *    item 16: never "Continue anonymously", because that implies the
+         *    founding route is not private).
+         */}
         <div className="animate-rise">
           <Eyebrow>Founding network · Pasadena</Eyebrow>
-          <h1 className="mt-3 font-display text-[2.05rem] font-extrabold leading-[1.06]">
-            You&apos;re one of the parents{" "}
-            <span className="highlight-gold">everyone asks</span>.
+          <h1 className="mt-3 font-display text-[1.7rem] font-extrabold leading-[1.08]">
+            Your number, and you&apos;re in.
           </h1>
-          <p className="mt-4 text-[16.5px] leading-relaxed text-ink-soft">
-            Pando is a text line for San Gabriel Valley parents — and it only
-            works if it starts with real local knowledge. Yours. Tell us the
-            classes, camps and caregivers you&apos;d actually vouch for.
+          <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
+            Pando is a text line for San Gabriel Valley parents. Tell us the
+            classes, camps and caregivers you&apos;d actually vouch for —{" "}
+            <strong className="font-semibold text-ink">about two minutes</strong>,
+            and it&apos;s tapping rather than typing.
           </p>
         </div>
 
-        <ul className="mt-7 space-y-2.5 md:grid md:grid-cols-3 md:gap-3 md:space-y-0">
-          <PromiseRow
-            icon={<ClockIcon />}
-            title="About two minutes"
-            body="Two questions are required. Everything else is one tap, or skip it."
-          />
-          <PromiseRow
-            icon={<TapIcon />}
-            /* Client's wording, 24 Aug — not "Taps, not typing". */
-            title="Tap, not type"
-            body="Your neighborhood's schools, classes and groups are already in the list."
-          />
-          <PromiseRow
-            icon={<ShieldIcon />}
-            /**
-             * 1 Sep, items 1 and 16. *"Change 'Your name is never shown' to:
-             * 'Private by default. Your name and contact information are not
-             * shown unless you explicitly choose otherwise.'"*
-             *
-             * The old line was a promise the product does not keep: P13 lets a
-             * parent choose to be named, and the privacy screen offers to show
-             * a shared connection. "Never" was therefore false on the one
-             * screen a parent decides to trust — and it also made the founding
-             * route look like the *less* private of the two, which is item 16's
-             * central objection.
-             */
-            title="Private by default"
-            body="Your name and contact information are not shown unless you explicitly choose otherwise."
-          />
-        </ul>
-
-        {/**
-         * 1 Sep, items 1 and 16 — the whole block rewritten, and the reframing
-         * is the point rather than the copy.
-         *
-         * **"Sharing anonymously" was inaccurate.** Her words: recommendations
-         * *are already* private from other parents by default, so calling one
-         * route anonymous implied the other was not — and the founding route is
-         * the one this network runs on. Worse, Pando can tie a "share without
-         * joining" contribution to a device and a session, so *"do not describe
-         * the contribution as anonymous if Pando can associate it with a phone
-         * number, account, device or other identifier. Use 'private' or 'not
-         * shown to other parents.'"*
-         *
-         * **"What you give up" led with a punishment.** *"Lead with what joining
-         * enables rather than 'what you give up.' The current framing feels
-         * punitive and may imply that joining reduces privacy."* So the list is
-         * the same four facts, stated as what joining is for, and the sentence
-         * that closes it is hers: joining does not change what other parents
-         * see.
-         *
-         * **The four InfoDots are gone**, on her instruction to *"remove the
-         * multiple information icons and expanded explanation boxes"* and keep
-         * one privacy link. They were added on 24 Aug at her own request and
-         * she has now seen them on a phone: four dots down one short list is
-         * four things to tap before you can read a paragraph.
-         *
-         * **And the thank-you claim is conditional.** *"Only say Pando cannot
-         * send the thank-you if the non-joining route genuinely leaves Pando
-         * without a usable payment or contact method."* It does — that route
-         * stores no name and no number at all — so the sentence stands, and it
-         * is stated once, in the secondary route's own words rather than as a
-         * penalty in a list.
-         */}
         {anonymous ? (
-          <Panel raised className="mt-7" title="Share without joining for now">
+          <Panel className="mt-6" tone="card" raised>
+            <h2 className="font-display text-[1.1rem] font-semibold">
+              Share without joining for now
+            </h2>
             <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
               Your recommendations can still help the network. They will not be
               connected to a founding profile, and founding benefits will not
-              apply — including the thank-you, which needs a name and a number
-              to send.
+              apply — including the thank-you, which needs a name and a number to
+              send.
             </p>
             <p className="mt-2.5 text-[14.5px] leading-relaxed text-ink-soft">
-              Either way, what other parents see is the same: the
-              recommendation, not who shared it.
+              Either way, what other parents see is the same: the recommendation,
+              not who shared it.
             </p>
-            <TextAction className="mt-3" onClick={() => setAnonymous(false)}>
-              Join the founding network
-            </TextAction>
+            <div className="mt-3">
+              <TextAction onClick={() => setAnonymous(false)} tone="green">
+                Join the founding network instead
+              </TextAction>
+            </div>
           </Panel>
         ) : (
-          <Panel raised className="mt-7" title="Join the founding network">
-            {/**
-             * Her suggested page, in her order: what joining *enables*, then the
-             * fields it needs. One privacy link at the end of the screen, and no
-             * information icons — see the block comment above.
-             */}
-            <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
-              Joining allows Pando to recognize your contribution, reserve your
-              place in the pilot, and let you know when something you shared
-              helps another family. As a founding contributor, you can:
-            </p>
-            {/**
-             * A plain `<ul>` renders as unmarked, unspaced text here — Tailwind
-             * v4's preflight zeroes `list-style` globally, and `.legal`'s own
-             * `list-style: disc` (globals.css) is scoped to that class and
-             * doesn't reach this card. Four benefits read as one run-on sentence
-             * without a marker. `Dot` is the same device `CaregiverFlow.tsx`
-             * already uses for this exact kind of list on a light card — a small
-             * green mark, not the gold checkmark `BrandPanel` uses on the dark
-             * panel, because this sits on `bg-card`.
-             */}
-            <ul className="mt-2.5 space-y-2 text-[14.5px] leading-relaxed text-ink-soft">
-              <li className="flex gap-2.5">
-                <Dot />
-                Receive a thank-you for your first qualifying contribution
-              </li>
-              <li className="flex gap-2.5">
-                <Dot />
-                Earn permanent Founding Status after your second approved
-                contribution
-              </li>
-              <li className="flex gap-2.5">
-                <Dot />
-                Have a reserved place in the Pasadena pilot
-              </li>
-              <li className="flex gap-2.5">
-                <Dot />
-                Receive private updates when your recommendations help other
-                parents
-              </li>
-            </ul>
-            {/* Her line, and it is the one that answers item 16's objection
-                outright: joining is not the less private route. */}
-            <p className="mt-3 rounded-2xl border border-green/20 bg-green-wash p-3 text-[14px] font-medium leading-relaxed text-green-deep">
-              Joining does not change what other parents see. Your
-              recommendations remain private by default.
-            </p>
-
-            <h3 className="mt-5 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
-              Your details
-            </h3>
-            {/* "…confirm you're really from the group" removed on the client's
-                instruction (24 Aug, item 4). Her reason is upstream of the
-                wording: she is moving away from a link that belongs to a group,
-                so telling a parent we are checking they belong to one reads as a
-                door being guarded. The other two reasons are the real ones. */}
-            <p className="mt-1 text-[14px] leading-relaxed text-muted">
-              Needed for Founding Status — it&apos;s how we hold your place in
-              the pilot, and thank you when a parent uses what you shared.
-            </p>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label htmlFor="first-name" className="block text-[15px] font-semibold">
-                  First name
-                </label>
-                <input
-                  id="first-name"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value.slice(0, 40))}
-                  autoComplete="given-name"
-                  enterKeyHint="next"
-                  placeholder="Janet"
-                  className="mt-2 min-h-[52px] w-full rounded-2xl border border-bark bg-paper px-4 text-[16px] outline-none placeholder:text-muted/60 focus:border-green"
-                />
-              </div>
-              <div>
-                <label htmlFor="last-name" className="block text-[15px] font-semibold">
-                  Last name
-                </label>
-                <input
-                  id="last-name"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value.slice(0, 60))}
-                  autoComplete="family-name"
-                  enterKeyHint="next"
-                  placeholder="Alvarez"
-                  className="mt-2 min-h-[52px] w-full rounded-2xl border border-bark bg-paper px-4 text-[16px] outline-none placeholder:text-muted/60 focus:border-green"
-                />
-              </div>
+          <Panel className="mt-6" tone="card" raised>
+            {/* `on="card"` — these sit inside a raised white `Panel`, and a
+                field is always the opposite surface to the thing it sits on. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                id="first-name"
+                label="First name"
+                on="card"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value.slice(0, 40))}
+                autoComplete="given-name"
+                enterKeyHint="next"
+                placeholder="Janet"
+              />
+              <Field
+                id="last-name"
+                label="Last name"
+                on="card"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value.slice(0, 60))}
+                autoComplete="family-name"
+                enterKeyHint="next"
+                placeholder="Alvarez"
+              />
             </div>
 
             <div className="mt-4">
@@ -517,46 +424,64 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               />
             </div>
 
-            {/* Its own element, unchecked by default, never bundled with anything
-                else — this checkbox is what authorises the verification text.
-
-                The wording is split across a label and a described-by paragraph for
-                one reason: when the whole registered text was inside the <label>, a
-                tap anywhere in ~230px of legal copy toggled consent. An accidental
-                opt-in is the worst failure this control has, so the label now covers
-                the sentence the parent is agreeing to, and the rest sits beside it —
-                same words, same order, still adjacent, and read out by a screen
-                reader through aria-describedby. */}
-            <div className="mt-4 rounded-2xl border border-bark bg-paper p-3.5">
-              <label className="flex gap-3">
-                <input
-                  type="checkbox"
-                  checked={smsConsent}
-                  onChange={(e) => setSmsConsent(e.target.checked)}
-                  aria-describedby="sms-consent-detail"
-                  className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--color-green-deep)]"
-                />
-                <span className="text-[13.5px] leading-relaxed text-ink-soft">
-                  {SMS_CONSENT_AGREEMENT}
-                </span>
-              </label>
-              <p
-                id="sms-consent-detail"
-                className="mt-2 pl-8 text-[13px] leading-relaxed text-muted"
-              >
-                {SMS_CONSENT_TERMS} See our{" "}
-                {/* New tab on purpose: the form isn't saved until Start, so
-                    navigating away here used to lose a typed name and number. */}
-                <InlineAction href="/privacy" external tone="green">
-                  Privacy Policy
-                </InlineAction>{" "}
-                and{" "}
-                <InlineAction href="/terms" external tone="green">
-                  Terms
-                </InlineAction>
-                .
-              </p>
-            </div>
+            {/**
+             * The consent box, and 3 Sep moved two things into it.
+             *
+             * Her instruction: *"Посилання на політику конфіденційності потрібно
+             * підняти вище, ближче до чекбоксу згоди на отримання SMS. Learn
+             * more... перенести в цей бокс."*
+             *
+             * The Privacy Policy and Terms links were already inside this box,
+             * but below a paragraph of carrier disclosure and indented under it
+             * — far enough down that they read as belonging to the disclosure
+             * rather than to the tick. They now sit **directly under the
+             * label**, on their own line, ahead of the disclosure; and "Learn
+             * more about privacy", which used to live at the very bottom of the
+             * screen beside the secondary action, is here too.
+             *
+             * That is the right place for a different reason as well: this is
+             * the one control on the screen that grants something, so the thing
+             * a parent might want to read before granting it belongs beside it
+             * rather than a screen away.
+             *
+             * **The wording split is unchanged and is not cosmetic.** The
+             * `<label>` covers only the sentence being agreed to; the carrier
+             * disclosure sits beside it via `aria-describedby`. When the whole
+             * registered text was inside the label, a tap anywhere in ~230px of
+             * legal copy toggled consent, and an accidental opt-in is the worst
+             * failure this control has.
+             */}
+            {/**
+             * The links sit immediately under the tick, ahead of the disclosure,
+             * and open in a new tab on purpose: nothing is saved until Start, so
+             * navigating away here used to lose a typed name and number.
+             *
+             * **"Learn more about privacy" was this link.** Her two instructions
+             * name it twice — raise the Privacy Policy link to the checkbox, and
+             * move "Learn more…" into this box — and both were the same
+             * `/privacy` page under two names. A row with two links to one page
+             * is a reader deciding which of them is the real one, so it says it
+             * once. **"Privacy Policy" is the name that survives**, and that is
+             * not a style call: it is the document a consent box has to point at
+             * by its own name, and it is the phrase the registered A2P opt-in
+             * language pairs with Terms.
+             */}
+            <Consent
+              id="sms-consent"
+              className="mt-4"
+              on="card"
+              checked={smsConsent}
+              onChange={setSmsConsent}
+              detail={SMS_CONSENT_TERMS}
+              links={
+                <>
+                  <InlineAction href="/privacy" external>Privacy Policy</InlineAction>
+                  <InlineAction href="/terms" external>Terms</InlineAction>
+                </>
+              }
+            >
+              {SMS_CONSENT_AGREEMENT}
+            </Consent>
 
             <p className="mt-3 text-[13px] leading-relaxed text-muted">
               {gate?.required && gate.sendable
@@ -564,48 +489,29 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 : "We'll send a 6-digit code to confirm the number when you finish."}
             </p>
 
-            {/**
-             * The secondary route, in her exact words. *"Use 'Share without
-             * joining for now' as the secondary action. Do not use 'Continue
-             * anonymously,' because that implies the founding route is not
-             * private."*
-             *
-             * It only switches which block is shown; the saved answers are
-             * untouched either way, which is her *"both routes must preserve
-             * saved answers and continue from the same point."*
-             */}
-            {/**
-             * A button and a link side by side, and they used to sit on
-             * different lines: a browser centres a button's own label inside its
-             * box while a blockified anchor leaves the text at the top, so two
-             * 44px boxes aligned by `items-center` still had their labels
-             * 11.5px apart (measured in the DOM, not guessed). Both come from
-             * `TextAction` now, which owns the box for either element.
-             */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <TextAction tone="quiet" onClick={() => setAnonymous(true)}>
+            <div className="mt-3">
+              <TextAction onClick={() => setAnonymous(true)} tone="quiet">
                 Share without joining for now
-              </TextAction>
-              {/* The one privacy link she asked to keep. */}
-              <TextAction tone="quiet" href="/privacy" external>
-                Learn more about privacy
               </TextAction>
             </div>
           </Panel>
         )}
 
         {(canResume || alreadySaved) && (
-          <p className="mt-6 rounded-2xl border border-green/25 bg-green-wash p-4 text-[14.5px] leading-relaxed text-green-deep">
-            {alreadySaved
-              ? "Your profile is already saved on this phone."
-              : "You have answers saved on this phone from earlier."}{" "}
-            <InlineAction onClick={startOver}>
-              {alreadySaved ? "Start a fresh one" : "Start over instead"}
-            </InlineAction>
-            .
-          </p>
+          <Panel className="mt-6" tone="positive">
+            <p className="text-[14.5px] leading-relaxed text-green-deep">
+              {alreadySaved
+                ? "Your profile is already saved on this phone."
+                : "You have answers saved on this phone from earlier."}{" "}
+              <InlineAction onClick={startOver}>
+                {alreadySaved ? "Start a fresh one" : "Start over instead"}
+              </InlineAction>
+              .
+            </p>
+          </Panel>
         )}
       </ScreenBody>
+
 
       <ScreenDock stickyOnDesktop>
         {alreadySaved ? (
@@ -630,7 +536,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               ? "Continue where you left off"
               : anonymous
                 ? "Start — about two minutes"
-                : "Join the founding network"}
+                : "Start — about two minutes"}
             <ArrowRight />
           </Button>
         )}
@@ -638,102 +544,21 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
          * *"The footer must not create a third competing action."*
          *
          * It never was one — it is a line of text — but it did read as a third
-         * offer when the card above already held two, so it now says only what
-         * the button needs, and nothing when the button is ready.
+         * offer when the card above already held two, so it says only what the
+         * button needs.
+         *
+         * **And nothing at all once the button is ready** (2 Sep, client): "No
+         * app. No account. No password." was a reassurance about *signing up*,
+         * printed under a button that by then says "Continue where you left
+         * off" — so it was answering a worry the parent had already moved past,
+         * in the one slot where the screen should be quiet.
          */}
-        <p className="py-3 text-center text-[12.5px] text-muted">
-          {canBegin
-            ? "No app. No account. No password."
-            : "Add your name and number, and tick the box, to join."}
-        </p>
+        {!canBegin && (
+          <p className="py-3 text-center text-[12.5px] text-muted">
+            Add your name and number, and tick the box, to join.
+          </p>
+        )}
       </ScreenDock>
     </Screen>
-  );
-}
-
-function PromiseRow({
-  icon,
-  title,
-  body,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  body: string;
-}) {
-  return (
-    <li className="flex gap-3.5 rounded-2xl border border-bark/70 bg-card/60 p-4">
-      <span className="mt-0.5 shrink-0 text-green">{icon}</span>
-      <span>
-        <span className="block text-[15.5px] font-semibold">{title}</span>
-        <span className="mt-0.5 block text-[14px] leading-snug text-muted">
-          {body}
-        </span>
-      </span>
-    </li>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
-      <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.6" />
-      <path
-        d="M10 5.8V10l3 1.8"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function TapIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
-      <path
-        d="M8 9V4.6a1.6 1.6 0 0 1 3.2 0V9m0 0V7.8a1.5 1.5 0 0 1 3 0V9m0 0a1.5 1.5 0 0 1 3 0v3.4A4.6 4.6 0 0 1 12.6 17h-1.2a4.4 4.4 0 0 1-3.3-1.5l-3-3.4a1.6 1.6 0 0 1 2.3-2.2L8 10.6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function ShieldIcon() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
-      <path
-        d="M10 2.8 4.4 4.9v4.6c0 3.3 2.3 6.3 5.6 7.6 3.3-1.3 5.6-4.3 5.6-7.6V4.9L10 2.8Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7.6 10.1 9.4 12l3.2-3.6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/**
- * The list marker for the "what joining enables" card — the same device as
- * `CaregiverFlow.tsx`'s `Tick`: a small dot, not a checkmark svg, because on a
- * light card four short claims read better as a plain list than as four ticked
- * boxes (a checkmark reads as "done", and nothing here has been completed yet).
- * `mt-[0.45rem]` lines it up with the first line of text rather than the
- * vertical centre of a wrapped one.
- */
-function Dot() {
-  return (
-    <span
-      aria-hidden="true"
-      className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-green"
-    />
   );
 }

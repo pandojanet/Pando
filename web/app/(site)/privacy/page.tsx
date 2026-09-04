@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         <a href="mailto:hello@pando.is">hello@pando.is</a> and a person will answer.
       </p>
 
-      <h3 id="collect">Information we collect</h3>
+      <h2 id="collect">Information we collect</h2>
       <ul>
         <li>
           <strong>Contact and profile information</strong> you provide: your name,
@@ -61,7 +61,7 @@ export default function PrivacyPage() {
         </li>
       </ul>
 
-      <h3 id="use">How we use it</h3>
+      <h2 id="use">How we use it</h2>
       <ul>
         <li>
           To answer your questions and route them to parents whose experience is
@@ -79,7 +79,7 @@ export default function PrivacyPage() {
         <li>To keep the service safe, prevent abuse, and comply with law.</li>
       </ul>
 
-      <h3 id="sms">SMS consent and mobile information</h3>
+      <h2 id="sms">SMS consent and mobile information</h2>
       <div className="my-3.5 rounded-xl border border-gold-line bg-gold-wash px-5 py-4">
         <p className="mb-0!">
           <strong>
@@ -96,7 +96,7 @@ export default function PrivacyPage() {
         replying STOP.
       </p>
 
-      <h3 id="share">What we share</h3>
+      <h2 id="share">What we share</h2>
       <ul>
         <li>
           <strong>With other parents:</strong> when you contribute a recommendation,
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
         cross-context behavioral advertising.
       </p>
 
-      <h3 id="retention">Retention and deletion</h3>
+      <h2 id="retention">Retention and deletion</h2>
       <p>
         We keep your information while your account is active and as needed to
         operate the service. You can request deletion of your data at any time by
@@ -135,7 +135,7 @@ export default function PrivacyPage() {
         complete, subject to records we’re legally required to keep.
       </p>
 
-      <h3 id="choices">Your choices</h3>
+      <h2 id="choices">Your choices</h2>
       <ul>
         <li>
           Reply <strong>STOP</strong> to stop all text messages.
@@ -151,7 +151,7 @@ export default function PrivacyPage() {
         </li>
       </ul>
 
-      <h3 id="children">Children</h3>
+      <h2 id="children">Children</h2>
       <p>
         Pando is a service for parents and guardians aged 18 and over. It is not
         directed to children, and we do not knowingly collect personal information
@@ -159,14 +159,14 @@ export default function PrivacyPage() {
         limited to what’s needed for relevant recommendations (such as age ranges).
       </p>
 
-      <h3 id="changes">Changes</h3>
+      <h2 id="changes">Changes</h2>
       <p>
         If we make material changes to this policy, we’ll update this page and note
         the new effective date. Significant changes affecting SMS consent will be
         communicated before they take effect.
       </p>
 
-      <h3 id="contact">Contact</h3>
+      <h2 id="contact">Contact</h2>
       <p>
         Pando Systems, Inc · Pasadena, California ·{" "}
         <a href="mailto:hello@pando.is">hello@pando.is</a>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
 import { checkVerification, VERIFY_COOKIE } from "@/lib/server/verify";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * POST /api/seed/verify/check — confirm the code.
@@ -15,6 +16,12 @@ import { checkVerification, VERIFY_COOKIE } from "@/lib/server/verify";
  */
 
 export async function POST(request: Request) {
+  /* Looser than the send: a wrong code is free to us, and the per-phone rule
+     already ends the attempt after three guesses. This only bounds somebody
+     working through many numbers at once. */
+  const limited = rateLimited(request, "verify_check");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as { code?: unknown } | null;
   const code = typeof raw?.code === "string" ? raw.code.replace(/\D/g, "") : "";
 

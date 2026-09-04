@@ -41,21 +41,46 @@ export function PandoMark({
   );
 }
 
+/**
+ * The mark and the word, locked up. The **only** place that pairing is written.
+ *
+ * It had been hand-drawn twice more — `BrandPanel` at `1.1rem`, the site header
+ * at `1.4rem` with a `1.8rem` mark — so the logo existed in three sizes that no
+ * single decision had chosen. A logo is the one element in a product that must
+ * not be approximate.
+ *
+ * `size` **selects** both halves rather than letting a caller append a height:
+ * the old `markClassName` prop put `h-6` and the override in the same Tailwind
+ * layer, where output order decides and the string does not (the `cn()` trap
+ * `Chip.tsx` documents). No caller ever used it, so it was a loaded gun with
+ * nothing pointing at it — removed rather than fixed.
+ */
 export function Wordmark({
   className,
   tone = "dark",
-  markClassName,
+  size = "default",
   pulse,
 }: {
   className?: string;
   tone?: "dark" | "light";
-  markClassName?: string;
+  /** `lead` is the site header, where the logo is the page's own masthead. */
+  size?: "default" | "lead";
   pulse?: boolean;
 }) {
+  const lead = size === "lead";
   return (
-    <span className={cn("flex items-center gap-2", className)}>
-      <PandoMark className={cn("h-6", markClassName)} tone={tone} pulse={pulse} />
-      <span className="font-display text-[1.15rem] font-bold tracking-[-0.02em]">
+    <span className={cn("flex items-center gap-2", lead && "gap-2.5", className)}>
+      <PandoMark
+        className={lead ? "h-[1.8rem]" : "h-6"}
+        tone={tone}
+        pulse={pulse}
+      />
+      <span
+        className={cn(
+          "font-display font-bold tracking-[-0.02em]",
+          lead ? "text-[1.4rem]" : "text-card-title",
+        )}
+      >
         Pando
       </span>
     </span>

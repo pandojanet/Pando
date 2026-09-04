@@ -3,6 +3,7 @@
 import { cn } from "@/lib/cn";
 import { PandoMark } from "@/components/ui/Logo";
 import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { recapRows } from "@/lib/seed-chat/engine";
 import type { Script, Submission } from "@/lib/seed-chat/types";
 
@@ -139,14 +140,15 @@ export function CardRecap({
             </dt>
             <dd className="min-w-0 flex-1 text-[15px] leading-snug">{row.value}</dd>
             {onEditField && (
-              <button
-                type="button"
+              <TextAction
+                tone="quiet"
+                underline={false}
                 onClick={() => onEditField(row.field)}
                 aria-label={`Edit ${row.label.toLowerCase()}`}
-                className="-my-1 -mr-1 h-11 shrink-0 rounded-full px-2 text-[13px] font-semibold text-muted transition-colors hover:text-green-deep"
+                className="-my-1 -mr-1 shrink-0 px-2"
               >
                 Edit
-              </button>
+              </TextAction>
             )}
           </div>
         ))}
@@ -177,14 +179,12 @@ export function CardRecap({
                 ? "Kept on this phone until you finish."
                 : "Received. Not in the network yet — a person reads it first."}
           </span>
+          {/* Was `h-9` — a 36px target, the smallest in the chat, on the one
+              control a parent reaches for after something already failed. */}
           {onRetry && (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="h-9 rounded-full px-3 text-[13.5px] font-semibold text-green-deep"
-            >
+            <TextAction underline={false} onClick={onRetry} className="px-3">
               Try again
-            </button>
+            </TextAction>
           )}
         </div>
       )}

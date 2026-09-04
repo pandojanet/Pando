@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { TextAction } from "@/components/ui/TextAction";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { cn } from "@/lib/cn";
 import { PhoneField } from "@/components/ui/PhoneField";
@@ -53,13 +55,14 @@ export function StepWidget({
             : `${script.label} · ${current} of ${total}`}
         </span>
         {canUndo && (
-          <button
-            type="button"
+          <TextAction
+            tone="quiet"
+            underline={false}
             onClick={onUndo}
-            className="-mr-2 h-11 rounded-full px-2 text-[13px] font-semibold text-muted transition-colors hover:text-green-deep"
+            className="-mr-2 px-2"
           >
             Change last answer
-          </button>
+          </TextAction>
         )}
       </div>
 
@@ -265,14 +268,16 @@ function ShortText({
 
   return (
     <>
-      <textarea
+      {/* The prompt is the label: it is the bubble the parent just read, so a
+          second visible copy would be the screen repeating itself. */}
+      <Field
+        label={step.prompt}
+        labelHidden
+        rows={2}
         value={value}
         onChange={(e) => setValue(e.target.value.slice(0, max))}
-        rows={2}
         enterKeyHint="enter"
         placeholder={step.placeholder}
-        aria-label={step.prompt}
-        className="w-full resize-none rounded-2xl border border-bark bg-card px-4 py-3 text-[16px] leading-snug outline-none placeholder:text-muted/60 focus:border-green"
       />
       <div className="mt-1 flex items-center justify-between gap-3">
         <span className="text-[12px] text-muted">
@@ -304,25 +309,28 @@ function NameFields({
   return (
     <>
       <div className="flex gap-2">
-        <input
+        <Field
+          label="Caregiver first name"
+          labelHidden
+          className="min-w-0 flex-1"
           value={first}
           onChange={(e) => setFirst(e.target.value.slice(0, 30))}
           placeholder="First name"
-          aria-label="Caregiver first name"
           autoComplete="off"
           enterKeyHint="next"
-          className="min-h-[52px] min-w-0 flex-1 rounded-2xl border border-bark bg-card px-4 text-[16px] outline-none placeholder:text-muted/60 focus:border-green"
         />
-        <input
+        <Field
+          label="Caregiver last initial"
+          labelHidden
+          className="w-[4.5rem]"
           value={initial}
           onChange={(e) =>
             setInitial(e.target.value.replace(/[^\p{L}]/gu, "").slice(0, 1).toUpperCase())
           }
           placeholder="R"
-          aria-label="Caregiver last initial"
+          align="center"
           autoComplete="off"
           enterKeyHint="done"
-          className="min-h-[52px] w-[4.5rem] rounded-2xl border border-bark bg-card text-center text-[16px] uppercase outline-none placeholder:text-muted/60 focus:border-green"
         />
       </div>
       <Button

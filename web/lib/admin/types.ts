@@ -26,8 +26,16 @@ export type AdminResource =
   | "consents"
   | "matching"
   | "blast_responses"
+  | "blasts"
+  | "blast_pool"
+  | "payments"
   | "answers"
   | "delivery"
+  | "conversations"
+  | "conversation"
+  | "freshness"
+  | "standing"
+  | "impact"
   | "audit";
 
 /**
@@ -225,6 +233,15 @@ export interface Overview {
     escalations: number;
     /** 2C — caregivers who registered themselves and are waiting to be matched. */
     pending_claims: number;
+    /**
+     * 14.9 — records a contributor withdrew, awaiting a retire-or-keep call.
+     *
+     * A **subset of `open_flags`**, so the two sidebar badges overlap on
+     * purpose — exactly as the flags row and the escalation row already do. What
+     * would have been wrong is leaving these countable only in the flags total,
+     * where "resolve" means "I have read this" and leaves the record answering.
+     */
+    withdrawn_records: number;
   };
   founding: { pending: number; approved: number };
   /**
@@ -243,6 +260,16 @@ export interface Overview {
     /** Claims about a named person. Human review only, never circulated. */
     named_allegation: number;
   };
+  /**
+   * 14.3 / 14.5 — the two numbers the nav needs about Network Asks.
+   *
+   * `open` is Asks a parent is still waiting on, which is what makes the blast
+   * manager a queue rather than a ledger. `refunds_owed` is the subset that
+   * involves money and is somebody's outstanding task — the only count in this
+   * payload that is deliberately shown in red on two different links, because
+   * it is one fact and both pages clear it.
+   */
+  blasts: { open: number; refunds_owed: number };
   /** §17.1 — records an admin has marked good enough to answer with. */
   answer_ready: number;
   drop_off: Array<{ step: string; reached: number }>;
@@ -680,6 +707,26 @@ export type AdminAction =
    */
   | { action: "share.answer_ready"; id: string; to: boolean }
   /**
+   * 14.9 — the two ways out of the freshness queue.
+   *
+   * `share.retire` sets the record to `rejected`, which takes it out of
+   * `shares_answerable` and so out of every answer. No new column and no
+   * migration: "not answerable" already had a name.
+   *
+   * `share.keep` clears the withdrawal flag and **leaves the record stale**.
+   * That is the honest middle: one parent withdrawing is evidence, others may
+   * still stand behind it, and the spec's answer to old knowledge is to *mark*
+   * it — so the record keeps answering while wearing its stale label rather
+   * than being quietly restored to fresh, which would assert the opposite of
+   * what the contributor said.
+   *
+   * Both carry the flag id as well as the record: clearing the queue and
+   * clearing the flag are one act, or the Flags page keeps insisting on
+   * something this page has dealt with.
+   */
+  | { action: "share.retire"; id: string; reason: string }
+  | { action: "share.keep"; id: string; reason: string }
+  /**
    * 7.6 — the admin rates a blast response, 1–5.
    *
    * Separate from approving it, because they are different judgements: a reply
@@ -738,6 +785,36 @@ export type AdminAction =
    */
   | { action: "matching.weight"; affinity_type: string; weight: number }
   | { action: "blast.send"; id: string }
+  /**
+   * 14.3 / 13.5 — open a Stripe checkout for a paid Ask.
+   *
+   * An admin action rather than something the parent's own flow does, for the
+   * pilot's duration: there is no consumer web channel for a Network Ask yet
+   * (that is M5's SMS path), so today a paid Ask is set up by a person who then
+   * sends the link on. The action returns the URL rather than redirecting,
+   * because the admin is not the one paying.
+   */
+  | { action: "blast.checkout"; id: string }
+  /**
+   * 14.3 — mark an Ask fulfilled, which is a judgement rather than a count.
+   *
+   * 7.7's guarantee turns on whether an answer was *useful*, and no query can
+   * decide that: three replies that all say "no idea, sorry" leave the guarantee
+   * owed. So the fulfillment flag the estimate asks for is a person's decision,
+   * and it carries a note for the same reason every other decision here does.
+   */
+  | { action: "blast.fulfil"; id: string; note: string }
+  /**
+   * 14.5 / 13.7 — the two halves of a refund, kept apart on purpose.
+   *
+   * `refund_due` is "somebody should refund this"; `refund` is "I have". They
+   * happen at different times and often by different people — whoever works the
+   * blast queue can see the window closed with nothing approved, and whoever
+   * handles money does the rest. One button would mean the person noticing has
+   * to also be the person authorised.
+   */
+  | { action: "blast.refund_due"; id: string; reason: string }
+  | { action: "blast.refund"; id: string; reason: string }
   | { action: "answer.approve"; id: string }
   | { action: "answer.send"; id: string }
   | { action: "answer.reject"; id: string; reason: string }
@@ -876,3 +953,329 @@ export interface AdminQueryResult<T> {
   rows: T;
   total?: number;
 }
+
+/**
+ * 14.1 — one parent's message history.
+ *
+ * ## What this page can and cannot show, and why that is not a gap
+ *
+ * The estimate says *"all conversations, inbound and outbound"*, which reads as
+ * a transcript. **`message_log` stores no message body**, on purpose: its
+ * columns are direction, category, template, the provider's id, the delivery
+ * status and the time. So this shows the *shape* of a conversation — who, when,
+ * which way, what kind of message, and whether it arrived — and never the text.
+ *
+ * That is invariant 7 holding at the schema level rather than at a log line, and
+ * storing bodies to fill this page would be a privacy decision dressed as a
+ * feature. The page says so out loud rather than looking broken.
+ *
+ * It is still the answer to the questions an admin actually has: did Pando text
+ * her, did it arrive, did she reply, and how often has she been asked lately —
+ * which is the same arithmetic the response-rate governor acts on.
+ */
+export interface ConversationRow {
+  person_id: string;
+  name: string | null;
+  phone_masked: string | null;
+  /** Newest activity in either direction — what the list is ordered by. */
+  last_at: string;
+  /** Which way the newest message went, so a list of waiting replies reads. */
+  last_direction: "in" | "out";
+  last_template: string | null;
+  sent: number;
+  received: number;
+  /** Proactive messages in the last 30 days — the window the governor uses. */
+  outreach_30: number;
+  /** Replies that named an outbound message, over the same window. */
+  answered_30: number;
+  /** Anything the carrier reported as failed. Zero is the ordinary case. */
+  failed: number;
+  is_test: boolean;
+}
+
+export interface ConversationsResult {
+  rows: ConversationRow[];
+  /** Messages with no person attached — a cold inbound, or a deleted profile. */
+  unattributed: number;
+}
+
+/** One message in the history. No body, per the note above. */
+export interface ConversationMessage {
+  id: string;
+  direction: "in" | "out";
+  category: string;
+  template: string | null;
+  sent_at: string;
+  /** 12.5's delivery status, for an outbound one. */
+  status: string | null;
+  error_code: number | null;
+  /** True when this inbound message answered an outbound one (8.4's signal). */
+  answered_something: boolean;
+}
+
+export interface ConversationDetail {
+  person_id: string;
+  name: string | null;
+  phone_masked: string | null;
+  /** Their own agreement, so the history can be read against what they allowed. */
+  monthly_contact_allowance: number | null;
+  allowance_mode: "fixed" | "as_relevant";
+  opted_out: boolean;
+  messages: ConversationMessage[];
+}
+
+/**
+ * 14.9 — a record a contributor said is no longer worth recommending.
+ *
+ * 10.2 has been raising `recommendation_withdrawn` since 1 Sep and marking the
+ * record stale, deliberately **without** rejecting it: one parent's changed mind
+ * is evidence, and three others may still stand behind it. That left a decision
+ * nobody had a screen for, which is this row's whole subject — the estimate's
+ * words are "for retire-or-re-blast decisions".
+ */
+export interface FreshnessOutcomeRow {
+  share_id: string;
+  name: string;
+  kind: string;
+  neighborhoods: string[];
+  /** Who said no, and when they were asked. */
+  said_no_by: string | null;
+  said_no_at: string | null;
+  /** How many parents still stand behind it — the reason this is a decision. */
+  firsthand_count: number;
+  /** Whether any of them would still recommend it (`yes` / `yes_with_caveats`). */
+  recommending_count: number;
+  last_confirmed_at: string | null;
+  freshness_state: string;
+  status: string;
+  is_test: boolean;
+}
+
+/**
+ * 14.4 — a contributor's standing: counters, response rate, tier and limits.
+ *
+ * The four things the row names, and each comes from somewhere different: the
+ * counters from `impact_events` (9.3), the response rate from `message_log`
+ * (8.4), the tier from `tierFor` over those events (9.4), and the limits from
+ * what the parent themselves agreed to (P14). Until this existed `standingsFor`
+ * had **no consumer at all** — the ladder was computed and shown nowhere.
+ */
+export interface StandingRow {
+  person_id: string;
+  name: string | null;
+  phone_masked: string | null;
+  /** `member` … `founding`. Computed every read, never stored — see `tiers.ts`. */
+  tier: string;
+  /** The next rung, for the admin only. Null at the top, or when founding. */
+  next_tier: string | null;
+  /** Lifetime quality responses. Admin-side; never shown to a contributor. */
+  equivalents: number;
+  contributions_approved: number;
+  asks_answered: number;
+  freshness_confirmed: number;
+  /** Times a recommendation of theirs reached a parent. Worth 0 toward a tier. */
+  answers_used: number;
+  /** 8.4's window: proactive messages in 30 days, and how many they answered. */
+  asked_30: number;
+  answered_30: number;
+  /** Null until there are enough requests to mean anything (`RESPONSE_MIN_SAMPLE`). */
+  response_rate: number | null;
+  monthly_contact_allowance: number | null;
+  allowance_mode: "fixed" | "as_relevant";
+  /** True when the governor would lower what they are asked. */
+  governed: boolean;
+  is_test: boolean;
+}
+
+/**
+ * 14.6 — one thank-you loop, end to end.
+ *
+ * 9.1 asks the parent who received an answer whether it helped; 9.2 thanks the
+ * contributors whose recommendation it was. This is the pair as one row, because
+ * reading them apart is what makes the loop impossible to audit: a "yes" with no
+ * thank-you sent is the interesting case, and it is invisible from either half.
+ */
+export interface ImpactEventRow {
+  answer_id: string;
+  question: string;
+  asker: string | null;
+  sent_at: string | null;
+  /** When 9.1's prompt went out. Null means it has not been asked yet. */
+  helped_asked_at: string | null;
+  /** Null is **not** no — it is a parent who did not reply. */
+  helped: boolean | null;
+  /** The records the answer was composed from, and who is behind them. */
+  records: Array<{ share_id: string; name: string }>;
+  /** Contributors owed or paid a thank-you for this answer. */
+  contributors: Array<{
+    person_id: string;
+    name: string | null;
+    /** When they were last thanked at all — 9.2's week is measured from this. */
+    last_thanked_at: string | null;
+  }>;
+  is_test: boolean;
+}
+
+export interface ImpactResult {
+  rows: ImpactEventRow[];
+  /** Counts for the filter tabs, computed once in SQL rather than per render. */
+  totals: {
+    answered_yes: number;
+    answered_no: number;
+    /** Asked and still silent. A silence is never recorded as a no (9.1). */
+    awaiting: number;
+    /** Sent, in window, and never asked — the thing worth noticing. */
+    unasked: number;
+  };
+}
+
+/**
+ * 14.3 — one Network Ask, as the blast manager needs to see it.
+ *
+ * The estimate's row is the fullest in M14: "preview the selected recipient
+ * pool, read the responses, rate their quality, pick the best, and manage
+ * fulfillment and refund flags." Three of those already had a home — the
+ * responses, their ratings and the promotion decision are `/admin/responses`
+ * (7.6/7.9, and 14.8 under its own number). What had **no** home was the blast
+ * itself: there was no list of them, no way to see the pool before it was sent,
+ * and no way to say "this one was fulfilled" or "this one owes a refund".
+ *
+ * So this row is the blast, its money, its pool and its replies in one shape,
+ * and the page is where the three verbs that were missing live.
+ */
+export interface BlastRow {
+  id: string;
+  question_text: string;
+  category: string | null;
+  neighborhood: string | null;
+  /** `passive` | `board` | `targeted` | `last_minute` — the 8.18 four. */
+  tier: string;
+  /** The state of the *question*. See `payment_status` for the money. */
+  status: string;
+  /** Set at creation for Last-Minute Care, and by `needsHumanReview`. */
+  human_review: boolean;
+  pool_target: number;
+  expires_at: string | null;
+  fulfilled_at: string | null;
+  created_at: string;
+  asker: { id: string; name: string | null; phone_masked: string | null } | null;
+  /**
+   * The state of the money, deliberately separate from `status`: a blast can be
+   * `fulfilled` and `refund_due` at once, because the guarantee is about whether
+   * an answer was *useful* rather than whether one arrived.
+   */
+  payment_status: string;
+  /** What was actually charged, frozen at checkout (`drizzle/0029`). */
+  price_cents: number;
+  paid_at: string | null;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  /** Whether a credit paid for it. The guarantee is then a credit, not money. */
+  credit_funded: boolean;
+  /** How many were asked, how many answered, and how many answers were kept. */
+  recipients: number;
+  responded: number;
+  passed: number;
+  approved_responses: number;
+  is_test: boolean;
+}
+
+/**
+ * 14.3's pool preview — who Pando *would* ask, before anybody is asked.
+ *
+ * The same shape the 6.7 harness shows, and for the same reason: a pool that
+ * cannot be argued with is a pool nobody checks. It is read through
+ * `selectPool`, so what is previewed is what would actually be contacted —
+ * matcher first, then the opt-out list, then the M8 protection rules per person.
+ *
+ * **Previewing sends nothing**, which is why it is a read resource rather than
+ * an action: the estimate asks to "preview the selected recipient pool", and a
+ * preview with a side effect is not one.
+ */
+export interface BlastPoolResult {
+  blast_id: string;
+  wanted: number;
+  /** Everyone who would be contacted, best match first. */
+  chosen: Array<{
+    person_id: string;
+    name: string | null;
+    phone_masked: string | null;
+    score: number;
+    reasons: Array<{ kind: string; value: string; points: number }>;
+  }>;
+  /**
+   * Ranked but not asked, with the rule that stopped each one. Called `held` to
+   * match `PoolResult` rather than renamed to something friendlier: two names
+   * for one list is how a page and the pool it previews start disagreeing.
+   *
+   * A row here is the system working — a contributor inside their 48-hour gap,
+   * or over their monthly allowance — which is why the page says so in words.
+   */
+  held: Array<{ person_id: string; name: string | null; score: number; reason: string }>;
+  /** 6.6 — fewer than the tier promised. */
+  cold: boolean;
+  /** Set when the pool is short or the requirements are stacked (7.3). */
+  human_review: { required: boolean; reason: string | null };
+}
+
+/**
+ * 14.5 — "paid blasts, credit-funded blasts, status, and refund needs."
+ *
+ * Its own page rather than a column on 14.3, because it answers a different
+ * question: 14.3 asks "how is this Ask going", and this asks "what does Pando
+ * owe, and to whom". The rows overlap; the reading does not.
+ *
+ * `owed` is computed by `refundOwed` in `lib/payments.ts` rather than here, so
+ * the page and the action cannot disagree about whether a refund is due.
+ */
+export interface PaymentRow {
+  blast_id: string;
+  question_text: string;
+  tier: string;
+  status: string;
+  payment_status: string;
+  price_cents: number;
+  paid_at: string | null;
+  refunded_at: string | null;
+  refund_reason: string | null;
+  credit_funded: boolean;
+  asker: { id: string; name: string | null } | null;
+  approved_responses: number;
+  expires_at: string | null;
+  /** Days since payment, for the ~60-day manual window (13.7). */
+  age_days: number | null;
+  is_test: boolean;
+}
+
+export interface PaymentsResult {
+  rows: PaymentRow[];
+  /**
+   * Whether Stripe is switched on at all, and in which mode.
+   *
+   * Booleans and an enum only — never a key or a prefix, which is the sort of
+   * thing that ends up in a screenshot. The page needs it to avoid offering a
+   * refund button that could only ever fail.
+   */
+  stripe: {
+    provisioned: boolean;
+    webhook_configured: boolean;
+    mode: "live" | "test" | null;
+    prices: Array<{ tier: string; label: string; price: string }>;
+  };
+  /** Cents, over the rows shown. Reported rather than recomputed per page. */
+  totals: { paid_cents: number; refunded_cents: number; refund_due_cents: number };
+}
+
+/**
+ * How many audit entries a read returns.
+ *
+ * Shared because it was two numbers that disagreed: the page sent
+ * `{ limit: 200 }` and `auditRows` is a hard `limit 500` that never read the
+ * param — so the number on the client was fiction, and the reader was never told
+ * the list ends at all. That is the dead-payload fault CLAUDE.md already records
+ * costing us once (estimate 2.2).
+ *
+ * A client page cannot import from `lib/server/*`, so the constant lives here,
+ * where both sides already import their types from.
+ */
+export const AUDIT_PAGE_SIZE = 500;

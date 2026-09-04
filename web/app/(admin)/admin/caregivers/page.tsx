@@ -8,13 +8,14 @@ import {
   Empty,
   ErrorNote,
   Field,
-  NotConfigured,
-  PageHead,
-  ResultNote,
-  ProvenanceBadge,
-  SampleBanner,
   inputClass,
+  Loading,
+  NotConfigured,
   optionLabel,
+  PageHead,
+  ProvenanceBadge,
+  ResultNote,
+  SampleBanner,
   slugLabel,
   when,
 } from "@/components/admin/ui";
@@ -107,6 +108,14 @@ export default function CaregiversPage() {
   /** A restricted note is fetched one at a time, on request, and never listed. */
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [noteBody, setNoteBody] = useState<string | null>(null);
+  /**
+   * Why the failure needs its own state: `noteBody` is `null` while loading, so
+   * a rejected read left the modal reading **"Loading…" forever** — on the one
+   * panel in the admin whose contents are a private note about a named person,
+   * where an admin waiting on a spinner concludes the note is missing rather
+   * than that the request failed. `readRestrictedNote` had no `.catch` at all.
+   */
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const rows = useMemo(
     () => (caregivers.rows ?? []).filter((r) => !r.is_test),
@@ -148,7 +157,7 @@ export default function CaregiversPage() {
       <div className="space-y-5">
         <Card title="Nominations">
           {caregivers.loading && rows.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+            <Loading />
           ) : !caregivers.configured && rows.length === 0 ? (
             /* This page reads two resources; sample mode has to cover both. */
             <NotConfigured
@@ -235,7 +244,7 @@ export default function CaregiversPage() {
                         {answerable ? (
                           <Badge
                             tone="green"
-                            title="She said yes and you switched her on — families can see her"
+                            hint="She said yes and you switched her on — families can see her"
                           >
                             Families can see her
                           </Badge>
@@ -392,7 +401,16 @@ export default function CaregiversPage() {
                                 onSelect={() => {
                                   setNoteFor(row.id);
                                   setNoteBody(null);
-                                  void readRestrictedNote(row.id).then(setNoteBody);
+                                  setNoteError(null);
+                                  void readRestrictedNote(row.id)
+                                    .then(setNoteBody)
+                                    .catch((err: unknown) =>
+                                      setNoteError(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "The note could not be read.",
+                                      ),
+                                    );
                                 }}
                               >
                                 Read private note
@@ -619,40 +637,6 @@ export default function CaregiversPage() {
                       </RecordDrawer>
                     )}
 
-                    {/**
-                      * The one panel on this page that is a **modal** rather
-                      * than an inline drawer (invariant 12). A private note
-                      * about a named person, whose read is itself audited,
-                      * should be the only thing on the screen while it is open
-                      * — not something left expanded behind other rows, or read
-                      * over a shoulder while somebody works the rest of the
-                      * queue. Everything else here stays inline, because taking
-                      * a reader off a queue they are working down is a cost.
-                      */}
-                    <Dialog
-                      open={noteFor === row.id}
-                      onClose={() => {
-                        setNoteFor(null);
-                        setNoteBody(null);
-                      }}
-                      title="Restricted — this screen only"
-                      description="Never shown to a family or to the caregiver, and never summarized by a model. Opening it is recorded."
-                      footer={
-                        <Button
-                          tone="secondary"
-                          onClick={() => {
-                            setNoteFor(null);
-                            setNoteBody(null);
-                          }}
-                        >
-                          Close
-                        </Button>
-                      }
-                    >
-                      <p className="whitespace-pre-line text-[14px] leading-relaxed">
-                        {noteBody ?? "Loading…"}
-                      </p>
-                    </Dialog>
                   </RecordCard>
                 );
               })}
@@ -738,6 +722,56 @@ export default function CaregiversPage() {
           )}
         </Card>
       </div>
+
+      {/**
+       * The one panel on this page that is a **modal** rather than an inline
+       * drawer (invariant 12). A private note about a named person, whose read
+       * is itself audited, should be the only thing on screen while it is open —
+       * not left expanded behind other rows, or read over a shoulder while
+       * somebody works the rest of the queue. Everything else here stays inline,
+       * because taking a reader off a queue they are working down is a cost.
+       *
+       * **One dialog for the page, not one per row.** It used to be rendered
+       * inside the `.map()`, so a queue of thirty caregivers mounted thirty
+       * `<dialog>` elements, thirty `useId`s and thirty effects to keep
+       * twenty-nine of them closed — and only one can ever be open, because
+       * `noteFor` is a single id. `noteFor` is now what the dialog reads
+       * directly.
+       */}
+      <Dialog
+        open={noteFor !== null}
+        onClose={() => {
+          setNoteFor(null);
+          setNoteBody(null);
+          setNoteError(null);
+        }}
+        title="Restricted — this screen only"
+        description="Never shown to a family or to the caregiver, and never summarized by a model. Opening it is recorded."
+        footer={
+          <Button
+            tone="secondary"
+            onClick={() => {
+              setNoteFor(null);
+              setNoteBody(null);
+              setNoteError(null);
+            }}
+          >
+            Close
+          </Button>
+        }
+      >
+        {/* Three states, not two: loading, failed, and read. Folding the first
+            two together is what produced the permanent spinner. */}
+        {noteError ? (
+          <ErrorNote>{noteError}</ErrorNote>
+        ) : noteBody === null ? (
+          <Loading inline />
+        ) : (
+          <p className="whitespace-pre-line text-[14px] leading-relaxed">
+            {noteBody}
+          </p>
+        )}
+      </Dialog>
     </>
   );
 }

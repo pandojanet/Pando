@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 
 /**
@@ -22,21 +23,33 @@ export function ConfirmBackWidget({
 }) {
   const [text, setText] = useState("");
   const ready = text.trim().length > 0;
+  const box = useRef<HTMLTextAreaElement>(null);
+
+  /**
+   * Focus after paint, not `autoFocus`.
+   *
+   * `autoFocus` fires during commit, before the widget has been laid out, so on
+   * iOS the keyboard starts rising against a dock that is still moving — the
+   * rule `mobile-first-ui` states and `OtherSheet` already implements. A frame
+   * later the box is where it will stay and the keyboard comes up under it.
+   */
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => box.current?.focus());
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   return (
     <div>
-      <label htmlFor="confirm-back" className="sr-only">
-        Anything to add
-      </label>
-      <textarea
+      <Field
         id="confirm-back"
+        label="Anything to add"
+        labelHidden
+        rows={3}
+        ref={box}
         value={text}
         onChange={(e) => setText(e.target.value.slice(0, 500))}
-        rows={3}
-        autoFocus
         enterKeyHint="done"
         placeholder="A sentence is plenty"
-        className="min-h-[84px] w-full rounded-2xl border border-bark bg-card px-4 py-3 text-[16px] leading-relaxed outline-none placeholder:text-muted/60 focus:border-green"
       />
       <div className="mt-2.5 flex items-center gap-3">
         <Button onClick={() => onAnswer(text)} disabled={!ready} full>

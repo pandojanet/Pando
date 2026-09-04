@@ -58,6 +58,41 @@
   --font-sans: var(--font-instrument), -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
 
+  /* The type scale, named for the role rather than the size.
+     It existed only as prose in .claude/skills/pando-design-system until now,
+     which is exactly why it drifted: measured at **52 distinct font sizes**
+     across 588 `text-[…]` values, against the eight steps the skill names —
+     and 82 of those below the skill's own 12.5px floor ("if something needs to
+     be smaller than 12.5px, it needs to be cut instead").
+
+     A role name is deliberate. `--text-sm` invites a judgement call about how
+     small a thing is; `--text-help` says what the thing *is*, and there is only
+     ever one right answer to that. Adding a step is a design decision made
+     here, not a bracket value added in a component at 2am. */
+  --text-eyebrow: 11.5px;
+  --text-eyebrow--line-height: 1.3;
+  --text-dock: 12.5px;
+  --text-dock--line-height: 1.45;
+  --text-help: 14px;
+  --text-help--line-height: 1.5;
+  --text-control: 15px;
+  --text-control--line-height: 1.35;
+  /* Separate from `control` on purpose: iOS Safari zooms the whole page when a
+     focused input is under 16px, so the field size cannot be the control size
+     even though the two read as one step. `@layer base` enforces the floor; this
+     is the token that lets a component say it deliberately. */
+  --text-field: 16px;
+  --text-body: 16.5px;
+  --text-body--line-height: 1.55;
+  --text-card-title: 1.15rem;
+  --text-card-title--line-height: 1.25;
+  --text-step-title: 1.7rem;
+  --text-landing: 2rem;
+
+  /* One eyebrow, not nine. That is the measured count of distinct `tracking`
+     values on what is a single component. */
+  --tracking-eyebrow: 0.15em;
+
   /* Motion — one easing for everything, so the app moves as one thing */
   --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
   --animate-step-in: step-in 0.34s var(--ease-soft) both;
@@ -119,6 +154,35 @@
     }
     to {
       opacity: 1;
+    }
+  }
+
+  /* ── Leaving ──────────────────────────────────────────────────────────
+     Every keyframe above is an *entrance*, which is the whole reason the app
+     had no exit animation anywhere: the sheet slid up over a quarter of a
+     second and then vanished between two frames. CSS can animate something
+     leaving perfectly well — what it cannot do on its own is keep the element
+     mounted long enough. `usePresence` (lib/use-presence.ts) is that half. */
+  --animate-fade-out: fade-out 0.2s linear both;
+  --animate-sheet-down: sheet-down 0.22s var(--ease-soft) both;
+  --animate-sink: sink 0.22s var(--ease-soft) both;
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes sheet-down {
+    to {
+      transform: translate3d(0, 100%, 0);
+    }
+  }
+  /* The desktop counterpart of `sheet-down`: the dialog is centred, so it
+     settles rather than slides off an edge it is nowhere near. */
+  @keyframes sink {
+    to {
+      opacity: 0;
+      transform: translate3d(0, 6px, 0);
     }
   }
   @keyframes pop {
@@ -221,6 +285,12 @@
    not components. Nothing else should use `.legal`.
    ─────────────────────────────────────────────────────────────── */
 @layer components {
+  /* `h2` because the page's own title is the `h1` and these are its sections —
+     as `h3` they skipped a level, so a screen reader's heading list read
+     "Privacy Policy" and then nine third-level items belonging to nothing.
+     `h3` keeps the same rule so a future client edit that types one is still
+     styled rather than silently rendering as body text. */
+  .legal h2,
   .legal h3 {
     font-family: var(--font-display);
     font-size: 1.1rem;

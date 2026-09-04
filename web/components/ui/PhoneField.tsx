@@ -60,11 +60,11 @@ export function PhoneField({
 
   return (
     <div>
-      <label htmlFor={id} className="block text-[15px] font-semibold">
+      <label htmlFor={id} className="block text-control font-semibold">
         {label}
       </label>
       {hint && (
-        <p id={`${id}-hint`} className="mt-1 text-[14px] leading-snug text-muted">
+        <p id={`${id}-hint`} className="mt-1 text-help leading-snug text-muted">
           {hint}
         </p>
       )}
@@ -86,7 +86,7 @@ export function PhoneField({
             /* 52px so the control clears the tap-target floor on its own, and
                `appearance-none` because native select chrome inside a field
                border reads as two nested inputs. */
-            className="min-h-[52px] appearance-none bg-transparent pl-4 pr-7 text-[16px] text-ink-soft outline-none"
+            className="min-h-[52px] appearance-none bg-transparent pl-4 pr-7 text-field text-ink-soft outline-none"
           >
             {PHONE_COUNTRIES.map((c) => (
               <option key={c} value={c}>
@@ -121,8 +121,17 @@ export function PhoneField({
             autoComplete="tel-national"
             enterKeyHint="done"
             placeholder={phonePlaceholder(country)}
-            aria-describedby={hint ? `${id}-hint` : undefined}
-            className="min-h-[52px] w-full bg-transparent pl-3.5 pr-11 text-[16px] outline-none placeholder:text-muted/60"
+            /* Both, and the second half is new: the "not a complete number yet"
+               line below had no `id`, was linked to nothing and carried no
+               role, so no screen reader ever reached it. `aria-invalid` was
+               used nowhere in this app at all. */
+            aria-invalid={started && !complete ? true : undefined}
+            aria-describedby={
+              [hint ? `${id}-hint` : null, started && !complete ? `${id}-error` : null]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
+            className="min-h-[52px] w-full bg-transparent pl-3.5 pr-11 text-field outline-none placeholder:text-muted/60"
           />
           {complete && (
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-green">
@@ -142,7 +151,7 @@ export function PhoneField({
 
       {/* Only once the picker and the digits disagree — never as they type. */}
       {started && !complete && (
-        <p className="mt-1.5 text-[14px] text-gold-ink">
+        <p id={`${id}-error`} className="mt-1.5 text-help text-gold-ink">
           That doesn&apos;t look like a complete {phoneCountryName(country)} mobile
           number yet.
         </p>

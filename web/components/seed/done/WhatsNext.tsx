@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
-import { InlineAction } from "@/components/ui/TextAction";
+import { Panel } from "@/components/ui/Panel";
+import { CopyButton } from "@/components/ui/CopyButton";
+import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { Wordmark } from "@/components/ui/Logo";
 import {
   Eyebrow,
@@ -42,11 +44,11 @@ export function WhatsNext() {
               otherwise read a list of things that happen to a submission Pando
               never received. */}
           {loaded && session && !completed && (
-            <p className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4 text-[14.5px] leading-relaxed text-gold-ink">
+            <Panel as="p" tone="warning" size="inset" className="mt-4 leading-relaxed text-gold-ink text-control">
               One thing is still open — the follow-up permission on the{" "}
               <InlineAction href="/done/ask">previous step</InlineAction>
               . Until that&apos;s answered, nothing below has started.
-            </p>
+            </Panel>
           )}
 
           <ol className="mt-5 space-y-2.5">
@@ -81,15 +83,12 @@ export function WhatsNext() {
 
           {session && <ReferralCard firstName={session.first_name ?? session.name} />}
 
-          <div className="mt-8 rounded-2xl border border-bark bg-card p-4">
-            <h3 className="text-[15.5px] font-semibold">
-              Thought of something later?
-            </h3>
-            <p className="mt-1 text-[14px] leading-relaxed text-muted">
+          <Panel size="inset" className="mt-8" title="Thought of something later?">
+            <p className="mt-1 leading-relaxed text-muted text-help">
               Open this same link again on this phone and pick up where you left off
               — no password, no account. One more recommendation is genuinely useful.
             </p>
-          </div>
+          </Panel>
 
           {loaded && !session && <NoSession />}
         </div>
@@ -103,13 +102,14 @@ export function WhatsNext() {
         >
           {count > 0 ? "Add one more" : "Share a recommendation"}
         </Link>
-        <Link
-          href="/profile"
-          className="mt-2 flex min-h-[48px] items-center justify-center text-[15px] font-semibold text-green-deep"
-        >
+        {/* One of three "secondary link under the dock" copies that predated
+            `TextAction`, at three different heights. 48px→44px and 15px→14px is
+            the design system's "Help / secondary" step, which is what the other
+            two were already close to. */}
+        <TextAction href="/profile" full className="mt-2">
           Review my answers
-        </Link>
-        <p className="py-2 text-center text-[12.5px] text-muted">
+        </TextAction>
+        <p className="py-2 text-center text-muted text-dock">
           hello@pando.is · Pasadena, CA
         </p>
       </ScreenDock>
@@ -128,7 +128,6 @@ export function WhatsNext() {
  * an open question in docs/spec-compliance-review.md.
  */
 function ReferralCard({ firstName }: { firstName: string | null }) {
-  const [copied, setCopied] = useState(false);
   const message =
     `I just joined Pando — it's a private network of local parents that answers the ` +
     `questions you'd normally ask in a group chat, except the answers come from ` +
@@ -143,34 +142,30 @@ function ReferralCard({ firstName }: { firstName: string | null }) {
       : "");
 
   return (
-    <div className="mt-8 rounded-2xl border border-bark bg-card p-4">
-      <h3 className="text-[15.5px] font-semibold">
-        Know another parent whose recommendations people trust?
-      </h3>
-      <p className="mt-1 text-[14px] leading-relaxed text-muted">
+    <Panel
+      size="inset"
+      className="mt-8"
+      title="Know another parent whose recommendations people trust?"
+    >
+      <p className="mt-1 leading-relaxed text-muted text-help">
         When someone you invite completes their profile and has a contribution
         approved, you earn a free Targeted Network Ask.
       </p>
-      <p className="mt-3 whitespace-pre-line rounded-2xl border border-bark bg-paper p-3 text-[14px] leading-relaxed">
-        {message}
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          navigator.clipboard
-            .writeText(message)
-            .then(() => {
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 2400);
-              track("seed_referral_copied");
-            })
-            .catch(() => setCopied(false));
-        }}
-        aria-live="polite"
-        className="mt-3 min-h-[44px] w-full rounded-full border border-green bg-card px-4 text-[15px] font-semibold text-green-deep"
+      <Panel
+        as="p"
+        tone="quiet"
+        size="inset"
+        className="mt-3 whitespace-pre-line leading-relaxed text-help"
       >
-        {copied ? "Copied — send it to one parent" : "Copy the invite"}
-      </button>
-    </div>
+        {message}
+      </Panel>
+      <CopyButton
+        className="mt-3"
+        text={message}
+        label="Copy the invite"
+        copiedLabel="Copied — send it to one parent"
+        onCopied={() => track("seed_referral_copied")}
+      />
+    </Panel>
   );
 }

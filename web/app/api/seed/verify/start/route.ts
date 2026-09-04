@@ -6,6 +6,7 @@ import {
   verificationSms,
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
+import { rateLimited } from "@/lib/server/rate-limit";
 import {
   devCodesEnabled,
   startVerification,
@@ -26,6 +27,14 @@ import {
  */
 
 export async function POST(request: Request) {
+  /* 15.4 — the tightest limit in the app, because this is the only endpoint
+     where every request that gets through costs money and carrier reputation.
+     The per-*phone* caps (§19: 3 sends an hour, then a 15-minute lock) are what
+     stop one number being spammed; this is what stops one machine spraying
+     many. */
+  const limited = rateLimited(request, "verify_start");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as {
     phone?: unknown;
     sms_consent?: unknown;
@@ -87,6 +96,12 @@ export async function POST(request: Request) {
     to: phone,
     body: verificationSms(started.code),
     category: "transactional",
+    /**
+     * Pinned to the real provider even while the Slack relay is on: a code in a
+     * test channel is a code the parent never gets. This is the only caller that
+     * sets it, and `npm run test:relay` asserts it stays that way.
+     */
+    purpose: "verification",
   });
 
   // Never the number, never the code.

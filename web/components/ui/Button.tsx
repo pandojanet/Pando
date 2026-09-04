@@ -22,7 +22,7 @@ const VARIANTS: Record<Variant, string> = {
 
 // 52px tall: comfortable for a thumb on a phone held one-handed.
 const BASE =
-  "inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full px-6 text-[16px] font-semibold " +
+  "inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full px-6 text-field font-semibold " +
   "transition-[transform,background-color,color,border-color] duration-150 active:scale-[0.985] " +
   "disabled:cursor-not-allowed disabled:active:scale-100";
 

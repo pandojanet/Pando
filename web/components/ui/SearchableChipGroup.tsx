@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
+import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { searchMarketOptions } from "@/lib/api-client";
 import { registerFoundOptions } from "@/lib/market-options";
@@ -317,17 +318,13 @@ export function SearchableChipGroup({
       />
 
       <div className="mt-4">
-        <label
-          htmlFor={`search-${category}`}
-          className="block text-[14px] font-semibold text-ink-soft"
-        >
-          {searchLabel}
-        </label>
-        <input
+        <Field
           id={`search-${category}`}
+          label={searchLabel}
           value={query}
           /* Points at the one status line below, so the count is available on
-             demand and not only when it happens to be announced. */
+             demand and not only when it happens to be announced. `Field` merges
+             this with its own describedby rather than replacing it. */
           aria-describedby={`search-${category}-status`}
           aria-busy={searching}
           onChange={(e) => setQuery(e.target.value.slice(0, 60))}
@@ -335,7 +332,6 @@ export function SearchableChipGroup({
           enterKeyHint="search"
           autoComplete="off"
           placeholder="Start typing a name"
-          className="mt-1.5 min-h-[52px] w-full rounded-2xl border border-bark bg-card px-4 text-[16px] outline-none placeholder:text-muted/60 focus:border-green"
         />
 
         {query.trim().length >= 2 && (
@@ -365,12 +361,12 @@ export function SearchableChipGroup({
               aria-live="polite"
               className={
                 searching
-                  ? "text-[13.5px] text-muted"
+                  ? "text-help text-muted"
                   : failed
-                    ? "text-[13.5px] text-gold-ink"
+                    ? "text-help text-gold-ink"
                     : unshown.length > 0
                       ? "sr-only"
-                      : "text-[13.5px] text-muted"
+                      : "text-help text-muted"
               }
             >
               {searching
@@ -397,7 +393,7 @@ export function SearchableChipGroup({
                       className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-bark bg-card px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
                     >
                       <span className="min-w-0">
-                        <span className="block truncate text-[15px] font-medium">
+                        <span className="block truncate text-control font-medium">
                           {option.label}
                         </span>
                         {/**
@@ -419,7 +415,7 @@ export function SearchableChipGroup({
                           const meta = [area, option.hint].filter(Boolean);
                           if (meta.length === 0) return null;
                           return (
-                            <span className="mt-0.5 block truncate text-[12.5px] text-muted">
+                            <span className="mt-0.5 block truncate text-dock text-muted">
                               {meta.join(" · ")}
                             </span>
                           );
@@ -427,7 +423,7 @@ export function SearchableChipGroup({
                       </span>
                       <span
                         aria-hidden="true"
-                        className="shrink-0 text-[13px] font-semibold text-green-deep"
+                        className="shrink-0 text-help font-semibold text-green-deep"
                       >
                         Add
                       </span>
@@ -458,7 +454,7 @@ export function SearchableChipGroup({
         )}
 
         {(otherLabel || footnote) && (
-          <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+          <p className="mt-2 text-dock leading-relaxed text-muted">
             {[otherLabel, footnote].filter(Boolean).join(". ")}
           </p>
         )}

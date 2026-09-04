@@ -62,6 +62,7 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   budget: [],
   trust_circles: [],
   topics: [],
+  child_months: {},
   topics_lived: [],
   /** P13. Null until they choose; nothing is shown until they do. */
   attribution: null,
@@ -84,6 +85,7 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
    */
   allowance: null,
   listening_ear: null,
+  recurring_messages: null,
   other: {},
   skipped: [],
 };
@@ -107,6 +109,18 @@ export const AGE_OPTIONS: Option[] = [
     label: age === 0 ? "Under 1" : String(age),
   })),
 ];
+
+/**
+ * Months, short enough to sit twelve-across on a phone.
+ *
+ * Ids are 1–12 as strings, matching `children.birth_month` rather than
+ * JavaScript's zero-based month — the column is what this has to agree with, and
+ * an off-by-one here would be invisible until somebody read a birthday.
+ */
+export const MONTH_OPTIONS: Option[] = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+].map((label, i) => ({ id: String(i + 1), label }));
 
 export const BIRTH_YEAR_OPTIONS: Option[] = [
   { id: String(EXPECTING), label: "Expecting", wide: true },
@@ -1114,7 +1128,11 @@ export const SCREENS: Screen[] = [
     questions: [
       {
         id: "budget",
-        label: "Cost preference",
+        /* Her label (2 Sep). Only ever rendered on the review screen and as the
+           chip group's accessible name — a question label is shown above the
+           chips only on a screen carrying more than one question, and this
+           screen has one. */
+        label: "Price & value",
         /* Single, not multi — see COST_PREFERENCE. A default instruction cannot
            be five simultaneous answers. */
         kind: "single",
@@ -1145,49 +1163,36 @@ export const SCREENS: Screen[] = [
       },
     ],
   },
-  {
-    /**
-     * Item 17, first of two. The client's judgement was that one screen holding
-     * both clusters is too dense, and that two screens probably do not cost time
-     * because each is clearer — so they are split.
-     *
-     * They are also two different **routing** categories, which is the reason
-     * that outlives the density argument: local knowledge and lived parenting
-     * experience are asked for differently, and the opt-out has to be per
-     * category. Declining local questions must not silently decline the
-     * emotional ones.
-     */
-    id: "topics",
-    eyebrow: "What you know",
-    title: "What local questions could you help with?",
-    help: "Choose anything you have firsthand experience with. You’ll always decide whether to answer.",
-    questions: [
-      {
-        id: "topics",
-        kind: "multi",
-        source: { type: "static", options: TOPICS_LOCAL },
-      },
-    ],
-    /**
-     * 1 Sep, item 15 — the two rules this screen has to make true. Both are
-     * still in force; **neither is stated on the screen any more.**
-     *
-     * The footnote that said them out loud went on 2 Sep, on the client's
-     * instruction to take the descriptive box off the profile pages. What it
-     * carried, and what is now code-only:
-     *
-     *  - *"Skipping must not opt the parent into any topic"* — which is how the
-     *    screen already works. Nothing is preselected and the answer starts
-     *    empty, so Continue grants nothing.
-     *  - Selecting *"Pediatricians and children's health providers"* permits
-     *    **firsthand provider recommendations only — not medical advice.** A
-     *    Phase 2 routing constraint, and the same line `classifyDemand` already
-     *    draws between a recommendation and a health question.
-     *
-     * `help` above still tells the parent they decide whether to answer, which
-     * is the one part of it they act on.
-     */
-  },
+  /**
+   * ## The local-questions screen is gone (3 Sep)
+   *
+   * Her instruction: *"Сторінку із запитанням про готовність відповідати на
+   * чутливі/місцеві питання («Which local questions could you help with?»)
+   * повністю прибирають з поточного флоу."*
+   *
+   * **The screen is removed; `answers.topics` is not.** That is the same call
+   * as the listening-ear removal on 1 Sep, and for the same reason: parents who
+   * filled this in under the old build have a real answer stored on their phone
+   * and in `topic_preferences`, and deleting the field would throw away
+   * something they actually said. So the field stays in `ProfileAnswers`, in
+   * `EMPTY_ANSWERS`, in the route's allowlist and in `derive.ts` — where it is
+   * still merged with `topics_lived` into `topic_preferences` — and nothing
+   * asks for it any more.
+   *
+   * **What this costs, and it is worth putting back to her.** `topic_preferences`
+   * was the only record of which *local* subjects a parent is the person to ask
+   * about — camps, daycare, pediatricians, parks. Phase 2's routing has one
+   * fewer signal for a new parent: the matcher still works (it scores shared
+   * connections and life relevance, never topics), but "who should Pando ask
+   * about camps in Altadena" now falls back to what somebody has already
+   * contributed rather than what they said they know. `topics_lived` is
+   * untouched and still carries the parenting-experience half.
+   *
+   * The sibling screen below (`topics_lived`, "Which parenting experiences
+   * would you be comfortable sharing?") is **deliberately kept**: her
+   * instruction names one heading, and that one — it is also the screen that
+   * carries the topic-level consent she dictated on 1 Sep.
+   */
   {
     /* Item 17, second of two. "Comfortable sharing" rather than "could help
        with": this list is about experience a parent lived, and the wording should
@@ -1348,7 +1353,16 @@ export const SCREENS: Screen[] = [
     questions: [
       {
         id: "allowance",
-        label: "Choose one",
+        /**
+         * Her label (2 Sep), and it fixes more than wording: what she reported
+         * was "MONTHLY ALLOWANCE" from an older build, and by then the 1 Sep
+         * rewrite had left this reading **"Choose one"** — an instruction, which
+         * on a review screen summarising an answer says nothing at all
+         * ("CHOOSE ONE · Community member"). Same rule as `budget` above: not
+         * rendered on the question screen itself, only on the review row and as
+         * the group's accessible name.
+         */
+        label: "Community participation",
         kind: "single",
         source: { type: "static", options: ALLOWANCE },
         required: true,
@@ -1588,13 +1602,16 @@ export function childBlocks(
   answers: ProfileAnswers,
 ): ChildBlock[] {
   if (!question.perChildRepeat) return [];
-  const ages = [...new Set(answers.child_ages)].sort((a, b) => a - b);
+  const ages = answerableChildren(answers);
+  /* One child needs no blocks — there is nothing to attribute between — and a
+     family with one born child and one on the way is now that case, which is
+     the right answer: the household list with silent attribution. */
   if (ages.length <= 1) return [];
 
   const attribution = answers.child_of[question.id] ?? {};
 
   return ages.map((age) => {
-    const year = age === EXPECTING ? "Expecting" : String(CURRENT_YEAR - age);
+    const year = String(CURRENT_YEAR - age);
     return {
       age,
       year,
@@ -1663,20 +1680,51 @@ export function sameForAllChildren(
   question: Question,
   answers: ProfileAnswers,
 ): { values: string[]; attribution: Record<string, number[]> } {
-  const ages = [...new Set(answers.child_ages)];
+  /* Item 10's shortcut must not hand a school to a child on the way either. */
+  const ages = answerableChildren(answers);
   const values = selectionsFor(question, answers);
   const attribution: Record<string, number[]> = {};
   for (const optionId of values) attribution[optionId] = [...ages];
   return { values, attribution };
 }
 
-export function childOptions(answers: ProfileAnswers): Option[] {
+/**
+ * The children a per-child question may be asked about — everybody except one
+ * on the way.
+ *
+ * 3 Sep, her instruction: *"Для користувачів зі статусом «Expecting» питання
+ * для такої дитини не мають відображатися."*
+ *
+ * It was a real defect rather than a wording point. `child_ages` stores
+ * `EXPECTING` as -1 alongside the real birth years, and every per-child path
+ * mapped over the lot — so a parent expecting a baby got a block headed **"For
+ * your child born in Expecting"** asking which preschool that child attends and
+ * what their current care arrangement is. Not merely odd: it is the app asking
+ * a parent to answer for a child who does not exist yet, on the screen right
+ * after they told it so.
+ *
+ * **The age itself stays recorded.** Expecting is a real answer and a strong
+ * matching signal — a parent 30 weeks in and a parent with a newborn are the
+ * pair the network is best at connecting — so it keeps its `children` row, its
+ * `age_range` edge and its place on the review screen. What it does not get is
+ * questions that presuppose a born child.
+ *
+ * One function for all three call sites (the attribution chips, the repeated
+ * blocks, and the "same for all children" shortcut), because three copies of
+ * this filter is three places for it to be forgotten — and the one that forgets
+ * is the one a parent meets.
+ */
+export function answerableChildren(answers: ProfileAnswers): number[] {
   return [...new Set(answers.child_ages)]
-    .sort((a, b) => a - b)
-    .map((age) => ({
-      id: String(age),
-      label: age === EXPECTING ? "Expecting" : String(CURRENT_YEAR - age),
-    }));
+    .filter((age) => age !== EXPECTING)
+    .sort((a, b) => a - b);
+}
+
+export function childOptions(answers: ProfileAnswers): Option[] {
+  return answerableChildren(answers).map((age) => ({
+    id: String(age),
+    label: String(CURRENT_YEAR - age),
+  }));
 }
 
 /**
@@ -1957,7 +2005,11 @@ export function maxSelectionsFor(
    * one, and nothing on screen would have looked wrong.
    */
   if (question.perChildLimit === undefined) return question.maxSelections;
-  const children = new Set(answers.child_ages).size;
+  /* 3 Sep: a child on the way is not a child this question can be answered
+     for, so it must not raise the ceiling either — otherwise a family with one
+     born child and one expecting could name two schools, and only one child
+     could be at either of them. */
+  const children = answerableChildren(answers).length;
   /* No cap before P4 is answered. It is required, so this is the corrupted-session
      case — and a screen that refuses every tap is worse than an uncapped one. */
   if (children === 0) return undefined;

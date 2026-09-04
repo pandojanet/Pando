@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { PandoMark } from "@/components/ui/Logo";
+import { PandoMark, Wordmark } from "@/components/ui/Logo";
+import { Eyebrow, SkipLink } from "@/components/ui/Screen";
 
 /**
  * The public site shell (pando.is): a normal responsive website, deliberately
@@ -34,7 +35,15 @@ export function Wrap({
 }
 
 export function SiteShell({ children }: { children: ReactNode }) {
-  return <div className="flex min-h-dvh flex-col bg-paper">{children}</div>;
+  return (
+    <div className="flex min-h-dvh flex-col bg-paper">
+      {/* Same reasoning as the app's: without it a keyboard starts every page
+          in the header nav. Reused rather than re-styled — a second skip link
+          that looked different would be this pass's own fault, committed. */}
+      <SkipLink />
+      {children}
+    </div>
+  );
 }
 
 /** Section with the hairline rule the original pages used between blocks. */
@@ -63,13 +72,13 @@ export function Section({
   );
 }
 
-export function Eyebrow({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-[0.78rem] font-semibold uppercase tracking-[0.15em] text-green">
-      {children}
-    </p>
-  );
-}
+/**
+ * Re-exported, not redeclared. This file used to carry its own `Eyebrow` at
+ * `0.78rem` against the app's `11.5px` — one component, two sizes, a pixel
+ * apart, chosen by whichever file you happened to import from. The site keeps
+ * its own shell; it does not get its own type scale.
+ */
+export { Eyebrow, SkipLink };
 
 /**
  * The desktop layout of a section: heading and intro become a left rail that
@@ -125,12 +134,11 @@ export function SiteHeader({
         <Link
           href="/"
           aria-label="Pando home"
-          className="flex min-h-11 items-center gap-2.5 text-ink"
+          className="flex min-h-11 items-center text-ink"
         >
-          <PandoMark className="h-[1.8rem]" pulse />
-          <span className="font-display text-[1.4rem] font-bold tracking-[-0.02em]">
-            Pando
-          </span>
+          {/* Was a third hand-drawn copy of the lockup, at its own third size.
+              See `Wordmark`'s header. */}
+          <Wordmark size="lead" pulse />
         </Link>
 
         {variant === "full" ? (

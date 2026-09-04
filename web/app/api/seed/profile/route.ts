@@ -13,14 +13,20 @@ import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { writeProfile } from "@/lib/server/repo/profile";
 import { validateInviteCode } from "@/lib/server/invite";
-import { LISTENING_EAR_CONSENT_TEXT_VERSION, SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
+import {
+  LISTENING_EAR_CONSENT_TEXT_VERSION,
+  RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
+  SMS_CONSENT_TEXT_VERSION,
+} from "@/lib/consent";
 import {
   deriveAffinities,
   deriveLifeRelevance,
+  childrenFromAges,
   derivePendingOptions,
 } from "@/lib/derive";
 import { EMPTY_ANSWERS } from "@/lib/questions";
 import type { ProfileAnswers, ProfilePayload, QuestionId } from "@/lib/types";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * POST /api/seed/profile — save the tap-first profile (spec §16.1).
@@ -73,6 +79,31 @@ function normaliseSmsConsent(
       typeof record.text_version === "string" && record.text_version !== ""
         ? record.text_version
         : SMS_CONSENT_TEXT_VERSION,
+    source: typeof record.source === "string" ? record.source : undefined,
+  };
+}
+
+/**
+ * The recurring automated SMS/RCS opt-in (2 Sep).
+ *
+ * `opted_in` only, and that is the shape rather than an oversight: the checkbox
+ * gates the participation screen, so there is no way past it having declined.
+ * Anything else — including a `declined` a hand-rolled request might send — is
+ * dropped rather than stored, because a `declined` row here would assert that
+ * Pando asked and was refused, which never happened.
+ */
+function normaliseRecurringConsent(
+  value: unknown,
+): { status: string; text_version: string; source?: string } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record.status !== "opted_in") return null;
+  return {
+    status: "opted_in",
+    text_version:
+      typeof record.text_version === "string" && record.text_version !== ""
+        ? record.text_version
+        : RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
     source: typeof record.source === "string" ? record.source : undefined,
   };
 }
@@ -144,6 +175,13 @@ const SCHOOL_STATUSES = ["current", "former", "not_yet", "homeschool"] as const;
 const MAX_OTHER_PER_QUESTION = 10;
 
 export async function POST(request: Request) {
+  /* Bounded by invariant 11 in the ordinary case — nothing about a named
+     parent is stored before the phone is verified — but SEED_REQUIRE_VERIFICATION=0
+     and SEED_VERIFY_DEV_CODES=1 both exist for QA and both open that door. This
+     is what stands there while they are on. */
+  const limited = rateLimited(request, "seed_write");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as Partial<ProfilePayload> | null;
   if (!raw) {
     return NextResponse.json({ error: "Malformed body" }, { status: 400 });
@@ -283,10 +321,35 @@ export async function POST(request: Request) {
     if (Object.keys(cleaned).length > 0) childOf[key] = cleaned;
   }
 
+  /**
+   * Which month each child was born in (3 Sep), keyed by the age id.
+   *
+   * Bounded to 1–12 and to an age the parent actually tapped — the same two
+   * rules `child_of` above follows, and for the same reason: this is the
+   * record of what was chosen, so a month against a child who does not exist
+   * would put a fact in `raw_answers` that no parent stated.
+   */
+  const capturedAt =
+    typeof raw.profile_captured_at === "string" &&
+    !Number.isNaN(Date.parse(raw.profile_captured_at))
+      ? new Date(raw.profile_captured_at)
+      : new Date();
+
+  const childMonths: Record<string, number> = {};
+  for (const [ageId, month] of Object.entries(
+    (answersIn?.child_months ?? {}) as Record<string, unknown>,
+  )) {
+    if (typeof month !== "number" || !Number.isInteger(month)) continue;
+    if (month < 1 || month > 12) continue;
+    if (!childAges.includes(Number(ageId))) continue;
+    childMonths[String(Number(ageId))] = month;
+  }
+
   const answers = {
     ...EMPTY_ANSWERS,
     neighborhood,
     child_ages: childAges,
+    child_months: childMonths,
     child_of: childOf as ProfileAnswers["child_of"],
     allowance: cleanId(answersIn?.allowance),
     attribution: cleanId(answersIn?.attribution),
@@ -350,15 +413,31 @@ export async function POST(request: Request) {
     phone_verified_at: gate.verified_at,
     sms_consent: normaliseSmsConsent(raw.sms_consent),
     listening_ear_consent: normaliseListeningEarConsent(raw.listening_ear_consent),
+    recurring_messages_consent: normaliseRecurringConsent(raw.recurring_messages_consent),
     wants_founding: raw.wants_founding !== false,
     neighborhood,
-    /** Birth years, not ages — plus the date the ages were taken. */
-    children: Array.isArray(raw.children) ? raw.children.slice(0, 12) : [],
+    /**
+     * Birth years, not ages — plus the date the ages were taken.
+     *
+     * The month is re-read from the sanitised map rather than taken from the
+     * row the client built (3 Sep). Two reasons, and the second is the one that
+     * bites: `children_birth_month_check` refuses anything outside 1–12 and
+     * `children_month_needs_year` refuses one on an expecting row, so an
+     * out-of-range value from an older or crafted client would abort the whole
+     * profile write — a parent losing everything they tapped because of one
+     * optional field.
+     *
+     * So the rows are **derived here** from the ages this route has already
+     * sanitised, instead of being read from `raw.children` and repaired. That
+     * is the 11 Aug rule (the graph is derived on the server, never taken from
+     * the request body) reaching the one part of the profile write that had
+     * still been trusting the client — and it is the same
+     * `childrenFromAges` the client calls, over the same capture time, so a
+     * well-behaved client sends exactly what the server now computes.
+     */
+    children: childrenFromAges(childAges, capturedAt, childMonths),
     child_ages_at_capture: childAges,
-    profile_captured_at:
-      typeof raw.profile_captured_at === "string"
-        ? raw.profile_captured_at
-        : new Date().toISOString(),
+    profile_captured_at: capturedAt.toISOString(),
     /**
      * P14. "As many as are genuinely relevant" has no number, and the send layer
      * must not invent one — it falls back to spacing and relevance rules alone.
@@ -472,6 +551,7 @@ export async function POST(request: Request) {
     phone_verified: payload.phone_verified,
     sms_consent: payload.sms_consent?.status ?? "none",
     listening_ear_consent: payload.listening_ear_consent?.status ?? "none",
+    recurring_messages_consent: payload.recurring_messages_consent?.status ?? "none",
     wants_founding: payload.wants_founding,
     children: payload.children.length,
     allowance: payload.monthly_contact_allowance,
@@ -496,6 +576,8 @@ export async function POST(request: Request) {
       phone_verified_at: payload.phone_verified_at,
       sms_consent: payload.sms_consent as ProfileConsent,
       listening_ear_consent: payload.listening_ear_consent as ProfileConsent,
+      recurring_messages_consent:
+        payload.recurring_messages_consent as ProfileConsent,
       wants_founding: payload.wants_founding,
       neighborhood,
       children: payload.children as never,

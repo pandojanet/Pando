@@ -1,11 +1,18 @@
 "use client";
 
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
+import { AnimatePresence, m } from "motion/react";
+import { MotionProvider, STEP } from "@/components/ui/Motion";
 import { Panel } from "@/components/ui/Panel";
-import { TextAction } from "@/components/ui/TextAction";
+import { Consent } from "@/components/ui/Consent";
+import {
+  RECURRING_MESSAGES_CONSENT_AGREEMENT,
+  RECURRING_MESSAGES_CONSENT_TERMS,
+} from "@/lib/consent";
+import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
@@ -25,6 +32,7 @@ import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import {
   applyChildSelections,
   canAdvance,
+  MONTH_OPTIONS,
   childBlocks,
   childOptions,
   customEntriesFor,
@@ -42,8 +50,21 @@ import {
   visibleScreens,
 } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
+import { useStepChange } from "@/lib/use-step-change";
 import { useMarketOptions } from "@/lib/use-market-options";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
+
+/**
+ * The repeated block inside one question: a school with its Current/Former row,
+ * a child with its birth month, a selection with its "whose is it?" chips.
+ *
+ * Deliberately **not** `Panel size="inset"`, which is `p-4`. These are a dense
+ * repeated list — up to six on the screen at once, on the tallest screens in the
+ * flow — and eight more pixels each is how the dock starts eating the content.
+ * A shared string rather than three copies, and a shared string rather than a
+ * third size on a primitive for one caller.
+ */
+const SUBBLOCK = "rounded-2xl border border-bark bg-card p-3";
 
 /**
  * Estimate 1.2 — the tap-first profile.
@@ -107,9 +128,12 @@ export function ProfileFlow() {
     [],
   );
 
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, [index, stage]);
+  /* Scroll to the top **and** move focus to the new screens heading. The
+     scroll half was already here; the focus half was not, so a keyboard user
+     stayed on a Continue button while everything around it silently changed.
+     See `useStepChange` for why the first run is skipped. */
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useStepChange(`${stage}:${index}`, headingRef);
 
   useEffect(() => {
     if (!screen) return;
@@ -133,7 +157,27 @@ export function ProfileFlow() {
 
   const market = session.market_id;
   const questions = visibleQuestions(screen, answers);
-  const unlocked = canAdvance(screen, answers);
+  /**
+   * The recurring-messaging opt-in (2 Sep, client) rides with the participation
+   * level, and is asked **only of the founding path**.
+   *
+   * The anonymous route opted out of SMS at `/join` in so many words and has no
+   * number stored, so there is nothing this could permit — showing it would ask
+   * a parent to agree to messages Pando cannot send, and would make the profile
+   * uncompletable for the one path that deliberately gave up messaging.
+   */
+  const needsRecurringConsent = session.wants_founding !== false;
+  const recurringAgreed = answers.recurring_messages === "opted_in";
+
+  /**
+   * Gated like `/join`'s SMS checkbox, and for the same reason: an unchecked box
+   * that lets the parent through is not an opt-in, it is a decoration that would
+   * leave Pando messaging somebody who never agreed. A parent unwilling to agree
+   * has the anonymous route, which `/join` offers explicitly.
+   */
+  const consentBlocked =
+    screen.id === "allowance" && needsRecurringConsent && !recurringAgreed;
+  const unlocked = canAdvance(screen, answers) && !consentBlocked;
   const isLast = index === screens.length - 1;
   /**
    * `questions.every(…)` on an empty array is `true`, so the two screens that
@@ -178,9 +222,19 @@ export function ProfileFlow() {
         case "listening_ear":
           a.listening_ear = next[0] ?? null;
           break;
-        case "child_ages":
+        case "child_ages": {
           a.child_ages = next.map(Number).sort((x, y) => x - y);
+          /* A month belongs to a birth year, so untapping the year takes it —
+             the same rule `school_status` follows, for the same reason: a
+             month against a child nobody named is a fact about nothing, and it
+             would be re-offered as a pre-filled answer if that year came back. */
+          a.child_months = Object.fromEntries(
+            Object.entries(s.answers.child_months).filter(([id]) =>
+              next.includes(id),
+            ),
+          );
           break;
+        }
         case "schools": {
           a.schools = next;
           // Keep a status only for the schools still selected.
@@ -209,6 +263,26 @@ export function ProfileFlow() {
       }
       a.skipped = s.answers.skipped.filter((id) => id !== screen.id);
       return { ...s, answers: a };
+    });
+  }
+
+  /**
+   * Which month a child was born in (3 Sep).
+   *
+   * Single-select and **optional**: the year is the required tap, and the
+   * child-ages screen is one of only two required questions in the profile — so
+   * a month that blocked the dock would put a measurable drop-off on the screen
+   * every parent has to pass. Tapping the chosen month again clears it, which is
+   * the one place this differs from a single-select chip elsewhere (3 Aug: a
+   * radio keeps its choice), because here there is a real "I'd rather not say"
+   * and no chip standing for it.
+   */
+  function setBirthMonth(age: number, month: string) {
+    update((s) => {
+      const months = { ...s.answers.child_months };
+      if (months[String(age)] === Number(month)) delete months[String(age)];
+      else months[String(age)] = Number(month);
+      return { ...s, answers: { ...s.answers, child_months: months } };
     });
   }
 
@@ -286,6 +360,23 @@ export function ProfileFlow() {
     track("seed_question_answered", {
       question: question.id,
       option: "same_for_all_children",
+    });
+  }
+
+  /**
+   * One direction only. Unticking is possible while the parent is on the screen
+   * (it is a checkbox, and taking a consent back has to be possible), which is
+   * why this writes `null` rather than `"declined"` — nothing past this screen
+   * may record a refusal that the flow cannot produce, and the dock re-locks.
+   */
+  function setRecurringConsent(on: boolean) {
+    update((s) => ({
+      ...s,
+      answers: { ...s.answers, recurring_messages: on ? "opted_in" : null },
+    }));
+    track("seed_question_answered", {
+      question: "recurring_messages",
+      option: on ? "opted_in" : "cleared",
     });
   }
 
@@ -490,7 +581,7 @@ export function ProfileFlow() {
         <ScreenBody className="pt-2">
           <div className="animate-step-in">
             <Eyebrow>One quick check</Eyebrow>
-            <h1 className="mt-2.5 font-display text-[1.7rem] font-bold">
+            <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
               Confirm your number and this is saved.
             </h1>
             <p className="mt-2.5 text-[15px] leading-relaxed text-ink-soft">
@@ -539,7 +630,7 @@ export function ProfileFlow() {
         <ScreenBody>
           <div className="animate-step-in">
             <Eyebrow>Almost done</Eyebrow>
-            <h1 className="mt-2.5 font-display text-[1.7rem] font-bold">
+            <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
             <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
@@ -572,7 +663,19 @@ export function ProfileFlow() {
                               )
                               .filter(Boolean)
                           : [];
+                      /* The month, where they gave one (3 Sep). The review
+                         screen is the cheapest data-quality tool in the flow —
+                         it is where a parent notices a mis-tap — so an answer
+                         that does not appear here is an answer nobody checks. */
+                      const month =
+                        q.kind === "ages"
+                          ? MONTH_OPTIONS.find(
+                              (m) =>
+                                Number(m.id) === answers.child_months[id],
+                            )?.label
+                          : undefined;
                       const detail = [
+                        month ?? null,
                         status ? statusLabel(status) : null,
                         ...whose,
                       ].filter(Boolean);
@@ -598,13 +701,19 @@ export function ProfileFlow() {
                           {values.length ? values.join(" · ") : "Skipped"}
                         </dd>
                       </div>
-                      <button
-                        type="button"
+                      {/* Named, because there are up to 23 of these down the
+                          review list and a screen reader otherwise hears
+                          "Edit" twenty-three times with nothing telling them
+                          which row they are on. `Bubble`'s per-row Edit already
+                          did this; this list did not. */}
+                      <TextAction
+                        underline={false}
                         onClick={() => jumpTo(s.id)}
-                        className="h-11 shrink-0 self-center rounded-full px-3 text-[14px] font-semibold text-green-deep"
+                        aria-label={`${values.length ? "Edit" : "Add"}: ${q.label ?? s.eyebrow}`}
+                        className="shrink-0 self-center px-3"
                       >
                         {values.length ? "Edit" : "Add"}
-                      </button>
+                      </TextAction>
                     </div>
                   );
                 }),
@@ -641,15 +750,16 @@ export function ProfileFlow() {
         left={<BackButton onClick={goBack} />}
         right={
           optionalScreen ? (
-            <button
-              type="button"
+            <TextAction
+              tone="quiet"
+              underline={false}
               onClick={skipScreen}
-              className="h-11 rounded-full px-3 text-[14.5px] font-semibold text-muted transition-colors hover:text-green-deep"
+              className="px-3"
             >
               Skip
-            </button>
+            </TextAction>
           ) : (
-            <span className="px-1 text-[13px] font-medium text-muted">
+            <span className="px-1 font-medium text-muted text-dock">
               {index + 1} of {screens.length}
             </span>
           )
@@ -662,12 +772,57 @@ export function ProfileFlow() {
       />
 
       <ScreenBody>
-        <div
-          key={screen.id}
-          className={direction === 1 ? "animate-step-in" : "animate-step-in-back"}
-        >
+        {/* Outside the keyed div on purpose: a live region has to be in the
+            document *before* its content changes, and anything inside that div
+            is remounted on every step — which is precisely the mistake
+            `TypingDots` already paid for. Focus moving to the heading is the
+            other half; this is what says where it moved *to*. */}
+        <p className="sr-only" role="status">
+          {`Step ${index + 1} of ${screens.length} — ${screen.title}`}
+        </p>
+        {/**
+         * The first time a step in this app can *leave*.
+         *
+         * It was a keyed `<div>` with `animate-step-in` — an entrance only, so
+         * the old question was gone between two frames while the new one slid
+         * in over it. `animate-step-in-back` exists because that is the most CSS
+         * can express; `AnimatePresence` is what the back-direction keyframe was
+         * standing in for.
+         *
+         * `mode="popLayout"` so the outgoing screen is taken out of flow rather
+         * than stacked above the incoming one, which on a phone would double the
+         * page height for a third of a second and jump the dock.
+         *
+         * ⚠ This changes *when* a step unmounts. Autosave runs on every tap, so
+         * nothing can be lost in the gap — but the screen is walked by hand
+         * rather than trusted to the types.
+         */}
+        <MotionProvider>
+        {/**
+         * A one-cell grid, and it is load-bearing rather than styling.
+         *
+         * `mode="popLayout"` was the obvious choice and does not work here: it
+         * needs layout projection, which lives in `domMax` and not in the
+         * `domAnimation` feature set this app loads — the outgoing step simply
+         * never unmounted, and both questions stayed on screen. Measured, not
+         * reasoned about.
+         *
+         * Stacking both steps in the same grid cell gets the same result for
+         * nothing: the container takes the height of the taller one, so the dock
+         * cannot jump, and the two cross-slide in place.
+         */}
+        <div className="grid">
+        <AnimatePresence initial={false}>
+          <m.div
+            key={screen.id}
+            className="[grid-area:1/1]"
+            initial={{ opacity: 0, x: direction * 14 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: direction * -14 }}
+            transition={STEP}
+          >
           <Eyebrow>{screen.eyebrow}</Eyebrow>
-          <h1 className="mt-2.5 font-display text-[1.7rem] font-bold">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
             {screen.title}
           </h1>
           {screen.help && (
@@ -725,9 +880,14 @@ export function ProfileFlow() {
                 </p>
               )}
               {screen.statement.note && (
-                <p className="mt-4 rounded-2xl border border-green/20 bg-green-wash p-3 text-[14px] font-medium leading-relaxed text-green-deep">
+                <Panel
+                  as="p"
+                  tone="positive"
+                  size="inset"
+                  className="mt-4 font-medium leading-relaxed text-green-deep text-help"
+                >
                   {screen.statement.note}
-                </p>
+                </Panel>
               )}
             </Panel>
           )}
@@ -869,9 +1029,9 @@ export function ProfileFlow() {
                             return (
                               <div
                                 key={optionId}
-                                className="rounded-2xl border border-bark bg-card p-3"
+                                className={SUBBLOCK}
                               >
-                                <p className="text-[14.5px] font-semibold">
+                                <p className="font-semibold text-control">
                                   {optionLabel}
                                 </p>
                                 <div
@@ -934,6 +1094,66 @@ export function ProfileFlow() {
               />
               )}
 
+              {/* 3 Sep — month and year, not a date of birth.
+                  Offered per born child, and **only** for a born child: an
+                  expecting row has no birth year, so
+                  `children_month_needs_year` refuses a month on it and the
+                  question would be asking when a baby was born who has not
+                  been. One row per year rather than a repeated block, because
+                  twelve short chips are a single line of taps and a heading per
+                  child would be more furniture than question. */}
+              {question.kind === "ages" && children.length > 0 && (
+                  <div className="mt-4 space-y-2.5">
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Birth month, if you like
+                    </p>
+                    <p className="text-[13.5px] text-ink-soft">
+                      Optional. It sharpens what counts as the same stage — a
+                      December and a January child are a school year apart.
+                    </p>
+                    {children.map((child) => {
+                      const chosen = answers.child_months[child.id];
+                      return (
+                        <div
+                          key={child.id}
+                          className={SUBBLOCK}
+                        >
+                          <p className="font-semibold text-control">
+                            Born in {child.label}
+                          </p>
+                          <div
+                            role="radiogroup"
+                            aria-label={`Birth month for the child born in ${child.label}`}
+                            className="mt-2 flex flex-wrap gap-2"
+                          >
+                            {MONTH_OPTIONS.map((month) => {
+                              const on = chosen === Number(month.id);
+                              return (
+                                <button
+                                  key={month.id}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={on}
+                                  onClick={() =>
+                                    setBirthMonth(Number(child.id), month.id)
+                                  }
+                                  className={
+                                    on
+                                      ? "min-h-[44px] rounded-full border border-green bg-green-wash px-3.5 text-[14px] font-semibold text-green-deep"
+                                      : "min-h-[44px] rounded-full border border-bark px-3.5 text-[14px] font-medium text-ink-soft"
+                                  }
+                                >
+                                  {month.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
               {/* Per selection, two follow-ups on the same card.
                   P5 — each school gets its own status. "Former" is a real signal:
                   a parent who has been through admissions is exactly who someone
@@ -958,9 +1178,9 @@ export function ProfileFlow() {
                       return (
                         <div
                           key={optionId}
-                          className="rounded-2xl border border-bark bg-card p-3"
+                          className={SUBBLOCK}
                         >
-                          <p className="text-[14.5px] font-semibold">{optionLabel}</p>
+                          <p className="font-semibold text-control">{optionLabel}</p>
 
                           {question.perSelectionStatus && (
                             <div
@@ -1037,10 +1257,15 @@ export function ProfileFlow() {
           </div>
 
           {index === 1 && (
-            <p className="mt-8 rounded-2xl border border-green/20 bg-green-wash p-4 text-[14px] leading-relaxed text-green-deep">
+            <Panel
+              as="p"
+              tone="positive"
+              size="inset"
+              className="mt-8 leading-relaxed text-green-deep text-help"
+            >
               That&apos;s both required questions. Everything after this is
               optional — it just sharpens who Pando asks on your behalf.
-            </p>
+            </Panel>
           )}
 
           {/**
@@ -1054,14 +1279,64 @@ export function ProfileFlow() {
            * asked for.
            *
            * Neutral styling, deliberately. In green it reads as reassurance and
-           * in gold as a warning; it is neither, it is the honest limit.
+           * in gold as a warning; it is neither, it is the honest limit. That
+           * argument is `Panel`'s `tone="quiet"` now — this comment is where the
+           * tone came from, and the register had existed here without a name
+           * since the day it was written.
            */}
           {screen.footnote && (
-            <p className="mt-7 rounded-2xl border border-bark bg-paper px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft">
+            <Panel
+              as="p"
+              tone="quiet"
+              size="inset"
+              className="mt-7 leading-relaxed text-ink-soft text-help"
+            >
               {screen.footnote}
-            </p>
+            </Panel>
           )}
+
+          {/**
+           * The recurring SMS/RCS opt-in, immediately above the dock — where she
+           * asked for it, and where a consent belongs: adjacent to the action it
+           * describes rather than a screen away from it.
+           *
+           * The `<label>` covers only the sentence being agreed to and the
+           * carrier disclosure sits beside it tied by `aria-describedby` — the
+           * rule `Consent` now enforces rather than four comments asking for it.
+           *
+           * Her "Terms · Privacy", as the site's own pages, and in a new tab
+           * because the answers are held on this phone and navigating away
+           * mid-flow is a resume the parent did not ask for. They are the
+           * component's `links` row rather than an inline `" · "`: at 375px that
+           * row always wraps, and an inline separator is left dangling at the end
+           * of a line — `/join` had already found that and the fix had not
+           * travelled the two files.
+           */}
+          {screen.id === "allowance" && needsRecurringConsent && (
+            <Consent
+              id="recurring-consent"
+              className="mt-7"
+              checked={recurringAgreed}
+              onChange={setRecurringConsent}
+              detail={RECURRING_MESSAGES_CONSENT_TERMS}
+              links={
+                <>
+                  <InlineAction href="/terms" external tone="green">
+                    Terms
+                  </InlineAction>
+                  <InlineAction href="/privacy" external tone="green">
+                    Privacy
+                  </InlineAction>
+                </>
+              }
+            >
+              {RECURRING_MESSAGES_CONSENT_AGREEMENT}
+            </Consent>
+          )}
+          </m.div>
+        </AnimatePresence>
         </div>
+        </MotionProvider>
       </ScreenBody>
 
       <ScreenDock>
@@ -1074,7 +1349,15 @@ export function ProfileFlow() {
               client's instruction (24 Aug, item 9). The Skip control in the
               header already says it, and a line inviting a parent to skip the
               screen they are currently reading works against the screen. */}
-          {!unlocked ? "Pick one to keep going" : "Autosaved. You can close this and come back."}
+          {/* Two reasons the dock can be locked on this screen, and they need
+              different sentences — "Pick one to keep going" under a screen where
+              a level *is* picked would be telling the parent to do something
+              they have already done. */}
+          {consentBlocked && canAdvance(screen, answers)
+            ? "Tick the box above to join"
+            : !unlocked
+              ? "Pick one to keep going"
+              : "Autosaved. You can close this and come back."}
         </p>
       </ScreenDock>
     </Screen>

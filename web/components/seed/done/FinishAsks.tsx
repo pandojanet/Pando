@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, buttonClass } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
+import { Note } from "@/components/ui/Note";
 import { TextAction } from "@/components/ui/TextAction";
 import { Wordmark } from "@/components/ui/Logo";
 import {
@@ -296,11 +297,10 @@ export function FinishAsks() {
 
           {loaded && !session && <NoSession />}
 
-          {error && (
-            <p className="mt-3 animate-rise rounded-2xl border border-gold-line bg-gold-wash p-3 text-[14px] font-medium text-gold-ink">
-              {error}
-            </p>
-          )}
+          {/* Was a byte-identical copy of `Note`'s own class string, minus the
+              `role="alert"` — so the one thing that made it a `Note` was the one
+              thing it had dropped. ⚠ It is announced now. */}
+          {error && <Note>{error}</Note>}
         </div>
       </ScreenBody>
 
@@ -317,12 +317,9 @@ export function FinishAsks() {
           /* No primary here on purpose: the action on this screen is the yes/no
              inside the consent card, and a dock button that only navigated past it
              would be a way to skip the one thing this screen exists for. */
-          <Link
-            href="/done"
-            className="flex min-h-[48px] items-center justify-center text-[15px] font-semibold text-green-deep"
-          >
+          <TextAction href="/done" full>
             Back
-          </Link>
+          </TextAction>
         )}
       </ScreenDock>
     </Screen>

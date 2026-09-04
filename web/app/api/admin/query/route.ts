@@ -22,6 +22,30 @@ import { readResource } from "@/lib/server/repo/admin-read";
 
 const EMPTY: Record<AdminResource, unknown> = {
   answers: [],
+  /* 14.3. An empty list, and the pool preview is an object because the page
+     reads three fields off it. */
+  blasts: [],
+  blast_pool: {
+    blast_id: "",
+    wanted: 0,
+    chosen: [],
+    held: [],
+    cold: false,
+    human_review: { required: false, reason: null },
+  },
+  /* 14.5. `provisioned: false` rather than an empty success: a page that cannot
+     reach Stripe must not imply payments are working. */
+  payments: {
+    rows: [],
+    stripe: {
+      provisioned: false,
+      webhook_configured: false,
+      mode: null,
+      prices: [],
+    },
+    totals: { paid_cents: 0, refunded_cents: 0, refund_due_cents: 0 },
+  },
+
   overview: null,
   contributors: [],
   contributor: null,
@@ -33,6 +57,11 @@ const EMPTY: Record<AdminResource, unknown> = {
   options: [],
   flags: [],
   demand: [],
+  conversations: { rows: [], unattributed: 0 },
+  conversation: null,
+  freshness: [],
+  standing: [],
+  impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
   founding: [],
   invites: [],
   consents: [],
@@ -71,6 +100,30 @@ const EMPTY: Record<AdminResource, unknown> = {
 
 const SAMPLE: Record<AdminResource, unknown> = {
   answers: [],
+  /* 14.3 / 14.5. No sample rows, for the reason the conversation history gives
+     one line up: invented money is worse than invented anything else. A page
+     showing a fabricated $15 payment answers "has anybody actually paid?" with
+     a yes. */
+  blasts: [],
+  blast_pool: {
+    blast_id: "",
+    wanted: 0,
+    chosen: [],
+    held: [],
+    cold: false,
+    human_review: { required: false, reason: null },
+  },
+  payments: {
+    rows: [],
+    stripe: {
+      provisioned: false,
+      webhook_configured: false,
+      mode: null,
+      prices: [],
+    },
+    totals: { paid_cents: 0, refunded_cents: 0, refund_due_cents: 0 },
+  },
+
   blast_responses: [],
   overview: sample.sampleOverview,
   contributors: sample.sampleContributors,
@@ -83,6 +136,14 @@ const SAMPLE: Record<AdminResource, unknown> = {
   options: sample.samplePendingOptions,
   flags: sample.sampleFlags,
   demand: sample.sampleDemand,
+  /* 14.1. No sample rows: a conversation history is the one thing that would be
+     actively misleading to fake — the whole page is "did Pando really text
+     her", and invented rows answer yes. */
+  conversations: { rows: [], unattributed: 0 },
+  conversation: null,
+  freshness: [],
+  standing: [],
+  impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
   founding: sample.sampleFounding,
   invites: sample.sampleInvites,
   consents: sample.sampleConsents,

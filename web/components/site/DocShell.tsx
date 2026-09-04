@@ -25,7 +25,7 @@ export function DocShell({
     <>
       <SiteHeader variant="back" />
 
-      <main className="py-10 sm:py-14 lg:py-20">
+      <main id="main" tabIndex={-1} className="py-10 sm:py-14 lg:py-20">
         {/* Fixed measure rather than a fluid column: legal text at ~75 characters
             a line reads; the same text across 750px does not. The pair is centred
             so the page looks composed instead of left-anchored. */}

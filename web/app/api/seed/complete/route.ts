@@ -9,6 +9,7 @@ import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { writeCompletion } from "@/lib/server/repo/completion";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * POST /api/seed/complete — the parent finished the Seed Tool (estimate 1.7).
@@ -31,6 +32,10 @@ const KINDS = ["activity", "caregiver", "place", "tip"] as const;
 type Kind = (typeof KINDS)[number];
 
 export async function POST(request: Request) {
+  /* Same budget as the other seed writes — it is the last of them. */
+  const limited = rateLimited(request, "seed_write");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as {
     invite_code?: unknown;
     source?: unknown;

@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./Button";
+import { fieldShell } from "./Field";
+import { cn } from "@/lib/cn";
+import { usePresence } from "@/lib/use-presence";
 
 interface Props {
   open: boolean;
@@ -59,8 +62,14 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
       }
       // A dialog that lets Tab wander into the page behind it isn't modal.
       if (e.key !== "Tab" || !formRef.current) return;
+      /* The full focusable list, not `"input, button:not([disabled])"`. Nothing
+         in this sheet is a link or a select *today*, which is exactly what made
+         the old selector a trap: the next person to add one gets a modal that
+         quietly leaks focus to the page behind, and nothing on screen says so. */
       const focusable = formRef.current.querySelectorAll<HTMLElement>(
-        "input, button:not([disabled])",
+        'a[href], button:not([disabled]), input:not([disabled]), ' +
+          'select:not([disabled]), textarea:not([disabled]), ' +
+          '[tabindex]:not([tabindex="-1"])',
       );
       if (focusable.length === 0) return;
       const first = focusable[0];
@@ -92,17 +101,43 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
     };
   }, [open, onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  /* Mounted for the length of the exit keyframe after `open` goes false. */
+  const present = usePresence(open, 220);
+  if (!present || typeof document === "undefined") return null;
 
   const trimmed = value.trim();
 
   return createPortal(
+    /**
+     * The sheet can *leave* now. Until this pass it was `if (!open) return null`
+     * — it slid up over a quarter of a second and then vanished between two
+     * frames, the most abrupt moment in the parent flow.
+     *
+     * `usePresence` holds it mounted for the exit keyframe; the keyframes
+     * themselves are in `globals.css` beside the entrances they mirror. **No
+     * `motion` here**, deliberately: this sheet is reached from the chat as well
+     * as the profile, and the library is confined to `/profile` because it
+     * measured at 44 KB gzipped in the eager payload.
+     *
+     * The exit mirrors whichever entrance actually ran — `sheet-down` against
+     * `animate-sheet-up` on a phone, `sink` against `md:animate-rise` on a
+     * laptop, where a centred dialog is nowhere near an edge to slide off.
+     */
     <div className="fixed inset-0 z-50 flex flex-col justify-end md:items-center md:justify-center md:p-6">
-      <button
-        type="button"
-        aria-label="Close"
+      {/* Inert, not a `<button aria-label="Close">`.
+          As a button it sat **before** the dialog in DOM order and **outside**
+          `formRef`, so the trap above could not see it: Tab from the scrim
+          escaped straight into the page behind, and Shift+Tab from the input
+          landed on an invisible full-screen control. Escape already closes
+          (above) and there is a real Cancel button, so the keyboard path is
+          complete without it. ⚠ One tab stop is removed. */}
+      <div
+        aria-hidden="true"
         onClick={onClose}
-        className="absolute inset-0 animate-fade bg-moss/40"
+        className={cn(
+          "absolute inset-0 bg-moss/40",
+          open ? "animate-fade" : "animate-fade-out",
+        )}
       />
       <form
         ref={formRef}
@@ -113,11 +148,14 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
           e.preventDefault();
           if (trimmed) onSubmit(trimmed);
         }}
-        className={
-          "relative w-full animate-sheet-up rounded-t-3xl border-t border-bark bg-card " +
-          "px-5 pt-5 pb-[max(1rem,env(safe-area-inset-bottom))] " +
-          "md:max-w-[27rem] md:animate-rise md:rounded-3xl md:border md:p-7 md:shadow-card"
-        }
+        className={cn(
+          "relative w-full rounded-t-3xl border-t border-bark bg-card",
+          "px-5 pt-5 pb-[max(1rem,env(safe-area-inset-bottom))]",
+          "md:max-w-[27rem] md:rounded-3xl md:border md:p-7 md:shadow-card",
+          open
+            ? "animate-sheet-up md:animate-rise"
+            : "animate-sheet-down md:animate-sink",
+        )}
       >
         {/* Grab handle: a phone affordance, so it stays on the phone. */}
         <div
@@ -126,13 +164,18 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
         />
         <label
           htmlFor="other-value"
-          className="block font-display text-[1.15rem] font-semibold"
+          className="block font-display text-card-title font-semibold"
         >
           {title}
         </label>
-        <p className="mt-1 text-[14px] text-muted">
+        <p className="mt-1 text-help text-muted">
           We&apos;ll add it to the list for your area once we&apos;ve checked it.
         </p>
+        {/* `fieldShell`, not `Field`: the sheet's own heading is already a real
+            `<label htmlFor="other-value">`, and a second one would make the
+            input's accessible name the two of them concatenated. This is the
+            case that prop exists for — a composite that owns its own labelling.
+            The sheet is `bg-card`, so the field is paper. */}
         <input
           id="other-value"
           ref={inputRef}
@@ -140,7 +183,7 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
           onChange={(e) => setValue(e.target.value.slice(0, 80))}
           autoComplete="off"
           enterKeyHint="done"
-          className="mt-4 w-full rounded-2xl border border-bark bg-paper px-4 py-3.5 text-ink outline-none placeholder:text-muted/70 focus:border-green"
+          className={cn(fieldShell({ on: "card" }), "mt-4 px-4 py-3.5 text-ink")}
           placeholder="Type it the way you'd say it"
         />
         <div className="mt-4 flex gap-2 md:mt-6 md:justify-end">

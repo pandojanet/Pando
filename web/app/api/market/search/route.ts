@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { MARKET_CATEGORIES } from "@/lib/types";
 import type { MarketCategory, Option } from "@/lib/types";
 import { withDb } from "@/lib/server/db";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * GET /api/market/search?category=schools&q=poly&area=pasadena
@@ -29,10 +30,14 @@ import { withDb } from "@/lib/server/db";
  * which is why this endpoint does not filter on `status` at all.
  *
  * **Nothing about a person, so no auth.** Same reference data `/options` serves,
- * and the questionnaire needs it before there is any identity to check. It is
- * rate-limited by nothing today for the same reason the options route is not:
- * it is public reference data behind an invite-gated screen. Worth revisiting if
- * the pilot's URL ever leaks — the shape to add is a per-IP counter, not auth.
+ * and the questionnaire needs it before there is any identity to check.
+ *
+ * It **is** rate-limited now (15.4, 3 Sep), which is what this comment used to
+ * say was worth doing: "the shape to add is a per-IP counter, not auth." That
+ * was the right diagnosis and it is what `market_read` is. The ceiling is the
+ * highest in `lib/rate-limits.ts` on purpose — this fires on every keystroke
+ * behind a debounce, and the aim is to stop a scrape starving real parents of
+ * pooler connections rather than to police browsing.
  */
 
 export const dynamic = "force-dynamic";
@@ -42,6 +47,14 @@ const MAX_QUERY = 60;
 const LIMIT = 25;
 
 export async function GET(request: Request) {
+  /* 15.4, and it replaces the note this file used to carry ("rate-limited by
+     nothing today … the shape to add is a per-IP counter, not auth"). That was
+     the right diagnosis: it is public reference data behind an invite-gated
+     screen, so the aim is to stop a scrape starving real parents of pooler
+     connections, not to police browsing — hence the highest ceiling here. */
+  const limited = rateLimited(request, "market_read");
+  if (limited) return limited;
+
   const url = new URL(request.url);
 
   const marketId = (url.searchParams.get("market_id") ?? "pasadena").toLowerCase().slice(0, 40);

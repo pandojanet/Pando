@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
+import { Field } from "@/components/ui/Field";
+import { TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { track } from "@/lib/analytics";
 import {
@@ -155,10 +157,10 @@ export function VerifyPhone({
 
   return (
     <Panel tone="positive" className="mt-7">
-      <h2 className="font-display text-[1.15rem] font-semibold text-green-deep">
+      <h2 className="font-display text-card-title font-semibold text-green-deep">
         Confirm it&apos;s your number
       </h2>
-      <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
+      <p className="mt-2 text-control leading-relaxed text-ink-soft">
         {audience === "caregiver" ? (
           <>
             {"Only you should be able to set up your profile, so we text "}
@@ -173,7 +175,7 @@ export function VerifyPhone({
           </>
         )}
       </p>
-      <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+      <p className="mt-2 leading-relaxed text-muted text-help">
         {SMS_CONSENT_REASSURANCE}{" "}
         {audience === "caregiver"
           ? "Your number is never shown to a family, and STOP ends it any time."
@@ -214,14 +216,14 @@ export function VerifyPhone({
             </p>
           )}
 
-          <label
-            htmlFor="verify-code"
-            className="text-[13px] font-semibold uppercase tracking-[0.08em] text-muted"
-          >
-            Six-digit code
-          </label>
-          <input
+          {/* The 22px tracked box survives as a named `variant`, not as a
+              `className` escape hatch — an escape hatch is how seventeen copies
+              happened. Its old bespoke `focus-visible:ring-4 ring-green/15` was
+              a fourth focus treatment and goes with it. */}
+          <Field
             id="verify-code"
+            label="Six-digit code"
+            variant="code"
             value={code}
             onChange={(event) =>
               setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
@@ -230,9 +232,8 @@ export function VerifyPhone({
             autoComplete="one-time-code"
             placeholder="••••••"
             aria-describedby="verify-help"
-            className="mt-1.5 w-full rounded-2xl border border-bark bg-card px-4 py-3 text-center text-[22px] font-semibold tracking-[0.35em] tabular-nums outline-none focus-visible:border-green focus-visible:ring-4 focus-visible:ring-green/15"
           />
-          <p id="verify-help" className="mt-2 text-[13px] text-muted">
+          <p id="verify-help" className="mt-2 text-muted text-help">
             Valid for {VERIFICATION_TTL_MINUTES} minutes.
             {resendsLeft !== null &&
               (resendsLeft > 0
@@ -253,15 +254,19 @@ export function VerifyPhone({
                 : "Confirm"}
           </Button>
 
+          {/* `disabled:opacity-50` is gone: `TextAction`'s own header argues
+              against it, and rightly — fading already-muted text drops it under
+              AA and still leaves it looking tappable. Its
+              `disabled:text-muted disabled:no-underline` is the one treatment. */}
           {resendsLeft !== null && resendsLeft > 0 && (
-            <button
-              type="button"
+            <TextAction
+              full
+              className="mt-2"
               onClick={() => void requestCode()}
               disabled={sending || busy}
-              className="mt-2 flex min-h-[44px] w-full items-center justify-center text-[14.5px] font-semibold text-green-deep disabled:opacity-50"
             >
               {sending ? "Sending…" : "Send a new code"}
-            </button>
+            </TextAction>
           )}
         </div>
       )}
@@ -296,19 +301,14 @@ function Blocked({
 
   if (reason === "opted_out") {
     return (
-      <div className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-        <p className="text-[14.5px] font-semibold text-gold-ink">
-          This number has texted STOP to Pando.
-        </p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-gold-ink/90">
-          We can&apos;t text it again until you turn it back on — that&apos;s the rule,
-          and we&apos;re not going to work around it. Text <strong>START</strong> to the
-          Pando number from{" "}
-          <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>,
-          then come back and tap send again. Everything you&apos;ve written is still on
-          this phone.
-        </p>
-      </div>
+      <BlockedNote title="This number has texted STOP to Pando.">
+        We can&apos;t text it again until you turn it back on — that&apos;s the rule,
+        and we&apos;re not going to work around it. Text <strong>START</strong> to the
+        Pando number from{" "}
+        <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>,
+        then come back and tap send again. Everything you&apos;ve written is still on
+        this phone.
+      </BlockedNote>
     );
   }
 
@@ -318,59 +318,67 @@ function Blocked({
    */
   if (reason === "locked") {
     return (
-      <div className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-        <p className="text-[14.5px] font-semibold text-gold-ink">
-          Too many wrong codes for this number.
-        </p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-gold-ink/90">
-          It&apos;s locked for {retryMinutes} to keep the number safe. Come back to
-          this link after that and tap send again — your profile and everything you
-          shared are still on this phone.
-        </p>
-      </div>
+      <BlockedNote title="Too many wrong codes for this number.">
+        It&apos;s locked for {retryMinutes} to keep the number safe. Come back to this
+        link after that and tap send again — your profile and everything you shared
+        are still on this phone.
+      </BlockedNote>
     );
   }
 
   if (reason === "phone_send_limit") {
     return (
-      <div className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-        <p className="text-[14.5px] font-semibold text-gold-ink">
-          That&apos;s a lot of codes to one number.
-        </p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-gold-ink/90">
-          We cap how many we&apos;ll send in an hour, to keep the number safe. Give it
-          an hour and try again, or email hello@pando.is and we&apos;ll finish it by
-          hand. Nothing you shared is lost.
-        </p>
-      </div>
+      <BlockedNote title="That's a lot of codes to one number.">
+        We cap how many we&apos;ll send in an hour, to keep the number safe. Give it an
+        hour and try again, or email hello@pando.is and we&apos;ll finish it by hand.
+        Nothing you shared is lost.
+      </BlockedNote>
     );
   }
 
   if (reason === "not_provisioned") {
     return (
-      <div className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-        <p className="text-[14.5px] font-semibold text-gold-ink">
-          Text verification isn&apos;t switched on yet.
-        </p>
-        <p className="mt-1.5 text-[14px] leading-relaxed text-gold-ink/90">
-          Nothing is lost: your profile and everything you shared stay on this phone,
-          and this link picks up right here once it&apos;s live — we&apos;ll text you
-          the moment it is.
-        </p>
-      </div>
+      <BlockedNote title="Text verification isn't switched on yet.">
+        Nothing is lost: your profile and everything you shared stay on this phone, and
+        this link picks up right here once it&apos;s live — we&apos;ll text you the
+        moment it is.
+      </BlockedNote>
     );
   }
 
   return (
-    <div className="mt-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-      <p className="text-[14.5px] font-semibold text-gold-ink">
-        That text didn&apos;t go out.
-      </p>
-      <p className="mt-1.5 text-[14px] leading-relaxed text-gold-ink/90">
-        Not your fault, and nothing is lost — everything you&apos;ve written is still on
-        this phone. Try again in a moment, or email hello@pando.is and we&apos;ll finish
-        it by hand.
-      </p>
-    </div>
+    <BlockedNote title="That text didn't go out.">
+      Not your fault, and nothing is lost — everything you&apos;ve written is still on
+      this phone. Try again in a moment, or email hello@pando.is and we&apos;ll finish
+      it by hand.
+    </BlockedNote>
+  );
+}
+
+/**
+ * One refusal box, five refusals.
+ *
+ * `Blocked` above hand-wrote `mt-4 rounded-2xl border border-gold-line
+ * bg-gold-wash p-4` five times in one function, each with the same
+ * bold-line-then-paragraph pair. Local rather than shared, because it is one
+ * function's pattern and not an app-wide one — what is shared is the box, which
+ * is `Panel`.
+ *
+ * The title is a `<p>`, not `Panel`'s `title` prop: these sit inside a `Panel`
+ * that already carries the screen's `<h2>`, and the bold first line of an alert
+ * is not a section anybody navigates to.
+ */
+function BlockedNote({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Panel tone="warning" size="inset" className="mt-4">
+      <p className="font-semibold text-gold-ink text-control">{title}</p>
+      <p className="mt-1.5 leading-relaxed text-gold-ink/90 text-help">{children}</p>
+    </Panel>
   );
 }

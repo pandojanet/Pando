@@ -1,4 +1,5 @@
 import "server-only";
+import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
@@ -172,6 +173,22 @@ async function writeShareCard(
       kind: input.kind,
       name,
       isTest: input.is_test,
+    });
+
+    /**
+     * 11.4 — the seed path's share of the named-person policy.
+     *
+     * The likely shape here is a parent typing a music teacher or a tutor into
+     * "Another class or activity" rather than into the caregiver card — the
+     * caregiver card asks the 18+ question and the firsthand-employment gate,
+     * and the activity card asks neither. Same treatment as the near-duplicate
+     * flag beside it: raised at capture, decided at approval.
+     */
+    await flagNamedPersonRecord(tx, {
+      shareId,
+      name,
+      marketId: input.market_id,
+      personId: input.person_id ?? null,
     });
   }
 

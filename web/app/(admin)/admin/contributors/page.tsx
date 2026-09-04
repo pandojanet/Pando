@@ -6,22 +6,24 @@ import { useMemo, useState } from "react";
 import {
   Badge,
   Card,
+  controlClass,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   SampleBanner,
+  slugLabel,
   TableWrap,
   Td,
   Th,
   Toolbar,
-  controlClass,
-  slugLabel,
-  yearList,
   when,
+  yearList,
 } from "@/components/admin/ui";
-import { SegmentedFilter, Select } from "@/components/admin/kit";
+import { Hint, SegmentedTabs, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
+import { Standing } from "@/components/admin/Standing";
 import { useAdminRows } from "@/lib/admin/client";
 import type { ContributorRow } from "@/lib/admin/types";
 
@@ -35,11 +37,28 @@ import type { ContributorRow } from "@/lib/admin/types";
  * number in full, test rows shown and labelled, and an audit row written every
  * time it is read.
  */
+/**
+ * The three questions this page answers about the same population.
+ *
+ * A constant rather than an inline array so the tab labels and the panel's own
+ * accessible name come from one place — otherwise the panel would be named by a
+ * second copy of the same three strings, which is how a tab ends up announcing
+ * something other than the tab that opened it.
+ */
+const VIEWS = [
+  { id: "people", label: "What they shared" },
+  /* 14.4 — the same people, a third question. Its own nav item is what the
+     consent file was moved off on 13 Aug, for the reason that nobody could tell
+     what a separate item was for. */
+  { id: "consents", label: "What they agreed to" },
+  { id: "standing", label: "What they have earned" },
+] as const;
+
 export default function ContributorsPage() {
   /* ?view=consents is where the old /admin/consents address lands. */
   const initialView =
     useSearchParams().get("view") === "consents" ? "consents" : "people";
-  const [view, setView] = useState<"people" | "consents">(initialView);
+  const [view, setView] = useState<"people" | "consents" | "standing">(initialView);
   const { rows, configured, sample, demo, setDemo, loading, error } =
     useAdminRows<ContributorRow[]>("contributors");
   const [search, setSearch] = useState("");
@@ -94,14 +113,17 @@ export default function ContributorsPage() {
        * are not an afterthought to a heading — they are how this page is used.
        */}
       <Toolbar>
-        <SegmentedFilter
+        {/* A real tab strip, not `SegmentedFilter`. These three swap whole
+            panels — different columns, different fetch — which is precisely
+            what `SegmentedFilter` documents itself as not being for. Manual
+            activation matters here: arrowing across to the third tab with
+            select-on-focus would fire two round trips nobody asked for. */}
+        <SegmentedTabs
+          panelId="contributor-view"
           label="Which question to answer about these contributors"
           value={view}
           onChange={setView}
-          options={[
-            { id: "people", label: "What they shared" },
-            { id: "consents", label: "What they agreed to" },
-          ]}
+          options={VIEWS}
         />
         {view === "people" && (
           <>
@@ -149,9 +171,18 @@ export default function ContributorsPage() {
         )}
       </Toolbar>
 
-      <div className="mb-4" />
-
+      {/* The one panel the tabs swap. Named by the chosen tab and focusable, so
+          a keyboard user who commits a tab can step straight into what changed
+          instead of hunting for it. */}
+      <div
+        id="contributor-view"
+        role="tabpanel"
+        tabIndex={0}
+        aria-label={VIEWS.find((v) => v.id === view)?.label}
+        className="mt-4"
+      >
       {view === "consents" && <ConsentRecords />}
+      {view === "standing" && <Standing />}
 
       {view === "people" && (
         <>
@@ -160,7 +191,7 @@ export default function ContributorsPage() {
 
       <Card>
         {loading && all.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : filtered.length === 0 ? (
@@ -173,7 +204,7 @@ export default function ContributorsPage() {
             }
           />
         ) : (
-          <TableWrap>
+          <TableWrap label="Contributors">
             <thead>
               <tr>
                 <Th>Name</Th>
@@ -182,7 +213,7 @@ export default function ContributorsPage() {
                     whose, because a column of bare years reads as theirs. Matches
                     the wording on the detail page rather than inventing a second. */}
                 <Th>Children born</Th>
-                <Th className="text-right" title="Everything they shared, whether or not you have looked at it yet.">
+                <Th className="text-right" hint="Everything they shared, whether or not you have looked at it yet.">
                   Shared
                 </Th>
                 {/* "Qualifying" is the word the estimate and the checklist both
@@ -193,14 +224,14 @@ export default function ContributorsPage() {
                     the next two columns you happened to be looking at. The
                     heading has to stand on its own, so it names the bigger of the
                     two thresholds and the tooltip carries both. */}
-                <Th className="text-right" title="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding.">
+                <Th className="text-right" hint="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding.">
                   Counts for Founding
                 </Th>
-                <Th title="Paid for one qualifying contribution.">Reward</Th>
-                <Th title="Activates on the second qualifying contribution, and never automatically — you confirm it.">
+                <Th hint="Paid for one qualifying contribution.">Reward</Th>
+                <Th hint="Activates on the second qualifying contribution, and never automatically — you confirm it.">
                   Founding
                 </Th>
-                <Th title="Whether they agreed another parent may come back to them about something they shared.">
+                <Th hint="Whether they agreed another parent may come back to them about something they shared.">
                   Open to questions
                 </Th>
                 <Th>Joined</Th>
@@ -228,21 +259,17 @@ export default function ContributorsPage() {
                   <Td>{row.neighborhood ? slugLabel(row.neighborhood) : "—"}</Td>
                   <Td>{yearList(row.child_birth_years)}</Td>
                   <Td className="text-right font-semibold">{row.submissions}</Td>
-                  <Td
-                    className="text-right font-semibold"
-                    title="Approved contributions meeting every Founding criterion"
-                  >
+                  {/* No `title` here: the column heading now carries that
+                      explanation as a reachable `Hint`, and saying it twice —
+                      once unreachably — is worse than saying it once. */}
+                  <Td className="text-right font-semibold">
                     {row.qualifying_approved}
                     {row.caregiver_approved > 0 && (
-                      <span
-                        className="ml-1 text-[12px] font-normal text-muted"
-                        title="Caregivers this family put forward that you have accepted and that are not on hold"
-                      >
+                      <span className="ml-1 text-[12px] font-normal text-muted">
                         {/* Was "+3 cg". Nobody expands that on sight, and this
                             column already has room for the word. */}
                         + {row.caregiver_approved}{" "}
-                        {row.caregiver_approved === 1 ? "caregiver" : "caregivers"}
-                      </span>
+                        {row.caregiver_approved === 1 ? "caregiver" : "caregivers"}{" "}<Hint>{"Caregivers this family put forward that you have accepted and that are not on hold"}</Hint></span>
                     )}
                   </Td>
                   <Td>
@@ -261,7 +288,7 @@ export default function ContributorsPage() {
                     {row.founding_status === "founding" ? (
                       <Badge tone="green">Confirmed</Badge>
                     ) : row.founding_status === "request_invite" ? (
-                      <Badge tone="muted" title="Not a rejection — they keep everything they shared and become an ordinary user at launch.">
+                      <Badge tone="muted" hint="Not a rejection — they keep everything they shared and become an ordinary user at launch.">
                         Not from the group
                       </Badge>
                     ) : (
@@ -277,7 +304,7 @@ export default function ContributorsPage() {
                        * the pill is a fact about a row, and what a reader needs
                        * to spot is the row that *differs*.
                        */
-                      <Badge tone="neutral" title="Founding is never granted automatically — somebody has to confirm it, on the founding queue.">
+                      <Badge tone="neutral" hint="Founding is never granted automatically — somebody has to confirm it, on the founding queue.">
                         Waiting on you
                       </Badge>
                     )}
@@ -300,6 +327,7 @@ export default function ContributorsPage() {
       </Card>
         </>
       )}
+      </div>
     </>
   );
 }

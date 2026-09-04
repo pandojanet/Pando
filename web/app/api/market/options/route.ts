@@ -4,6 +4,7 @@ import { MARKET_CATEGORIES } from "@/lib/types";
 import type { MarketCategory, Option } from "@/lib/types";
 import { withDb } from "@/lib/server/db";
 import { cacheOptions, cachedOptions } from "@/lib/server/market-cache";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * Categories that became a *directory* on 24 Aug and are no longer a chip list.
@@ -76,6 +77,12 @@ const SEARCHABLE = new Set([
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+  /* Shares the search budget. Cheap in itself (cached 60s), but it is the
+     other half of the same screen and a limit that only covered one of them
+     would just move the scrape. */
+  const limited = rateLimited(request, "market_read");
+  if (limited) return limited;
+
   const url = new URL(request.url);
   /* Same shape as every other id we accept from a URL: lowercase, hyphenated,
      bounded. An unknown market simply comes back empty. */

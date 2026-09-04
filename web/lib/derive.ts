@@ -41,18 +41,37 @@ const NON_ANSWERS = new Set(["prefer_not_to_say"]);
  * "Expecting" has no birth year yet. We record a due year, but mark how we got it:
  * it is the capture year, not something the parent told us.
  */
-export function childrenFromAges(ages: number[], capturedAt: Date): ChildRecord[] {
+export function childrenFromAges(
+  ages: number[],
+  capturedAt: Date,
+  /**
+   * Optional months, keyed by age id (3 Sep). Defaulted so every existing
+   * caller — the client, the route, `test:e2e` — keeps working unchanged.
+   */
+  months: Record<string, number> = {},
+): ChildRecord[] {
   const year = capturedAt.getFullYear();
-  return ages.map((age) =>
-    age === EXPECTING
-      ? {
-          birth_year: null,
-          expecting: true,
-          due_year: year,
-          due_year_precision: "assumed_capture_year" as const,
-        }
-      : { birth_year: year - age, expecting: false, due_year: null },
-  );
+  return ages.map((age) => {
+    if (age === EXPECTING) {
+      return {
+        birth_year: null,
+        expecting: true,
+        due_year: year,
+        due_year_precision: "assumed_capture_year" as const,
+      };
+    }
+    const month = months[String(age)];
+    return {
+      birth_year: year - age,
+      /* Bounded here as well as in the CHECK: this is derived on the server from
+         answers a client sent, and `children_birth_month_check` aborting the
+         whole profile write is a worse outcome than dropping one month. */
+      birth_month:
+        Number.isInteger(month) && month >= 1 && month <= 12 ? month : null,
+      expecting: false,
+      due_year: null,
+    };
+  });
 }
 
 /**
@@ -291,6 +310,19 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
      * from the answer at payload time, the same way `attribution` is narrowed
      * here rather than stored pre-shaped. Null when skipped, never assumed.
      */
+    /**
+     * The recurring-messaging opt-in (2 Sep). Same shape and same reasoning as
+     * the listening ear below it: built here from the answer rather than carried
+     * pre-shaped on the session.
+     *
+     * Only ever `opted_in` or absent — the checkbox gates the screen, so there
+     * is no state where a parent went past it having declined. That is why this
+     * does not mirror the `|| === "declined"` branch under it.
+     */
+    recurring_messages_consent:
+      answers.recurring_messages === "opted_in"
+        ? buildConsentRecord("sms_recurring", true, "seed_tool_profile")
+        : null,
     listening_ear_consent:
       answers.listening_ear === "opted_in" || answers.listening_ear === "declined"
         ? buildConsentRecord(
@@ -302,7 +334,7 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     wants_founding: session.wants_founding !== false,
     neighborhood: answers.neighborhood,
     /** Stable: birth years, plus the date the ages were taken. */
-    children: childrenFromAges(answers.child_ages, capturedAt),
+    children: childrenFromAges(answers.child_ages, capturedAt, answers.child_months),
     child_ages_at_capture: answers.child_ages,
     profile_captured_at: capturedAt.toISOString(),
     /**

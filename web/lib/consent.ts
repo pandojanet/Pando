@@ -138,6 +138,55 @@ export const SMS_CONSENT_REASSURANCE =
   "We won't text you anything you didn't ask for.";
 
 /**
+ * The recurring-messaging opt-in on the participation screen (2 Sep, client).
+ *
+ * ## Why a second SMS-shaped consent exists
+ *
+ * `SMS_CONSENT_TEXT` is taken at the phone field and authorises Pando to text
+ * the number at all — it is what sends the verification code. This one is taken
+ * at the moment the parent *chooses how often they may be asked*, and that is
+ * what it covers: it names **recurring automated messages**, says **SMS and
+ * RCS** explicitly, and ties the volume to the level just picked ("up to the
+ * number of relevant community questions you select"). RCS is the reason it was
+ * asked for — it is a different channel from SMS, and the carriers want it
+ * named.
+ *
+ * Its own version string, never shared with `sms`: the two are different
+ * permissions taken at different moments, and a stored record has to resolve to
+ * the words that were actually on screen.
+ *
+ * **The client's wording, verbatim.** The trailing "Terms · Privacy" of her copy
+ * is deliberately *not* in this string — those are links, not language, so they
+ * are rendered beside it and can never end up inside a stored consent text.
+ *
+ * ⚠️ Her sentence says "tapping **Continue**", and on that screen the dock
+ * button reads **Review**, because it is the last question before the review
+ * step. The text is registered copy and the button is a flow control, so
+ * neither was changed unilaterally — put it to her.
+ */
+export const RECURRING_MESSAGES_CONSENT_TEXT_VERSION = "seed-recurring-2026-09-02";
+
+export const RECURRING_MESSAGES_CONSENT_TEXT =
+  "By selecting a participation level and tapping Continue, you agree to receive recurring automated text messages (SMS and RCS) from Pando. These include answers you request and up to the number of relevant community questions you select. Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help.";
+
+/**
+ * Split for display only, and **derived** from the string above so the halves
+ * cannot drift from the text that gets registered — the same rule, and the same
+ * reason, as `SMS_CONSENT_AGREEMENT`: a `<label>` wrapping the whole paragraph
+ * turns a screenful of legal copy into an opt-in control, and an accidental
+ * opt-in is the worst failure a consent checkbox can have.
+ */
+const RECURRING_SPLIT_AT = "Message frequency varies.";
+const RECURRING_SPLIT_INDEX =
+  RECURRING_MESSAGES_CONSENT_TEXT.indexOf(RECURRING_SPLIT_AT);
+
+export const RECURRING_MESSAGES_CONSENT_AGREEMENT =
+  RECURRING_MESSAGES_CONSENT_TEXT.slice(0, RECURRING_SPLIT_INDEX).trim();
+
+export const RECURRING_MESSAGES_CONSENT_TERMS =
+  RECURRING_MESSAGES_CONSENT_TEXT.slice(RECURRING_SPLIT_INDEX);
+
+/**
  * 2C — the caregiver's own permissions (G2, G8–G10).
  *
  * Four decisions, asked and stored separately, because they are four different
@@ -166,10 +215,40 @@ export const CAREGIVER_CONSENT_TEXT = {
     "A family I've worked for may be asked to be a reference for me. Pando asks them, not me, and they can always say no.",
 } as const;
 
+/**
+ * 11.3 — the word that honours the sentence above.
+ *
+ * `CAREGIVER_CONSENT_TEXT.profile` promises "I can delete it at any time by
+ * texting DELETE", and the 2C flow's last screen says "Text DELETE and the whole
+ * profile goes, without asking why". Those are the only two places the promise
+ * is made, and the keyword lives here beside one of them so the two cannot
+ * drift — the same argument that keeps `isSettingsCommand` in
+ * `outreach-policy.ts` next to the numbers it quotes.
+ *
+ * **Exact on the whole message**, the rule every parser in this app follows
+ * (`keywordOf`, `yesOrNo`, `readPingReply`) and here for the sharpest version of
+ * the reason: this one is *irreversible*. "delete my saturday slot" must not
+ * remove somebody's profile, and a substring test would.
+ *
+ * **And it acts immediately, with no "are you sure?".** That is what the copy
+ * promises — "at any time by texting DELETE" describes one message, not two —
+ * and a confirmation step would make the sentence false on the one screen where
+ * a caregiver is deciding whether to trust Pando at all. The exact-match rule is
+ * what makes immediacy safe: DELETE is not a word anybody texts by accident.
+ */
+const CAREGIVER_DELETE_KEYWORDS = ["DELETE", "REMOVE ME", "DELETE MY PROFILE"];
+
+export function isCaregiverDeleteRequest(body: string): boolean {
+  const word = body.trim().toUpperCase().replace(/[.!]+$/, "");
+  return CAREGIVER_DELETE_KEYWORDS.includes(word);
+}
+
 /** The permissions, kept distinct on purpose. */
 export type ConsentScope =
   /** The registered SMS consent taken at the phone field. */
   | "sms"
+  /** Recurring automated SMS **and RCS**, agreed with the participation level. */
+  | "sms_recurring"
   /** Pando may message me about my own contributions and occasional questions. */
   | "follow_up"
   /** Pando may include me in paid Blasts from other parents (Phase 2). */
@@ -208,6 +287,8 @@ export function buildConsentRecord(
     text_version:
       scope === "sms"
         ? SMS_CONSENT_TEXT_VERSION
+        : scope === "sms_recurring"
+          ? RECURRING_MESSAGES_CONSENT_TEXT_VERSION
         : scope === "listening_ear"
           ? LISTENING_EAR_CONSENT_TEXT_VERSION
           : scope.startsWith("caregiver_")

@@ -123,10 +123,16 @@ export function ChipGroup({
 
   return (
     <div>
+      {/* A `<p>`, not an `<h2>`. This is the sub-label for one question on a
+          screen that carries more than one, and its text is already the
+          `role="group"`'s own `aria-label` two lines below — so as a heading it
+          put a duplicate into the document outline under an `<h1>` that is
+          itself the question. Nothing is lost: the group is still named, and
+          the screen's heading structure gets shorter and more honest. */}
       {label && (
-        <h2 className="mb-2.5 text-[13px] font-semibold uppercase tracking-[0.1em] text-muted">
+        <p className="mb-2.5 font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
           {label}
-        </h2>
+        </p>
       )}
 
       <div
@@ -168,7 +174,7 @@ export function ChipGroup({
           */}
         {grouped.map(([section, list]) => (
           <div key={section} className="w-full">
-            <p className="mb-1.5 mt-1 text-[12px] font-semibold uppercase tracking-[0.09em] text-muted">
+            <p className="mb-1.5 mt-1 font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
               {section}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -209,7 +215,7 @@ export function ChipGroup({
           is a rule to remember instead of a screen to answer — and this is a
           full question, never an error: they have done nothing wrong. */}
       {atMax && maxHint && (
-        <p className="mt-2.5 text-[13px] leading-relaxed text-muted">{maxHint}</p>
+        <p className="mt-2.5 text-help leading-relaxed text-muted">{maxHint}</p>
       )}
 
       {onAddCustom && (

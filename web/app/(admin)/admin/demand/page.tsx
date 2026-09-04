@@ -8,15 +8,16 @@ import {
   Empty,
   ErrorNote,
   Field,
+  inputClass,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
-  inputClass,
   slugLabel,
   when,
 } from "@/components/admin/ui";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
   FactGrid,
@@ -153,6 +154,12 @@ export default function DemandPage() {
         intro="What parents asked, in their own words. Health, legal and safety ones need a person today."
       />
 
+      {/* Banners above the filter — see `/admin/activities` for why: a wrapped
+          filter row pushes a confirmation off a phone screen. */}
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {sample && <SampleBanner />}
+      {message && <ResultNote>{message}</ResultNote>}
+
       <div className="mb-4">
         <SegmentedFilter
           label="Which questions to show"
@@ -169,10 +176,6 @@ export default function DemandPage() {
           ]}
         />
       </div>
-
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {sample && <SampleBanner />}
-      {message && <ResultNote>{message}</ResultNote>}
 
       {/**
        * Above the high-stakes banner on purpose: this is the only class where Pando
@@ -209,9 +212,7 @@ export default function DemandPage() {
 
       <Card>
         {loading && all.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-            Loading…
-          </div>
+          <Loading />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
@@ -260,7 +261,7 @@ export default function DemandPage() {
                     <>
                       <Badge
                         tone={kind?.tone ?? "neutral"}
-                        title={
+                        hint={
                           kind
                             ? `What they saw: ${kind.said}\nWhat you may do: ${kind.allowed}`
                             : undefined
@@ -332,12 +333,8 @@ export default function DemandPage() {
                       {row.neighborhood ? (
                         slugLabel(row.neighborhood)
                       ) : (
-                        <span
-                          className="text-muted"
-                          title="Anonymous session — no profile to read it from"
-                        >
-                          Not known
-                        </span>
+                        <span className="text-muted">
+                          Not known{" "}<Hint>{"Anonymous session — no profile to read it from"}</Hint></span>
                       )}
                     </Fact>
                   </FactGrid>

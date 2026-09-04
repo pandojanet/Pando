@@ -8,6 +8,7 @@ import { getDb, withDb } from "@/lib/server/db";
 import { saveCard, type CardKind } from "@/lib/server/repo/cards";
 import { scheduleExtraction } from "@/lib/server/repo/flags";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
+import { rateLimited } from "@/lib/server/rate-limit";
 
 /**
  * POST /api/seed/save — one finished capture card (spec §16.1).
@@ -114,6 +115,12 @@ function cleanFields(fields: RawFields): Record<string, unknown> {
 }
 
 export async function POST(request: Request) {
+  /* Shares the seed budget with the profile write: cards save as they are
+     finished (13 Aug), so one honest session is a dozen requests and the ceiling
+     has to allow for that. */
+  const limited = rateLimited(request, "seed_write");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as {
     invite_code?: unknown;
     source?: unknown;

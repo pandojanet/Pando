@@ -1,10 +1,13 @@
 import "server-only";
+import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
 import { sendBlast } from "@/lib/server/repo/blast";
+import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
+import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
 import {
   insertContributionImpact,
   insertImpact,
@@ -32,7 +35,21 @@ export interface ActionContext {
 }
 
 export type ActionOutcome =
-  | { applied: true; resource: string; resource_id: string | null }
+  | {
+      applied: true;
+      resource: string;
+      resource_id: string | null;
+      /**
+       * Something the caller needs that is **not** part of the record.
+       *
+       * Added for `blast.checkout`, whose whole output is a one-time Stripe
+       * payment link: the admin needs it in the response, and it must not go
+       * into `audit_log.after`, which every admin can read and which is kept
+       * forever. Anything durable about the decision belongs in the audit row
+       * instead — this is for what is useful for the next thirty seconds.
+       */
+      detail?: Record<string, unknown>;
+    }
   | {
       applied: false;
       /**
@@ -209,6 +226,52 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "share", resource_id: target };
     }
 
+    /* ── 14.9 Freshness outcomes ─────────────────────────────────────────── */
+
+    /**
+     * Retire a record a contributor said is no longer worth recommending.
+     *
+     * `rejected` rather than a new state: `shares_answerable` requires
+     * `approved`, so this is already the name for "will not reach an answer".
+     * Inventing a `retired` status would have meant a migration, a CHECK, a
+     * label and a second thing every read had to remember.
+     *
+     * **The record is not deleted.** It carries the contributions of every
+     * parent who did recommend it, which are theirs; and a record that comes
+     * back (a class under new management, a park reopened) is one approval away
+     * rather than one re-entry away.
+     */
+    case "share.retire": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      await tx.execute(
+        sql`update shares set status = 'rejected', updated_at = now()
+             where id = ${target}::uuid`,
+      );
+      await resolveWithdrawalFlag(tx, target, ctx.actor, text(b.reason));
+      return { applied: true, resource: "share", resource_id: target };
+    }
+
+    /**
+     * Keep it, stale.
+     *
+     * The record stays answerable and **stays marked stale** — deliberately not
+     * restored to fresh, which would assert the opposite of what the
+     * contributor just said. The spec's answer to old knowledge is to label it,
+     * and `trust-labels.ts` computes that label from `last_confirmed_at`, so
+     * leaving the date alone is what keeps the answer honest.
+     */
+    case "share.keep": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      await tx.execute(
+        sql`update shares set freshness_state = 'stale', updated_at = now()
+             where id = ${target}::uuid and status = 'approved'`,
+      );
+      await resolveWithdrawalFlag(tx, target, ctx.actor, text(b.reason));
+      return { applied: true, resource: "share", resource_id: target };
+    }
+
     /**
      * 7.8 — send a blast to its matched pool.
      *
@@ -232,6 +295,132 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
            whose pool came back short, is the system refusing on purpose. The
            audit row is skipped because nothing changed that is worth attributing. */
         console.info("[blast] send refused", { reason: outcome.reason });
+        return { applied: false, reason: "not_found" };
+      }
+      return { applied: true, resource: "blast", resource_id: target };
+    }
+
+
+    /* ── 14.3 / 13.5–13.7 The blast manager, and the money ───────────────── */
+
+    /**
+     * Open a Stripe checkout for a paid Ask.
+     *
+     * The URL comes back in `detail` rather than being followed, because the
+     * admin is not the one paying: during the pilot a paid Ask is set up by a
+     * person who then passes the link on. When M5's SMS path takes over, the
+     * same `openCheckout` is what it will call.
+     *
+     * **The URL is deliberately not in the audit row.** `audit_log.after` is
+     * read by every admin and kept forever, and this is a live payment link;
+     * what belongs in the record is that a checkout was opened, by whom, for
+     * which blast.
+     *
+     * Like `blast.send` and `answer.send`, this holds the transaction open
+     * across one HTTP call. Acceptable at pilot volume and noted for the same
+     * reason it is noted there: the audit row must not be lost because a
+     * third-party API was slow, and `openCheckout` never throws.
+     */
+    case "blast.checkout": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+
+      const outcome = await openCheckout(target);
+      if (!outcome.ok) {
+        /* `nothing_to_pay` is a legitimate answer — a free tier, or one a credit
+           already covered — so this is a refusal with a name rather than an
+           error. */
+        console.info("[blast] checkout refused", { reason: outcome.reason });
+        return { applied: false, reason: "not_found" };
+      }
+      return {
+        applied: true,
+        resource: "blast",
+        resource_id: target,
+        detail: { url: outcome.url },
+      };
+    }
+
+    /**
+     * Mark an Ask fulfilled — a judgement, which is why it is a button.
+     *
+     * 7.7's guarantee turns on whether an answer was *useful*, and no query can
+     * decide that: three replies of "no idea, sorry" leave it owed. So this is a
+     * person saying the parent got what they paid for, and the note is the
+     * record of that.
+     *
+     * It deliberately does **not** touch `payment_status`. Fulfilment and money
+     * are separate columns for exactly this reason (`drizzle/0029`): an Ask can
+     * be fulfilled and still owe a goodwill refund, and collapsing the two would
+     * make that unrepresentable.
+     */
+    case "blast.fulfil": {
+      const target = id(b.id);
+      const note = text(b.note);
+      if (!target || !note) return { applied: false, reason: "not_implemented" };
+
+      const rows = (await tx.execute(sql`
+        update blasts
+           set status = 'fulfilled', fulfilled_at = now()
+         where id = ${target}::uuid
+           and status in ('active', 'pending_review', 'expired')
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      /* A conditional UPDATE, per the 11 Aug rule: a stale screen acting on a
+         blast that has since been refunded is a no-op with a name rather than a
+         transaction rolled back over an audit row. */
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "blast", resource_id: target };
+    }
+
+    /**
+     * 13.7, first half — flag that a refund is owed, without making it.
+     *
+     * The middle state 14.5's page is named for ("status, and **refund needs**").
+     * The two halves happen at different times and often by different people:
+     * whoever works the blast queue can see the window closed with nothing
+     * approved, and whoever handles money does the rest. One button would mean
+     * the person noticing has to also be the person authorised.
+     */
+    case "blast.refund_due": {
+      const target = id(b.id);
+      const reason = text(b.reason);
+      if (!target || !reason) return { applied: false, reason: "not_implemented" };
+
+      const rows = (await tx.execute(sql`
+        update blasts
+           set payment_status = 'refund_due', refund_reason = ${reason}
+         where id = ${target}::uuid
+           and payment_status = 'paid'
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "blast", resource_id: target };
+    }
+
+    /**
+     * 13.7, second half — the refund itself.
+     *
+     * **Stripe first, then the row**, which is the opposite of the order that
+     * looks safer. Marking the row refunded and then failing to reach Stripe
+     * leaves a record saying the money went back when it did not — and the
+     * parent, who can see their card statement, then knows more about Pando's
+     * finances than Pando does. A Stripe failure leaves the row untouched and
+     * the admin sees an error they can retry; the idempotency key (the blast id)
+     * is what makes that retry safe.
+     *
+     * The reason is required for the same reason it is on `claim.decline` and
+     * `share.retire`: this is a manual decision for the pilot's first sixty
+     * days, so the note is the only record of the judgement.
+     */
+    case "blast.refund": {
+      const target = id(b.id);
+      const reason = text(b.reason);
+      if (!target || !reason) return { applied: false, reason: "not_implemented" };
+
+      const outcome = await refundBlast({ blastId: target, reason });
+      if (!outcome.ok) {
+        console.error("[blast] refund failed", { reason: outcome.reason });
         return { applied: false, reason: "not_found" };
       }
       return { applied: true, resource: "blast", resource_id: target };
@@ -460,6 +649,25 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           returning id
         `)) as unknown as Array<Record<string, unknown>>;
         shareId = String(created[0]?.id ?? "");
+        /**
+         * 11.4 — a blast reply naming a person.
+         *
+         * This is the path most likely to produce one: a parent asked "who do
+         * you use for piano?" answers with a teacher's name, and 7.6 already
+         * refuses to create a *caregiver* from a reply (it cannot express the
+         * consent workflow). So the record lands as an activity called after a
+         * person, and this is what asks an admin the caregiver questions before
+         * it can be answered with. Only on a newly created record — a merge
+         * target was already reviewed under its own name.
+         */
+        if (shareId && name) {
+          await flagNamedPersonRecord(tx, {
+            shareId,
+            name,
+            marketId: String(reply.market_id ?? "pasadena"),
+            personId,
+          });
+        }
       }
       if (!shareId) return { applied: false, reason: "not_implemented" };
 
@@ -989,39 +1197,14 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const claim = id(b.id);
       if (!claim) return { applied: false, reason: "not_implemented" };
 
-      await tx.execute(
-        sql`
-          with claim as (
-            delete from caregiver_claims where id = ${claim}::uuid
-            returning person_id, linked_caregiver_id
-          ),
-          cg as (
-            update caregivers c
-            set consent_status = 'revoked',
-                active = false, discoverable = false, introducible = false,
-                profile_person_id = null, updated_at = now()
-            from claim
-            where c.id = claim.linked_caregiver_id
-            returning c.id
-          ),
-          prof as (
-            delete from caregiver_profiles where caregiver_id in (select id from cg)
-          ),
-          cons as (
-            delete from consents
-            where person_id in (select person_id from claim)
-              and scope like 'caregiver%'
-          )
-          delete from people p
-          where p.id in (select person_id from claim)
-            and not exists (select 1 from submissions s where s.person_id = p.id)
-            and not exists (select 1 from caregiver_nominations n where n.person_id = p.id)
-            and not exists (
-              select 1 from consents c
-              where c.person_id = p.id and c.scope not like 'caregiver%'
-            )
-        `,
-      );
+      /**
+       * The cascade lives in `repo/caregiver.ts` now, because 11.3 gave it a
+       * second caller: a caregiver who texts DELETE instead of asking Janet to
+       * press this button. Two copies of a statement that removes a person's
+       * record would drift in exactly the place where drifting leaves a profile
+       * half-deleted.
+       */
+      await deleteCaregiverClaim(tx, { claimId: claim });
 
       return { applied: true, resource: "caregiver_claim", resource_id: claim };
     }
@@ -1082,4 +1265,40 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     default:
       return { applied: false, reason: "not_implemented" };
   }
+}
+
+/**
+ * 14.9 — clear the withdrawal flag that put a record in the queue.
+ *
+ * Both outcomes call it, because both are decisions about the same flag: the
+ * queue is *driven* by `recommendation_withdrawn` being open, so a record that
+ * left the queue with its flag still open would leave the Flags page insisting
+ * on something this page had already dealt with.
+ *
+ * **Resolved by reason and subject, and the flag id is deliberately not passed
+ * in.** A stale screen can hold an id that has since been resolved or replaced
+ * — a record can be withdrawn, kept, and withdrawn again by a different parent
+ * — and the thing that must end up clear is "the open withdrawal flag on this
+ * record", whichever row that is now. Sending the id and then not using it would
+ * be the dead-payload fault that estimate 2.2 already cost once.
+ *
+ * The reason is stored because it is the only record of *why* a queue was
+ * cleared — the same rule `claim.decline` and every rejection here follow.
+ */
+async function resolveWithdrawalFlag(
+  tx: Tx,
+  shareId: string,
+  actor: string,
+  note: string | null,
+): Promise<void> {
+  await tx.execute(sql`
+    update flags
+       set status = 'resolved',
+           resolved_at = now(),
+           resolved_by = ${actor},
+           resolution_note = ${note}
+     where status = 'open'
+       and reason = 'recommendation_withdrawn'
+       and subject_id = ${shareId}::uuid
+  `);
 }

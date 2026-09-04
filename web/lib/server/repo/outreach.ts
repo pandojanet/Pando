@@ -39,6 +39,17 @@ export interface SendRecord {
   providerMessageId: string | null;
   /** The inbound message this answers, for the response-rate governor. */
   respondedTo: string | null;
+  /**
+   * 13.4 — the `message_log` row this attempt is retrying, when it is one.
+   *
+   * It exists for a promise rather than for bookkeeping: every counter in this
+   * file reads this table, so a retry written as an ordinary row would spend a
+   * parent's monthly allowance **twice for one message they received once**, and
+   * restart their 48-hour gap. Rows carrying this are excluded from all of them.
+   */
+  retryOf?: string | null;
+  /** How many attempts preceded this one. Zero for a first send. */
+  retryCount?: number;
 }
 
 /**
@@ -73,11 +84,12 @@ export async function recordSend(record: SendRecord): Promise<void> {
     await db.execute(sql`
       insert into message_log
         (person_id, direction, category, template, template_version,
-         provider_message_id, responded_to, sent_at)
+         provider_message_id, responded_to, retry_of, retry_count, sent_at)
       values
         (${record.personId}::uuid, ${record.direction}, ${record.category},
          ${record.template}, ${record.templateVersion},
-         ${record.providerMessageId}, ${record.respondedTo}::uuid, now())
+         ${record.providerMessageId}, ${record.respondedTo}::uuid,
+         ${record.retryOf ?? null}::uuid, ${record.retryCount ?? 0}, now())
     `);
     return true;
   });
@@ -107,8 +119,16 @@ export async function outreachAllowed(
         -- Proactive messages only. A verification code is not a request for help,
         -- and counting it would spend somebody's monthly allowance on their own
         -- sign-up.
+        -- 13.4: every outbound branch below carries "m.retry_of is null", and
+        --
+        -- A retry is the *same message* reaching the same parent once. Counting
+        -- it twice would spend a second slot of an allowance they agreed to for
+        -- being asked things, which is the ceiling invariant 5 exists to keep —
+        -- and it would make the response-rate governor read a parent as less
+        -- responsive because Pando's carrier had a bad minute.
         coalesce(sum(case when m.direction = 'out'
                            and m.category = 'outreach'
+                           and m.retry_of is null
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                     as sent_30,
         -- Answered: an inbound message that names an outbound one. That is what
@@ -118,14 +138,17 @@ export async function outreachAllowed(
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                     as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
+                  and m.retry_of is null
                  then m.sent_at end)                                  as last_outreach,
         coalesce(sum(case when m.direction = 'out'
                            and m.template = 'freshness_ping'
+                           and m.retry_of is null
                            and date_trunc('month', m.sent_at)
                              = date_trunc('month', now())
                       then 1 else 0 end), 0)::int                     as pings_month,
         coalesce(bool_or(m.direction = 'out'
                      and m.category = 'outreach'
+                     and m.retry_of is null
                      and m.template is distinct from 'freshness_ping'
                      and m.sent_at::date = now()::date), false)       as blast_today
       from people p
@@ -224,8 +247,15 @@ export async function setOptOut(
 export async function recordInbound(input: {
   phone: string;
   category: "transactional" | "outreach";
-  /** Which keyword it was, or null for ordinary text. Never the body itself. */
-  keyword: "opt_out" | "opt_in" | "help" | "pass" | null;
+  /**
+   * Which keyword it was, or null for ordinary text. Never the body itself.
+   *
+   * `delete` is Pando's own (11.3), not a carrier-standard one like the four
+   * above it — it is in the same union because this column answers "what kind of
+   * message was this", and a self-service deletion is exactly the kind worth
+   * being able to count.
+   */
+  keyword: "opt_out" | "opt_in" | "help" | "pass" | "delete" | null;
 }): Promise<void> {
   await withDb(async (db: Db) => {
     await db.execute(sql`

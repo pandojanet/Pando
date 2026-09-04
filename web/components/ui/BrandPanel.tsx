@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { PandoMark } from "./Logo";
+import { Wordmark } from "./Logo";
 
 /**
  * Desktop-only pane beside the app (lg+). Renders nothing below lg.
@@ -158,6 +158,7 @@ export function BrandPanel() {
 
   return (
     <aside
+      aria-label="About Pando"
       className={cn(
         "frame-scroll hidden lg:sticky lg:top-0 lg:flex lg:h-dvh lg:w-[21rem] lg:shrink-0 lg:flex-col",
         /* The rail grows on a wide window too. It carries real context, so giving
@@ -168,22 +169,33 @@ export function BrandPanel() {
       )}
     >
       <div className="flex flex-wrap items-center gap-2.5 text-paper">
-        <PandoMark className="h-6" tone="light" />
-        <span className="font-display text-[1.1rem] font-bold tracking-[-0.02em]">
-          Pando
-        </span>
-        {/* 11.5px is the smallest size in the type scale (the eyebrow). 10.5px was
-            below the system's own floor for no reason other than fitting. */}
-        <span className="rounded-full border border-gold/40 px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-[0.12em] text-gold">
+        {/* `Wordmark`, not a hand-written copy of it. This was the mark plus the
+            word at `1.1rem` beside `Wordmark`'s own `1.15rem` — the same lockup
+            twice, half a step apart, which is the one thing a logo must never
+            be. */}
+        <Wordmark tone="light" />
+        {/* Eyebrow *type* on a badge box, which is why it is not an `Eyebrow`:
+            the rounded border is not spacing, and `Eyebrow`'s className is
+            spacing only. The size and tracking are the tokens, so it cannot
+            drift from the real eyebrow — which is the whole fault this pass is
+            closing. 10.5px was below the system's own floor for no reason other
+            than fitting. */}
+        <span className="rounded-full border border-gold/40 px-2.5 py-1 font-semibold uppercase text-eyebrow tracking-eyebrow text-gold">
           {panel.badge}
         </span>
       </div>
 
       <div className="py-8">
-        <h2 className="font-display text-[1.8rem] font-extrabold leading-[1.08] text-paper xl:text-[2.1rem]">
+        {/* A `<p>`, not an `<h2>`. This aside precedes `<main>` in the DOM, so
+            as a heading it made the document outline on every desktop screen
+            start at level 2 and *then* reach the page's own `<h1>` — the page
+            title reading as a child of the marketing line beside it. It is
+            ambient context, not a section anybody navigates to; the `<aside>`
+            is named instead, which is what a landmark wants. */}
+        <p className="font-display text-[1.8rem] font-extrabold leading-[1.08] text-paper xl:text-[2.1rem]">
           {panel.title}
-        </h2>
-        <p className="mt-4 text-[15px] leading-relaxed text-paper-soft">
+        </p>
+        <p className="mt-4 text-control leading-relaxed text-paper-soft">
           {panel.lead}
         </p>
 
@@ -191,7 +203,7 @@ export function BrandPanel() {
           {panel.points.map((point) => (
             <li
               key={point}
-              className="flex gap-2.5 text-[14px] leading-snug text-paper-soft"
+              className="flex gap-2.5 text-help leading-snug text-paper-soft"
             >
               <CheckMark />
               {point}
@@ -203,7 +215,7 @@ export function BrandPanel() {
       {/* Where they are in the flow. The phone shows this as a progress bar in the
           header; on desktop there's room to name the steps. */}
       {activeStep >= 0 ? (
-        <ol className="flex flex-wrap items-center gap-2.5 text-[12.5px]">
+        <ol className="flex flex-wrap items-center gap-2.5 text-dock">
           {STEPS.map((step, i) => (
             <li key={step.key} className="flex items-center gap-2.5">
               {i > 0 && (
@@ -243,7 +255,7 @@ export function BrandPanel() {
           ))}
         </ol>
       ) : (
-        <p className="text-[12.5px] leading-relaxed text-paper-faint">
+        <p className="text-dock leading-relaxed text-paper-faint">
           Pando Systems, Inc · Pasadena, CA ·{" "}
           <a
             href="mailto:hello@pando.is"

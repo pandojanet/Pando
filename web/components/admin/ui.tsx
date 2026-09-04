@@ -129,28 +129,53 @@ export function Stat({
   label,
   value,
   hint,
+  explain,
   tone = "plain",
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
-  tone?: "plain" | "warn" | "good";
+  /**
+   * A sentence the reader can actually reach, next to the label.
+   *
+   * Delivery's "Still in flight" carried its only explanation in a `title=` —
+   * unreachable by touch and by keyboard, which is the fault both this file and
+   * `kit.tsx` document at length and which has already cost two client reports.
+   */
+  explain?: ReactNode;
+  /**
+   * `alert` rather than `warn` for a number that is *wrong*, not pending. Gold
+   * already means "not finished yet" everywhere on this surface; a delivery rate
+   * under the 95% floor is not pending, it is a fault somebody has to act on.
+   */
+  tone?: "plain" | "warn" | "good" | "alert";
 }) {
   return (
     <div
       className={cn(
         "rounded-xl border p-4",
+        // Selected, never appended — `cn()` is a plain join.
         tone === "warn"
           ? "border-gold-line bg-gold-wash"
           : tone === "good"
             ? "border-green/25 bg-green-wash"
-            : "border-bark bg-card",
+            : tone === "alert"
+              ? "border-alert-line bg-alert-wash"
+              : "border-bark bg-card",
       )}
     >
-      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
+      <p className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
         {label}
+        {explain && <Hint label={`What "${label}" means`}>{explain}</Hint>}
       </p>
-      <p className="mt-1 font-display text-[1.7rem] font-bold leading-none">{value}</p>
+      <p
+        className={cn(
+          "mt-1 font-display text-[1.7rem] font-bold leading-none",
+          tone === "alert" && "text-alert",
+        )}
+      >
+        {value}
+      </p>
       {hint && <p className="mt-1.5 text-[12.5px] leading-snug text-muted">{hint}</p>}
     </div>
   );
@@ -209,11 +234,36 @@ export function Badge({
  * fix as the admin nav (`Shell.tsx`), because a table is the one place on this
  * page that's expected to scroll, not the whole surface reaching for attention.
  */
-export function TableWrap({ children }: { children: ReactNode }) {
+export function TableWrap({
+  label,
+  children,
+}: {
+  /**
+   * What this table is. Names the scroll region **and** the table.
+   *
+   * Without it the scrolling div had no `tabindex`, no role and no name — so the
+   * nine-column contributors table could not be scrolled sideways from the
+   * keyboard *at all*, and there is not even a scrollbar to hint that there is
+   * more: `useEdgeFade` replaces it with a mask.
+   *
+   * `role="group"`, deliberately, not `region`: eight tables becoming eight
+   * landmarks is noise in the landmark list.
+   */
+  label: string;
+  children: ReactNode;
+}) {
   const { ref, maskStyle } = useEdgeFade<HTMLDivElement>();
   return (
-    <div ref={ref} className="overflow-x-auto no-scrollbar" style={maskStyle}>
+    <div
+      ref={ref}
+      tabIndex={0}
+      role="group"
+      aria-label={label}
+      className="overflow-x-auto no-scrollbar"
+      style={maskStyle}
+    >
       <table className="w-full min-w-[46rem] border-collapse text-left text-[14px]">
+        <caption className="sr-only">{label}</caption>
         {children}
       </table>
     </div>
@@ -224,22 +274,41 @@ export function Th({
   children,
   className,
   title,
+  hint,
+  scope = "col",
 }: {
   children?: ReactNode;
   className?: string;
   /** Hover explanation, same as `Td` — a column heading has to fit in two words
       more often than it can explain itself in two words. */
   title?: string;
+  /**
+   * The reachable version of `title`, for a heading whose second sentence is the
+   * only place a fact is stated. The worst instance was the contributors table,
+   * where a `title=` held the **only** statement anywhere of the difference
+   * between the reward threshold and the Founding threshold.
+   */
+  hint?: ReactNode;
+  /** `col` for a column heading; `row` for the cell that names a row. */
+  scope?: "col" | "row";
 }) {
   return (
     <th
       title={title}
+      scope={scope}
       className={cn(
         "border-b border-bark/70 bg-paper/60 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted",
         className,
       )}
     >
-      {children}
+      {hint ? (
+        <span className="inline-flex items-center gap-1">
+          {children}
+          <Hint label="What this column means">{hint}</Hint>
+        </span>
+      ) : (
+        children
+      )}
     </th>
   );
 }
@@ -393,26 +462,100 @@ export function SampleBanner() {
 export function NotConfigured({
   demo,
   onDemo,
+  noSample,
 }: {
   demo: boolean;
   onDemo: (on: boolean) => void;
+  /**
+   * Why this resource has no sample rows, in one sentence.
+   *
+   * Nine resources answer with a deliberately **empty** sample — money,
+   * payments, conversation histories, blast pools, matching rankings, freshness,
+   * impact, delivery, answers — and each has its reason written beside it in
+   * `app/api/admin/query/route.ts`: a fabricated $15 payment answers "has
+   * anybody actually paid?" with a yes, and an invented ranking is the one thing
+   * the matching harness must never show, because judging the real ranking is
+   * its whole purpose.
+   *
+   * The defect this closes is small and corrosive: those pages still offered a
+   * **"Show sample data" button that does nothing**, because there is nothing to
+   * show. A control that visibly does not respond reads as a broken page, so an
+   * admin concludes the tool is broken rather than that the deployment has no
+   * database. Passing the reason replaces the button with it — and the text
+   * comes from the same decision as the empty sample rather than being written
+   * again here, so the two cannot drift.
+   */
+  noSample?: string;
 }) {
   return (
     <Empty
       title="No database connected yet"
       body={
-        <>
-          This page reads from the pilot database, and this deployment isn&apos;t
-          connected to one. Until it is there is nothing to show — you can switch on
-          sample rows to review the layout.
-        </>
+        noSample ? (
+          <>
+            This page reads from the pilot database, and this deployment
+            isn&apos;t connected to one. {noSample}
+          </>
+        ) : (
+          <>
+            This page reads from the pilot database, and this deployment
+            isn&apos;t connected to one. Until it is there is nothing to show —
+            you can switch on sample rows to review the layout.
+          </>
+        )
       }
       action={
-        <Button tone="secondary" onClick={() => onDemo(!demo)}>
-          {demo ? "Hide sample data" : "Show sample data"}
-        </Button>
+        noSample ? undefined : (
+          <Button tone="secondary" onClick={() => onDemo(!demo)}>
+            {demo ? "Hide sample data" : "Show sample data"}
+          </Button>
+        )
       }
     />
+  );
+}
+
+/**
+ * Waiting for a query, in one place.
+ *
+ * It was written out **24 times** — 23 of them the identical
+ * `px-4 py-10 text-center text-[13.5px] text-muted`, one at `py-8` for no
+ * reason — and not one of them announced anything, so a screen-reader user
+ * working the admin got silence between clicking and rows appearing.
+ *
+ * ## Why the text arrives one tick late
+ *
+ * A live region has to be **in the document before its content changes**, or
+ * nothing is announced. That is the rule `TypingDots` paid for in the chat and
+ * `CopyButton` paid for again on 3 Sep, and mounting a `role="status"` with its
+ * message already inside is exactly the mistake: the region and the text arrive
+ * in the same commit, so there is no change to observe. So the element mounts
+ * empty and an effect fills it.
+ *
+ * Two consequences worth keeping. The box holds its height either way, so
+ * nothing shifts when the text lands. And a query that resolves inside one tick
+ * now shows **nothing at all** rather than flashing "Loading…" — which is the
+ * better behaviour on the warm pooler, where most of these return in ~200ms.
+ *
+ * No skeletons, deliberately: this is a tool for one or two people at a laptop,
+ * a skeleton that blinks for 200ms is more movement than a line of text, and it
+ * would be a promise about the shape of the rows that differs on all 23 pages.
+ */
+export function Loading({ inline = false }: { inline?: boolean }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => setShown(true), []);
+
+  return (
+    <div
+      role="status"
+      className={
+        inline
+          ? "px-4 py-6 text-center text-[13.5px] text-muted"
+          : "px-4 py-10 text-center text-[13.5px] text-muted"
+      }
+    >
+      {shown ? "Loading…" : ""}
+    </div>
   );
 }
 
@@ -489,9 +632,23 @@ export function ResultNote({
  * On a phone it drops below the title rather than fighting it for the row,
  * which is what `PageHead` already does — this only fixes the inside.
  */
+/**
+ * The row of controls under the page title: search, filters, hide-test.
+ *
+ * It owns its own `mb-4`, like every other block under `PageHead` (which owns
+ * `mb-5`). Before this the four pages carrying one each supplied the gap from
+ * whatever came next — an `mt-5` here, an `mt-4` there — so the distance between
+ * the controls and the work depended on which page you were on.
+ *
+ * `right` on `PageHead` is **not** where this goes. That slot is a flex of
+ * `shrink-0` items whose failure mode is documented on this file: a checkbox
+ * label, the one thing with no intrinsic width to defend, wrapped into three
+ * lines of one word each against the page title. Fixed on `/admin/contributors`
+ * on 2 Sep and left in place on three other pages until now.
+ */
 export function Toolbar({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 [&_label]:whitespace-nowrap">
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 [&_label]:whitespace-nowrap">
       {children}
     </div>
   );
@@ -514,22 +671,78 @@ export function Toolbar({ children }: { children: ReactNode }) {
  * operable, findable by the browser's own find-in-page (Chrome expands a closed
  * `details` to reveal a hit), and no state for a page to get wrong.
  *
- * **Open by default**, deliberately. A collapsed explainer is a tooltip with a
- * bigger target — the reader still has to know to look. Anyone who has read it
- * can fold it away, and the summary stays as the reminder.
+ * ## Closed by default, and it opens on hover (3 Sep)
+ *
+ * This **reverses** the 2 Sep decision recorded in CLAUDE.md, which was "open
+ * by default, because a collapsed explainer is a tooltip with a bigger target".
+ * The client's instruction is the newer document and it wins: *"Тултіпи лише
+ * при наведенні курсору, а не бути постійно розгорнутими, щоб не
+ * перевантажувати сторінку."*
+ *
+ * She is right about the cost, and the cost is what the earlier reasoning did
+ * not price. Six pages carry one of these, and every one of them opened with a
+ * paragraph of ours above the work — on `/admin/payments` the reader met four
+ * sentences about how money works before the first payment. An explanation that
+ * is always on screen stops being read at all, which is the same failure as a
+ * tooltip nobody finds, arriving from the other direction.
+ *
+ * **What is kept from the earlier decision, because it was the sound half:**
+ * this is not a `title` attribute. It stays a real `<details>`, so it is
+ * reachable by tap and by keyboard, and findable by the browser's own
+ * find-in-page (Chrome expands a closed `details` to reveal a hit). The hover
+ * is added *on top of* that rather than instead of it — hover alone would put
+ * the explanation out of reach on the phone the admin sometimes uses, which is
+ * exactly the defect this component was written to end.
+ *
+ * So there are two ways in and they do not fight: hovering peeks, clicking
+ * pins. A pinned explainer stays open when the pointer leaves — otherwise
+ * reading a long one means keeping the mouse inside it while you scroll.
  */
 export function Explainer({
   title,
   children,
-  open = true,
+  open = false,
 }: {
   title: string;
   children: ReactNode;
+  /** Pinned open from the first render. Rare: something a page must not bury. */
   open?: boolean;
 }) {
+  const [pinned, setPinned] = useState(open);
+  const [peeking, setPeeking] = useState(false);
+
   return (
-    <details open={open} className="group border-b border-bark/70 last:border-b-0">
-      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.07em] text-muted hover:text-ink">
+    <details
+      open={pinned || peeking}
+      /* Its own box, because it belongs **above** the work rather than inside
+         it. `border-b … last:border-b-0` was shaped for living as the first row
+         of a `Card` — which is exactly the placement this pass removed: on
+         `/admin/blasts` and `/admin/payments` our paragraph was literally the
+         first row of the reader's queue. Standalone, those classes drew a naked
+         summary line on bare paper, so the two placements could not both be
+         right. */
+      className="group mb-4 rounded-xl border border-bark bg-card"
+      onPointerEnter={(e) => {
+        /* Pointer type matters: a tap fires `pointerenter` too, and peeking on
+           a tap would race the click that toggles the pin — the summary would
+           open on the enter and close again on the click. Hover is a mouse. */
+        if (e.pointerType === "mouse") setPeeking(true);
+      }}
+      onPointerLeave={() => setPeeking(false)}
+    >
+      {/* `open` is ours, so the browser's own toggle has to be stopped — and
+          `onToggle` is **not** the place to read it back: that event fires on
+          any change to the attribute, including one React made for a peek, so
+          hovering would silently pin. Intercepting the click is what keeps the
+          two gestures separate, and it covers the keyboard too (Enter and Space
+          on a summary both arrive as a click). */}
+      <summary
+        onClick={(e) => {
+          e.preventDefault();
+          setPinned((was) => !was);
+        }}
+        className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.07em] text-muted hover:text-ink"
+      >
         <span
           aria-hidden="true"
           className="text-[10px] transition-transform group-open:rotate-90"
@@ -588,13 +801,35 @@ export function when(iso: string | null): string {
       date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/**
+ * A date **and** a time, pinned to en-US for exactly the reason `when()` records.
+ *
+ * The audit log was the one place in the admin calling
+ * `toLocaleString(undefined, …)` — the reader's own locale — which is the worst
+ * page to do it on, since its whole job is being readable months later and
+ * compared against somebody else's screenshot. Its own sibling here rather than
+ * a second inline call, so the reason lives in one file.
+ */
+export function whenExact(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? "—"
+    : date.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+}
+
 export function ProvenanceBadge({ provenance }: { provenance: string }) {
   if (provenance === "parent_submitted") {
-    return <Badge tone="green" title="A real parent submitted this">Parent</Badge>;
+    return <Badge tone="green" hint="A real parent submitted this">Parent</Badge>;
   }
   if (provenance === "admin_entered") {
     return (
-      <Badge tone="gold" title="Entered by an admin — can never carry a parent-vouched label">
+      <Badge tone="gold" hint="Entered by an admin — can never carry a parent-vouched label">
         Admin-entered
       </Badge>
     );

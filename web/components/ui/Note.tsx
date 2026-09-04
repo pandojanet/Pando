@@ -34,7 +34,7 @@ export function Note({
   return (
     <p
       role="alert"
-      className={`${className} animate-rise rounded-2xl border border-gold-line bg-gold-wash p-3 text-[14px] font-medium text-gold-ink`}
+      className={`${className} animate-rise rounded-2xl border border-gold-line bg-gold-wash p-3 text-help font-medium text-gold-ink`}
     >
       {children}
     </p>

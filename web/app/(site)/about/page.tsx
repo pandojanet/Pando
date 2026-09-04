@@ -19,7 +19,7 @@ export default function AboutPage() {
     <>
       <SiteHeader />
 
-      <main className="py-11 sm:py-[4.5rem]">
+      <main id="main" tabIndex={-1} className="py-11 sm:py-[4.5rem]">
         <Wrap size="story">
           <Eyebrow>Why we’re called Pando</Eyebrow>
           <h1 className="mt-4 font-display text-[clamp(1.7rem,7vw,3rem)] font-extrabold leading-[1.05] tracking-[-0.028em]">

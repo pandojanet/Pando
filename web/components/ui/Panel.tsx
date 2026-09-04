@@ -37,17 +37,26 @@ import { cn } from "@/lib/cn";
  * edge from a border. Making it a prop keeps that a decision per screen rather
  * than a property of a colour.
  */
-type Tone = "card" | "positive" | "warning";
+type Tone = "card" | "positive" | "warning" | "quiet";
+type Size = "default" | "inset";
 
 const TONES: Record<Tone, { box: string; title: string }> = {
   card: { box: "border-bark bg-card", title: "text-ink" },
   positive: { box: "border-green/25 bg-green-wash", title: "text-green-deep" },
   warning: { box: "border-gold-line bg-gold-wash", title: "text-gold-ink" },
+  /**
+   * The register that already existed and had no name. `ProfileFlow`'s footnote
+   * carried the argument in a comment before this tone did: *"Neutral styling,
+   * deliberately. In green it reads as reassurance and in gold as a warning; it
+   * is neither, it is the honest limit."*
+   */
+  quiet: { box: "border-bark bg-paper", title: "text-ink" },
 };
 
 export function Panel({
   children,
   tone = "card",
+  size = "default",
   raised = false,
   flush = false,
   title,
@@ -56,6 +65,19 @@ export function Panel({
 }: {
   children: ReactNode;
   tone?: Tone;
+  /**
+   * `inset` is the nested or footnote box: `rounded-2xl p-4` with a plain
+   * heading, against `default`'s `rounded-3xl p-5` and display heading.
+   *
+   * It exists because `Panel` could not absorb the twelve hand-written boxes
+   * without it — every one of them is `p-4`, and **five sit inside another
+   * `Panel`** (`VerifyPhone`'s `Blocked()` lives in a `tone="positive"` one). A
+   * `p-5` card inside a `p-5` card is a heavier screen, not a calmer one.
+   *
+   * `rounded-2xl` is the design system's input radius, so a box at input scale
+   * takes it. Not a new step.
+   */
+  size?: Size;
   /** `shadow-card`. The one card the screen is about — see the note above. */
   raised?: boolean;
   /**
@@ -72,18 +94,30 @@ export function Panel({
   className?: string;
 }) {
   const t = TONES[tone];
+  const inset = size === "inset";
   return (
     <Tag
       className={cn(
-        "rounded-3xl border",
+        "border",
+        /* Radius and padding each come from **one** expression, never from two
+           appended utilities: `cn()` is a plain join, so two `rounded-*` in the
+           same layer are resolved by Tailwind's output order and not by this
+           string. Same trap `Chip.tsx` documents for `active:scale-*`. */
+        inset ? "rounded-2xl" : "rounded-3xl",
+        flush ? "overflow-hidden" : inset ? "p-4" : "p-5",
         t.box,
         raised && "shadow-card",
-        flush ? "overflow-hidden" : "p-5",
         className,
       )}
     >
       {title && (
-        <h2 className={cn("font-display text-[1.15rem] font-semibold", t.title)}>
+        <h2
+          className={cn(
+            "font-semibold",
+            inset ? "text-control" : "font-display text-card-title",
+            t.title,
+          )}
+        >
           {title}
         </h2>
       )}

@@ -42,12 +42,16 @@ export const sampleOverview: Overview = {
     review_holds: 2,
     pending_contributions: 7,
     escalations: 1,
+    withdrawn_records: 1,
     pending_claims: 2,
   },
   founding: { pending: 12, approved: 19 },
   /** The three add up to `contributors.total`, as they do against a real database. */
   reward: { eligible: 19, started: 9, none: 14 },
   demand: { ordinary: 14, peer_support: 3, high_stakes: 1, named_allegation: 0 },
+  /* 14.3 / 14.5 — zeroed rather than invented. Sample money is the one kind
+     of fabrication that answers "has anybody actually paid?" with a yes. */
+  blasts: { open: 0, refunds_owed: 0 },
   answer_ready: 6,
   drop_off: [
     { step: "Opened the link", reached: 64 },

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_CONSENT_TEXT_VERSION } from "@/lib/consent";
 import { caregiverClaims, consents, people } from "@/lib/db/schema";
@@ -161,4 +161,87 @@ export async function saveCaregiverClaim(
       updated: existing !== undefined,
     };
   });
+}
+
+/**
+ * 11.3 — the whole of "text DELETE and the profile goes", as one statement.
+ *
+ * Extracted so there is **one copy**. It was inline in `claim.delete`, and 11.3
+ * gives it a second caller — a caregiver who texts DELETE rather than asking
+ * Janet to press the button. Two copies of a cascade that removes a person's
+ * record is the duplication this codebase cannot afford: they would drift in
+ * exactly the place where drifting means a profile half-deleted.
+ *
+ * **Why it is a real delete and not a status change.** The last sentence of the
+ * 2C flow, and `CAREGIVER_CONSENT_TEXT.profile` itself, promise that the whole
+ * profile goes. A soft delete would make the app lie on the one screen where
+ * somebody is deciding whether to trust it.
+ *
+ * ## The two boundaries, which are the whole design
+ *
+ * **The `people` row survives if anything else is attached to it** — a
+ * submission, a nomination, a non-caregiver consent. Somebody can be both a
+ * parent who contributed and a caregiver who signed up; a delete request from
+ * one role must not wipe the other.
+ *
+ * **A linked `caregivers` row is taken back down the ladder rather than
+ * removed.** It may carry a nominating parent's own contribution, which is
+ * theirs and not the caregiver's to delete — and it holds no way to contact
+ * anybody (invariant 13), which is what makes "the whole profile" and
+ * "everything Pando has about you" the same thing here.
+ */
+/**
+ * Anything that can run a statement — a connection or an open transaction.
+ *
+ * Structural for the same reason `repo/impact.ts` is: the admin action runs this
+ * inside the transaction that also writes its audit row, and
+ * `Db["transaction"]`'s argument is not a `Db`.
+ */
+interface Executor {
+  execute(query: SQL): Promise<unknown>;
+}
+
+export async function deleteCaregiverClaim(
+  tx: Executor,
+  where: { claimId?: string; personId?: string },
+): Promise<void> {
+  const { claimId, personId } = where;
+  if (!claimId && !personId) return;
+
+  await tx.execute(sql`
+    with claim as (
+      delete from caregiver_claims
+       where ${
+         claimId
+           ? sql`id = ${claimId}::uuid`
+           : sql`person_id = ${personId}::uuid`
+       }
+      returning person_id, linked_caregiver_id
+    ),
+    cg as (
+      update caregivers c
+      set consent_status = 'revoked',
+          active = false, discoverable = false, introducible = false,
+          profile_person_id = null, updated_at = now()
+      from claim
+      where c.id = claim.linked_caregiver_id
+      returning c.id
+    ),
+    prof as (
+      delete from caregiver_profiles where caregiver_id in (select id from cg)
+    ),
+    cons as (
+      delete from consents
+      where person_id in (select person_id from claim)
+        and scope like 'caregiver%'
+    )
+    delete from people p
+    where p.id in (select person_id from claim)
+      and not exists (select 1 from submissions s where s.person_id = p.id)
+      and not exists (select 1 from caregiver_nominations n where n.person_id = p.id)
+      and not exists (
+        select 1 from consents c
+        where c.person_id = p.id and c.scope not like 'caregiver%'
+      )
+  `);
 }

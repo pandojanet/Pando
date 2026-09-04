@@ -9,17 +9,18 @@ import {
   Empty,
   ErrorNote,
   Field,
-  NotConfigured,
-  PageHead,
-  ResultNote,
-  ProvenanceBadge,
-  SampleBanner,
   inputClass,
+  Loading,
+  NotConfigured,
   optionLabel,
+  PageHead,
+  ProvenanceBadge,
+  ResultNote,
+  SampleBanner,
   slugLabel,
   when,
 } from "@/components/admin/ui";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
   FactGrid,
@@ -172,6 +173,14 @@ export default function ContributionsPage() {
         intro="Add the ones you'd be happy for Pando to pass on. Hold the ones missing something."
       />
 
+      {/* Banners **above** the filter. At 375px this six-pill row wraps to three
+          lines, so a green "Approved" confirmation rendered underneath it landed
+          off the bottom of the screen — the reader acted, saw nothing, and had
+          no way to tell whether it had worked. */}
+      {error && <ErrorNote>{error}</ErrorNote>}
+      {sample && <SampleBanner />}
+      {message && <ResultNote>{message}</ResultNote>}
+
       <div className="mb-4">
         <SegmentedFilter
           label="Which contributions to show"
@@ -188,15 +197,9 @@ export default function ContributionsPage() {
         />
       </div>
 
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {sample && <SampleBanner />}
-      {message && <ResultNote>{message}</ResultNote>}
-
       <Card>
         {loading && all.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-            Loading…
-          </div>
+          <Loading />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
@@ -228,19 +231,19 @@ export default function ContributionsPage() {
                     <>
                       <Badge
                         tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}
-                        title={REVIEW_STATUS[row.status]?.meaning}
+                        hint={REVIEW_STATUS[row.status]?.meaning}
                       >
                         {REVIEW_STATUS[row.status]?.label ?? row.status}
                       </Badge>
                       {/* R2 — the label reads the source, never who typed it. */}
                       {row.firsthand ? (
-                        <Badge tone="green" title="This family used it themselves.">
+                        <Badge tone="green" hint="This family used it themselves.">
                           They went themselves
                         </Badge>
                       ) : (
                         <Badge
                           tone="gold"
-                          title="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
+                          hint="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
                         >
                           Heard from a friend
                         </Badge>
@@ -249,7 +252,7 @@ export default function ContributionsPage() {
                       {row.share.answer_ready && (
                         <Badge
                           tone="green"
-                          title="Good enough to answer a parent's question on its own, without asking anyone"
+                          hint="Good enough to answer a parent's question on its own, without asking anyone"
                         >
                           Ready to answer with
                         </Badge>
@@ -428,21 +431,13 @@ export default function ContributionsPage() {
                     <Fact label="Counts toward Founding">
                       {/* Answers the label, rather than restating the rule. */}
                       {!row.firsthand ? (
-                        <span
-                          className="text-muted"
-                          title="Only a family's own experience counts toward Founding. This one is still welcome."
-                        >
-                          No — heard from a friend
-                        </span>
+                        <span className="text-muted">
+                          No — heard from a friend{" "}<Hint>{"Only a family's own experience counts toward Founding. This one is still welcome."}</Hint></span>
                       ) : missing.length === 0 ? (
                         <Badge tone="green">Yes</Badge>
                       ) : (
-                        <span
-                          className="text-gold-ink"
-                          title="They skipped these questions. It counts as soon as they are answered."
-                        >
-                          Not yet — they didn&apos;t say {missing.join(", ")}
-                        </span>
+                        <span className="text-gold-ink">
+                          Not yet — they didn&apos;t say {missing.join(", ")}{" "}<Hint>{"They skipped these questions. It counts as soon as they are answered."}</Hint></span>
                       )}
                     </Fact>
                     <Fact label="How useful their words are">

@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import {
+  ageList,
   Badge,
   Button,
   Card,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
-  ageList,
   slugLabel,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
@@ -81,7 +82,7 @@ export default function FoundingQueuePage() {
 
       {loading && pending.length === 0 ? (
         <Card>
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         </Card>
       ) : !configured && pending.length === 0 ? (
         <Card>
@@ -142,7 +143,7 @@ export default function FoundingQueuePage() {
                             {offList && (
                               <Badge
                                 tone="gold"
-                                title="No group was recorded when they arrived — they came on a link that is not tied to one, or on no link at all. Not a mark against them; it just means there is nothing to check them against."
+                                hint="No group was recorded when they arrived — they came on a link that is not tied to one, or on no link at all. Not a mark against them; it just means there is nothing to check them against."
                               >
                                 no group recorded
                               </Badge>

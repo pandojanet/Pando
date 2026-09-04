@@ -416,6 +416,109 @@ export function SegmentedFilter<T extends string | number>({
   );
 }
 
+/**
+ * A real tab strip, for the **one** place that swaps whole panels.
+ *
+ * ## Why this is not `SegmentedFilter`
+ *
+ * That component's own doc says it: *"A tablist implies panels you move between;
+ * these buttons filter one list that stays where it is."* `/admin/contributors`
+ * does the other thing — three separate panels (the table, the consent file, the
+ * standing view), each with its own columns and its own fetch — so a reader
+ * heard six unrelated buttons and nothing announced that the region below had
+ * been replaced.
+ *
+ * Adding this is not a reversal of the 2 Sep decision that consolidated five
+ * hand-rolled filter rows into one component. It is the distinction that
+ * decision was drawing, given a second name.
+ *
+ * ## Manual activation, which is the opposite of `SegmentedFilter`
+ *
+ * There, moving the focus **is** choosing, because a filter is free. Here each
+ * panel is a separate `useAdminRows` fetch, so arrowing across three tabs to
+ * reach the fourth would fire three round trips nobody asked for. Arrows move
+ * focus, Enter or Space commits — the manual-activation pattern, and the reason
+ * it exists.
+ *
+ * The pills are the same ones, deliberately: this reads as the same control to
+ * anybody looking at it, because it is the same control doing a job one step
+ * bigger.
+ */
+export function SegmentedTabs<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  panelId,
+}: {
+  label: string;
+  value: T;
+  options: ReadonlyArray<{ id: T; label: string; count?: number }>;
+  onChange: (id: T) => void;
+  /** The single `role="tabpanel"` these swap. */
+  panelId: string;
+}) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selected = Math.max(
+    0,
+    options.findIndex((o) => o.id === value),
+  );
+
+  /** Focus only. Committing is a separate keypress — see the header. */
+  const move = (to: number) => {
+    if (options.length === 0) return;
+    refs.current[(to + options.length) % options.length]?.focus();
+  };
+
+  return (
+    <div role="tablist" aria-label={label} className="flex flex-wrap gap-1.5">
+      {options.map((o, i) => {
+        const on = o.id === value;
+        return (
+          <button
+            key={o.id}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            aria-controls={panelId}
+            tabIndex={i === selected ? 0 : -1}
+            onClick={() => onChange(o.id)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                e.preventDefault();
+                move(i + 1);
+              } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                e.preventDefault();
+                move(i - 1);
+              } else if (e.key === "Home") {
+                e.preventDefault();
+                move(0);
+              } else if (e.key === "End") {
+                e.preventDefault();
+                move(options.length - 1);
+              }
+            }}
+            className={cn(
+              "inline-flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 text-[13.5px] transition-colors",
+              on
+                ? "border-green bg-green-wash font-semibold text-green-deep"
+                : "border-bark bg-card font-medium text-muted hover:border-green/50 hover:text-ink",
+            )}
+          >
+            {o.label}
+            {o.count !== undefined && (
+              <span className="tabular-nums opacity-70">{o.count}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Menu ─────────────────────────────────────────────────────────────────── */
 
 /** So an item can close the menu it is in without every page wiring it up. */

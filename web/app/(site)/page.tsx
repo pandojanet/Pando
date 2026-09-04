@@ -122,7 +122,7 @@ export default function HomePage() {
     <>
       <SiteHeader />
 
-      <main>
+      <main id="main" tabIndex={-1}>
         {/* Hero */}
         <Wrap className="hero-wash grid items-center gap-9 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24.5rem)] lg:gap-16 lg:py-24 xl:gap-20">
           <div>
@@ -255,9 +255,9 @@ export default function HomePage() {
                   key={ask.kind}
                   className="rounded-2xl rounded-bl-[0.3rem] border border-bark bg-card px-4 py-4 text-[0.95rem] text-ink-soft"
                 >
-                  <span className="mb-1.5 block text-[0.72rem] font-bold uppercase tracking-[0.12em] text-gold">
+                  <Eyebrow tone="gold" as="span" className="mb-1.5 block">
                     {ask.kind}
-                  </span>
+                  </Eyebrow>
                   {ask.text}
                 </div>
               ))}

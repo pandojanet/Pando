@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
+import { Field } from "@/components/ui/Field";
+import { Consent } from "@/components/ui/Consent";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
@@ -16,7 +18,8 @@ import {
   ScreenDock,
   ScreenHeader,
 } from "@/components/ui/Screen";
-import { PandoMark } from "@/components/ui/Logo";
+import { Wordmark } from "@/components/ui/Logo";
+import { Progress } from "@/components/ui/Progress";
 import {
   CAREGIVER_CONSENT_TEXT,
   SMS_CONSENT_AGREEMENT,
@@ -32,6 +35,7 @@ import {
 } from "@/lib/caregiver-flow";
 import { isPhoneComplete, toE164 } from "@/lib/phone";
 import { useMarketOptions } from "@/lib/use-market-options";
+import { useStepChange } from "@/lib/use-step-change";
 import type { MarketId } from "@/lib/types";
 
 /**
@@ -70,6 +74,31 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [declined, setDeclined] = useState(false);
+
+  /* Every screen a caregiver actually walks: intro, identity, the tap steps,
+     the three permissions, the code. `done` and the declined ending are not
+     steps — they are where the flow stops. */
+  const totalSteps = 4 + steps.length;
+  const stepIndex =
+    stage === "intro"
+      ? 0
+      : stage === "identity"
+        ? 1
+        : stage === "tap"
+          ? 2 + tapIndex
+          : stage === "permissions"
+            ? 2 + steps.length
+            : 3 + steps.length;
+
+  /**
+   * ⚠ This flow had **no** `useEffect` and no `window.scrollTo` at all, so
+   * advancing opened the next screen at the previous one's scroll offset — the
+   * most visible defect in the caregiver flow, and invisible in review because
+   * the file looks complete on its own. `useStepChange` also moves focus to the
+   * heading, which neither flow did.
+   */
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useStepChange(`${stage}:${tapIndex}`, headingRef);
 
   const set = <K extends keyof CaregiverAnswers>(
     key: K,
@@ -123,7 +152,7 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
         <Header />
         <ScreenBody>
           <Eyebrow>No problem</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             Nothing was saved.
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -141,7 +170,7 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
         <Header />
         <ScreenBody>
           <Eyebrow>Thank you</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             That&apos;s saved — and you&apos;re not listed yet.
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -151,17 +180,17 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
           </p>
           <ul className="mt-6 space-y-3 text-[15px] leading-relaxed text-ink-soft">
             <li className="flex gap-2.5">
-              <Tick />
+              <Bullet />
               We&apos;ll text you once it&apos;s matched up.
             </li>
             <li className="flex gap-2.5">
-              <Tick />
+              <Bullet />
               {answers.appear_in_answers
                 ? "Then families near you can see your first name, what you're good with, and your range — never your number."
                 : "You said no to appearing in answers, so nothing about you is shown to a family. You can change that any time."}
             </li>
             <li className="flex gap-2.5">
-              <Tick />
+              <Bullet />
               Text DELETE and the whole profile goes, without asking why.
             </li>
           </ul>
@@ -174,10 +203,10 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
   if (stage === "intro") {
     return (
       <Screen>
-        <Header />
+        <Header step={stepIndex} total={totalSteps} />
         <ScreenBody>
           <Eyebrow>For caregivers</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             A family recommended you.
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -191,16 +220,16 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
             </p>
             <ul className="mt-4 space-y-2.5 text-[14px] leading-relaxed text-muted">
               <li className="flex gap-2.5">
-                <Tick />
+                <Bullet />
                 Your number is never shown to a family.
               </li>
               <li className="flex gap-2.5">
-                <Tick />
+                <Bullet />
                 What you were told about — who said what — stays between them and
                 Pando. You&apos;ll never see it here, and neither will anyone else.
               </li>
               <li className="flex gap-2.5">
-                <Tick />
+                <Bullet />
                 Every permission after this is a separate yes.
               </li>
             </ul>
@@ -228,10 +257,10 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
   if (stage === "identity") {
     return (
       <Screen>
-        <Header onBack={() => setStage("intro")} />
+        <Header onBack={() => setStage("intro")} step={stepIndex} total={totalSteps} />
         <ScreenBody>
           <Eyebrow>G1 · You</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             What should families call you?
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -240,25 +269,21 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
 
           <div className="mt-6 space-y-4">
             <div className="flex gap-3">
-              <label className="flex-1">
-                <span className="text-[14px] font-semibold">First name</span>
-                <input
-                  value={answers.first_name}
-                  onChange={(e) => set("first_name", e.target.value.slice(0, 30))}
-                  autoComplete="given-name"
-                  className="mt-1.5 min-h-[52px] w-full rounded-2xl border border-bark bg-card px-4 text-[16.5px]"
-                />
-              </label>
-              <label className="w-[6.5rem]">
-                <span className="text-[14px] font-semibold">Initial</span>
-                <input
-                  value={answers.last_initial}
-                  onChange={(e) =>
-                    set("last_initial", e.target.value.slice(0, 1).toUpperCase())
-                  }
-                  className="mt-1.5 min-h-[52px] w-full rounded-2xl border border-bark bg-card px-4 text-[16.5px]"
-                />
-              </label>
+              <Field
+                label="First name"
+                className="flex-1"
+                value={answers.first_name}
+                onChange={(e) => set("first_name", e.target.value.slice(0, 30))}
+                autoComplete="given-name"
+              />
+              <Field
+                label="Initial"
+                className="w-[6.5rem]"
+                value={answers.last_initial}
+                onChange={(e) =>
+                  set("last_initial", e.target.value.slice(0, 1).toUpperCase())
+                }
+              />
             </div>
 
             <PhoneField
@@ -268,21 +293,18 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
               hint="Only ever used to reach you. Never shown to a family."
             />
 
-            <label className="flex items-start gap-3 rounded-2xl border border-bark bg-card p-4">
-              <input
-                type="checkbox"
-                checked={answers.sms_consent}
-                onChange={(e) => set("sms_consent", e.target.checked)}
-                aria-describedby="cg-sms-terms"
-                className="mt-1 h-5 w-5 shrink-0 accent-[var(--color-green-deep)]"
-              />
-              <span className="text-[14px] leading-relaxed text-ink-soft">
-                {SMS_CONSENT_AGREEMENT}
-              </span>
-            </label>
-            <p id="cg-sms-terms" className="text-[12.5px] leading-relaxed text-muted">
-              {SMS_CONSENT_TERMS}
-            </p>
+            {/* The disclosure was outside the bordered box here and inside it on
+                the two parent surfaces, which made it read as an unrelated
+                footnote rather than as part of what was being agreed to. One
+                component, one answer. */}
+            <Consent
+              id="cg-sms"
+              checked={answers.sms_consent}
+              onChange={(on) => set("sms_consent", on)}
+              detail={SMS_CONSENT_TERMS}
+            >
+              {SMS_CONSENT_AGREEMENT}
+            </Consent>
           </div>
         </ScreenBody>
         <ScreenDock>
@@ -311,11 +333,12 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
           onBack={() =>
             tapIndex === 0 ? setStage("identity") : setTapIndex(tapIndex - 1)
           }
-          progress={`${tapIndex + 1} of ${steps.length}`}
+          step={stepIndex}
+          total={totalSteps}
         />
         <ScreenBody>
           <Eyebrow>{step.eyebrow}</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             {step.title}
           </h1>
           {step.help && (
@@ -339,20 +362,13 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
             ))}
 
             {step.freeText && (
-              <label className="block">
-                <span className="text-[14px] font-semibold">
-                  {step.freeText.label}
-                </span>
-                <textarea
-                  value={answers.hours_note}
-                  onChange={(e) =>
-                    set("hours_note", e.target.value.slice(0, 300))
-                  }
-                  rows={3}
-                  placeholder={step.freeText.placeholder}
-                  className="mt-1.5 w-full rounded-2xl border border-bark bg-card p-4 text-[16.5px]"
-                />
-              </label>
+              <Field
+                label={step.freeText.label}
+                rows={3}
+                value={answers.hours_note}
+                onChange={(e) => set("hours_note", e.target.value.slice(0, 300))}
+                placeholder={step.freeText.placeholder}
+              />
             )}
           </div>
         </ScreenBody>
@@ -379,10 +395,10 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
   if (stage === "permissions") {
     return (
       <Screen>
-        <Header onBack={() => setStage("tap")} />
+        <Header onBack={() => setStage("tap")} step={stepIndex} total={totalSteps} />
         <ScreenBody>
           <Eyebrow>G8–G10 · Your call</Eyebrow>
-          <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+          <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
             What may families see?
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -391,7 +407,8 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
           </p>
 
           <div className="mt-6 space-y-3">
-            <Permission
+            <Consent
+              reflects
               checked={answers.appear_in_answers}
               onChange={(on) => {
                 set("appear_in_answers", on);
@@ -402,26 +419,31 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
                 if (!on) set("open_to_introductions", false);
               }}
               title="Appear in answers"
-              body={CAREGIVER_CONSENT_TEXT.listing}
-            />
-            <Permission
+            >
+              {CAREGIVER_CONSENT_TEXT.listing}
+            </Consent>
+            <Consent
+              reflects
               checked={answers.open_to_introductions}
               disabled={!answers.appear_in_answers}
               onChange={(on) => set("open_to_introductions", on)}
               title="Be introduced"
-              body={CAREGIVER_CONSENT_TEXT.introduction}
               note={
                 answers.appear_in_answers
                   ? undefined
-                  : "Available once you've said yes to appearing in answers."
+                  : "Available once you have said yes to appearing in answers."
               }
-            />
-            <Permission
+            >
+              {CAREGIVER_CONSENT_TEXT.introduction}
+            </Consent>
+            <Consent
+              reflects
               checked={answers.open_to_reference_intros}
               onChange={(on) => set("open_to_reference_intros", on)}
               title="References"
-              body={CAREGIVER_CONSENT_TEXT.reference}
-            />
+            >
+              {CAREGIVER_CONSENT_TEXT.reference}
+            </Consent>
           </div>
         </ScreenBody>
         <ScreenDock>
@@ -436,10 +458,10 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
   /* ── Verify, then write. Nothing before this point has left the device. ──── */
   return (
     <Screen>
-      <Header onBack={() => setStage("permissions")} />
+      <Header onBack={() => setStage("permissions")} step={stepIndex} total={totalSteps} />
       <ScreenBody>
         <Eyebrow>Last step</Eyebrow>
-        <h1 className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
+        <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
           Confirm it&apos;s you.
         </h1>
         <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
@@ -465,25 +487,43 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
 
 function Header({
   onBack,
-  progress,
+  step,
+  total,
 }: {
   onBack?: () => void;
-  progress?: string;
+  /**
+   * 0-based index across *every* stage, not just the tap ones.
+   *
+   * The header used to read "3 of 5" counting the tap steps alone, with no bar
+   * at all — so a caregiver who reached "5 of 5" still had the permissions
+   * screen and the code screen ahead of them. A progress indicator that fills
+   * up and then hands you two more screens is worse than none.
+   */
+  step?: number;
+  total?: number;
 }) {
+  const progress =
+    step !== undefined && total !== undefined
+      ? `${step + 1} of ${total}`
+      : undefined;
   return (
     <ScreenHeader
-      left={
-        <span className="flex items-center gap-2">
-          <PandoMark className="h-5" />
-          <span className="font-display text-[1rem] font-bold tracking-[-0.02em]">
-            Pando
-          </span>
-        </span>
+      /* Was a fourth hand-drawn copy of the lockup, at a fourth size (`h-5` and
+         `1rem`). Nothing made the caregiver flow's logo smaller than the parent
+         flow's — every other `ScreenHeader` passes a plain `Wordmark`, and so
+         does this one now. */
+      left={<Wordmark />}
+      below={
+        step !== undefined && total !== undefined ? (
+          <div className="pb-1 pt-2">
+            <Progress total={total} current={step} />
+          </div>
+        ) : undefined
       }
       right={
         <>
           {progress && (
-            <span className="text-[12.5px] font-semibold text-muted">
+            <span className="font-semibold text-muted text-dock">
               {progress}
             </span>
           )}
@@ -500,52 +540,14 @@ function Header({
   );
 }
 
-function Permission({
-  checked,
-  onChange,
-  title,
-  body,
-  note,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (on: boolean) => void;
-  title: string;
-  body: string;
-  note?: string;
-  disabled?: boolean;
-}) {
-  return (
-    <label
-      className={`flex items-start gap-3 rounded-2xl border p-4 ${
-        disabled
-          ? "border-bark bg-paper opacity-60"
-          : checked
-            ? "border-green/40 bg-green-wash"
-            : "border-bark bg-card"
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-5 w-5 shrink-0 accent-[var(--color-green-deep)]"
-      />
-      <span>
-        <span className="block text-[15px] font-semibold">{title}</span>
-        <span className="mt-1 block text-[14px] leading-relaxed text-ink-soft">
-          {body}
-        </span>
-        {note && (
-          <span className="mt-1.5 block text-[12.5px] text-muted">{note}</span>
-        )}
-      </span>
-    </label>
-  );
-}
-
-function Tick() {
+/**
+ * A 6px dot at the head of a list item.
+ *
+ * Renamed from `Tick`, which is what `components/ui/Chip.tsx` calls its
+ * circle-to-check mark. Two unrelated components under one name in one codebase
+ * is a trap for the next import, and this one is not a tick at all.
+ */
+function Bullet() {
   return (
     <span
       aria-hidden="true"

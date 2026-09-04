@@ -4,12 +4,14 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   SampleBanner,
   TableWrap,
   Td,
   Th,
+  whenExact,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
 import {
@@ -24,6 +26,7 @@ import {
   sentence,
 } from "@/lib/admin/labels";
 import type { AuditRow } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
 
 /**
  * Estimate 2.8 — the audit log, read side.
@@ -35,7 +38,7 @@ import type { AuditRow } from "@/lib/admin/types";
  */
 export default function AuditPage() {
   const { rows, configured, sample, demo, setDemo, loading, error } =
-    useAdminRows<AuditRow[]>("audit", { limit: 200 });
+    useAdminRows<AuditRow[]>("audit");
 
   const entries = rows ?? [];
 
@@ -51,7 +54,7 @@ export default function AuditPage() {
 
       <Card>
         {loading && entries.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         ) : !configured && entries.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : entries.length === 0 ? (
@@ -60,7 +63,7 @@ export default function AuditPage() {
             body="Actions appear here as soon as an admin makes one."
           />
         ) : (
-          <TableWrap>
+          <TableWrap label="Audit log entries">
             <thead>
               <tr>
                 <Th>When</Th>
@@ -74,12 +77,7 @@ export default function AuditPage() {
               {entries.map((row) => (
                 <tr key={row.id}>
                   <Td className="whitespace-nowrap text-[13px] text-muted">
-                    {new Date(row.at).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {whenExact(row.at)}
                   </Td>
                   <Td className="font-semibold">{row.user}</Td>
                   <Td className="text-[13.5px]">
@@ -107,6 +105,19 @@ export default function AuditPage() {
           </TableWrap>
         )}
       </Card>
+
+      {/* Only once there is something to footnote — the same rule the queue
+          explainers follow. Below the cap this line would be telling a reader
+          about a limit they have not reached.
+
+          No "load more": paging is a read-layer change (an offset and a stable
+          sort key), not presentation, so the honest thing is to say where the
+          list stops rather than ship a control that refetches the same 500. */}
+      {entries.length === AUDIT_PAGE_SIZE && (
+        <p className="mt-3 text-[12.5px] text-muted">
+          Showing the {AUDIT_PAGE_SIZE} most recent entries.
+        </p>
+      )}
     </>
   );
 }

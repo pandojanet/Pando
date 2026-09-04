@@ -1,5 +1,20 @@
 "use client";
 
+/**
+ * ⚠ **Zero importers, and it is parked rather than dead. Do not delete it.**
+ *
+ * It is the built implementation of the client's 24 Aug request for footnotes on
+ * the Founding Status points. Those points came off `/join` on 3 Sep on her own
+ * instruction, and that decision records where they go if she asks for them
+ * back: *"the place is a tooltip on the badge rather than a page."* This is that
+ * tooltip, already built to the rules that make it reachable — a real 44px
+ * button, `aria-expanded`/`aria-controls`, inline rather than `position: fixed`
+ * so it cannot be clipped by an animated ancestor.
+ *
+ * Deleting it means rebuilding it, and rebuilding it means rediscovering all
+ * three of those rules.
+ */
+
 import { useId, useState } from "react";
 import { cn } from "@/lib/cn";
 
@@ -71,7 +86,7 @@ export function InfoDot({ children, label, className }: Props) {
       {open && (
         <span
           id={id}
-          className="mt-1.5 block rounded-xl border border-bark bg-paper px-3 py-2 text-[13.5px] leading-relaxed text-ink-soft animate-rise"
+          className="mt-1.5 block rounded-xl border border-bark bg-paper px-3 py-2 text-help leading-relaxed text-ink-soft animate-rise"
         >
           {children}
         </span>

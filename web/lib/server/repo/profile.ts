@@ -35,6 +35,8 @@ import {
 
 export interface ChildInput {
   birth_year: number | null;
+  /** 1–12, optional. Never set for an expecting child — see `drizzle/0031`. */
+  birth_month?: number | null;
   expecting: boolean;
   due_year: number | null;
   due_year_precision?: "assumed_capture_year" | "stated";
@@ -74,6 +76,11 @@ export interface ProfileInput {
   sms_consent: { status: string; text_version: string; source?: string } | null;
   /** 18 Aug — willingness to occasionally answer another parent's hard question. */
   listening_ear_consent: { status: string; text_version: string; source?: string } | null;
+  recurring_messages_consent: {
+    status: string;
+    text_version: string;
+    source?: string;
+  } | null;
   wants_founding: boolean;
   /**
    * Null when the parent **typed** their neighborhood instead of tapping one.
@@ -221,6 +228,9 @@ export async function writeProfile(
         childRows.map((c) => ({
           personId,
           birthYear: c.expecting ? null : c.birth_year,
+          /* `children_month_needs_year` refuses a month on an expecting row, so
+             the ternary is the constraint restated rather than defensiveness. */
+          birthMonth: c.expecting ? null : (c.birth_month ?? null),
           expecting: c.expecting,
           dueYear: c.expecting ? c.due_year : null,
           dueYearPrecision: c.expecting
@@ -401,6 +411,25 @@ export async function writeProfile(
         status: input.sms_consent.status === "opted_in" ? "opted_in" : "declined",
         source: input.sms_consent.source ?? "seed_tool",
         textVersion: input.sms_consent.text_version,
+      });
+    }
+
+    /**
+     * The recurring SMS/RCS opt-in (2 Sep), and it **is** gated on `input.phone`
+     * — the same rule as the SMS consent above and for the same reason: it is
+     * permission to send recurring messages to a number, so without a number
+     * there is nothing it could permit. The anonymous path is never shown it.
+     *
+     * `opted_in` unconditionally: the route drops any other status rather than
+     * storing a refusal that the flow cannot produce.
+     */
+    if (input.recurring_messages_consent && input.phone) {
+      await tx.insert(consents).values({
+        personId,
+        scope: "sms_recurring",
+        status: "opted_in",
+        source: input.recurring_messages_consent.source ?? "seed_tool",
+        textVersion: input.recurring_messages_consent.text_version,
       });
     }
 

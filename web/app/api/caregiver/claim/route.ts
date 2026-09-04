@@ -5,6 +5,7 @@ import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { saveCaregiverClaim } from "@/lib/server/repo/caregiver";
+import { rateLimited } from "@/lib/server/rate-limit";
 import {
   CAREGIVER_AGE_BANDS,
   CAREGIVER_AVAILABLE_FROM,
@@ -55,6 +56,12 @@ function oneOf(
 }
 
 export async function POST(request: Request) {
+  /* 2C writes a claim keyed to a verified identity, so this is bounded
+     already — but the flow is reachable by anyone with the link, and a claim is
+     a row about a named person. */
+  const limited = rateLimited(request, "caregiver_claim");
+  if (limited) return limited;
+
   const raw = (await request.json().catch(() => null)) as Record<
     string,
     unknown

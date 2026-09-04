@@ -94,7 +94,17 @@ export function useAdminRows<T>(
 
 export async function adminAction(
   action: AdminAction,
-): Promise<{ ok: true; persisted: boolean; actor: string }> {
+): Promise<{
+  ok: true;
+  persisted: boolean;
+  actor: string;
+  /**
+   * Whatever the action needed to hand back that is not part of the record —
+   * today only `blast.checkout`, whose output is a one-time Stripe payment
+   * link. Absent for every other action, and never written to the audit row.
+   */
+  detail?: Record<string, unknown>;
+}> {
   return post("/api/admin/action", action);
 }
 

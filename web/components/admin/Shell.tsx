@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   BadgeCheck,
+  CreditCard,
+  Megaphone,
   CalendarClock,
   ClipboardList,
   Flag,
@@ -121,7 +123,7 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
       {
         href: "/admin/demand",
         icon: ListChecks,
-        label: "Asked for",
+        label: "What parents asked for",
         hint: "The questions parents asked. Anything about a named person comes first.",
         count: (o) =>
           o.demand.ordinary +
@@ -142,10 +144,44 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         hint: "What Pando would reply, waiting for you to read it. Nothing goes out unread.",
       },
       {
+        /**
+         * 14.3. In "Waiting on you" and it counts, unlike the matching harness
+         * or the delivery gauge: the default view is Asks that are still open,
+         * and every one of those is a parent waiting — several of them having
+         * paid. The count is the open ones rather than all of them, because a
+         * fulfilled Ask is a record you look up, not work.
+         */
+        href: "/admin/blasts",
+        icon: Megaphone,
+        label: "Network Asks",
+        hint: "Questions parents paid Pando to ask. Preview the pool, see the replies, mark them answered.",
+        count: (o) => o.blasts?.open ?? 0,
+        urgent: (o) => o.blasts?.refunds_owed ?? 0,
+      },
+      {
         href: "/admin/responses",
         icon: MessageSquareReply,
         label: "Network answers",
         hint: "Replies to Network Asks. Rate them, and decide what enters the knowledge base.",
+      },
+      {
+        /**
+         * 14.9. **A queue, so it counts** — unlike the conversation record or
+         * the matching harness. Every row is a decision nobody has taken: a
+         * contributor said a record is no longer worth recommending, and until
+         * somebody retires it or keeps it, Pando keeps answering with it.
+         *
+         * The number is the open `recommendation_withdrawn` flags, which is a
+         * subset of `open_flags` below — so the two badges overlap by design,
+         * the same way the flags row and the escalation row already do. What
+         * would be wrong is showing it *only* in the flags total, where
+         * "resolve" means "I have read this" and leaves the record untouched.
+         */
+        href: "/admin/freshness",
+        icon: Flag,
+        label: "Withdrawn recommendations",
+        hint: "A contributor said one of these is no longer worth recommending. Retire it, or keep it marked old.",
+        count: (o) => o.quality.withdrawn_records,
       },
       {
         href: "/admin/flags",
@@ -160,6 +196,20 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
   {
     group: "Records",
     items: [
+      {
+        /**
+         * 14.5. Under Records because it is mostly a ledger you consult — but
+         * with a **red** count for refunds owed, which is the one thing here
+         * that is somebody's outstanding task and involves money. Gold would be
+         * wrong: this is not "pending", it is owed.
+         */
+        href: "/admin/payments",
+        icon: CreditCard,
+        label: "Payments",
+        hint: "What parents paid for an Ask, and what Pando owes back.",
+        count: (o) => o.blasts?.refunds_owed ?? 0,
+        urgent: (o) => o.blasts?.refunds_owed ?? 0,
+      },
       {
         href: "/admin/invites",
         icon: Link2,
@@ -196,6 +246,34 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         icon: CalendarClock,
         label: "Message delivery",
         hint: "Did the texts arrive? The rate, and the carrier errors worth acting on.",
+      },
+      {
+        /**
+         * 14.1. **No count**, on the 10 Aug rule: a number in this sidebar means
+         * "something here is waiting for you", and this is a record you open
+         * rather than a queue that fills. The one view that *is* queue-shaped
+         * ("they spoke last") is not a queue Pando owes an answer to either —
+         * `/admin/answers` is, and it already carries the badge.
+         */
+        href: "/admin/conversations",
+        icon: MessageSquareReply,
+        label: "Conversations",
+        hint: "Who Pando has messaged, whether it arrived, and who replied. No message text is kept.",
+      },
+      {
+        /**
+         * 14.6. **No count**, and the reason is the page's own subject: the
+         * number worth acting on is "a yes whose contributors are unthanked",
+         * which the weekly `thanks_delivery` batch is supposed to clear on its
+         * own. A badge would read as a queue for a person to work, and the
+         * honest reading of a non-zero one is "the job is not running" — which
+         * is a different alarm, and belongs in the container log rather than in
+         * a sidebar that cries wolf.
+         */
+        href: "/admin/impact",
+        icon: Heart,
+        label: "Thanks and impact",
+        hint: "Did the answers help, and have the parents behind them heard about it?",
       },
       {
         href: "/admin/audit",
@@ -290,6 +368,16 @@ export function AdminShell({
        and only one tooltip on screen at a time. */
     <HintProvider>
       <div className="min-h-dvh bg-paper text-ink md:flex">
+        {/* Eighteen nav links plus two footer controls sit before the content on
+            every page, at both breakpoints. `tabIndex={-1}` on `<main>` is what
+            makes this actually move focus rather than only scroll — without it
+            the next Tab goes straight back into the nav that was just skipped. */}
+        <a
+          href="#admin-main"
+          className="sr-only rounded-lg border border-bark bg-card px-3 py-2 text-[13.5px] font-semibold text-green-deep focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50"
+        >
+          Skip to the page
+        </a>
         {/*
         Sticky and self-scrolling from `md`: the contributors table is long, and a
         sidebar that scrolls away with it means finding another section requires
@@ -399,19 +487,21 @@ export function AdminShell({
           </div>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-8">
+        <main
+          id="admin-main"
+          tabIndex={-1}
+          className="min-w-0 flex-1 px-4 py-5 md:px-8 md:py-8"
+        >
           <div className="mx-auto w-full max-w-[76rem]">
             {/*
-            The one thing worth saying above every page: whether anything is
-            waiting anywhere. Rendered only once the counts have arrived, and only
-            when it has something to report — an empty bar teaching an admin to
-            ignore that strip would defeat it.
+            The "Nothing waiting for review right now." bar was here, above
+            **every** page. On a quiet `/admin/flags` that read: this bar →
+            PageHead → "Nothing urgent" → "Nothing waiting" — four ways of saying
+            the same thing before any content. Its legitimate home already exists
+            and is the page whose whole job is that question: the Overview
+            worklist's own "every queue is clear". Nothing is lost either, because
+            a sidebar with no badges on it says the same thing continuously.
           */}
-            {counts && waiting === 0 && (
-              <p className="mb-4 rounded-lg border border-green/25 bg-green-wash px-3 py-2 text-[13px] font-medium text-green-deep">
-                Nothing waiting for review right now.
-              </p>
-            )}
             {children}
           </div>
           <div className="mt-8 flex flex-wrap items-center gap-3 md:hidden">

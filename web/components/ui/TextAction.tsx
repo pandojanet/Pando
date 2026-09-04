@@ -61,7 +61,7 @@ const TONES: Record<Tone, string> = {
  * top of it.
  */
 const BASE =
-  "inline-flex min-h-11 items-center gap-1.5 text-[14px] font-semibold " +
+  "inline-flex min-h-11 items-center gap-1.5 text-help font-semibold " +
   "transition-colors duration-150 disabled:cursor-not-allowed";
 
 function textActionClass(

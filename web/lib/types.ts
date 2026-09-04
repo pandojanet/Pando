@@ -416,6 +416,17 @@ export interface ProfileAnswers {
   trust_circles: string[];
   /** P12, split into the two clusters the client's list shows. */
   topics: string[];
+  /**
+   * Which month each child was born in, keyed by the **age id** the year chip
+   * stores — so `{ "3": 11 }` is "the child who is 3 was born in November".
+   *
+   * A parallel map rather than a change to `child_ages`, and that is the whole
+   * reason this was affordable: `child_ages` is read by `derive.ts`,
+   * `matching.ts`, the attribution keys in `child_of`, the review screen, the
+   * admin and `test:e2e`. Widening it to carry two numbers would have touched
+   * every one of them; an additive map touches none.
+   */
+  child_months: Record<string, number>;
   topics_lived: string[];
   /** P13 — anonymous_verified | first_name_safe. */
   attribution: string | null;
@@ -440,6 +451,16 @@ export interface ProfileAnswers {
    * declined, same rule as every other optional tap.
    */
   listening_ear: string | null;
+  /**
+   * The recurring-messaging opt-in that sits with the participation level
+   * (2 Sep, client — RCS needs the channel named). `"opted_in" | null`, and
+   * unlike every other optional tap there is no `"declined"`: the checkbox
+   * gates the screen for anybody on the founding path, so a parent who does not
+   * tick it does not get past it and there is nothing to record. Null means the
+   * question was never put to them — the anonymous path, which has no number to
+   * message and is never shown the block.
+   */
+  recurring_messages: string | null;
   /** Free-text "other" entries, keyed by question id → pending_options. */
   other: Partial<Record<QuestionId, string[]>>;
   /** Screens the parent deliberately skipped (analytics + admin insight). */
@@ -453,6 +474,13 @@ export interface ProfileAnswers {
  */
 export interface ChildRecord {
   birth_year: number | null;
+  /**
+   * 1–12, optional (3 Sep). The year is the required tap; this sharpens the age
+   * band at a year boundary, where a December and a January child are a school
+   * year apart. Null wherever a parent skipped it — every consumer works from
+   * the year alone.
+   */
+  birth_month?: number | null;
   expecting: boolean;
   due_year: number | null;
   /** How the due year was arrived at, so nobody mistakes it for something asked. */
@@ -559,6 +587,11 @@ export interface ProfilePayload {
    * Null when the parent skipped the question rather than declined it.
    */
   listening_ear_consent: import("./consent").ConsentRecord | null;
+  /**
+   * The recurring automated SMS/RCS opt-in taken beside the participation level
+   * (2 Sep). Null when the parent was never shown it — see `ProfileAnswers`.
+   */
+  recurring_messages_consent: import("./consent").ConsentRecord | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
   wants_founding: boolean;
   neighborhood: string | null;

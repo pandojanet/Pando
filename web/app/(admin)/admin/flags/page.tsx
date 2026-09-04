@@ -1,17 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
   Badge,
   Button,
   Card,
+  ConfidenceBadge,
   Empty,
   ErrorNote,
+  inputClass,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
-  inputClass,
   when,
 } from "@/components/admin/ui";
 import { Quote, RecordGroup } from "@/components/admin/Record";
@@ -61,6 +64,221 @@ import type { FlagRow } from "@/lib/admin/types";
  * and the controls. It also makes the page answer a question it could not
  * before — "how many of these are the same thing?" — at a glance.
  */
+/**
+ * One flag, and the section that groups them — both **at module level**, which
+ * is the same correctness fix as `AnswerCard` and `ResponseCard` and was the
+ * same defect on the page where it mattered most.
+ *
+ * Declared inside `FlagsPage`, each was a new component *type* every render, so
+ * React unmounted and remounted the subtree instead of updating it. The card
+ * holds the controlled note field, so **one keystroke rebuilt it and the caret
+ * went with it** — on the queue whose whole purpose is an admin writing down
+ * what they concluded about a parent's own words.
+ *
+ * `Grouped` has to carry the whole `notes` map rather than one note: it is the
+ * thing that knows which flags are in each run.
+ */
+function FlagCard({
+  flag,
+  note,
+  busy,
+  setNotes,
+  run,
+}: {
+  flag: FlagRow;
+  /** The admin's note for this flag, "" when nothing has been typed. */
+  note: string;
+  busy: boolean;
+  setNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  run: (label: string, fn: () => Promise<{ persisted: boolean }>) => Promise<void>;
+}) {
+  const isQuestion = flag.subject?.kind === "demand_signal";
+  const wrote = flag.subject?.wrote ?? [];
+
+  return (
+    <article className="px-4 py-3.5">
+      {/* Which record this is on, and who it came from. The *kind* of flag is
+          no longer here — it is the group heading above, once. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        {/**
+         * An empty `subject.title` is not a missing record — the type says
+         * so: *"Empty for a question, which is its own text."* Two wrong
+         * answers were tried before this one, and both are worth recording
+         * because they are the two obvious ones. Printing "No record
+         * attached" states something false on every flag raised from a demand
+         * signal, which is the entire urgent section. Printing the *kind*
+         * instead ("A question a parent asked") is true and useless: the group
+         * heading above already says what these are, so it was the same
+         * duplication this pass removed, reappearing one level down.
+         *
+         * So the line appears only when it **identifies** something. A flag
+         * with no subject at all is the one case worth saying out loud, since
+         * that is odd data rather than an ordinary question.
+         */}
+        {flag.subject?.title ? (
+          <p className="text-[13.5px] font-semibold text-ink">
+            {flag.subject.title}
+          </p>
+        ) : !flag.subject ? (
+          <p className="text-[13.5px] text-muted">No record attached</p>
+        ) : (
+          <span />
+        )}
+        <p className="text-[12.5px] text-muted">
+          {[
+            flag.contributor?.name ? `from ${flag.contributor.name}` : null,
+            when(flag.created_at),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      </div>
+
+      {/* The words — the reason this page exists. Field by field, so two
+          answers never read as one sentence. */}
+      {wrote.length > 0 ? (
+        <div className="mt-2.5 space-y-2">
+          {wrote.map((w) => (
+            <Quote
+              key={w.field}
+              label={
+                isQuestion
+                  ? "What they asked"
+                  : (FIELD_LABEL[w.field] ?? sentence(w.field))
+              }
+            >
+              “{w.body}”
+            </Quote>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[13px] text-muted">
+          They wrote nothing — this came from what they tapped
+          {flag.field
+            ? `, on ${FIELD_LABEL[flag.field] ?? sentence(flag.field)}`
+            : ""}
+          .
+        </p>
+      )}
+
+      {/* Only the *specific* reason the review pass wrote, if it wrote one.
+          The generic meaning of this kind of flag is in the group heading, so
+          printing it here would be the duplication this pass removed. */}
+      {/* A `<div>`, not a `<p>`: `ConfidenceBadge` returns a `<div>`, and a
+          `<div>` inside a `<p>` is invalid markup that React hydrates as a
+          mismatch. Same classes, so nothing moves. */}
+      {(flag.excerpt || flag.confidence !== null) && (
+        <div className="mt-2.5 flex flex-wrap items-baseline gap-x-2 text-[12.5px] leading-relaxed text-muted">
+          {flag.excerpt && <span>{flag.excerpt}</span>}
+          {flag.confidence !== null && <ConfidenceBadge value={flag.confidence} />}
+        </div>
+      )}
+
+      {/**
+       * A real label, not a placeholder.
+       *
+       * The compaction pass replaced this heading with a placeholder and an
+       * `aria-label`, which reads as tidy and is not: a placeholder vanishes
+       * the moment somebody types, so the one moment you might want to check
+       * what the box is for is the moment the answer disappears. The client
+       * had asked for this field to be named, twice.
+       */}
+      <div className="mt-3">
+        <label
+          htmlFor={`note-${flag.id}`}
+          className="block text-[11px] font-semibold uppercase tracking-[0.07em] text-muted"
+        >
+          Admin comment
+        </label>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <input
+            id={`note-${flag.id}`}
+            className={`${inputClass} min-w-[12rem] flex-1`}
+            value={note}
+            onChange={(e) =>
+              setNotes((n) => ({ ...n, [flag.id]: e.target.value.slice(0, 300) }))
+            }
+            placeholder="What you decided, and why"
+          />
+          <Button
+            tone="primary"
+            disabled={busy}
+            title="Saves your comment and takes this off the list"
+            onClick={() =>
+              void run("Marked as read.", async () =>
+                adminAction({
+                  action: "flag.resolve",
+                  id: flag.id,
+                  note: note.trim() || null,
+                }),
+              )
+            }
+          >
+            I&apos;ve read it
+          </Button>
+          {flag.severity !== "escalation" && (
+            <Button
+              tone="danger"
+              disabled={busy}
+              title="Saves your comment and moves this to the top of the page"
+              onClick={() =>
+                void run("Moved to the top.", async () =>
+                  adminAction({
+                    action: "flag.escalate",
+                    id: flag.id,
+                    note: note.trim() || null,
+                  }),
+                )
+              }
+            >
+              Needs attention
+            </Button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** The flags of one section, in runs that share a reason. */
+function Grouped({
+  flags,
+  notes,
+  busy,
+  setNotes,
+  run,
+}: {
+  flags: FlagRow[];
+  notes: Record<string, string>;
+  busy: boolean;
+  setNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  run: (label: string, fn: () => Promise<{ persisted: boolean }>) => Promise<void>;
+}) {
+  return (
+    <>
+      {groupByReason(flags).map((group) => (
+        <RecordGroup
+          key={group.reason}
+          title={flagTitle(group.reason)}
+          count={group.flags.length}
+          meaning={flagMeaning(group.reason)}
+        >
+          {group.flags.map((flag) => (
+            <FlagCard
+              key={flag.id}
+              flag={flag}
+              note={notes[flag.id] ?? ""}
+              busy={busy}
+              setNotes={setNotes}
+              run={run}
+            />
+          ))}
+        </RecordGroup>
+      ))}
+    </>
+  );
+}
+
 export default function FlagsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<FlagRow[]>("flags", { status: "open" });
@@ -93,173 +311,6 @@ export default function FlagsPage() {
     }
   }
 
-  function FlagCard({ flag }: { flag: FlagRow }) {
-    const note = notes[flag.id] ?? "";
-    const isQuestion = flag.subject?.kind === "demand_signal";
-    const wrote = flag.subject?.wrote ?? [];
-
-    return (
-      <article className="px-4 py-3.5">
-        {/* Which record this is on, and who it came from. The *kind* of flag is
-            no longer here — it is the group heading above, once. */}
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          {/**
-           * An empty `subject.title` is not a missing record — the type says
-           * so: *"Empty for a question, which is its own text."* Two wrong
-           * answers were tried before this one, and both are worth recording
-           * because they are the two obvious ones. Printing "No record
-           * attached" states something false on every flag raised from a demand
-           * signal, which is the entire urgent section. Printing the *kind*
-           * instead ("A question a parent asked") is true and useless: the group
-           * heading above already says what these are, so it was the same
-           * duplication this pass removed, reappearing one level down.
-           *
-           * So the line appears only when it **identifies** something. A flag
-           * with no subject at all is the one case worth saying out loud, since
-           * that is odd data rather than an ordinary question.
-           */}
-          {flag.subject?.title ? (
-            <p className="text-[13.5px] font-semibold text-ink">
-              {flag.subject.title}
-            </p>
-          ) : !flag.subject ? (
-            <p className="text-[13.5px] text-muted">No record attached</p>
-          ) : (
-            <span />
-          )}
-          <p className="text-[12.5px] text-muted">
-            {[
-              flag.contributor?.name ? `from ${flag.contributor.name}` : null,
-              when(flag.created_at),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
-        </div>
-
-        {/* The words — the reason this page exists. Field by field, so two
-            answers never read as one sentence. */}
-        {wrote.length > 0 ? (
-          <div className="mt-2.5 space-y-2">
-            {wrote.map((w) => (
-              <Quote
-                key={w.field}
-                label={
-                  isQuestion
-                    ? "What they asked"
-                    : (FIELD_LABEL[w.field] ?? sentence(w.field))
-                }
-              >
-                “{w.body}”
-              </Quote>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-[13px] text-muted">
-            They wrote nothing — this came from what they tapped
-            {flag.field
-              ? `, on ${FIELD_LABEL[flag.field] ?? sentence(flag.field)}`
-              : ""}
-            .
-          </p>
-        )}
-
-        {/* Only the *specific* reason the review pass wrote, if it wrote one.
-            The generic meaning of this kind of flag is in the group heading, so
-            printing it here would be the duplication this pass removed. */}
-        {(flag.excerpt || flag.confidence !== null) && (
-          <p className="mt-2.5 flex flex-wrap items-baseline gap-x-2 text-[12.5px] leading-relaxed text-muted">
-            {flag.excerpt && <span>{flag.excerpt}</span>}
-            {flag.confidence !== null && <Usefulness value={flag.confidence} />}
-          </p>
-        )}
-
-        {/**
-         * A real label, not a placeholder.
-         *
-         * The compaction pass replaced this heading with a placeholder and an
-         * `aria-label`, which reads as tidy and is not: a placeholder vanishes
-         * the moment somebody types, so the one moment you might want to check
-         * what the box is for is the moment the answer disappears. The client
-         * had asked for this field to be named, twice.
-         */}
-        <div className="mt-3">
-          <label
-            htmlFor={`note-${flag.id}`}
-            className="block text-[11px] font-semibold uppercase tracking-[0.07em] text-muted"
-          >
-            Admin comment
-          </label>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <input
-              id={`note-${flag.id}`}
-              className={`${inputClass} min-w-[12rem] flex-1`}
-              value={note}
-              onChange={(e) =>
-                setNotes({ ...notes, [flag.id]: e.target.value.slice(0, 300) })
-              }
-              placeholder="What you decided, and why"
-            />
-            <Button
-              tone="primary"
-              disabled={busy}
-              title="Saves your comment and takes this off the list"
-              onClick={() =>
-                void run("Marked as read.", async () =>
-                  adminAction({
-                    action: "flag.resolve",
-                    id: flag.id,
-                    note: note.trim() || null,
-                  }),
-                )
-              }
-            >
-              I&apos;ve read it
-            </Button>
-            {flag.severity !== "escalation" && (
-              <Button
-                tone="danger"
-                disabled={busy}
-                title="Saves your comment and moves this to the top of the page"
-                onClick={() =>
-                  void run("Moved to the top.", async () =>
-                    adminAction({
-                      action: "flag.escalate",
-                      id: flag.id,
-                      note: note.trim() || null,
-                    }),
-                  )
-                }
-              >
-                Needs attention
-              </Button>
-            )}
-          </div>
-        </div>
-      </article>
-    );
-  }
-
-  /** The flags of one section, in runs that share a reason. */
-  function Grouped({ flags }: { flags: FlagRow[] }) {
-    return (
-      <>
-        {groupByReason(flags).map((group) => (
-          <RecordGroup
-            key={group.reason}
-            title={flagTitle(group.reason)}
-            count={group.flags.length}
-            meaning={flagMeaning(group.reason)}
-          >
-            {group.flags.map((flag) => (
-              <FlagCard key={flag.id} flag={flag} />
-            ))}
-          </RecordGroup>
-        ))}
-      </>
-    );
-  }
-
   return (
     <>
       <PageHead
@@ -277,20 +328,18 @@ export default function FlagsPage() {
           className={urgent.length > 0 ? "border-alert-line" : undefined}
         >
           {loading && open.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-              Loading…
-            </div>
+            <Loading />
           ) : !configured && open.length === 0 ? (
             <NotConfigured demo={demo} onDemo={setDemo} />
           ) : urgent.length === 0 ? (
             <Empty title="Nothing urgent" body="This is the one you want empty." />
           ) : (
-            <Grouped flags={urgent} />
+            <Grouped flags={urgent} notes={notes} busy={busy} setNotes={setNotes} run={run} />
           )}
         </Card>
 
         <Card title={`When you have a minute (${rest.length})`}>
-          {rest.length === 0 ? <Empty title="Nothing waiting" /> : <Grouped flags={rest} />}
+          {rest.length === 0 ? <Empty title="Nothing waiting" /> : <Grouped flags={rest} notes={notes} busy={busy} setNotes={setNotes} run={run} />}
         </Card>
       </div>
     </>
@@ -317,26 +366,3 @@ function groupByReason(flags: FlagRow[]): Array<{ reason: string; flags: FlagRow
     .sort((a, b) => b.flags.length - a.flags.length);
 }
 
-/**
- * How much another parent could act on the text — a word first, the number
- * second, and coloured, because the number alone said nothing about whether to
- * act. The bands match the ones the contributions queue sorts on.
- */
-function Usefulness({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
-  const band =
-    value < 0.4
-      ? { label: "Thin", tone: "red" as const }
-      : value < 0.6
-        ? { label: "Some use", tone: "gold" as const }
-        : value < 0.85
-          ? { label: "Useful", tone: "neutral" as const }
-          : { label: "Very useful", tone: "green" as const };
-
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5">
-      <Badge tone={band.tone}>{band.label}</Badge>
-      <span className="text-[12px] tabular-nums text-muted">{pct}%</span>
-    </span>
-  );
-}

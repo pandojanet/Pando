@@ -469,5 +469,80 @@ const gradeCare = q
   .map((o) => o.id);
 ok("an eight-year-old is", gradeCare.includes("after_school_program"));
 
+/* ────────────────────────────────────────────────────────────────────────────
+   The 3 Sep round.
+
+   Four of her five items are in this file's reach; the fifth (the privacy links
+   moving up into the SMS-consent box on /join) is copy on a screen with no data
+   file, and is walked in a browser instead.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+console.log("\n=== 3 Sep: the local-questions screen is gone ===");
+ok(
+  "no screen asks which local questions a parent could help with",
+  !q.SCREENS.some((s) => s.questions.some((x) => x.id === "topics")),
+  "her instruction — the whole page comes out of the flow",
+);
+ok(
+  "its sibling, parenting experiences, is deliberately kept",
+  q.SCREENS.some((s) => s.questions.some((x) => x.id === "topics_lived")),
+  "she named one heading, and that screen carries the 1 Sep topic-level opt-in",
+);
+ok(
+  "the stored answer survives the screen",
+  Array.isArray(q.EMPTY_ANSWERS.topics),
+  "parents answered it under the old build; deleting the field would discard that",
+);
+
+console.log("\n=== 3 Sep: a child on the way is not asked about ===");
+const expectingOnly: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1] };
+const oneOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1, 4] };
+const twoOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1, 4, 9] };
+const schoolQ = questionById("schools")!;
+ok(
+  "an expecting child is not offered as a “whose is it?” chip",
+  q.childOptions(twoOnTheWay).every((c) => c.label !== "Expecting"),
+  q.childOptions(twoOnTheWay).map((c) => c.label).join(","),
+);
+ok("and the born children still are", q.childOptions(twoOnTheWay).length === 2);
+ok(
+  "no per-child block is headed “Expecting”",
+  q.childBlocks(schoolQ, "pasadena", twoOnTheWay).every((b) => !/Expecting/.test(b.heading)),
+  q.childBlocks(schoolQ, "pasadena", twoOnTheWay).map((b) => b.heading).join(" | "),
+);
+ok(
+  "one born child plus one on the way asks no blocks at all",
+  q.childBlocks(schoolQ, "pasadena", oneOnTheWay).length === 0,
+  "nothing to attribute between — the household list, attributed silently",
+);
+ok(
+  "a parent expecting their first is asked no per-child question either",
+  q.childOptions(expectingOnly).length === 0 &&
+    q.childBlocks(schoolQ, "pasadena", expectingOnly).length === 0,
+);
+ok(
+  "the expecting answer itself is still recorded",
+  expectingOnly.child_ages.includes(-1),
+  "it is a strong matching signal, and the screen before it said so",
+);
+
+console.log("\n=== 3 Sep: month and year, not a date of birth ===");
+ok("twelve months, in order", q.MONTH_OPTIONS.length === 12);
+ok(
+  "ids are 1-12, matching children.birth_month and not JavaScript's zero",
+  q.MONTH_OPTIONS.map((m) => m.id).join(",") === "1,2,3,4,5,6,7,8,9,10,11,12",
+  "an off-by-one here is invisible until somebody reads a birthday",
+);
+ok(
+  "January is 1 and December is 12",
+  q.MONTH_OPTIONS[0].label === "Jan" && q.MONTH_OPTIONS[11].label === "Dec",
+);
+ok(
+  "nothing is pre-filled",
+  Object.keys(q.EMPTY_ANSWERS.child_months).length === 0,
+  "the year is the required tap; the month is offered beside it",
+);
+ok("and the ages question stays the required one", schoolQ !== undefined && questionById("child_ages")?.required === true);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

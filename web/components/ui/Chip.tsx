@@ -40,7 +40,7 @@ export function Chip({
       className={cn(
         // 48px minimum: the smallest target a thumb hits reliably every time.
         "inline-flex min-h-12 select-none items-center gap-2 rounded-full border text-left",
-        "text-[15px] font-medium leading-snug",
+        "text-control font-medium leading-snug",
         "transition-[transform,background-color,border-color,color,box-shadow] duration-150",
         /* Conditional rather than overridden later in the string: two
            `active:scale-*` utilities live in the same layer, so which one wins is
@@ -62,7 +62,7 @@ export function Chip({
         {hint && (
           <span
             className={cn(
-              "text-[12.5px] font-normal",
+              "text-dock font-normal",
               selected ? "text-white/70" : "text-muted",
             )}
           >
@@ -106,7 +106,7 @@ export function CustomChip({
   onRemove: () => void;
 }) {
   return (
-    <span className="inline-flex min-h-12 items-center gap-1 rounded-full border border-gold-line bg-gold-wash pl-4 pr-1.5 text-[15px] font-medium text-gold-ink">
+    <span className="inline-flex min-h-12 items-center gap-1 rounded-full border border-gold-line bg-gold-wash pl-4 pr-1.5 text-control font-medium text-gold-ink">
       {label}
       <button
         type="button"
@@ -142,7 +142,7 @@ export function AddOtherChip({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex min-h-12 items-center gap-2 rounded-full border border-dashed bg-transparent px-4 text-[15px] font-medium transition-colors duration-150",
+        "inline-flex min-h-12 items-center gap-2 rounded-full border border-dashed bg-transparent px-4 text-control font-medium transition-colors duration-150",
         /* A typed answer is still an answer, so the cap has to cover this too —
            otherwise "one per child" is a rule the Other sheet walks straight past. */
         disabled

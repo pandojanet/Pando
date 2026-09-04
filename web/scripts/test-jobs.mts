@@ -103,7 +103,28 @@ ok("the ledger sweep does not", j.JOBS.impact_sync.sends === false, "it writes r
  * to text a parent. The list is the thing worth reviewing: adding a name here is
  * a deliberate act, and a job that starts sending without one fails this.
  */
-const SENDING = ["freshness_ping", "thanks_prompt", "thanks_delivery"];
+const SENDING = [
+  "freshness_ping",
+  "thanks_prompt",
+  "thanks_delivery",
+  /**
+   * 13.4, added 3 Sep — and this list is exactly where a new sender should have
+   * to argue for itself, so here is the argument.
+   *
+   * It is the most *frequent* sending job (every ten minutes) and by far the
+   * narrowest. `RETRY_GIVE_UP_MINUTES` is 60, so a run can only see failures
+   * from the last hour; `RETRY_LIMIT` is 1, so each of those is tried exactly
+   * once; and the policy refuses every permanent carrier error, including the
+   * one where a retry would be a compliance breach rather than a wasted send
+   * (21610 — texting somebody who asked Pando to stop).
+   *
+   * It also cannot invent a message: `message_log` stores no body, so it only
+   * re-sends what a template can rebuild — and it declines two of those on
+   * purpose (a verification code, whose three sends belong to the parent, and an
+   * answer, which `/admin/answers` already queues for a person).
+   */
+  "retry_failed",
+];
 ok(
   "and those are the only jobs that may text anybody",
   j.JOB_NAMES.filter((n) => j.JOBS[n].sends).sort().join(",") === SENDING.slice().sort().join(","),

@@ -6,17 +6,19 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
+  slugify,
+  slugLabel,
   TableWrap,
   Td,
-  slugify,
   Th,
-  slugLabel,
   when,
 } from "@/components/admin/ui";
+import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { PendingOptionRow } from "@/lib/admin/types";
 import { CATEGORY_LABEL } from "@/lib/admin/labels";
@@ -69,7 +71,7 @@ export default function PendingOptionsPage() {
 
       <Card title={`Waiting (${pending.length})`}>
         {loading && pending.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         ) : !configured && pending.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : pending.length === 0 ? (
@@ -78,12 +80,12 @@ export default function PendingOptionsPage() {
             body="New ones appear as parents type them."
           />
         ) : (
-          <TableWrap>
+          <TableWrap label="Answers parents typed, waiting to be promoted">
             <thead>
               <tr>
                 <Th>What they typed</Th>
                 <Th>Category</Th>
-                <Th className="text-right" title="How many parents typed this. More than one is the strongest reason to add it.">
+                <Th className="text-right" hint="How many parents typed this. More than one is the strongest reason to add it.">
                   Parents who typed it
                 </Th>
                 <Th>First from</Th>
@@ -104,12 +106,8 @@ export default function PendingOptionsPage() {
                   <Td>{CATEGORY_LABEL[row.category] ?? slugLabel(row.category)}</Td>
                   <Td className="text-right">
                     {row.occurrences > 1 ? (
-                      <span
-                        className="font-semibold text-green-deep"
-                        title="More than one parent typed this, which is the strongest reason to add it."
-                      >
-                        {row.occurrences}
-                      </span>
+                      <span className="font-semibold text-green-deep">
+                        {row.occurrences}{" "}<Hint>{"More than one parent typed this, which is the strongest reason to add it."}</Hint></span>
                     ) : (
                       row.occurrences
                     )}

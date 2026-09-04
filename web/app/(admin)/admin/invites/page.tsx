@@ -8,17 +8,19 @@ import {
   Empty,
   ErrorNote,
   Field,
+  inputClass,
+  Loading,
   NotConfigured,
   PageHead,
   ResultNote,
   SampleBanner,
+  slugLabel,
   TableWrap,
   Td,
   Th,
-  inputClass,
-  slugLabel,
   when,
 } from "@/components/admin/ui";
+import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { InviteRow } from "@/lib/admin/types";
 
@@ -209,9 +211,7 @@ export default function InvitesPage() {
       <div className="mt-4">
         <Card title={`Live (${live.length})`}>
           {loading && all.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-              Loading…
-            </div>
+            <Loading />
           ) : !configured && all.length === 0 ? (
             <NotConfigured demo={demo} onDemo={setDemo} />
           ) : live.length === 0 ? (
@@ -242,6 +242,79 @@ export default function InvitesPage() {
   );
 }
 
+/**
+ * The invite link, and a copy button that does not eat it.
+ *
+ * **Two defects, and the first destroyed data on screen.** The cell rendered
+ * `copied === row.id ? "copied" : `?i=${row.code}`` — the confirmation
+ * *replaced* the code — and `setCopied` was never reset, so the moment an admin
+ * copied a link that row stopped showing which link it was, permanently, until
+ * a reload. A table cell must not be able to lose its own value; the
+ * confirmation sits **beside** the code now and the code never leaves.
+ *
+ * **Second, a blocked clipboard said nothing.** `void navigator.clipboard?.…`
+ * discards both the missing-API case and the rejected promise, so on a browser
+ * that refuses it the admin taps and the row confirms a copy that did not
+ * happen — worse than a visible failure, because they then paste the previous
+ * clipboard into a group chat. That is the `CopyButton` lesson from the parent
+ * flow (3 Sep) arriving on the admin side, and the same answer: say so.
+ *
+ * The timer is cleared on unmount, because a row can be removed by a reload
+ * while its confirmation is still up.
+ */
+function LinkCell({ code }: { code: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    if (state === "idle") return;
+    const t = setTimeout(() => setState("idle"), 2400);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  async function copy() {
+    try {
+      if (!navigator.clipboard) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(`https://pando.is/join?i=${code}`);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  return (
+    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      {/* `aria-label`, not `title`. The visible text is the code (`?i=sgv-…`),
+          which does not say that pressing it copies anything — and a `title`
+          conveys that to a mouse and to nobody else. An accessible name is the
+          right home for what a control *does*. */}
+      <button
+        type="button"
+        aria-label={`Copy the full invite link for ${code}`}
+        onClick={() => void copy()}
+        className="font-mono text-[12.5px] text-green-deep underline underline-offset-2"
+      >
+        ?i={code}
+      </button>
+      {/* Permanently mounted, so a screen reader hears the change rather than
+          the button being re-read under a new name. */}
+      <span
+        role="status"
+        className={
+          state === "failed"
+            ? "text-[12px] text-alert"
+            : "text-[12px] text-muted"
+        }
+      >
+        {state === "copied"
+          ? "copied"
+          : state === "failed"
+            ? "couldn't copy — select it and copy by hand"
+            : ""}
+      </span>
+    </span>
+  );
+}
+
 function InviteTable({
   rows,
   busy,
@@ -257,10 +330,8 @@ function InviteTable({
     fn: () => Promise<{ persisted: boolean }>,
   ) => Promise<void>;
 }) {
-  const [copied, setCopied] = useState<string | null>(null);
-
   return (
-    <TableWrap>
+    <TableWrap label="Invite links">
       <thead>
         <tr>
           <Th>Group</Th>
@@ -273,13 +344,13 @@ function InviteTable({
           {/* The denominator estimate 2.2 asks for. Without it "four joined" is
               unreadable: four out of six is a good channel and four out of two
               hundred is a bad one, and the page could not tell them apart. */}
-          <Th title="How many times the link was opened. Not a headcount — it counts opens, so a parent who came back twice counts twice, and link previews count. Read it against the next column rather than on its own.">
+          <Th hint="How many times the link was opened. Not a headcount — it counts opens, so a parent who came back twice counts twice, and link previews count. Read it against the next column rather than on its own.">
             Opened
           </Th>
-          <Th title="People who opened this link and filled in a profile.">
+          <Th hint="People who opened this link and filled in a profile.">
             Joined
           </Th>
-          <Th title="How many of those went on to share something you added to Pando. A group with thirty joins and two of these is telling you something.">
+          <Th hint="How many of those went on to share something you added to Pando. A group with thirty joins and two of these is telling you something.">
             Gave something
           </Th>
           <Th>Created</Th>
@@ -298,31 +369,15 @@ function InviteTable({
               )}
             </Td>
             <Td>
-              <button
-                type="button"
-                title="Copy the link"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(
-                    `https://pando.is/join?i=${row.code}`,
-                  );
-                  setCopied(row.id);
-                }}
-                className="font-mono text-[12.5px] text-green-deep underline underline-offset-2"
-              >
-                {copied === row.id ? "copied" : `?i=${row.code}`}
-              </button>
+              <LinkCell code={row.code} />
             </Td>
             <Td className="text-[13px]">
               {row.group_option_value ? (
                 (groups.find((g) => g.id === row.group_option_value)?.label ??
                   slugLabel(row.group_option_value))
               ) : (
-                <span
-                  className="text-muted"
-                  title="Nothing is recorded about which group these contributors came from"
-                >
-                  not linked
-                </span>
+                <span className="text-muted">
+                  not linked{" "}<Hint>{"Nothing is recorded about which group these contributors came from"}</Hint></span>
               )}
             </Td>
             <Td className="tabular-nums text-muted">{row.opens}</Td>

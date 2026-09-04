@@ -174,6 +174,12 @@ head("1.2 / 1.3  profile, and the graph derived from it");
     answers: {
       neighborhood: "altadena",
       child_ages: [3, 6],
+      /* Month and year (3 Sep). Three entries and only the first is legitimate:
+         13 is outside the CHECK and 11 is an age nobody tapped, and either one
+         reaching `children` would abort the whole profile write on a
+         constraint — a parent losing everything they answered because of one
+         optional field. */
+      child_months: { 3: 4, 6: 13, 11: 9 },
       schools: ["walden-school"],
       /* Whose it is. The 6-year-old's school, and a camp both children went to —
          plus an age nobody tapped, which must not survive. */
@@ -654,6 +660,7 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
     sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
     monthly_contact_allowance: 3, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
     listening_ear_consent: { status: "opted_in", text_version: "seed-listening-ear-2026-08-18" },
+    recurring_messages_consent: { status: "opted_in", text_version: "seed-recurring-2026-09-02" },
     answers: { neighborhood: "altadena", child_ages: [5], allowance: "3", other: {} },
   });
   const [oldRow] = await sql`select monthly_contact_allowance from people where first_name = 'AuditOldAllowance'`;
@@ -668,7 +675,11 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
     invite_code: "sgv-founding", phone: tenPhone, wants_founding: true, first_name: "AuditTenAllowance",
     sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
     monthly_contact_allowance: 10, children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
+    /* A "declined" this consent cannot legitimately be: the checkbox gates the
+       screen, so the route must drop it rather than store a refusal the flow
+       cannot produce. Asserted below. */
     listening_ear_consent: { status: "declined", text_version: "seed-listening-ear-2026-08-18" },
+    recurring_messages_consent: { status: "declined", text_version: "seed-recurring-2026-09-02" },
     answers: { neighborhood: "altadena", child_ages: [5], allowance: "10", other: {} },
   });
   const [tenRow] = await sql`select monthly_contact_allowance from people where first_name = 'AuditTenAllowance'`;
@@ -688,6 +699,33 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
       earConsents[1].status === "declined" &&
       earConsents.every((c) => c.text_version === "seed-listening-ear-2026-08-18"),
     JSON.stringify(earConsents),
+  );
+
+  /**
+   * 2 Sep — the recurring SMS/RCS opt-in that rides with the participation
+   * level. Asserted against the **landed row**, not the 200: it needed
+   * `consents_scope_check` widened (drizzle 0028), and a route that accepted
+   * the field while the CHECK still refused the scope would answer 502 from one
+   * layer down — which is exactly how the 18 Aug allowance change was caught.
+   */
+  const recurring = await sql`
+    select p.first_name, c.status, c.text_version from consents c
+    join people p on p.id = c.person_id
+    where c.scope = 'sms_recurring'
+      and p.first_name in ('AuditOldAllowance', 'AuditTenAllowance')
+    order by p.first_name`;
+  ok(
+    "the recurring SMS/RCS consent lands under its own scope and version",
+    recurring.length === 1 &&
+      recurring[0].first_name === "AuditOldAllowance" &&
+      recurring[0].status === "opted_in" &&
+      recurring[0].text_version === "seed-recurring-2026-09-02",
+    JSON.stringify(recurring),
+  );
+  ok(
+    "and a declined one is dropped rather than stored as a refusal",
+    !recurring.some((c) => c.first_name === "AuditTenAllowance"),
+    "the checkbox gates the screen, so 'declined' is a state the flow cannot produce",
   );
 }
 
@@ -719,8 +757,11 @@ const pend = await sql`select market_id, submitted_value, status from pending_op
 ok("the injected pending option was ignored", !pend.some((o) => o.submitted_value === "Injected"));
 ok("the real 'other' answer is parked as pending (inv 9)", pend.some((o) => o.submitted_value === "Audit Test Club" && o.status === "pending"));
 ok("its market came from the invite", pend.every((o) => o.market_id === "pasadena"));
-const kids = await sql`select birth_year from children where person_id = ${p.id}`;
+const kids = await sql`select birth_year, birth_month from children where person_id = ${p.id} order by birth_year`;
 ok("children stored as birth years", kids.length === 2);
+ok("a birth month lands beside its year (3 Sep)", kids.some((k) => k.birth_year === thisYear - 3 && k.birth_month === 4), JSON.stringify(kids));
+ok("a month outside 1-12 is dropped, not stored", kids.every((k) => k.birth_month === null || (k.birth_month >= 1 && k.birth_month <= 12)));
+ok("and the 6-year-old keeps no month at all", kids.some((k) => k.birth_year === thisYear - 6 && k.birth_month === null));
 const sch = await sql`select status, child_birth_years from person_schools where person_id = ${p.id}`;
 ok("school carries its own status (P5)", sch.length === 1 && sch[0].status === "current");
 ok("and the same child the affinity says", sch.length === 1 && JSON.stringify(sch[0].child_birth_years) === JSON.stringify([thisYear - 6]));

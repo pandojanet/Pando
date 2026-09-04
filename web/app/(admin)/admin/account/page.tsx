@@ -80,7 +80,9 @@ export default function AccountPage() {
 
       {done ? (
         <Card>
-          <div className="px-4 py-5">
+          {/* Announced: the form it replaces is gone from the page, so without
+              a role the only signal that anything happened is visual. */}
+          <div className="px-4 py-5" role="status">
             <p className="text-[15px] font-semibold text-green-deep">
               Password changed.
             </p>
@@ -98,6 +100,21 @@ export default function AccountPage() {
         </Card>
       ) : (
         <Card title="Change password">
+          {/**
+           * A real `<form>`, which it was not.
+           *
+           * Three password fields and a button, and pressing Enter in any of
+           * them did nothing — the one keystroke every browser and password
+           * manager expects to submit. `type="submit"` on the button plus
+           * `onSubmit` here is the whole fix; the click path is unchanged
+           * because a submit button still fires it.
+           */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (ready) void submit();
+            }}
+          >
           <div className="grid max-w-[34rem] gap-3 px-4 py-3">
             <Field label="Current password">
               <input
@@ -122,21 +139,31 @@ export default function AccountPage() {
             </Field>
             <Field label="New password again">
               <input
+                id="password-again"
                 className={inputClass}
                 type="password"
                 autoComplete="new-password"
+                aria-invalid={mismatch || undefined}
+                aria-describedby={mismatch ? "password-mismatch" : undefined}
                 value={again}
                 onChange={(e) => setAgain(e.target.value)}
               />
             </Field>
+            {/* `role="alert"`, and linked to the field it is about. It was a
+                plain `<p>`: a sighted user saw why the button stayed disabled
+                and a screen-reader user did not. */}
             {mismatch && (
-              <p className="text-[13px] font-medium text-alert">
+              <p
+                id="password-mismatch"
+                role="alert"
+                className="text-[13px] font-medium text-alert"
+              >
                 Those two don&apos;t match.
               </p>
             )}
           </div>
           <div className="border-t border-bark/70 px-4 py-3">
-            <Button tone="primary" disabled={!ready} onClick={() => void submit()}>
+            <Button type="submit" tone="primary" disabled={!ready}>
               {busy ? "Changing…" : "Change password"}
             </Button>
             <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
@@ -144,6 +171,7 @@ export default function AccountPage() {
               forget it, a developer can set a new one — nobody can recover the old.
             </p>
           </div>
+          </form>
         </Card>
       )}
     </>

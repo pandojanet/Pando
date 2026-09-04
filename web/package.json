@@ -10,6 +10,7 @@
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
+    "seed:blasts": "node --env-file=.env.local scripts/seed-blasts.mjs",
     "options:import": "node scripts/import-market-options.mjs",
     "check": "node scripts/check.mjs",
     "admin:user": "node scripts/admin-user.mjs",
@@ -40,12 +41,19 @@
     "test:feedback": "tsx scripts/test-seed-feedback.mts",
     "test:starters": "node --experimental-strip-types --no-warnings scripts/test-starters.mts",
     "test:person-search": "node --experimental-strip-types --no-warnings scripts/test-person-search.mts",
-    "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts"
+    "test:payments": "node --experimental-strip-types --no-warnings scripts/test-payments.mts",
+    "test:payments-live": "node --env-file=.env.local scripts/test-payments-live.mjs",
+    "test:security": "node --experimental-strip-types --no-warnings scripts/test-security.mts",
+    "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts",
+    "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
+    "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
+    "test:relay-live": "tsx scripts/test-relay-live.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.39.0",
+    "motion": "^13.2.0",
     "next": "16.2.12",
     "postgres": "^3.4.9",
     "posthog-js": "^1.413.2",

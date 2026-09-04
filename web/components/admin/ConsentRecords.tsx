@@ -7,15 +7,17 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Loading,
   NotConfigured,
   SampleBanner,
+  slugLabel,
   TableWrap,
   Td,
   Th,
-  slugLabel,
   when,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
+import { consentScopeLabel } from "@/lib/admin/labels";
 import type { ConsentRow } from "@/lib/admin/types";
 
 /**
@@ -76,7 +78,7 @@ export function ConsentRecords() {
                 tone={scope === key ? "primary" : "secondary"}
                 onClick={() => setScope(key)}
               >
-                {key === "all" ? "Every scope" : slugLabel(key)}
+                {key === "all" ? "Every scope" : consentScopeLabel(key)}
               </Button>
             ))}
             <Button
@@ -95,9 +97,7 @@ export function ConsentRecords() {
 
       <Card>
         {loading && all.length === 0 ? (
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-            Loading…
-          </div>
+          <Loading />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
@@ -106,7 +106,7 @@ export function ConsentRecords() {
             body="They are written as parents give their number and finish the flow."
           />
         ) : (
-          <TableWrap>
+          <TableWrap label="Consent records">
             <thead>
               <tr>
                 <Th>Who</Th>
@@ -133,7 +133,7 @@ export function ConsentRecords() {
                   <Td className="whitespace-nowrap font-mono text-[12.5px]">
                     {row.phone ?? "—"}
                   </Td>
-                  <Td className="text-[13px]">{slugLabel(row.scope)}</Td>
+                  <Td className="text-[13px]">{consentScopeLabel(row.scope)}</Td>
                   <Td>
                     <Badge
                       tone={

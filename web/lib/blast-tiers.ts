@@ -52,6 +52,20 @@ export interface TierSpec {
   credit_kind: "network_ask" | "targeted_network_ask" | null;
   /** Shown to the admin; not parent-facing copy. */
   note: string;
+  /**
+   * 13.5 — the line on the Stripe receipt, for the tiers that charge.
+   *
+   * Its own field rather than reusing `note`, for two reasons. `note` opens
+   * with the price ("$15. Three to five…"), which on a receipt that already
+   * states the amount reads as a mistake; and it carries admin-facing asides
+   * like "The first one is free", which is bewildering on something a parent has
+   * just paid for.
+   *
+   * **It never contains the parent's question.** A Stripe receipt is emailed,
+   * stored by a third party and often forwarded, and the question can be
+   * personal — so the receipt says what was bought, never what was asked.
+   */
+  receipt_description?: string;
 }
 
 /**
@@ -87,6 +101,8 @@ export const TIERS: Record<BlastTier, TierSpec> = {
     always_human_review: false,
     credit_kind: "network_ask",
     note: "$5. Anonymous on the once-a-day board. If two days pass with no answer, one well-matched parent is asked directly.",
+    receipt_description:
+      "One question on the local parents' board, asked anonymously.",
   },
   targeted: {
     id: "targeted",
@@ -100,6 +116,8 @@ export const TIERS: Record<BlastTier, TierSpec> = {
     always_human_review: false,
     credit_kind: "targeted_network_ask",
     note: "$15. Three to five carefully matched parents, asked personally. The first one is free.",
+    receipt_description:
+      "One question asked personally of a few carefully matched local parents.",
   },
   last_minute: {
     id: "last_minute",
@@ -186,4 +204,70 @@ export function owedRefund(input: {
   if (input.approved_answers > 0) return false;
   if (!input.expires_at) return false;
   return input.now.getTime() >= input.expires_at.getTime();
+}
+
+/**
+ * M13.5 — what this Ask owes, given its tier and whether a credit paid for it.
+ *
+ * ## Why this lives here and not in `lib/payments.ts`
+ *
+ * It was written there first, and it could not stay: `payments.ts` would have
+ * needed to import this file, and an import is the one thing that stops a module
+ * being loadable by `node --experimental-strip-types`. CLAUDE.md records the
+ * same trade for `lib/matching.ts` — "deliberately free of *runtime* imports so
+ * `npm run test:matching` can load it in plain node" — and an earlier attempt at
+ * that file lost the property by giving the age ladder its own module.
+ *
+ * The factoring that fell out is better than the one it replaced, which is worth
+ * saying: **"what does this tier cost" is a fact about a tier**, and tiers and
+ * their prices live here. What stayed in `payments.ts` is everything that is
+ * *not* about a tier — whether a refund is coherent, whether the guarantee is
+ * owed, how to write cents as dollars.
+ *
+ * ## The three answers are exhaustive on purpose
+ *
+ * There is no "unknown" branch, because a blast whose payment state cannot be
+ * determined must not be creatable in the first place.
+ *
+ * And the credit is checked **before** the price, which is 13.5's own
+ * requirement ("skipped entirely when a free credit covers it") rather than an
+ * optimisation: the strategy's guarantee is that a paid Ask producing no useful
+ * answer earns an automatic credit, so charging before looking would bill a
+ * parent for the Ask Pando owed them. `createBlast` redeems the credit inside
+ * the same transaction as the insert, so by the time this is asked the row
+ * already knows.
+ */
+export interface PaymentDecision {
+  /** Whether a card payment has to happen before this blast can be sent. */
+  charge: boolean;
+  /** US cents. Zero whenever `charge` is false. */
+  cents: number;
+  /** The `blasts.payment_status` this implies. */
+  status: "not_required" | "pending";
+  /** Why, in words an admin can read on the payments page. */
+  reason: "free_tier" | "credit_redeemed" | "checkout_required";
+}
+
+export function paymentFor(input: {
+  tier: BlastTier;
+  creditRedeemed: boolean;
+}): PaymentDecision {
+  const spec = TIERS[input.tier];
+
+  /* Free by design. `passive` contacts nobody (it is 7.11's demand map) and
+     `last_minute` is free during the pilot — a decision, not a placeholder. */
+  if (spec.price_cents === 0) {
+    return { charge: false, cents: 0, status: "not_required", reason: "free_tier" };
+  }
+
+  if (input.creditRedeemed) {
+    return { charge: false, cents: 0, status: "not_required", reason: "credit_redeemed" };
+  }
+
+  return {
+    charge: true,
+    cents: spec.price_cents,
+    status: "pending",
+    reason: "checkout_required",
+  };
 }

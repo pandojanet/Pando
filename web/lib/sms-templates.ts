@@ -132,6 +132,59 @@ export function thanksSms(what: string): string {
   return `Pando: a parent nearby used your recommendation — ${what}. Thank you. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 }
 
+/**
+ * M11.3 — the receipt for a caregiver who texted DELETE.
+ *
+ * ⚠️ **Not among the registered A2P samples**, like the OTP text. It is a
+ * transactional reply to a message the person just sent, which is the least
+ * carrier-sensitive shape there is, but the campaign should carry a sample
+ * matching it before the first live one goes out.
+ *
+ * **It confirms rather than asks.** The 2C flow promises the profile goes
+ * "without asking why", so this says what happened and stops — no exit survey,
+ * no "was it something we did", and no offer to come back. A parent who has just
+ * removed themselves is the last person to sell to.
+ *
+ * It does say the door is open, in one clause, because that is a fact they would
+ * otherwise have to ask about: signing up again is the same two minutes it was
+ * the first time.
+ */
+/**
+ * 10.3 — "is this still worth recommending?"
+ *
+ * Extracted here on 3 Sep because it was composed inline in `repo/jobs.ts`,
+ * which made it the only outbound message in the app with no single definition.
+ * The retry sweep (13.4) needs to rebuild *the same* message rather than a
+ * paraphrase of it, and two call sites composing one text is how the second one
+ * drifts.
+ *
+ * PASS is in the copy for the reason strategy §6 gives: "an effortless exit —
+ * reply PASS and the question moves to someone else immediately, with no
+ * follow-up, no penalty, and nothing recorded against you." An exit nobody was
+ * told about is not one.
+ */
+export function freshnessPingSms(input: { name: string }): string {
+  return `Quick one — is ${input.name} still worth recommending? Reply yes, no, or PASS to skip.`;
+}
+
+export function caregiverDeletedSms(): string {
+  return "Pando: done — your profile and everything in it is deleted. Families can no longer see you. If you ever want to set one up again, it's pando.is/caregiver. Reply STOP to opt out, HELP for help.";
+}
+
+/**
+ * The answer when DELETE arrives from a number with no caregiver profile.
+ *
+ * **It does not guess what they meant.** The likely sender is a parent who read
+ * DELETE somewhere and wants their own data gone — a real request, and a
+ * different one: there is no self-serve parent delete, a person handles it, and
+ * inventing one in a keyword handler would be a product decision taken in the
+ * wrong place. So this says what Pando could not find and where a person is,
+ * rather than offering something that does not exist.
+ */
+export function nothingToDeleteSms(): string {
+  return "Pando: there's no caregiver profile on this number to delete. If you'd like your own information removed, email hello@pando.is and a person will handle it. Reply STOP to opt out, HELP for help.";
+}
+
 export const VERIFICATION_CODE_LENGTH = 6;
 /** Minutes a code stays valid. */
 export const VERIFICATION_TTL_MINUTES = 5;

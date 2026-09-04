@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   Card,
   ErrorNote,
+  Loading,
   NotConfigured,
   PageHead,
   SampleBanner,
@@ -93,14 +94,14 @@ export default function AdminOverviewPage() {
          */
         {
           label: "questions that need a person",
-          where: "Asked for",
+          where: "What parents asked for",
           n: o.demand.high_stakes + o.demand.named_allegation,
           href: "/admin/demand",
           urgent: true,
         },
         {
           label: "other questions parents asked",
-          where: "Asked for",
+          where: "What parents asked for",
           n: o.demand.ordinary + o.demand.peer_support,
           href: "/admin/demand",
           urgent: false,
@@ -163,9 +164,7 @@ export default function AdminOverviewPage() {
 
       {loading && !o ? (
         <Card>
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">
-            Loading…
-          </div>
+          <Loading />
         </Card>
       ) : !configured && !o ? (
         <Card>

@@ -7,17 +7,19 @@ import {
   Card,
   Empty,
   ErrorNote,
+  inputClass,
+  Loading,
   NotConfigured,
+  optionLabel,
   PageHead,
   ResultNote,
   SampleBanner,
-  inputClass,
-  optionLabel,
   when,
 } from "@/components/admin/ui";
 import { Spec, SpecList } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { CaregiverClaimRow } from "@/lib/admin/types";
+import { CLAIM_STATUS, CONSENT_STATE, sentence } from "@/lib/admin/labels";
 import {
   CAREGIVER_AGE_BANDS,
   CAREGIVER_AVAILABLE_FROM,
@@ -151,7 +153,7 @@ export default function ClaimsPage() {
 
       {loading && all.length === 0 ? (
         <Card>
-          <div className="px-4 py-10 text-center text-[13.5px] text-muted">Loading…</div>
+          <Loading />
         </Card>
       ) : !configured && all.length === 0 ? (
         <Card>
@@ -251,7 +253,7 @@ export default function ClaimsPage() {
                             <span className="ml-2 text-muted">
                               {c.nominations}{" "}
                               {c.nominations === 1 ? "nomination" : "nominations"} ·{" "}
-                              {c.consent_status}
+                              {CONSENT_STATE[c.consent_status]?.label ?? sentence(c.consent_status)}
                               {c.invite_sent_by_parent
                                 ? " · invite sent"
                                 : " · no invite sent"}
@@ -320,7 +322,7 @@ export default function ClaimsPage() {
                           </span>
                         )}
                         <Badge tone={claim.status === "linked" ? "green" : "muted"}>
-                          {claim.status}
+                          {CLAIM_STATUS[claim.status] ?? sentence(claim.status)}
                         </Badge>
                       </span>
                     </div>

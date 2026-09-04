@@ -1,6 +1,7 @@
 import "server-only";
+import { looksLikePerson, NAMED_PERSON_FLAG } from "@/lib/named-person";
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { extractCard, isExtractionConfigured } from "@/lib/server/extract";
 
@@ -38,8 +39,19 @@ export interface FlagInput {
  * same rule again *does* raise a new one — that is deliberate: a concern that
  * recurs after a human cleared it is new information, not a duplicate.
  */
+/**
+ * Anything that can run a statement — a connection or an open transaction.
+ *
+ * Structural for the third time in this codebase, and for the same reason each
+ * time: these run inside the transaction that writes the record they are about,
+ * and `Db["transaction"]`'s argument is not a `Db`.
+ */
+export interface Executor {
+  execute(query: SQL): Promise<unknown>;
+}
+
 export async function writeFlagIfNew(
-  db: Db,
+  db: Executor,
   flag: FlagInput,
 ): Promise<{ created: boolean }> {
   const rows = (await db.execute(
@@ -262,4 +274,97 @@ export async function sweepExtraction(
   }
 
   return { processed: pending.length, scored, flags };
+}
+
+/**
+ * M11.4 — flag a record whose own *name* is a person.
+ *
+ * One helper, called from each of the three paths that create a `shares` row —
+ * the seed card (`repo/cards.ts`), the SMS capture (`repo/capture.ts`) and an
+ * approved blast reply (`admin-write.ts`). Three call sites is acceptable
+ * because the **rule** is one function; three copies of the rule would not be.
+ *
+ * ## Why this flags rather than refuses
+ *
+ * A record only reaches an answer once an admin has approved it
+ * (`shares_answerable` requires `status = 'approved'` on both halves), so the
+ * dangerous state is not "unflagged" — it is "approved without anybody having
+ * been asked the caregiver questions". This flag is what puts that question in
+ * front of them, with the instruction in `labels.ts`: if it is a business,
+ * approve it; if it is a person, it belongs in the caregiver flow with its own
+ * consent.
+ *
+ * **A second gate in `retrieval.ts` was considered and rejected.** Holding an
+ * *approved* record out of answers on a lexical heuristic would silently
+ * withhold something an admin had explicitly decided about — the same class of
+ * fault as a label describing a state nothing maintains, in reverse. Approval is
+ * the decision; this is the prompt.
+ *
+ * Never throws: every caller is inside the transaction that writes the record,
+ * and a record failing to save because a *flag* could not be written would be
+ * the tail wagging the dog.
+ */
+export async function flagNamedPersonRecord(
+  db: Executor,
+  input: {
+    shareId: string;
+    name: string;
+    marketId?: string;
+    personId?: string | null;
+  },
+): Promise<{ created: boolean }> {
+  try {
+    /**
+     * The place-name veto, read here rather than passed in.
+     *
+     * It is the difference between 16 false positives on this market's 588 real
+     * records and **zero** — "Brella Pasadena", "Calvary Monrovia", "Altadena
+     * Stables" are all places, and the market's own neighborhood list is what
+     * says so. Fetched inside because there are three call sites: a parameter
+     * every caller had to remember is a parameter one caller eventually
+     * forgets, and forgetting it here means flagging legitimate businesses.
+     *
+     * One extra query on a write path that already runs several, and only when
+     * a share is created.
+     */
+    const areas = (await db.execute(sql`
+      select distinct label from market_options
+       where market_id = ${input.marketId ?? "pasadena"}
+         and category = 'neighborhoods'
+    `)) as unknown as Array<Record<string, unknown>>;
+    const placeWords = areas.map((r) => String(r.label));
+
+    const verdict = looksLikePerson(input.name, { placeWords });
+    if (!verdict.person) return { created: false };
+
+    return await writeFlagIfNew(db, {
+      /**
+       * `review`, not `escalation`. An escalation is what is owed a person
+       * *today* (10 Aug: `alert` red is reserved for that), and this is a
+       * question about a record nobody can answer with yet anyway — it sits in
+       * the queue until the record is looked at, which is exactly when the
+       * question needs answering.
+       */
+      severity: "review",
+      reason: NAMED_PERSON_FLAG,
+      subject_kind: "share",
+      subject_id: input.shareId,
+      field: "name",
+      /**
+       * The name itself, because the reviewer's whole decision is about it and
+       * a flag that made them open another page to see the subject would be
+       * read in arrival order instead. It is a curated record name, not a
+       * parent's free text about somebody.
+       */
+      excerpt: input.name.slice(0, 200),
+      person_id: input.personId ?? null,
+    });
+  } catch {
+    /* Counts and enums only, and not even a count here: the record saved, which
+       is the important half. The sweep in `POST /api/admin/extract` is not this
+       rule's catch-up, so a lost flag is genuinely lost — worth knowing, and
+       still not worth failing a parent's contribution over. */
+    console.warn("[flags] named-person flag not written");
+    return { created: false };
+  }
 }

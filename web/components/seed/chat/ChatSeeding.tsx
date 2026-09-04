@@ -69,8 +69,21 @@ export function ChatSeeding() {
   );
 
   useEffect(() => {
-    reduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    return () => timers.current.forEach((t) => window.clearTimeout(t));
+    /* Read **and** subscribed. It was read once at mount and never again, so a
+       parent who turned reduced motion on mid-session kept the typing delays
+       until they reloaded — and this is the one screen where those delays are
+       the whole experience. A ref rather than state on purpose: a state change
+       here would re-render the entire transcript on a media-query flip. */
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    reduced.current = mq.matches;
+    const onChange = (e: MediaQueryListEvent) => {
+      reduced.current = e.matches;
+    };
+    mq.addEventListener("change", onChange);
+    return () => {
+      mq.removeEventListener("change", onChange);
+      timers.current.forEach((t) => window.clearTimeout(t));
+    };
   }, []);
 
   useEffect(() => {
@@ -701,6 +714,11 @@ export function ChatSeeding() {
       <ScreenHeader left={<Wordmark />} />
 
       <ScreenBody className="pt-5">
+        {/* `/share` was the one route in the app with no `<h1>` — the screen is
+            a message thread, so it has no visible title and never should have
+            one. Screen-reader-only is the whole fix: the document gets a name,
+            and nothing on screen changes. */}
+        <h1 className="sr-only">Share a recommendation</h1>
         <div className="space-y-2.5">
           {chat.messages.map((message) =>
             message.invite ? (
