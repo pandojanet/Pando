@@ -10,15 +10,17 @@ import {
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
 import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
+import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
+import { toGsm7 } from "@/lib/sms-segments";
 import {
   heldReply,
   routeAnswer,
   mentionsCaregiver as answerMentionsCaregiver,
 } from "@/lib/answer-routing";
 import { classifyDemand } from "@/lib/demand";
-import { bandsForBirthYears } from "@/lib/matching";
+import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
 import { CLARIFYING_COPY, clarifyTemplate, nextQuestion } from "@/lib/onboarding";
-import { retrieveFor } from "@/lib/server/repo/retrieval";
+import { focusOptions, retrieveFor } from "@/lib/server/repo/retrieval";
 import { queueAnswer } from "@/lib/server/repo/answers";
 import {
   isSettingsCommand,
@@ -669,9 +671,40 @@ async function answerQuestion(input: {
    */
   const aboutCare = input.caregiverIntent || answerMentionsCaregiver(body);
 
+  /**
+   * The bands come from the **question first**, and that ordering is the fix for
+   * a live answer that padded itself with a trail.
+   *
+   * Taking them only from the asker's children is right for a contributor Pando
+   * knows and empty for the cold inbound 5.9 exists for — and an empty band list
+   * applies no filter at all, so "any good toddler classes near South Pasadena?"
+   * came back with Little Maestros (right on all three axes) **and Hahamongna
+   * Watershed Park**: a trail, in Altadena, for preschool and up. Wrong on all
+   * three, wearing the same trust chain, so it read as endorsed as the right one.
+   *
+   * The question wins over the profile rather than merging with it, because a
+   * parent who names an age is asking about *that* child — a mother of a toddler
+   * and a teenager asking about toddler classes does not want the teenager's
+   * options mixed in. Falls back to the children when the question says nothing.
+   */
+  const asked = bandsInQuestion(body);
+  const known = profile ? bandsForBirthYears(profile.child_birth_years, new Date()) : [];
+
+  /**
+   * What the question is *about*, checked against the topics this market
+   * actually offers.
+   *
+   * The list is passed in rather than assumed, for the reason the extraction
+   * pass validates the same way: a market that does not offer
+   * `special_needs_resources` must not have questions matched against it, and
+   * `market_options` is the table that decides.
+   */
+  const focus = focusInQuestion(body, await focusOptions());
+
   const retrieved = await retrieveFor({
     area: profile?.neighborhood ?? null,
-    bands: profile ? bandsForBirthYears(profile.child_birth_years, new Date()) : [],
+    bands: asked.length > 0 ? asked : known,
+    focus,
     shares: !aboutCare,
     caregivers: true,
   });
@@ -685,6 +718,39 @@ async function answerQuestion(input: {
   }
 
   /**
+   * "$50-100 a month", from two taps, or nothing.
+   *
+   * The unit label is a noun ("Month", "Camp week") because R8 asks it as one,
+   * so it needs the article the option list does not carry. And the whole thing
+   * goes through `toGsm7`: the band label is "$50–100" with an **en dash**, one
+   * character outside GSM-7, which would drop the entire message to UCS-2 and
+   * halve its budget — undoing the encoding work for a dash nobody would miss.
+   * `toGsm7` returns null when it is already clean, hence the `??`.
+   */
+  const priceLine = (band: string | null, unit: string | null): string | null => {
+    if (!band || band === "prefer_not_to_say") return null;
+    const bandLabel = PRICE_BAND.find((o) => o.id === band)?.label;
+    if (!bandLabel) return null;
+    const unitLabel = unit ? PRICE_UNIT.find((o) => o.id === unit)?.label : null;
+    const text = unitLabel ? `${bandLabel} a ${unitLabel.toLowerCase()}` : bandLabel;
+    return toGsm7(text) ?? text;
+  };
+
+  /**
+   * R9's judgement, lower-cased to sit inside the sentence.
+   *
+   * Dropped when the band is already `free` — "Free. it's free." is the same fact
+   * twice — and **kept when it is negative**: a consensus of "pricey, not worth
+   * it" is exactly what a parent about to spend the money needs, and an answer
+   * that reports only the good ones is an advertisement.
+   */
+  const worthLine = (worth: string | null, band: string | null): string | null => {
+    if (!worth || (band === "free" && worth === "free")) return null;
+    const label = WORTH_IT.find((o) => o.id === worth)?.label;
+    return label ? label.charAt(0).toLowerCase() + label.slice(1) : null;
+  };
+
+  /**
    * A caregiver is a candidate like any other, and `display` is the only shape
    * `caregivers` can hold — a first name and a last initial, by CHECK. Invariant
    * 1's four conditions are already in `retrieveFor`'s WHERE clause, so anything
@@ -695,6 +761,11 @@ async function answerQuestion(input: {
       name: share.name,
       venue: share.venue,
       kind: share.kind,
+      /* One is enough to place it, and the first is the one the record leads
+         with. A list of five neighborhoods reads as a franchise. */
+      area: share.neighborhoods[0] ?? null,
+      price: priceLine(share.price_band, share.price_unit),
+      worth: worthLine(share.worth_it, share.price_band),
       trust: share.trust,
       firsthand_count: share.firsthand_count,
       answer_ready: share.answer_ready,

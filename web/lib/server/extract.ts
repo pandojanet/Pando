@@ -62,6 +62,16 @@ export interface ExtractionInput {
    * were captured, neither of which was in front of it. A note is not worse
    * because the price lives in a different column.
    */
+  /**
+   * The market's `focus` values, as `{ id, label }`, so the model chooses from
+   * the taxonomy rather than inventing a word.
+   *
+   * Passed in rather than read here for the reason every other list in this
+   * codebase is: `market_options` is authoritative and an admin edits it (12
+   * Aug), so a copy in this file would go stale the day a market is added.
+   * Omitted or empty ⇒ no topic is asked for and none comes back.
+   */
+  focus_options?: ReadonlyArray<{ id: string; label: string }>;
   captured?: {
     price_band?: string | null;
     price_unit?: string | null;
@@ -85,6 +95,22 @@ export interface ExtractionResult {
   possible_named_person: boolean;
   /** Short, non-quoting reason for the score. Safe to show an admin. */
   note: string;
+  /**
+   * What a parent would ask about to reach this record — one `market_options.focus`
+   * id, or **null**.
+   *
+   * ⚠ **Null is a real answer and the schema says so.** The developer chose the
+   * model over an admin for this on 4 Sep with the cost stated back to them —
+   * "дешево, і помиляється так, що ніхто не помітить" — and the single largest
+   * source of that unnoticed error is forcing a pick. A model given thirteen
+   * options and no way out will produce the nearest one for a record that
+   * belongs to none, and nothing downstream can tell that apart from a real
+   * answer. So "none of these" is explicitly offered.
+   *
+   * Validated against the list before it is written, so a value the model
+   * invented is dropped rather than stored.
+   */
+  focus: string | null;
 }
 
 const SCHEMA = {
@@ -105,8 +131,13 @@ const SCHEMA = {
       description:
         "One short sentence saying WHY the score came out where it did — name what the text does or does not give another parent. Written for the reviewer, in your own words: never quote or paraphrase the parent's sentence back, and never list facts captured elsewhere as missing.",
     },
+    focus: {
+      type: "string",
+      description:
+        "Which topic a parent would ask about to reach this record. Use one of the ids listed under 'Topics' in the message, exactly as written, or the string 'none' when the record does not belong to any of them. 'none' is a real answer and is better than the nearest fit.",
+    },
   },
-  required: ["confidence", "possible_named_person", "note"],
+  required: ["confidence", "possible_named_person", "note", "focus"],
   additionalProperties: false,
 } as const;
 
@@ -123,7 +154,9 @@ Two things must not lower the score.
 
 Always explain the score. The note is shown next to the number to the person deciding what to read first, so it has to say what drove it — what this text gives a parent, or what it leaves them still not knowing. "Vague" on its own is not a reason.
 
-You are classifying, not rewriting. Never reproduce the parent's wording in your note, and never suggest what is missing from a card — only what this text does or does not tell a parent.`;
+You are classifying, not rewriting. Never reproduce the parent's wording in your note, and never suggest what is missing from a card — only what this text does or does not tell a parent.
+
+When a list of topics is given, also say which one a parent would ask about to reach this record — judged from the name and the kind first, and the note second. Answer "none" whenever the record does not clearly belong to one: a wrong topic is worse than no topic, because it puts a record in front of a parent who asked about something else, and nobody downstream can tell it apart from a right one.`;
 
 /** Unset key ⇒ no extraction. The column stays null; nothing is invented. */
 export function isExtractionConfigured(): boolean {
@@ -168,6 +201,7 @@ export async function extractCard(
   /* The taps, so the model judges what the sentences add rather than what the
      card as a whole is missing. */
   const c = input.captured ?? {};
+  const focusOptions = input.focus_options ?? [];
   const captured = [
     c.recommendation && `recommends: ${c.recommendation}`,
     c.last_there && `last there: ${c.last_there}`,
@@ -195,6 +229,13 @@ export async function extractCard(
             `Kind: ${input.kind}`,
             `Name: ${input.place_name}`,
             captured ? `Already answered as taps — ${captured}` : null,
+            /* The market's own vocabulary, ids and labels, so the answer can be
+               checked against the list rather than interpreted. */
+            focusOptions.length > 0
+              ? `Topics (answer with one id, or "none"): ${focusOptions
+                  .map((o) => `${o.id} (${o.label})`)
+                  .join(", ")}`
+              : null,
             "",
             "What the parent wrote:",
             text,
@@ -235,12 +276,26 @@ export async function extractCard(
       return null;
     }
 
+    /**
+     * Checked against the list it was given, never trusted.
+     *
+     * "none" is the documented way out and lands as null; so does anything the
+     * model invented, which is the same protection `applyThreshold` gives the
+     * intent classifier — a confident answer naming a value that does not exist
+     * is still nonsense. Written this way round so that adding a topic to
+     * `market_options` is all it takes for records to start using it.
+     */
+    const claimed = typeof parsed.focus === "string" ? parsed.focus.trim() : "";
+    const focus =
+      claimed !== "" && focusOptions.some((o) => o.id === claimed) ? claimed : null;
+
     return {
       // Clamp rather than trust: the column has a 0–1 CHECK, and a value
       // outside it would abort the update instead of just being wrong.
       confidence: Math.min(1, Math.max(0, Number(parsed.confidence))),
       possible_named_person: parsed.possible_named_person === true,
       note: note.slice(0, 300),
+      focus,
     };
   } catch (err) {
     // Error class only. The request body is a parent's own words.

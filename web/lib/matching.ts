@@ -164,6 +164,100 @@ export function bandsForAge(age: number): AgeBand[] {
   return ["teen"];
 }
 
+/**
+ * The age bands a **question** is about, from the words in it.
+ *
+ * Retrieval takes its bands from the asker's own children, which is right for a
+ * contributor Pando knows and useless for the cold inbound 5.9 is about — a
+ * stranger has no children on file, so no band filter applied and the answer
+ * padded itself with whatever ranked next. The live proof: *"any good toddler
+ * classes near South Pasadena?"* came back naming Little Maestros (a class, in
+ * South Pasadena, for toddlers — right on all three) **and Hahamongna Watershed
+ * Park** (a trail, in Altadena, for preschool and up — wrong on all three),
+ * both wearing the same trust chain, so the wrong one read as endorsed as the
+ * right one.
+ *
+ * The band names are the taxonomy's own, so reading them is not guesswork the
+ * way guessing a *kind* would be — "toddler" means exactly one thing here. The
+ * synonyms are the words a parent actually types instead; a bare number goes
+ * through `bandsForAge`, which is the same ladder everything else uses.
+ *
+ * Returns an empty array when the question says nothing about age, and the
+ * caller then falls back to what it knows about the asker. Never guesses.
+ */
+const BAND_WORDS: ReadonlyArray<readonly [RegExp, AgeBand]> = [
+  [/\b(expecting|pregnan\w*|due in|newborn on the way)\b/i, "expecting"],
+  [/\b(baby|babies|infant|infants|newborn|newborns)\b/i, "baby"],
+  [/\b(toddler|toddlers)\b/i, "toddler"],
+  [/\b(preschool|pre-?k|nursery|kindergart\w+)\b/i, "preschool"],
+  [/\b(grade ?school|elementary|primary)\b/i, "grade"],
+  [/\b(tween|tweens|middle ?school)\b/i, "tween"],
+  [/\b(teen|teens|teenager|teenagers|high ?school)\b/i, "teen"],
+];
+
+export function bandsInQuestion(text: string): AgeBand[] {
+  const found = new Set<AgeBand>();
+
+  for (const [pattern, band] of BAND_WORDS) {
+    if (pattern.test(text)) found.add(band);
+  }
+
+  /* "my 3 year old", "a 7yo". Anchored on the noun so a price, a house number
+     or a time of day cannot be read as a child's age. */
+  for (const match of text.matchAll(/\b(\d{1,2})\s*(?:-|\s)?\s*(?:year|yr|yo)\b/gi)) {
+    for (const band of bandsForAge(Number(match[1]))) found.add(band);
+  }
+  for (const match of text.matchAll(/\b(\d{1,2})\s*months?\b/gi)) {
+    for (const band of bandsForAge(Number(match[1]) / 12)) found.add(band);
+  }
+
+  return AGE_BANDS.filter((band) => found.has(band));
+}
+
+/**
+ * The `market_options.focus` topic a question is about, or null.
+ *
+ * The other half of `bandsInQuestion`, and the reason retrieval could not tell
+ * "toddler swim classes" from "toddler music classes": the taxonomy existed and
+ * nothing read it. These are the words a parent types for each of the thirteen
+ * curated topics.
+ *
+ * ⚠ **The ids are checked against the caller's list, not assumed.** A market
+ * that does not offer `special_needs_resources` must not have questions matched
+ * against it, so the caller passes what `market_options` actually holds and
+ * anything else is dropped — the same shape as the extraction pass's own
+ * validation, and for the same reason.
+ *
+ * Order matters where two patterns can both fire: "nanny share" is care rather
+ * than sharing, and "swim class" is sport rather than the generic activities
+ * bucket, so the specific topics are tested before the general ones.
+ */
+const FOCUS_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(nanny|nannies|au ?pair|childminder|full ?time care)\b/i, "nannies"],
+  [/\b(sitter|babysitter|babysitting|date ?night)\b/i, "babysitters"],
+  [/\b(newborn|night nurse|postpartum|doula|new ?born care)\b/i, "newborn_care"],
+  [/\b(pediatric\w*|paediatric\w*|doctor|dentist|therapist|speech|allerg\w+)\b/i, "pediatric_health"],
+  [/\b(special ?needs|iep|autis\w+|adhd|sensory)\b/i, "special_needs_resources"],
+  [/\b(preschool|pre-?k|school|kindergart\w+|nursery)\b/i, "preschools_schools"],
+  [/\b(camp|camps)\b/i, "camps"],
+  [/\b(swim\w*|soccer|football|gymnastic\w*|karate|martial arts|sport\w*|ballet|dance|tennis|basketball)\b/i, "sports"],
+  [/\b(music|piano|guitar|violin|singing|art|arts|painting|drawing|pottery|theat\w+|drama)\b/i, "arts_music"],
+  [/\b(park|playground|trail|hike|hiking|library|museum|outing|day ?trip|rainy ?day)\b/i, "outings"],
+  [/\b(childcare logistics|after ?school|daycare hours|work\w* parent|commut\w+)\b/i, "working_parent_logistics"],
+  [/\b(just moved|new to (the )?area|moving here|relocat\w+)\b/i, "new_to_area_help"],
+  [/\b(class|classes|lesson|lessons|activit\w+|club)\b/i, "activities"],
+];
+
+export function focusInQuestion(
+  text: string,
+  offered: ReadonlyArray<string>,
+): string | null {
+  for (const [pattern, focus] of FOCUS_WORDS) {
+    if (pattern.test(text) && offered.includes(focus)) return focus;
+  }
+  return null;
+}
+
 /** Distance in bands, for 6.4's "similar but not identical". */
 export function bandDistance(a: AgeBand, b: AgeBand): number {
   const i = AGE_BANDS.indexOf(a);

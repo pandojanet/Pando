@@ -39,6 +39,46 @@ export interface AnswerCandidate {
   name: string;
   venue?: string | null;
   kind: string;
+  /**
+   * Where it is, in the market's own vocabulary — one neighborhood slug.
+   *
+   * Added because the answer named two records and said what neither of them
+   * **was** or **where**: a parent reading "Little Maestros (on Mission St)" has
+   * to already know it is a music class in South Pasadena, which is precisely
+   * what they were asking. It is a slug rather than a label because that is what
+   * the record holds; the renderer is the only place that has to know how to say
+   * it out loud.
+   *
+   * ⚠ Structured fields only, and that boundary is invariant 11.4's: this type
+   * has **no free-text field at all**, so a named person in a parent's note
+   * cannot structurally reach another parent. Adding "what the parent said" here
+   * would open exactly the hole the absence closes.
+   */
+  area?: string | null;
+  /**
+   * What it costs, **already written out** — "$50-100 a month".
+   *
+   * Rendered by the caller rather than here, and that is the same boundary the
+   * rest of this type keeps: `answer.ts` imports nothing at runtime so a plain
+   * node test can load it, while the words for `50_100` and `per_month` live in
+   * the option lists `lib/seed-chat/scripts.ts` already exports. Passing the ids
+   * would mean a second copy of those labels in here.
+   *
+   * ⚠ It must arrive **GSM-7 clean**. The option label is "$50–100" with an en
+   * dash, which is outside GSM-7 and would drop the whole message to UCS-2 —
+   * undoing the encoding fix above for one character. `toGsm7` is exactly the
+   * tool, used exactly as its own header intends: on copy that is *not*
+   * registered.
+   */
+  price?: string | null;
+  /**
+   * What the parents made of the price — "great value", "pricey but worth it".
+   *
+   * Rendered by the caller for the same reason as `price`, and carried
+   * separately from it because a record can have one without the other: 11 of 13
+   * live records agree on a price and only 8 on this.
+   */
+  worth?: string | null;
   trust: TrustLabels;
   firsthand_count: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
@@ -72,18 +112,41 @@ export interface ComposedAnswer {
 }
 
 /**
- * The length budget.
+ * The length budget: **three segments**, raised from two on 4 Sep.
  *
- * An SMS segment is 160 GSM-7 characters, and 153 once a message is split. Two
- * segments is the most an answer should ever be: the strategy's own example
- * answer is about that long, and the product's whole claim is that it reads like
- * a person texting rather than like a newsletter.
+ * An SMS segment is 160 GSM-7 characters, and 153 once a message is split, so
+ * this is 153 × 3 exactly.
+ *
+ * ## Why it moved, and what it was before
+ *
+ * It was 306 — two segments — on two grounds written here at the time: the
+ * arithmetic, and *"the strategy's own example answer is about that long"*. Read
+ * that second clause carefully before changing this again: it is **an inference
+ * from an example, not an instruction**. The client never specified a length,
+ * and there was no Decisions row for it, so the number looked like a settled
+ * choice only because it was a named constant.
+ *
+ * ⚠ **The strategy document is not in the repo**, so nobody here can check that
+ * example. If it turns out to be two segments, this is a deviation from her
+ * intent and should go back to her — it is on the list.
+ *
+ * What actually forced it: once a record carried what it *is*, where it is and
+ * what it costs, two records no longer fit and a question like "any good toddler
+ * classes near South Pasadena?" came back naming **one** option. The argument
+ * for two segments was that an answer should read like a person texting rather
+ * than a newsletter — and the thing the client reacted to read like neither. It
+ * read like a database dump, from too little detail rather than too much. An
+ * answer that offers one option is also an answer the parent will follow with a
+ * Network Ask, so the second message is spent either way.
+ *
+ * The cost is real: roughly 50% more per answer. Worth it for a second option a
+ * parent can compare, and worth re-examining when there is a bill to look at.
  *
  * The budget is enforced by **dropping whole records**, never by truncating a
  * sentence mid-word — an answer that ends in "recommended by three par" is worse
  * than one that mentions two places.
  */
-export const SMS_BUDGET = 306;
+export const SMS_BUDGET = 459;
 
 /**
  * How records are ordered — "by category / risk / evidence, **not a fixed
@@ -121,16 +184,83 @@ export function rankForAnswer(candidates: AnswerCandidate[]): AnswerCandidate[] 
  * Freshness is appended as a word only when it is not fresh: saying "fresh" out
  * loud is noise, while saying nothing about an ageing record would be a claim.
  */
+/**
+ * What a record *is*, in one word a parent would use.
+ *
+ * `share_kind` has four members and none of them is a word anybody says: a
+ * parent asks about a class, not an "activity", and "place" tells them nothing
+ * a park does not. Kept beside the renderer rather than in `labels.ts`, which
+ * is the admin's vocabulary — this is the parent's.
+ */
+const KIND_WORD: Record<string, string> = {
+  activity: "class",
+  place: "place",
+  tip: "tip",
+  caregiver: "caregiver",
+};
+
+/** `south-pasadena` as somebody would say it. */
+function areaWords(slug: string): string {
+  return slug
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/**
+ * One record, and it now says what it is and where.
+ *
+ * It used to render `name (venue): labels` and nothing else, which is what made
+ * a real answer read as a list of names — *"Little Maestros (on Mission St):
+ * Validated by multiple parents · Human-reviewed · Last confirmed Aug 2026"*
+ * tells a parent who does not already know what Little Maestros is precisely
+ * nothing, and the identical chain on the next line made both look
+ * machine-generated.
+ *
+ * ⚠ **The labels themselves are untouched and must stay so.** They are approved
+ * copy held verbatim in `TRUST_LABEL` (invariant 3), so what could change was
+ * everything around them, never their wording — and the kind and the area are
+ * structured fields the record already holds, so nothing here is invented.
+ *
+ * The cost is real and worth naming: roughly twenty characters a record against
+ * a 306-character budget, so a long answer now fits one record fewer. That is a
+ * trade rather than a free win - an answer that names three things nobody can
+ * identify is worse than one that names two they can act on.
+ *
+ * ## And every separator here is ASCII, which is worth more than it looks
+ *
+ * The old line joined the labels with ` · `, and one character outside GSM-7
+ * drops the whole message to UCS-2 and the budget from 160 to 70. Measured with
+ * `planSegments` on one rendered record: **130 characters, UCS-2, two segments**
+ * with the interpunct, and **128 characters, GSM-7, one** without it. Both the
+ * separator and the dash had to go — either one alone keeps it in UCS-2 — and
+ * across a two-record answer that is five segments against two.
+ *
+ * ⚠ The **labels are untouched**: they are approved copy held verbatim in
+ * `TRUST_LABEL` (invariant 3). What changed is the punctuation *between* them,
+ * which is this function's own and was never registered. The design system's
+ * "em dashes are fine" is a rule about screens; `sms-segments.ts` exists for
+ * exactly this argument on the other side.
+ */
 function line(candidate: AnswerCandidate): string {
-  const where = candidate.venue ? ` (${candidate.venue})` : "";
-  const claims = candidate.trust.labels.join(" · ");
+  const what = KIND_WORD[candidate.kind];
+  const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
+  const venue = candidate.venue ? `, ${candidate.venue}` : "";
+  const describes = what ? ` - ${what}${where}${venue}` : `${where}${venue}`;
+  /* The one fact a parent choosing between two classes actually needs, and the
+     answer never carried it. Omitted rather than guessed when the parents who
+     reported it did not agree — see `ShareCandidate.price_band`. */
+  const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
+  const cost = money ? ` ${money}.` : "";
+
+  const claims = candidate.trust.labels.join(". ");
   const age =
     candidate.trust.freshness === "fresh"
       ? ""
       : candidate.trust.freshness === "ageing"
-        ? " — worth checking it hasn't changed"
-        : " — this one is old, so treat it as a starting point";
-  return `${candidate.name}${where}: ${claims}${age}`;
+        ? " Worth checking it hasn't changed."
+        : " This one is old, so treat it as a starting point.";
+  return `${candidate.name}${describes}.${cost} ${claims}.${age}`;
 }
 
 /**
@@ -145,7 +275,7 @@ function line(candidate: AnswerCandidate): string {
  * door — so the wording names the service rather than assuming the reader knows
  * what it is.
  */
-export const SHARE_LINE = "— from Pando, where local parents answer. Text this number to ask your own.";
+export const SHARE_LINE = "- from Pando, where local parents answer. Text this number to ask your own.";
 
 export interface ComposeInput {
   candidates: AnswerCandidate[];
@@ -172,7 +302,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     return {
       text: input.can_offer_blast === false
         ? "I don't have anything from local parents on this yet. I'll come back to you when I do."
-        : "I don't have anything from local parents on this yet — want me to ask a few nearby who might?",
+        : "I don't have anything from local parents on this yet. Want me to ask a few nearby who might?",
       next_step: input.can_offer_blast === false ? "human_review" : "offer_blast",
       public_only: false,
       used: 0,
@@ -214,7 +344,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * which is 5.6's guard arriving in the prose.
    */
   const head = publicOnly
-    ? "Here's what I can tell you — this is general information, not from a parent:"
+    ? "Here's what I can tell you. This is general information, not from a parent:"
     : "Here's what local parents have shared:";
 
   const lines: string[] = [];

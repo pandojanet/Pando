@@ -13,6 +13,7 @@ import type { AnswerCandidate } from "../lib/answer.ts";
 const PARENT_LABELS = ["Shared by a local parent","Vouched by a local parent","Validated by multiple parents"] as const;
 
 const a = (await import(`../lib/answer.ts?v=${Date.now()}`)) as typeof import("../lib/answer.ts");
+const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
 const t = (await import(`../lib/trust-labels.ts?v=${Date.now()}`)) as typeof import("../lib/trust-labels.ts");
 
 let pass = 0;
@@ -238,6 +239,52 @@ ok(
   "it names the service, since a forwarded answer is a stranger's first contact",
   /Pando/.test(a.SHARE_LINE) && /ask your own/i.test(a.SHARE_LINE),
 );
+
+console.log("\n=== a record says what it is, and the whole answer stays in GSM-7 ===");
+{
+  /* The live answer read "Little Maestros (on Mission St): Validated by multiple
+     parents · Human-reviewed · Last confirmed Aug 2026" — which tells a parent
+     who does not already know what Little Maestros is precisely nothing, and
+     the identical chain on the next line made both look machine-generated. */
+  const one = compose([
+    parent({ name: "Little Maestros", venue: "on Mission St", kind: "activity", area: "south-pasadena" }),
+  ]).text;
+  ok("it names the kind in a word a parent would use", /class/.test(one), one);
+  ok("and where it is, from the slug", /South Pasadena/.test(one), one);
+  ok(
+    "the labels themselves are untouched",
+    /Validated by multiple parents/.test(one),
+    "approved copy, verbatim - only the punctuation between them is ours",
+  );
+
+  /* One character outside GSM-7 halves the budget, and the old separator was
+     one: 130 chars/UCS-2/two segments with the interpunct against 128/GSM-7/one
+     without. Across a two-record answer that was five segments against two. */
+  const two = compose([
+    parent({ name: "Little Maestros", venue: "on Mission St", kind: "activity", area: "south-pasadena" }),
+    parent({ name: "Rose Bowl Aquatics parent & me", kind: "activity", area: "old-pasadena" }),
+  ]).text;
+  ok(
+    "a two-record answer is GSM-7, not UCS-2",
+    seg.planSegments(two).encoding === "gsm7",
+    JSON.stringify(seg.planSegments(two)),
+  );
+  ok(
+    "and stays inside the budget's own segment count",
+    seg.planSegments(two).segments <= 3,
+    `${seg.planSegments(two).segments} segments, budget ${a.SMS_BUDGET}`,
+  );
+  ok(
+    "which is a whole number of segments, not a number somebody typed",
+    a.SMS_BUDGET % 153 === 0,
+    "153 is a concatenated GSM-7 segment; a budget between two is a budget that wastes one",
+  );
+  ok(
+    "and nothing the composer writes reaches for an em dash",
+    !/\u2014|\u00b7/.test(two),
+    "the design system allows both on a screen; sms-segments.ts is why not here",
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

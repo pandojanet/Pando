@@ -268,5 +268,51 @@ ok(
 );
 ok("and each carries what it was for", explained.reasons.every((r) => r.kind && r.value));
 
+console.log("\n=== what a question is about, in the market's own vocabulary ===");
+{
+  /* Retrieval read no subject at all, so "toddler swim classes" and "toddler
+     music classes" returned the same activities. The vocabulary existed the
+     whole time - market_options.focus, thirteen curated topics - and a grep
+     for it over the repository returned nothing. */
+  const OFFERED = [
+    "activities", "arts_music", "babysitters", "camps", "nannies",
+    "new_to_area_help", "newborn_care", "outings", "pediatric_health",
+    "preschools_schools", "special_needs_resources", "sports",
+    "working_parent_logistics",
+  ];
+  const read = (q: string) => m.focusInQuestion(q, OFFERED);
+
+  ok("a swim class is sport", read("toddler swim classes near me") === "sports");
+  ok("a music class is arts", read("music classes for a 3 year old") === "arts_music");
+  ok(
+    "and a bare class is neither",
+    read("any good toddler classes near South Pasadena?") === "activities",
+    "the generic bucket, which is the honest answer to a generic question",
+  );
+  ok("a nanny is care, not sharing", read("we need a nanny three days a week") === "nannies");
+  ok("a rainy day is an outing", read("somewhere to take a toddler on a rainy day") === "outings");
+  ok("and nothing is read out of nothing", read("thanks!") === null);
+
+  /* Specific before general, or every sport and every instrument collapses
+     into the activities bucket and the whole exercise buys nothing. */
+  ok(
+    "the specific topic wins over the general one",
+    read("swim class") === "sports" && read("piano lessons") === "arts_music",
+  );
+
+  /* A market that does not offer a topic must not have questions matched
+     against it - market_options decides, not this file. */
+  ok(
+    "a topic the market does not offer is not returned",
+    m.focusInQuestion("we need a nanny", ["activities", "camps"]) === null,
+    "the same validation the extraction pass does on the way in",
+  );
+  ok(
+    "but the next offered one still is",
+    m.focusInQuestion("swim classes", ["activities", "camps"]) === "activities",
+    "a market with no sports still has a class - degrading is better than nothing",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

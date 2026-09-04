@@ -94,6 +94,7 @@ export async function extractAndFlag(
              pc.who_for, pc.who_not_for, pc.last_there, pc.is_test,
              pc.price_band, pc.price_unit, pc.worth_it, pc.how_much,
              pc.recommendation, pc.child_age_at_time,
+             pl.id as share_id, pl.market_id, pl.focus as share_focus,
              pl.name as place_name, pl.kind, pl.freshness_state
       from share_contributions pc
       join shares pl on pl.id = pc.share_id
@@ -126,6 +127,29 @@ export async function extractAndFlag(
 
   if (!isExtractionConfigured()) return { scored: false, flags };
 
+  /**
+   * The market's topic vocabulary, and it is **not asked for when the record
+   * already has one**.
+   *
+   * Both halves save something. The list comes from `market_options` rather than
+   * from a constant here, because that table is authoritative and an admin edits
+   * it (12 Aug) — a copy in this file would go stale the day a market is added.
+   * And skipping it for an already-tagged share keeps the prompt shorter and
+   * makes the model's answer unusable rather than merely ignored, which is the
+   * clearer state to be in: the write below only fills a null column anyway.
+   */
+  const options =
+    row.share_focus === null
+      ? (
+          (await db.execute(
+            sql`select option_value, label from market_options
+                 where market_id = ${String(row.market_id ?? "pasadena")}
+                   and category = 'focus' and active
+                 order by option_value`,
+          )) as unknown as Array<Record<string, unknown>>
+        ).map((o) => ({ id: String(o.option_value), label: String(o.label) }))
+      : [];
+
   const result = await extractCard({
     kind: row.kind as "activity" | "place" | "tip",
     place_name: (row.place_name as string) ?? "",
@@ -145,6 +169,9 @@ export async function extractAndFlag(
       recommendation: (row.recommendation as string | null) ?? null,
       child_ages: (row.child_age_at_time as number[] | null) ?? null,
     },
+    /* The market's own topics, read from the table that owns them rather than
+       from a list in this file. Empty ⇒ no topic is asked for. */
+    focus_options: options,
   });
 
   if (!result) return { scored: false, flags };
@@ -167,6 +194,32 @@ export async function extractAndFlag(
                confidence_note = ${result.note}
          where id = ${contributionId}::uuid`,
   );
+
+  /**
+   * The topic, and it is written **only into an empty column**.
+   *
+   * Three reasons, and the first is the one that matters. A share is one subject
+   * with many parents' contributions about it, so this runs again for every
+   * later contribution — and a second opinion silently overwriting the first
+   * would make the value depend on which parent last wrote something, which is
+   * exactly the kind of drift nobody would ever notice. **First tagging wins.**
+   *
+   * It also means a correction is permanent: nothing here can undo it, because
+   * the column is no longer null. ⚠ Today a correction means
+   * `npm run focus:backfill -- --retag`, because no admin control for this
+   * exists yet — worth closing, since the model is what assigns these.
+   *
+   * And it is skipped entirely when the model declined — `focus` is null for
+   * "none of these", which is a real answer (see `ExtractionResult.focus`) and
+   * must not be recorded as one.
+   */
+  if (result.focus) {
+    await db.execute(
+      sql`update shares
+             set focus = ${result.focus}
+           where id = ${row.share_id}::uuid and focus is null`,
+    );
+  }
 
   /**
    * Invariant 8: free text about a named person never gets published without a

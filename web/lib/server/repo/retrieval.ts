@@ -43,6 +43,21 @@ export interface QuestionContext {
   kinds?: string[];
   /** Age bands the question is about, from the asker's children or the question. */
   bands?: string[];
+  /**
+   * The `market_options.focus` topic the question is about — **a rank, never a
+   * filter**, and that is the whole mitigation for how these get assigned.
+   *
+   * The topic on a record is written by the extraction model (4 Sep, the
+   * developer's call with the cost stated: *"дешево, і помиляється так, що ніхто
+   * не помітить"*). Ranking is what turns that from a silent failure into a
+   * recoverable one. A wrong topic re-orders an answer; a wrong topic that
+   * *excluded* would drop the right record and leave nothing on screen saying
+   * so — and nobody would ever know, which is precisely the accepted risk.
+   *
+   * The same argument the chip list already makes about the asker's area: it
+   * ranks and never filters.
+   */
+  focus?: string | null;
   limit?: number;
   /**
    * Which half may answer this question.
@@ -74,6 +89,36 @@ export interface ShareCandidate {
   secondhand_count: number;
   /** §17.1 — an admin marked this complete enough to answer with, no Ask needed. */
   answer_ready: boolean;
+  /**
+   * What it costs, **only when every parent who said so said the same thing.**
+   *
+   * R8 captures a band and a unit as taps, and it is the single most actionable
+   * fact a parent asked to choose between two classes has — the answer named
+   * things without ever saying what they cost. Aggregating it needs a rule, and
+   * the honest one is agreement: two parents reporting `50_100` and one
+   * reporting `100_200` is not a range Pando may state, and the modal value
+   * would silently drop a real disagreement about money. Null when they differ,
+   * and the line simply omits it.
+   */
+  price_band: string | null;
+  price_unit: string | null;
+  /**
+   * R9's worth-it judgement, under the same agreement rule as the price.
+   *
+   * ⚠ **Measured before it was added, because the coverage is the point:**
+   * across the live market the parents agree on this for **8 of 13** records and
+   * on the price for 11 of 13 — and of the five records with more than one
+   * contribution, only two agree on worth. So this shows mostly on records one
+   * parent contributed, which are precisely the ones whose *trust* labels are
+   * weakest. It is worth having and it is not a substitute for volume.
+   *
+   * The disagreements are shades rather than contradictions ("fair" against
+   * "great value"), which is an argument for a modal value and a better argument
+   * against one: enthusiasm is exactly what a reader would take from the word,
+   * and reporting the majority's would quietly discard a parent who paid the
+   * same money and thought less of it.
+   */
+  worth_it: string | null;
 }
 
 export interface CaregiverCandidate {
@@ -115,6 +160,27 @@ const EMPTY: Retrieved = {
 };
 
 /**
+ * The topics this market offers, as ids.
+ *
+ * Lives here rather than in a constant because `market_options` is
+ * authoritative and an admin edits it (12 Aug) — a list in code would go stale
+ * the day a market is added, and it is what both the extraction pass and the
+ * question reader check their answers against. Empty on an unreachable database,
+ * which reads as "match no topic" and costs an ordering nudge rather than an
+ * answer.
+ */
+export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select option_value from market_options
+       where market_id = ${marketId} and category = 'focus' and active
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => String(r.option_value));
+  });
+  return result.persisted ? (result.data ?? []) : [];
+}
+
+/**
  * ⚠ **What this does not do: read the subject of the question.**
  *
  * There is no text matching here at all. A question is a market, an area, a set
@@ -142,6 +208,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
     : ["activity", "camp", "place", "tip"];
   const area = question.area ?? "";
   const wantShares = question.shares !== false;
+  const focus = question.focus ?? "";
   const wantCaregivers = question.caregivers !== false;
 
   const result = await withDb(async (db: Db) => {
@@ -166,7 +233,15 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         count(sc.id) filter (where not sc.firsthand)                    as secondhand,
         count(sc.id) filter (where sc.firsthand
                                and sc.recommendation in ('yes','yes_with_caveats'))
-                                                                        as recommending
+                                                                        as recommending,
+        -- Agreement, not an average: the count of distinct answers is what the
+        -- mapping below checks before it is willing to state a price at all.
+        count(distinct sc.price_band) filter (where sc.price_band is not null) as price_bands,
+        count(distinct sc.price_unit) filter (where sc.price_unit is not null) as price_units,
+        count(distinct sc.worth_it) filter (where sc.worth_it is not null)     as worths,
+        min(sc.price_band) filter (where sc.price_band is not null)     as price_band,
+        min(sc.price_unit) filter (where sc.price_unit is not null)     as price_unit,
+        min(sc.worth_it) filter (where sc.worth_it is not null)         as worth_it
       from shares s
       join share_contributions sc on sc.share_id = s.id
       where s.market_id = ${marketId}
@@ -185,10 +260,15 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
       group by s.id
       order by
-        -- Golden answers first (17.1), then the asker's own area, then how many
-        -- parents stand behind it. Area ranks and never filters, the same rule
-        -- the chip list follows.
+        -- Golden answers first (17.1), then the topic the question is about,
+        -- then the asker's own area, then how many parents stand behind it.
+        -- All three rank and none of them filters, which for the topic is a
+        -- deliberate guard rather than symmetry: see QuestionContext.focus,
+        -- and note the backtick this comment deliberately does not contain: one
+        -- inside a sql template closes it. That is documented in CLAUDE.md and
+        -- has now cost a fourth debugging round.
         s.answer_ready desc,
+        case when ${focus} <> '' and s.focus = ${focus} then 0 else 1 end,
         case when ${area} <> '' and s.neighborhoods && array[${area}]::text[] then 0 else 1 end,
         count(sc.id) filter (where sc.firsthand) desc,
         s.last_confirmed_at desc nulls last
@@ -273,6 +353,11 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       firsthand_count: candidate.firsthand_count,
       secondhand_count: candidate.secondhand_count,
       answer_ready: r.answer_ready === true,
+      /* Agreement, checked here rather than in SQL so the rule is readable: one
+         distinct answer means the parents agree and Pando may say it. */
+      price_band: Number(r.price_bands) === 1 ? String(r.price_band) : null,
+      price_unit: Number(r.price_units) === 1 ? String(r.price_unit) : null,
+      worth_it: Number(r.worths) === 1 ? String(r.worth_it) : null,
     });
   }
 

@@ -603,6 +603,21 @@ export const shares = pgTable(
     placeType: text("place_type"),
     /** tip cards */
     topic: text("topic"),
+    /**
+     * What a parent would ask about to reach this - a `market_options.focus`
+     * value, set by the extraction pass the first time it scores a card.
+     *
+     * ⚠ **There is no admin control for it yet**, so a wrong tag is corrected by
+     * `npm run focus:backfill -- --retag` or by hand. That is the gap to close
+     * next: the developer chose the model over an admin for this (4 Sep) with
+     * the error rate stated, and correction is the other half of that bargain.
+     *
+     * Distinct from `topic` above, which is the tip script's own question and a
+     * different vocabulary. No CHECK on purpose: the values live in
+     * `market_options`, so one here would be a second copy of a list this code
+     * does not own. See `drizzle/0032`.
+     */
+    focus: text("focus"),
     status: reviewStatus("status").notNull().default("pending_review"),
     provenance: provenance("provenance").notNull().default("parent_submitted"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),

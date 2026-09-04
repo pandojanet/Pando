@@ -289,7 +289,7 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
    * HELP to create a person is asking the wrong branch, which is how this
    * assertion was written the first time.
    */
-  const res = await slackEvent(message(`${PHONE}: any good camps near Altadena?`));
+  const res = await slackEvent(message(`${PHONE}: any good toddler classes near South Pasadena?`));
   ok("the event is accepted", res.ok);
 
   /* The pipeline runs in `after()`, so wait for its last write rather than for
@@ -338,6 +338,47 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
   ok(
     "with text composed from records rather than left empty",
     Boolean(queued?.answer_text && String(queued.answer_text).length > 0),
+  );
+
+  /**
+   * ⚠ **Every record it names has to be about what was asked.**
+   *
+   * The question is "any good toddler classes near South Pasadena?", and the
+   * live answer to it named Little Maestros — a class, in South Pasadena, for
+   * toddlers, right on all three axes — **and Hahamongna Watershed Park**, a
+   * trail in Altadena for preschool and up, wrong on all three and wearing the
+   * identical trust chain. The cause was that bands came only from the asker's
+   * children and a cold number has none, so no band filter applied at all and
+   * the composer padded to the budget with whatever ranked next.
+   *
+   * Asserted against the table rather than against two record names, so it does
+   * not break the day the client retires one.
+   */
+  const eligible = await sql`
+    select name from shares
+     where status = 'approved' and not is_test
+       and age_bands && '{toddler}'::text[]`;
+  const allowed = new Set(eligible.map((r) => String(r.name)));
+  const offTopic = await sql`
+    select name from shares
+     where status = 'approved' and not is_test
+       and not (age_bands && '{toddler}'::text[])`;
+  const named = offTopic
+    .map((r) => String(r.name))
+    .filter((name) => String(queued?.answer_text ?? "").includes(name));
+  ok(
+    "and every record it names is one a toddler question could reach",
+    named.length === 0,
+    named.length > 0 ? `named anyway: ${named.join(", ")}` : `${allowed.size} eligible`,
+  );
+
+  /* One character outside GSM-7 halves the budget from 160 to 70. The composer's
+     own punctuation is ASCII for that reason; the labels are verbatim and are
+     not the risk. */
+  ok(
+    "and the answer is cheap to send",
+    !/[\u2014\u00b7\u2018\u2019\u201c\u201d]/.test(String(queued?.answer_text ?? "")),
+    "an em dash or an interpunct drops the whole message to UCS-2",
   );
 
   /**
