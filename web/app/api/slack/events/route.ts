@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { toE164 } from "@/lib/phone";
+import { readSlackMessage } from "@/lib/slack-text";
 import { keywordOf } from "@/lib/sms-templates";
 import { handleInboundMessage } from "@/lib/server/inbound";
 import { personForThread } from "@/lib/server/repo/relay";
@@ -32,7 +33,10 @@ import {
  * **A top-level message can name a number.** `+16265550143: hello` is how a
  * *cold* inbound gets tested (5.9 — a stranger who was forwarded an answer and
  * texted the number). Without it that path would be unreachable from Slack,
- * because a stranger has no thread yet by definition.
+ * because a stranger has no thread yet by definition. ⚠ Slack **linkifies** a
+ * phone number, so what arrives is `<tel:+16265550143|+16265550143>: hello` and
+ * the raw text never matched — `lib/slack-text.ts` undoes that, and its header
+ * records what the silence looked like.
  *
  * Anything else in the channel is ignored, deliberately: a human talking to
  * another human is not an inbound text, and guessing would file somebody's aside
@@ -74,21 +78,6 @@ interface SlackEnvelope {
     ts?: string;
     thread_ts?: string;
   };
-}
-
-/**
- * `+1626...: hello` — the cold-inbound form.
- *
- * The colon is required rather than inferred from a leading `+`: a tester
- * writing "+1 more thing" in the channel should not become a text message from a
- * phone number, and requiring the separator keeps the accident impossible.
- */
-function addressedNumber(text: string): { phone: string; body: string } | null {
-  const match = text.match(/^\s*(\+?[\d\s()\-.]{7,20}):\s*([\s\S]*)$/);
-  if (!match) return null;
-  const phone = toE164(match[1]);
-  if (!phone) return null;
-  return { phone, body: match[2] };
 }
 
 export async function POST(request: Request) {
@@ -134,7 +123,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const text = (event.text ?? "").trim();
+  /* Slack's own markup, undone before anything reads it — the address, the
+     keyword and the parent's free text are all wrong without this. */
+  const { text, addressed: named } = readSlackMessage(event.text ?? "");
   if (text === "") return NextResponse.json({ ok: true });
 
   /* A threaded reply belongs to whoever that thread was addressed to; a
@@ -142,10 +133,28 @@ export async function POST(request: Request) {
      of saying "this *is* the root", which is not a reply to anything of ours. */
   const inThread = event.thread_ts && event.thread_ts !== event.ts;
   const resolved = inThread ? await personForThread(event.thread_ts!) : null;
-  const addressed = resolved ? null : addressedNumber(text);
+  /* `readSlackMessage` hands back the number as written; whether it *is* one is
+     `toE164`'s answer, and it stays out of that module so the module stays
+     importable by a plain-node test. */
+  const addressedPhone = resolved || !named ? null : toE164(named.raw);
+  const addressed = addressedPhone ? { phone: addressedPhone, body: named!.body } : null;
 
   const from = resolved?.phone ?? addressed?.phone ?? null;
-  const body = resolved ? text : (addressed?.body ?? "");
+
+  /**
+   * ⚠ **The prefix is stripped inside a thread too, and this one reached the
+   * database.** A threaded reply needs no address — the thread *is* the address
+   * — so the whole message was taken as the body. A tester replying in-thread
+   * out of habit typed `+16265550005: Sierra Madre Tumbling`, and the capture
+   * stored that entire string as the record's **name**: a phone number one step
+   * from `shares.name`, which is the one field published to other parents. It
+   * got no further only because that capture never completed.
+   *
+   * Nothing a real parent texts begins with seven-to-twenty digits and a colon,
+   * so stripping it costs nothing and the transport stops depending on the
+   * tester remembering which kind of message they are writing.
+   */
+  const body = resolved ? (named?.body ?? text) : (addressed?.body ?? "");
 
   if (!from || body.trim() === "") {
     /* Counts and enums only. "Somebody said something in the channel" is not an

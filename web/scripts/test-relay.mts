@@ -23,6 +23,8 @@ import { readFileSync } from "node:fs";
    type-only import cannot carry the functions. */
 const sig = (await import(String.raw`../lib/slack-signature.ts` + `?v=${Date.now()}`)) as typeof import("../lib/slack-signature.ts");
 const { SLACK_REPLAY_WINDOW_SECONDS, slackSignaturePayload, verifySlackSignature } = sig;
+const txt = (await import(String.raw`../lib/slack-text.ts` + `?v=${Date.now()}`)) as typeof import("../lib/slack-text.ts");
+const { unwrapSlackText, addressedNumber, readSlackMessage } = txt;
 
 let pass = 0;
 let fail = 0;
@@ -235,13 +237,12 @@ head("the replay window — the one thing Twilio's scheme has no equivalent of")
 
 head("addressing a message to a number, for the cold inbound (5.9)");
 {
-  /* The same expression the route uses. Restated for the same reason as
-     `transportFor`: the route is a server module. */
-  const re = /^\s*(\+?[\d\s()\-.]{7,20}):\s*([\s\S]*)$/;
-  const parse = (t: string) => {
-    const m = t.match(re);
-    return m ? { raw: m[1], body: m[2] } : null;
-  };
+  /* The real function, not a copy of its regex. It used to be restated here
+     "because the route is a server module" — so this suite was checking a
+     duplicate, and would have passed with the route's own parser deleted. It
+     did pass, throughout the linkify bug below. That is why the parser moved
+     to `lib/slack-text.ts`, which imports nothing and loads in plain node. */
+  const parse = addressedNumber;
 
   ok("a number and a colon is an addressed message", parse("+16265550143: hello") !== null);
   ok(
@@ -259,6 +260,59 @@ head("addressing a message to a number, for the cold inbound (5.9)");
     parse("note: this is for us") === null,
     "the prefix has to look like a number",
   );
+}
+
+head("Slack's own markup, undone before anything reads the message");
+{
+  /* The bug, by name. Slack linkifies a phone number, so the raw event text
+     for "+16265550001: HELP" is a tel link and the address parser saw a
+     message starting with "<". The channel went silent and the route logged
+     `addressed:false` — nothing errored, and typing the number without the
+     plus worked, which is how it surfaced. */
+  const read = (t: string) => readSlackMessage(t).addressed;
+
+  ok(
+    "a linkified number is still an address",
+    read("<tel:+16265550001|+16265550001>: HELP")?.raw === "+16265550001",
+    "this is the case that was silently dropped",
+  );
+  ok("and its body survives", read("<tel:+16265550001|+16265550001>: HELP")?.body === "HELP");
+  ok(
+    "a bare tel link yields the number, not the scheme",
+    read("<tel:+16265550001>: HELP")?.raw === "+16265550001",
+    "the label is optional; the target is what counts",
+  );
+  ok(
+    "an unlinkified number still works",
+    read("16265550001: HELP")?.raw === "16265550001",
+    "the form that happened to work is not allowed to regress",
+  );
+
+  ok(
+    "a labelled link yields the label",
+    unwrapSlackText("see <https://pando.is/share|the form>") === "see the form",
+    "the label is what the person sees, so it is what they meant",
+  );
+  ok(
+    "an unlabelled link yields the target",
+    unwrapSlackText("<https://pando.is/share>") === "https://pando.is/share",
+  );
+  ok("an email link unwraps too", unwrapSlackText("<mailto:a@b.com|a@b.com>") === "a@b.com");
+
+  /* Slack escapes exactly three characters in every event body, so this
+     reaches a capture's free-text step and would be stored inside a parent's
+     own words. */
+  ok(
+    "the three escaped entities are decoded",
+    unwrapSlackText("Tom &amp; Jerry &lt;3 &gt;") === "Tom & Jerry <3 >",
+  );
+  ok(
+    "and decoding runs last, so escaped text is not read as markup",
+    unwrapSlackText("&lt;tel:+15550001&gt;") === "<tel:+15550001>",
+    "decoding first would turn a typed angle bracket into a link to unwrap",
+  );
+
+  ok("ordinary text passes through untouched", unwrapSlackText("morning all") === "morning all");
 }
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`);

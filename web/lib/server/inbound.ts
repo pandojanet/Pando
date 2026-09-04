@@ -33,6 +33,7 @@ import {
 } from "@/lib/capture";
 import {
   cancelCapture,
+  hasOpenCapture,
   openCapture,
   saveAnswer,
   saveCapturedCard,
@@ -130,9 +131,22 @@ export async function handleInboundMessage(input: {
     return;
   }
 
-  if (keyword === "pass") {
+  if (keyword === "pass" && !(await hasOpenCapture(from))) {
     /**
      * Strategy §6 — the effortless exit.
+     *
+     * ⚠ **Guarded by the capture check, and that guard is a bug fix rather than
+     * a refinement.** `SKIP` is one of the two PASS keywords *and* the word the
+     * capture's last question asks for by name — so a parent doing exactly what
+     * the screen told them had it read as a decline to a different question, the
+     * card they had answered five questions for was never written, and PASS
+     * sends no reply, so the whole exchange ended in silence. Worse, the capture
+     * stayed `open`, so every later message from that person was swallowed as an
+     * answer to a question they had already finished.
+     *
+     * The tie-break is the pipeline's own: the more recently asked question
+     * wins. Nothing else changes — with no capture open, PASS behaves exactly as
+     * it did, including for a number Pando has never seen.
      *
      * "The question moves to someone else immediately, with no follow-up, no
      * penalty, and nothing recorded against you." All three halves are here:

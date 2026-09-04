@@ -46,6 +46,42 @@ export async function openCapture(personId: string): Promise<OpenCapture | null>
 }
 
 /**
+ * Is this number mid-capture? Asked **before** a person is ensured.
+ *
+ * It exists for one collision. `SKIP` is a PASS keyword (the effortless exit,
+ * strategy §6) **and** the word the capture's own last question tells a parent
+ * to reply with — "anything another parent should know? Reply with a sentence,
+ * or SKIP." The keyword block runs first, so a parent following the instruction
+ * on screen had their answer read as a decline to somebody else's question, the
+ * card was never saved, and PASS is deliberately silent: they got nothing back.
+ *
+ * Resolved the way this pipeline resolves every ambiguous word — **the records
+ * decide, and the more recently asked question wins** (the 1 Sep tie-break for a
+ * bare "yes"). A capture is a conversation Pando is holding right now, one text
+ * ago; a blast is a question asked to five people at once. So an open capture
+ * takes the word.
+ *
+ * Keyed by phone rather than by person because it is consulted above
+ * `ensureInboundPerson`, and running that first would mean creating a person in
+ * order to decide whether a stranger's PASS is a PASS.
+ */
+export async function hasOpenCapture(phone: string): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select 1
+        from sms_captures c
+        join people p on p.id = c.person_id
+       where p.phone = ${phone} and c.status = 'open'
+       limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows.length > 0;
+  });
+  /* Unreachable database is "no": the capture branch below cannot run either,
+     and treating it as a PASS at least keeps the effortless exit working. */
+  return result.persisted ? (result.data ?? false) : false;
+}
+
+/**
  * Start one, or hand back the one already running.
  *
  * A parent who texts ADD twice is not asking for a second card — they are more
