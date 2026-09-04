@@ -79,6 +79,16 @@ export interface AnswerCandidate {
    * live records agree on a price and only 8 on this.
    */
   worth?: string | null;
+  /**
+   * The kind of care a caregiver offers — "Full-time", "Before / after school".
+   *
+   * Replaces the kind word rather than joining it: "Elena V. - caregiver" says
+   * nothing that her being in an answer about care did not already say, while
+   * "Elena V. - full-time care" is the thing a parent is choosing on. Null for a
+   * caregiver who has not filled in a profile of their own, and the line falls
+   * back to the plain word.
+   */
+  care?: string | null;
   trust: TrustLabels;
   firsthand_count: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
@@ -242,8 +252,8 @@ function areaWords(slug: string): string {
  * "em dashes are fine" is a rule about screens; `sms-segments.ts` exists for
  * exactly this argument on the other side.
  */
-function line(candidate: AnswerCandidate): string {
-  const what = KIND_WORD[candidate.kind];
+function line(candidate: AnswerCandidate, labels: readonly string[]): string {
+  const what = candidate.care ? `${candidate.care.toLowerCase()} care` : KIND_WORD[candidate.kind];
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   const venue = candidate.venue ? `, ${candidate.venue}` : "";
   const describes = what ? ` - ${what}${where}${venue}` : `${where}${venue}`;
@@ -253,14 +263,56 @@ function line(candidate: AnswerCandidate): string {
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
   const cost = money ? ` ${money}.` : "";
 
-  const claims = candidate.trust.labels.join(". ");
+  const claims = labels.join(". ");
   const age =
     candidate.trust.freshness === "fresh"
       ? ""
       : candidate.trust.freshness === "ageing"
         ? " Worth checking it hasn't changed."
         : " This one is old, so treat it as a starting point.";
-  return `${candidate.name}${describes}.${cost} ${claims}.${age}`;
+  /* Every label may have been hoisted, in which case the record is its own
+     sentence and the full stop after the price already closed it. */
+  return claims === ""
+    ? `${candidate.name}${describes}.${cost}${age}`.trimEnd()
+    : `${candidate.name}${describes}.${cost} ${claims}.${age}`;
+}
+
+/**
+ * The labels every record in the answer carries, said once instead of on each
+ * line.
+ *
+ * ## Why this is not a reword, and could not have been one
+ *
+ * The labels are approved copy held verbatim (invariant 3), so shortening the
+ * wording is a re-approval rather than an edit. Shortening the **repetition** is
+ * neither: the identical string is printed once about the set instead of once
+ * about each member of it, and no record loses a claim.
+ *
+ * It is worth real space. A three-record answer repeats "Human-reviewed" three
+ * times for 48 characters that say one thing, and when the records also share
+ * their strength and their date — which two approved records from the same month
+ * usually do — the whole 70-character chain collapses to one line. That is a
+ * record's worth of budget bought back from punctuation.
+ *
+ * ## The two rules that keep it honest
+ *
+ * **Only labels *every* record has**, which is what makes the hoisted line true
+ * of each of them. A label one record lacks stays on the lines that do have it —
+ * and that is the interesting case rather than an edge: "Validated by multiple
+ * parents" on one record beside "Shared by a local parent" on another is exactly
+ * the distinction a reader is there to see.
+ *
+ * **Computed over every ranked candidate, not only the ones that fit.** Dropping
+ * a record can only *shrink* the shared set, never grow it, so a label hoisted
+ * before the budget loop is still true of whatever survives it. Getting that
+ * backwards would put a claim on a footer about a record the reader was shown.
+ */
+function sharedLabels(candidates: AnswerCandidate[]): string[] {
+  if (candidates.length < 2) return [];
+  const [first, ...rest] = candidates;
+  return first.trust.labels.filter((label) =>
+    rest.every((c) => c.trust.labels.includes(label)),
+  );
 }
 
 /**
@@ -347,13 +399,28 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     ? "Here's what I can tell you. This is general information, not from a parent:"
     : "Here's what local parents have shared:";
 
+  /**
+   * The labels every record shares come out of the lines and go under them once.
+   *
+   * `footer` is budgeted like a line because it is one; the connective is ours
+   * rather than approved copy, and it is deliberately colourless — the labels do
+   * the talking and a sentence introducing them would be a gloss on wording
+   * nobody may gloss.
+   */
+  const hoisted = sharedLabels(ranked);
+  const perLine = (c: AnswerCandidate) =>
+    hoisted.length === 0
+      ? c.trust.labels
+      : c.trust.labels.filter((l) => !hoisted.includes(l));
+  const footer = hoisted.length > 0 ? `All of these: ${hoisted.join(". ")}.` : "";
+
   const lines: string[] = [];
   let used = 0;
-  let length = head.length;
+  let length = head.length + (footer ? footer.length + 1 : 0);
   const tail = input.forwardable ? `\n${SHARE_LINE}` : "";
 
   for (const candidate of ranked) {
-    const rendered = line(candidate);
+    const rendered = line(candidate, perLine(candidate));
     const cost = rendered.length + 1;
     if (length + cost + tail.length > SMS_BUDGET) break;
     lines.push(rendered);
@@ -361,10 +428,22 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     used += 1;
   }
 
+  /**
+   * One record does not need a footer, and reads worse with one: a line saying
+   * "All of these" about a single thing is a shared claim with nothing to share
+   * it with. Rendered again with its own labels, which is cheaper than it looks
+   * — the loop above has already told us the record fits.
+   */
+  const collapse = used === 1 && footer !== "";
+  if (collapse) {
+    lines.length = 0;
+    lines.push(line(ranked[0], ranked[0].trust.labels));
+  }
+
   /* Everything was too long to fit even once. Send the best one alone rather than
      an opening sentence with nothing under it. */
   if (lines.length === 0) {
-    const only = line(ranked[0]);
+    const only = line(ranked[0], ranked[0].trust.labels);
     lines.push(only.slice(0, SMS_BUDGET - head.length - tail.length - 2));
     used = 1;
   }
@@ -391,7 +470,12 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       : "";
 
   return {
-    text: `${head}\n${lines.join("\n")}${offer}${tail}`,
+    /* The footer sits under the records and above anything offered, because it
+       describes them and not the offer. Dropped when a single record collapsed
+       back to carrying its own labels. */
+    text: `${head}\n${lines.join("\n")}${
+      footer && !collapse ? `\n${footer}` : ""
+    }${offer}${tail}`,
     next_step,
     public_only: publicOnly,
     used,

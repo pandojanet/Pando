@@ -372,6 +372,27 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
     named.length > 0 ? `named anyway: ${named.join(", ")}` : `${allowed.size} eligible`,
   );
 
+  /**
+   * ⚠ **No caregiver in an answer about classes.**
+   *
+   * The first version of the retrieval gate narrowed the *shares* half and left
+   * `caregivers: true` unconditional, so this exact question came back naming a
+   * caregiver beside two music classes — a named person put in front of somebody
+   * who asked about neither, which is the highest-stakes thing this answer does.
+   * It passed invariant 1 the whole time, which is why it looked fine.
+   */
+  const surfaced = await sql`
+    select first_name, last_initial from caregivers
+     where consent_status = 'consented' and active and discoverable and is_adult`;
+  const mentioned = surfaced
+    .map((c) => `${c.first_name} ${c.last_initial}`)
+    .filter((who) => String(queued?.answer_text ?? "").includes(who));
+  ok(
+    "a question about classes names no caregiver",
+    mentioned.length === 0,
+    mentioned.length > 0 ? `named: ${mentioned.join(", ")}` : `${surfaced.length} were eligible`,
+  );
+
   /* One character outside GSM-7 halves the budget from 160 to 70. The composer's
      own punctuation is ASCII for that reason; the labels are verbatim and are
      not the risk. */

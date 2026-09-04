@@ -39,6 +39,11 @@ const parent = (over: Partial<AnswerCandidate> = {}): AnswerCandidate => ({
   },
   ...over,
 });
+/* The label set is what the hoisting checks vary, and `parent` takes a whole
+   `trust` — this is the shim, not a second fixture. */
+const backed = (name: string, labels: string[], over: Partial<AnswerCandidate> = {}) =>
+  parent({ name, trust: { labels, freshness: "fresh", public_only: false }, ...over });
+
 const publicRecord = (over: Partial<AnswerCandidate> = {}): AnswerCandidate =>
   parent({
     name: "City parks list",
@@ -283,6 +288,62 @@ console.log("\n=== a record says what it is, and the whole answer stays in GSM-7
     "and nothing the composer writes reaches for an em dash",
     !/\u2014|\u00b7/.test(two),
     "the design system allows both on a screen; sms-segments.ts is why not here",
+  );
+}
+
+console.log("\n=== a claim every record shares is made once, not on each line ===");
+{
+  /* The trust chain is approved copy and cannot be shortened, so what was
+     shortened is the repetition: 70 characters per line saying the same thing,
+     roughly half the message. Nothing is reworded and no record loses a claim
+     - the identical string is printed once about the set. */
+  const same = ["Validated by multiple parents", "Human-reviewed"];
+  const three = compose([
+    backed("A", same),
+    backed("B", same),
+    backed("C", same),
+  ]).text;
+  ok(
+    "the shared chain appears once",
+    three.match(/Human-reviewed/g)?.length === 1,
+    three,
+  );
+  ok("and it is still verbatim", /Validated by multiple parents/.test(three));
+
+  /* The interesting case, and the one that must not be flattened: two records
+     of different strength. What they share hoists; what distinguishes them
+     stays where a reader can see which is which. */
+  const mixed = compose([
+    backed("Strong", ["Validated by multiple parents", "Human-reviewed"]),
+    backed("Weaker", ["Shared by a local parent", "Human-reviewed"]),
+  ]).text;
+  const strongLine = mixed.split("\n").find((l) => l.startsWith("Strong")) ?? "";
+  const weakLine = mixed.split("\n").find((l) => l.startsWith("Weaker")) ?? "";
+  ok(
+    "the distinction stays on the lines",
+    /Validated by multiple parents/.test(strongLine) &&
+      /Shared by a local parent/.test(weakLine),
+    "hoisting what differs would tell the reader both were equally backed",
+  );
+  ok(
+    "and only what they share is hoisted",
+    !/Human-reviewed/.test(strongLine) && /All of these: Human-reviewed/.test(mixed),
+  );
+
+  ok(
+    "a single record keeps its own labels and gets no footer",
+    !/All of these/.test(compose([backed("Alone", same)]).text),
+    "a shared claim about one thing has nothing to share it with",
+  );
+
+  /* The space it buys is the point: three records where two fit before. */
+  ok(
+    "three records fit where the repetition would have cost one",
+    compose([
+      backed("Little Maestros", same, { area: "south-pasadena", price: "$50-100 a month" }),
+      backed("Rose Bowl Aquatics parent & me", same, { area: "old-pasadena", price: "$100-200 a term" }),
+      backed("AYSO soccer", same, { area: "sierra-madre", price: "$50-100 a term" }),
+    ]).used === 3,
   );
 }
 

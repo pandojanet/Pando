@@ -10,6 +10,7 @@ import {
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
 import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
+import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { toGsm7 } from "@/lib/sms-segments";
 import {
@@ -701,12 +702,31 @@ async function answerQuestion(input: {
    */
   const focus = focusInQuestion(body, await focusOptions());
 
+  /**
+   * ⚠ **A caregiver only answers a question about care**, and the first version
+   * of this gated only the *shares* half — `caregivers: true` was
+   * unconditional, so a question about toddler classes came back naming
+   * **Elena V.** alongside two music classes. Half a fix, and the wrong half:
+   * putting a named person in front of somebody who did not ask about one is
+   * the highest-stakes thing this answer can do. Not a breach of invariant 1 —
+   * she consented and is discoverable, which is why it looked fine — but wrong,
+   * and it spent a slot a second class should have had.
+   *
+   * Two signals, because each catches what the other misses. The word list is
+   * blunt and generous (`nanny`, `sitter`, `au pair`…) and does not read "who
+   * can look after my toddler on Tuesdays"; the focus topics do, because
+   * `focusInQuestion` maps that vocabulary onto `nannies` / `babysitters` /
+   * `newborn_care`. Either one is enough.
+   */
+  const CARE_TOPICS = ["nannies", "babysitters", "newborn_care"];
+  const wantsCare = aboutCare || (focus !== null && CARE_TOPICS.includes(focus));
+
   const retrieved = await retrieveFor({
     area: profile?.neighborhood ?? null,
     bands: asked.length > 0 ? asked : known,
     focus,
-    shares: !aboutCare,
-    caregivers: true,
+    shares: !wantsCare,
+    caregivers: wantsCare,
   });
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
@@ -770,9 +790,24 @@ async function answerQuestion(input: {
       firsthand_count: share.firsthand_count,
       answer_ready: share.answer_ready,
     })),
+    /**
+     * A caregiver's line said "Elena V. - caregiver." and nothing else, while
+     * the record held **what kind of care** and **which areas** — the two facts
+     * a parent asking about care actually needs, dropped in the mapping exactly
+     * as the shares' neighborhood was.
+     *
+     * The kind of care replaces the bare word "caregiver" rather than joining
+     * it: "full-time" already says what she is. One area, not three — a list
+     * reads as a service radius and costs the space a second candidate needs.
+     * Both are missing on a caregiver with no profile of their own (Maria G.
+     * today), and the line falls back to the plain word.
+     */
     ...retrieved.caregivers.map((caregiver) => ({
       name: caregiver.display,
       kind: "caregiver",
+      care:
+        CAREGIVER_TYPES.find((t) => t.id === caregiver.kind_of_care[0])?.label ?? null,
+      area: caregiver.areas[0] ?? null,
       trust: caregiver.trust,
       firsthand_count: caregiver.firsthand_count,
     })),
@@ -786,7 +821,7 @@ async function answerQuestion(input: {
    * cost of missing it is the highest-stakes sentence Pando sends going out with
    * nobody having read it.
    */
-  const caregiverRelated = aboutCare || retrieved.caregivers.length > 0;
+  const caregiverRelated = wantsCare || retrieved.caregivers.length > 0;
 
   const verdict = routeAnswer({
     /* Rules only, and they may only ever escalate. There is no category tap on
