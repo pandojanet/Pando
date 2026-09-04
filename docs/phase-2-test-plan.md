@@ -212,7 +212,7 @@ same step still means PASS.
 16265550006: I want to add our nanny Marisol, she is wonderful
 ```
 
-**Pass:** a link to `/share`, and **no caregiver record anywhere**. This is the
+**Pass:** a link to `/share`, and **no caregiver record anywhere** — and nothing in `/admin/answers` either. This is the walk that found four faults on 4 Sep: the redirect only fired inside a capture, so an unprompted offer came back as a *queued answer* recommending a music class and a park. This is the
 correct behaviour: a text cannot ask the firsthand-employment question
 (invariant 14), the 18+ question (invariant 2) or hold a restricted note
 (invariant 12). Refusing to collect something badly is not a missing feature.

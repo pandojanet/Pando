@@ -489,6 +489,44 @@ console.log("\n=== an admin approves it, and it lands in the parent's thread ===
   ok("and it carries who decided", Boolean(after?.reviewed_by), String(after?.reviewed_by));
 }
 
+/**
+ * A4, and the walk that found it.
+ *
+ * A caregiver *offer* must be sent to the form that can ask the three questions
+ * a text cannot — employed them (invariant 14), 18 or over (invariant 2), and
+ * the private note behind a hesitant rehire (invariant 12). Before 4 Sep the
+ * redirect only fired inside a capture, so an unprompted offer was read as a
+ * question and queued as an answer.
+ */
+console.log("\n=== a caregiver offered by text is refused, not answered ===");
+{
+  const before = posted.length;
+  const answersBefore = await sql`select count(*)::int n from answers where phone = ${PHONE}`;
+  await slackEvent(
+    message(`${PHONE}: I want to add our nanny Marisol, she is wonderful`, {
+      ts: "1788401999.9",
+    }),
+  );
+  await new Promise((r) => setTimeout(r, 2000));
+
+  const reply = posted[posted.length - 1];
+  ok("Pando answered", posted.length > before, `${posted.length} posts`);
+  ok(
+    "with the link to the form, not with an answer",
+    Boolean(reply?.text.includes("/share")),
+    reply?.text.slice(0, 120),
+  );
+  const answersAfter = await sql`select count(*)::int n from answers where phone = ${PHONE}`;
+  ok(
+    "and nothing was queued as a question",
+    answersAfter[0].n === answersBefore[0].n,
+    "a nomination in the answers queue is one nobody processes properly",
+  );
+  const [caregiver] = await sql`
+    select count(*)::int n from caregivers where lower(first_name) = 'marisol'`;
+  ok("nor was a caregiver record created", caregiver.n === 0, "invariants 2 and 14");
+}
+
 console.log("\n=== STOP still stops, relay or not ===");
 {
   const [outbound] = await sql`

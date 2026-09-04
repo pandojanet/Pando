@@ -99,19 +99,33 @@ ok(
   compose([parent(), parent({ name: "Little Maestros" }), publicRecord()]).public_only === false,
 );
 
-console.log("\n=== the count in the opening is the count it can stand behind ===");
+console.log("\n=== the opening claims nothing it cannot stand behind ===");
+/* These three used to assert the opposite, which is how the fault survived: the
+   suite was written from the same misreading as the code. The opener counted
+   *records* and called them *parents*, and counted them before the budget loop
+   dropped the ones that did not fit — a live walk printed "10 local parents have
+   shared something on this" above two records. */
 ok(
-  "one parent reads as one",
-  /^One local parent/.test(compose([parent()]).text),
+  "it does not count people, because a candidate cannot say how many there are",
+  !/\d+ local parents/.test(
+    compose([parent(), parent({ name: "Little Maestros" })]).text,
+  ),
+  "firsthand_count is per record, and one parent can stand behind several",
 );
 ok(
-  "two read as two",
-  /^2 local parents/.test(compose([parent(), parent({ name: "Little Maestros" })]).text),
+  "one record and two read the same way",
+  compose([parent()]).text.split("\n")[0] ===
+    compose([parent(), parent({ name: "Little Maestros" })]).text.split("\n")[0],
 );
 ok(
-  "a public record is not counted among them",
-  /^One local parent/.test(compose([parent(), publicRecord()]).text),
-  "counting it would be the guard failing in the prose, where it is easiest to lose",
+  "and it still never says parents about public information",
+  /general information, not from a parent/.test(compose([publicRecord()]).text) &&
+    !/local parent/.test(compose([publicRecord()]).text.split("\n")[0]),
+  "5.6's guard arriving in the prose, where it is easiest to lose",
+);
+ok(
+  "a parent-backed record still opens as parent-backed",
+  /^Here's what local parents have shared/.test(compose([parent(), publicRecord()]).text),
 );
 
 console.log("\n=== order: evidence first, freshness only as a tiebreak ===");

@@ -40,6 +40,7 @@ import {
   isCaptureCancel,
   isCaptureStart,
   isSkipWord,
+  offersSomething,
   readsAsSkip,
   mentionsCaregiver,
   readAnswer,
@@ -362,13 +363,38 @@ export async function handleInboundMessage(input: {
     const named =
       capture?.step === "name" ? looksLikePerson(body) : { person: false as const };
 
+    /**
+     * ⚠ **And the same refusal for an offer made outside a capture**, which is
+     * where it was missing until a walk of A4 found it.
+     *
+     * The gate above is `capture || isCaptureStart`, because the redirect was
+     * written for 10.1's five-question script. So a parent who simply texted
+     * *"I want to add our nanny Marisol, she is wonderful"* — no ADD first, no
+     * capture open — sailed past it, was read as `ask_caregiver` (the rule-based
+     * reading maps **any** caregiver word to that, with no notion of offering
+     * versus asking), and came back as a **queued answer**. A nomination sitting
+     * in the answers queue is a nomination nobody will process properly.
+     *
+     * `offersSomething` is what separates the two, and the asymmetry is worth
+     * keeping: "any good nannies near Altadena?" and "we need a nanny three days
+     * a week" carry no offer verb and are answered, held for a person because
+     * `routeAnswer` treats anything caregiver-related as a permanent hold.
+     */
+    const offeringCaregiver =
+      !capture && !isCaptureStart(body) && mentionsCaregiver(body) && offersSomething(body);
+
     if (
-      (capture || isCaptureStart(body)) &&
-      (mentionsCaregiver(body) || (named.person && named.strong))
+      ((capture || isCaptureStart(body)) &&
+        (mentionsCaregiver(body) || (named.person && named.strong))) ||
+      offeringCaregiver
     ) {
       if (capture) await cancelCapture(capture.capture_id);
       console.info("[sms:inbound] capture refused", {
-        reason: named.person ? `named_person:${named.signal}` : "caregiver_words",
+        reason: offeringCaregiver
+          ? "caregiver_offered"
+          : named.person
+            ? `named_person:${named.signal}`
+            : "caregiver_words",
       });
       await sendSms({
         to: from,
@@ -626,9 +652,28 @@ async function answerQuestion(input: {
   const { from, body, person } = input;
   const profile = person?.profile;
 
+  /**
+   * Which half of the graph may answer this, and it is the only narrowing that
+   * can be drawn safely.
+   *
+   * A walk of A4 produced a nanny question answered with **Little Maestros and
+   * Hahamongna Watershed Park** — a music class and a park — under the sentence
+   * "local parents have shared something on this". `retrieveFor` reads no
+   * subject at all (its header says so now), so without this it always returns
+   * both halves and the composer writes about whatever ranked highest.
+   *
+   * ⚠ Narrowing **within** a kind is deliberately not attempted. A word list
+   * mapping "birthday party venues" to `place` would exclude the record of that
+   * exact name, which is a `tip` — so a guess at the kind can make an answer
+   * worse than no guess. See `retrieveFor`'s header for what a real fix needs.
+   */
+  const aboutCare = input.caregiverIntent || answerMentionsCaregiver(body);
+
   const retrieved = await retrieveFor({
     area: profile?.neighborhood ?? null,
     bands: profile ? bandsForBirthYears(profile.child_birth_years, new Date()) : [],
+    shares: !aboutCare,
+    caregivers: true,
   });
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
@@ -670,10 +715,7 @@ async function answerQuestion(input: {
    * cost of missing it is the highest-stakes sentence Pando sends going out with
    * nobody having read it.
    */
-  const caregiverRelated =
-    input.caregiverIntent ||
-    answerMentionsCaregiver(body) ||
-    retrieved.caregivers.length > 0;
+  const caregiverRelated = aboutCare || retrieved.caregivers.length > 0;
 
   const verdict = routeAnswer({
     /* Rules only, and they may only ever escalate. There is no category tap on

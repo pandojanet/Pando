@@ -209,5 +209,24 @@ console.log("\n=== SKIP belongs to the capture only where it is accepted ===");
   );
 }
 
+console.log("\n=== offering something is not the same as asking about it ===");
+{
+  /* The distinction the caregiver refusal turns on, and it was missing: a
+     parent who texted "I want to add our nanny Marisol" with no capture open
+     sailed past the redirect and came back a queued answer. A nomination in
+     the answers queue is a nomination nobody processes properly. */
+  ok("an offer is recognised", c.offersSomething("I want to add our nanny Marisol"));
+  ok("in any of the capture verbs", c.offersSomething("I would recommend our sitter Ana"));
+  ok(
+    "a question about the same subject is not",
+    !c.offersSomething("any good nannies near Altadena?"),
+  );
+  ok(
+    "and neither is asking for help finding one",
+    !c.offersSomething("we need a nanny three days a week"),
+    "the obvious inverse test — is it question-shaped — fails on exactly this",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

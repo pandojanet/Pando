@@ -184,17 +184,38 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const publicOnly = parentBacked.length === 0;
 
   /**
-   * The opening sentence.
+   * The opening sentence, and **the count is gone from it on purpose.**
    *
-   * It never counts records the answer will not go on to mention, and it never
-   * says "parents" about public information — that is the guard from 5.6 arriving
-   * in the prose, where it would otherwise be easiest to lose.
+   * It used to read "N local parents have shared something on this", and the
+   * comment here used to claim it never counted records the answer would not
+   * mention. Both were wrong, and a live walk printed the proof: *"10 local
+   * parents have shared something on this"* above **two** records.
+   *
+   * Two separate faults, and the first is the serious one.
+   *
+   * **It counted records and called them parents.** `parentBacked` is a filter
+   * over candidates, so ten records might be ten parents, or three parents who
+   * contributed ten records, or one enthusiast. How many *people* stand behind an
+   * answer is the strongest claim Pando makes — invariants 3 and 4 exist for it —
+   * and it is **not derivable** from what a candidate carries: `firsthand_count`
+   * is per record, and the same parent can appear in several.
+   *
+   * **And it was computed before the budget loop**, which then dropped whatever
+   * did not fit. So even read as a count of records it described a list the
+   * reader was not shown.
+   *
+   * The honest fix is to stop claiming a number rather than to compute a better
+   * one. Nothing is lost that the reader cannot see: the records are listed right
+   * underneath, and each carries its own label — "Validated by multiple parents"
+   * is the per-record version of the claim, computed from the counts by 5.6,
+   * where it is true.
+   *
+   * The public-information branch is untouched: it never says "parents" at all,
+   * which is 5.6's guard arriving in the prose.
    */
   const head = publicOnly
     ? "Here's what I can tell you — this is general information, not from a parent:"
-    : parentBacked.length === 1
-      ? "One local parent has shared something on this:"
-      : `${parentBacked.length} local parents have shared something on this:`;
+    : "Here's what local parents have shared:";
 
   const lines: string[] = [];
   let used = 0;

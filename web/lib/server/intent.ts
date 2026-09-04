@@ -53,11 +53,34 @@ const SYSTEM = [
   "than admitting you cannot tell.",
 ].join("\n");
 
+/**
+ * ⚠ **`confidence` carries no `minimum`/`maximum`, and that is not an
+ * oversight — it is a bug fix.**
+ *
+ * It had both, and the API refuses them:
+ *
+ *     output_config.format.schema: For 'number' type, properties maximum,
+ *     minimum are not supported
+ *
+ * So **every** call was a 400 and the model half of 5.3 had never run once. The
+ * `catch` below turned each one into the rule-based fallback, which is a
+ * legitimate outcome, so nothing anywhere looked wrong: `test:intent` exercises
+ * the pure fallback and never the request. The same shape as `bands` and
+ * `area_slug` — written, reviewed, and silently never executed — and it is worth
+ * knowing that the difference it hides is real: the fallback maps **any**
+ * caregiver word to `ask_caregiver`, while the model reads "I want to add our
+ * nanny Marisol" as `contribute`, which is what it is.
+ *
+ * The range is not lost. `applyThreshold` compares against
+ * `INTENT_CONFIDENCE_FLOOR` and falls back on anything under it, so a value
+ * outside 0–1 cannot promote a reading — and a schema the API rejects enforces
+ * nothing at all.
+ */
 const SCHEMA = {
   type: "object",
   properties: {
     intent: { type: "string", enum: INTENTS },
-    confidence: { type: "number", minimum: 0, maximum: 1 },
+    confidence: { type: "number" },
     reason: {
       type: "string",
       maxLength: 200,
@@ -144,9 +167,19 @@ export async function classifyIntent(input: {
     const parsed = block && "text" in block ? safeParse(block.text) : null;
     return applyThreshold(parsed, text, input.context);
   } catch (err) {
-    /* Counts and enums only — never the message (invariant 7). */
+    /**
+     * Counts and enums only — never the message (invariant 7), and never the
+     * SDK's own `message` either: it can carry the request body, which is the
+     * parent's text. That is the `withDb` leak in a different library.
+     *
+     * ⚠ **The status is logged because the class name is not usable.** This runs
+     * from the standalone bundle, where `err.constructor.name` is minified — the
+     * 400 above was reported for weeks as `{ error: 'a' }`, which is why nobody
+     * could see that every call was failing. A status is a number and survives.
+     */
+    const status = (err as { status?: unknown })?.status;
     console.error("[intent] classification failed", {
-      error: err instanceof Error ? err.constructor.name : "unknown",
+      status: typeof status === "number" ? status : null,
     });
     return applyThreshold(null, text, input.context);
   }

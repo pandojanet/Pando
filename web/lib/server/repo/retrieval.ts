@@ -44,6 +44,21 @@ export interface QuestionContext {
   /** Age bands the question is about, from the asker's children or the question. */
   bands?: string[];
   limit?: number;
+  /**
+   * Which half may answer this question.
+   *
+   * Both default true, which is what every earlier caller assumed. They exist
+   * because a question about a nanny was being answered with a music class and a
+   * park: nothing here reads the *subject* of a question (see the header), so
+   * without this the two halves are always both returned and the composer then
+   * writes "local parents have shared something on this" about records that have
+   * nothing to do with it.
+   *
+   * ⚠ This narrows by **kind of thing**, which is the one distinction that can be
+   * drawn safely. It does not narrow within a kind — see the header.
+   */
+  caregivers?: boolean;
+  shares?: boolean;
 }
 
 export interface ShareCandidate {
@@ -99,6 +114,25 @@ const EMPTY: Retrieved = {
   configured: false,
 };
 
+/**
+ * ⚠ **What this does not do: read the subject of the question.**
+ *
+ * There is no text matching here at all. A question is a market, an area, a set
+ * of age bands and a set of kinds; records are ranked by whether an admin marked
+ * them answer-ready, whether they are in the asker's area, and how many parents
+ * stand behind them. So *"toddler swim classes"* and *"birthday party venues"*
+ * retrieve the **same activities**, and the only thing that separates them today
+ * is `caregivers`/`shares` above.
+ *
+ * That was invisible while nothing called this function. It became visible the
+ * day the inbound path did, and it is a real gap rather than a bug to patch
+ * here: matching a subject means either a topic taxonomy or embeddings, and
+ * name matching specifically does **not** work — a parent asking for "toddler
+ * swim classes" shares no word with "Rose Bowl Aquatics parent & me", which is
+ * the right answer. Recorded so the next session does not reach for trigrams and
+ * conclude they helped.
+ */
+
 /** What may answer this question, with its labels. */
 export async function retrieveFor(question: QuestionContext): Promise<Retrieved> {
   const marketId = question.marketId ?? "pasadena";
@@ -107,6 +141,8 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
     ? question.kinds
     : ["activity", "camp", "place", "tip"];
   const area = question.area ?? "";
+  const wantShares = question.shares !== false;
+  const wantCaregivers = question.caregivers !== false;
 
   const result = await withDb(async (db: Db) => {
     const policies = (await db.execute(
@@ -122,7 +158,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         ? `{${question.bands.map((b) => `"${b}"`).join(",")}}`
         : null;
 
-    const shareRows = (await db.execute(sql`
+    const shareRows = !wantShares ? [] : (await db.execute(sql`
       select
         s.id, s.kind, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
@@ -185,7 +221,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
      * them, which is what "confirmed" has to mean for a person. `updated_at`
      * would have been wrong: it moves when an admin edits a flag.
      */
-    const caregiverRows = (await db.execute(sql`
+    const caregiverRows = !wantCaregivers ? [] : (await db.execute(sql`
       select
         c.id, c.first_name, c.last_initial, c.provenance,
         cp.roles_wanted, cp.areas_served,

@@ -176,6 +176,34 @@ const CAREGIVER_WORDS = [
   "NANNIES",
 ];
 
+/**
+ * Is this message *offering* something rather than asking about it?
+ *
+ * The distinction the caregiver refusal turns on. "I want to **add** our nanny
+ * Marisol" is a nomination and must be sent to a form that can ask the three
+ * questions a text cannot — whether the family employed them (invariant 14),
+ * whether they are 18 (invariant 2), and the private note behind a hesitant
+ * rehire (invariant 12). "Any good nannies near Altadena?" is a question, and
+ * answering it is right.
+ *
+ * The verbs are `START_WORDS` read loosely — the same vocabulary the capture
+ * already owns, matched **anywhere** in the sentence rather than as the whole
+ * message, because a parent volunteering something writes a sentence and not a
+ * command.
+ *
+ * ⚠ Deliberately **not** "is this question-shaped". The obvious inverse test
+ * fails on "we need a nanny three days a week", which has no question mark and
+ * no interrogative and is plainly a request for help — sending that parent a
+ * nomination form would be the redirect firing on exactly the person it is not
+ * for.
+ */
+const OFFER_WORDS =
+  /\b(add|adding|added|recommend|recommending|share|sharing|suggest|suggesting|vouch|vouching)\b/i;
+
+export function offersSomething(body: string): boolean {
+  return OFFER_WORDS.test(body);
+}
+
 export function mentionsCaregiver(body: string): boolean {
   const text = body.trim().toUpperCase();
   return CAREGIVER_WORDS.some((word) => text.includes(word));
