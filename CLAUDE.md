@@ -52,6 +52,10 @@ docs/
   spec-compliance-review.md   built vs. every client document, + open questions
   qa-checklist.md             M4 — how to test both flows, in order
   test-plan-by-estimate.md    the same ground indexed by estimate row, incl. ⬜ ones
+  phase-2-test-plan.md        the SMS product, through the Slack relay: the three
+                              doors that send anything, the conversation loop, a
+                              question end to end, blasts, freshness, money — plus
+                              what is deliberately absent and the switch-off list
   2c-caregiver-flow.md        why the caregiver flow is a claim, and how to test it
 supabase/            seed data for the tap lists (supabase/README.md)
 web/drizzle/         the migrations — baseline, triggers+views, RLS+invariant checks,
