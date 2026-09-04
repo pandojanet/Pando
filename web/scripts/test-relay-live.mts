@@ -227,6 +227,26 @@ function slackEvent(body: unknown, opts: { sign?: boolean } = {}) {
   });
 }
 
+/**
+ * Wait for the pipeline to have done something, rather than for a guess.
+ *
+ * The route answers Slack inside its three-second budget and runs the work in
+ * `after()`, so a fixed sleep is now a race the suite loses on a slow query and
+ * wins by accident on a fast one — which is worse than failing, because it fails
+ * *sometimes*. Each caller says what it is waiting for.
+ *
+ * The timeout is generous because one of these waits on a model call. Returning
+ * early on success keeps the walk quick when nothing is slow.
+ */
+const settle = async (done: () => boolean | Promise<boolean>, ms = 12000) => {
+  const until = Date.now() + ms;
+  for (;;) {
+    if (await done()) return true;
+    if (Date.now() > until) return false;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+};
+
 const message = (text: string, extra: Record<string, unknown> = {}) => ({
   type: "event_callback",
   event: { type: "message", user: "U0TESTER", channel: "C0RELAYWALK", ts: "1788401111.1", text, ...extra },
@@ -272,8 +292,12 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
   const res = await slackEvent(message(`${PHONE}: any good camps near Altadena?`));
   ok("the event is accepted", res.ok);
 
-  /* Parts of the pipeline run after the response, so give it a moment. */
-  await new Promise((r) => setTimeout(r, 2000));
+  /* The pipeline runs in `after()`, so wait for its last write rather than for
+     a number: the queued answer is the end of this branch. */
+  await settle(async () => {
+    const [row] = await sql`select count(*)::int n from answers where phone = ${PHONE}`;
+    return row.n > 0;
+  });
 
   const [person] = await sql`
     select id, first_name, phone_verified_at from people where phone = ${PHONE}`;
@@ -347,7 +371,7 @@ console.log("\n=== a keyword is answered, and the reply is addressed ===");
   const before = posted.length;
   const res = await slackEvent(message(`${PHONE}: HELP`, { ts: "1788401555.5" }));
   ok("the event is accepted", res.ok);
-  await new Promise((r) => setTimeout(r, 1500));
+  await settle(() => posted.length > before);
 
   ok("Pando's reply reached Slack", posted.length > before, `${posted.length} posts`);
   const last = posted[posted.length - 1];
@@ -394,7 +418,7 @@ console.log("\n=== a threaded reply resolves back to that parent ===");
     message("SETTINGS", { thread_ts: threadTs, ts: "1788402222.2" }),
   );
   ok("the threaded event is accepted", res.ok);
-  await new Promise((r) => setTimeout(r, 1500));
+  await settle(() => posted.length > before);
 
   const inbound = await sql`
     select m.direction, m.category
@@ -465,7 +489,7 @@ console.log("\n=== an admin approves it, and it lands in the parent's thread ===
     body: JSON.stringify({ action: "answer.send", id: queued?.id }),
   });
   ok("answer.send is accepted", sent.status === 200, `status ${sent.status}`);
-  await new Promise((r) => setTimeout(r, 1500));
+  await settle(() => posted.length > before);
 
   ok("the answer reached the channel", posted.length > before, `${posted.length} posts`);
   const answer = posted[posted.length - 1];
@@ -507,7 +531,7 @@ console.log("\n=== a caregiver offered by text is refused, not answered ===");
       ts: "1788401999.9",
     }),
   );
-  await new Promise((r) => setTimeout(r, 2000));
+  await settle(() => posted.length > before);
 
   const reply = posted[posted.length - 1];
   ok("Pando answered", posted.length > before, `${posted.length} posts`);
@@ -538,7 +562,14 @@ console.log("\n=== STOP still stops, relay or not ===");
   await slackEvent(
     message("STOP", { thread_ts: String(outbound.ts), ts: "1788403333.3" }),
   );
-  await new Promise((r) => setTimeout(r, 1200));
+  /* STOP is the one branch that deliberately sends nothing, so there is no post
+     to wait for — wait for the row it does write. */
+  await settle(async () => {
+    const [row] = await sql`
+      select count(*)::int n from sms_opt_outs
+       where phone = ${PHONE} and opted_out_at is not null`;
+    return row.n > 0;
+  });
 
   const [out] = await sql`
     select opted_out_at from sms_opt_outs where phone = ${PHONE}`;
@@ -548,7 +579,15 @@ console.log("\n=== STOP still stops, relay or not ===");
   await slackEvent(
     message("SETTINGS", { thread_ts: String(outbound.ts), ts: "1788404444.4" }),
   );
-  await new Promise((r) => setTimeout(r, 1200));
+  /**
+   * ⚠ An absence cannot be waited *for*. This one has to be given long enough to
+   * fail to happen — and with the pipeline now running in `after()`, "long
+   * enough" is a real judgement rather than a formality: too short and the suite
+   * passes because the send had not been attempted yet, which is the assertion
+   * silently proving nothing. Four seconds against a keyword path that answers
+   * in well under one.
+   */
+  await new Promise((r) => setTimeout(r, 4000));
   ok(
     "and nothing further reaches the channel",
     posted.length === before,

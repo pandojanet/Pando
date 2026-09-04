@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
 import { readSlackMessage } from "@/lib/slack-text";
 import { keywordOf } from "@/lib/sms-templates";
@@ -57,11 +57,33 @@ import {
  * `MESSAGING_RELAY` is not `slack`, the deployment is in a state nobody chose,
  * and answering "fine" would hide it.
  *
- * ## Why it always answers 200 otherwise
+ * ## Why it always answers 200 otherwise, and why that was not enough
  *
  * Slack retries a non-2xx, and a retry duplicates whatever the pipeline already
  * did — a second log row, a second capture answer. So every outcome the route
  * *understands* is a 200, including "I ignored that".
+ *
+ * ⚠ **A 200 that arrives late is a non-2xx as far as Slack is concerned.** It
+ * gives an endpoint **three seconds**, and this route `await`ed the whole
+ * pipeline before answering — which was fine while that pipeline was a keyword
+ * lookup and a post, and stopped being fine the day it grew a model call, a
+ * retrieval query and a queue write. Measured in `message_log`: **4.8 to 6.3
+ * seconds** from inbound to reply. So Slack retried, the pipeline ran a second
+ * time, and the parent got two messages — sometimes two *different* ones, because
+ * the second run saw what the first had already written (a question answered with
+ * `clarify_child_age` on the first pass and `answer_queued` on the retry, three
+ * seconds apart).
+ *
+ * Two defences, because either alone leaves a hole:
+ *
+ *  - **`after()` runs the pipeline once the response is out**, so the ack takes
+ *    milliseconds and no retry is provoked. This is Next's own mechanism for it
+ *    rather than a floating promise, so the work is tracked instead of racing
+ *    the request's teardown.
+ *  - **A retry is acked and dropped.** A cold start can still cross three
+ *    seconds, and `x-slack-retry-num` says outright that Slack has this event
+ *    already. Reprocessing it cannot help — the first attempt is still running —
+ *    and can only duplicate.
  */
 
 /** Slack wants the challenge echoed verbatim when the URL is first configured. */
@@ -111,6 +133,19 @@ export async function POST(request: Request) {
   /* The one-time handshake when the URL is saved in Slack's app config. */
   if (envelope.type === "url_verification" && envelope.challenge) {
     return NextResponse.json({ challenge: envelope.challenge });
+  }
+
+  /**
+   * Slack has already delivered this one. Checked **after** the signature, never
+   * before: an unsigned header is a claim, not a fact.
+   */
+  const retry = request.headers.get("x-slack-retry-num");
+  if (retry) {
+    console.info("[slack:events] retry dropped", {
+      attempt: Number(retry) || null,
+      reason: request.headers.get("x-slack-retry-reason"),
+    });
+    return NextResponse.json({ ok: true });
   }
 
   const event = envelope.event;
@@ -176,6 +211,19 @@ export async function POST(request: Request) {
     via: resolved ? "thread" : "addressed",
   });
 
-  await handleInboundMessage({ from, body });
+  /* Answer first, work second — see the header. `handleInboundMessage` never
+     throws for an outcome it understands, so the catch is for the ones it does
+     not, and it must not be silent: after the response there is nobody left to
+     tell. */
+  after(async () => {
+    try {
+      await handleInboundMessage({ from, body });
+    } catch (err) {
+      console.error("[slack:events] pipeline failed", {
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    }
+  });
+
   return NextResponse.json({ ok: true });
 }

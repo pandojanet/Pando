@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
 import { verifyTwilioSignature } from "@/lib/server/twilio-signature";
 import { handleInboundMessage } from "@/lib/server/inbound";
@@ -61,8 +61,29 @@ export async function POST(request: Request) {
     return twiml();
   }
 
-  /* The handler logs the keyword and the length for both transports, so this
-     route does not log it again. */
-  await handleInboundMessage({ from, body });
+  /**
+   * Answered before the pipeline runs, the same as the Slack door and for the
+   * same reason — the two transports must not differ in behaviour, which is the
+   * whole point of there being one `handleInboundMessage`.
+   *
+   * Twilio is more forgiving than Slack (fifteen seconds, and a timeout is an
+   * error rather than a retry-with-duplicate), so this was not the door where
+   * the duplicates appeared. It is still the wrong shape: a pipeline that now
+   * makes a model call and two queries should not be holding open the response
+   * that tells the carrier the message was received.
+   *
+   * The handler logs the keyword and the length for both transports, so this
+   * route does not log it again.
+   */
+  after(async () => {
+    try {
+      await handleInboundMessage({ from, body });
+    } catch (err) {
+      console.error("[sms:inbound] pipeline failed", {
+        error: err instanceof Error ? err.name : "unknown",
+      });
+    }
+  });
+
   return twiml();
 }
