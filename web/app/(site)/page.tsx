@@ -316,13 +316,22 @@ export default function HomePage() {
                 founding places now open — more SGV neighborhoods as each one is
                 ready
               </p>
-              {/* Straight into the Seed Tool. A visitor without an invite code
-                  lands on its gate, which explains itself and takes a code by
-                  hand — it replaced the Tally waitlist form. */}
-              <SiteButton href="/join" tone="gold" className="mt-6 w-full">
-                Join the founding network
-              </SiteButton>
-              <p className="mt-5 text-[0.9rem] leading-relaxed text-paper-soft">
+              {/* ⚠ The "Join the founding network" button was here, pointing at
+                  /join. Access became link-only on 4 Sep, so from this page that
+                  button led to /join, which redirected straight back here — a
+                  control that visibly does nothing, on the one screen a
+                  prospective contributor is deciding from.
+
+                  It is a sentence rather than a smaller button because there is
+                  no honest destination left: the way in is an invite somebody
+                  sends you, and a button cannot hand you one. The line below it
+                  already asked the reader to forward the page, which is now the
+                  actual next step rather than a footnote to a CTA. */}
+              <p className="mt-6 text-[0.95rem] leading-relaxed text-paper-soft">
+                Founding places are by invitation — the link is shared inside
+                parent groups, not published.
+              </p>
+              <p className="mt-4 text-[0.9rem] leading-relaxed text-paper-soft">
                 Know a parent everyone asks for recommendations?
                 <br />
                 Forward this page — that’s exactly who we’re looking for.

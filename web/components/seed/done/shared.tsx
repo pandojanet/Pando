@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { InlineAction } from "@/components/ui/TextAction";
 import { Panel } from "@/components/ui/Panel";
 import { loadSession } from "@/lib/storage";
 import type { SeedSession } from "@/lib/types";
@@ -53,10 +52,13 @@ export function isAnonymous(session: SeedSession | null): boolean {
 export function NoSession() {
   return (
     <Panel as="p" size="inset" className="mt-7 leading-relaxed text-muted text-help">
+      {/* Not a link any more: it used to point at /join, which since 4 Sep
+          redirects anybody arriving without a code — so the one instruction on
+          this panel led to the public site. The invite link is the thing they
+          have to find, and only they have it. */}
       We don&apos;t have a session on this phone — nothing was lost, but to be
-      counted as a founding parent,{" "}
-      <InlineAction href="/join">start from your invite link</InlineAction>
-      .
+      counted as a founding parent, open the invite link you were sent and start
+      from there.
     </Panel>
   );
 }

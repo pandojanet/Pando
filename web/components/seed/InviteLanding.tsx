@@ -19,7 +19,7 @@ import { Field } from "@/components/ui/Field";
 import { Consent } from "@/components/ui/Consent";
 import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { identifyArrival, track } from "@/lib/analytics";
-import { validateInvite, verifyStatus, type VerifyStatus } from "@/lib/api-client";
+import { verifyStatus, type VerifyStatus } from "@/lib/api-client";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -44,10 +44,10 @@ interface Props {
 
 export function InviteLanding({ invite, inviteCode, source }: Props) {
   const router = useRouter();
-  const [resolved, setResolved] = useState(invite);
-  const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
+  /* Not state any more, and that is the whole of what the removal cost here:
+     nothing in the browser re-resolves an invite now that the code screen is
+     gone, so there is nothing left to set. The server has already decided. */
+  const resolved = invite;
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -88,11 +88,16 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       invite_group: invite.group_option_value ?? null,
       source,
     });
-    track("seed_link_opened", { source, invite_valid: invite.valid });
-    track(invite.valid ? "seed_invite_valid" : "seed_invite_invalid", {
-      reason: invite.reason ?? null,
-    });
-  }, [invite.valid, invite.reason, invite.group_option_value, inviteCode, source]);
+    track("seed_link_opened", { source });
+    /* Always valid now: an invalid code is redirected to the public site before
+       this component renders, so `seed_invite_invalid` cannot fire from here and
+       the ternary that used to choose between them was a branch nothing could
+       reach. ⚠ The consequence, worth knowing rather than discovering from an
+       empty chart: **uninvited arrivals are no longer visible in PostHog at
+       all** — no client code runs for them. `invites.opens` is unaffected; it is
+       written server-side, before the redirect. */
+    track("seed_invite_valid", { reason: invite.reason ?? null });
+  }, [invite.reason, invite.group_option_value, inviteCode, source]);
 
   /* Whether a code can reach this parent at all. Left null on failure, which the
      branch in `begin` treats as "no" — the flow still works, held on the phone. */
@@ -120,35 +125,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     if (existing && existing.wants_founding === false) setAnonymous(true);
   }, []);
 
-  async function submitCode() {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    setChecking(true);
-    setCodeError(null);
-    try {
-      const result = await validateInvite(trimmed);
-      if (result.valid) {
-        setResolved(result);
-        /* A typed code is the same arrival by a slower route — re-registered, or
-           every event after it would be attributed to the empty link they
-           landed on. */
-        identifyArrival({
-          invite_code: trimmed,
-          invite_group: result.group_option_value ?? null,
-          source,
-        });
-        track("seed_invite_valid", { reason: "manual_entry" });
-      } else {
-        setCodeError("That code isn't one of ours. Check the message it came in?");
-        track("seed_invite_invalid", { reason: "manual_entry" });
-      }
-    } catch {
-      setCodeError("Couldn't check that just now. Try again in a moment.");
-    } finally {
-      setChecking(false);
-    }
-  }
-
   /**
    * Captures the identity, then decides whether the code comes now or later.
    *
@@ -169,9 +145,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                The server re-resolves it from this code on every write, so a
                client copy would only be a second version of the same fact — and
                the one the browser could edit. */
-            invite_code: resolved.valid
-              ? (inviteCode ?? (code.trim() || null))
-              : null,
+            invite_code: resolved.valid ? inviteCode : null,
             market_id: resolved.market_id,
             source,
           });
@@ -228,73 +202,30 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     setAlreadySaved(false);
   }
 
-  if (!resolved.valid) {
-    return (
-      <Screen>
-        <ScreenHeader left={<Wordmark />} />
-        <ScreenBody>
-          <Eyebrow>Invite needed</Eyebrow>
-          <h1 className="mt-3 font-display text-[1.95rem] font-extrabold">
-            This link needs its code.
-          </h1>
-          <p className="mt-4 text-[16.5px] leading-relaxed text-ink-soft">
-            Pando&apos;s founding tool is shared privately inside parent groups,
-            not published. Paste the code from the message you got — or scan the
-            QR again.
-          </p>
-
-          {/* The error rides on the field rather than under it as a bare line:
-              that gets it `aria-invalid` and an `aria-describedby` link, so it
-              is read when focus lands. As a loose `<p>` it had no role at all —
-              on the one screen where somebody has just typed something wrong. */}
-          <Field
-            id="invite-code"
-            label="Invite code"
-            className="mt-8"
-            value={code}
-            error={codeError ?? undefined}
-            onChange={(e) => {
-              setCode(e.target.value);
-              setCodeError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void submitCode();
-            }}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            enterKeyHint="go"
-            placeholder="sgv-founding"
-          />
-
-          <Panel as="p" size="inset" className="mt-8 leading-relaxed text-muted text-help">
-            Got here by accident? Pando is a text line for San Gabriel Valley
-            parents, launching this fall.{" "}
-            {/* Was a bare `<Link>` at ~22px. `InlineAction` is `-my-1 py-1`,
-                which WCAG 2.5.8 exempts from 44px as an inline target and
-                which takes it to 31.6px. The gold underline rides through:
-                it is the site's highlighter idiom and does not conflict. */}
-            <InlineAction href="/" className="decoration-gold decoration-2">
-              Read the story
-            </InlineAction>
-            .
-          </Panel>
-        </ScreenBody>
-        <ScreenDock stickyOnDesktop>
-          <Button
-            full
-            onClick={() => void submitCode()}
-            disabled={checking || code.trim().length === 0}
-          >
-            {checking ? "Checking…" : "Continue"}
-          </Button>
-          <p className="py-3 text-center text-[12.5px] text-muted">
-            No app. No account. No password.
-          </p>
-        </ScreenDock>
-      </Screen>
-    );
-  }
+  /**
+   * ⚠ **The invite-code screen is gone** — the client's call, 4 Sep — and it is a
+   * change to who can reach this tool, not to how a screen looks.
+   *
+   * `/join` used to branch here on `!resolved.valid` and *ask* for a code: its
+   * own screen, with a field, a "Checking…" button and a manual-entry analytics
+   * path. **The gate itself did not go with it.** It moved one layer up and got
+   * stricter: `app/(seed)/join/page.tsx` now redirects an arrival with no code,
+   * a retired one or an unknown one to the public site, so an uninvited visitor
+   * never reaches this component at all. Access is by link.
+   *
+   * Why the screen was the wrong answer rather than merely an extra step: it was
+   * the one place this address was useful to somebody who had *not* been invited
+   * — it confirmed they had found the right door and only lacked the key — while
+   * 1.1's rule is that the founding tool is "shared privately inside parent
+   * groups, not published".
+   *
+   * **What is unchanged.** The gate is still *soft* everywhere below this point:
+   * nothing authenticates anybody, `invite_code` may still be null on a session,
+   * and the write routes still accept one — a link forwarded last week must not
+   * become a dead end mid-flow (12 Aug). Attribution is unchanged too: a valid
+   * `?i=` still lands on `people.invite_id`, still segments PostHog, still counts
+   * an open.
+   */
 
 
   return (

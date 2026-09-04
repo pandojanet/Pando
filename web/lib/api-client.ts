@@ -1,6 +1,6 @@
 "use client";
 
-import type { InviteResult, Option, ProfilePayload } from "./types";
+import type { Option, ProfilePayload } from "./types";
 
 /**
  * The browser only ever talks to our own route handlers. They do the work
@@ -35,10 +35,6 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     throw new ApiError(detail || `Request failed (${res.status})`, res.status);
   }
   return (await res.json()) as T;
-}
-
-export function validateInvite(code: string | null): Promise<InviteResult> {
-  return postJson<InviteResult>("/api/seed/invite", { code });
 }
 
 /* ── Phone verification (the gate everything else waits behind) ────────── */

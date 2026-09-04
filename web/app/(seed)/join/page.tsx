@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { InviteLanding } from "@/components/seed/InviteLanding";
 import { recordInviteOpen, validateInviteCode } from "@/lib/server/invite";
 
@@ -35,6 +36,31 @@ export default async function Page({
    * cold). `recordInviteOpen` swallows its own failures for the same reason.
    */
   void recordInviteOpen(rawCode);
+
+  /**
+   * No valid code, no screen — the client's call, 4 Sep: **access is by link
+   * only**.
+   *
+   * `/join` used to answer an arrival without a code by *asking* for one: its own
+   * screen, with a field, a "Checking…" button and a manual-entry analytics path.
+   * That screen is gone. It was the one place this address was useful to somebody
+   * who had not been invited — it told them they had found the right door and
+   * only lacked the key — while 1.1's rule is that the founding tool is "shared
+   * privately inside parent groups, not published".
+   *
+   * So an arrival with no code, a retired one or an unknown one is sent to the
+   * public site, which is what Pando has to say to somebody not in a parent group
+   * yet. **Server-side**, so the seed flow never renders and there is no flash of
+   * a form nobody may use.
+   *
+   * Two things this deliberately does not change. The gate stays *soft* at every
+   * other layer — nothing here authenticates anybody, and the write routes still
+   * accept a session whose `invite_code` is null, because a link forwarded last
+   * week must not become a dead end mid-flow (12 Aug). And it cannot loop:
+   * `next.config.ts` rewrites `/` → `/join` only when the request actually
+   * carries `?i=`, and this redirect carries none.
+   */
+  if (!invite.valid) redirect("/");
 
   return <InviteLanding invite={invite} inviteCode={rawCode} source={source} />;
 }

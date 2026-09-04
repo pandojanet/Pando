@@ -44,7 +44,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/done`                  | 1.7 screen 1 of 3 — badge, thank-you, what they shared. Tells only.          |
 | `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
 | `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
-| `POST /api/seed/invite`  | Validates a hand-typed code.                                                |
+| `POST /api/seed/invite`  | Validates a code. **No caller in the app since 4 Sep** — kept for `test:e2e`. |
 | `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. Since 3 Sep the `children` rows are **derived here** from `answers.child_ages` and the optional `answers.child_months` (age id → 1–12) rather than read from the body — a month outside 1–12, or one against a child nobody tapped, is dropped instead of aborting the write on a CHECK. |
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
