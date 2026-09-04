@@ -85,14 +85,33 @@ export async function proxy(request: NextRequest) {
  * An invalid code neither issues a marker nor clears one: somebody mid-flow who
  * reopens a stale link with a since-retired code is a parent, not an intruder,
  * and their own screens keep working.
+ *
+ * ⚠ **And `/join` itself is one of their screens.** The first version bounced
+ * *every* codeless arrival, which broke a control every parent can reach in two
+ * taps: `ProfileFlow` sends Back from the first question to `/join`, with no
+ * `?i=` on it, so tapping Back threw a parent who was mid-questionnaire out onto
+ * the marketing site with no way back except the original link. Nothing was
+ * lost — the session is autosaved — but the app appeared to eject them.
+ *
+ * So the marker is consulted here too, and that is the gate's own question
+ * answered rather than a hole in it: a browser carrying `pando_invited` has
+ * already arrived through a valid link, which is the whole thing the code is
+ * asked to prove. They get the landing screen, and their session resumes from
+ * it. Attribution is unaffected — a session begun without a code has
+ * `invite_code: null` and always has.
  */
 async function seedGate(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
+  const marker = Boolean(request.cookies.get(INVITE_COOKIE));
 
   if (pathname === "/join") {
     const code = searchParams.get("i") ?? searchParams.get("invite");
     const invite = await validateInviteCode(code);
-    if (!invite.valid) return NextResponse.redirect(new URL("/", request.url));
+    if (!invite.valid) {
+      return marker
+        ? NextResponse.next()
+        : NextResponse.redirect(new URL("/", request.url));
+    }
 
     const response = NextResponse.next();
     response.cookies.set(INVITE_COOKIE, "1", {
@@ -105,7 +124,7 @@ async function seedGate(request: NextRequest) {
     return response;
   }
 
-  if (isGatedSeedPath(pathname) && !request.cookies.get(INVITE_COOKIE)) {
+  if (isGatedSeedPath(pathname) && !marker) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

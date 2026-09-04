@@ -65,20 +65,22 @@ export async function openCapture(personId: string): Promise<OpenCapture | null>
  * `ensureInboundPerson`, and running that first would mean creating a person in
  * order to decide whether a stranger's PASS is a PASS.
  */
-export async function hasOpenCapture(phone: string): Promise<boolean> {
+export async function openCaptureStep(phone: string): Promise<CaptureStep | null> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      select 1
+      select c.step
         from sms_captures c
         join people p on p.id = c.person_id
        where p.phone = ${phone} and c.status = 'open'
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;
-    return rows.length > 0;
+    const step = rows[0]?.step;
+    return typeof step === "string" ? (step as CaptureStep) : null;
   });
-  /* Unreachable database is "no": the capture branch below cannot run either,
-     and treating it as a PASS at least keeps the effortless exit working. */
-  return result.persisted ? (result.data ?? false) : false;
+  /* Unreachable database is "no capture": the capture branch below cannot run
+     either, so treating the word as a PASS at least keeps the effortless exit
+     working rather than dropping the message on the floor. */
+  return result.persisted ? (result.data ?? null) : null;
 }
 
 /**

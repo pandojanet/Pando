@@ -180,5 +180,34 @@ ok(
 );
 ok("STOP and HELP last", /Reply STOP to opt out, HELP for help\.$/.test(saved));
 
+console.log("\n=== SKIP belongs to the capture only where it is accepted ===");
+{
+  /* `SKIP` is a PASS keyword *and* the word the last capture question asks
+     for by name, and the keyword block runs first — so the word reached
+     `recordPass` and the card five answers had gone into was never written.
+     The pipeline diverts it to the capture, and these two rules are what stop
+     that fix from causing the opposite fault. */
+  ok(
+    "the last question accepts it",
+    c.readsAsSkip("detail", "SKIP") && c.readsAsSkip("detail", "skip."),
+  );
+  ok(
+    "the name question does not",
+    !c.readsAsSkip("name", "SKIP"),
+    "at `name` it would be stored as the record's name",
+  );
+  ok("nor does a closed step", !c.readsAsSkip("kind", "SKIP"));
+  ok(
+    "PASS is never a capture skip",
+    !c.readsAsSkip("detail", "PASS"),
+    "so a mid-capture PASS still reaches the Network Ask it answers",
+  );
+  ok(
+    "and the cheap pre-check agrees",
+    c.isSkipWord("SKIP") && c.isSkipWord("none") && !c.isSkipWord("PASS"),
+    "it is what keeps an ordinary PASS from querying the database",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

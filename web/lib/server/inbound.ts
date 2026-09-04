@@ -28,13 +28,15 @@ import {
   caregiverRedirectSms,
   isCaptureCancel,
   isCaptureStart,
+  isSkipWord,
+  readsAsSkip,
   mentionsCaregiver,
   readAnswer,
 } from "@/lib/capture";
 import {
   cancelCapture,
-  hasOpenCapture,
   openCapture,
+  openCaptureStep,
   saveAnswer,
   saveCapturedCard,
   startCapture,
@@ -131,7 +133,18 @@ export async function handleInboundMessage(input: {
     return;
   }
 
-  if (keyword === "pass" && !(await hasOpenCapture(from))) {
+  /**
+   * Does this message belong to a capture rather than to somebody's Network Ask?
+   *
+   * Only `SKIP` can be both, so the phone is not queried for an ordinary PASS.
+   * And the step has to accept a skip: at `name` the capture would store "SKIP"
+   * as the record's name, which is a worse outcome than the PASS this diverts.
+   */
+  const step =
+    keyword === "pass" && isSkipWord(body) ? await openCaptureStep(from) : null;
+  const skipBelongsToCapture = step !== null && readsAsSkip(step, body);
+
+  if (keyword === "pass" && !skipBelongsToCapture) {
     /**
      * Strategy §6 — the effortless exit.
      *

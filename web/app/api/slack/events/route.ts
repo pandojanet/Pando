@@ -136,8 +136,9 @@ export async function POST(request: Request) {
   /* `readSlackMessage` hands back the number as written; whether it *is* one is
      `toE164`'s answer, and it stays out of that module so the module stays
      importable by a plain-node test. */
-  const addressedPhone = resolved || !named ? null : toE164(named.raw);
-  const addressed = addressedPhone ? { phone: addressedPhone, body: named!.body } : null;
+  const namedPhone = named ? toE164(named.raw) : null;
+  const addressed =
+    !resolved && namedPhone ? { phone: namedPhone, body: named!.body } : null;
 
   const from = resolved?.phone ?? addressed?.phone ?? null;
 
@@ -150,11 +151,13 @@ export async function POST(request: Request) {
    * from `shares.name`, which is the one field published to other parents. It
    * got no further only because that capture never completed.
    *
-   * Nothing a real parent texts begins with seven-to-twenty digits and a colon,
-   * so stripping it costs nothing and the transport stops depending on the
-   * tester remembering which kind of message they are writing.
+   * It is stripped only when the prefix is **actually a phone number**, not
+   * merely digit-shaped. `addressedNumber` accepts seven to twenty digit-ish
+   * characters before a colon, so a free-text capture answer like "1234567: that
+   * is the gate code" would otherwise lose its first seven characters silently —
+   * the same class of quiet loss this fix exists for, reintroduced by the fix.
    */
-  const body = resolved ? (named?.body ?? text) : (addressed?.body ?? "");
+  const body = resolved ? (namedPhone ? named!.body : text) : (addressed?.body ?? "");
 
   if (!from || body.trim() === "") {
     /* Counts and enums only. "Somebody said something in the channel" is not an

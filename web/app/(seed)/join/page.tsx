@@ -1,4 +1,6 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { INVITE_COOKIE } from "@/lib/seed-gate";
 import { InviteLanding } from "@/components/seed/InviteLanding";
 import { recordInviteOpen, validateInviteCode } from "@/lib/server/invite";
 
@@ -60,7 +62,12 @@ export default async function Page({
    * `next.config.ts` rewrites `/` → `/join` only when the request actually
    * carries `?i=`, and this redirect carries none.
    */
-  if (!invite.valid) redirect("/");
+  /* The marker is read here as well as in the proxy, for the reason the proxy's
+     own header gives: a browser carrying it arrived through a valid link once,
+     and `/join` is where its session resumes — `ProfileFlow`'s Back button on
+     the first question points straight here, with no code on it. */
+  const invited = (await cookies()).has(INVITE_COOKIE);
+  if (!invite.valid && !invited) redirect("/");
 
   return <InviteLanding invite={invite} inviteCode={rawCode} source={source} />;
 }

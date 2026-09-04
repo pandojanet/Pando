@@ -89,15 +89,21 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       source,
     });
     track("seed_link_opened", { source });
-    /* Always valid now: an invalid code is redirected to the public site before
-       this component renders, so `seed_invite_invalid` cannot fire from here and
-       the ternary that used to choose between them was a branch nothing could
-       reach. ⚠ The consequence, worth knowing rather than discovering from an
-       empty chart: **uninvited arrivals are no longer visible in PostHog at
-       all** — no client code runs for them. `invites.opens` is unaffected; it is
-       written server-side, before the redirect. */
-    track("seed_invite_valid", { reason: invite.reason ?? null });
-  }, [invite.reason, invite.group_option_value, inviteCode, source]);
+    /* Reaching this component means one of two things: a valid code, or the
+       marker from an earlier valid arrival — a Back tap from the first profile
+       question, a resumed session, a link whose code has since been retired. So
+       the distinction is still real and still worth recording; what changed is
+       **who is left in the invalid bucket**. It is no longer strangers, because
+       an arrival with neither is redirected before any client code runs, so
+       ⚠ uninvited arrivals are invisible in PostHog and `invites.opens` is the
+       only remaining signal for them — and that counter no longer moves for a
+       *retired* code either, since the proxy turns those away before the page
+       renders. `seed_invite_invalid` now means "somebody already invited arrived
+       without a usable code", which is a much smaller and more useful set. */
+    track(invite.valid ? "seed_invite_valid" : "seed_invite_invalid", {
+      reason: invite.reason ?? null,
+    });
+  }, [invite.valid, invite.reason, invite.group_option_value, inviteCode, source]);
 
   /* Whether a code can reach this parent at all. Left null on failure, which the
      branch in `begin` treats as "no" — the flow still works, held on the phone. */

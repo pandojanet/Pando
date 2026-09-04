@@ -204,6 +204,24 @@ export type CaptureAnswer =
   | { ok: true; skipped: true }
   | { ok: false };
 
+/**
+ * Would the capture read this message as *skip this question*?
+ *
+ * Both halves matter, and the step is the half that is easy to drop. `SKIP` is
+ * also a PASS keyword, so `handleInboundMessage` has to decide which of the two
+ * a mid-capture message means — and it may only hand it to the capture when the
+ * capture would actually treat it as a decline. At a step that is **not**
+ * skippable the word is read as an ordinary answer: on `name`, "SKIP" would
+ * become the record's name.
+ */
+export function isSkipWord(body: string): boolean {
+  return SKIP_WORDS.includes(body.trim().toUpperCase().replace(/[.!,]+$/, ""));
+}
+
+export function readsAsSkip(step: CaptureStep, body: string): boolean {
+  return Boolean(CAPTURE_QUESTIONS[step].skippable) && isSkipWord(body);
+}
+
 export function readAnswer(step: CaptureStep, body: string): CaptureAnswer {
   const question = CAPTURE_QUESTIONS[step];
   const trimmed = body.trim();
