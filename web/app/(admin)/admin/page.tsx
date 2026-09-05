@@ -69,14 +69,12 @@ export default function AdminOverviewPage() {
     ? [
         {
           label: "need you today — a parent is waiting",
-          where: "Flags",
           n: o.quality.escalations,
           href: "/admin/flags",
           urgent: true,
         },
         {
           label: "other flags to read",
-          where: "Flags",
           n: readQueue,
           href: "/admin/flags",
           urgent: false,
@@ -94,49 +92,42 @@ export default function AdminOverviewPage() {
          */
         {
           label: "questions that need a person",
-          where: "What parents asked for",
           n: o.demand.high_stakes + o.demand.named_allegation,
           href: "/admin/demand",
           urgent: true,
         },
         {
           label: "other questions parents asked",
-          where: "What parents asked for",
           n: o.demand.ordinary + o.demand.peer_support,
           href: "/admin/demand",
           urgent: false,
         },
         {
           label: "recommendations to look at",
-          where: "Contributions",
           n: o.quality.pending_contributions,
           href: "/admin/activities",
           urgent: false,
         },
         {
           label: "contributors to confirm",
-          where: "Founding queue",
           n: o.founding.pending,
           href: "/admin/founding",
           urgent: false,
         },
         {
           label: "caregivers held for you",
-          where: "Caregivers",
           n: o.quality.review_holds,
           href: "/admin/caregivers",
           urgent: false,
         },
         {
           label: "caregiver sign-ups to match",
-          where: "Caregiver sign-ups",
           n: o.quality.pending_claims,
           href: "/admin/claims",
           urgent: false,
         },
         {
           label: "new names to approve",
-          where: "Names & places",
           n: o.quality.pending_options,
           href: "/admin/options",
           urgent: false,
@@ -193,11 +184,18 @@ export default function AdminOverviewPage() {
                * alignment a worklist has to get right, because scanning down
                * the labels *is* how it is used.
                *
-               * **Each row says where it goes.** An admin who has not yet
-               * learned this nav could not tell that "caregivers held for you"
-               * and "caregiver sign-ups to match" are two different pages. The
-               * destination on the right is also what makes the row read as a
-               * link rather than as a table cell.
+               * **The destination is an arrow, not a word.** It used to be the
+               * nav label spelled out on every row — "Flags", "What parents
+               * asked for", "Founding queue" — which put a second column of
+               * repeated words beside the labels a reader is actually scanning,
+               * two inches from the sidebar saying the same thing. Nine of them
+               * on the one screen whose job is to be read at a glance.
+               *
+               * The argument for spelling it out was that a new admin could not
+               * tell "caregivers held for you" from "caregiver sign-ups to
+               * match". Those are two distinct sentences and each is a link; the
+               * arrow keeps the row reading as one, and the page it opens is one
+               * click rather than a word repeated nine times.
                *
                * **And the urgent row is separated, not just coloured.** Red text
                * alone put it in the same rhythm as the rest; a rule under it
@@ -235,8 +233,11 @@ export default function AdminOverviewPage() {
                       >
                         {t.label}
                       </span>
-                      <span className="shrink-0 whitespace-nowrap text-[12.5px] text-muted group-hover:text-green-deep">
-                        {t.where} <span aria-hidden="true">→</span>
+                      <span
+                        aria-hidden="true"
+                        className="shrink-0 text-[12.5px] text-muted group-hover:text-green-deep"
+                      >
+                        →
                       </span>
                     </Link>
                   </li>
@@ -245,6 +246,39 @@ export default function AdminOverviewPage() {
             )}
           </Card>
 
+          {/**
+           * Everything below this line is **statistics**, and it is folded away.
+           *
+           * The page's own rule, written 19 Aug: *"an admin arrives asking 'is
+           * there anything for me', so the overview answers that and nothing
+           * else"* — which is why the grid of every count the system can produce
+           * was removed then. It grew back, one section at a time, and no single
+           * addition looked wrong: on 4 Sep the page was ten sections tall, of
+           * which nine were numbers. Folded, it is **900 pixels** at 1440x900 —
+           * one screen, the worklist and nothing else.
+           *
+           * So the worklist keeps the top of the page to itself and the numbers
+           * are one click away. Deleting them was the other option and is not
+           * ours to take: only the client knows whether she reads the funnel.
+           *
+           * `<details>` rather than state, for the same reasons `Explainer` uses
+           * it — it works before hydration, it is reachable by keyboard and by
+           * the browser's own find-in-page, and it needs nothing remembered.
+           * Closed on every visit on purpose: a fold that remembers being open
+           * is a page that is long again tomorrow.
+           */}
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-bark bg-card px-4 py-3 text-[14px] font-medium text-ink-soft hover:border-green/60 hover:text-green-deep">
+              <span
+                aria-hidden="true"
+                className="text-[12px] text-muted transition-transform group-open:rotate-90"
+              >
+                ▶
+              </span>
+              Show the numbers
+            </summary>
+
+            <div className="mt-4 space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
               label="Contributors"
@@ -397,6 +431,8 @@ export default function AdminOverviewPage() {
               )}
             </Card>
           )}
+            </div>
+          </details>
         </div>
       ) : null}
     </>

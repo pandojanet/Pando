@@ -19,6 +19,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Dialog, Menu, MenuItem, MenuSeparator } from "@/components/admin/kit";
 import {
   Fact,
@@ -121,6 +122,9 @@ export default function CaregiversPage() {
     () => (caregivers.rows ?? []).filter((r) => !r.is_test),
     [caregivers.rows],
   );
+  /* Nomination cards are tall, so thirty of them is already a long page.
+     Inert at today's nineteen. */
+  const { shown, hidden, revealAll } = useReveal(rows);
 
   async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
     setBusy(true);
@@ -171,7 +175,7 @@ export default function CaregiversPage() {
             <Empty title="No nominations yet" />
           ) : (
             <RecordList>
-              {rows.map((row) => {
+              {shown.map((row) => {
                 const answerable = row.consent_status === "consented" && row.active;
                 const open = openConsent === row.id;
                 /**
@@ -642,6 +646,7 @@ export default function CaregiversPage() {
               })}
             </RecordList>
           )}
+          <RevealMore n={hidden} onClick={revealAll} />
         </Card>
 
         <Card
@@ -651,10 +656,7 @@ export default function CaregiversPage() {
           }
         >
           {(duplicates.rows ?? []).length === 0 ? (
-            <Empty
-              title="No duplicate candidates"
-              body="Name and initial aren't an identifier, so candidates are only suggested — a phone number at consent is the real key."
-            />
+            <Empty title="No duplicate candidates" />
           ) : (
             <ul className="divide-y divide-bark/50">
               {(duplicates.rows ?? []).map((group) => (

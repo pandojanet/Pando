@@ -17,6 +17,7 @@ import {
   Stat,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
@@ -107,6 +108,10 @@ export default function PaymentsPage() {
 
   const stripe = data?.stripe;
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(visible);
+
   return (
     <>
       <PageHead
@@ -181,7 +186,6 @@ export default function PaymentsPage() {
           <Stat
             label="Refunded"
             value={formatCents(data.totals.refunded_cents)}
-            hint="Already returned"
           />
         </div>
       )}
@@ -247,7 +251,7 @@ export default function PaymentsPage() {
           />
         ) : (
           <RecordList>
-            {visible.map((row) => {
+            {shown.map((row) => {
               const payment = PAYMENT_STATUS[row.payment_status];
               const refund = assessRefund({
                 payment_status: row.payment_status as never,
@@ -422,6 +426,7 @@ export default function PaymentsPage() {
             })}
           </RecordList>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
     </>
   );

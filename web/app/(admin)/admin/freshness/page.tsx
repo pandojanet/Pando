@@ -17,6 +17,7 @@ import {
   Toolbar,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import {
   Fact,
   FactGrid,
@@ -120,11 +121,15 @@ export default function FreshnessPage() {
     );
   }
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(filtered);
+
   return (
     <>
       <PageHead
         title="Withdrawn recommendations"
-        intro="A contributor said one of these is no longer worth recommending. Retire it, or keep it marked as out of date."
+        intro="A contributor said one of these is no longer worth recommending. Retire it, or keep it marked out of date."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -204,7 +209,7 @@ export default function FreshnessPage() {
              different appearances depending on which page you were on. */
           <Card>
             <RecordList>
-          {filtered.map((row) => (
+          {shown.map((row) => (
             <RecordCard
               key={row.share_id}
               title={row.name}
@@ -273,6 +278,7 @@ export default function FreshnessPage() {
             </RecordCard>
           ))}
             </RecordList>
+            <RevealMore n={hidden} onClick={revealAll} />
           </Card>
         )}
       </div>

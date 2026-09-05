@@ -278,7 +278,7 @@ export default function BlastResponsesPage() {
     <>
       <PageHead
         title="Network answers"
-        intro="Replies to Network Asks. Rating one feeds their credits; approving one puts it in front of the contributions queue."
+        intro="Replies to Network Asks. Rating feeds their credits; approving sends it to the contributions queue."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

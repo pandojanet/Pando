@@ -120,7 +120,7 @@ export default function InvitesPage() {
     <>
       <PageHead
         title="Invites"
-        intro="One link per group, so you can see which groups actually brought people in. A link is never tied to one person."
+        intro="One link per group. A link is never tied to one person."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -149,7 +149,6 @@ export default function InvitesPage() {
         <div className="grid gap-3 px-4 py-3 md:grid-cols-2">
           <Field
             label="Group name"
-            hint="How you'll recognise this group in the queues and on a contributor's record."
           >
             <input
               className={inputClass}

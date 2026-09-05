@@ -16,6 +16,7 @@ import {
   SampleBanner,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Spec, SpecList } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { CaregiverClaimRow } from "@/lib/admin/types";
@@ -140,11 +141,15 @@ export default function ClaimsPage() {
     }
   }
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(pending);
+
   return (
     <>
       <PageHead
         title="Caregiver sign-ups"
-        intro="Caregivers who signed themselves up. Say which family put each one forward — Pando never guesses, because two people can share a name."
+        intro="Caregivers who signed themselves up. Say which family put each one forward."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -168,7 +173,7 @@ export default function ClaimsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {pending.map((claim) => (
+          {shown.map((claim) => (
             <Card
               key={claim.id}
               title={`${claim.first_name} ${claim.last_initial ?? ""}`.trim()}
@@ -302,6 +307,7 @@ export default function ClaimsPage() {
                   />
                 </div>
               </div>
+              <RevealMore n={hidden} onClick={revealAll} />
             </Card>
           ))}
 

@@ -18,6 +18,7 @@ import {
   Th,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { PendingOptionRow } from "@/lib/admin/types";
@@ -58,11 +59,15 @@ export default function PendingOptionsPage() {
     }
   }
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(pending);
+
   return (
     <>
       <PageHead
         title="Names & places"
-        intro="Things parents typed because they weren't on the list. Add the real ones so the next parent can tap them."
+        intro="Things parents typed because they weren't on the list. Add the real ones."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -94,7 +99,7 @@ export default function PendingOptionsPage() {
               </tr>
             </thead>
             <tbody>
-              {pending.map((row) => (
+              {shown.map((row) => (
                 <tr key={row.id}>
                   <Td>
                     {/* The badge here said "asked for 3×" and the column three
@@ -152,6 +157,7 @@ export default function PendingOptionsPage() {
             </tbody>
           </TableWrap>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
 
       <p className="mt-4 text-[12.5px] leading-relaxed text-muted">

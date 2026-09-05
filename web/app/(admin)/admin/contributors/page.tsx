@@ -21,6 +21,7 @@ import {
   when,
   yearList,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint, SegmentedTabs, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { Standing } from "@/components/admin/Standing";
@@ -93,11 +94,15 @@ export default function ContributorsPage() {
 
   const testCount = all.filter((r) => r.is_test).length;
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(filtered);
+
   return (
     <>
       <PageHead
         title="Contributors"
-        intro="Everyone who filled in a profile. Open one to see what they shared."
+        intro="Everyone who filled in a profile."
       />
 
       {/**
@@ -238,7 +243,7 @@ export default function ContributorsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
+              {shown.map((row) => (
                 <tr key={row.id} className="hover:bg-paper/70">
                   <Td>
                     <Link
@@ -324,6 +329,7 @@ export default function ContributorsPage() {
             </tbody>
           </TableWrap>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
         </>
       )}

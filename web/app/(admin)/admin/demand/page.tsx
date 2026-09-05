@@ -17,6 +17,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
@@ -70,6 +71,10 @@ export default function DemandPage() {
     if (filter === "open") return list.filter((r) => r.status === "open");
     return list;
   }, [all, filter]);
+
+  /* Counted off the filtered list, so the button follows the tab a reader is
+     on. Inert at today's 27 questions and in place before the pilot fills it. */
+  const { shown, hidden, revealAll } = useReveal(visible);
 
   /**
    * The counts, and each is computed with **the same predicate as the tab it
@@ -226,7 +231,7 @@ export default function DemandPage() {
           />
         ) : (
           <RecordList>
-            {visible.map((row) => {
+            {shown.map((row) => {
               const kind = DEMAND_SENSITIVITY[row.sensitivity];
               const needsNote =
                 row.sensitivity === "high_stakes" ||
@@ -389,6 +394,7 @@ export default function DemandPage() {
             })}
           </RecordList>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
 
       {(byArea.rows.length > 0 || byArea.unknown > 0) && (

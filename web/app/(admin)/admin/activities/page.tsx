@@ -20,6 +20,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
@@ -127,6 +128,10 @@ export default function ContributionsPage() {
     return list;
   }, [real, filter]);
 
+  /* Off the filtered list, so the number the button offers is the number the
+     current tab is hiding. Inert until a tab holds more than thirty. */
+  const { shown, hidden, revealAll } = useReveal(visible);
+
   /**
    * The counts live on the filters, so "is there anything in the other views"
    * is answerable without clicking through all six. The nav already does this
@@ -209,7 +214,7 @@ export default function ContributionsPage() {
           />
         ) : (
           <RecordList>
-            {visible.map((row) => {
+            {shown.map((row) => {
               const open = editing === row.id;
               const missing = missingForFounding(row);
               return (
@@ -237,7 +242,7 @@ export default function ContributionsPage() {
                       </Badge>
                       {/* R2 — the label reads the source, never who typed it. */}
                       {row.firsthand ? (
-                        <Badge tone="green" hint="This family used it themselves.">
+                        <Badge tone="green">
                           They went themselves
                         </Badge>
                       ) : (
@@ -607,6 +612,7 @@ export default function ContributionsPage() {
             })}
           </RecordList>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
     </>
   );

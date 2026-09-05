@@ -14,6 +14,7 @@ import {
   Toolbar,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
@@ -102,6 +103,10 @@ export default function ImpactPage() {
       ).length,
     [filtered],
   );
+
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(filtered);
 
   return (
     <>
@@ -199,10 +204,11 @@ export default function ImpactPage() {
                 depending only on which page you happened to be on. */}
             <Card>
               <RecordList>
-                {filtered.map((row) => (
+                {shown.map((row) => (
                   <ImpactCard key={row.answer_id} row={row} />
                 ))}
               </RecordList>
+              <RevealMore n={hidden} onClick={revealAll} />
             </Card>
           </>
         )}

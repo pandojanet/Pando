@@ -13,6 +13,7 @@ import {
   Th,
   whenExact,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { useAdminRows } from "@/lib/admin/client";
 import {
   AUDIT_ACTION,
@@ -41,12 +42,22 @@ export default function AuditPage() {
     useAdminRows<AuditRow[]>("audit");
 
   const entries = rows ?? [];
+  /**
+   * 500 rows in one table is **31,726 pixels** — about thirty-five screens,
+   * measured 4 Sep at 1440x900 and by some distance the tallest page here. The
+   * first thirty are 2,534 of them.
+   *
+   * ⚠ Not the paging the note below declines, and the difference matters: these
+   * rows are already fetched and already in memory. Nothing refetches, no offset
+   * exists, and the count in the button is the array's own length.
+   */
+  const { shown, hidden, revealAll } = useReveal(entries, 30);
 
   return (
     <>
       <PageHead
         title="Audit log"
-        intro="Who did what, and when. Written by itself — nobody can turn it off."
+        intro="Who did what, and when."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -74,7 +85,7 @@ export default function AuditPage() {
               </tr>
             </thead>
             <tbody>
-              {entries.map((row) => (
+              {shown.map((row) => (
                 <tr key={row.id}>
                   <Td className="whitespace-nowrap text-[13px] text-muted">
                     {whenExact(row.at)}
@@ -104,6 +115,7 @@ export default function AuditPage() {
             </tbody>
           </TableWrap>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
 
       {/* Only once there is something to footnote — the same rule the queue

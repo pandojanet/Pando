@@ -18,6 +18,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
@@ -169,6 +170,10 @@ export default function BlastsPage() {
     }
   }
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(visible);
+
   return (
     <>
       <PageHead
@@ -238,7 +243,7 @@ export default function BlastsPage() {
           />
         ) : (
           <RecordList>
-            {visible.map((row) => {
+            {shown.map((row) => {
               const owed = owedBy.get(row.id);
               const status = BLAST_STATUS[row.status];
               const payment = PAYMENT_STATUS[row.payment_status];
@@ -464,6 +469,7 @@ export default function BlastsPage() {
             })}
           </RecordList>
         )}
+        <RevealMore n={hidden} onClick={revealAll} />
       </Card>
     </>
   );

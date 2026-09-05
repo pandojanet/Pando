@@ -110,7 +110,7 @@ export default function MatchingPage() {
     <>
       <PageHead
         title="Who Pando would ask"
-        intro="Pick a parent and see who Pando would go to with their question, and why each of them scored where they did. Nothing is sent from this page."
+        intro="Pick a parent and see who Pando would ask, and why. Nothing is sent from this page."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

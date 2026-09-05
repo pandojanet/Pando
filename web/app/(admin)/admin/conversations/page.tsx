@@ -18,6 +18,7 @@ import {
   Toolbar,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
 import { slugLabel } from "@/components/admin/ui";
@@ -125,6 +126,10 @@ export default function ConversationsPage() {
     el.focus();
   }, [open]);
 
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(filtered);
+
   return (
     <>
       <PageHead
@@ -230,7 +235,7 @@ export default function ConversationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
+                {shown.map((row) => (
                   <ConversationTableRow
                     key={row.person_id}
                     row={row}
@@ -240,6 +245,7 @@ export default function ConversationsPage() {
               </tbody>
             </TableWrap>
           )}
+          <RevealMore n={hidden} onClick={revealAll} />
         </Card>
       </div>
 

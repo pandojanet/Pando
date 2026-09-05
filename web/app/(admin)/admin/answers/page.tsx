@@ -15,6 +15,7 @@ import {
   ResultNote,
   when,
 } from "@/components/admin/ui";
+import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { holdReasonLabel, sentence } from "@/lib/admin/labels";
@@ -267,6 +268,9 @@ export default function AnswersPage() {
 
   const all = rows ?? [];
   const waiting = all.filter((r) => r.status === "pending_review");
+  /* Every queue reveals the same way: thirty rows, then a button saying how
+     many are left. Inert until the list is long enough to need it. */
+  const { shown, hidden, revealAll } = useReveal(waiting);
   const approved = all.filter((r) => r.status === "approved");
   const done = all.filter((r) => r.status === "sent" || r.status === "rejected");
 
@@ -311,7 +315,7 @@ export default function AnswersPage() {
             />
           ) : (
             <ul className="divide-y divide-bark/50">
-              {waiting.map((r) => (
+              {shown.map((r) => (
                 <AnswerCard
                   key={r.id}
                   row={r}
@@ -323,6 +327,7 @@ export default function AnswersPage() {
               ))}
             </ul>
           )}
+          <RevealMore n={hidden} onClick={revealAll} />
         </Card>
 
         {approved.length > 0 && (
