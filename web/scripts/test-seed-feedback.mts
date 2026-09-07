@@ -605,5 +605,64 @@ ok(
 );
 ok("and the ages question stays the required one", schoolQ !== undefined && questionById("child_ages")?.required === true);
 
+/* ── the tenure screen ─────────────────────────────────────────────────────── */
+
+/**
+ * The client's report (7 Sep): on this screen the options do not hang
+ * together — *"if you grew up here then you have lived here more than ten years
+ * anyway"*.
+ *
+ * The redundancy reading suggests folding "I grew up in this area" back into
+ * the band list, and that is the one thing not to do: item 11 took it out on
+ * 24 Aug precisely so a parent who grew up here, left and came back is not
+ * forced to pick one truth and drop the other. What was missing is a rule for
+ * what the band measures, so these pin the rule and the pair it makes coherent.
+ */
+console.log("\n=== 7 Sep: the tenure screen says what it counts ===");
+{
+  const screen = q.SCREENS.find((s) => s.id === "time_in_area")!;
+  ok(
+    "the help line states what to count from",
+    /most recent move/i.test(screen.help ?? ""),
+    screen.help ?? "no help line",
+  );
+  ok(
+    "and says the two answers go together for a returner",
+    /grew up here/i.test(screen.help ?? "") && /came back/i.test(screen.help ?? ""),
+  );
+  ok(
+    "local roots is still its own question, not a band",
+    screen.questions.some((x) => x.id === "grew_up_here") &&
+      !q
+        .optionsFor(
+          screen.questions.find((x) => x.id === "time_in_area")!,
+          "pasadena",
+          q.EMPTY_ANSWERS,
+        )
+        .some((o) => o.id === "grew_up_here"),
+    "as an option in the band list it was mutually exclusive with every band",
+  );
+  /* The combination the split exists for: both answers coexist. */
+  const returner: ProfileAnswers = {
+    ...q.EMPTY_ANSWERS,
+    time_in_area: "under_year",
+    grew_up_here: "grew_up_here",
+  };
+  ok(
+    "a returner can hold both answers at once",
+    returner.time_in_area === "under_year" && returner.grew_up_here === "grew_up_here",
+  );
+  ok(
+    "and every band is still offered when they tick it",
+    q.optionsFor(
+      screen.questions.find((x) => x.id === "time_in_area")!,
+      "pasadena",
+      returner,
+    ).length === 4,
+    "hiding bands once local roots is ticked is the 24 Aug bug coming back",
+  );
+}
+
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

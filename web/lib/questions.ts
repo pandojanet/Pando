@@ -940,7 +940,43 @@ export const SCREENS: Screen[] = [
     id: "time_in_area",
     eyebrow: "Life context",
     title: "How long have you lived in the Pasadena area?",
-    help: "Your local experience helps Pando tailor answers and find the right parents to ask.",
+    /**
+     * ## Why this line says what it counts (7 Sep)
+     *
+     * The client's report: on this screen the options do not hang together —
+     * *"if you grew up here then you have lived here more than ten years
+     * anyway"*. She is describing a real defect, and it is not the redundancy
+     * it looks like.
+     *
+     * **The question never said what it measured.** For a parent who grew up in
+     * Pasadena, left for a decade and came back three years ago, *"How long
+     * have you lived in the Pasadena area?"* has two truthful answers — 10+ for
+     * a lifetime, 1–3 for the current stretch — and the screen gave no rule. So
+     * two identical families answered differently and `time_in_area` became
+     * noise in the one dimension it exists to measure.
+     *
+     * ⚠ **The fix is not to fold "I grew up here" back into the band list**,
+     * which is what the redundancy reading suggests. Item 11 took it out of that
+     * list on 24 Aug for exactly this parent: as an option there it was mutually
+     * exclusive with every band, so a returner *had* to pick one truth and drop
+     * the other. Putting it back would restore that bug.
+     *
+     * Counting from the most recent move makes every combination coherent
+     * instead: grew up here and 10+ is somebody who never left, grew up here and
+     * under a year is a returner — which is a **more** useful pair than either
+     * answer alone, because it says both "knows this place deeply" and "has been
+     * away, so may not know this year's waiting lists".
+     *
+     * The two also stay separate in the graph, and that is deliberate:
+     * `derive.ts` writes `grew_up_here` and `time_in_area` as their own
+     * dimensions, so neither stands in for the other.
+     *
+     * The sentence it replaces — *"Your local experience helps Pando tailor
+     * answers…"* — explained **why** we ask, which is the kind of line the 4 Sep
+     * triage removes; this one names a rule the reader would otherwise walk
+     * into. ⚠ New user-facing copy, so it is on the list for the client.
+     */
+    help: "Count from your most recent move. If you grew up here, tick the box below too — even if you left and came back.",
     questions: [
       {
         id: "time_in_area",
