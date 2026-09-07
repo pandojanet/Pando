@@ -886,7 +886,10 @@ export type AdminAction =
       code: string;
       label: string;
       market_id: string;
+      /** Defaults to `group` for a caller that predates drizzle/0034. */
+      kind?: InviteKind;
       group_option_value?: string | null;
+      school_option_value?: string | null;
       note?: string | null;
     }
   /** Stops it being offered. Never deletes: people already point at it, and a
@@ -929,13 +932,38 @@ export type AdminAction =
  * The counts are the reason the table exists: "which group was sent a link" was
  * always knowable, "which group actually delivered contributors" never was.
  */
+/**
+ * What a link points at (`drizzle/0034`).
+ *
+ *  - `group`    — a `market_options.parent_groups` value, the original kind.
+ *  - `school`   — a `market_options.schools` value.
+ *  - `personal` — one person's own link: an admin's, or a parent's referral link.
+ *
+ * All three are **attribution only**. A link forwarded out of a group or a
+ * school is evidence somebody shared it, never that whoever opened it belongs
+ * there, so none of them writes an affinity edge (12 and 14 Aug).
+ */
+export type InviteKind = "group" | "school" | "personal";
+
 export interface InviteRow {
   id: string;
   code: string;
   label: string;
   market_id: string;
+  kind: InviteKind;
   /** The `parent_groups` option this maps to, when the admin linked one. */
   group_option_value: string | null;
+  /** The `market_options.schools` option, for a school link. */
+  school_option_value: string | null;
+  /**
+   * Whose link it is, when it is somebody's own.
+   *
+   * A **parent's** referral link carries their name here; an **admin's**
+   * individual link carries none, because the admin who created it is already in
+   * `created_by` and inventing a `people` row for an operator to satisfy a
+   * foreign key is what invariant 10 forbids.
+   */
+  referrer_name: string | null;
   active: boolean;
   note: string | null;
   /** Everyone who arrived on this code. */

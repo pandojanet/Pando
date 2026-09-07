@@ -1,6 +1,3 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { INVITE_COOKIE } from "@/lib/seed-gate";
 import { InviteLanding } from "@/components/seed/InviteLanding";
 import { recordInviteOpen, validateInviteCode } from "@/lib/server/invite";
 
@@ -40,34 +37,34 @@ export default async function Page({
   void recordInviteOpen(rawCode);
 
   /**
-   * No valid code, no screen — the client's call, 4 Sep: **access is by link
-   * only**.
+   * ## Entry is open again (7 Sep)
    *
-   * `/join` used to answer an arrival without a code by *asking* for one: its own
-   * screen, with a field, a "Checking…" button and a manual-entry analytics path.
-   * That screen is gone. It was the one place this address was useful to somebody
-   * who had not been invited — it told them they had found the right door and
-   * only lacked the key — while 1.1's rule is that the founding tool is "shared
-   * privately inside parent groups, not published".
+   * This **reverses the 4 Sep decision** recorded in CLAUDE.md — *"access is by
+   * link, and the code screen is gone"* — on the client's instruction: the
+   * marketing page's "Join the founding network" button comes back and leads
+   * straight here, to the name-and-number screen. An arrival with no code, an
+   * unknown one or a retired one is a parent now, not an intruder.
    *
-   * So an arrival with no code, a retired one or an unknown one is sent to the
-   * public site, which is what Pando has to say to somebody not in a parent group
-   * yet. **Server-side**, so the seed flow never renders and there is no flash of
-   * a form nobody may use.
+   * **What the reversal does not touch, and this is the part to keep straight.**
+   * A code is still *resolved* server-side and still means exactly what it meant:
+   * attribution. `people.invite_id` records which link somebody arrived on,
+   * `invites.opens` counts the arrivals, PostHog carries the code as a
+   * super-property, and **no affinity edge is ever written from a link** (12 and
+   * 14 Aug) — a forwarded link is evidence somebody shared it, never that whoever
+   * opened it belongs to the group or the school. What is gone is only the
+   * *gate*: a link no longer decides who may see the screen.
    *
-   * Two things this deliberately does not change. The gate stays *soft* at every
-   * other layer — nothing here authenticates anybody, and the write routes still
-   * accept a session whose `invite_code` is null, because a link forwarded last
-   * week must not become a dead end mid-flow (12 Aug). And it cannot loop:
-   * `next.config.ts` rewrites `/` → `/join` only when the request actually
-   * carries `?i=`, and this redirect carries none.
+   * So `/admin/invites` keeps its whole job. It stopped being a door and stayed
+   * a measurement, which is what estimate 2.2's per-link funnel actually needs.
+   *
+   * ⚠ The consequence to accept, stated plainly because it is the reason the
+   * 4 Sep decision existed: the founding tool is now reachable by anybody who
+   * types the address, so 1.1's *"shared privately inside parent groups, not
+   * published"* no longer holds at the door. Everything behind it still does —
+   * nothing about a named parent is stored before their phone is verified
+   * (invariant 11), and founding status is still granted by a person on the
+   * second approved contribution.
    */
-  /* The marker is read here as well as in the proxy, for the reason the proxy's
-     own header gives: a browser carrying it arrived through a valid link once,
-     and `/join` is where its session resumes — `ProfileFlow`'s Back button on
-     the first question points straight here, with no code on it. */
-  const invited = (await cookies()).has(INVITE_COOKIE);
-  if (!invite.valid && !invited) redirect("/");
 
   return <InviteLanding invite={invite} inviteCode={rawCode} source={source} />;
 }

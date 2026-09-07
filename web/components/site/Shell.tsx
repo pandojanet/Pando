@@ -146,8 +146,12 @@ export function SiteHeader({
             <NavLink href="/#how">How it works</NavLink>
             <NavLink href="/about">Our story</NavLink>
             <NavLink href="/#founding">Founding parents</NavLink>
+            {/* 7 Sep: the masthead CTA goes to the screen it names. It
+                pointed at the section that explained founding places were by
+                invitation, because while access was link-only /join bounced
+                every arrival back to this page. */}
             <Link
-              href="/#founding"
+              href="/join"
               className="inline-flex min-h-11 items-center rounded-full bg-gold px-5 text-[0.95rem] font-semibold text-ink transition-colors duration-150 hover:bg-gold-deep"
             >
               Join the founding network

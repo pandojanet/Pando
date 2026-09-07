@@ -221,7 +221,40 @@ export async function POST(request: Request) {
     }
     if (!cleanText(body?.label, 80)) {
       return NextResponse.json(
-        { error: "Name the group — the parent sees this, not the code" },
+        { error: "Name the link — the parent sees this, not the code" },
+        { status: 422 },
+      );
+    }
+    /**
+     * The kind, and that its target matches (`drizzle/0034`).
+     *
+     * `invites_target_matches_kind` already refuses a mismatched row, and that
+     * is deliberately not the error the admin meets: a CHECK violation reaches
+     * this surface as a bare 502. The route says which field is wrong, on the
+     * rule that a constraint is the last line and never the only one.
+     */
+    const kind = body?.kind === undefined ? "group" : body.kind;
+    if (kind !== "group" && kind !== "school" && kind !== "personal") {
+      return NextResponse.json(
+        { error: "A link points at a group, a school or one person" },
+        { status: 422 },
+      );
+    }
+    if (kind === "school" && !cleanId(body?.school_option_value)) {
+      return NextResponse.json(
+        { error: "Pick the school this link is for" },
+        { status: 422 },
+      );
+    }
+    if (kind !== "group" && cleanId(body?.group_option_value)) {
+      return NextResponse.json(
+        { error: "Only a group link can name a group" },
+        { status: 422 },
+      );
+    }
+    if (kind !== "school" && cleanId(body?.school_option_value)) {
+      return NextResponse.json(
+        { error: "Only a school link can name a school" },
         { status: 422 },
       );
     }

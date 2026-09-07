@@ -1071,6 +1071,10 @@ async function inviteRows(db: Db) {
     db,
     sql`
       select i.*,
+             -- Whose link it is, when a parent's. An admin's individual link has
+             -- no person behind it and is named by created_by instead.
+             (select trim(concat(rp.first_name, ' ', rp.last_name)) from people rp
+               where rp.id = i.referrer_person_id)                      as referrer_name,
              (select count(*) from people p
                where p.invite_id = i.id and not p.is_test)              as contributors,
              (select count(*) from people p
@@ -1088,7 +1092,10 @@ async function inviteRows(db: Db) {
     code: r.code,
     label: r.label,
     market_id: r.market_id,
+    kind: (r.kind ?? "group") as "group" | "school" | "personal",
     group_option_value: r.group_option_value,
+    school_option_value: r.school_option_value ?? null,
+    referrer_name: (r.referrer_name as string | null) || null,
     active: r.active === true,
     note: r.note,
     opens: Number(r.opens ?? 0),

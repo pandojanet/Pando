@@ -140,7 +140,12 @@ export default function HomePage() {
               whose lives overlap with yours, labeled by who shared them and when.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-2.5">
-              <SiteButton href="/#founding" className="max-sm:w-full">
+              {/* 7 Sep — straight to the name-and-number screen, which is the
+                  client's instruction and what makes this button honest again.
+                  It pointed at `/#founding` while access was link-only, because
+                  `/join` would have bounced the reader back here; entry is open
+                  now, so the button goes where its label says. */}
+              <SiteButton href="/join" className="max-sm:w-full">
                 Join the founding network
               </SiteButton>
               <SiteButton href="/#how" tone="gold" className="max-sm:w-full">
@@ -316,21 +321,21 @@ export default function HomePage() {
                 founding places now open — more SGV neighborhoods as each one is
                 ready
               </p>
-              {/* ⚠ The "Join the founding network" button was here, pointing at
-                  /join. Access became link-only on 4 Sep, so from this page that
-                  button led to /join, which redirected straight back here — a
+              {/* The button is back (7 Sep), for the reason it went: it now has
+                  an honest destination. While access was link-only it led to
+                  `/join`, which redirected straight back to this page — a
                   control that visibly does nothing, on the one screen a
-                  prospective contributor is deciding from.
-
-                  It is a sentence rather than a smaller button because there is
-                  no honest destination left: the way in is an invite somebody
-                  sends you, and a button cannot hand you one. The line below it
-                  already asked the reader to forward the page, which is now the
-                  actual next step rather than a footnote to a CTA. */}
-              <p className="mt-6 text-[0.95rem] leading-relaxed text-paper-soft">
-                Founding places are by invitation — the link is shared inside
-                parent groups, not published.
-              </p>
+                  prospective contributor decides from. Entry is open, so it
+                  works. */}
+              <div className="mt-6">
+                <SiteButton href="/join" tone="gold">
+                  Join the founding network
+                </SiteButton>
+              </div>
+              {/* ⚠ The sentence that said founding places are by invitation and
+                  the link is not published has gone with the gate it described.
+                  Leaving it under a button that admits anybody would have made
+                  the page contradict itself in two inches. */}
               <p className="mt-4 text-[0.9rem] leading-relaxed text-paper-soft">
                 Know a parent everyone asks for recommendations?
                 <br />

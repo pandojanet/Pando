@@ -105,13 +105,21 @@ async function seedGate(request: NextRequest) {
   const marker = Boolean(request.cookies.get(INVITE_COOKIE));
 
   if (pathname === "/join") {
-    const code = searchParams.get("i") ?? searchParams.get("invite");
-    const invite = await validateInviteCode(code);
-    if (!invite.valid) {
-      return marker
-        ? NextResponse.next()
-        : NextResponse.redirect(new URL("/", request.url));
-    }
+    /**
+     * Every arrival gets the marker, valid code or not (7 Sep).
+     *
+     * Entry is open again on the client's instruction, so this is no longer a
+     * door — but the marker still has a job: it is what lets `/profile`,
+     * `/share` and `/done` know the flow was entered through the front door
+     * rather than typed at, which is the hole the 4 Sep pass closed and which
+     * would otherwise reopen ("closing `/join` alone moved the open door one
+     * URL to the right").
+     *
+     * The code is still resolved, because a *valid* one is attribution and
+     * `/join` renders differently for it — what changed is only that an invalid
+     * one no longer sends anybody away.
+     */
+    void validateInviteCode(searchParams.get("i") ?? searchParams.get("invite"));
 
     const response = NextResponse.next();
     response.cookies.set(INVITE_COOKIE, "1", {

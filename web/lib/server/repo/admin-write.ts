@@ -913,13 +913,33 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const code = id(b.code);
       const label = text(b.label);
       if (!code || !label) return { applied: false, reason: "not_implemented" };
+      /* The route validates the value; this is the fallback for an older caller
+         that sends none, and it is the kind every existing row already is. */
+      const kind =
+        b.kind === "school" || b.kind === "personal" ? b.kind : "group";
 
       const [row] = (await tx.execute(
-        sql`insert into invites (code, market_id, label, group_option_value, note, created_by)
+        /**
+         * 7 Sep — a link can point at a school or at a person now
+         * (`drizzle/0034`). The kind is written explicitly and the two target
+         * columns are cleared for the kinds that must not carry them, so the
+         * row can never disagree with itself: an `on conflict` update that left
+         * a stale `group_option_value` behind on a link somebody re-created as
+         * a school would be refused by `invites_target_matches_kind`, which is
+         * a 502 where a correct write is available.
+         */
+        sql`insert into invites (code, market_id, label, kind,
+                                group_option_value, school_option_value,
+                                note, created_by)
             values (${code}, ${id(b.market_id) || "pasadena"}, ${label},
-                    ${text(b.group_option_value)}, ${text(b.note)}, ${ctx.actor})
+                    ${kind},
+                    ${kind === "group" ? text(b.group_option_value) : null},
+                    ${kind === "school" ? text(b.school_option_value) : null},
+                    ${text(b.note)}, ${ctx.actor})
             on conflict (code) do update set
               label = excluded.label,
+              kind = excluded.kind,
+              school_option_value = excluded.school_option_value,
               market_id = excluded.market_id,
               group_option_value = excluded.group_option_value,
               note = excluded.note,

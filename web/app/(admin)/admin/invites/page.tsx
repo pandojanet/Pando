@@ -58,16 +58,34 @@ export default function InvitesPage() {
    * can match.
    */
   const [groups, setGroups] = useState<Array<{ id: string; label: string }>>([]);
+  /**
+   * The schools a link can point at (7 Sep, her fourth instruction).
+   *
+   * Same source as the groups, and that is the point rather than a convenience:
+   * the value stored on the invite has to be one the questionnaire itself
+   * offers, or a link would attribute arrivals to a school no chip can match.
+   * `/api/market/options` serves the **curated starters** for this market, which
+   * is what an admin making a link is choosing between.
+   */
+  const [schools, setSchools] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
     void fetch("/api/market/options?market_id=pasadena")
       .then((r) => r.json())
-      .then((body) => setGroups(body?.options?.parent_groups ?? []))
-      .catch(() => setGroups([]));
+      .then((body) => {
+        setGroups(body?.options?.parent_groups ?? []);
+        setSchools(body?.options?.schools ?? []);
+      })
+      .catch(() => {
+        setGroups([]);
+        setSchools([]);
+      });
   }, []);
 
   const [code, setCode] = useState("");
   const [label, setLabel] = useState("");
+  const [kind, setKind] = useState<"group" | "school" | "personal">("group");
   const [group, setGroup] = useState("");
+  const [school, setSchool] = useState("");
   const [note, setNote] = useState("");
   /** The create form is folded away until asked for — see below. */
   const [creating, setCreating] = useState(false);
@@ -114,13 +132,18 @@ export default function InvitesPage() {
         code: value,
         label: label.trim(),
         market_id: "pasadena",
-        group_option_value: group || null,
+        kind,
+        /* Only the target its own kind names. The route refuses a mismatch in
+           words, and clearing here is what stops the form ever sending one. */
+        group_option_value: kind === "group" ? group || null : null,
+        school_option_value: kind === "school" ? school || null : null,
         note: note.trim() || null,
       }),
     );
     setCode("");
     setLabel("");
     setGroup("");
+    setSchool("");
     setNote("");
     setCreating(false);
   }
@@ -174,23 +197,72 @@ export default function InvitesPage() {
               onChange={(e) => setCode(e.target.value.slice(0, 40))}
             />
           </Field>
+          {/**
+            * What the link points at (7 Sep, `drizzle/0034`).
+            *
+            * A native `<select>` on purpose — the 13 Aug decision keeps them for
+            * their typeahead and the OS wheel, and the schools list is 133
+            * curated starters, which is exactly the case typeahead is for.
+            *
+            * Personal takes no target field: **the referrer is whoever created
+            * the link**, which is already recorded in `created_by`. A parent's
+            * own referral link is the same kind, created by the app rather than
+            * from this form.
+            */}
           <Field
-            label="Matches which group in the tap lists?"
-            hint="Optional. Records which group somebody came through — it never claims they belong to it."
+            label="What is this link for?"
+            hint="All three record where somebody came from. None of them ever claims they belong to it."
           >
             <select
               className={inputClass}
-              value={group}
-              onChange={(e) => setGroup(e.target.value)}
+              value={kind}
+              onChange={(e) =>
+                setKind(e.target.value as "group" | "school" | "personal")
+              }
             >
-              <option value="">— none —</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.label}
-                </option>
-              ))}
+              <option value="group">A parent group</option>
+              <option value="school">A school</option>
+              <option value="personal">One person — you</option>
             </select>
           </Field>
+          {kind === "group" && (
+            <Field
+              label="Which group in the tap lists?"
+              hint="Optional. Records which group somebody came through — it never claims they belong to it."
+            >
+              <select
+                className={inputClass}
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
+              >
+                <option value="">— none —</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          {kind === "school" && (
+            <Field
+              label="Which school?"
+              hint="The same list the questionnaire offers, so an arrival can be attributed to a school a chip can match."
+            >
+              <select
+                className={inputClass}
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+              >
+                <option value="">— pick one —</option>
+                {schools.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Note" hint="Yours. Where it was posted, who runs the group.">
             <input
               className={inputClass}
@@ -202,7 +274,11 @@ export default function InvitesPage() {
         <div className="flex flex-wrap items-center gap-3 border-t border-bark/70 px-4 py-3">
           <Button
             tone="primary"
-            disabled={busy === CREATING || label.trim().length === 0}
+            disabled={
+              busy === CREATING ||
+              label.trim().length === 0 ||
+              (kind === "school" && !school)
+            }
             onClick={() => void create()}
           >
             Create invite
@@ -230,7 +306,13 @@ export default function InvitesPage() {
               body="Make one above, and the link works straight away."
             />
           ) : (
-            <InviteTable rows={live} busy={busy} onAction={run} groups={groups} />
+            <InviteTable
+              rows={live}
+              busy={busy}
+              onAction={run}
+              groups={groups}
+              schools={schools}
+            />
           )}
         </Card>
       </div>
@@ -238,7 +320,13 @@ export default function InvitesPage() {
       {retired.length > 0 && (
         <div className="mt-4">
           <Card title={`No longer shared (${retired.length})`}>
-            <InviteTable rows={retired} busy={busy} onAction={run} groups={groups} />
+            <InviteTable
+              rows={retired}
+              busy={busy}
+              onAction={run}
+              groups={groups}
+              schools={schools}
+            />
             {/* Kept: this is genuinely surprising behaviour, so one line stays.
                 The reasoning behind it — a forwarded link must not become a dead
                 end — is a decision, and decisions live in CLAUDE.md. */}
@@ -330,12 +418,14 @@ function InviteTable({
   busy,
   onAction,
   groups,
+  schools,
 }: {
   rows: InviteRow[];
   /** The link being acted on, or null. */
   busy: string | null;
   /** The live chip list, so the column shows the group's real name and not its id. */
   groups: Array<{ id: string; label: string }>;
+  schools: Array<{ id: string; label: string }>;
   onAction: (
     rowId: string,
     text: string,
@@ -346,9 +436,19 @@ function InviteTable({
     <TableWrap label="Invite links">
       <thead>
         <tr>
-          <Th>Group</Th>
+          {/**
+            * ⚠ These three were **mislabelled before this pass**, and renaming
+            * the first one is what surfaced it: the header row read
+            * `Group | Link | Matches` over cells holding
+            * `name | link | target`, so "Group" sat above the invite's own name
+            * and the column that actually showed the group was headed
+            * "Matches". Renaming "Group" to "Points at" would have moved the
+            * fault rather than fixed it, so both are corrected: the name column
+            * says Name, and the target column says what it points at.
+            */}
+          <Th>Name</Th>
           <Th>Link</Th>
-          <Th>Matches</Th>
+          <Th>Points at</Th>
           {/* "Arrived" and "Delivered" — the second of which read as if the
               *link* had been delivered, which is the opposite of what it counts.
               The pair only means anything read together, so both now say what
@@ -383,8 +483,26 @@ function InviteTable({
             <Td>
               <LinkCell code={row.code} />
             </Td>
+            {/* One column for all three kinds. A row says what it points at in
+                the words the tap lists use, and only says "not linked" when it
+                genuinely records nothing. */}
             <Td className="text-[13px]">
-              {row.group_option_value ? (
+              {row.kind === "school" && row.school_option_value ? (
+                <>
+                  {schools.find((s) => s.id === row.school_option_value)?.label ??
+                    slugLabel(row.school_option_value)}
+                  <span className="mt-0.5 block text-[11.5px] uppercase tracking-[0.06em] text-muted">
+                    school
+                  </span>
+                </>
+              ) : row.kind === "personal" ? (
+                <>
+                  {row.referrer_name ?? row.created_by ?? "somebody"}
+                  <span className="mt-0.5 block text-[11.5px] uppercase tracking-[0.06em] text-muted">
+                    {row.referrer_name ? "a parent's own link" : "personal"}
+                  </span>
+                </>
+              ) : row.group_option_value ? (
                 (groups.find((g) => g.id === row.group_option_value)?.label ??
                   slugLabel(row.group_option_value))
               ) : (

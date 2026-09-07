@@ -239,6 +239,13 @@
       "when": 1788782400000,
       "tag": "0033_blast_credit_granted",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788868800000,
+      "tag": "0034_invite_kinds_and_referral_links",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   char,
   date,
@@ -104,6 +105,36 @@ export const invites = pgTable(
      * that the person who opened it belongs to it.
      */
     groupOptionValue: text("group_option_value"),
+    /**
+     * Which of the three things this link points at (`drizzle/0034`).
+     *
+     * The row says it rather than leaving a reader to infer it from whichever
+     * column happens to be full — and `invites_target_matches_kind` makes the
+     * two agree, so a `personal` row cannot also claim a group.
+     */
+    kind: text("kind").notNull().default("group"),
+    /**
+     * A `market_options.schools` value. **Attribution only**, exactly like the
+     * group value above: a link forwarded out of a school's WhatsApp group is
+     * evidence somebody shared it, never that whoever opened it has a child
+     * there, so no affinity edge is written from it and the 14 Aug hole stays
+     * open and documented rather than quietly closed by a link.
+     */
+    schoolOptionValue: text("school_option_value"),
+    /**
+     * The parent whose own referral link this is.
+     *
+     * One row per parent, enforced by a partial unique index. `set null` on
+     * delete rather than cascade: `people.invite_id` points here, and that is
+     * how everyone who arrived through the link is attributed — deleting the
+     * referrer must not take their arrivals' attribution with it.
+     */
+    /* `AnyPgColumn` because `people.invite_id` points back here: without the
+       annotation Drizzle cannot infer either table and reports both as `any`. */
+    referrerPersonId: uuid("referrer_person_id").references(
+      (): AnyPgColumn => people.id,
+      { onDelete: "set null" },
+    ),
     active: boolean("active").notNull().default(true),
     /** The admin's own note: where it was posted, who runs the group. */
     note: text("note"),
@@ -114,6 +145,13 @@ export const invites = pgTable(
   },
   (t) => [
     check("invites_code_check", sql`${t.code} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    check("invites_kind_check", sql`${t.kind} in ('group','school','personal')`),
+    check(
+      "invites_target_matches_kind",
+      sql`(${t.kind} = 'group' and ${t.schoolOptionValue} is null and ${t.referrerPersonId} is null)
+          or (${t.kind} = 'school' and ${t.referrerPersonId} is null)
+          or (${t.kind} = 'personal' and ${t.schoolOptionValue} is null and ${t.groupOptionValue} is null)`,
+    ),
   ],
 );
 
@@ -1275,6 +1313,18 @@ export const referrals = pgTable(
     referredId: uuid("referred_id").references(() => people.id, {
       onDelete: "set null",
     }),
+    /**
+     * The admin who created an individual link, when the referrer is not a
+     * person in the graph (`drizzle/0034`).
+     *
+     * Invariant 10 is that one person is one identity keyed by phone, so
+     * minting a `people` row for an operator to satisfy a foreign key would be
+     * worse than a nullable column. ⚠ The CHECK forbids **both** being set and
+     * deliberately does not require one: `referrer_id` is set null on delete,
+     * so demanding one would make deleting a person fail on a constraint
+     * attached to a row about somebody else.
+     */
+    referrerAdmin: text("referrer_admin"),
     status: text("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1289,6 +1339,10 @@ export const referrals = pgTable(
     unique("referrals_referrer_id_referred_id_key").on(
       t.referrerId,
       t.referredId,
+    ),
+    check(
+      "referrals_one_referrer",
+      sql`not (${t.referrerId} is not null and ${t.referrerAdmin} is not null)`,
     ),
   ],
 );
