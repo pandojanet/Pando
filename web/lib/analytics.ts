@@ -50,6 +50,14 @@ export type SeedEvent =
   | "seed_verify_failed"
   | "seed_verify_confirmed"
   /**
+   * Coming back (7 Sep). Three events, because the drop-off worth measuring is
+   * between them: a parent who asked for a code and never confirmed one is a
+   * different problem from a parent whose number has no profile against it.
+   */
+  | "seed_signin_started"
+  | "seed_signin_completed"
+  | "seed_signin_no_profile"
+  /**
    * The code step was reached, and then passed, at the end of the profile. Its own
    * pair because this is the flow's biggest single gate: everything after it is
    * saved as it happens, and everyone who drops between the two leaves nothing

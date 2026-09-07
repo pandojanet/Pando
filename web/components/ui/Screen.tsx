@@ -68,6 +68,11 @@ export function Screen({
  * that has to be able to escape its own flow when focused.
  *
  * ⚠ The wording is new user-facing copy and is on the list for the client.
+ *
+ * "Skip to the questions" was the first wording and was true on exactly one of
+ * the flow's five surfaces: `/join` asks for a number, `/share` is a message
+ * thread, `/done*` is three screens of thank-you and `/signin` is a code box.
+ * A skip link names where it lands, so it names the content.
  */
 export function SkipLink({ href = "#main" }: { href?: string }) {
   return (
@@ -75,7 +80,7 @@ export function SkipLink({ href = "#main" }: { href?: string }) {
       href={href}
       className="sr-only rounded-full border border-bark bg-card px-4 py-3 font-semibold text-green-deep text-help focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50"
     >
-      Skip to the questions
+      Skip to the content
     </a>
   );
 }

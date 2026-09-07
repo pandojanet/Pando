@@ -524,6 +524,15 @@ export interface SeedSession {
   screen_index: number;
   profile_saved_at: string | null;
   /**
+   * This parent's own referral link (7 Sep, her third instruction).
+   *
+   * Stored on the session so the thank-you screen can show it on a later visit
+   * without another round trip, and so the popup can be shown **once**:
+   * `referral_shown_at` is what makes it once rather than on every render.
+   */
+  referral_code: string | null;
+  referral_shown_at: string | null;
+  /**
    * Completion screen state (estimate 1.7). `follow_up_opt_in` is the one Phase 1
    * field that unlocks Phase 2 — it maps to blast_opt_in at migration — so it is
    * stored with the consent record that produced it, never as a bare boolean.

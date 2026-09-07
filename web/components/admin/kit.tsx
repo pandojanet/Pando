@@ -795,7 +795,11 @@ export function Dialog({
            child, so this fires only for a click outside the panel. */
         if (e.target === ref.current) onClose();
       }}
-      className="max-h-[85vh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-bark bg-card p-0 text-ink shadow-card backdrop:bg-moss/40 backdrop:backdrop-blur-[2px]"
+      /* `m-auto` is load-bearing: a modal `<dialog>` centres itself through the
+         UA's own `margin: auto`, and Tailwind's preflight zeroes every margin —
+         so without it every dialog on this surface sits in the top-left corner.
+         Found while building the referral popup, which had the same fault. */
+      className="m-auto max-h-[85vh] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-bark bg-card p-0 text-ink shadow-card backdrop:bg-moss/40 backdrop:backdrop-blur-[2px]"
     >
       <div className="flex items-start justify-between gap-3 border-b border-bark/70 px-4 py-3">
         <div>

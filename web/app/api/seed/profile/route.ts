@@ -638,6 +638,12 @@ export async function POST(request: Request) {
     ok: true,
     contributor_id: result.data.person_id,
     persisted: true,
+    /**
+     * The parent's own referral link, for the popup her third instruction asks
+     * for. A **code**, not a URL: the browser composes the link, so the domain
+     * lives in one place rather than being baked into a response.
+     */
+    referral_code: result.data.referral_code,
   });
 }
 

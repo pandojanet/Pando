@@ -4,6 +4,7 @@ import "server-only";
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
+import { ensureReferralLink, recordReferral } from "./referral";
 import {
   children,
   affiliationVisibility,
@@ -141,6 +142,17 @@ const SCHOOL_STATUSES = new Set(["current", "former", "not_yet", "homeschool"]);
 
 export interface ProfileWriteResult {
   person_id: string;
+  /**
+   * This parent's own referral link, created on the first write and returned on
+   * every one (`repo/referral.ts`).
+   *
+   * Null only when the insert could not be made — the flow shows the popup when
+   * it has a code and says nothing when it does not, which is the same honesty
+   * rule as `persisted: false`: better silent than a link that 404s.
+   */
+  referral_code: string | null;
+  /** Whether an arrival on somebody's personal link was recorded as a referral. */
+  referral_recorded: "none" | "person" | "admin" | "self";
   /** Counts only — this is what gets logged (invariant 7). */
   counts: {
     children: number;
@@ -449,8 +461,29 @@ export async function writeProfile(
       });
     }
 
+    /**
+     * The referral pair, inside the same transaction as the profile.
+     *
+     * Deliberately not after it: a referral row that survived a rolled-back
+     * profile would credit somebody for a parent who does not exist, and a
+     * profile that committed without its referral would leave the link the
+     * parent is about to be shown pointing at nothing. Both are the atomicity
+     * the 6 Aug move to real transactions was for.
+     */
+    const referralCode = await ensureReferralLink(tx as unknown as Db, {
+      id: personId,
+      first_name: input.first_name,
+      market_id: input.market_id,
+    });
+    const referralRecorded = await recordReferral(tx as unknown as Db, {
+      referred_person_id: personId,
+      invite_id: input.invite_id ?? null,
+    });
+
     return {
       person_id: personId,
+      referral_code: referralCode,
+      referral_recorded: referralRecorded,
       counts: {
         children: childRows.length,
         affinities: affinityRows.length,

@@ -104,7 +104,15 @@ async function seedGate(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
   const marker = Boolean(request.cookies.get(INVITE_COOKIE));
 
-  if (pathname === "/join") {
+  /**
+   * `/signin` is a front door as well (7 Sep), so it issues the marker.
+   *
+   * Without this a returning parent confirms a code and is then bounced off
+   * `/done` by `isGatedSeedPath` — signed in, and turned away from the one
+   * screen signing in exists to reach. It resolves no code, because there is
+   * none to resolve: identity here comes from the verification, not a link.
+   */
+  if (pathname === "/join" || pathname === "/signin") {
     /**
      * Every arrival gets the marker, valid code or not (7 Sep).
      *
@@ -119,7 +127,9 @@ async function seedGate(request: NextRequest) {
      * `/join` renders differently for it — what changed is only that an invalid
      * one no longer sends anybody away.
      */
-    void validateInviteCode(searchParams.get("i") ?? searchParams.get("invite"));
+    if (pathname === "/join") {
+      void validateInviteCode(searchParams.get("i") ?? searchParams.get("invite"));
+    }
 
     const response = NextResponse.next();
     response.cookies.set(INVITE_COOKIE, "1", {
@@ -144,8 +154,9 @@ export const config = {
   matcher: [
     "/admin",
     "/admin/:path*",
-    // The Seed Tool: /join issues the marker, the rest require it.
+    // The Seed Tool: /join and /signin issue the marker, the rest require it.
     "/join",
+    "/signin",
     "/profile",
     "/share",
     "/done",

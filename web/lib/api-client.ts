@@ -122,6 +122,14 @@ export interface SaveProfileResult {
   contributor_id: string | null;
   /** False when `DATABASE_URL` isn't set — the UI stays honest about it. */
   persisted: boolean;
+  /**
+   * This parent's own referral link, minted on the first write.
+   *
+   * Null on a deployment with no database, and on the held path where nothing
+   * has been written yet — the flow shows the popup only when it has a code,
+   * because a link that 404s is worse than no link.
+   */
+  referral_code?: string | null;
 }
 
 export function saveProfile(

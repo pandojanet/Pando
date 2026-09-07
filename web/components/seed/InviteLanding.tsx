@@ -437,9 +437,18 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 : "We'll send a 6-digit code to confirm the number when you finish."}
             </p>
 
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4">
               <TextAction onClick={() => setAnonymous(true)} tone="quiet">
                 Share without joining for now
+              </TextAction>
+              {/**
+                * The way back in (7 Sep, her second instruction). On this screen
+                * rather than only in the header, because a returning parent's
+                * mistake is to start filling the form in again — and the moment
+                * they notice is when they are looking at it.
+                */}
+              <TextAction href="/signin" tone="quiet">
+                I&apos;ve joined before
               </TextAction>
             </div>
           </Panel>

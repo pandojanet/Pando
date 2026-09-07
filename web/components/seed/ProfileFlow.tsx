@@ -585,11 +585,34 @@ export function ProfileFlow() {
          screen says "saved", and either way that is true. */
       const held = holdsUntilVerified(current);
       const result = held ? null : await saveProfile(buildProfilePayload(current));
-      update((s) => ({ ...s, profile_saved_at: new Date().toISOString() }));
+      const code = result?.referral_code ?? null;
+      update((s) => ({
+        ...s,
+        profile_saved_at: new Date().toISOString(),
+        referral_code: code ?? s.referral_code,
+      }));
       track("seed_profile_saved", {
         completeness: profileCompleteness(current.answers),
         persisted: result?.persisted ?? false,
       });
+      /**
+       * The code is kept and `/share` shows the popup — this screen does not.
+       *
+       * The first version returned a dialog over an **empty** screen here, and
+       * the client's report was right: a modal with nothing behind it does not
+       * read as a popup, it reads as a broken page. The parent is on their way
+       * to `/share`, so that is the page the popup belongs on, and closing it
+       * leaves them where they were already going.
+       *
+       * It also makes "once" fall out of the data rather than needing a second
+       * mechanism: `/share` shows it while the session has a code that has not
+       * been shown, so a re-save cannot bring it back and a reload mid-popup
+       * still gets it.
+       *
+       * No code means no popup and no apology — on the held path (a deployment
+       * that cannot send a code, or the anonymous route) nothing has been
+       * written yet, so there is no link to give.
+       */
       // Straight into the part only they can answer.
       router.push("/share");
     } catch (err) {

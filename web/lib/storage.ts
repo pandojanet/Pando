@@ -46,6 +46,8 @@ export function newSession(init: {
     chat: null,
     screen_index: 0,
     profile_saved_at: null,
+    referral_code: null,
+    referral_shown_at: null,
     follow_up_opt_in: null,
     consent: null,
     demand: null,

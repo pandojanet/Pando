@@ -30,6 +30,7 @@ import type {
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
+import { ReferralDialog } from "@/components/seed/ReferralInvite";
 import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import type { SeedSession } from "@/lib/types";
 import { Bubble, CardRecap, TypingDots } from "./Bubble";
@@ -712,6 +713,26 @@ export function ChatSeeding() {
           screen as recaps, so the pill only repeated what the parent could see —
           and a count in the header edges towards scorekeeping. */}
       <ScreenHeader left={<Wordmark />} />
+
+      {/**
+        * The referral popup, over this page (7 Sep, her third instruction).
+        *
+        * The trigger is the session rather than a prop or a query parameter: a
+        * code that has not been shown yet. So it appears once, survives a
+        * reload, cannot come back on a re-save, and needs nothing from the
+        * screen that navigated here.
+        */}
+      {session?.referral_code && !session.referral_shown_at && (
+        <ReferralDialog
+          code={session.referral_code}
+          onClose={() =>
+            update((s) => ({
+              ...s,
+              referral_shown_at: new Date().toISOString(),
+            }))
+          }
+        />
+      )}
 
       <ScreenBody className="pt-5">
         {/* `/share` was the one route in the app with no `<h1>` — the screen is

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { Field } from "@/components/ui/Field";
@@ -57,7 +57,19 @@ interface Props {
    * attempt ceiling and the "not provisioned yet" honesty are the same mechanism,
    * and forking the component to reword three lines would have duplicated all of it.
    */
-  audience?: "parent" | "caregiver";
+  audience?: "parent" | "caregiver" | "returning";
+  /**
+   * Request the code on mount, for the one caller whose *previous* screen already
+   * said "Text me a code" — `/signin`, where the number is the whole of the
+   * first step. Without it that parent taps the same words twice and the first
+   * tap visibly did nothing.
+   *
+   * Off everywhere else on purpose: at the end of the profile and in the
+   * caregiver flow the dock says something else, so this panel's own button is
+   * the first request and firing on mount would send a code to a parent who has
+   * only scrolled onto the screen.
+   */
+  autoStart?: boolean;
   /**
    * True where confirming also *sends* something — the completion screen, which
    * flushes a held session, and the caregiver flow, which writes the claim. At the
@@ -75,6 +87,7 @@ export function VerifyPhone({
   allowance,
   audience = "parent",
   submits = false,
+  autoStart = false,
   onVerified,
   busy,
 }: Props) {
@@ -153,6 +166,22 @@ export function VerifyPhone({
     }
   }
 
+  /**
+   * One send, whatever React does with this component.
+   *
+   * A ref rather than an empty dependency list on its own: in development the
+   * effect runs twice, and a second send would spend one of the parent's three
+   * (§19) before they have read the screen — visible to them as "2 resends
+   * left" on a code they asked for once.
+   */
+  const started = useRef(false);
+  useEffect(() => {
+    if (!autoStart || started.current) return;
+    started.current = true;
+    void requestCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   const resendsLeft = start ? Math.max(0, start.max_sends - start.sends) : null;
 
   return (
@@ -166,6 +195,15 @@ export function VerifyPhone({
             {"Only you should be able to set up your profile, so we text "}
             <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
             {" a six-digit code. Until you confirm it, nothing you've written is saved."}
+          </>
+        ) : audience === "returning" ? (
+          /* A returning parent is not writing anything, so the sentence about
+             nothing reaching us would be about a different screen. What the code
+             does here is prove the number is theirs — that is the whole account. */
+          <>
+            {"There's no password — the number is the account. We text "}
+            <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
+            {" a six-digit code so we know it's you."}
           </>
         ) : (
           <>

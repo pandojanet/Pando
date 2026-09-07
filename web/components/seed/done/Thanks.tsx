@@ -11,6 +11,7 @@ import {
   ScreenDock,
   ScreenHeader,
 } from "@/components/ui/Screen";
+import { ReferralPanel } from "@/components/seed/ReferralInvite";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { submissionTitle } from "@/lib/seed-chat/engine";
@@ -119,6 +120,23 @@ export function Thanks() {
                 ))}
               </ul>
             </Panel>
+          )}
+
+          {/**
+            * Her third instruction's second half: on a later sign-in the link is
+            * on the thank-you screen with a way to copy it. This is that screen
+            * — `/done/next` is "what happens next", two taps further on, and a
+            * returning parent should not have to walk a question they have
+            * already answered to reach their own link.
+            *
+            * It renders for anybody holding a code rather than only for a
+            * returning parent, which is deliberate: the popup on `/share` is
+            * shown once and a parent who dismissed it has nowhere else to look.
+            * The anonymous path has no person row and therefore no code, so it
+            * renders nothing there and needs no condition of its own.
+            */}
+          {session?.referral_code && (
+            <ReferralPanel code={session.referral_code} />
           )}
 
           {loaded && !session && <NoSession />}

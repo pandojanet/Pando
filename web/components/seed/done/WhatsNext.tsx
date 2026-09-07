@@ -81,7 +81,12 @@ export function WhatsNext() {
             />
           </ol>
 
-          {session && <ReferralCard firstName={session.first_name ?? session.name} />}
+          {session && (
+            <ReferralCard
+              firstName={session.first_name ?? session.name}
+              code={session.referral_code}
+            />
+          )}
 
           <Panel size="inset" className="mt-8" title="Thought of something later?">
             <p className="mt-1 leading-relaxed text-muted text-help">
@@ -122,24 +127,42 @@ export function WhatsNext() {
  * earned, not given: the invited parent has to complete a profile *and* have a
  * contribution approved.
  *
- * One honest limitation on the screen's promise: with a single shared invite link
- * there is no way to attribute a signup to the parent who sent it. Rather than
- * imply otherwise, the card asks them to mention their name — and unique links are
- * an open question in docs/spec-compliance-review.md.
+ * ## The limitation this card used to carry is gone (7 Sep)
+ *
+ * It read: *"with a single shared invite link there is no way to attribute a
+ * signup to the parent who sent it. Rather than imply otherwise, the card asks
+ * them to mention their name — and unique links are an open question."* That
+ * question is answered. A verified parent now has their own link
+ * (`drizzle/0034`, `repo/referral.ts`), so the message carries it and the
+ * "mention my name" workaround goes with the problem it worked around.
+ *
+ * ⚠ **The shared link stays as the fallback**, and that is not laziness: a
+ * parent on the held path has no code yet, and a message that said "mention my
+ * name" to somebody who *does* have a link would be worse than one that simply
+ * does not name them. So the sentence appears only when it is still true.
  */
-function ReferralCard({ firstName }: { firstName: string | null }) {
+function ReferralCard({
+  firstName,
+  code,
+}: {
+  firstName: string | null;
+  code: string | null;
+}) {
+  const link = code ? `pando.is/join?i=${code}` : "pando.is/join";
   const message =
     `I just joined Pando — it's a private network of local parents that answers the ` +
     `questions you'd normally ask in a group chat, except the answers come from ` +
     `parents whose kids are the same age as yours.
 
 ` +
-    `They're building the Pasadena network now: pando.is/join` +
-    (firstName
-      ? `
+    `They're building the Pasadena network now: ${link}` +
+    (code
+      ? ""
+      : firstName
+        ? `
 
 (If you sign up, mention ${firstName} sent you.)`
-      : "");
+        : "");
 
   return (
     <Panel
@@ -150,6 +173,9 @@ function ReferralCard({ firstName }: { firstName: string | null }) {
       <p className="mt-1 leading-relaxed text-muted text-help">
         When someone you invite completes their profile and has a contribution
         approved, you earn a free Targeted Network Ask.
+        {code
+          ? " The link below is yours — anyone who joins through it is recorded as having come from you."
+          : ""}
       </p>
       <Panel
         as="p"
