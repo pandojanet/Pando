@@ -7,7 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -154,29 +154,14 @@ export default function FreshnessPage() {
         )}
       </Toolbar>
 
-      {/* Only once there is something to decide about — a rule for judging a
-          queue, printed under an empty queue, is a rule the reader is asked to
-          hold for work that does not exist (2 Sep). */}
-      {filtered.length > 0 && (
-        <Explainer title="How to read these">
-          <p>
-            Nothing has been taken down. Pando asked a parent whether their
-            recommendation still holds, they said no, and the record was marked
-            out of date — it still answers, with its age shown.
-          </p>
-          <p className="mt-2">
-            <strong>How many other parents stand behind it</strong> is the thing
-            to look at. One person changing their mind about somewhere nobody
-            else has used is close to a retirement; the same answer about
-            somewhere four families still recommend is close to a keep.
-          </p>
-        </Explainer>
-      )}
-
       <div className="space-y-4">
         {loading && !rows ? (
           <Card>
             <Loading />
+          </Card>
+        ) : error && !rows ? (
+          <Card>
+            <Failed />
           </Card>
         ) : !configured ? (
           <Card>

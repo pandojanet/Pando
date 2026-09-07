@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Heading, HeadingLevel, useHeadingLevel } from "@/components/admin/ui";
 import { cn } from "@/lib/cn";
 
 /**
@@ -75,20 +76,29 @@ export function RecordGroup({
   meaning?: string | null;
   children: ReactNode;
 }) {
+  const level = useHeadingLevel();
   return (
     <section className="border-b border-bark/60 last:border-b-0">
       <header className="bg-paper/60 px-4 py-2.5">
-        <h3 className="text-[13px] font-semibold text-ink">
+        {/* The level comes from the tree, not from this file. A group inside a
+            titled `Card` is an h3; the same group on a page whose card has no
+            title is an h2, because that is where the outline had actually
+            reached. */}
+        <Heading className="text-[13px] font-semibold text-ink">
           {title}
           <span className="ml-2 font-normal tabular-nums text-muted">{count}</span>
-        </h3>
+        </Heading>
         {meaning && (
           <p className="mt-0.5 max-w-[80ch] text-[12.5px] leading-relaxed text-muted">
             {meaning}
           </p>
         )}
       </header>
-      <div className="divide-y divide-bark/60">{children}</div>
+      {/* The cards inside are one level under the group's own heading, so a
+          record was previously a *sibling* of the heading that names its run. */}
+      <div className="divide-y divide-bark/60">
+        <HeadingLevel value={level + 1}>{children}</HeadingLevel>
+      </div>
     </section>
   );
 }
@@ -136,14 +146,14 @@ export function RecordCard({
     >
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1 basis-[18rem]">
-          <h3 className="font-display text-[1.05rem] font-semibold leading-snug tracking-[-0.01em]">
+          <Heading className="font-display text-[1.05rem] font-semibold leading-snug tracking-[-0.01em]">
             {title}
             {kind && (
               <span className="ml-2 align-middle text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted">
                 {kind}
               </span>
             )}
-          </h3>
+          </Heading>
           {badges && <div className="mt-1.5 flex flex-wrap gap-1.5">{badges}</div>}
         </div>
         {aside && (
@@ -179,6 +189,62 @@ export function FactGrid({ children }: { children: ReactNode }) {
     <dl className="grid gap-x-6 gap-y-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
       {children}
     </dl>
+  );
+}
+
+/**
+ * The same facts on **one line**, for a record whose values are all short.
+ *
+ * ## Grid or line is a property of the values, not a preference
+ *
+ * That is the table-or-cards rule one level down, and `/admin/demand` is what
+ * made it necessary. Its record carries exactly two facts — a category and a
+ * neighbourhood, one word each — and `FactGrid` gave each of them half of a
+ * 1,130px row, as a label stacked over a value. Measured at 1440×900: **347px
+ * per card, 4,508px of page** for thirteen questions whose whole content is a
+ * sentence and two words. The grid was doing its job (a fact never squeezed
+ * below a readable line); the job was the wrong one.
+ *
+ * So: **three or more facts, or any of them longer than about three words →
+ * `FactGrid`. Two or three short ones → `FactLine`.** `/admin/activities` keeps
+ * the grid, because eight facts on one line is not a line.
+ *
+ * It stays a real `<dl>` with `<dt>`/`<dd>` pairs — the facts are still facts to
+ * anything reading the document, and only their arrangement changed. The label
+ * is muted and the value is ink, so the pair reads as one unit without a colon
+ * doing the work; the separator is a dot between pairs, never inside one.
+ */
+export function FactLine({ children }: { children: ReactNode }) {
+  return (
+    <dl className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[13px] [&>div:not(:last-child)]:after:ml-1.5 [&>div:not(:last-child)]:after:text-bark [&>div:not(:last-child)]:after:content-['·']">
+      {children}
+    </dl>
+  );
+}
+
+/**
+ * One fact on a `FactLine`: the label and the value side by side.
+ *
+ * A separate component from `Fact` rather than a prop on it, because the two
+ * differ in the markup and not only in the styling — stacked, the label is a
+ * block above its value; inline, the two sit on one baseline and the whole pair
+ * has to stay together when the line wraps.
+ */
+export function FactInline({
+  label,
+  children,
+}: {
+  label: string;
+  children?: ReactNode;
+}) {
+  const empty = children === null || children === undefined || children === "";
+  return (
+    <div className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+        {label}
+      </dt>
+      <dd className="min-w-0">{empty ? <span className="text-muted">—</span> : children}</dd>
+    </div>
   );
 }
 

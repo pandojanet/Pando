@@ -311,6 +311,38 @@ console.log("\n=== 7.7: the guarantee, and its clock ===");
     credit.owed && credit.as === "credit",
   );
 
+  /* The other end of 7.7's clock. `expire_blasts` grants that credit itself,
+     in the same transaction that expires the Ask — and until the grant was
+     stamped on the row, this function kept saying it was owed, so the blast
+     manager painted an alert-red "Pando owes a fresh credit" on a promise the
+     job had already kept. The obvious response to that is to grant a second. */
+  const granted = payments.refundOwed({
+    status: "expired",
+    payment_status: "not_required",
+    credit_id: "c1",
+    approved_responses: 0,
+    expires_at: past,
+    credit_granted_at: past,
+  });
+  ok("and once the job has granted it, nothing is owed", !granted.owed);
+  ok(
+    "but it still says what happened, because that is not the same as never owing",
+    granted.as === "credit" && (granted.why ?? "").includes("granted automatically"),
+    granted.why ?? "(no reason)",
+  );
+  ok(
+    "a null grant still reads as owed — a deployment with no cron grants nothing",
+    payments.refundOwed({
+      status: "expired",
+      payment_status: "not_required",
+      credit_id: "c1",
+      approved_responses: 0,
+      expires_at: past,
+      credit_granted_at: null,
+    }).owed,
+    "silence from a job that never ran must not read as a promise kept",
+  );
+
   const freeTier = payments.refundOwed({
     status: "expired",
     payment_status: "not_required",

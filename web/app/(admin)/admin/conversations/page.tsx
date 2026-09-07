@@ -7,7 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -21,6 +21,7 @@ import {
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Hint, SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import { slugLabel } from "@/components/admin/ui";
 import type {
   ConversationDetail,
@@ -59,8 +60,11 @@ import type {
  * button here would be a second path around 5.8, and the one thing this product
  * promises never to send is an answer nobody read.
  */
+/** The tabs, and what the query parameter may say. */
+const VIEWS = ["all", "waiting", "quiet", "failed"] as const;
+
 export default function ConversationsPage() {
-  const [view, setView] = useState<"all" | "waiting" | "quiet" | "failed">("all");
+  const [view, setView] = useUrlFilter(VIEWS, "all", "view");
   const [search, setSearch] = useState("");
   const [hideTest, setHideTest] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
@@ -165,6 +169,7 @@ export default function ConversationsPage() {
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!rows}
           label="Which conversations"
           value={view}
           onChange={(v) => setView(v as typeof view)}
@@ -177,31 +182,20 @@ export default function ConversationsPage() {
         />
       </div>
 
-      <Explainer title="Why there is no message text here">
-        <p>
-          Pando doesn&apos;t store what anyone writes — inbound or outbound. The
-          record keeps who, when, which direction, what kind of message it was
-          and whether it arrived, and nothing else.
-        </p>
-        <p className="mt-2">
-          So this answers &ldquo;did Pando text her, did it arrive, and did she
-          reply&rdquo; — which is also the arithmetic behind how often Pando is
-          allowed to ask her again.
-        </p>
-      </Explainer>
-
       <div className="mt-4">
         <Card
           title={`Conversations (${filtered.length})`}
           right={
             rows && rows.unattributed > 0 ? (
               <span className="text-[12.5px] text-muted">
-                {rows.unattributed} unattributed{" "}<Hint>{"A message from a number Pando had not yet made a person for, or one whose caregiver profile has since been deleted — the log row survives without them."}</Hint></span>
+                {rows.unattributed} unattributed{" "}<Hint label="What “unattributed” means">{"A message from a number Pando had not yet made a person for, or one whose caregiver profile has since been deleted — the log row survives without them."}</Hint></span>
             ) : undefined
           }
         >
           {loading && !rows ? (
             <Loading />
+          ) : error && !rows ? (
+            <Failed />
           ) : !configured ? (
             <NotConfigured
               demo={demo}
@@ -283,6 +277,8 @@ export default function ConversationsPage() {
           >
             {detail.loading && !detail.rows ? (
               <Loading />
+            ) : detail.error && !detail.rows ? (
+              <Failed />
             ) : !detail.rows ? (
               <Empty title="No history for that parent" />
             ) : (
@@ -344,7 +340,11 @@ function ConversationTableRow({
         {row.failed > 0 && (
           <Badge tone="red">{row.failed} failed</Badge>
         )}
-        <Button tone="secondary" onClick={onOpen}>
+        <Button
+          tone="secondary"
+          subject={row.name ?? "this number"}
+          onClick={onOpen}
+        >
           History
         </Button>
       </Td>

@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -69,9 +70,31 @@ export default function DeliveryPage() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {/**
+        * The one thing a page about delivery has to say before any number on it
+        * means anything: these messages did not go to phones.
+        *
+        * With the relay on, a 100% rate means every message reached a Slack
+        * channel — which is the page's own rule from 3 Sep, that a surface
+        * reporting an outcome says whether the thing producing it is switched
+        * on, applied to the transport instead of to Stripe.
+        */}
+      {data?.relay && (
+        <p className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
+          <strong>Messages are going to the Slack test channel, not to phones.</strong>{" "}
+          Every rate below describes posts in that channel. Verification codes
+          are the exception — those always go by SMS. Quiet hours are not
+          enforced against the channel, because nobody&apos;s phone buzzes.
+        </p>
+      )}
+
       {loading && !data ? (
         <Card>
           <Loading />
+        </Card>
+      ) : error && !data ? (
+        <Card>
+          <Failed />
         </Card>
       ) : !data?.configured ? (
         <Card>

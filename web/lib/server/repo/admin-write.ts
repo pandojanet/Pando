@@ -1,7 +1,8 @@
 import "server-only";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
-import { sendBlast } from "@/lib/server/repo/blast";
+import { createBlastIn, sendBlast } from "@/lib/server/repo/blast";
+import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
 import { sql } from "drizzle-orm";
@@ -57,8 +58,25 @@ export type ActionOutcome =
        * `not_implemented`: a stale admin screen acting on a row that has since
        * been rejected is an ordinary race, not a missing feature, and the two
        * deserve different words on screen.
+       *
+       * The send refusals are their own reasons for the same argument one step
+       * on. `sendBlast` distinguishes six outcomes — a paid Ask that has not
+       * been paid, one still marked for review, one already sent — and they
+       * were all collapsed to `not_found` here, with the real one written to a
+       * container log the admin cannot read. So an admin pressing Send on an
+       * unpaid Ask was told the row had changed. Each is a different thing to
+       * do next, so each says so.
        */
-      reason: "not_implemented" | "referral_cap_reached" | "not_found";
+      reason:
+        | "not_implemented"
+        | "referral_cap_reached"
+        | "not_found"
+        | "blast_unpaid"
+        | "blast_needs_review"
+        | "blast_already_sent"
+        | "blast_not_ready"
+        | "blast_contacts_nobody"
+        | "blast_nobody_reachable";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -293,9 +311,28 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (!outcome.ok) {
         /* Not an error the admin caused: a blast still marked for review, or one
            whose pool came back short, is the system refusing on purpose. The
-           audit row is skipped because nothing changed that is worth attributing. */
+           audit row is skipped because nothing changed that is worth attributing.
+           The reason travels, though — it used to stop at this log line, so the
+           admin was told "that has changed" about an Ask that simply had not
+           been paid for, and the only place the truth existed was stdout. */
         console.info("[blast] send refused", { reason: outcome.reason });
-        return { applied: false, reason: "not_found" };
+        return {
+          applied: false,
+          reason:
+            outcome.reason === "nobody_reachable"
+              ? "blast_nobody_reachable"
+              : outcome.reason === "contacts_nobody"
+                ? "blast_contacts_nobody"
+              : outcome.reason === "unpaid"
+                ? "blast_unpaid"
+              : outcome.reason === "needs_human_review"
+                ? "blast_needs_review"
+                : outcome.reason === "already_sent"
+                  ? "blast_already_sent"
+                  : outcome.reason === "not_ready"
+                    ? "blast_not_ready"
+                    : "not_found",
+        };
       }
       return { applied: true, resource: "blast", resource_id: target };
     }
@@ -354,6 +391,63 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      * be fulfilled and still owe a goodwill refund, and collapsing the two would
      * make that unrepresentable.
      */
+    /**
+     * 7.1 — record a Network Ask, on behalf of the parent who asked for it.
+     *
+     * ## Why the admin creates it, in the pilot
+     *
+     * `createBlast` was written on 27 Aug and had **no caller** — no route, no
+     * action, no job — so the whole of M7 could be managed and never begun:
+     * `/admin/blasts` listed Asks that only a seed script could produce. This
+     * is the entry, and it is deliberately the *manual* one, because that is
+     * how the rest of the pilot already works: an answer waits for a person
+     * (5.8), a caregiver claim is matched by hand (11 Aug), and a parent's
+     * question reaches an admin as a demand signal or a queued answer.
+     *
+     * ⚠ **It is not the automatic path, and that is still a decision.** A thin
+     * answer ends by offering one — *"Want me to ask a few nearby parents for
+     * more?"* — and nothing reads the parent's "yes". Wiring that means saying
+     * what the reply costs and whether it may charge, which is the client's
+     * call rather than ours.
+     *
+     * ## Three things it does not do
+     *
+     * **It does not send.** `blast.send` is a separate button for the reason
+     * recorded there: this is the one path that reaches five strangers'
+     * phones, and creating a question is not deciding to ask it.
+     *
+     * **It does not charge.** `blast.checkout` is separate too, and a paid
+     * tier that has not been paid is refused by `sendBlast`.
+     *
+     * **It does not choose the pool.** A blast exists the moment the question
+     * does; who to bother with it is 7.3, and may need a human first.
+     *
+     * A credit **is** redeemed here, inside this transaction — that is 7.1's
+     * own behaviour, and it is why the insert is `createBlastIn` rather than a
+     * second copy of the statement.
+     */
+    case "blast.create": {
+      const askerId = id(b.asker_id);
+      const question = text(b.question_text);
+      const tier = id(b.tier) as BlastTier | "";
+      if (!askerId || !question || !tier || !TIER_IDS.includes(tier as BlastTier)) {
+        return { applied: false, reason: "not_implemented" };
+      }
+
+      const created = await createBlastIn(tx, {
+        askerId,
+        question,
+        tier: tier as BlastTier,
+        category: text(b.category),
+      });
+      /* An id that names nobody is an ordinary mistake — a stale picker, a
+         contributor since removed — not a fault to roll the transaction back
+         over. Same shape as every other conditional write here. */
+      if (!created) return { applied: false, reason: "not_found" };
+
+      return { applied: true, resource: "blast", resource_id: created.blast_id };
+    }
+
     case "blast.fulfil": {
       const target = id(b.id);
       const note = text(b.note);

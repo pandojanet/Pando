@@ -9,6 +9,7 @@ import {
   ConfidenceBadge,
   Empty,
   ErrorNote,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -94,6 +95,19 @@ function FlagCard({
 }) {
   const isQuestion = flag.subject?.kind === "demand_signal";
   const wrote = flag.subject?.wrote ?? [];
+  /**
+   * What these buttons act on, for their accessible name.
+   *
+   * The record's title where there is one; otherwise the parent's own first
+   * words, because on a flag raised from a question that *is* the subject (the
+   * type says so: "Empty for a question, which is its own text"). Trimmed hard
+   * — a name is read aloud, and a paragraph is not a name.
+   */
+  const subject =
+    flag.subject?.title ||
+    (wrote[0]?.body ? `"${wrote[0].body.slice(0, 40).trimEnd()}"` : null) ||
+    flag.contributor?.name ||
+    "this flag";
 
   return (
     <article className="px-4 py-3.5">
@@ -203,6 +217,7 @@ function FlagCard({
           <Button
             tone="primary"
             disabled={busy}
+            subject={subject}
             title="Saves your comment and takes this off the list"
             onClick={() =>
               void run("Marked as read.", async () =>
@@ -220,6 +235,7 @@ function FlagCard({
             <Button
               tone="danger"
               disabled={busy}
+              subject={subject}
               title="Saves your comment and moves this to the top of the page"
               onClick={() =>
                 void run("Moved to the top.", async () =>
@@ -250,9 +266,14 @@ function Grouped({
 }: {
   flags: FlagRow[];
   notes: Record<string, string>;
-  busy: boolean;
+  /** The flag being acted on, or null. `FlagCard` still takes a boolean. */
+  busy: string | null;
   setNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  run: (label: string, fn: () => Promise<{ persisted: boolean }>) => Promise<void>;
+  run: (
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) => Promise<void>;
 }) {
   return (
     <>
@@ -268,9 +289,9 @@ function Grouped({
               key={flag.id}
               flag={flag}
               note={notes[flag.id] ?? ""}
-              busy={busy}
+              busy={busy === flag.id}
               setNotes={setNotes}
-              run={run}
+              run={(label, fn) => run(flag.id, label, fn)}
             />
           ))}
         </RecordGroup>
@@ -284,7 +305,8 @@ export default function FlagsPage() {
     useAdminRows<FlagRow[]>("flags", { status: "open" });
 
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
+  /* The flag being resolved, not the whole queue. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const open = (rows ?? []).filter((r) => r.status === "open");
@@ -297,8 +319,12 @@ export default function FlagsPage() {
     [open],
   );
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -307,7 +333,7 @@ export default function FlagsPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -329,6 +355,8 @@ export default function FlagsPage() {
         >
           {loading && open.length === 0 ? (
             <Loading />
+          ) : error && open.length === 0 ? (
+            <Failed />
           ) : !configured && open.length === 0 ? (
             <NotConfigured demo={demo} onDemo={setDemo} />
           ) : urgent.length === 0 ? (

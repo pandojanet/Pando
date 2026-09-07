@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -101,7 +102,8 @@ export default function CaregiversPage() {
   const [openConsent, setOpenConsent] = useState<string | null>(null);
   const [method, setMethod] = useState(METHODS[0].id);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  /* The caregiver being acted on, not the whole ladder. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   /** Releasing a hold needs a reason, so it gets its own panel rather than a button. */
   const [releasing, setReleasing] = useState<string | null>(null);
@@ -126,8 +128,12 @@ export default function CaregiversPage() {
      Inert at today's nineteen. */
   const { shown, hidden, revealAll } = useReveal(rows);
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -141,7 +147,7 @@ export default function CaregiversPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -162,6 +168,8 @@ export default function CaregiversPage() {
         <Card title="Nominations">
           {caregivers.loading && rows.length === 0 ? (
             <Loading />
+          ) : caregivers.error && rows.length === 0 ? (
+            <Failed />
           ) : !caregivers.configured && rows.length === 0 ? (
             /* This page reads two resources; sample mode has to cover both. */
             <NotConfigured
@@ -295,7 +303,8 @@ export default function CaregiversPage() {
                         {NEXT_STATES[row.consent_status].includes("consented") && (
                           <Button
                             tone="primary"
-                            disabled={busy}
+                            disabled={busy === row.id}
+                            subject={row.first_name}
                             onClick={() => {
                               setOpenConsent(open ? null : row.id);
                               setMethod(METHODS[0].id);
@@ -313,7 +322,7 @@ export default function CaregiversPage() {
                             .map((to) => (
                               <MenuItem
                                 key={to}
-                                disabled={busy}
+                                disabled={busy === row.id}
                                 tone={to === "declined" ? "danger" : "plain"}
                                 hint={
                                   to === "declined"
@@ -321,7 +330,7 @@ export default function CaregiversPage() {
                                     : "You have asked her, and are waiting."
                                 }
                                 onSelect={() =>
-                                  void run(`Marked ${to}`, async () =>
+                                  void run(row.id, `Marked ${to}`, async () =>
                                     adminAction({
                                       action: "caregiver.consent",
                                       id: row.id,
@@ -350,10 +359,11 @@ export default function CaregiversPage() {
                            */}
                           {row.consent_status === "consented" && (
                             <MenuItem
-                              disabled={busy}
+                              disabled={busy === row.id}
                               hint="Whether Pando may use her at all. Nothing shows a family until the next step too."
                               onSelect={() =>
                                 void run(
+                                  row.id,
                                   row.active ? "Switched off." : "Switched on.",
                                   async () =>
                                     adminAction({
@@ -373,10 +383,11 @@ export default function CaregiversPage() {
                               a family is a further step, and hers to give. */}
                           {row.consent_status === "consented" && row.active && (
                             <MenuItem
-                              disabled={busy}
+                              disabled={busy === row.id}
                               hint="Whether a family asking about care may be shown her at all."
                               onSelect={() =>
                                 void run(
+                                  row.id,
                                   row.discoverable
                                     ? "Hidden from families."
                                     : "Families can see her now.",
@@ -400,7 +411,7 @@ export default function CaregiversPage() {
                             <>
                               <MenuSeparator />
                               <MenuItem
-                                disabled={busy}
+                                disabled={busy === row.id}
                                 hint="Opening it is recorded against your name."
                                 onSelect={() => {
                                   setNoteFor(row.id);
@@ -426,7 +437,7 @@ export default function CaregiversPage() {
                         {row.review_hold && (
                           <Button
                             tone="danger"
-                            disabled={busy}
+                            disabled={busy === row.id}
                             onClick={() => setReleasing(row.id)}
                           >
                             Release the hold…
@@ -576,11 +587,11 @@ export default function CaregiversPage() {
                           <Button
                             tone="primary"
                             disabled={
-                              busy ||
+                              busy === row.id ||
                               (NEEDS_NOTE.includes(method) && note.trim().length === 0)
                             }
                             onClick={() =>
-                              void run("Consent recorded", async () =>
+                              void run(row.id, "Consent recorded", async () =>
                                 adminAction({
                                   action: "caregiver.consent",
                                   id: row.id,
@@ -612,9 +623,9 @@ export default function CaregiversPage() {
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button
                             tone="danger"
-                            disabled={busy || releaseNote.trim().length < 3}
+                            disabled={busy === row.id || releaseNote.trim().length < 3}
                             onClick={() =>
-                              void run("Hold released", async () => {
+                              void run(row.id, "Hold released", async () => {
                                 const result = await adminAction({
                                   action: "nomination.release_hold",
                                   id: row.id,
@@ -694,9 +705,9 @@ export default function CaregiversPage() {
                         </span>
                         <Button
                           tone="secondary"
-                          disabled={busy}
+                          disabled={busy === m.id}
                           onClick={() =>
-                            void run("Merged", async () =>
+                            void run(m.id, "Merged", async () =>
                               adminAction({
                                 action: "caregiver.merge",
                                 keep: m.id,

@@ -313,7 +313,7 @@ export function PersonPicker<T extends SearchablePerson>({
         className={cn("mt-1 text-[12px]", filtering && !open ? "text-muted" : "sr-only")}
       >
         {filtering
-          ? `${matches.length} ${matches.length === 1 ? noun : `${noun}s`} match “${query.trim()}”.`
+          ? `${matches.length} ${matches.length === 1 ? `${noun} matches` : `${noun}s match`} “${query.trim()}”.`
           : `${people.length} ${people.length === 1 ? noun : `${noun}s`} to choose from.`}
       </p>
 
@@ -338,7 +338,7 @@ function personLine(person: SearchablePerson): string {
  * area rather than a name — and a reader who cannot see why a row is there
  * cannot trust the ones that are missing.
  */
-function Highlight({ text, query }: { text: string; query: string }) {
+export function Highlight({ text, query }: { text: string; query: string }) {
   const ranges = matchRanges(text, query);
   if (ranges.length === 0) return <>{text}</>;
   const parts: ReactNode[] = [];

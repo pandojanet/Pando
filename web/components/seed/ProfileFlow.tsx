@@ -93,6 +93,28 @@ export function ProfileFlow() {
       existing ??
         newSession({ invite_code: null, market_id: "pasadena", source: "direct" }),
     );
+    /**
+     * A parent whose profile is already saved opens on the **review**, not
+     * wherever they happened to stop.
+     *
+     * Found by walking the flow to the end: `/done/next` offers *"Review my
+     * answers"* pointing at `/profile`, and `/profile` restored
+     * `screen_index` — which for a finished session is the **last question
+     * they answered**. So a parent who had been thanked, asked their question
+     * and told what happens next tapped "Review my answers" and landed on
+     * *"Ask when you need help. Help when you can."*, mid-questionnaire, with a
+     * dock reading "Review". CLAUDE.md's copy list carried this as an open
+     * question — *"I did not trace what `screen_index` holds for a completed
+     * session"* — and it holds 16 of 17.
+     *
+     * Keyed on `profile_saved_at` rather than a query parameter, because a URL
+     * that changes what a screen does is the thing this app refuses (4 Aug) —
+     * and because the stored fact is the better test anyway: it is true for
+     * *any* return to a saved profile, not only for the one link that happens to
+     * point here. An unfinished session is untouched: the field is null until
+     * the profile is written, so resume still lands where they stopped.
+     */
+    if (existing?.profile_saved_at) setStage("review");
   }, []);
 
   const answers: ProfileAnswers | null = session?.answers ?? null;
@@ -109,6 +131,33 @@ export function ProfileFlow() {
     () => (answers ? visibleScreens(answers) : []),
     [answers],
   );
+
+  /**
+   * How many screens a parent walks: the questions, plus the review.
+   *
+   * **One expression, because two of them disagreed.** Measured in the DOM: the
+   * bar rendered `aria-valuemax="18"` while the live region announced *"Step 1
+   * of 17"* — a sighted parent counting segments and a screen-reader user
+   * hearing the total were given different denominators, and only one of them
+   * could be right. Worse on the verification screen, which passed
+   * `current={screens.length + 1}` and so reported **"Step 19 of 18"**: a bar
+   * whose `valuenow` exceeds its own `valuemax`.
+   *
+   * The 3 Sep fix for the caregiver flow is the precedent — *"the bar and the
+   * counter read from the same expression, so they cannot disagree"* — and this
+   * flow never got it.
+   *
+   * **The code screen counts as the last step rather than an extra one**, and
+   * that is deliberate: whether it appears at all depends on
+   * `/verify/status`, which is fetched lazily at the end (13 Aug) and is
+   * unknown while the questions are being answered. A denominator that grew by
+   * one on the last screen would be a total that changed under the reader; a
+   * denominator that assumed the screen would appear would leave the bar
+   * permanently one segment short wherever verification is off. So review is
+   * the last step, and entering the code is the act of saving it — the bar sits
+   * full there rather than overflowing.
+   */
+  const totalSteps = screens.length + 1;
 
   /** The birth years tapped in P4, for the "whose is it" chips. */
   const children = useMemo(
@@ -574,7 +623,7 @@ export function ProfileFlow() {
           left={<BackButton onClick={() => setStage("review")} />}
           below={
             <div className="mt-1">
-              <Progress total={screens.length + 1} current={screens.length + 1} />
+              <Progress total={totalSteps} current={screens.length} />
             </div>
           }
         />
@@ -623,7 +672,7 @@ export function ProfileFlow() {
           left={<BackButton onClick={goBack} />}
           below={
             <div className="mt-1">
-              <Progress total={screens.length + 1} current={screens.length} />
+              <Progress total={totalSteps} current={screens.length} />
             </div>
           }
         />
@@ -766,7 +815,7 @@ export function ProfileFlow() {
         }
         below={
           <div className="mt-1">
-            <Progress total={screens.length + 1} current={index} />
+            <Progress total={totalSteps} current={index} />
           </div>
         }
       />
@@ -778,7 +827,7 @@ export function ProfileFlow() {
             `TypingDots` already paid for. Focus moving to the heading is the
             other half; this is what says where it moved *to*. */}
         <p className="sr-only" role="status">
-          {`Step ${index + 1} of ${screens.length} — ${screen.title}`}
+          {`Step ${index + 1} of ${totalSteps} — ${screen.title}`}
         </p>
         {/**
          * The first time a step in this app can *leave*.

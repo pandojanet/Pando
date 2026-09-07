@@ -126,7 +126,7 @@ export function Consent({
       {/* `pl-8` on both: the tick's 20px plus the 12px gap, so everything under
           the sentence lines up with it rather than with the box edge. */}
       {links && (
-        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 pl-8 leading-relaxed text-help">
+        <p className="mt-1 flex flex-wrap items-center gap-x-4 pl-8 leading-relaxed text-help">
           {links}
         </p>
       )}

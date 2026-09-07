@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -42,6 +43,9 @@ import type { InviteRow } from "@/lib/admin/types";
  * records where somebody came from; a retired one still lets a parent in, without
  * attribution, because a link forwarded a week ago must not become a dead end.
  */
+/** `busy` for the create form, the one action here with no row. */
+const CREATING = "new-invite";
+
 export default function InvitesPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<InviteRow[]>("invites");
@@ -67,7 +71,8 @@ export default function InvitesPage() {
   const [note, setNote] = useState("");
   /** The create form is folded away until asked for — see below. */
   const [creating, setCreating] = useState(false);
-  const [busy, setBusy] = useState(false);
+  /* The link being retired or restored — or CREATING, for the form. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const all = rows ?? [];
@@ -81,8 +86,12 @@ export default function InvitesPage() {
     .replace(/^-|-$/g, "")
     .slice(0, 40);
 
-  async function run(text: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    text: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -93,13 +102,13 @@ export default function InvitesPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function create() {
     const value = (code.trim() || suggested).toLowerCase();
-    await run("Invite created", async () =>
+    await run(CREATING, "Invite created", async () =>
       adminAction({
         action: "invite.create",
         code: value,
@@ -193,7 +202,7 @@ export default function InvitesPage() {
         <div className="flex flex-wrap items-center gap-3 border-t border-bark/70 px-4 py-3">
           <Button
             tone="primary"
-            disabled={busy || label.trim().length === 0}
+            disabled={busy === CREATING || label.trim().length === 0}
             onClick={() => void create()}
           >
             Create invite
@@ -211,6 +220,8 @@ export default function InvitesPage() {
         <Card title={`Live (${live.length})`}>
           {loading && all.length === 0 ? (
             <Loading />
+          ) : error && all.length === 0 ? (
+            <Failed />
           ) : !configured && all.length === 0 ? (
             <NotConfigured demo={demo} onDemo={setDemo} />
           ) : live.length === 0 ? (
@@ -321,10 +332,12 @@ function InviteTable({
   groups,
 }: {
   rows: InviteRow[];
-  busy: boolean;
+  /** The link being acted on, or null. */
+  busy: string | null;
   /** The live chip list, so the column shows the group's real name and not its id. */
   groups: Array<{ id: string; label: string }>;
   onAction: (
+    rowId: string,
     text: string,
     fn: () => Promise<{ persisted: boolean }>,
   ) => Promise<void>;
@@ -376,7 +389,7 @@ function InviteTable({
                   slugLabel(row.group_option_value))
               ) : (
                 <span className="text-muted">
-                  not linked{" "}<Hint>{"Nothing is recorded about which group these contributors came from"}</Hint></span>
+                  not linked{" "}<Hint label="What “not linked” means">{"Nothing is recorded about which group these contributors came from"}</Hint></span>
               )}
             </Td>
             <Td className="tabular-nums text-muted">{row.opens}</Td>
@@ -415,10 +428,11 @@ function InviteTable({
               {row.active ? (
                 <Button
                   tone="secondary"
-                  disabled={busy}
+                  disabled={busy === row.id}
+                  subject={row.label}
                   title="Stops this link being handed out. Anyone already holding it still gets in — it just stops counting towards this group."
                   onClick={() =>
-                    void onAction("Stopped sharing", async () =>
+                    void onAction(row.id, "Stopped sharing", async () =>
                       adminAction({ action: "invite.retire", id: row.id }),
                     )
                   }
@@ -428,9 +442,9 @@ function InviteTable({
               ) : (
                 <Button
                   tone="secondary"
-                  disabled={busy}
+                  disabled={busy === row.id}
                   onClick={() =>
-                    void onAction("Shared again", async () =>
+                    void onAction(row.id, "Shared again", async () =>
                       adminAction({ action: "invite.restore", id: row.id }),
                     )
                   }

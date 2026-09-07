@@ -8,6 +8,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -100,7 +101,7 @@ function ResponseCard({
         {row.responder_phone_masked && <span>{row.responder_phone_masked}</span>}
         <span>·</span>
         <span>
-          {row.responder_contributions} added before{" "}<Hint>{"Approved contributions they already have. A track record is not a reason to approve, but it is a reason to read differently."}</Hint></span>
+          {row.responder_contributions} added before{" "}<Hint label="What “added before” means">{"Approved contributions they already have. A track record is not a reason to approve, but it is a reason to read differently."}</Hint></span>
         {row.responded_at && (
           <>
             <span>·</span>
@@ -252,7 +253,8 @@ export default function BlastResponsesPage() {
   const { rows, configured, demo, setDemo, loading, error, reload } =
     useAdminRows<BlastResponseRow[]>("blast_responses");
 
-  const [busy, setBusy] = useState(false);
+  /* The reply being acted on, not the whole page. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
 
@@ -260,8 +262,12 @@ export default function BlastResponsesPage() {
   const waiting = all.filter((r) => r.review_status === "pending_review");
   const done = all.filter((r) => r.review_status !== "pending_review");
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -270,7 +276,7 @@ export default function BlastResponsesPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -288,6 +294,8 @@ export default function BlastResponsesPage() {
         <Card title={`Waiting to be read (${waiting.length})`}>
           {loading && all.length === 0 ? (
             <Loading />
+          ) : error && all.length === 0 ? (
+            <Failed />
           ) : !configured && all.length === 0 ? (
             <NotConfigured
               demo={demo}
@@ -306,9 +314,9 @@ export default function BlastResponsesPage() {
                   key={key(r)}
                   row={r}
                   typed={names[key(r)] ?? ""}
-                  busy={busy}
+                  busy={busy === key(r)}
                   setNames={setNames}
-                  run={run}
+                  run={(label, fn) => run(key(r), label, fn)}
                 />
               ))}
             </ul>
@@ -323,9 +331,9 @@ export default function BlastResponsesPage() {
                   key={key(r)}
                   row={r}
                   typed={names[key(r)] ?? ""}
-                  busy={busy}
+                  busy={busy === key(r)}
                   setNames={setNames}
-                  run={run}
+                  run={(label, fn) => run(key(r), label, fn)}
                 />
               ))}
             </ul>

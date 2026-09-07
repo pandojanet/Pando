@@ -106,6 +106,53 @@ export const ALLOWANCE_CHOICES = [
  * them a bare number — because a bare number is how somebody answers the
  * clarifying question about a child's age, and the two must never collide.
  */
+/**
+ * Does the quiet-hours rule stop this message?
+ *
+ * The window itself is 8am–9pm Pacific and lives in `isQuietHours`, which needs
+ * a clock; this is the *rule* around it, which does not — so all four inputs can
+ * be tested exhaustively rather than at whatever hour the suite happens to run.
+ *
+ * ## Three things it refuses to block, and the third is the interesting one
+ *
+ * **Transactional messages.** A verification code, a HELP reply, a capture
+ * prompt: the parent asked for it, and §14 is about proactive contact.
+ *
+ * **A live reply.** 12.1 exempts "direct replies in a live conversation", which
+ * is why `inReplyTo` exists separately from `transactional` — answering a
+ * parent who texted at 10pm is a reply, not an intrusion.
+ *
+ * **Anything going to the Slack relay**, and the argument is what the rule is
+ * *for*. Quiet hours exist so a phone does not buzz on somebody's nightstand;
+ * a post in a test channel wakes nobody, and the recipients there are demo rows
+ * rather than parents. Enforcing Pacific evenings against a Slack channel does
+ * not protect anyone — it makes the loop untestable for anybody working
+ * European hours, whose whole day is inside the window.
+ *
+ * ⚠ This is a **narrowing** of CLAUDE.md's "the relay is a swap of the provider
+ * step only", and the boundary is deliberate: opt-out, the 48-hour gap, the
+ * monthly ceiling and the response governor all still run on the relay,
+ * untouched, because each is about *whether this person may be contacted at
+ * all* and each must be exercised by the testing that the relay exists for.
+ * Quiet hours is the one rule that is purely about the **clock on the wall**,
+ * and the relay has no wall. It cannot leak into production either: production
+ * has no relay, and a deployment that did would be posting every parent's
+ * message into a Slack channel — a far louder failure than the hour.
+ */
+export function quietHoursBlocks(input: {
+  category: "outreach" | "transactional";
+  /** A reply to something the parent just sent. */
+  inReplyTo: boolean;
+  /** From `isQuietHours()` — passed in so this stays clock-free. */
+  quiet: boolean;
+  transport: "sms" | "slack";
+}): boolean {
+  if (input.category !== "outreach") return false;
+  if (input.inReplyTo) return false;
+  if (!input.quiet) return false;
+  return input.transport !== "slack";
+}
+
 export function isSettingsCommand(text: string): boolean {
   const body = text.trim().toUpperCase().replace(/[.!?]+$/, "");
   return body === "SETTINGS" || body === "BLAST SETTINGS";

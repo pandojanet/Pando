@@ -92,6 +92,17 @@ export function useAdminRows<T>(
   };
 }
 
+/**
+ * Dispatched on `window` after any write that went through. The shell listens
+ * for it and re-reads the queue counts in the sidebar.
+ *
+ * It is fired here, in the one function every write goes through, rather than
+ * from the fourteen pages that call it — the same reason `/api/admin/action` is
+ * the single write path that cannot forget its audit row. A page added next year
+ * gets this for nothing, and a page cannot forget it.
+ */
+export const ADMIN_WRITE_EVENT = "pando:admin-write";
+
 export async function adminAction(
   action: AdminAction,
 ): Promise<{
@@ -105,7 +116,16 @@ export async function adminAction(
    */
   detail?: Record<string, unknown>;
 }> {
-  return post("/api/admin/action", action);
+  const result = await post<{
+    ok: true;
+    persisted: boolean;
+    actor: string;
+    detail?: Record<string, unknown>;
+  }>("/api/admin/action", action);
+  /* After the response, so a refused action does not make the sidebar re-read
+     for nothing — and only on success, because `post` throws otherwise. */
+  window.dispatchEvent(new Event(ADMIN_WRITE_EVENT));
+  return result;
 }
 
 /**

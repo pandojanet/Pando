@@ -274,5 +274,52 @@ ok(
   })(),
 );
 
+console.log("\n=== quiet hours: the rule around the clock ===");
+/* The window itself is 8am-9pm Pacific and needs a clock. This is the rule that
+   decides whether it applies at all, which does not — so all four inputs are
+   checked here rather than at whatever hour the suite happens to run. */
+const qh = (over: Partial<Parameters<typeof p.quietHoursBlocks>[0]> = {}) =>
+  p.quietHoursBlocks({
+    category: "outreach",
+    inReplyTo: false,
+    quiet: true,
+    transport: "sms",
+    ...over,
+  });
+
+ok("a proactive text at 11pm Pacific is refused", qh());
+ok("the same text at noon is not", !qh({ quiet: false }));
+ok("a transactional message is never held back", !qh({ category: "transactional" }));
+ok(
+  "nor is a reply to somebody who just texted",
+  !qh({ inReplyTo: true }),
+  "12.1 exempts a live conversation — answering at 10pm is a reply, not an intrusion",
+);
+ok(
+  "and the relay is exempt, because a Slack post wakes nobody",
+  !qh({ transport: "slack" }),
+  "the rule protects a phone on a nightstand; the test channel has none",
+);
+ok(
+  "the exemption is the transport and nothing else",
+  qh({ transport: "sms" }) && !qh({ transport: "slack" }),
+);
+ok(
+  "and it does not leak into the other protections",
+  (() => {
+    /* Opt-out, the gap, the ceiling and the governor are about whether this
+       person may be contacted at all, so the relay must still run every one. */
+    const d = p.decideOutreach("blast", { monthly_contact_allowance: 5, allowance_mode: "fixed" }, {
+      sent_last_30_days: 5,
+      responded_last_30_days: 5,
+      last_outreach_at: null,
+      pings_this_month: 0,
+      blast_today: false,
+    });
+    return !d.ok;
+  })(),
+  "decideOutreach takes no transport, so it cannot be relaxed by one",
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

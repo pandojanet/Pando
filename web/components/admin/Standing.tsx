@@ -6,7 +6,7 @@ import {
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -92,25 +92,6 @@ export function Standing() {
 
   return (
     <>
-      <Explainer title="What a tier is, and what it is not">
-        <p>
-          A tier is <strong>earned access, not a score</strong>. It counts what
-          somebody has done — contributions approved, Network Asks answered,
-          freshness checks confirmed — and it never goes down.
-        </p>
-        <p className="mt-2">
-          Nobody is ever shown their own. There are no points and no leaderboard:
-          what a higher tier buys is being able to ask the community more, and
-          Founding is granted by you on a second approved contribution rather
-          than earned by volume.
-        </p>
-        <p className="mt-2">
-          <strong>How often somebody is asked</strong> is a separate mechanism.
-          A contributor who stops answering is asked <em>less</em> — that is the
-          response rate column — but they keep the tier they earned.
-        </p>
-      </Explainer>
-
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <div className="mt-4">
@@ -153,12 +134,14 @@ export function Standing() {
           right={
             governed > 0 ? (
               <span className="text-[12.5px] text-gold-ink">
-                {beingAskedLess(governed)}{" "}<Hint>{"Their response rate is under a quarter over 30 days, so Pando has lowered how often it asks them — never below five a month, which is the community minimum."}</Hint></span>
+                {beingAskedLess(governed)}{" "}<Hint label="Why Pando is asking them less">{"Their response rate is under a quarter over 30 days, so Pando has lowered how often it asks them — never below five a month, which is the community minimum."}</Hint></span>
             ) : undefined
           }
         >
           {loading && !rows ? (
             <Loading />
+          ) : error && !rows ? (
+            <Failed />
           ) : !configured ? (
             <NotConfigured
               demo={demo}

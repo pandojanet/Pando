@@ -78,10 +78,49 @@ ok(
   /purpose === "verification"\)\s*return "sms";/.test(source),
   "if this fails, the copy above no longer describes the app",
 );
+/**
+ * The same rule, asserted against **the function's own body** rather than
+ * against what happens to sit within 400 characters of the word.
+ *
+ * The proximity version failed on 7 Sep and was a false positive: the first
+ * `transportFor` in the file is a mention in a doc comment, the next is the
+ * call site inside `sendSms`, and a few lines below *that* call the quiet-hours
+ * relay exemption legitimately reads `category === "outreach"`. So a correct
+ * router was reported as routing on the category. That is the same shape as the
+ * `test:security` regex that once called a signed route unguarded — a
+ * source-grepping assertion has to name the region it is asking about, or the
+ * file grows into it.
+ */
+const routerBody = (() => {
+  const start = source.indexOf("export function transportFor");
+  if (start < 0) return null;
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(open, i + 1);
+    }
+  }
+  return null;
+})();
+ok("the router is where the copy above says it is", routerBody !== null);
 ok(
   "and it does not route on `category`",
-  !/transportFor[\s\S]{0,400}category ===/.test(source),
+  routerBody !== null && !/category/.test(routerBody),
   "`transactional` covers HELP, settings and every capture prompt — the relay's whole subject",
+);
+/* The strongest form of the same claim: the category is not even a parameter,
+   so no future edit inside that body could reach for it without also changing
+   the signature this line reads. */
+ok(
+  "the category is not an input to it at all",
+  /* A plain `includes`, not a regex: a template literal eats `\(` and `\s` on the
+     way in, which is how the first version of this line shipped as
+     `transportFor(s*input…)` and failed against a signature it matched by eye. */
+  source.includes('export function transportFor(input: Pick<SendInput, "purpose">)'),
+  "if this fails, check whether the signature grew a field before assuming the test is stale",
 );
 ok(
   "the verification caller marks itself",

@@ -65,6 +65,8 @@ const EMPTY: PoolResult = {
   configured: false,
 };
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 export async function selectPool(input: {
   askerId: string;
   tier: BlastTier;
@@ -259,72 +261,125 @@ export async function createBlast(input: {
   | { ok: true; blast_id: string; credit_redeemed: boolean; expires_at: string | null }
   | { ok: false; reason: "unconfigured" | "unknown_asker" }
 > {
-  const spec = TIERS[input.tier];
-  const marketId = input.marketId ?? "pasadena";
-  const expires = expiryFor(input.tier, new Date());
-
   const result = await withDb(async (db: Db) =>
-    db.transaction(async (tx) => {
-      const asker = (await tx.execute(
-        sql`select id from people where id = ${input.askerId}::uuid`,
-      )) as unknown as Array<Record<string, unknown>>;
-      if (asker.length === 0) return null;
-
-      /**
-       * One unspent credit of this tier, locked while we look at it.
-       *
-       * SKIP LOCKED because two blasts created at once must not redeem the same
-       * credit — the second takes the next one, or pays. A balance read followed
-       * by an update is exactly that race with extra steps.
-       */
-      const credit =
-        spec.credit_kind !== null
-          ? ((await tx.execute(sql`
-              select id from credits
-               where person_id = ${input.askerId}::uuid
-                 and kind = ${spec.credit_kind}
-                 and spent_at is null
-               order by created_at
-               limit 1
-               for update skip locked
-            `)) as unknown as Array<Record<string, unknown>>)
-          : [];
-      const creditId = credit[0]?.id ? String(credit[0].id) : null;
-
-      const rows = (await tx.execute(sql`
-        insert into blasts
-          (market_id, asker_id, question_text, category, neighborhood, tier,
-           status, pool_target, expires_at, human_review, credit_id, is_test)
-        values
-          (${marketId}, ${input.askerId}::uuid, ${input.question},
-           ${input.category ?? null},
-           (select neighborhood from people where id = ${input.askerId}::uuid),
-           ${input.tier},
-           ${spec.always_human_review ? "pending_review" : "draft"},
-           ${spec.pool_target},
-           ${expires ? expires.toISOString() : null},
-           ${spec.always_human_review}, ${creditId}, ${input.isTest === true})
-        returning id, expires_at
-      `)) as unknown as Array<Record<string, unknown>>;
-
-      if (creditId) {
-        /* Spent in the same transaction as the thing it paid for: a credit marked
-           spent against a blast that failed to insert is a balance the parent
-           lost to a database error. */
-        await tx.execute(sql`update credits set spent_at = now() where id = ${creditId}::uuid`);
-      }
-
-      return {
-        blast_id: String(rows[0]?.id ?? ""),
-        credit_redeemed: creditId !== null,
-        expires_at: (rows[0]?.expires_at as string | null) ?? null,
-      };
-    }),
+    db.transaction(async (tx) => createBlastIn(tx, input)),
   );
 
   if (!result.persisted) return { ok: false, reason: "unconfigured" };
   if (!result.data) return { ok: false, reason: "unknown_asker" };
   return { ok: true, ...result.data };
+}
+
+/** What 7.1 hands back once the Ask exists. */
+export interface CreatedBlast {
+  blast_id: string;
+  credit_redeemed: boolean;
+  expires_at: string | null;
+}
+
+/**
+ * The body of 7.1, inside a caller's transaction.
+ *
+ * Extracted so the admin's "record an Ask" action can write the blast and its
+ * own audit row in **one** transaction, which is the rule every admin write
+ * follows (6 Aug). Copying the insert into `admin-write.ts` was the
+ * alternative and is the drift this repo has paid for before: two writers of
+ * one fact, and the credit redemption is the half that would quietly stop
+ * matching the tier it is meant to cover.
+ *
+ * Returns null when the asker does not exist, which the caller reports. It does
+ * not throw — a bad id is an ordinary answer, not a fault.
+ */
+export async function createBlastIn(
+  tx: Tx,
+  input: {
+    askerId: string;
+    question: string;
+    tier: BlastTier;
+    category?: string | null;
+    marketId?: string;
+    isTest?: boolean;
+  },
+): Promise<CreatedBlast | null> {
+  const spec = TIERS[input.tier];
+  const marketId = input.marketId ?? "pasadena";
+  const expires = expiryFor(input.tier, new Date());
+
+  const asker = (await tx.execute(
+    sql`select id from people where id = ${input.askerId}::uuid`,
+  )) as unknown as Array<Record<string, unknown>>;
+  if (asker.length === 0) return null;
+
+  /**
+   * One unspent credit of this tier, locked while we look at it.
+   *
+   * SKIP LOCKED because two blasts created at once must not redeem the same
+   * credit — the second takes the next one, or pays. A balance read followed
+   * by an update is exactly that race with extra steps.
+   */
+  const credit =
+    spec.credit_kind !== null
+      ? ((await tx.execute(sql`
+          select id from credits
+           where person_id = ${input.askerId}::uuid
+             and kind = ${spec.credit_kind}
+             and spent_at is null
+           order by created_at
+           limit 1
+           for update skip locked
+        `)) as unknown as Array<Record<string, unknown>>)
+      : [];
+  const creditId = credit[0]?.id ? String(credit[0].id) : null;
+
+  /**
+   * What the money is, said at creation rather than at checkout.
+   *
+   * The column defaults to `not_required`, and while nothing could create a
+   * blast that default was harmless. It is not now: a $15 Targeted Ask with no
+   * credit behind it sat there reading *no payment required* until somebody
+   * happened to open a checkout for it — on `/admin/payments`, which exists to
+   * answer what is owed and to whom.
+   *
+   * `paymentFor` decides, so the row and `sendBlast`'s refusal cannot
+   * disagree: a free tier and a credit-funded Ask are `not_required`, and a
+   * priced one with no credit is `pending` from the moment it exists.
+   *
+   * `price_cents` is deliberately **not** written here. It is frozen at
+   * checkout (`drizzle/0029`) because it records what this parent was actually
+   * charged, and nobody has been charged yet.
+   */
+  const payment = paymentFor({ tier: input.tier, creditRedeemed: creditId !== null });
+
+  const rows = (await tx.execute(sql`
+    insert into blasts
+      (market_id, asker_id, question_text, category, neighborhood, tier,
+       status, pool_target, expires_at, human_review, credit_id,
+       payment_status, is_test)
+    values
+      (${marketId}, ${input.askerId}::uuid, ${input.question},
+       ${input.category ?? null},
+       (select neighborhood from people where id = ${input.askerId}::uuid),
+       ${input.tier},
+       ${spec.always_human_review ? "pending_review" : "draft"},
+       ${spec.pool_target},
+       ${expires ? expires.toISOString() : null},
+       ${spec.always_human_review}, ${creditId},
+       ${payment.status}, ${input.isTest === true})
+    returning id, expires_at
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  if (creditId) {
+    /* Spent in the same transaction as the thing it paid for: a credit marked
+       spent against a blast that failed to insert is a balance the parent
+       lost to a database error. */
+    await tx.execute(sql`update credits set spent_at = now() where id = ${creditId}::uuid`);
+  }
+
+  return {
+    blast_id: String(rows[0]?.id ?? ""),
+    credit_redeemed: creditId !== null,
+    expires_at: (rows[0]?.expires_at as string | null) ?? null,
+  };
 }
 
 export interface SendBlastResult {
@@ -334,6 +389,10 @@ export interface SendBlastResult {
   skipped: number;
   reason?:
     | "not_found"
+    /** 7.11 — a passive entry is the demand map, and contacts nobody. */
+    | "contacts_nobody"
+    /** Everybody in the pool was refused, or the provider is not configured. */
+    | "nobody_reachable"
     /** 13.5 — a paid tier whose checkout has not completed. */
     | "unpaid"
     | "not_ready"
@@ -390,6 +449,18 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   const blast = loaded.data;
   if (Number(blast.already ?? 0) > 0) {
     return { ok: false, sent: 0, skipped: 0, reason: "already_sent" };
+  }
+  /**
+   * 7.11 — a passive entry contacts nobody, so there is nothing to send.
+   *
+   * Without this the send ran, found an empty pool, counted zero and marked the
+   * Ask `pending_review` — telling an admin that a question doing exactly what
+   * its tier promises is waiting for a person. `selectPool` already returns
+   * early for `pool_target === 0`; this is the same fact one layer up, before
+   * anything is written.
+   */
+  if (TIERS[String(blast.tier) as BlastTier].pool_target === 0) {
+    return { ok: false, sent: 0, skipped: 0, reason: "contacts_nobody" };
   }
   if (blast.human_review === true) {
     return { ok: false, sent: 0, skipped: 0, reason: "needs_human_review" };
@@ -498,7 +569,14 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   });
 
   console.info("[blast] sent", { tier, sent, skipped, wanted: pool.target });
-  return { ok: sent > 0, sent, skipped };
+  /* A send that reached nobody is a refusal with a name, not a bare `ok: false`.
+     Without one the admin was told the row had changed, when what happened is
+     that every parent was inside a protection rule — or, far more often on a
+     fresh deployment, that no messaging provider is configured at all. The row
+     is still marked for review above: nought sent is something a person should
+     look at. */
+  if (sent === 0) return { ok: false, sent, skipped, reason: "nobody_reachable" };
+  return { ok: true, sent, skipped };
 }
 
 async function phoneFor(personId: string): Promise<string | null> {

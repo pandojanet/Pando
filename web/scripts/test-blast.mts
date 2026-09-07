@@ -217,5 +217,70 @@ ok(
   t.TIER_IDS.every((id) => t.TIERS[id].id === id),
 );
 
+console.log("\n=== 7.7's automatic credit is not a second compensation ===");
+/* Both of these were live on 7 Sep, and one run of `expire_blasts` against the
+   real database did both: it credited a card-paid Ask the payments page was
+   already reporting as owed a refund, and it credited a Board Ask whose
+   checkout had never completed. */
+ok(
+  "a credit-funded Ask that timed out gets a fresh credit",
+  t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: true })
+    .grant,
+);
+ok(
+  "and it is the tier's credit kind, never the tier id",
+  t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: true })
+    .kind === t.TIERS.targeted.credit_kind,
+  "credits_kind_check does not admit tier ids",
+);
+ok(
+  "a card-paid Ask is owed money, so it is NOT also credited",
+  !t.automaticCredit({ tier: "targeted", payment_status: "paid", credit_funded: false }).grant,
+  "one failure, one compensation - the refund is 13.7's manual step",
+);
+ok(
+  "nor is one already flagged for refund",
+  !t.automaticCredit({ tier: "targeted", payment_status: "refund_due", credit_funded: false })
+    .grant,
+);
+ok(
+  "an Ask whose checkout never completed mints nothing",
+  !t.automaticCredit({ tier: "board", payment_status: "pending", credit_funded: false }).grant,
+  "otherwise a free credit is farmable by creating an Ask and not paying for it",
+);
+ok(
+  "and neither does a failed checkout",
+  !t.automaticCredit({ tier: "board", payment_status: "failed", credit_funded: false }).grant,
+);
+ok(
+  "a free tier is owed nothing, because nothing was taken",
+  t.TIER_IDS.filter((id) => t.TIERS[id].price_cents === 0).every(
+    (id) =>
+      !t.automaticCredit({ tier: id, payment_status: "not_required", credit_funded: false })
+        .grant,
+  ),
+);
+ok(
+  "the two halves of the guarantee never both fire",
+  t.TIER_IDS.every((id) =>
+    (["paid", "refund_due", "pending", "failed", "not_required"] as const).every((status) => {
+      const credit = t.automaticCredit({
+        tier: id,
+        payment_status: status,
+        credit_funded: false,
+      }).grant;
+      const money =
+        t.owedRefund({
+          tier: id,
+          approved_answers: 0,
+          expires_at: new Date("2026-08-01T00:00:00Z"),
+          now: new Date("2026-09-01T00:00:00Z"),
+        }) && (status === "paid" || status === "refund_due");
+      return !(credit && money);
+    }),
+  ),
+  "a credit and a refund for one failure is paying twice",
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

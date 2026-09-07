@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -18,15 +19,16 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint, SegmentedFilter } from "@/components/admin/kit";
+import { SegmentedFilter } from "@/components/admin/kit";
 import {
-  Fact,
-  FactGrid,
+  FactInline,
+  FactLine,
   RecordCard,
   RecordDrawer,
   RecordList,
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import {
   DEMAND_CATEGORY,
   DEMAND_SENSITIVITY,
@@ -53,14 +55,18 @@ import type { DemandRow } from "@/lib/admin/types";
  * Nothing here is ever published. The text is a parent's own words about their own
  * family, and it stays on this screen.
  */
+/** The tabs, and what the query parameter may say. */
+const FILTERS = ["urgent", "open", "all"] as const;
+
 export default function DemandPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<DemandRow[]>("demand");
 
-  const [filter, setFilter] = useState<"urgent" | "open" | "all">("urgent");
+  const [filter, setFilter] = useUrlFilter(FILTERS, "urgent");
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  /* The question being acted on, not the whole queue. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const all = rows ?? [];
@@ -132,8 +138,12 @@ export default function DemandPage() {
     };
   }, [all]);
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -148,7 +158,7 @@ export default function DemandPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -167,6 +177,7 @@ export default function DemandPage() {
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!rows}
           label="Which questions to show"
           value={filter}
           onChange={setFilter}
@@ -187,30 +198,21 @@ export default function DemandPage() {
        * does nothing at all until a person has read it.
        */}
       {counts.allegation > 0 && (
-        <div className="mb-4 rounded-2xl border border-alert-line bg-alert-wash p-4">
-          <p className="text-[14.5px] font-semibold text-alert">
+        <div className="mb-2 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5">
+          <p className="text-[13.5px] font-semibold text-alert">
             {counts.allegation === 1
               ? "One parent made a claim about a named person."
               : `${counts.allegation} parents made claims about named people.`}
-          </p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-alert/90">
-            Read it, and nothing else. These are never circulated, never quoted in an
-            answer, and never written into the knowledge base — and Pando told the
-            parent it cannot look into it.
           </p>
         </div>
       )}
 
       {counts.high > 0 && (
-        <div className="mb-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
-          <p className="text-[14.5px] font-semibold text-gold-ink">
+        <div className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-4 py-2.5">
+          <p className="text-[13.5px] font-semibold text-gold-ink">
             {counts.high === 1
               ? "One parent asked about health, legal or safety."
               : `${counts.high} parents asked about health, legal or safety.`}
-          </p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-gold-ink/90">
-            They were shown professional resources in the flow. This queue exists so
-            somebody follows up properly — Pando does not answer these.
           </p>
         </div>
       )}
@@ -218,6 +220,8 @@ export default function DemandPage() {
       <Card>
         {loading && all.length === 0 ? (
           <Loading />
+        ) : error && all.length === 0 ? (
+          <Failed />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
@@ -266,30 +270,28 @@ export default function DemandPage() {
                     <>
                       <Badge
                         tone={kind?.tone ?? "neutral"}
-                        hint={
-                          kind
-                            ? `What they saw: ${kind.said}\nWhat you may do: ${kind.allowed}`
-                            : undefined
-                        }
-                      >
+>
                         {kind?.label ?? sentence(row.sensitivity)}
                       </Badge>
                       <Badge tone={DEMAND_STATUS[row.status]?.tone ?? "neutral"}>
                         {DEMAND_STATUS[row.status]?.label ?? sentence(row.status)}
                       </Badge>
                       {/**
-                       * The line under the badge used to read "not usable until
-                       * read" for every row `requires_human_review` was set on —
-                       * which is every non-ordinary row, and **nothing ever
-                       * clears that column**. So a question you had read,
-                       * followed up and answered still said it was unread,
-                       * forever. It is now tied to the thing that does change:
-                       * while it is open it is waiting, and once you have moved
-                       * it on it isn't.
+                       * ⚠ There is deliberately **no** third badge here. It used
+                       * to carry "Waiting for you to read it" whenever
+                       * `requires_human_review` was set and the row was open —
+                       * beside a status badge that already reads **"Not looked
+                       * at"** for exactly those rows. Two pills saying one thing,
+                       * on every open card. What it was really distinguishing is
+                       * *this one needs a person*, and the sensitivity badge to
+                       * its left says that in words.
+                       *
+                       * (Its history is worth keeping: it once read "not usable
+                       * until read", driven by a column **nothing ever clears**,
+                       * so a question you had read, followed up and answered
+                       * still claimed to be unread forever. Tying it to `status`
+                       * fixed the lie; removing it fixes the repetition.)
                        */}
-                      {row.requires_human_review && row.status === "open" && (
-                        <Badge tone="muted">Waiting for you to read it</Badge>
-                      )}
                     </>
                   }
                   actions={
@@ -297,7 +299,8 @@ export default function DemandPage() {
                       {row.status === "open" && (
                         <Button
                           tone="primary"
-                          disabled={busy}
+                          disabled={busy === row.id}
+                          subject={`"${row.question_text.slice(0, 44).trimEnd()}"`}
                           title="Writes a note against this question, with your name on it. Nothing goes to the parent."
                           onClick={() => setNoteFor(noteFor === row.id ? null : row.id)}
                         >
@@ -309,10 +312,11 @@ export default function DemandPage() {
                       {row.status !== "closed" && (
                         <Button
                           tone="secondary"
-                          disabled={busy}
+                          disabled={busy === row.id}
+                          subject={`"${row.question_text.slice(0, 44).trimEnd()}"`}
                           title="Takes it off the list without a note — for a question that needs nothing from you."
                           onClick={() =>
-                            void run("Closed", async () =>
+                            void run(row.id, "Closed", async () =>
                               adminAction({
                                 action: "demand.status",
                                 id: row.id,
@@ -328,21 +332,23 @@ export default function DemandPage() {
                     </>
                   }
                 >
-                  <FactGrid>
-                    <Fact label="About">
+                  {/* One line, not a grid: two one-word values were taking
+                      half a 1,130px row each, stacked over their labels — 347px
+                      of card for a sentence and two words. */}
+                  <FactLine>
+                    <FactInline label="About">
                       {row.category
                         ? (DEMAND_CATEGORY[row.category] ?? sentence(row.category))
                         : null}
-                    </Fact>
-                    <Fact label="Where from">
+                    </FactInline>
+                    <FactInline label="Where from">
                       {row.neighborhood ? (
                         slugLabel(row.neighborhood)
                       ) : (
-                        <span className="text-muted">
-                          Not known{" "}<Hint>{"Anonymous session — no profile to read it from"}</Hint></span>
+                        <span className="text-muted">Not known</span>
                       )}
-                    </Fact>
-                  </FactGrid>
+                    </FactInline>
+                  </FactLine>
 
                   {noteFor === row.id && (
                     <RecordDrawer>
@@ -363,9 +369,9 @@ export default function DemandPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           tone="primary"
-                          disabled={busy || note.trim().length < 3}
+                          disabled={busy === row.id || note.trim().length < 3}
                           onClick={() =>
-                            void run("Recorded", async () =>
+                            void run(row.id, "Recorded", async () =>
                               adminAction({
                                 action: "demand.status",
                                 id: row.id,

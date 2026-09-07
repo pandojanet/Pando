@@ -1,6 +1,6 @@
 import "server-only";
 
-import { type OutreachKind } from "@/lib/outreach-policy";
+import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
 import { isOptedOut, outreachAllowed, recordSend } from "@/lib/server/repo/outreach";
 import {
@@ -318,8 +318,17 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
    * `inReplyTo` exists separately from `transactional`: answering a parent who
    * just texted at 10pm is a reply, not an intrusion.
    */
-  if (category === "outreach" && !input.inReplyTo && isQuietHours()) {
+  const transport = transportFor(input);
+  const quiet = isQuietHours();
+  if (quietHoursBlocks({ category, inReplyTo: Boolean(input.inReplyTo), quiet, transport })) {
     return { sent: false, reason: "quiet_hours" };
+  }
+  if (quiet && category === "outreach" && !input.inReplyTo && transport === "slack") {
+    /* Said out loud every time it happens, because a rule that stops applying
+       silently is how it stops applying somewhere it should not. */
+    console.info("[sms] quiet hours ignored — relay, so nobody's phone buzzes", {
+      template: input.template ?? null,
+    });
   }
 
   /**
@@ -348,7 +357,7 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
    * contributor protection exactly as a real send is, so what gets exercised in
    * Slack is the behaviour that will ship.
    */
-  if (transportFor(input) === "slack") {
+  if (transport === "slack") {
     return sendViaSlack(input);
   }
 

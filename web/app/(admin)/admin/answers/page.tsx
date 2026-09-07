@@ -8,6 +8,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -87,7 +88,7 @@ function AnswerCard({
                impression of Pando, which is worth the reviewer knowing. */
             <span>
               New number{" "}
-              <Hint>
+              <Hint label="What “New number” means">
                 No profile — they texted cold, usually from a forwarded answer.
               </Hint>
             </span>
@@ -142,13 +143,11 @@ function AnswerCard({
             </Badge>
           ))
         )}
+        {/* No hint: "Routine — every answer is read" in neutral, against a
+            named reason in gold, is the whole of what the two sentences here
+            used to say — and on this queue the same one rendered ten times. */}
         <Badge
           tone={row.hold_reason === "pilot_review_all" ? "neutral" : "gold"}
-          hint={
-            row.hold_reason === "pilot_review_all"
-              ? "Held because the pilot reads every answer, not because of anything in this one."
-              : "This one would still be held once the pilot stops reading everything."
-          }
         >
           {holdReasonLabel(row.hold_reason)}
         </Badge>
@@ -164,6 +163,7 @@ function AnswerCard({
           <>
             <Button
               tone="primary"
+              subject={`"${row.question.slice(0, 44).trimEnd()}"`}
               disabled={busy}
               title="Records your decision. Sending is the next button — a carrier failure must not undo an approval."
               onClick={() =>
@@ -176,6 +176,7 @@ function AnswerCard({
             </Button>
             <Button
               tone="secondary"
+              subject={`"${row.question.slice(0, 44).trimEnd()}"`}
               disabled={busy}
               onClick={() => setDrafts((d) => ({ ...d, [row.id]: row.answer_text }))}
             >
@@ -183,6 +184,7 @@ function AnswerCard({
             </Button>
             <Button
               tone="danger"
+              subject={`"${row.question.slice(0, 44).trimEnd()}"`}
               disabled={busy}
               title="Nothing is sent. The text is kept as the record of what was refused."
               onClick={() =>
@@ -239,6 +241,7 @@ function AnswerCard({
         {row.status === "approved" && (
           <Button
             tone="primary"
+            subject={`"${row.question.slice(0, 44).trimEnd()}"`}
             disabled={busy}
             title="Goes through the same send layer as everything else — opt-out and quiet hours still apply."
             onClick={() =>
@@ -262,7 +265,10 @@ export default function AnswersPage() {
   const { rows, configured, demo, setDemo, loading, error, reload } =
     useAdminRows<AnswerRow[]>("answers");
 
-  const [busy, setBusy] = useState(false);
+  /* The row being acted on, not a page-wide flag. Reading one answer while
+     another is sending is ordinary work; freezing every button on the page for
+     the round trip made the queue feel broken. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
@@ -274,8 +280,12 @@ export default function AnswersPage() {
   const approved = all.filter((r) => r.status === "approved");
   const done = all.filter((r) => r.status === "sent" || r.status === "rejected");
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -284,7 +294,7 @@ export default function AnswersPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -302,6 +312,8 @@ export default function AnswersPage() {
         <Card title={`Waiting for you (${waiting.length})`}>
           {loading && all.length === 0 ? (
             <Loading />
+          ) : error && all.length === 0 ? (
+            <Failed />
           ) : !configured && all.length === 0 ? (
             <NotConfigured
               demo={demo}
@@ -320,9 +332,9 @@ export default function AnswersPage() {
                   key={r.id}
                   row={r}
                   draft={drafts[r.id]}
-                  busy={busy}
+                  busy={busy === r.id}
                   setDrafts={setDrafts}
-                  run={run}
+                  run={(label, fn) => run(r.id, label, fn)}
                 />
               ))}
             </ul>
@@ -344,9 +356,9 @@ export default function AnswersPage() {
                   key={r.id}
                   row={r}
                   draft={drafts[r.id]}
-                  busy={busy}
+                  busy={busy === r.id}
                   setDrafts={setDrafts}
-                  run={run}
+                  run={(label, fn) => run(r.id, label, fn)}
                 />
               ))}
             </ul>
@@ -361,9 +373,9 @@ export default function AnswersPage() {
                   key={r.id}
                   row={r}
                   draft={drafts[r.id]}
-                  busy={busy}
+                  busy={busy === r.id}
                   setDrafts={setDrafts}
-                  run={run}
+                  run={(label, fn) => run(r.id, label, fn)}
                 />
               ))}
             </ul>

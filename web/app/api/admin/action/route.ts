@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
 import { cleanId, cleanText } from "@/lib/sanitize";
+import { TIER_IDS } from "@/lib/blast-tiers";
 import { withDb } from "@/lib/server/db";
 import { invalidateOptions } from "@/lib/server/market-cache";
 import { invalidateInvites } from "@/lib/server/invite-cache";
@@ -54,6 +55,8 @@ const ACTIONS = new Set([
   "answer.send",
   "answer.reject",
   "answer.edit",
+  /* 7.1's entry (7 Sep). `createBlast` had no caller at all before it. */
+  "blast.create",
   "blast.send",
   /* 14.3 / 13.5–13.7 — the blast manager's three verbs and the money. */
   "blast.checkout",
@@ -329,6 +332,40 @@ export async function POST(request: Request) {
   }
 
   /**
+   * An Ask needs somebody to ask for, a question, and a tier that exists.
+   *
+   * The tier is checked **here** and not only in the write, because it decides
+   * the price, the pool size, the window and whether a person has to look
+   * before anything goes out (`always_human_review`). A value outside the four
+   * would fall through `TIERS[tier]` as undefined and take those four
+   * decisions with it — so it is refused by name rather than defaulted to the
+   * cheapest thing.
+   *
+   * The question is capped at the same 500 the form shows, so the two numbers
+   * cannot drift apart.
+   */
+  if (action === "blast.create") {
+    if (!cleanText(body?.asker_id, 64)) {
+      return NextResponse.json(
+        { error: "Choose the parent this Ask is for" },
+        { status: 422 },
+      );
+    }
+    if (!cleanText(body?.question_text, 500)) {
+      return NextResponse.json(
+        { error: "An Ask needs the question, in the parent's own words" },
+        { status: 422 },
+      );
+    }
+    if (!TIER_IDS.includes(String(body?.tier) as (typeof TIER_IDS)[number])) {
+      return NextResponse.json(
+        { error: `Choose a tier: ${TIER_IDS.join(", ")}` },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
    * A rating is 1–5, refused rather than clamped.
    *
    * `admin-write.ts` clamps with `Math.min(5, Math.max(1, …))`, which is right
@@ -494,7 +531,58 @@ export async function POST(request: Request) {
      * an admin can actually hit — the strategy's referral cap (18 Aug) is the
      * first one that isn't a genuine gap, so it gets its own honest sentence
      * rather than borrowing the generic one.
+     *
+     * `not_found` is the second, and it is far commoner than the cap: nearly
+     * every write here is a **conditional** UPDATE (11 Aug), so a row that has
+     * moved since the screen was drawn — a blast since refunded, a record since
+     * retired, a contributor since removed — comes back this way. Telling an
+     * admin that a button they have used all week is "not implemented" sends
+     * them to report a bug about an ordinary race. 409, because that is what it
+     * is: the page and the database disagree, and reloading settles it.
      */
+    /**
+     * The send refusals, each in words and each with something to do next.
+     *
+     * 409 rather than 501 for the same reason `not_found` is: these are states
+     * the row is in, not features that are missing. An admin who reads "this
+     * Ask has not been paid for" knows to open a checkout; one who reads "not
+     * implemented" files a bug.
+     */
+    const SEND_REFUSALS: Record<string, string> = {
+      blast_unpaid:
+        "This Ask has not been paid for yet — open a checkout and send the link to the parent first.",
+      blast_needs_review:
+        "This Ask is waiting for a person. Preview the pool: a short one means the network could not fill the tier.",
+      blast_already_sent: "This Ask has already gone out. Replies come back on their own.",
+      /* Quiet hours is named **first** because it is the likeliest cause and the
+         least obvious one: the window is 8am-9pm *Pacific* (§14, the parent's
+         clock), so an admin working European hours is inside it for most of
+         their working day and would otherwise read this as a broken send. */
+      blast_nobody_reachable:
+        "Nothing went out. It is outside 8am-9pm Pacific, or every parent in the pool was refused — opted out, inside their 48-hour gap, over their monthly limit — or no messaging provider is configured here. The Ask is marked for review.",
+      blast_contacts_nobody:
+        "A passive entry is a question on the demand map — it contacts nobody by design.",
+      blast_not_ready:
+        "This Ask is not in a state that can be sent — it may have been fulfilled, expired or refunded.",
+    };
+    const refusal = SEND_REFUSALS[result.data.reason];
+    if (refusal) {
+      return NextResponse.json(
+        { error: refusal, reason: result.data.reason },
+        { status: 409 },
+      );
+    }
+
+    if (result.data.reason === "not_found") {
+      return NextResponse.json(
+        {
+          error:
+            "That has changed since the page was loaded — reload and look again.",
+          reason: "not_found",
+        },
+        { status: 409 },
+      );
+    }
     const message =
       result.data.reason === "referral_cap_reached"
         ? "This parent already has three referrals credited — that's the cap."

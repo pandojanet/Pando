@@ -7,7 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -28,6 +28,7 @@ import {
   RecordList,
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import { BLAST_TIER, PAYMENT_STATUS, sentence } from "@/lib/admin/labels";
 import { REFUND_WINDOW_DAYS, assessRefund, formatCents } from "@/lib/payments";
 import type { PaymentsResult } from "@/lib/admin/types";
@@ -63,14 +64,18 @@ import type { PaymentsResult } from "@/lib/admin/types";
  * *credit* automatically, because a credit costs nobody anything and is
  * reversible; money is not.
  */
+/** The tabs, and what the query parameter may say. */
+const FILTERS = ["owed", "paid", "refunded", "all"] as const;
+
 export default function PaymentsPage() {
   const { rows, configured, loading, error, demo, setDemo, reload } =
     useAdminRows<PaymentsResult>("payments");
 
-  const [filter, setFilter] = useState<"owed" | "paid" | "refunded" | "all">("owed");
+  const [filter, setFilter] = useUrlFilter(FILTERS, "owed");
   const [refunding, setRefunding] = useState<string | null>(null);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
+  /* The Ask being refunded, not the whole ledger. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const data = rows;
@@ -90,8 +95,12 @@ export default function PaymentsPage() {
     all: all.length,
   };
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -102,7 +111,7 @@ export default function PaymentsPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -192,6 +201,7 @@ export default function PaymentsPage() {
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!data}
           label="Which payments to show"
           value={filter}
           onChange={setFilter}
@@ -203,37 +213,12 @@ export default function PaymentsPage() {
           ]}
         />
       </div>
-      <Explainer title="How money works here">
-        <p>
-          <strong>Two prices, and they come from one place.</strong>{" "}
-          {stripe && stripe.prices.length > 0
-            ? stripe.prices.map((p) => `${p.label} ${p.price}`).join(" · ")
-            /* No full stop: the fragment after this supplies one, so a period
-               here rendered "No chargeable tier is configured.. A checkout…"
-               — visible only on a deployment with no chargeable tier, which
-               is every deployment until Stripe is switched on. */
-            : "No chargeable tier is configured"}
-          {". A checkout reads them from the code, and what was actually charged"}
-          {" is frozen onto the Ask"} — so a price change later never alters an old
-          receipt or an old refund.
-        </p>
-        <p className="mt-2">
-          <strong>A credit is refunded as a credit.</strong> When a parent pays
-          with an earned credit and the Ask goes unanswered, Pando grants a fresh
-          credit automatically — there is no charge to reverse, so those rows never
-          need you.
-        </p>
-        <p className="mt-2">
-          <strong>Refunds are whole, and by hand.</strong>
-          {` For the pilot's first ${REFUND_WINDOW_DAYS} days a person makes every refund and says why. There is no partial: the promise is "no useful answer, not charged", which is all or nothing.`}
-        </p>
-      </Explainer>
-
-
       <Card>
 
         {loading && !data ? (
           <Loading />
+        ) : error && !data ? (
+          <Failed />
         ) : !configured && !data ? (
           <NotConfigured
               demo={demo}
@@ -314,7 +299,7 @@ export default function PaymentsPage() {
                       {refund.refundable && !refund.credit_instead && (
                         <Button
                           tone="danger"
-                          disabled={busy || stripe?.provisioned === false}
+                          disabled={busy === row.blast_id || stripe?.provisioned === false}
                           title={
                             stripe?.provisioned === false
                               ? "Stripe is not switched on, so this could only fail."
@@ -396,9 +381,9 @@ export default function PaymentsPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           tone="danger"
-                          disabled={busy || reason.trim().length < 3}
+                          disabled={busy === row.blast_id || reason.trim().length < 3}
                           onClick={() =>
-                            void run("Refunded.", async () =>
+                            void run(row.blast_id, "Refunded.", async () =>
                               adminAction({
                                 action: "blast.refund",
                                 id: row.blast_id,

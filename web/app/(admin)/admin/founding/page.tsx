@@ -8,6 +8,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -83,6 +84,10 @@ export default function FoundingQueuePage() {
       {loading && pending.length === 0 ? (
         <Card>
           <Loading />
+        </Card>
+      ) : error && pending.length === 0 ? (
+        <Card>
+          <Failed />
         </Card>
       ) : !configured && pending.length === 0 ? (
         <Card>
@@ -193,6 +198,7 @@ export default function FoundingQueuePage() {
                           <Button
                             tone="primary"
                             disabled={busy !== null}
+                            subject={row.name ?? "this contributor"}
                             onClick={() =>
                               void act("founding.approve", [row.id], "Confirmed as a Founding parent.")
                             }
@@ -202,6 +208,7 @@ export default function FoundingQueuePage() {
                           <Button
                             tone="secondary"
                             disabled={busy !== null}
+                            subject={row.name ?? "this contributor"}
                             title="Not a rejection — they keep everything they shared and become an ordinary user at launch."
                             onClick={() =>
                               void act(

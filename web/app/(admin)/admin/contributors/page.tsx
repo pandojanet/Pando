@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   Badge,
@@ -9,6 +7,7 @@ import {
   controlClass,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -16,16 +15,18 @@ import {
   slugLabel,
   TableWrap,
   Td,
+  TextLink,
   Th,
   Toolbar,
   when,
   yearList,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint, SegmentedTabs, Select } from "@/components/admin/kit";
+import { SegmentedTabs, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { Standing } from "@/components/admin/Standing";
 import { useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributorRow } from "@/lib/admin/types";
 
 /**
@@ -56,10 +57,15 @@ const VIEWS = [
 ] as const;
 
 export default function ContributorsPage() {
-  /* ?view=consents is where the old /admin/consents address lands. */
-  const initialView =
-    useSearchParams().get("view") === "consents" ? "consents" : "people";
-  const [view, setView] = useState<"people" | "consents" | "standing">(initialView);
+  /* ?view=consents is where the old /admin/consents address lands — and now
+     every tab is addressable, and a tab change writes itself back, so a reload
+     does not throw the reader back to the first panel. The ids come from VIEWS,
+     so the pills and the address bar cannot name different tabs. */
+  const [view, setView] = useUrlFilter(
+    VIEWS.map((v) => v.id),
+    "people",
+    "view",
+  );
   const { rows, configured, sample, demo, setDemo, loading, error } =
     useAdminRows<ContributorRow[]>("contributors");
   const [search, setSearch] = useState("");
@@ -197,6 +203,8 @@ export default function ContributorsPage() {
       <Card>
         {loading && all.length === 0 ? (
           <Loading />
+        ) : error && all.length === 0 ? (
+          <Failed />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : filtered.length === 0 ? (
@@ -229,7 +237,7 @@ export default function ContributorsPage() {
                     the next two columns you happened to be looking at. The
                     heading has to stand on its own, so it names the bigger of the
                     two thresholds and the tooltip carries both. */}
-                <Th className="text-right" hint="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding.">
+                <Th className="text-right" hint="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding. A “+ 1 caregiver” beside it counts caregivers this family put forward that you have accepted and are not holding.">
                   Counts for Founding
                 </Th>
                 <Th hint="Paid for one qualifying contribution.">Reward</Th>
@@ -246,12 +254,9 @@ export default function ContributorsPage() {
               {shown.map((row) => (
                 <tr key={row.id} className="hover:bg-paper/70">
                   <Td>
-                    <Link
-                      href={`/admin/contributors/${row.id}`}
-                      className="font-semibold text-green-deep underline underline-offset-2"
-                    >
+                    <TextLink href={`/admin/contributors/${row.id}`}>
                       {row.name ?? "Unknown"}
-                    </Link>
+                    </TextLink>
                     <span className="mt-0.5 block text-[12.5px] text-muted">
                       {row.phone_masked ?? "no number"}
                     </span>
@@ -274,7 +279,12 @@ export default function ContributorsPage() {
                         {/* Was "+3 cg". Nobody expands that on sight, and this
                             column already has room for the word. */}
                         + {row.caregiver_approved}{" "}
-                        {row.caregiver_approved === 1 ? "caregiver" : "caregivers"}{" "}<Hint>{"Caregivers this family put forward that you have accepted and that are not on hold"}</Hint></span>
+                        {row.caregiver_approved === 1 ? "caregiver" : "caregivers"}
+                        {/* The sentence that was here is in the column heading
+                            now. It is a fact about the column, and on a
+                            directory of 29 contributors it rendered once per
+                            row — five identical triggers, measured. */}
+                      </span>
                     )}
                   </Td>
                   <Td>
@@ -309,9 +319,16 @@ export default function ContributorsPage() {
                        * the pill is a fact about a row, and what a reader needs
                        * to spot is the row that *differs*.
                        */
-                      <Badge tone="neutral" hint="Founding is never granted automatically — somebody has to confirm it, on the founding queue.">
-                        Waiting on you
-                      </Badge>
+                      /* No hint on the row. Its sentence — "Founding is never
+                         granted automatically" — is the same fact the *column*
+                         heading above already carries reachably, and on a
+                         directory of 29 contributors nearly every row is
+                         unconfirmed, so it rendered **21 identical hint
+                         triggers** down one column (measured at 1440×900). That
+                         is the 7 Sep rule stated once more: a fact true of a
+                         whole run of rows belongs above them, and what stays on
+                         the row is what differs between rows. */
+                      <Badge tone="neutral">Waiting on you</Badge>
                     )}
                   </Td>
                   <Td>

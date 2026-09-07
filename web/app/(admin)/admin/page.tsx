@@ -3,12 +3,15 @@
 import Link from "next/link";
 import {
   Card,
+  Disclosure,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
   SampleBanner,
   Stat,
+  TextLink,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
 import { CONSENT_STATE, DEMAND_SENSITIVITY } from "@/lib/admin/labels";
@@ -93,19 +96,22 @@ export default function AdminOverviewPage() {
         {
           label: "questions that need a person",
           n: o.demand.high_stakes + o.demand.named_allegation,
-          href: "/admin/demand",
+          href: "/admin/demand?filter=urgent",
           urgent: true,
         },
         {
           label: "other questions parents asked",
           n: o.demand.ordinary + o.demand.peer_support,
-          href: "/admin/demand",
+          /* "All open" rather than the urgent tab this page opens on: these are
+             precisely the questions that tab hides, so an unfiltered link put
+             the reader on the one list their row is not in. */
+          href: "/admin/demand?filter=open",
           urgent: false,
         },
         {
           label: "recommendations to look at",
           n: o.quality.pending_contributions,
-          href: "/admin/activities",
+          href: "/admin/activities?filter=pending",
           urgent: false,
         },
         {
@@ -156,6 +162,14 @@ export default function AdminOverviewPage() {
       {loading && !o ? (
         <Card>
           <Loading />
+        </Card>
+      ) : error && !o ? (
+        /* The old chain ended `: o ? … : null`, so a failed read rendered an
+           error banner over an otherwise blank page — honest, in that it never
+           claimed every queue was clear, and unhelpful about what the blank
+           meant. */
+        <Card>
+          <Failed />
         </Card>
       ) : !configured && !o ? (
         <Card>
@@ -261,24 +275,17 @@ export default function AdminOverviewPage() {
            * are one click away. Deleting them was the other option and is not
            * ours to take: only the client knows whether she reads the funnel.
            *
-           * `<details>` rather than state, for the same reasons `Explainer` uses
-           * it — it works before hydration, it is reachable by keyboard and by
+           * `<details>` rather than state — it works before hydration, it is
+           * reachable by keyboard and by
            * the browser's own find-in-page, and it needs nothing remembered.
            * Closed on every visit on purpose: a fold that remembers being open
            * is a page that is long again tomorrow.
            */}
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl border border-bark bg-card px-4 py-3 text-[14px] font-medium text-ink-soft hover:border-green/60 hover:text-green-deep">
-              <span
-                aria-hidden="true"
-                className="text-[12px] text-muted transition-transform group-open:rotate-90"
-              >
-                ▶
-              </span>
-              Show the numbers
-            </summary>
-
-            <div className="mt-4 space-y-4">
+          {/* `Disclosure`, not a hand-written `<details>`: there were three of
+              those, with three different chevrons at three type sizes, and none
+              of them chosen. This is the only fold left in the admin. */}
+          <Disclosure title="Show the numbers" flush>
+            <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
               label="Contributors"
@@ -315,12 +322,9 @@ export default function AdminOverviewPage() {
               <Count label="Tips" n={o.submissions.tips} />
             </dl>
             <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] text-muted">
-              <Link
-                href="/admin/activities?filter=golden"
-                className="font-semibold text-green-deep underline underline-offset-2"
-              >
+              <TextLink href="/admin/activities?filter=golden">
                 {o.answer_ready}
-              </Link>{" "}
+              </TextLink>{" "}
               of them are good enough to answer a question with on their own.
             </p>
           </Card>
@@ -432,7 +436,7 @@ export default function AdminOverviewPage() {
             </Card>
           )}
             </div>
-          </details>
+          </Disclosure>
         </div>
       ) : null}
     </>

@@ -8,6 +8,7 @@ import {
   ConfidenceBadge,
   Empty,
   ErrorNote,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -21,7 +22,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint, SegmentedFilter } from "@/components/admin/kit";
+import { SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
   FactGrid,
@@ -32,6 +33,7 @@ import {
   RecordNotes,
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributionRow } from "@/lib/admin/types";
 import {
   FRESHNESS,
@@ -80,17 +82,31 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
  * `/admin/contributors` is deliberately **still a table** — its values are all
  * short. The layout follows the data, not a preference.
  */
+/** The tabs, in the order they are shown, and what `?filter=` may say. */
+const FILTERS = [
+  "pending",
+  "low",
+  "incomplete",
+  "secondhand",
+  "golden",
+  "all",
+] as const;
+
 export default function ContributionsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<ContributionRow[]>("contributions");
 
-  const [filter, setFilter] = useState<
-    "pending" | "low" | "secondhand" | "incomplete" | "golden" | "all"
-  >("pending");
+  /* In the URL, so the Overview's "Ready to answer with" row can point at the
+     tab it counted. It has linked to `?filter=golden` since 19 Aug and this
+     page never read search params, so the parameter did nothing at all. */
+  const [filter, setFilter] = useUrlFilter(FILTERS, "pending");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<ContributionRow>>({});
   const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
+  /* The card being acted on, not the queue. Reading the next recommendation
+     while one is saving is ordinary work; the page used to disable every button
+     on every row for the round trip. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const all = rows ?? [];
@@ -153,8 +169,12 @@ export default function ContributionsPage() {
     [real],
   );
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -167,7 +187,7 @@ export default function ContributionsPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -188,6 +208,7 @@ export default function ContributionsPage() {
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!rows}
           label="Which contributions to show"
           value={filter}
           onChange={setFilter}
@@ -205,6 +226,8 @@ export default function ContributionsPage() {
       <Card>
         {loading && all.length === 0 ? (
           <Loading />
+        ) : error && all.length === 0 ? (
+          <Failed />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
@@ -234,10 +257,12 @@ export default function ContributionsPage() {
                   }
                   badges={
                     <>
-                      <Badge
-                        tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}
-                        hint={REVIEW_STATUS[row.status]?.meaning}
-                      >
+                      {/* No `hint`. The four statuses are the tabs at the top
+                          of this page, and three of the four sentences restated
+                          the label they hung off ("Waiting for you" → "Nobody
+                          has looked at this yet"). The one that said something
+                          the label does not is in the explainer above. */}
+                      <Badge tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}>
                         {REVIEW_STATUS[row.status]?.label ?? row.status}
                       </Badge>
                       {/* R2 — the label reads the source, never who typed it. */}
@@ -246,21 +271,11 @@ export default function ContributionsPage() {
                           They went themselves
                         </Badge>
                       ) : (
-                        <Badge
-                          tone="gold"
-                          hint="Someone told them about it. Welcome, always labelled as such, and never counted toward Founding."
-                        >
-                          Heard from a friend
-                        </Badge>
+                        <Badge tone="gold">Heard from a friend</Badge>
                       )}
                       <ProvenanceBadge provenance={row.provenance} />
                       {row.share.answer_ready && (
-                        <Badge
-                          tone="green"
-                          hint="Good enough to answer a parent's question on its own, without asking anyone"
-                        >
-                          Ready to answer with
-                        </Badge>
+                        <Badge tone="green">Ready to answer with</Badge>
                       )}
                     </>
                   }
@@ -282,10 +297,11 @@ export default function ContributionsPage() {
                       {row.status !== "approved" && (
                         <Button
                           tone="primary"
-                          disabled={busy}
+                          disabled={busy === row.id}
+                          subject={row.share.name}
                           title="Make this usable in an answer to a parent"
                           onClick={() =>
-                            void run("Added to Pando.", async () =>
+                            void run(row.id, "Added to Pando.", async () =>
                               adminAction({
                                 action: "contribution.approve",
                                 id: row.id,
@@ -298,7 +314,8 @@ export default function ContributionsPage() {
                       )}
                       <Button
                         tone="secondary"
-                        disabled={busy}
+                        disabled={busy === row.id}
+                        subject={row.share.name}
                         onClick={() => {
                           setEditing(open ? null : row.id);
                           setDraft(open ? {} : { ...row });
@@ -319,7 +336,8 @@ export default function ContributionsPage() {
                       {row.status === "approved" && (
                         <Button
                           tone="secondary"
-                          disabled={busy}
+                          disabled={busy === row.id}
+                          subject={row.share.name}
                           title={
                             row.share.answer_ready
                               ? "Stop treating it as good enough to answer with"
@@ -327,6 +345,7 @@ export default function ContributionsPage() {
                           }
                           onClick={() =>
                             void run(
+                              row.id,
                               row.share.answer_ready
                                 ? "No longer marked ready."
                                 : "Marked ready to answer with.",
@@ -347,10 +366,11 @@ export default function ContributionsPage() {
                       {row.status !== "rejected" && (
                         <Button
                           tone="danger"
-                          disabled={busy}
+                          disabled={busy === row.id}
+                          subject={row.share.name}
                           title="Set it aside. Nothing is sent to the parent."
                           onClick={() =>
-                            void run("Set aside.", async () =>
+                            void run(row.id, "Set aside.", async () =>
                               adminAction({
                                 action: "contribution.reject",
                                 id: row.id,
@@ -436,13 +456,13 @@ export default function ContributionsPage() {
                     <Fact label="Counts toward Founding">
                       {/* Answers the label, rather than restating the rule. */}
                       {!row.firsthand ? (
-                        <span className="text-muted">
-                          No — heard from a friend{" "}<Hint>{"Only a family's own experience counts toward Founding. This one is still welcome."}</Hint></span>
+                        <span className="text-muted">No — heard from a friend</span>
                       ) : missing.length === 0 ? (
                         <Badge tone="green">Yes</Badge>
                       ) : (
                         <span className="text-gold-ink">
-                          Not yet — they didn&apos;t say {missing.join(", ")}{" "}<Hint>{"They skipped these questions. It counts as soon as they are answered."}</Hint></span>
+                          Not yet — they didn&apos;t say {missing.join(", ")}
+                        </span>
                       )}
                     </Fact>
                     <Fact label="How useful their words are">
@@ -549,9 +569,9 @@ export default function ContributionsPage() {
                         <div className="mt-3">
                           <Button
                             tone="primary"
-                            disabled={busy}
+                            disabled={busy === row.id}
                             onClick={() =>
-                              void run("Saved", async () =>
+                              void run(row.id, "Saved", async () =>
                                 adminAction({
                                   action: "contribution.edit",
                                   id: row.id,
@@ -590,9 +610,9 @@ export default function ContributionsPage() {
                         <div className="mt-3">
                           <Button
                             tone="secondary"
-                            disabled={busy || question.trim().length === 0}
+                            disabled={busy === row.id || question.trim().length === 0}
                             onClick={() =>
-                              void run("Held — noted", async () =>
+                              void run(row.id, "Held — noted", async () =>
                                 adminAction({
                                   action: "contribution.needs_detail",
                                   id: row.id,

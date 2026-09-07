@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { PandoMark } from "@/components/ui/Logo";
-import { Button, Field, inputClass } from "@/components/admin/ui";
+import { Button, ErrorNote, Field, inputClass } from "@/components/admin/ui";
 
 /**
  * Admin sign-in.
@@ -171,9 +171,11 @@ export function LoginForm({
               </Field>
             </div>
 
-            {error && (
-              <p className="mt-3 text-[13.5px] font-medium text-alert">{error}</p>
-            )}
+            {/* `ErrorNote`, not a hand-written line: it carries `role="alert"`,
+                and without it "that didn't match" was announced to nobody at
+                all — on the one screen where the only thing to do next is read
+                the message. */}
+            {error && <ErrorNote className="mt-4">{error}</ErrorNote>}
 
             <Button
               type="submit"

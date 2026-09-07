@@ -52,6 +52,10 @@ export const sampleOverview: Overview = {
   /* 14.3 / 14.5 — zeroed rather than invented. Sample money is the one kind
      of fabrication that answers "has anybody actually paid?" with a yes. */
   blasts: { open: 0, refunds_owed: 0 },
+  /* Zeroed for the same reason as the line above: the answers page serves a
+     deliberately empty sample, so a badge promising rows it cannot show would
+     send a reader to an empty queue. */
+  answers: { waiting: 0, replies: 0 },
   answer_ready: 6,
   drop_off: [
     { step: "Opened the link", reached: 64 },

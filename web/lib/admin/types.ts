@@ -155,6 +155,16 @@ export interface AnswerRow {
 export interface DeliveryHealthRow {
   /** False with no database — the page then says so rather than showing 0%. */
   configured: boolean;
+  /**
+   * Messages are going to the Slack test channel, not to phones.
+   *
+   * The single most important thing a page about delivery can say, and it said
+   * nothing: with the relay on, a 100% delivery rate means every message
+   * reached a Slack channel. It also changes what "quiet hours" means — the
+   * window is enforced against phones and not against a channel that wakes
+   * nobody — which is why `/admin/blasts` reads the same flag.
+   */
+  relay: boolean;
   window_days: number;
   /** Null when nothing has settled yet: 0 out of 0 is not a failure. */
   rate: number | null;
@@ -270,6 +280,15 @@ export interface Overview {
    * it is one fact and both pages clear it.
    */
   blasts: { open: number; refunds_owed: number };
+  /**
+   * 14.2 / 14.8 — what is waiting in the two answer queues.
+   *
+   * `waiting` counts approved-but-unsent alongside unread, because both are a
+   * parent who has not heard back; the answers page already splits them on
+   * screen. Added 7 Sep: the nav had carried comments claiming both of these
+   * counts for a fortnight and the payload had never contained either.
+   */
+  answers: { waiting: number; replies: number };
   /** §17.1 — records an admin has marked good enough to answer with. */
   answer_ready: number;
   drop_off: Array<{ step: string; reached: number }>;
@@ -784,6 +803,22 @@ export type AdminAction =
    * cannot be invented from a screen.
    */
   | { action: "matching.weight"; affinity_type: string; weight: number }
+  /**
+   * 7.1's entry, added 7 Sep — `createBlast` had been written since 27 Aug with
+   * no caller at all, so a Network Ask could be managed and never begun.
+   *
+   * The manual path on purpose, like everything else in the pilot. It records
+   * the question and redeems a credit if one covers the tier; it does not send
+   * (`blast.send`), does not charge (`blast.checkout`) and does not choose the
+   * pool (7.3, previewed by `blast_pool`).
+   */
+  | {
+      action: "blast.create";
+      asker_id: string;
+      question_text: string;
+      tier: string;
+      category?: string | null;
+    }
   | { action: "blast.send"; id: string }
   /**
    * 14.3 / 13.5 — open a Stripe checkout for a paid Ask.
@@ -1172,6 +1207,8 @@ export interface BlastRow {
   refund_reason: string | null;
   /** Whether a credit paid for it. The guarantee is then a credit, not money. */
   credit_funded: boolean;
+  /** When 7.7's automatic credit was granted, if it has been. Null means owed. */
+  credit_granted_at: string | null;
   /** How many were asked, how many answered, and how many answers were kept. */
   recipients: number;
   responded: number;
@@ -1239,6 +1276,8 @@ export interface PaymentRow {
   refunded_at: string | null;
   refund_reason: string | null;
   credit_funded: boolean;
+  /** When 7.7's automatic credit was granted, if it has been. Null means owed. */
+  credit_granted_at: string | null;
   asker: { id: string; name: string | null } | null;
   approved_responses: number;
   expires_at: string | null;

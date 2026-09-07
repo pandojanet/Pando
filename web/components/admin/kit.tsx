@@ -207,7 +207,7 @@ function usePopoverElement(
  * the top layer, so a scrolling table cannot clip it.
  *
  * **It is still not the place for an explanation somebody needs.** That rule
- * stands — `Explainer` and `RecordGroup` put those on the page. This is for the
+ * stands — `RecordGroup` puts those on the page. This is for the
  * second sentence about a value that is already labelled: what "Thin" means,
  * what a stored status implies, what a number is measuring.
  */
@@ -345,12 +345,25 @@ export function SegmentedFilter<T extends string | number>({
   value,
   options,
   onChange,
+  unknown = false,
 }: {
   /** What this filters — announced, never drawn. */
   label: string;
   value: T;
   options: ReadonlyArray<{ id: T; label: string; count?: number }>;
   onChange: (id: T) => void;
+  /**
+   * The rows are not known — a read that failed, or one still in flight.
+   *
+   * Every count here is computed off the rows the page holds, so during an
+   * outage they all render **0**: six pills stating that there are zero of
+   * everything, which is the same untruth the work area used to tell with
+   * "Nothing in this view". A missing number says "not known"; a zero says
+   * "none". One suppression at the group rather than a ternary on every pill,
+   * because the pills are written one per line and the one that gets forgotten
+   * is the one nobody was looking at.
+   */
+  unknown?: boolean;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const selected = Math.max(
@@ -406,7 +419,7 @@ export function SegmentedFilter<T extends string | number>({
             )}
           >
             {o.label}
-            {o.count !== undefined && (
+            {!unknown && o.count !== undefined && (
               <span className="tabular-nums opacity-70">{o.count}</span>
             )}
           </button>

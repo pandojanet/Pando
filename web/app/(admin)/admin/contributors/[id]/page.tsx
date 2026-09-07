@@ -16,6 +16,7 @@ import {
   ResultNote,
   SampleBanner,
   slugLabel,
+  TextLink,
   when,
   yearList,
 } from "@/components/admin/ui";
@@ -124,12 +125,7 @@ export default function ContributorDetailPage({
       <PageHead
         title={c?.name ?? "Contributor"}
         intro={
-          <Link
-            href="/admin/contributors"
-            className="font-semibold text-green-deep underline underline-offset-2"
-          >
-            ← All contributors
-          </Link>
+          <TextLink href="/admin/contributors">← All contributors</TextLink>
         }
         right={
           c ? (
@@ -326,16 +322,15 @@ export default function ContributorDetailPage({
                       </span>
                       <span className="flex items-center gap-2 text-[13px] text-muted">
                         {REVIEW_STATUS[card.status]?.label ?? sentence(card.status)}
-                        <Link
+                        <TextLink
                           href={
                             card.kind === "caregiver"
                               ? "/admin/caregivers"
                               : "/admin/activities"
                           }
-                          className="font-semibold text-green-deep underline underline-offset-2"
                         >
                           Review
-                        </Link>
+                        </TextLink>
                       </span>
                     </li>
                   ))}
@@ -420,23 +415,21 @@ export default function ContributorDetailPage({
                 </p>
                 {c.referral.referred_by ? (
                   <div className="mt-1 flex items-center justify-between gap-2">
-                    <Link
+                    <TextLink
                       href={`/admin/contributors/${c.referral.referred_by.id}`}
-                      className="font-semibold text-green-deep underline underline-offset-2"
                     >
                       {c.referral.referred_by.name ?? "Unknown"}
-                    </Link>
+                    </TextLink>
                   </div>
                 ) : !pickerOpen ? (
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <span className="text-[13.5px] text-muted">Nobody recorded</span>
-                    <button
-                      type="button"
+                    <TextLink
+                      className="text-[12.5px]"
                       onClick={() => setPickerOpen(true)}
-                      className="text-[12.5px] font-semibold text-green-deep underline underline-offset-2"
                     >
                       Record who invited them
-                    </button>
+                    </TextLink>
                   </div>
                 ) : (
                   <>

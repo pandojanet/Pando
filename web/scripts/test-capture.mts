@@ -228,5 +228,55 @@ console.log("\n=== offering something is not the same as asking about it ===");
   );
 }
 
+/* ── what each message costs to send ───────────────────────────────────────── */
+
+/**
+ * The encoding, pinned.
+ *
+ * One character outside GSM-7 drops a whole message to UCS-2 and the budget
+ * from 160 characters to 70 — so a 185-character sentence with one em dash in
+ * it is **three** segments where the same sentence with a comma is two.
+ * Measured on this script's own copy: the last capture question was 2 segments
+ * and is 1, the caregiver redirect was 3 and is 2.
+ *
+ * Asserted rather than commented, because the cost is invisible in review: the
+ * house voice uses em dashes everywhere and they are free on a screen. What
+ * makes it safe to change here is that none of this is registered A2P copy —
+ * that lives in \`sms-templates.ts\`, where a reword is a compliance event.
+ */
+console.log("\n=== segments ===");
+{
+  const GSM =
+    "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡" +
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+  const EXT = "^{}\\[~]|€";
+  const segments = (s: string) => {
+    let slots = 0;
+    for (const ch of s) {
+      if (GSM.includes(ch)) slots += 1;
+      else if (EXT.includes(ch)) slots += 2;
+      else {
+        const units = [...s].reduce((n, c) => n + (c.codePointAt(0)! > 0xffff ? 2 : 1), 0);
+        return { gsm: false, segs: units <= 70 ? 1 : Math.ceil(units / 67) };
+      }
+    }
+    return { gsm: true, segs: slots <= 160 ? 1 : Math.ceil(slots / 153) };
+  };
+
+  for (const [name, step] of Object.entries(c.CAPTURE_QUESTIONS)) {
+    const r = segments(step.prompt);
+    ok(
+      `the ${name} question stays in GSM-7`,
+      r.gsm,
+      "one character outside it halves the budget for the whole message",
+    );
+  }
+  ok("the last question is one segment", segments(c.CAPTURE_QUESTIONS.detail.prompt).segs === 1);
+  const redirect = segments(c.caregiverRedirectSms());
+  ok("the caregiver redirect stays in GSM-7", redirect.gsm);
+  ok("and costs two segments, not three", redirect.segs === 2, String(redirect.segs));
+}
+
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

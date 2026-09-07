@@ -6,7 +6,7 @@ import {
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -24,6 +24,7 @@ import {
   RecordList,
 } from "@/components/admin/Record";
 import { useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ImpactEventRow, ImpactResult } from "@/lib/admin/types";
 
 /**
@@ -57,8 +58,11 @@ import type { ImpactEventRow, ImpactResult } from "@/lib/admin/types";
  * would be a second sender with no knowledge of that week, and the page's job is
  * to show whether the loop is running rather than to run it by hand.
  */
+/** The tabs, and what the query parameter may say. */
+const VIEWS = ["all", "yes", "no", "awaiting", "unasked"] as const;
+
 export default function ImpactPage() {
-  const [view, setView] = useState<"all" | "yes" | "no" | "awaiting" | "unasked">("all");
+  const [view, setView] = useUrlFilter(VIEWS, "all", "view");
   const [search, setSearch] = useState("");
   const [hideTest, setHideTest] = useState(true);
 
@@ -138,6 +142,7 @@ export default function ImpactPage() {
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!rows}
           label="Which answers"
           value={view}
           onChange={(v) => setView(v as typeof view)}
@@ -152,24 +157,14 @@ export default function ImpactPage() {
       </div>
 
 
-      <Explainer title="How to read this">
-        <p>
-          A few days after Pando sends an answer it asks the parent whether it
-          helped. A <strong>yes</strong> is what earns the people behind that
-          recommendation a thank-you, sent in a weekly batch so nobody hears from
-          Pando twice for being helpful.
-        </p>
-        <p className="mt-2">
-          <strong>No reply is not a no.</strong> Most parents will not answer, and
-          that says nothing about the recommendation — it is never recorded as a
-          failure and never blames a contributor.
-        </p>
-      </Explainer>
-
       <div className="space-y-4">
         {loading && !rows ? (
           <Card>
             <Loading />
+          </Card>
+        ) : error && !rows ? (
+          <Card>
+            <Failed />
           </Card>
         ) : !configured ? (
           <Card>
@@ -222,8 +217,35 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
 
   return (
     <RecordCard
-      title={row.records.length > 0 ? row.records.map((r) => r.name).join(", ") : "Answer"}
-      kind={row.records.length === 1 ? "record" : `${row.records.length} records`}
+      /**
+       * The records, or — when the answer names none — the **question**.
+       *
+       * Found by reading the page rather than the code: every row on the live
+       * database is headed the literal word **"Answer"** with a kind of
+       * "0 records", because an answer composed by the inbound pipeline carries
+       * an empty `share_ids`. So a queue of answers had one heading repeated
+       * down it, while the one string that tells them apart — *"any good
+       * toddler classes near South Pasadena?"* — sat three lines below in the
+       * quote. A heading has to name the row it heads.
+       *
+       * The quote stays: it is a parent's own words against a green rule
+       * (invariant 8's distinction on screen), and the heading is a trimmed
+       * plain-text copy rather than a replacement for it.
+       */
+      title={
+        row.records.length > 0
+          ? row.records.map((r) => r.name).join(", ")
+          : row.question.length > 72
+            ? `${row.question.slice(0, 72).trimEnd()}…`
+            : row.question
+      }
+      kind={
+        row.records.length === 0
+          ? "no records named"
+          : row.records.length === 1
+            ? "record"
+            : `${row.records.length} records`
+      }
       badges={
         <>
           {row.is_test && <Badge tone="neutral">Test</Badge>}

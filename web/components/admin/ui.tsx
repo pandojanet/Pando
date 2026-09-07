@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  isValidElement,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Hint } from "@/components/admin/kit";
 import { cn } from "@/lib/cn";
 
@@ -14,17 +23,39 @@ import { cn } from "@/lib/cn";
 
 const FADE_PX = 16;
 
-function edgeMaskFor(start: boolean, end: boolean): string {
+function edgeMaskFor(
+  start: boolean,
+  end: boolean,
+  /** Which way the element actually scrolls. See `useEdgeFade`. */
+  axis: "x" | "y",
+): string {
   if (!start && !end) return "none";
-  const left = start ? `transparent, black ${FADE_PX}px` : "black";
-  const right = end ? `black calc(100% - ${FADE_PX}px), transparent` : "black";
-  return `linear-gradient(to right, ${left}, ${right})`;
+  const from = start ? `transparent, black ${FADE_PX}px` : "black";
+  const to = end ? `black calc(100% - ${FADE_PX}px), transparent` : "black";
+  return `linear-gradient(to ${axis === "x" ? "right" : "bottom"}, ${from}, ${to})`;
 }
 
 /**
- * Attach to a horizontally scrollable element to get a `maskImage` that fades
- * only the edge that actually hides content, and updates live as the user
- * scrolls or the content changes.
+ * Attach to a scrollable element to get a `maskImage` that fades only the edge
+ * actually hiding content, and updates live as the user scrolls or the content
+ * changes.
+ *
+ * ## It reads the axis rather than assuming one (7 Sep)
+ *
+ * It measured `scrollLeft` only, and the admin nav — its main caller — is
+ * **horizontal on a phone and vertical from `md`**. So on every desktop the
+ * fade computed `end: false` (nothing overflows sideways) and the mask was
+ * `none`; and because the same element carries `no-scrollbar`, a sidebar
+ * taller than the window had **no scrollbar and no fade — nothing whatsoever
+ * saying there was more of it below**. Measured at 1440x900: the nav needs
+ * 726px and gets 643, so the last 83px were unreachable-looking, and after the
+ * groups were folded the thing sitting in that dead band was the toggle that
+ * reveals six pages.
+ *
+ * Which axis is not a prop, because a caller would have to say "x below md, y
+ * above" and would then be a second copy of the breakpoint: the element is
+ * asked which way it actually overflows, so it stays right through the
+ * breakpoint change on its own.
  *
  * A fade that's on for both edges regardless of scroll position looks fine on
  * a quiet background, but on a filled control (a selected filter's solid
@@ -34,7 +65,11 @@ function edgeMaskFor(start: boolean, end: boolean): string {
  */
 export function useEdgeFade<T extends HTMLElement>() {
   const ref = useRef<T>(null);
-  const [edges, setEdges] = useState({ start: false, end: false });
+  const [edges, setEdges] = useState<{
+    axis: "x" | "y";
+    start: boolean;
+    end: boolean;
+  }>({ axis: "x", start: false, end: false });
 
   useEffect(() => {
     const el = ref.current;
@@ -44,11 +79,24 @@ export function useEdgeFade<T extends HTMLElement>() {
        leading padding, not hidden content — so a strict >0 check would show a
        left fade at rest there. Being within one fade-width of an edge reads as
        "there" regardless. */
-    const update = () =>
-      setEdges({
-        start: el.scrollLeft > FADE_PX,
-        end: el.scrollLeft + el.clientWidth < el.scrollWidth - FADE_PX,
-      });
+    const update = () => {
+      /* Vertical wins a tie only because nothing here scrolls both ways; a
+         container that did would need two masks composited, not one. */
+      const vertical = el.scrollHeight - el.clientHeight > FADE_PX;
+      setEdges(
+        vertical
+          ? {
+              axis: "y",
+              start: el.scrollTop > FADE_PX,
+              end: el.scrollTop + el.clientHeight < el.scrollHeight - FADE_PX,
+            }
+          : {
+              axis: "x",
+              start: el.scrollLeft > FADE_PX,
+              end: el.scrollLeft + el.clientWidth < el.scrollWidth - FADE_PX,
+            },
+      );
+    };
     update();
     el.addEventListener("scroll", update, { passive: true });
     const ro = new ResizeObserver(update);
@@ -67,7 +115,7 @@ export function useEdgeFade<T extends HTMLElement>() {
     };
   }, []);
 
-  const mask = edgeMaskFor(edges.start, edges.end);
+  const mask = edgeMaskFor(edges.start, edges.end, edges.axis);
   return { ref, maskStyle: { maskImage: mask, WebkitMaskImage: mask } };
 }
 
@@ -97,6 +145,74 @@ export function PageHead({
   );
 }
 
+/**
+ * What heading level the next heading in this region should be.
+ *
+ * ## The defect, measured at 1440×900
+ *
+ * `PageHead` renders the page's `<h1>`, `Card` hard-coded an `<h2>`,
+ * `RecordGroup` an `<h3>` and `RecordCard` an `<h3>`. Whether those add up to a
+ * legible outline therefore depended on which of them a page happened to use —
+ * and on `/admin/activities`, `/admin/demand` and `/admin/payments` the record
+ * queues sit in a **titleless** `Card` (the filter tabs name the section
+ * instead), so the document went straight from `h1 Contributions` to
+ * `h3 Victory Park playground`. Eight record titles on that page, every one of
+ * them a level below where the outline had reached: for somebody navigating by
+ * heading, a whole queue filed under a section that does not exist.
+ *
+ * A level *prop* was the other option and is worse: it makes every call site
+ * responsible for a fact about the tree above it, which is exactly the kind of
+ * thing that goes stale when a card gains or loses a title. Read from context,
+ * the answer follows the structure on its own and no page had to be edited.
+ *
+ * A card **without** a title deliberately does not consume a level: it is a box,
+ * not a section, and its children are still whatever the page had reached.
+ */
+const HeadingLevelContext = createContext(2);
+
+export function useHeadingLevel(): number {
+  return useContext(HeadingLevelContext);
+}
+
+export function HeadingLevel({
+  value,
+  children,
+}: {
+  value: number;
+  children: ReactNode;
+}) {
+  return (
+    <HeadingLevelContext.Provider value={Math.min(Math.max(value, 2), 6)}>
+      {children}
+    </HeadingLevelContext.Provider>
+  );
+}
+
+/**
+ * A heading at whatever level this region has reached.
+ *
+ * Every size here is set explicitly by the caller's `className`, so the tag and
+ * the appearance are independent — changing the level cannot change how a page
+ * looks, which is what made this safe to apply everywhere at once.
+ */
+export function Heading({
+  id,
+  className,
+  children,
+}: {
+  id?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const level = useHeadingLevel();
+  const Tag = `h${level}` as "h2" | "h3" | "h4" | "h5" | "h6";
+  return (
+    <Tag id={id} className={className}>
+      {children}
+    </Tag>
+  );
+}
+
 export function Card({
   children,
   className,
@@ -108,19 +224,25 @@ export function Card({
   title?: ReactNode;
   right?: ReactNode;
 }) {
+  const level = useHeadingLevel();
   return (
     <section
       className={cn("rounded-xl border border-bark bg-card", className)}
     >
       {(title || right) && (
         <header className="flex items-center justify-between gap-3 border-b border-bark/70 px-4 py-2.5">
-          <h2 className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-muted">
-            {title}
-          </h2>
+          {/* Only when there is a title. It used to render the heading whenever
+              *either* was present, so a card carrying only a `right` control
+              put an **empty heading** into the outline. */}
+          {title && (
+            <Heading className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+              {title}
+            </Heading>
+          )}
           {right}
         </header>
       )}
-      {children}
+      <HeadingLevel value={title ? level + 1 : level}>{children}</HeadingLevel>
     </section>
   );
 }
@@ -193,6 +315,49 @@ type BadgeTone = "neutral" | "green" | "gold" | "red" | "muted";
  * how two client reports of "this screen is unexplained" happened while the
  * explanation was already written.
  */
+/**
+ * The visible text of a node, for building an accessible name out of what a
+ * component already renders.
+ *
+ * ## The defect it fixes, measured rather than assumed
+ *
+ * `Hint` renders a `<button>`, and both callers hard-coded its accessible name.
+ * Walked in a browser at 1440×900: **`/admin/contributors` had 27 buttons named
+ * "What this means"** and five named "What this column means"; `/admin/answers`
+ * had 16. That is the parent flow's "23 buttons all called Edit" (3 Sep) on the
+ * admin side, and the cost is the same — a screen-reader user hears the identical
+ * phrase 27 times with nothing saying which fact each one explains, so the
+ * control might as well not be there.
+ *
+ * The 7 Sep pass fixed it on `/admin/activities` by hoisting repeated sentences
+ * into one `Explainer`, taking that page from 23 triggers to zero. That route is
+ * closed now: the client had every explainer removed later the same day. So the
+ * remaining answer is to **name** them, and the name is derivable — a badge and
+ * a column heading both already render the thing the hint is about, so neither
+ * call site has to say it again and none of the 59 hints had to be edited.
+ *
+ * A `Hint` inside the children is skipped: its panel is the explanation, not
+ * part of the label.
+ */
+function plainText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(plainText).join(" ");
+  if (isValidElement(node)) {
+    if (node.type === Hint) return "";
+    return plainText((node.props as { children?: ReactNode }).children);
+  }
+  return "";
+}
+
+function hintLabel(children: ReactNode, kind: "badge" | "column"): string {
+  const name = plainText(children).replace(/\s+/g, " ").trim().slice(0, 60);
+  if (!name) return kind === "column" ? "What this column means" : "What this means";
+  return kind === "column"
+    ? `What the ${name} column means`
+    : `What ${name} means`;
+}
+
 export function Badge({
   children,
   tone = "neutral",
@@ -221,7 +386,8 @@ export function Badge({
       )}
     >
       {children}
-      {hint && <Hint label="What this means">{hint}</Hint>}
+      {/* Named after the badge it hangs off — see `plainText`. */}
+      {hint && <Hint label={hintLabel(children, "badge")}>{hint}</Hint>}
     </span>
   );
 }
@@ -304,7 +470,7 @@ export function Th({
       {hint ? (
         <span className="inline-flex items-center gap-1">
           {children}
-          <Hint label="What this column means">{hint}</Hint>
+          <Hint label={hintLabel(children, "column")}>{hint}</Hint>
         </span>
       ) : (
         children
@@ -336,49 +502,166 @@ export function Td({
   );
 }
 
-export function Button({
-  children,
-  onClick,
-  tone = "secondary",
-  disabled,
-  type = "button",
-  className,
-  title,
-}: {
+const BUTTON_TONES = {
+  primary: "bg-green-deep text-white hover:bg-ink",
+  secondary: "border border-bark bg-card text-ink hover:border-green/60",
+  danger: "border border-alert-line bg-alert-wash text-alert hover:border-alert/45",
+  ghost: "text-muted hover:text-green-deep",
+};
+
+/* `whitespace-nowrap` is a correctness fix, not a style preference. In a narrow
+   table cell the label wrapped mid-phrase ("Add to Pando" over three lines) and
+   — on `/admin/demand`, where an ancestor set `truncate` — the primary button
+   rendered as **"I've dealt with this…"**: an ellipsis eating the label of the
+   button somebody is meant to press. A button is as wide as its words; if that
+   is too wide for its container, the container is wrong. */
+const BUTTON_BOX =
+  "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+
+type ButtonTone = keyof typeof BUTTON_TONES;
+
+interface ButtonCommon {
   children: ReactNode;
-  onClick?: () => void;
-  tone?: "primary" | "secondary" | "danger" | "ghost";
-  disabled?: boolean;
-  type?: "button" | "submit";
+  tone?: ButtonTone;
   className?: string;
   /** For a control whose label has to stay short — this table is dense on purpose. */
   title?: string;
-}) {
-  const tones = {
-    primary: "bg-green-deep text-white hover:bg-ink",
-    secondary: "border border-bark bg-card text-ink hover:border-green/60",
-    danger: "border border-alert-line bg-alert-wash text-alert hover:border-alert/45",
-    ghost: "text-muted hover:text-green-deep",
-  };
+  /**
+   * What this button acts on, appended to its accessible name.
+   *
+   * ## The defect, counted rather than guessed
+   *
+   * Every queue here repeats one row action down the page, and until now every
+   * copy had the identical accessible name. Measured at 1440x900 against the
+   * live database: **22x "I've read it"** on /admin/flags, **19x "Nothing to
+   * do"** and 14x "I've dealt with this" on /admin/demand, 13x "Confirm" and
+   * 13x "Not from the group" on /admin/founding, 8x each of "Add to Pando",
+   * "Edit or hold" and "Don't use" on /admin/activities, 8x "Approve" on
+   * /admin/answers, 5x "Mark declined" on /admin/caregivers.
+   *
+   * That is the parent flow's *"23 buttons all called Edit"* (3 Sep) on the
+   * admin side, and it is worse here, because these buttons approve a
+   * contribution, retire a record and confirm a person's founding status. A
+   * screen-reader user tabbing a queue hears "Confirm, button" thirteen times
+   * with nothing saying who is being confirmed.
+   *
+   * The visible label is untouched — a column of buttons reading "Confirm Grace
+   * Kim" would be the fix eating the layout it was meant to serve — so this
+   * becomes an `aria-label` of "`{label} — {subject}`" and only the
+   * accessible name changes.
+   */
+  subject?: string;
+}
+
+/**
+ * An action, or a navigation that looks and behaves like one.
+ *
+ * ## `href` renders the anchor here rather than at the call site (7 Sep)
+ *
+ * This is the lesson `TextAction` already paid for in the parent flow, arriving
+ * one surface along. A `<button>` and an `<a>` **do not put their label in the
+ * same place** — a browser centres a button's own label vertically, while a
+ * blockified anchor leaves its text at the top of its box — so two controls that
+ * are meant to be one thing drift apart the moment one of them is hand-written,
+ * and no care at the call site prevents it. The admin's sidebar footer was
+ * exactly that pair: "Change password" is a navigation and "Sign out" is an
+ * action, and because `Button` could only ever be a `<button>`, both were
+ * hand-rolled as underlined text instead, in four copies across two breakpoints.
+ *
+ * The two shapes are a union rather than one loose prop bag, so a link cannot be
+ * given `type="submit"` or a `disabled` that an anchor has no way to honour — a
+ * disabled link is not a thing the platform has, and faking it with
+ * `pointer-events: none` leaves it in the tab order, reachable and dead.
+ */
+type ButtonProps =
+  | (ButtonCommon & {
+      href?: undefined;
+      onClick?: () => void;
+      disabled?: boolean;
+      type?: "button" | "submit";
+    })
+  | (ButtonCommon & {
+      href: string;
+      onClick?: never;
+      disabled?: never;
+      type?: never;
+    });
+
+export function Button(props: ButtonProps) {
+  const { children, tone = "secondary", className, title, subject } = props;
+  const box = cn(BUTTON_BOX, BUTTON_TONES[tone], className);
+
+  /* Built from the visible label, so the accessible name still *starts* with
+     what the button says — a name that replaced the label would make the two
+     disagree, which is its own failure (WCAG 2.5.3). `plainText` is used
+     rather than requiring the caller to repeat the label as a string. */
+  const label = subject
+    ? `${plainText(children).replace(/\s+/g, " ").trim()} — ${subject}`
+    : undefined;
+
+  if (props.href !== undefined) {
+    return (
+      <Link href={props.href} title={title} aria-label={label} className={box}>
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <button
-      type={type}
-      onClick={onClick}
-      disabled={disabled}
+      type={props.type ?? "button"}
+      onClick={props.onClick}
+      disabled={props.disabled}
       title={title}
-      className={cn(
-        /* `whitespace-nowrap` is a correctness fix, not a style preference. In a
-           narrow table cell the label wrapped mid-phrase ("Add to Pando" over
-           three lines) and — on `/admin/demand`, where an ancestor set
-           `truncate` — the primary button rendered as **"I've dealt with
-           this…"**: an ellipsis eating the label of the button somebody is
-           meant to press. A button is now as wide as its words; if that is too
-           wide for its container, the container is wrong. */
-        "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        tones[tone],
-        className,
-      )}
+      aria-label={label}
+      className={box}
     >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * A link inside a sentence, a table cell or a list — not a control with a box.
+ *
+ * Fifteen hand-written copies of this existed across the admin and they had
+ * drifted on every axis available: `12px` / `12.5px` / `13.5px` / inherited,
+ * some `font-semibold` and some not, one hovering to `alert` rather than green.
+ * It deliberately **sets no font size**: several of these live in table cells
+ * whose own register is 12.5px, and forcing one size here would make the link
+ * the biggest thing in its row. What it fixes is the treatment, which is the
+ * part that was never a per-call-site decision.
+ */
+export function TextLink({
+  href,
+  onClick,
+  children,
+  tone = "green",
+  className,
+}: {
+  href?: string;
+  onClick?: () => void;
+  children: ReactNode;
+  /** `quiet` is for an aside — a destructive path, or a footnote's own link. */
+  tone?: "green" | "quiet";
+  className?: string;
+}) {
+  const box = cn(
+    "font-semibold underline underline-offset-2 transition-colors",
+    tone === "green"
+      ? "text-green-deep hover:text-ink"
+      : "text-muted hover:text-alert",
+    className,
+  );
+  if (href !== undefined) {
+    return (
+      <Link href={href} className={box}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={box}>
       {children}
     </button>
   );
@@ -560,14 +843,67 @@ export function Loading({ inline = false }: { inline?: boolean }) {
 }
 
 /**
+ * The read failed, said **where the rows would have been**.
+ *
+ * ## Why this is not just the banner
+ *
+ * Found by walking `/admin/flags` while a session had quietly expired. The page
+ * showed all three of these at once: the error banner *"Could not load that
+ * right now"*, two section headers reading **"(0)"**, and the empty states
+ * **"Nothing urgent"** and **"Nothing waiting"** — while the sidebar beside it
+ * still said **Flags 22**. Every admin page is built as
+ * `loading ? … : !configured ? … : empty ? … : rows`, with `error` adding only a
+ * banner *above* — so a failed read falls all the way through to the empty
+ * branch, and the work area states there is nothing to do.
+ *
+ * That is `persisted: false` broken on a read. "We could not save your answer"
+ * and "there was nothing to save" are different sentences, and so are "we could
+ * not look" and "there is nothing waiting" — and of the two things on that
+ * screen, the one a person acts on is *"Nothing waiting"*, because it is where
+ * the work would be. The honest reading of the old page was "I have no work
+ * today", from a queue with twenty-two open flags in it.
+ *
+ * One line, deliberately: the banner above already says what went wrong, and
+ * this only has to stop the space claiming to be empty.
+ */
+export function Failed({ inline = false }: { inline?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "text-center text-[13.5px] text-muted",
+        inline ? "px-4 py-6" : "px-4 py-10",
+      )}
+    >
+      Couldn&apos;t load this — so this is not &ldquo;nothing&rdquo;.
+    </div>
+  );
+}
+
+/**
  * Something went wrong. `role="alert"` because it interrupts: the admin was
  * mid-task and the thing they tried did not happen.
  */
-export function ErrorNote({ children }: { children: ReactNode }) {
+export function ErrorNote({
+  children,
+  /**
+   * Spacing only, and it **replaces** the default rather than joining it —
+   * `cn()` is a plain join, so `mb-4` and a caller's `mb-0` in one layer are
+   * resolved by Tailwind's output order and not by the string. Every page-top
+   * caller passes nothing and keeps `mb-4`; the sign-in form owns its own,
+   * because there the note sits above a button that already has `mt-5`.
+   */
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div
       role="alert"
-      className="mb-4 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert"
+      className={cn(
+        "rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert",
+        className ?? "mb-4",
+      )}
     >
       {children}
     </div>
@@ -698,15 +1034,58 @@ export function Toolbar({ children }: { children: ReactNode }) {
  * pins. A pinned explainer stays open when the pointer leaves — otherwise
  * reading a long one means keeping the mouse inside it while you scroll.
  */
-export function Explainer({
+/**
+ * A section of a page you can open — the **one** way the admin hides anything.
+ *
+ * ## Why this exists
+ *
+ * The client's report was that "some sections hide and some don't, and it isn't
+ * clear". She was describing something countable: there were **seven** distinct
+ * "there is more here" affordances on this surface, and three of them were
+ * hand-written variants of the same `<details>` with three different chevrons —
+ * `▶` at 10px in `Explainer`, `▶` at 12px on the Overview's numbers fold, and a
+ * lucide `ChevronRight` in the sidebar's group fold — at 12.5px uppercase, 14px
+ * medium and 11px uppercase respectively. Nothing about which of those a reader
+ * met was a decision; it was whoever wrote that page.
+ *
+ * One trigger row now: chevron, label, same type, same box, same rotation. What
+ * stays distinct is only what is genuinely a different *job* — `Hint` for one
+ * word inside a sentence, `RevealMore` for more rows of the same list (a **down**
+ * arrow, because that is what it means), `RecordDrawer` for a panel belonging to
+ * one record, `SegmentedFilter` for changing which rows you are looking at.
+ *
+ * ## `peek` is help, not content
+ *
+ * Hovering previews an *explanation* — the client's 3 Sep instruction, kept
+ * verbatim. It is deliberately **not** the default: peeking a nine-section
+ * statistics grid would make the page jump every time the pointer crossed it,
+ * so content opens on a click and only help previews on hover. That is the one
+ * behavioural difference left here, it is a property of what is inside rather
+ * than of who wrote the page, and `Explainer` is the name for the help case so
+ * a call site never has to decide.
+ */
+export function Disclosure({
   title,
   children,
   open = false,
+  flush = false,
 }: {
   title: string;
   children: ReactNode;
   /** Pinned open from the first render. Rare: something a page must not bury. */
   open?: boolean;
+  /**
+   * The box wraps the trigger row only, and the content falls below it
+   * unpadded — for children that are already cards. The Overview's numbers are
+   * a grid of `Stat` tiles, and putting those inside a white bordered card is
+   * the card-in-card the design system argues against; prose, by contrast, has
+   * to be *inside* the box, or a bordered trigger row leaves a naked paragraph
+   * on bare paper (the fault this component was moved out of a `Card` to fix on
+   * 4 Sep). So the trigger is identical either way and only the panel differs,
+   * which is the part that genuinely cannot be the same for a paragraph and a
+   * grid.
+   */
+  flush?: boolean;
 }) {
   const [pinned, setPinned] = useState(open);
   const [peeking, setPeeking] = useState(false);
@@ -721,7 +1100,10 @@ export function Explainer({
          first row of the reader's queue. Standalone, those classes drew a naked
          summary line on bare paper, so the two placements could not both be
          right. */
-      className="group mb-4 rounded-xl border border-bark bg-card"
+      className={cn(
+        "group mb-4",
+        !flush && "rounded-xl border border-bark bg-card",
+      )}
       onPointerEnter={(e) => {
         /* Pointer type matters: a tap fires `pointerenter` too, and peeking on
            a tap would race the click that toggles the pin — the summary would
@@ -741,20 +1123,33 @@ export function Explainer({
           e.preventDefault();
           setPinned((was) => !was);
         }}
-        className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.07em] text-muted hover:text-ink"
+        className={cn(
+          "flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[13.5px] font-semibold text-ink-soft hover:text-green-deep",
+          flush &&
+            "rounded-xl border border-bark bg-card hover:border-green/60",
+        )}
       >
-        <span
-          aria-hidden="true"
-          className="text-[10px] transition-transform group-open:rotate-90"
-        >
-          ▶
-        </span>
+        <DisclosureChevron />
         {title}
       </summary>
-      <div className="px-4 pb-3.5 text-[13px] leading-relaxed text-muted [&_strong]:font-semibold [&_strong]:text-ink">
+      <div className={flush ? "mt-4" : "px-4 pb-3.5"}>
         {children}
       </div>
     </details>
+  );
+}
+
+/**
+ * The one chevron. Exported so the sidebar's group fold — which cannot be a
+ * `<details>`, because on a phone that nav is a horizontal scrolling row and its
+ * links have to stay in the document — still turns the same shape the same way.
+ */
+export function DisclosureChevron() {
+  return (
+    <ChevronRight
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 text-muted transition-transform group-open:rotate-90"
+    />
   );
 }
 
@@ -825,7 +1220,13 @@ export function whenExact(iso: string | null): string {
 
 export function ProvenanceBadge({ provenance }: { provenance: string }) {
   if (provenance === "parent_submitted") {
-    return <Badge tone="green" hint="A real parent submitted this">Parent</Badge>;
+    /* No hint: "A real parent submitted this" restates the word on the badge,
+       and on a queue where every row is a parent submission that was eight
+       identical `?` triggers on one page. `admin_entered` keeps its sentence,
+       because that one carries a rule the label does not say (invariant 4). The
+       rule this leaves behind is legible: a badge has a hint exactly when the
+       sentence says something its label does not. */
+    return <Badge tone="green">Parent</Badge>;
   }
   if (provenance === "admin_entered") {
     return (

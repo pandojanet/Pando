@@ -144,7 +144,7 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
   detail: {
     step: "detail",
     prompt:
-      "Pando: last one — anything another parent should know? Reply with a sentence, or SKIP.",
+      "Pando: last one, anything another parent should know? Reply with a sentence, or SKIP.",
     skippable: true,
   },
 };
@@ -343,5 +343,5 @@ export function captureSavedSms(name: string): string {
  * have a variable in it.
  */
 export function caregiverRedirectSms(): string {
-  return "Pando: for a nanny or sitter we ask a few careful questions first — including whether you employed them yourself. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
+  return "Pando: for a nanny or sitter we ask a few careful questions first, including whether you employed them yourself. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
 }

@@ -5,6 +5,7 @@ import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
+import { isSlackRelayEnabled } from "@/lib/server/slack";
 import { EVENT_WEIGHT, nextTier, tierFor } from "@/lib/tiers";
 import { RESPONSE_MIN_SAMPLE, RESPONSE_RATE_FLOOR } from "@/lib/outreach-policy";
 import type {
@@ -175,6 +176,20 @@ async function overview(db: Db) {
         (select count(*) from flags
            where status = 'open' and reason = 'recommendation_withdrawn')          as withdrawn_records,
         (select count(*) from pending_options where status = 'pending')            as pending_options,
+        /* 14.2 — the nav has carried a comment since 27 Aug saying this page
+           "counts, because 19 says every one is read by a person", and it had
+           no count at all: the payload never carried one. Approved-but-unsent
+           is inside it deliberately — that is a parent still waiting, and the
+           answers page gives it its own gold card for exactly that reason. */
+        (select count(*) from answers
+           where status in ('pending_review', 'approved') and not is_test)         as answers_waiting,
+        /* 7.6 / 14.8 — same story one queue along. A reply nobody has read is
+           a parent who answered and has not been told it mattered. */
+        (select count(*) from blast_recipients br
+           join blasts b on b.id = br.blast_id
+          where br.response_text is not null
+            and br.review_status = 'pending_review'
+            and not b.is_test)                                                     as replies_waiting,
         (select count(*) from caregiver_nominations where review_hold and not is_test) as review_holds,
         (select count(*) from caregiver_claims
            where status = 'pending' and not is_test)                            as pending_claims,
@@ -267,6 +282,7 @@ async function overview(db: Db) {
       named_allegation: n("demand_allegation"),
     },
     blasts: { open: n("blasts_open"), refunds_owed: n("refunds_owed") },
+    answers: { waiting: n("answers_waiting"), replies: n("replies_waiting") },
     answer_ready: n("answer_ready"),
     /**
      * Estimate 2.2's funnel, and it used to be a hardcoded `[]` under a comment
@@ -1450,6 +1466,7 @@ async function deliveryHealthRow(
   if (!counts) {
     return {
       configured: false,
+      relay: isSlackRelayEnabled(),
       window_days: windowDays,
       rate: null,
       below_floor: false,
@@ -1459,7 +1476,12 @@ async function deliveryHealthRow(
       alerts: [],
     };
   }
-  return { configured: true, window_days: windowDays, ...deliveryHealth(counts) };
+  return {
+    configured: true,
+    relay: isSlackRelayEnabled(),
+    window_days: windowDays,
+    ...deliveryHealth(counts),
+  };
 }
 /* ── 14.1 Conversations ──────────────────────────────────────────────────── */
 
@@ -1868,6 +1890,7 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
            b.refunded_at                                     as refunded_at,
            b.refund_reason                                   as refund_reason,
            b.credit_id is not null                           as credit_funded,
+           b.credit_granted_at,
            b.is_test                                         as is_test,
            p.id::text                                        as asker_id,
            p.first_name                                      as asker_first,
@@ -1913,6 +1936,7 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
     refunded_at: (r.refunded_at as string | null) ?? null,
     refund_reason: (r.refund_reason as string | null) ?? null,
     credit_funded: r.credit_funded === true,
+    credit_granted_at: (r.credit_granted_at as string | null) ?? null,
     recipients: Number(r.recipients ?? 0),
     responded: Number(r.responded ?? 0),
     passed: Number(r.passed ?? 0),
@@ -2026,6 +2050,7 @@ async function paymentRows(db: Db): Promise<PaymentsResult> {
            b.refunded_at                                 as refunded_at,
            b.refund_reason                               as refund_reason,
            b.credit_id is not null                       as credit_funded,
+           b.credit_granted_at,
            b.expires_at                                  as expires_at,
            b.is_test                                     as is_test,
            p.id::text                                    as asker_id,
@@ -2055,6 +2080,7 @@ async function paymentRows(db: Db): Promise<PaymentsResult> {
     refunded_at: (r.refunded_at as string | null) ?? null,
     refund_reason: (r.refund_reason as string | null) ?? null,
     credit_funded: r.credit_funded === true,
+    credit_granted_at: (r.credit_granted_at as string | null) ?? null,
     asker: r.asker_id
       ? { id: String(r.asker_id), name: fullName(r.asker_first, r.asker_last) }
       : null,

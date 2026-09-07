@@ -6,6 +6,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -38,13 +39,18 @@ export default function PendingOptionsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<PendingOptionRow[]>("options", { status: "pending" });
 
-  const [busy, setBusy] = useState(false);
+  /* The name being decided on, not the whole list. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const pending = (rows ?? []).filter((r) => r.status === "pending");
 
-  async function run(label: string, fn: () => Promise<{ persisted: boolean }>) {
-    setBusy(true);
+  async function run(
+    rowId: string,
+    label: string,
+    fn: () => Promise<{ persisted: boolean }>,
+  ) {
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -55,7 +61,7 @@ export default function PendingOptionsPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -77,6 +83,8 @@ export default function PendingOptionsPage() {
       <Card title={`Waiting (${pending.length})`}>
         {loading && pending.length === 0 ? (
           <Loading />
+        ) : error && pending.length === 0 ? (
+          <Failed />
         ) : !configured && pending.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : pending.length === 0 ? (
@@ -112,7 +120,7 @@ export default function PendingOptionsPage() {
                   <Td className="text-right">
                     {row.occurrences > 1 ? (
                       <span className="font-semibold text-green-deep">
-                        {row.occurrences}{" "}<Hint>{"More than one parent typed this, which is the strongest reason to add it."}</Hint></span>
+                        {row.occurrences}{" "}<Hint label="What the number of parents means">{"More than one parent typed this, which is the strongest reason to add it."}</Hint></span>
                     ) : (
                       row.occurrences
                     )}
@@ -123,9 +131,10 @@ export default function PendingOptionsPage() {
                     <div className="flex flex-wrap gap-1.5">
                       <Button
                         tone="primary"
-                        disabled={busy}
+                        subject={row.submitted_value}
+                        disabled={busy === row.id}
                         onClick={() =>
-                          void run("Added — parents can tap it now.", async () =>
+                          void run(row.id, "Added — parents can tap it now.", async () =>
                             adminAction({
                               action: "option.promote",
                               id: row.id,
@@ -141,9 +150,10 @@ export default function PendingOptionsPage() {
                       </Button>
                       <Button
                         tone="secondary"
-                        disabled={busy}
+                        subject={row.submitted_value}
+                        disabled={busy === row.id}
                         onClick={() =>
-                          void run("Set aside.", async () =>
+                          void run(row.id, "Set aside.", async () =>
                             adminAction({ action: "option.reject", id: row.id }),
                           )
                         }

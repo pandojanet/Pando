@@ -4,6 +4,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -66,6 +67,8 @@ export default function AuditPage() {
       <Card>
         {loading && entries.length === 0 ? (
           <Loading />
+        ) : error && entries.length === 0 ? (
+          <Failed />
         ) : !configured && entries.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : entries.length === 0 ? (

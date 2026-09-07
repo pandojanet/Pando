@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   inputClass,
   Loading,
   NotConfigured,
@@ -14,6 +15,7 @@ import {
   PageHead,
   ResultNote,
   SampleBanner,
+  TextLink,
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
@@ -159,6 +161,10 @@ export default function ClaimsPage() {
       {loading && all.length === 0 ? (
         <Card>
           <Loading />
+        </Card>
+      ) : error && all.length === 0 ? (
+        <Card>
+          <Failed />
         </Card>
       ) : !configured && all.length === 0 ? (
         <Card>
@@ -383,13 +389,9 @@ function DeleteRequest({
 }) {
   if (!confirming) {
     return (
-      <button
-        type="button"
-        onClick={onArm}
-        className="mt-2 text-[12.5px] font-semibold text-muted underline underline-offset-2 hover:text-alert"
-      >
+      <TextLink tone="quiet" className="mt-2 text-[12.5px]" onClick={onArm}>
         They asked to be removed
-      </button>
+      </TextLink>
     );
   }
 

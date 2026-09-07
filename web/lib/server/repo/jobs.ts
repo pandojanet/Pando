@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { JOBS, isDue, outcomeFor, type JobName, type JobResult } from "@/lib/jobs";
-import { TIERS } from "@/lib/blast-tiers";
+import { TIERS, automaticCredit } from "@/lib/blast-tiers";
 import { deliveryHealth } from "@/lib/delivery";
 import { withDb, type Db } from "@/lib/server/db";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
@@ -283,7 +283,8 @@ async function expire_blasts(): Promise<JobResult> {
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
       const due = (await tx.execute(sql`
-        select b.id, b.tier, b.asker_id
+        select b.id, b.tier, b.asker_id, b.payment_status,
+               b.credit_id is not null as credit_funded
           from blasts b
          where b.status in ('active', 'pending_review')
            and b.expires_at is not null
@@ -296,16 +297,44 @@ async function expire_blasts(): Promise<JobResult> {
 
       let credited = 0;
       for (const row of due) {
-        const tier = TIERS[String(row.tier) as keyof typeof TIERS];
         await tx.execute(sql`
           update blasts set status = 'expired' where id = ${String(row.id)}::uuid
         `);
-        /* Free tiers are never refunded — nothing was taken. */
-        if (tier?.credit_kind && tier.price_cents > 0 && row.asker_id) {
+        /**
+         * Who is owed a credit, decided by `automaticCredit` rather than here.
+         *
+         * The old rule was "any priced tier", and it was wrong in two
+         * directions at once — measured on the live database, where a single
+         * run credited three of four expired Asks: it paid a **second**
+         * compensation on a card-paid Ask the payments page was already
+         * reporting as owed a refund, and it **minted a free credit** for a
+         * Board Ask whose checkout was never completed, which is repeatable
+         * by anybody willing to create an Ask and not pay for it.
+         */
+        const owed = automaticCredit({
+          tier: String(row.tier) as keyof typeof TIERS,
+          payment_status: String(row.payment_status ?? ""),
+          credit_funded: row.credit_funded === true,
+        });
+        if (owed.grant && owed.kind && row.asker_id) {
           await tx.execute(sql`
             insert into credits (person_id, kind, reason)
-            values (${String(row.asker_id)}::uuid, ${tier.credit_kind},
+            values (${String(row.asker_id)}::uuid, ${owed.kind},
                     'blast_expired_unanswered')
+          `);
+          /**
+           * Stamped on the Ask, in the same transaction as the credit it
+           * records — `credits` holds no reference back to the blast, so
+           * without this the grant is invisible to every reader.
+           *
+           * What it fixes: `refundOwed` could only say "a credit is owed",
+           * so the blast manager painted that in alert red for ever on a
+           * promise this job had already kept, and the obvious response to
+           * it is to grant a second credit by hand.
+           */
+          await tx.execute(sql`
+            update blasts set credit_granted_at = now()
+             where id = ${String(row.id)}::uuid
           `);
           credited += 1;
         }

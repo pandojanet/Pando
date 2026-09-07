@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Badge,
   Button,
@@ -8,6 +8,7 @@ import {
   controlClass,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   PageHead,
@@ -67,7 +68,7 @@ import type { MatchCandidateRow, MatchingResult } from "@/lib/admin/types";
  * connections" rendered as **"7.57 connections"** on one line, which is not a
  * subtle failure of clarity but a wrong number on the screen.
  *
- * **The weights are explained where they are used.** `Explainer` put the
+ * **The weights are explained where they are used.** A page-level explainer put the
  * sentences on the page instead of in a tooltip, and the weight table sat
  * inside that explanation rather than in a separate card at the bottom, where
  * it described badges a screen-height away.
@@ -200,6 +201,8 @@ export default function MatchingPage() {
         >
           {loading && !data ? (
             <Loading />
+          ) : error && !data ? (
+            <Failed />
           ) : !configured ? (
             <NotConfigured
               demo={demo}
@@ -356,9 +359,18 @@ export default function MatchingPage() {
  * would be worse — the admin rule this repo keeps relearning is that a control
  * must not claim a state nothing maintains.
  *
- * **The list is ordered by name, not by weight** (see `sortWeights`): a field
- * that jumps to a new position the moment its value changes moves under the
- * cursor of the person who just typed in it.
+ * **The list is ordered by its own labels, and never by weight.** Ordering by
+ * weight would be more useful to read and is not available: a field that jumps
+ * to a new position the moment its value changes moves under the cursor of the
+ * person who just typed in it. The bar beside each number carries the ranking
+ * instead, which is the whole reason it is there.
+ *
+ * The old comment here claimed a `sortWeights` that **did not exist** — the
+ * order came from the query, i.e. alphabetical by `affinity_type`, which is the
+ * slug and not the label. On screen that read: *class or activity · next-door
+ * area · children the same stage · faith community · area · school · club*.
+ * Alphabetical by a string the reader cannot see is indistinguishable from
+ * random, and the client reported the card as unstructured.
  */
 function WeightsCard({
   weights,
@@ -384,6 +396,14 @@ function WeightsCard({
     draft[w.affinity_type] ?? String(w.weight);
 
   const changed = weights.filter((w) => shown(w) !== String(w.weight));
+  /* The bar's denominator is the heaviest weight *as currently typed*, so the
+     longest bar is always full and raising school to 20 shortens every other bar
+     rather than overflowing its own. Never below 1, or a table of zeroes would
+     divide by nothing. */
+  const heaviest = Math.max(
+    1,
+    ...weights.map((w) => (inRange(shown(w)) ? Number(shown(w)) : w.weight)),
+  );
   /* The same range the route enforces — checked here so a bad value disables the
      button rather than travelling to the server to be refused. */
   const bad = changed.filter((w) => !inRange(shown(w)));
@@ -432,47 +452,113 @@ function WeightsCard({
         />
       ) : (
         <>
-          <div className="flex flex-wrap gap-x-6 gap-y-3.5 px-4 py-3.5">
-            {weights.map((w) => (
-              <label key={w.affinity_type} className="flex items-center gap-2">
-                <span className="text-[13.5px]">{affinityLabel(w.affinity_type)}</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  step={1}
-                  inputMode="numeric"
-                  disabled={busy}
-                  aria-invalid={!inRange(shown(w))}
-                  /* A **ring**, not a border colour. `controlClass` already sets
-                     `border-bark`, and two utilities for one property in the same
-                     layer are resolved by Tailwind's output order rather than by
-                     the order they sit in the string — the trap `controlClass`
-                     itself is named after. A ring is a different property, so it
-                     cannot lose that argument. */
-                  className={`${controlClass} w-16 text-right tabular-nums ${
-                    inRange(shown(w)) ? "" : "ring-1 ring-alert-line"
-                  }`}
-                  value={shown(w)}
-                  onChange={(e) =>
-                    setDraft((d) => ({ ...d, [w.affinity_type]: e.target.value }))
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && changed.length > 0 && bad.length === 0) void save();
-                  }}
-                />
-              </label>
-            ))}
+          {/**
+           * One row per kind of connection, in **one grid**, so the numbers form
+           * a column.
+           *
+           * The measurement that decided this: as a wrapping row of inline
+           * label-and-input pairs, the seven inputs sat at **seven different x
+           * positions** (378 · 445 · 464 · 553 · 635 · 700 · 769 at a 940px
+           * viewport) across three ragged rows. Seven numbers that exist to be
+           * compared with each other, and not one of them lined up with
+           * another — which is what the client saw as unstructured, and no
+           * amount of explanatory text would have fixed it.
+           *
+           * `htmlFor` rather than a wrapping `<label>`: the three cells are
+           * direct children of the grid, and tying them together by id keeps the
+           * association independent of the layout instead of depending on
+           * `display: contents` behaving well on a form control.
+           */}
+          <div className={`${WEIGHT_GRID} px-4 py-3.5`}>
+            {sortWeights(weights).map((w) => {
+              const value = shown(w);
+              const ok = inRange(value);
+              return (
+                <Fragment key={w.affinity_type}>
+                  <label
+                    htmlFor={`weight-${w.affinity_type}`}
+                    className="text-[13.5px]"
+                  >
+                    {affinityLabel(w.affinity_type)}
+                  </label>
+                  <input
+                    id={`weight-${w.affinity_type}`}
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    inputMode="numeric"
+                    disabled={busy}
+                    aria-invalid={!ok}
+                    aria-describedby="weight-scale"
+                    /* A **ring**, not a border colour. `controlClass` already
+                       sets `border-bark`, and two utilities for one property in
+                       the same layer are resolved by Tailwind's output order
+                       rather than by where they sit in the string — the trap
+                       `controlClass` itself is named after. A ring is a
+                       different property, so it cannot lose that argument. */
+                    className={`${controlClass} w-full text-right tabular-nums ${
+                      ok ? "" : "ring-1 ring-alert-line"
+                    }`}
+                    value={value}
+                    onChange={(e) =>
+                      setDraft((d) => ({ ...d, [w.affinity_type]: e.target.value }))
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && changed.length > 0 && bad.length === 0)
+                        void save();
+                    }}
+                  />
+                  {/**
+                   * The ranking, without reordering the fields.
+                   *
+                   * This is the part that lets somebody who has never seen the
+                   * platform read the card: "school is the strongest connection
+                   * there is, a neighbouring area is the weakest" is visible at
+                   * a glance, where seven numbers in a ragged row is arithmetic
+                   * homework. It is derived from the value in the field beside
+                   * it, so it moves as you type and cannot disagree with it —
+                   * and it is `aria-hidden`, because the number is already
+                   * there and a screen reader does not need it twice.
+                   */}
+                  <span
+                    aria-hidden="true"
+                    className="hidden h-1.5 rounded-full bg-bark/50 md:block"
+                  >
+                    <span
+                      className={`block h-full rounded-full ${ok ? "bg-green" : "bg-alert-line"}`}
+                      style={{
+                        width: `${Math.min(100, Math.max(4, (Number(value) / heaviest) * 100))}%`,
+                      }}
+                    />
+                  </span>
+                </Fragment>
+              );
+            })}
+          </div>
 
-            {/* Read-only, and labelled as such rather than left looking broken. */}
-            <span className="flex items-center gap-2">
-              <span className="text-[13.5px] text-muted">Any kind of similar context</span>
-              <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-[14px] tabular-nums text-muted">
-                {RELEVANCE_STEP}
-              </span>
-              <span className="text-[11.5px] uppercase tracking-[0.06em] text-muted">
-                in code
-              </span>
+          {/**
+           * The one number on this card that is not a knob, below a rule so it
+           * cannot read as a broken field.
+           *
+           * It was in the same wrapping row as the seven editable ones, with a
+           * greyed box and an "in code" tag — which is a control that looks
+           * disabled for no stated reason. `RELEVANCE_STEP` is a constant in
+           * `lib/matching.ts`: the whole of life relevance is deliberately
+           * worth less than one shared school, and that balance is a code
+           * decision rather than something an admin sets. It is shown because
+           * the badges on every row include context points, so a reader
+           * checking a score needs the number.
+           */}
+          <div
+            className={`${WEIGHT_GRID} border-t border-bark/70 px-4 py-3 text-muted`}
+          >
+            <span className="text-[13.5px]">Any kind of similar context</span>
+            <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-right text-[14px] tabular-nums">
+              {RELEVANCE_STEP}
+            </span>
+            <span className="self-center text-[11.5px] uppercase tracking-[0.06em] max-md:col-span-2">
+              set in code
             </span>
           </div>
 
@@ -489,11 +575,16 @@ function WeightsCard({
                 Undo
               </Button>
             )}
-            {bad.length > 0 && (
-              <span className="text-[12.5px] text-alert">
-                A weight is a whole number between 1 and 20.
-              </span>
-            )}
+            {/* The scale, stated once and permanently rather than only when
+                somebody has already got it wrong. `aria-describedby` on every
+                field points here, so it is announced with the field instead of
+                being a sentence a reader has to go and find. */}
+            <span
+              id="weight-scale"
+              className={`text-[12.5px] ${bad.length > 0 ? "text-alert" : "text-muted"}`}
+            >
+              A weight is a whole number from 1 to 20.
+            </span>
             {note && <ResultNote inline>{note}</ResultNote>}
             {failed && <span className="text-[12.5px] text-alert">{failed}</span>}
           </div>
@@ -517,6 +608,31 @@ function inRange(value: string): boolean {
  * changes" is the difference between pressing it deliberately and discovering
  * afterwards that a stray keystroke went with it.
  */
+/**
+ * The three columns every row of the weights card lines up on: the connection,
+ * its number, and the bar. One constant, because the read-only context row below
+ * the list has to sit on exactly the same grid — two copies of a template is how
+ * one of them ends up a quarter-rem out.
+ */
+const WEIGHT_GRID =
+  /* Capped, because a label and the number it belongs to have to read as a
+     pair: unconstrained, the 1fr label column stretched to the full content
+     width and put ~500px of empty paper between "Same school" and the 5 that
+     belongs to it at 1440px. */
+  "grid max-w-[36rem] grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(3rem,7rem)]";
+
+/**
+ * By the label a reader can see, not by the slug underneath it.
+ *
+ * `localeCompare` rather than `<`, so "Área" and "Area" would not sort by code
+ * point if a market ever labels a connection in another language.
+ */
+function sortWeights<T extends { affinity_type: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) =>
+    affinityLabel(a.affinity_type).localeCompare(affinityLabel(b.affinity_type), "en"),
+  );
+}
+
 function saveLabel(count: number): string {
   if (count === 0) return "Nothing to save";
   return count === 1 ? "Save 1 change" : `Save ${count} changes`;

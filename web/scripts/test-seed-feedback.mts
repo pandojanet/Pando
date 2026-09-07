@@ -520,6 +520,67 @@ ok(
   q.childOptions(expectingOnly).length === 0 &&
     q.childBlocks(schoolQ, "pasadena", expectingOnly).length === 0,
 );
+/* The two above were what this section asserted, and neither is the thing.
+   `childBlocks` returning nothing for one child is *correct* — it means the
+   caller renders the ordinary household list — so the question was still on
+   screen, headed "Where does your child go to school, preschool or daycare?",
+   offering "Homeschool" and "Not in school or daycare yet". The assertion has
+   to be about the screen, not about the blocks. */
+const perChildFor = (a: ProfileAnswers) =>
+  q
+    .visibleScreens(a)
+    .filter((s) => !q.isStatementScreen(s))
+    .flatMap((s) => q.visibleQuestions(s, a))
+    .filter((x) => x.perChild)
+    .map((x) => x.id);
+ok(
+  "and no per-child question is on the screen at all",
+  perChildFor(expectingOnly).length === 0,
+  perChildFor(expectingOnly).join(",") || "none",
+);
+ok(
+  "the schools screen is gone rather than empty",
+  !q.visibleScreens(expectingOnly).some((s) => s.id === "schools") &&
+    !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare_now"),
+  "a screen with two options about an unborn child is a dead end",
+);
+ok(
+  "one born child brings every one of them back",
+  perChildFor(oneOnTheWay).length === 4,
+  perChildFor(oneOnTheWay).join(","),
+);
+ok(
+  "and a parent who has not reached the ages screen is asked normally",
+  perChildFor(q.EMPTY_ANSWERS).length === 4,
+  "hiding half the flow from somebody who has not answered yet is the same bug inverted",
+);
+/**
+ * The screen the `perChild` gate could not reach (7 Sep).
+ *
+ * Backup childcare is deliberately **not** a per-child question — a grandmother
+ * who can come over covers every child — so the gate did not touch it, and an
+ * expecting-only parent was asked *"What can you usually rely on when regular
+ * childcare falls through?"* about a child who is not born. The decisive point
+ * is structural rather than a matter of taste: the thing it is the backup *to*
+ * is per-child and therefore hidden, so the flow asked for a fallback to
+ * something it had never asked about.
+ */
+ok(
+  "the backup-childcare screen goes with it",
+  !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare_backup"),
+  "a fallback with no antecedent — its own antecedent screen is hidden",
+);
+ok(
+  "and it comes back the moment one child is born",
+  q.visibleScreens(oneOnTheWay).some((s) => s.id === "childcare_backup") &&
+    q.visibleScreens(q.EMPTY_ANSWERS).some((s) => s.id === "childcare_backup"),
+  "including for a parent who has not reached the ages screen yet",
+);
+ok(
+  "an expecting-only parent walks fourteen screens, and none is about a child",
+  q.visibleScreens(expectingOnly).length === 14,
+  String(q.visibleScreens(expectingOnly).length),
+);
 ok(
   "the expecting answer itself is still recorded",
   expectingOnly.child_ages.includes(-1),

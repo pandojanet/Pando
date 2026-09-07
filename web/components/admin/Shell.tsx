@@ -10,6 +10,7 @@ import {
   CalendarClock,
   ClipboardList,
   Flag,
+  ChevronRight,
   Gauge,
   Heart,
   IdCard,
@@ -26,8 +27,9 @@ import {
 import { cn } from "@/lib/cn";
 import { HintProvider } from "@/components/admin/kit";
 import { PandoMark } from "@/components/ui/Logo";
-import { useEdgeFade } from "@/components/admin/ui";
-import { signOut } from "@/lib/admin/client";
+import { Button, useEdgeFade } from "@/components/admin/ui";
+import { ADMIN_WRITE_EVENT, signOut } from "@/lib/admin/client";
+import { QuickFind } from "./QuickFind";
 import type { Overview } from "@/lib/admin/types";
 
 /**
@@ -67,7 +69,20 @@ interface NavItem {
   urgent?: (o: Overview) => number;
 }
 
-const NAV: Array<{ group?: string; items: NavItem[] }> = [
+/**
+ * A section of the nav.
+ *
+ * There is no `fold` flag any more, and no `QuietItem`. **Every labelled group
+ * folds, and none of them remembers anything** — see `NavGroup` for why the
+ * client's report ("some categories hide and some don't") could not be answered
+ * by choosing better which one folds.
+ *
+ * A section with no `group` is the Overview: one link, always visible, because
+ * there is no label to click and nothing to reveal.
+ */
+type NavSection = { group?: string; items: NavItem[] };
+
+const NAV: NavSection[] = [
   {
     items: [
       {
@@ -133,36 +148,21 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         urgent: (o) => o.demand.high_stakes + o.demand.named_allegation,
       },
       {
-        /* 7.6. In "Waiting on you" and it DOES carry a count: unlike the
-           matching harness or the delivery gauge, this is a queue — every row is
-           a parent who answered and is waiting to hear that it mattered. */
-        /* 14.2. A queue, so it counts — and during the pilot it counts every
-           answer, because 19 says every one is read by a person. */
+        /**
+         * 14.2. A queue, so it counts — and during the pilot it counts every
+         * answer, because §19 says every one is read by a person.
+         *
+         * ⚠ It said exactly that for a fortnight and **carried no count**: the
+         * comment was here, the badge was not, and `Overview` had no field to
+         * put one in. Fixed 7 Sep. Approved-but-unsent is inside the number on
+         * purpose — that is a parent still waiting, and the page gives it its
+         * own gold card for the same reason.
+         */
         href: "/admin/answers",
         icon: Send,
         label: "Answers to send",
         hint: "What Pando would reply, waiting for you to read it. Nothing goes out unread.",
-      },
-      {
-        /**
-         * 14.3. In "Waiting on you" and it counts, unlike the matching harness
-         * or the delivery gauge: the default view is Asks that are still open,
-         * and every one of those is a parent waiting — several of them having
-         * paid. The count is the open ones rather than all of them, because a
-         * fulfilled Ask is a record you look up, not work.
-         */
-        href: "/admin/blasts",
-        icon: Megaphone,
-        label: "Network Asks",
-        hint: "Questions parents paid Pando to ask. Preview the pool, see the replies, mark them answered.",
-        count: (o) => o.blasts?.open ?? 0,
-        urgent: (o) => o.blasts?.refunds_owed ?? 0,
-      },
-      {
-        href: "/admin/responses",
-        icon: MessageSquareReply,
-        label: "Network answers",
-        hint: "Replies to Network Asks. Rate them, and decide what enters the knowledge base.",
+        count: (o) => o.answers?.waiting ?? 0,
       },
       {
         /**
@@ -184,6 +184,13 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         count: (o) => o.quality.withdrawn_records,
       },
       {
+        href: "/admin/options",
+        icon: Tags,
+        label: "Names & places",
+        hint: "A parent typed something new — add it to the lists everyone picks from.",
+        count: (o) => o.quality.pending_options,
+      },
+      {
         href: "/admin/flags",
         icon: Flag,
         label: "Flags",
@@ -194,14 +201,52 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
     ],
   },
   {
-    group: "Records",
+    /**
+     * One Ask is three screens — the question, the replies, the money — and it
+     * was three unrelated-looking nav items in two different groups, with
+     * Payments filed under "Records" while carrying a red badge for money owed.
+     * They are one flow and they read as one now. Nothing merged: 14.3, 14.8
+     * and 14.5 are still their own pages, because the rows overlap and the
+     * reading does not (3 Sep).
+     */
+    group: "Network Asks",
     items: [
       {
         /**
-         * 14.5. Under Records because it is mostly a ledger you consult — but
-         * with a **red** count for refunds owed, which is the one thing here
-         * that is somebody's outstanding task and involves money. Gold would be
-         * wrong: this is not "pending", it is owed.
+         * 14.3. In "Waiting on you" and it counts, unlike the matching harness
+         * or the delivery gauge: the default view is Asks that are still open,
+         * and every one of those is a parent waiting — several of them having
+         * paid. The count is the open ones rather than all of them, because a
+         * fulfilled Ask is a record you look up, not work.
+         */
+        href: "/admin/blasts",
+        icon: Megaphone,
+        label: "Network Asks",
+        hint: "Questions parents paid Pando to ask. Preview the pool, see the replies, mark them answered.",
+        count: (o) => o.blasts?.open ?? 0,
+        urgent: (o) => o.blasts?.refunds_owed ?? 0,
+      },
+      {
+        /**
+         * 7.6 / 14.8. A queue, so it counts: every unread row is a parent who
+         * answered a Network Ask and has not been told it mattered. The count
+         * is the unread ones — a reply already rated is a record.
+         */
+        href: "/admin/responses",
+        icon: MessageSquareReply,
+        label: "Network answers",
+        hint: "Replies to Network Asks. Rate them, and decide what enters the knowledge base.",
+        count: (o) => o.answers?.replies ?? 0,
+      },
+      {
+        /**
+         * 14.5. Mostly a ledger you consult — but with a **red** count for
+         * refunds owed, which is the one thing here that is somebody's
+         * outstanding task and involves money. Gold would be wrong: this is not
+         * "pending", it is owed.
+         *
+         * It sat under "Records" until 7 Sep, which put the only red badge in
+         * the admin inside the group that is now the one you can fold away.
          */
         href: "/admin/payments",
         icon: CreditCard,
@@ -210,6 +255,25 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         count: (o) => o.blasts?.refunds_owed ?? 0,
         urgent: (o) => o.blasts?.refunds_owed ?? 0,
       },
+    ],
+  },
+  {
+    /**
+     * **Which pages are in this group was not a judgement**: it is exactly the
+     * set that carries no count, which this file had already decided page by
+     * page, each with its reason written above it. A tool you open when you
+     * want it (6.7), a gauge rather than a queue (12.5), a record rather than
+     * a worklist (14.1, 14.6), the audit log, and the invite links. Nothing
+     * here can ever be waiting for you.
+     *
+     * It used to be the *only* group that folded, and that is what the client
+     * reported as "some categories hide and some don't" — see `NavGroup`. Every
+     * group folds now, so this one is no longer special: it is simply the group
+     * that is always collapsed, because the rule that opens a group is having
+     * something in it and nothing here ever does.
+     */
+    group: "Records & tools",
+    items: [
       {
         href: "/admin/invites",
         icon: Link2,
@@ -217,15 +281,8 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
         hint: "One link per group, and which group actually brought contributors.",
       },
       {
-        href: "/admin/options",
-        icon: Tags,
-        label: "Names & places",
-        hint: "A parent typed something new — add it to the lists everyone picks from.",
-        count: (o) => o.quality.pending_options,
-      },
-      {
         /**
-         * 6.7. Under Records rather than "Waiting on you", and with **no count**:
+         * 6.7. A tool rather than a queue, and with **no count**:
          * the nav's numbers mean "there is something here for you to clear" (10
          * Aug), and this is a tool you open when you want it, not a queue that
          * fills. A badge here would make the nav cry wolf.
@@ -285,7 +342,7 @@ const NAV: Array<{ group?: string; items: NavItem[] }> = [
   },
 ];
 
-const ITEMS = NAV.flatMap((section) => section.items);
+const ITEMS: NavItem[] = NAV.flatMap((section) => section.items as NavItem[]);
 
 function isActive(pathname: string, href: string): boolean {
   return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
@@ -294,8 +351,15 @@ function isActive(pathname: string, href: string): boolean {
 /**
  * The queue lengths, fetched once per page load rather than per navigation: this
  * component lives in the layout, so it survives every move between admin pages.
- * Re-read on navigation because approving something is exactly what changes them —
- * a count that goes stale the moment you act on it is worse than no count.
+ * Re-read on navigation, **and after any write** — approving something is exactly
+ * what changes these numbers, and until 7 Sep only the first half was true: this
+ * comment claimed a count never went stale while working a queue left the badge
+ * showing the figure it had when the page opened. `adminAction` fires one event
+ * for every write in the admin, so no page has to remember to say so.
+ *
+ * The bump is debounced, because clearing a queue is a burst of writes and the
+ * overview is the heaviest read here (it was the one that needed collapsing into
+ * a single statement on 10 Aug). One re-read after the burst, not one per click.
  *
  * Failure is silent on purpose. A number missing from the nav is a smaller problem
  * than an error banner on every page, and the page itself will report the same
@@ -303,6 +367,20 @@ function isActive(pathname: string, href: string): boolean {
  */
 function useQueueCounts(pathname: string): Overview | null {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [writes, setWrites] = useState(0);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bump = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setWrites((n) => n + 1), 600);
+    };
+    window.addEventListener(ADMIN_WRITE_EVENT, bump);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(ADMIN_WRITE_EVENT, bump);
+    };
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -323,7 +401,7 @@ function useQueueCounts(pathname: string): Overview | null {
     return () => {
       live = false;
     };
-  }, [pathname]);
+  }, [pathname, writes]);
 
   return overview;
 }
@@ -348,6 +426,146 @@ function CountBadge({ count, urgent }: { count: number; urgent: number }) {
   );
 }
 
+/**
+ * One group of nav links, and its fold.
+ *
+ * ## Every group folds now, and the open ones are open for a reason
+ *
+ * The client's report was that *some* categories hide and some do not. That was
+ * exactly true and it was not a bug in the fold — it was the design: one group
+ * of four had a chevron because it was the only one whose pages carry no count,
+ * and the other three had a plain label. So which groups can be collapsed
+ * depended on a rule that is **invisible from the screen**, and the affordance
+ * looked arbitrary. Picking a different group to fold would not have fixed
+ * that; the inconsistency was the thing to remove.
+ *
+ * So: every labelled group has the same chevron, and whether it starts open is
+ * **derived from whether it has anything for you**:
+ *
+ *  - it contains the page you are on, or
+ *  - one of its pages has a non-zero count, or
+ *  - you opened it by hand.
+ *
+ * That keeps the property the old static fold was built to guarantee — a badge
+ * is never hidden — and it keeps it *by construction* rather than by a type:
+ * a count above zero opens its own group. Which is why `QuietItem` is gone. It
+ * existed to stop a counted page being filed behind a fold that could not react
+ * to it, and a fold that reacts needs no such rule; keeping it would now
+ * **prevent** the design, since the folding groups are all of them.
+ *
+ * Two things it deliberately does not do. It does not remember a fold across a
+ * reload (the 4 Sep rule for the Overview's statistics: a fold that remembers
+ * being open is a sidebar that is long again tomorrow). And it does not
+ * summarise a collapsed group's counts on its label, because by the rule above
+ * a collapsed group has none — if it had, it would be open.
+ *
+ * A reader may still close a group that has work in it. That is their call, the
+ * label stays on screen, and the numbers come back the moment they reopen it or
+ * reload — the alternative is a control that refuses to work on exactly the
+ * groups somebody most wants out of the way.
+ *
+ * The fold is desktop-only by construction: on a phone the nav is a single
+ * horizontal scrolling row, where hiding links behind a toggle saves no height
+ * and costs a tap. So the items are always in the document and the closing is
+ * `md:hidden`, which is also what keeps this free of any "am I on a phone" test
+ * that would differ between the server and the browser.
+ */
+function NavGroup({
+  section,
+  pathname,
+  counts,
+}: {
+  section: NavSection;
+  pathname: string;
+  counts: Overview | null;
+}) {
+  /**
+   * `null` until the reader touches it, so the derived answer below stays live —
+   * counts arrive from a fetch, and a `useState(hasWork)` initialised on the
+   * first render would have been seeded from a null `counts` and stayed closed
+   * on a group that turned out to have twenty-two flags in it.
+   */
+  const [override, setOverride] = useState<boolean | null>(null);
+  const inside = section.items.some((item) => isActive(pathname, item.href));
+  const hasWork = section.items.some((item) =>
+    counts ? (item.count?.(counts) ?? 0) > 0 : false,
+  );
+  const foldable = section.group !== undefined;
+  const shown = !foldable || (override ?? (inside || hasWork));
+
+  return (
+    <div className="flex shrink-0 gap-1 md:mt-1 md:flex-col md:gap-0.5 md:first:mt-0">
+      {/* Group labels are a desktop affordance: on a phone the nav is one
+          scrolling row, and headings inside it would just eat the width. */}
+      {section.group && (
+          <button
+            type="button"
+            onClick={() => setOverride(!shown)}
+            aria-expanded={shown}
+            className="hidden w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-semibold uppercase tracking-[0.09em] text-muted hover:text-ink-soft md:flex"
+          >
+            {/* The same chevron the page-level `Disclosure` turns — it cannot
+                be a `<details>` here, because on a phone this nav is a
+                horizontal scrolling row and every link has to stay in the
+                document, so the rotation is driven by our own state instead. */}
+            <ChevronRight
+              aria-hidden="true"
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 transition-transform",
+                shown && "rotate-90",
+              )}
+            />
+            {section.group}
+          </button>
+      )}
+      {/* `contents`, so folding changes nothing about how the links lay out —
+          and `md:hidden` rather than `hidden`, because the phone's row keeps
+          all of them. */}
+      <div className={cn("contents", foldable && !shown && "md:hidden")}>
+        {section.items.map((item) => {
+          const active = isActive(pathname, item.href);
+          const count = counts ? (item.count?.(counts) ?? 0) : 0;
+          const urgent = counts ? (item.urgent?.(counts) ?? 0) : 0;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              /* The hint is worth having *before* you click; on the page
+               you are already on, the page's own intro says it. */
+              title={item.hint}
+              className={cn(
+                /*
+                44px on a phone, 40 from `md`. The admin is a denser
+                register than the parent flow and `min-h-9` (36px) was fine
+                for a cursor — but this row is the one thing here that gets
+                thumbed, and 36px misses the design system's 44px floor.
+              */
+                "flex min-h-11 shrink-0 snap-start items-center gap-2 rounded-lg px-3 text-[13.5px] font-semibold transition-colors md:min-h-10",
+                active
+                  ? "bg-green-wash text-green-deep"
+                  : "text-ink-soft hover:bg-paper",
+              )}
+            >
+              <item.icon
+                aria-hidden="true"
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  active ? "text-green-deep" : "text-muted",
+                )}
+              />
+              <span className="truncate">{item.label}</span>
+              {count > 0 && (
+                <CountBadge count={count} urgent={urgent} />
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AdminShell({
   user,
   children,
@@ -368,8 +586,8 @@ export function AdminShell({
        and only one tooltip on screen at a time. */
     <HintProvider>
       <div className="min-h-dvh bg-paper text-ink md:flex">
-        {/* Eighteen nav links plus two footer controls sit before the content on
-            every page, at both breakpoints. `tabIndex={-1}` on `<main>` is what
+        {/* Twenty nav links plus the search and two footer controls sit before
+            the content on every page, at both breakpoints. `tabIndex={-1}` on `<main>` is what
             makes this actually move focus rather than only scroll — without it
             the next Tab goes straight back into the nav that was just skipped. */}
         <a
@@ -393,6 +611,12 @@ export function AdminShell({
             </Link>
           </div>
 
+          {/* Above the nav rather than in the header row: at 16rem a control
+              beside the wordmark is a 40px square nobody reads as a search. */}
+          <div className="px-2 pb-2">
+            <QuickFind />
+          </div>
+
           <nav
             ref={navRef}
             aria-label="Admin sections"
@@ -400,57 +624,12 @@ export function AdminShell({
             className="flex snap-x gap-1 overflow-x-auto px-2 pb-2 no-scrollbar md:min-h-0 md:flex-1 md:flex-col md:gap-0 md:overflow-y-auto md:overflow-x-visible"
           >
             {NAV.map((section, i) => (
-              <div
+              <NavGroup
                 key={section.group ?? `section-${i}`}
-                className="flex shrink-0 gap-1 md:mt-1 md:flex-col md:gap-0.5 md:first:mt-0"
-              >
-                {/* Group labels are a desktop affordance: on a phone the nav is one
-                  scrolling row, and headings inside it would just eat the width. */}
-                {section.group && (
-                  <p className="hidden px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted md:block">
-                    {section.group}
-                  </p>
-                )}
-                {section.items.map((item) => {
-                  const active = isActive(pathname, item.href);
-                  const count = counts ? (item.count?.(counts) ?? 0) : 0;
-                  const urgent = counts ? (item.urgent?.(counts) ?? 0) : 0;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={active ? "page" : undefined}
-                      /* The hint is worth having *before* you click; on the page
-                       you are already on, the page's own intro says it. */
-                      title={item.hint}
-                      className={cn(
-                        /*
-                        44px on a phone, 40 from `md`. The admin is a denser
-                        register than the parent flow and `min-h-9` (36px) was fine
-                        for a cursor — but this row is the one thing here that gets
-                        thumbed, and 36px misses the design system's 44px floor.
-                      */
-                        "flex min-h-11 shrink-0 snap-start items-center gap-2 rounded-lg px-3 text-[13.5px] font-semibold transition-colors md:min-h-10",
-                        active
-                          ? "bg-green-wash text-green-deep"
-                          : "text-ink-soft hover:bg-paper",
-                      )}
-                    >
-                      <item.icon
-                        aria-hidden="true"
-                        className={cn(
-                          "h-4 w-4 shrink-0",
-                          active ? "text-green-deep" : "text-muted",
-                        )}
-                      />
-                      <span className="truncate">{item.label}</span>
-                      {count > 0 && (
-                        <CountBadge count={count} urgent={urgent} />
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
+                section={section}
+                pathname={pathname}
+                counts={counts}
+              />
             ))}
           </nav>
 
@@ -465,24 +644,24 @@ export function AdminShell({
           <div className="hidden border-t border-bark/70 px-4 py-3 md:block">
             <p className="text-[12px] text-muted">Signed in as</p>
             <p className="text-[13.5px] font-semibold">{user}</p>
-            {/* Stacked, not side by side: this column is 16rem wide and both labels
-              are long enough that one row crowds them at the first name longer
-              than "andrii". Two lines cost nothing here — the footer is the least
-              busy part of the page. */}
-            <div className="mt-1.5 flex flex-col items-start gap-0.5">
-              <Link
-                href="/admin/account"
-                className="flex min-h-9 items-center text-[13px] font-semibold text-green-deep underline underline-offset-2"
-              >
-                Change password
-              </Link>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="flex min-h-9 items-center text-[13px] font-semibold text-green-deep underline underline-offset-2"
-              >
+            {/*
+              Two real buttons, not two underlined words. They were hand-written
+              because `Button` could only render a `<button>` and "Change
+              password" is a navigation — which is exactly the drift `TextAction`
+              was extracted to end in the parent flow; `Button` takes an `href`
+              now, so both come out of one box.
+
+              Stacked and stretched, which is a measurement rather than a
+              preference: side by side the pair came to 225px inside a 224px
+              column and wrapped by **one pixel**, leaving a wide button above a
+              narrow one. Made equal width, they read as a deliberate pair, and
+              nothing about them depends on a label staying short.
+            */}
+            <div className="mt-2 flex flex-col items-stretch gap-1.5">
+              <Button href="/admin/account">Change password</Button>
+              <Button onClick={() => void signOut()}>
                 Sign out
-              </button>
+              </Button>
             </div>
           </div>
         </aside>
@@ -508,19 +687,10 @@ export function AdminShell({
             <span className="text-[12.5px] text-muted">
               Signed in as {user}
             </span>
-            <Link
-              href="/admin/account"
-              className="min-h-9 text-[13px] font-semibold text-green-deep underline underline-offset-2"
-            >
-              Change password
-            </Link>
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              className="min-h-9 text-[13px] font-semibold text-green-deep underline underline-offset-2"
-            >
+            <Button href="/admin/account">Change password</Button>
+            <Button onClick={() => void signOut()}>
               Sign out
-            </button>
+            </Button>
           </div>
         </main>
       </div>

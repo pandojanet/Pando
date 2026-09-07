@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
   Card,
   Empty,
   ErrorNote,
-  Explainer,
+  Failed,
   Field,
   inputClass,
   Loading,
@@ -19,7 +19,8 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { SegmentedFilter, Select } from "@/components/admin/kit";
+import { PersonPicker } from "@/components/admin/PersonPicker";
 import {
   Fact,
   FactGrid,
@@ -29,6 +30,7 @@ import {
   RecordList,
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { useUrlFilter } from "@/lib/admin/url-state";
 import {
   BLAST_STATUS,
   BLAST_TIER,
@@ -40,7 +42,13 @@ import {
   sentence,
 } from "@/lib/admin/labels";
 import { formatCents, refundOwed } from "@/lib/payments";
-import type { BlastPoolResult, BlastRow } from "@/lib/admin/types";
+import { TIERS, TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
+import type {
+  BlastPoolResult,
+  BlastRow,
+  DeliveryHealthRow,
+  MatchingResult,
+} from "@/lib/admin/types";
 
 /**
  * Estimate 14.3 — the blast manager.
@@ -83,18 +91,96 @@ import type { BlastPoolResult, BlastRow } from "@/lib/admin/types";
  * owed. **Flag a refund** is the first half of 13.7, kept separate from making
  * one so that noticing and authorising can be different people.
  */
+/**
+ * Is Pando allowed to text anybody right now?
+ *
+ * §14's window is 8am-9pm **Pacific** — the parent's clock, not the reader's —
+ * and `sendSms` refuses outreach outside it. Nothing in the admin said so, and
+ * the failure it produces is the misleading kind: every send is skipped, the
+ * Ask is marked for review, and the screen looks like a broken pool. Whoever is
+ * testing from Europe is inside quiet hours for their whole working day.
+ *
+ * Rendered only after mount. The server's answer and the browser's are the same
+ * computation but a second apart, which is a hydration mismatch for a clock —
+ * and the server's is the one nobody is looking at.
+ */
+function QuietHoursNote({ relay }: { relay: boolean }) {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  if (!now) return null;
+
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(now);
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+  );
+  /* The relay is exempt, so a banner warning about the hour while sends
+     actually go through would be the page contradicting the send layer — the
+     class of thing this file keeps fixing. `quietHoursBlocks` is the one rule;
+     this reads the same two facts it does. */
+  const quiet = hour < 8 || hour >= 21;
+  const blocked = quiet && !relay;
+
+  return (
+    <p
+      className={`mb-4 rounded-xl border px-3 py-2 text-[12.5px] leading-relaxed ${
+        blocked
+          ? "border-gold-line bg-gold-wash text-gold-ink"
+          : "border-bark bg-paper text-muted"
+      }`}
+    >
+      <strong>{time} in Pasadena.</strong>{" "}
+      {blocked
+        ? "That is outside 8am–9pm Pacific, so nothing will send — every recipient is skipped and the Ask comes back marked for review. Replies still arrive."
+        : quiet
+          ? "That is outside 8am–9pm Pacific, but sends are going to the Slack test channel, where nobody’s phone buzzes — so the window is not enforced and you can send now."
+          : "Inside 8am–9pm Pacific, so sending is open."}
+    </p>
+  );
+}
+
+/** The tabs, and what the query parameter may say. */
+const FILTERS = ["open", "owed", "paid", "all"] as const;
+
+/** `busy` for the create form, which is the one action here with no row. */
+const CREATING = "new-ask";
+
 export default function BlastsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<BlastRow[]>("blasts");
 
-  const [filter, setFilter] = useState<"open" | "owed" | "paid" | "all">("open");
+  const [filter, setFilter] = useUrlFilter(FILTERS, "open");
   const [openPool, setOpenPool] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{ id: string; kind: "fulfil" | "refund_due" } | null>(
     null,
   );
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  /* The Ask being acted on — or CREATING, for the form at the top, which is
+     the one control on this page that belongs to no row. */
+  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  /* 7.1's entry. The people list comes from the matching resource, which
+     already returns it with no asker chosen — a second query for the same
+     names would be a second list to keep in step. */
+  const { rows: matching } = useAdminRows<MatchingResult>("matching");
+  /* Only for the transport flag — whether a send tonight reaches a phone or a
+     Slack channel decides whether the quiet-hours window applies at all. */
+  const { rows: delivery } = useAdminRows<DeliveryHealthRow>("delivery");
+  const [asker, setAsker] = useState("");
+  const [question, setQuestion] = useState("");
+  const [tier, setTier] = useState<BlastTier>("targeted");
 
   const all = rows ?? [];
   const real = useMemo(() => all.filter((r) => !r.is_test), [all]);
@@ -118,6 +204,10 @@ export default function BlastsPage() {
           /* 7.7's clock. Without it this said "Pando owes a refund" about an
              Ask that was still live — see the note in `refundOwed`. */
           expires_at: row.expires_at,
+          /* And the other end of it: the credit half of the guarantee is
+             granted by `expire_blasts`, so without this the row reported it
+             as still owed on a promise the job had already kept. */
+          credit_granted_at: row.credit_granted_at,
         }),
       );
     }
@@ -145,10 +235,11 @@ export default function BlastsPage() {
   };
 
   async function run(
+    rowId: string,
     label: string,
     fn: () => Promise<{ persisted: boolean; detail?: Record<string, unknown> }>,
   ) {
-    setBusy(true);
+    setBusy(rowId);
     setMessage(null);
     try {
       const result = await fn();
@@ -166,7 +257,7 @@ export default function BlastsPage() {
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -184,9 +275,83 @@ export default function BlastsPage() {
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
       {message && <ResultNote>{message}</ResultNote>}
+      <QuietHoursNote relay={delivery?.relay === true} />
+
+      {/**
+        * 7.1 — where an Ask begins.
+        *
+        * `createBlast` was written on 27 Aug and had no caller: the page below
+        * managed Asks that only a seed script could create. This is the manual
+        * entry, which is how the rest of the pilot already works — a parent's
+        * question reaches a person, and a person records it.
+        *
+        * ⚠ It creates and stops. Sending is its own button on the row (that is
+        * the path to five strangers' phones), paying is another, and choosing
+        * who to ask is the pool preview. Creating a question is not deciding to
+        * ask it.
+        */}
+      <Card title="Record an Ask">
+        <div className="grid gap-3.5 px-4 py-3.5 md:grid-cols-[1fr_12rem]">
+          <PersonPicker
+            label="Asking on behalf of"
+            people={matching?.people ?? []}
+            value={asker}
+            onChange={setAsker}
+            hint="Type a name or a town — “south pas” finds South Pasadena."
+            emptyLabel="No contributors in the database yet."
+          />
+          <Field label="Tier" hint={TIERS[tier].note}>
+            <Select
+              label="Which tier this Ask is"
+              value={tier}
+              onChange={setTier}
+              options={TIER_IDS.map((id) => ({
+                id,
+                label:
+                  TIERS[id].price_cents > 0
+                    ? `${TIERS[id].label} — ${formatCents(TIERS[id].price_cents)}`
+                    : `${TIERS[id].label} — free`,
+              }))}
+            />
+          </Field>
+          <Field
+            label="The question"
+            hint="Their words, not a summary — this is the text five parents read."
+          >
+            <textarea
+              className={`${inputClass} min-h-[4.5rem]`}
+              maxLength={500}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Any good toddler swim classes near South Pasadena?"
+            />
+          </Field>
+          <div className="flex items-end">
+            <Button
+              tone="primary"
+              disabled={busy === CREATING || !asker || question.trim() === ""}
+              onClick={() =>
+                run(CREATING, "Ask recorded. Nothing has been sent.", async () => {
+                  const result = await adminAction({
+                    action: "blast.create",
+                    asker_id: asker,
+                    question_text: question.trim(),
+                    tier,
+                  });
+                  setQuestion("");
+                  return result;
+                })
+              }
+            >
+              Record it
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <div className="mb-4">
         <SegmentedFilter
+          unknown={!rows}
           label="Which Asks to show"
           value={filter}
           onChange={setFilter}
@@ -198,34 +363,12 @@ export default function BlastsPage() {
           ]}
         />
       </div>
-      <Explainer title="What this page can and cannot do">
-        <p>
-          <strong>Nothing here texts anybody by itself.</strong>{" "}
-          Previewing a pool is a read — it runs the same matching a live send would, so you can
-          argue with the choice before five strangers&apos; phones ring. Sending is
-          its own button, and it re-checks every protection rule again on the way
-          out.
-        </p>
-        <p className="mt-2">
-          <strong>Two states, kept apart.</strong> The left badge is the state of
-          the <em>question</em>; the right one is the state of the{" "}
-          <em>money</em>. An Ask can be answered and still owe a refund, because
-          the guarantee is about whether an answer was <em>useful</em>
-          {" "}— three replies saying &ldquo;no idea, sorry&rdquo; leave it owed. That is why
-          marking one fulfilled is your judgement and not a count of replies.
-        </p>
-        <p className="mt-2">
-          <strong>A credit is refunded as a credit.</strong> An Ask a parent paid
-          for with an earned credit gets a fresh credit when it goes unanswered,
-          never money — there is no charge to reverse.
-        </p>
-      </Explainer>
-
-
       <Card>
 
         {loading && all.length === 0 ? (
           <Loading />
+        ) : error && all.length === 0 ? (
+          <Failed />
         ) : !configured && all.length === 0 ? (
           <NotConfigured
               demo={demo}
@@ -300,10 +443,10 @@ export default function BlastsPage() {
                         (row.tier === "board" || row.tier === "targeted")) ? (
                         <Button
                           tone="primary"
-                          disabled={busy}
+                          disabled={busy === row.id}
                           title="Creates a Stripe payment link. You pass it to the parent — Pando has no web channel for an Ask yet."
                           onClick={() =>
-                            void run("Checkout opened.", async () =>
+                            void run(row.id, "Checkout opened.", async () =>
                               adminAction({ action: "blast.checkout", id: row.id }),
                             )
                           }
@@ -316,7 +459,7 @@ export default function BlastsPage() {
 
                       <Button
                         tone="secondary"
-                        disabled={busy}
+                        disabled={busy === row.id}
                         onClick={() => setOpenPool(openPool === row.id ? null : row.id)}
                       >
                         {openPool === row.id ? "Hide the pool" : "Who would be asked"}
@@ -327,7 +470,7 @@ export default function BlastsPage() {
                         row.status === "expired") && (
                         <Button
                           tone="secondary"
-                          disabled={busy}
+                          disabled={busy === row.id}
                           title="Your judgement that the parent got a useful answer. Replies alone are not an answer."
                           onClick={() => {
                             setNoteFor({ id: row.id, kind: "fulfil" });
@@ -341,7 +484,7 @@ export default function BlastsPage() {
                       {row.payment_status === "paid" && (
                         <Button
                           tone="danger"
-                          disabled={busy}
+                          disabled={busy === row.id}
                           title="Flags that a refund is owed. Making it is a separate step on the payments page."
                           onClick={() => {
                             setNoteFor({ id: row.id, kind: "refund_due" });
@@ -402,6 +545,17 @@ export default function BlastsPage() {
                     </p>
                   )}
 
+                  {/* Settled, and said rather than left silent: "the guarantee
+                      was owed and has been met" is a different answer from
+                      "nothing was ever owed", and only one of them tells an
+                      admin why this Ask cost the parent nothing. Neutral, not
+                      alert — there is nothing to do. */}
+                  {owed && !owed.owed && owed.as === "credit" && (
+                    <p className="mt-3.5 rounded-lg border border-bark bg-paper px-3 py-2 text-[12.5px] leading-relaxed text-muted">
+                      {owed.why}
+                    </p>
+                  )}
+
                   {row.refund_reason && (
                     <div className="mt-3.5">
                       <Quote label="Why a refund was flagged">{row.refund_reason}</Quote>
@@ -429,9 +583,10 @@ export default function BlastsPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           tone={drawer === "fulfil" ? "primary" : "danger"}
-                          disabled={busy || note.trim().length < 3}
+                          disabled={busy === row.id || note.trim().length < 3}
                           onClick={() =>
                             void run(
+                              row.id,
                               drawer === "fulfil" ? "Marked answered." : "Refund flagged.",
                               async () =>
                                 drawer === "fulfil"

@@ -155,6 +155,20 @@ export function refundOwed(
      * from one that has not finished.
      */
     expires_at: string | null;
+    /**
+     * When `expire_blasts` granted the automatic credit, if it has.
+     *
+     * The second half of the clock, and the same fault one step later: the
+     * credit half of the guarantee is granted by a job, automatically, and
+     * nothing recorded that it had — so this function answered "a credit is
+     * owed" for ever and the blast manager painted it in alert red on a
+     * promise Pando had already kept.
+     *
+     * Null means not granted, and it is load-bearing in the direction nobody
+     * looks: a deployment whose cron is not wired runs no jobs and grants
+     * nothing, so a null has to keep reading as owed rather than as done.
+     */
+    credit_granted_at?: string | null;
   },
   now = new Date(),
 ): { owed: boolean; as: "money" | "credit" | null; why: string | null } {
@@ -195,6 +209,16 @@ export function refundOwed(
     };
   }
   if (input.credit_id !== null) {
+    /* Already made good, automatically, by the job that expired it. Reported
+       rather than dropped: an admin asking "what happened to this one" is owed
+       the answer, and it is not the same answer as "nothing was ever owed". */
+    if (input.credit_granted_at) {
+      return {
+        owed: false,
+        as: "credit",
+        why: "Paid with a credit, and a fresh one was granted automatically when the window closed.",
+      };
+    }
     return {
       owed: true,
       as: "credit",

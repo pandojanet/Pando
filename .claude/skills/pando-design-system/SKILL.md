@@ -153,13 +153,21 @@ smaller type, `rounded-xl` cards, 36px controls. It still has to work on a
 phone — nav and tables scroll inside themselves, never the page.
 
 ```
-components/admin/ui.tsx      PageHead · Card · Stat · Badge · Button · Field
-                             TableWrap/Th/Td · Empty · NotConfigured
-                             ResultNote · ErrorNote · Explainer
-                             SegmentedFilter · Toolbar
+components/admin/ui.tsx      PageHead · Card · Stat · Badge · Field
+                             Button (an action, or — with `href` — a navigation
+                               that looks like one) · TextLink (a link inside a
+                               sentence or a table cell, no box)
+                             TableWrap/Th/Td · Empty · NotConfigured · Loading
+                             ResultNote · ErrorNote · Loading · Failed
+                             Disclosure (the **one** way a page hides a section)
+                             SegmentedFilter · SegmentedTabs · Toolbar
                              inputClass (fills its column) · controlClass (no width)
+components/admin/QuickFind.tsx     `/` from anywhere: find a parent, open their page
+components/admin/Reveal.tsx        the first thirty rows, then a button saying how many
 components/admin/Record.tsx  RecordList · RecordCard · RecordGroup · RecordDrawer
-                             FactGrid/Fact · SpecList/Spec · Quote · RecordNotes
+                             FactGrid/Fact (stacked, mixed lengths)
+                             FactLine/FactInline (one baseline, short values)
+                             SpecList/Spec · Quote · RecordNotes
 components/admin/PersonPicker.tsx  find one parent among hundreds (a real combobox)
 ```
 
@@ -186,6 +194,13 @@ control looked like three different things on pages an admin sees minutes apart.
 
 ### Rules that keep it honest
 
+- **A control with a box is `Button`; a link in running text is `TextLink`.**
+  `Button` renders the anchor itself when given `href`, because a `<button>` and
+  an `<a>` do not put their label in the same place — the parent flow learned
+  this as `TextAction` and the admin footer had the same pair hand-written as
+  underlined words, in four copies. `TextLink` sets **no font size**: several of
+  its call sites are table cells whose own register is 12.5px, and forcing one
+  size would make the link the largest thing in its row.
 - **A button is as wide as its words** (`whitespace-nowrap`). If that is too wide
   for its container, the container is wrong — never let a label truncate. The
   page that broke this rendered its primary action as "I've dealt with this…".
@@ -196,16 +211,42 @@ control looked like three different things on pages an admin sees minutes apart.
   `primary` buttons beside real primary buttons that change the data.
 - **A count and the list it describes come from one expression.** Two that
   happen to agree will stop agreeing — a tab once read 14 and listed 19.
+- **A failed read never renders an empty state.** Every page is
+  `loading ? … : empty ? … : rows`, so an `error` that only adds a banner falls
+  through to "Nothing waiting" — measured on `/admin/flags` with twenty-two open
+  flags and the sidebar saying so. Use `Failed`, and pass `unknown` to
+  `SegmentedFilter`: **a missing number says "not known", a zero says "none".**
+- **Grid or line is a property of the values.** Three or more facts, or any
+  longer than about three words → `FactGrid`. Two or three short ones →
+  `FactLine`: two one-word values in the grid took half a 1,130px row each,
+  stacked over their labels, and cost 347px of card.
 - **A wash marks the exception, never the rule.** A tint on every row is a
   page-wide tint, and then it says nothing.
 - **An empty value is an em dash**, so a gap reads as "they skipped this" rather
   than as a layout bug — unless the absence is itself the point, in which case
   say it ("None recorded").
-- **Explanations go on the page, once.** `Explainer` for how something works,
-  `RecordGroup` for a fact true of a whole run of records. A `title` attribute is
-  not an explanation: invisible until hovered, unreachable on a touch device, and
-  unfindable by anyone who does not already suspect there is something to find.
-  A footnote about how to judge a queue does not belong under an empty queue.
+- **One way to hide a section: `Disclosure`.** There were seven "there is
+  more here" affordances on this surface and three were the same `<details>`
+  hand-written with three different chevrons. What may still differ is only the
+  *job*: `Hint` for a word in a sentence, `RevealMore` for more rows of one list
+  (a **down** arrow — that is what it means), `RecordDrawer` for one record's
+  own panel, `SegmentedFilter` for changing which rows you see.
+- **A badge carries a hint exactly when the sentence says something its label
+  does not.** "Waiting for you" needs no tooltip reading "Nobody has looked at
+  this yet", and a hint inside a card renders once per row: two sentences became
+  23 identical `?` triggers on one page. A fact true of a run of records belongs
+  above them.
+- **The admin explains nothing on the page — client's call, 7 Sep.** She asked
+  for the explanation blocks off *every* page and they are gone; the component
+  went with them, so there is nothing to reach for. What is left to carry a fact
+  is the one-line `PageHead` intro, `RecordGroup` for something true of a whole
+  run of records, and a `Hint` **only** where the sentence says something its
+  label does not. A `title` attribute is still never an explanation: invisible
+  until hovered, unreachable on a touch device, unfindable by anyone who does not
+  already suspect there is something to find.
+  ⚠ The cost is real and named: `/admin/conversations` no longer says anywhere
+  that message bodies are not stored, so a reader can conclude the page is
+  broken. Adding it back means one clause in that page's intro, not an explainer.
 - **Never append a conflicting width utility.** `` `${inputClass} w-auto` `` keeps
   `w-full`: two utilities for one property in one layer are resolved by
   Tailwind's output order, not by the string. Use `controlClass` for a toolbar

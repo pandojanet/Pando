@@ -7,6 +7,7 @@ import {
   Card,
   Empty,
   ErrorNote,
+  Failed,
   Loading,
   NotConfigured,
   SampleBanner,
@@ -98,6 +99,8 @@ export function ConsentRecords() {
       <Card>
         {loading && all.length === 0 ? (
           <Loading />
+        ) : error && all.length === 0 ? (
+          <Failed />
         ) : !configured && all.length === 0 ? (
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (

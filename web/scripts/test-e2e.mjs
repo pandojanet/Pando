@@ -845,15 +845,39 @@ ok("and it cannot be stored without a human attached", allegation && allegation.
 ok("it raised its own escalation, under its own reason", (await sql`select 1 from flags where reason = 'named_allegation' and status = 'open'`).length > 0);
 
 head("1.8 / 1.9  extraction and flags");
-const scored = await sql`select confidence, confidence_note from share_contributions where person_id = ${p.id} and confidence is not null`;
-const shareCards = await sql`select count(*)::int as n from share_contributions where person_id = ${p.id}`;
+const scored = await sql`
+  select sc.confidence, sc.confidence_note
+  from share_contributions sc
+  join shares s on s.id = sc.share_id
+  where sc.person_id = ${p.id} and s.kind <> 'caregiver' and sc.confidence is not null`;
+/**
+ * The denominator excludes caregiver cards, and that is the fix rather than a
+ * concession: `extract.ts` never scores one **by design** — a caregiver card's
+ * free text *is* the restricted note (invariant 12), so it is deliberately not
+ * sent to a model. Counting every `share_contributions` row for this parent put
+ * the caregiver nomination in the total, so the check read "3 of 4" and blamed
+ * the extraction pass for obeying its own rule.
+ */
+const shareCards = await sql`
+  select count(*)::int as n
+  from share_contributions sc
+  join shares s on s.id = sc.share_id
+  where sc.person_id = ${p.id} and s.kind <> 'caregiver'`;
 /* Every share card this walk made, not a hardcoded three: the count moved the
    moment a card was added above, and an assertion that has to be edited whenever
    the fixtures grow will eventually be edited to match whatever the code did. */
+const unscored = await sql`
+  select s.kind, s.name
+  from share_contributions sc
+  join shares s on s.id = sc.share_id
+  where sc.person_id = ${p.id} and s.kind <> 'caregiver' and sc.confidence is null`;
 ok(
   "every card was scored by the model",
   scored.length === shareCards[0].n,
-  `${scored.length} of ${shareCards[0].n}`,
+  /* Naming what was missed, because "3 of 4" sends the next reader to the
+     database to find out which one — and the answer decides whether the bug is
+     in the extraction pass or in this count. */
+  `${scored.length} of ${shareCards[0].n}${unscored.length ? " — unscored: " + unscored.map((u) => u.kind + " " + u.name).join(", ") : ""}`,
 );
 ok("the corrected card was re-scored, not left stale", a && Number(a.confidence) > 0.4, a ? String(a.confidence) : "");
 ok("stale_at_capture raised without the model", (await sql`select 1 from flags where reason = 'stale_at_capture' and status = 'open'`).length > 0);

@@ -247,10 +247,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
        * contributor" is what they are the moment they start, and it is the word
        * `/done` has used since 6 Aug.
        */}
+      {/* The badge takes `text-dock` (12.5px) rather than a bracket value: 12px
+          is below the design system's own floor and is not a step on the scale.
+          It was the last hand-written font size on this screen. */}
       <ScreenHeader
         left={<Wordmark />}
         right={
-          <span className="rounded-full border border-bark bg-card px-3 py-1.5 text-[12px] font-semibold text-muted">
+          <span className="rounded-full border border-bark bg-card px-3 py-1.5 text-dock font-semibold text-muted">
             Founding contributor
           </span>
         }
@@ -412,8 +415,16 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               detail={SMS_CONSENT_TERMS}
               links={
                 <>
-                  <InlineAction href="/privacy" external>Privacy Policy</InlineAction>
-                  <InlineAction href="/terms" external>Terms</InlineAction>
+                  {/* `TextAction`, not `InlineAction`: these are their own row
+                      now rather than a clause in a sentence, so the 2.5.8
+                      exemption that let them be 31px no longer applies to them.
+                      See `Consent`. */}
+                  <TextAction href="/privacy" external>
+                    Privacy Policy
+                  </TextAction>
+                  <TextAction href="/terms" external>
+                    Terms
+                  </TextAction>
                 </>
               }
             >

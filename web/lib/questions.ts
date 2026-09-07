@@ -757,8 +757,10 @@ export const SCREENS: Screen[] = [
          */
         perChildRepeat: true,
         childHeading: "Where does your child born in {year} currently go?",
-        /* Expecting-only families have nothing to answer here yet, and a screen
-           with no chips on it is a dead end (spec §8.5 gates whole questions). */
+        /* Not the expecting gate — that is `perChild` in `isQuestionVisible`,
+           because `expecting` carries the `baby` band with it. This list is
+           what keeps the question off a screen for a family with no children
+           in it at all, which today cannot happen and one day might. */
         showForBands: ["baby", "toddler", "preschool", "grade", "tween", "teen"],
       },
     ],
@@ -1062,6 +1064,29 @@ export const SCREENS: Screen[] = [
        can come over covers every child, so attributing it per child would be
        inventing a distinction the parent did not make. */
     id: "childcare_backup",
+    /**
+     * Not asked when the only child is on the way — and the argument is
+     * structural rather than a matter of taste, which is why this screen gets a
+     * gate that the `perChild` rule could not give it.
+     *
+     * This is deliberately **not** a per-child question (see the comment above),
+     * so the 7 Sep gate in `isQuestionVisible` does not touch it. But the thing
+     * it is the backup *to* — "Your child's current care" — **is** per-child and
+     * is therefore hidden for an expecting-only parent. So the flow asked *"What
+     * can you usually rely on when regular childcare falls through?"* of a
+     * parent it had never asked about childcare, about a child who is not born:
+     * a fallback with no antecedent, on the screen after they said they were
+     * expecting.
+     *
+     * The other reason is the one this repo keeps applying: every option here
+     * would be answered about a hypothetical, and `relevance: "childcare"`
+     * derived from a hypothetical is a fact the parent did not state.
+     *
+     * ⚠ The signal is not lost for long — the question returns the moment a
+     * child is recorded as born, and an expecting parent is asked their work
+     * setup, their circles and their practical priorities either way.
+     */
+    when: hasBornChild,
     eyebrow: "Life context",
     title: "Your backup childcare",
     /* Item 11 adds the instruction; the question keeps its own framing. */
@@ -1455,6 +1480,31 @@ export function isQuestionVisible(
   answers: ProfileAnswers,
 ): boolean {
   if (question.when && !question.when(answers)) return false;
+  /**
+   * A question whose answer belongs to a child is not asked at all when the
+   * only child is on the way.
+   *
+   * The 3 Sep round fixed the *mixed* family — `answerableChildren` keeps an
+   * unborn child out of the attribution chips, the repeated blocks and the
+   * "same for all children" shortcut — and left the family whose **first** is
+   * on the way being asked all three of them, because with one child there is
+   * nothing to attribute and `childBlocks` correctly falls back to the ordinary
+   * household list. So the screen still read *"Where does your child go to
+   * school, preschool or daycare?"*, offering "Homeschool" and "Not in school
+   * or daycare yet" — two options for a child who has not been born.
+   *
+   * ⚠ `showForBands` cannot express this and the comment on the schools
+   * question wrongly claimed it did: `bandsForAge(EXPECTING)` returns
+   * **`["expecting", "baby"]`** on purpose (a family about to be in the baby
+   * band is who they most want to hear from), so every band list that admits a
+   * baby admits an expecting parent too. Narrowing those lists would break
+   * matching to fix a screen; the gate belongs here.
+   *
+   * Only when they have answered: an empty `child_ages` is a parent who has not
+   * reached the ages screen yet, and hiding half the flow from them would be
+   * the same mistake in the other direction.
+   */
+  if (question.perChild && !hasBornChild(answers)) return false;
   if (!question.showForBands) return true;
   const bands = ageBandsOf(answers.child_ages);
   if (bands.length === 0) return true;
@@ -1714,6 +1764,17 @@ export function sameForAllChildren(
  * this filter is three places for it to be forgotten — and the one that forgets
  * is the one a parent meets.
  */
+/**
+ * Is there a child this flow can ask about at all?
+ *
+ * `false` only once the ages screen has been answered and holds nothing but
+ * `EXPECTING` — an empty `child_ages` is a parent who has not reached that
+ * screen yet, and hiding half the flow from them is the same mistake inverted.
+ */
+export function hasBornChild(answers: ProfileAnswers): boolean {
+  return answers.child_ages.length === 0 || answerableChildren(answers).length > 0;
+}
+
 export function answerableChildren(answers: ProfileAnswers): number[] {
   return [...new Set(answers.child_ages)]
     .filter((age) => age !== EXPECTING)

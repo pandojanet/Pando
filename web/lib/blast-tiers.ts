@@ -207,6 +207,54 @@ export function owedRefund(input: {
 }
 
 /**
+ * 7.7's other half — does `expire_blasts` owe this Ask an automatic credit?
+ *
+ * The guarantee has **two** currencies and they must not both be spent on one
+ * failure. `owedRefund` above answers the money question; this answers the
+ * credit one, and the split is the same one `refundOwed` in `lib/payments.ts`
+ * already draws for the admin: *a credit-funded Ask gets a fresh credit, a
+ * card-funded one gets money back*.
+ *
+ * ## What it refuses, and both were live
+ *
+ * **A card payment is not answered with a credit.** The job granted one to any
+ * expired paid tier, while the blast manager simultaneously reported "Pando
+ * owes this parent a refund" — so a $15 Ask that timed out produced a credit
+ * *and* a refund for one failure. Measured on the live database: of four
+ * expired Asks the job credited three, one of them card-paid.
+ *
+ * **An Ask nobody paid for is owed nothing.** This is the one with teeth.
+ * `createBlast` starts a paid tier at `payment_status = 'pending'`, and the
+ * old rule looked only at the tier — so a Board Ask created, never paid, never
+ * sent, and left to expire **minted a free credit**, repeatably. The same live
+ * run credited exactly such a row. Nothing was taken, so nothing is owed.
+ *
+ * A free tier is unchanged and needs no branch of its own: `passive` and
+ * `last_minute` are `price_cents === 0`, so they can never have been paid and
+ * can never carry a credit.
+ */
+export function automaticCredit(input: {
+  tier: BlastTier;
+  payment_status: string;
+  credit_funded: boolean;
+}): { grant: boolean; kind: string | null } {
+  const spec = TIERS[input.tier];
+  if (!spec || spec.credit_kind === null || spec.price_cents === 0) {
+    return { grant: false, kind: null };
+  }
+  /* Paid with a credit: give it back. This is the case the guarantee's
+     "automatic credit" was written for. */
+  if (input.credit_funded) return { grant: true, kind: spec.credit_kind };
+  /* Paid with a card: owed money, and the refund is a person's decision (13.7).
+     Granting a credit here would be the second compensation. */
+  if (input.payment_status === "paid" || input.payment_status === "refund_due") {
+    return { grant: false, kind: null };
+  }
+  /* Never paid at all — pending, failed, not_required on a priced tier. */
+  return { grant: false, kind: null };
+}
+
+/**
  * M13.5 — what this Ask owes, given its tier and whether a credit paid for it.
  *
  * ## Why this lives here and not in `lib/payments.ts`
