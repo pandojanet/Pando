@@ -142,6 +142,7 @@ for (const [label, r] of [
   ok(`${label} carries a reason`, r.reason.length > 0);
 }
 
+const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
 const d = (await import(`../lib/demand.ts?v=${Date.now()}`)) as typeof import("../lib/demand.ts");
 console.log("\n=== the model can raise the sensitivity, never lower it ===");
 /* Added with `PILOT_HOLD_EVERYTHING` coming off (8 Sep): the keyword net was a
@@ -232,6 +233,75 @@ ok(
   d.classifyDemand("she gets nosebleeds", null) === "high_stakes" &&
     d.classifyDemand("he has had seizures", null) === "high_stakes",
   "the list is nouns and parents write plurals — it matched whole words only until 8 Sep",
+);
+
+console.log("\n=== when Pando cannot read the message ===");
+/* The client, 8 Sep: ask for the detail needed to classify rather than going
+   quiet. These are the two rules that keep it from becoming a machine that
+   argues with somebody — how much is remembered, and when to stop. */
+const pq = (await import(`../lib/pending-question.ts?v=${Date.now()}`)) as typeof import("../lib/pending-question.ts");
+const open = (turns: string[], asks = turns.length) => ({ id: "x", turns, asks });
+
+ok(
+  "nothing pending means no context at all",
+  pq.contextFor(null).length === 0,
+);
+ok(
+  "the window is the last three turns, not the whole exchange",
+  pq.contextFor(open(["a", "b", "c", "d", "e"])).join("") === "cde",
+  "the model is shown recent.slice(-3), so a fourth would be stored and never read",
+);
+ok(
+  "the question is answered as one thing",
+  pq.combined(open(["camps"]), "for a 6 year old in Altadena") ===
+    "camps for a 6 year old in Altadena",
+);
+ok(
+  "a repeated message is not read twice",
+  pq.combined(open(["camps near me"]), "camps near me") === "camps near me",
+  "a parent whose text went unanswered often sends the same words again",
+);
+ok(
+  "and blank turns contribute nothing",
+  pq.combined(open(["camps", "   "]), "") === "camps",
+);
+ok(
+  "with nothing pending it is just what they wrote",
+  pq.combined(null, "any good camps?") === "any good camps?",
+);
+
+ok(
+  "Pando asks twice and then stops",
+  !pq.shouldGiveUp(null) &&
+    !pq.shouldGiveUp(open(["a"], 1)) &&
+    pq.shouldGiveUp(open(["a", "b"], 2)),
+  "a third attempt from the same classifier will not read what two could not",
+);
+ok(
+  "the second ask is not the first one repeated",
+  pq.askForDetail(0) !== pq.askForDetail(1),
+  "asking the same words again reads as not having listened",
+);
+ok(
+  "neither apologises, and neither talks about itself",
+  [pq.askForDetail(0), pq.askForDetail(1), pq.handingOver()].every(
+    (t) => !/sorry|apolog|I am an|assistant|AI\b/i.test(t),
+  ),
+);
+ok(
+  "the handover promises a person and no time",
+  /person|somebody/i.test(pq.handingOver()) &&
+    !/soon|shortly|minutes|hours|today/i.test(pq.handingOver()),
+);
+ok(
+  "all three cost one segment, in GSM-7",
+  [pq.askForDetail(0), pq.askForDetail(1), pq.handingOver()].every((t) => {
+    const plan = seg.planSegments(t);
+    return plan.segments === 1 && plan.encoding === "gsm7";
+  }),
+  [pq.askForDetail(0), pq.askForDetail(1), pq.handingOver()]
+    .map((t) => `${t.length}/${seg.planSegments(t).segments}`)
+    .join(" "),
 );
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

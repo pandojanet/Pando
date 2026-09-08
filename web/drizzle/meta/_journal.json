@@ -246,6 +246,13 @@
       "when": 1788868800000,
       "tag": "0034_invite_kinds_and_referral_links",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788955200000,
+      "tag": "0035_pending_questions",
+      "breakpoints": true
     }
   ]
 }

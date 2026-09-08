@@ -30,6 +30,19 @@ import {
 } from "@/lib/server/web-search";
 import { markAnswerSent, queueAnswer } from "@/lib/server/repo/answers";
 import {
+  askForDetail,
+  combined,
+  contextFor,
+  handingOver,
+  shouldGiveUp,
+} from "@/lib/pending-question";
+import {
+  closeQuestion,
+  flagUnreadable,
+  openQuestion,
+  rememberTurn,
+} from "@/lib/server/repo/pending-question";
+import {
   isSettingsCommand,
   parseAllowanceChoice,
   settingsConfirmation,
@@ -583,8 +596,21 @@ export async function handleInboundMessage(input: {
    *
    * Logged as an enum. Never the message (invariant 7).
    */
+  /**
+   * The question so far, when there is one.
+   *
+   * `classifyIntent` has taken a `recent` array since the day it was written and
+   * **nothing had ever passed one**, because there was nowhere to read it from:
+   * `message_log` deliberately holds no message bodies. `pending_questions`
+   * (`drizzle/0035`) is that somewhere, and it exists only for a question Pando
+   * could not read — it is opened on `unclear` and closed the moment the
+   * exchange makes sense.
+   */
+  const pending = person ? await openQuestion(person.person_id) : null;
+
   const reading = await classifyIntent({
     text: body,
+    recent: contextFor(pending),
     context: {
       awaiting_blast_reply: attached.attached,
       /* Not hardcoded: `created` is true only for a number Pando had never seen,
@@ -618,13 +644,89 @@ export async function handleInboundMessage(input: {
    * the whole ordering above exists to prevent.
    */
   if (attached.attached || answeredSomething || clarified) return;
+
+  /**
+   * Pando could not tell what they want, so it asks — rather than going quiet.
+   *
+   * ⚠ **Silence was the old behaviour**, and it was the worst of the three ways
+   * a message could vanish here: `unclear` is by definition the parent whose
+   * sentence did not land, and they got nothing back and no way to know the
+   * number was alive. 5.3's own design says `unclear` and `chitchat` are
+   * different answers *because* the first belongs with a person; this is the
+   * route there, with two attempts at reading it first.
+   *
+   * The turn is remembered before the reply, so the **next** message is read
+   * together with this one — which is the whole point, and what finally gives
+   * `classifyIntent`'s `recent` parameter something to receive.
+   *
+   * ⚠ Only for somebody Pando has a row for. A cold number reaching here is
+   * rare (5.9 creates the person on the first inbound) and has nothing to attach
+   * a question to; it still gets the reply, just no memory of it.
+   */
+  /**
+   * ⚠ **`chitchat` counts too, but only mid-exchange** — and this is the hole the
+   * first live walk found. "hmm" was read as `unclear` and answered; the follow-up
+   * *"stuff for the kids"* came back `chitchat`, fell straight through, and the
+   * parent got silence in the middle of a conversation Pando had started. That is
+   * the very failure this branch exists to end, one intent along.
+   *
+   * The principle is the pipeline's own and is already written into
+   * `awaiting_blast_reply`: **the records beat the words.** Pando asked a
+   * question one text ago, so whatever comes back is an attempt at answering it,
+   * however the sentence reads. With nothing open, `chitchat` stays what it is —
+   * a greeting is not a request, and answering one with "what are you looking
+   * for?" would be Pando starting an interrogation nobody asked for.
+   *
+   * `contribute` is deliberately **not** included even mid-exchange: "we loved
+   * Little Gym" is a real offer, and reading it as an unreadable turn would lose
+   * a contribution to ask a question.
+   */
+  const unreadable =
+    reading.intent === "unclear" || (pending !== null && reading.intent === "chitchat");
+
+  if (unreadable) {
+    const giveUp = shouldGiveUp(pending);
+    if (person) {
+      if (giveUp && pending) {
+        await closeQuestion(pending.id, "given_up");
+        /* The copy below promises a person, so one is actually summoned. */
+        await flagUnreadable({ personId: person.person_id, text: combined(pending, body) });
+      }
+      else await rememberTurn({ personId: person.person_id, text: body });
+    }
+    await sendSms({
+      to: from,
+      body: giveUp ? handingOver() : askForDetail(pending?.asks ?? 0),
+      category: "transactional",
+      personId: person?.person_id,
+      template: giveUp ? "unclear_handover" : "ask_detail",
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] asked for detail", {
+      asks: pending?.asks ?? 0,
+      handed_over: giveUp,
+    });
+    return;
+  }
+
   if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
     return;
   }
 
+  /**
+   * It reads as a question now, so the exchange is over and the **whole** of it
+   * is what gets answered.
+   *
+   * A parent who wrote "camps" and then "for a 6 year old in Altadena" is
+   * answered on both: `combined` is what retrieval sees and what lands in
+   * `answers.question_text`, so the admin queue shows the question they actually
+   * asked rather than the fragment that happened to tip the classifier over.
+   */
+  if (pending) await closeQuestion(pending.id, "resolved");
+
   await answerQuestion({
     from,
-    body,
+    body: combined(pending, body),
     person,
     caregiverIntent: reading.intent === "ask_caregiver",
     sensitive: reading.sensitive,

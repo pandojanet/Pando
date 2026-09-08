@@ -45,6 +45,11 @@ const FLAG_REASONS: Record<string, { title: string; meaning: string }> = {
     meaning:
       "The name looks like an individual — a tutor, a coach, a teacher — rather than a place or a programme. That matters because a caregiver gets protections this record does not: nobody asked whether they are 18, and nobody asked them anything at all. If it is a business, approve it and this goes away. If it is a person, it belongs in the caregiver flow with its own consent, and should not be answered with until it is.",
   },
+  unreadable_question: {
+    title: "A question Pando could not read",
+    meaning:
+      "A parent wrote in, Pando asked twice what they were looking for, and still could not tell. They have been told a person will read it and come back to them — so this one is owed a reply today, and the words they used are on the flag.",
+  },
   recommendation_withdrawn: {
     title: "A parent took it back",
     meaning:
