@@ -1880,7 +1880,19 @@ const SEARCHABLE_QUESTIONS: Partial<
 > = {
   schools: {
     category: "schools",
-    dropdown: true,
+    /**
+     * ⚠ **No dropdown here**, and it is the client's own correction (8 Sep) —
+     * *"на цій сторінці не потрібні були dropdown"*, pointing at this screen.
+     *
+     * Her original instruction named "local groups, schools, faith communities",
+     * which read as three questions; they are two **screens**, and only one of
+     * them is the circles page. Schools has its own, and it keeps the chips: the
+     * starters are already trimmed to the parent's own area (eight per area, her
+     * curation), so what is on offer is a short familiar list rather than the
+     * wall of hundreds the dropdown was for — and on a per-child screen each
+     * block would otherwise be a closed box a parent has to open before they can
+     * see whether Pando knows their school at all.
+     */
     searchLabel: "Search all schools, preschools and daycares",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
