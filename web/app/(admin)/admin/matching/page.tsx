@@ -20,7 +20,7 @@ import {
 } from "@/components/admin/ui";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { RELEVANCE_STEP } from "@/lib/matching";
+import { RELEVANCE_DIMENSIONS, RELEVANCE_STEP } from "@/lib/matching";
 import { affinityLabel, matchReason, matchReasonValue } from "@/lib/admin/labels";
 import type { MatchCandidateRow, MatchingResult } from "@/lib/admin/types";
 
@@ -495,11 +495,29 @@ function WeightsCard({
    * and an input that saves nothing is the fault the old decision guarded
    * against.
    *
-   * ⚠ **No bar.** The third cell is empty on purpose: a bar's denominator here
-   * is the heaviest *weight*, and this is points **per dimension** with up to
-   * five of them stacking. Drawing 0.5 against 5 would invite a comparison that
-   * is not true — it would read as the weakest thing on the card, when the
-   * whole of life relevance is deliberately worth about half a shared school.
+   * ## It has a bar since 8 Sep, and the card's own title is why
+   *
+   * ⚠ **This reverses the note that stood here**, which read: *"No bar. The
+   * third cell is empty on purpose: a bar's denominator here is the heaviest
+   * weight, and this is points per dimension … drawing 0.5 against 5 would read
+   * as the weakest thing on the card, when the whole of life relevance is
+   * deliberately worth about half a shared school."* The client asked for the
+   * bar, and re-reading the objection it is about what a reader might *infer*,
+   * not about the bar being wrong.
+   *
+   * The card is headed **"What one shared connection is worth"**, and that is
+   * the unit every bar already draws: one of these, against the strongest one.
+   * One matching context dimension really is worth 0.5 against a shared school's
+   * 5. So the bar is `step / heaviest` like all the others — a tenth — and it is
+   * the shortest on the card because it is genuinely the smallest single
+   * contribution in the model, which is the intended shape (`RELEVANCE_STEP`:
+   * "a boost, not a second scoring system").
+   *
+   * What the old note was right about is the inference, so **the footer carries
+   * the stacking** — `RELEVANCE_DIMENSIONS` of them can match at once — and that
+   * is where it belongs: the bar answers "how much is one worth", the sentence
+   * answers "how many can there be". Splitting those across two denominators
+   * would have made this the one bar on the card meaning something else.
    */
   function renderContextRow() {
     return (
@@ -538,7 +556,33 @@ function WeightsCard({
             {RELEVANCE_STEP}
           </span>
         )}
-        <span aria-hidden="true" className="hidden md:block" />
+        {/* Same track, same denominator and the same `aria-hidden` as the seven
+            above — the number is already in the field beside it. `shownStep` is
+            what is typed rather than what is saved, so it moves as you type; a
+            value out of range paints the bar alert-red exactly as a weight
+            does, which is what stops a ringed field with a healthy green bar
+            beside it. */}
+        <span
+          aria-hidden="true"
+          className="hidden h-1.5 rounded-full bg-bark/50 md:block"
+        >
+          <span
+            className={`block h-full rounded-full ${stepBad ? "bg-alert-line" : "bg-green"}`}
+            style={{
+              /* `RELEVANCE_STEP` on the read-only branch, not `shownStep`: that
+                 branch holds "" and would draw the floor, i.e. a bar claiming
+                 the step is near zero next to a field reading 0.5. Whatever the
+                 span beside it shows is what the bar draws. */
+              width: `${Math.min(
+                100,
+                Math.max(
+                  4,
+                  ((stepEditable ? Number(shownStep) : RELEVANCE_STEP) / heaviest) * 100,
+                ),
+              )}%`,
+            }}
+          />
+        </span>
       </Fragment>
     );
   }
@@ -702,13 +746,19 @@ function WeightsCard({
             </span>
             {/* The context step's own rule, here rather than in its row: in a
                 column the third cell is ~5rem and this wrapped to three lines
-                against a one-line field. */}
+                against a one-line field.
+
+                The stacking clause is what the bar cannot say (8 Sep). The bar
+                draws one dimension against the strongest connection, which is a
+                tenth and correct; without this sentence a reader would take the
+                shortest bar on the card to mean context barely counts, when six
+                of them together come to more than half a shared school. */}
             <span
               id="step-scale"
               className={`text-[12.5px] ${stepBad ? "text-alert" : "text-muted"}`}
             >
               {stepEditable
-                ? "Similar context is per dimension, 0 to 5, in steps of 0.05."
+                ? `Similar context is per dimension, 0 to 5, in steps of 0.05 — up to ${RELEVANCE_DIMENSIONS} dimensions can match at once.`
                 : "Similar context is set in code — run the latest migration to change it here."}
             </span>
             {note && <ResultNote inline>{note}</ResultNote>}

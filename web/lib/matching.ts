@@ -107,13 +107,39 @@ export interface ScoredPerson {
  *
  * Deliberately small and flat. The lightest affinity edge is 1
  * (`adjacent_neighborhood`) and the heaviest is 5 (a shared school), so a step of
- * 1 would let four shared context values outweigh a shared school — which
- * inverts the strategy's own order, where relevant firsthand experience comes
- * first and context breaks the tie. At 0.5 the whole of life relevance (five
- * dimensions) tops out below a single school edge, which is the intended shape:
- * a boost, not a second scoring system.
+ * 1 would let shared context outweigh a shared school — which inverts the
+ * strategy's own order, where relevant firsthand experience comes first and
+ * context breaks the tie. At 0.5 the whole of life relevance tops out at 3,
+ * below a single school edge, which is the intended shape: a boost, not a second
+ * scoring system.
  */
 export const RELEVANCE_STEP = 0.5;
+
+/**
+ * How many life-relevance dimensions can match at once — the ceiling on the
+ * boost above, since `scoreCandidate` counts each dimension only once.
+ *
+ * ⚠ **It is a number here and a list in `questions.ts`, and a test holds them
+ * together.** The scorer cannot count them itself: it reads dimensions off the
+ * rows it is given, so at runtime there is nothing to count until somebody has
+ * answered. And the honest source — the distinct `relevance` values across the
+ * question set — cannot be imported, because this module deliberately has **no
+ * runtime imports** (that is what lets `test:matching` load it in plain node)
+ * and `questions.ts` imports *this* file for the age ladder, so reaching back
+ * would be a cycle.
+ *
+ * So it is stated, and `test:feedback` asserts it equals the real count — the
+ * only shape that keeps one number in one place. The doc above said **five**
+ * until 8 Sep, which is what a hand-maintained count does on its own: the 24 Aug
+ * split promised `life_relevance` would "gain rows and never a dimension" and
+ * that held, but nobody re-counted, and today it is budget · tenure · logistics
+ * · family_setup · childcare · trust_circle.
+ *
+ * Read by `/admin/matching`, which needs the ceiling to say what the context
+ * step is worth in total — 0.5 a dimension is a tenth of a shared school and
+ * reads as negligible unless the page can also say six of them stack.
+ */
+export const RELEVANCE_DIMENSIONS = 6;
 
 /**
  * The age ladder — **the only copy**, and it lives here rather than beside the

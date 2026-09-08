@@ -663,6 +663,44 @@ console.log("\n=== 7 Sep: the tenure screen says what it counts ===");
   );
 }
 
+console.log("\n=== 8 Sep: the context step's ceiling is one number, in one place ===");
+{
+  /**
+   * `RELEVANCE_DIMENSIONS` is stated in `lib/matching.ts` and the dimensions
+   * themselves are declared here, on the questions — and the scorer cannot count
+   * them for itself, because it reads them off whatever rows a parent produced.
+   * So this is the join, and it exists because the hand-maintained count had
+   * already gone stale: `RELEVANCE_STEP`'s own doc said *five* until today.
+   *
+   * `/admin/matching` prints it ("up to N dimensions can match at once"), which
+   * is the sentence that stops the shortest bar on the card reading as "context
+   * barely counts". A wrong N there is a wrong statement about the model, and
+   * nothing else would catch it.
+   */
+  const matching = (await import(
+    `../lib/matching.ts?v=${Date.now()}`
+  )) as typeof import("../lib/matching.ts");
+
+  const declared = new Set<string>();
+  for (const screen of q.SCREENS) {
+    for (const question of screen.questions) {
+      if (question.relevance) declared.add(question.relevance);
+    }
+  }
+
+  ok(
+    "the count matches the dimensions the question set declares",
+    matching.RELEVANCE_DIMENSIONS === declared.size,
+    `states ${matching.RELEVANCE_DIMENSIONS}, found ${declared.size}: ${[...declared]
+      .sort()
+      .join(", ")}`,
+  );
+  ok(
+    "and all of them together still lose to a shared school",
+    matching.RELEVANCE_STEP * matching.RELEVANCE_DIMENSIONS < 5,
+    "life relevance is a boost that breaks ties, never a second scoring system",
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);
