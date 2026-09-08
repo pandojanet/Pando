@@ -479,6 +479,70 @@ function WeightsCard({
     }
   }
 
+  /**
+   * The context step's cells, in the same three-column grid as a weight.
+   *
+   * ⚠ **Editable since 8 Sep, on the client's instruction**, and that reverses
+   * the 2 Sep decision — "a constant in `lib/matching.ts` … a code decision
+   * rather than something an admin sets", with the warning that "a control must
+   * not claim a state nothing maintains". That warning is why this was a
+   * migration and not a one-line change: the number moved into
+   * `matching_settings` (`drizzle/0036`) and the scorer reads it there before
+   * the field appeared, so what is typed here is what ranks.
+   *
+   * It stays read-only when the row is missing — a deployment behind on that
+   * migration — because then `RELEVANCE_STEP` really is what the scorer uses,
+   * and an input that saves nothing is the fault the old decision guarded
+   * against.
+   *
+   * ⚠ **No bar.** The third cell is empty on purpose: a bar's denominator here
+   * is the heaviest *weight*, and this is points **per dimension** with up to
+   * five of them stacking. Drawing 0.5 against 5 would invite a comparison that
+   * is not true — it would read as the weakest thing on the card, when the
+   * whole of life relevance is deliberately worth about half a shared school.
+   */
+  function renderContextRow() {
+    return (
+      <Fragment key="context-step">
+        <label
+          htmlFor="relevance-step"
+          className={`text-[13.5px] ${stepEditable ? "" : "text-muted"}`}
+        >
+          Any kind of similar context
+        </label>
+        {stepEditable ? (
+          <input
+            id="relevance-step"
+            type="number"
+            min={0}
+            max={5}
+            /* 0.05, matching the route and `numeric(4,2)`: a finer value would
+               be **rounded** by Postgres rather than refused, and the page
+               would come back showing a number nobody typed. */
+            step={0.05}
+            inputMode="decimal"
+            disabled={busy}
+            aria-invalid={stepBad}
+            aria-describedby="step-scale"
+            className={`${controlClass} w-full text-right tabular-nums ${
+              stepBad ? "ring-1 ring-alert-line" : ""
+            }`}
+            value={shownStep}
+            onChange={(e) => setStepDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && pending > 0 && !blocked) void save();
+            }}
+          />
+        ) : (
+          <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-right text-[14px] tabular-nums text-muted">
+            {RELEVANCE_STEP}
+          </span>
+        )}
+        <span aria-hidden="true" className="hidden md:block" />
+      </Fragment>
+    );
+  }
+
   return (
     <Card title="What one shared connection is worth">
       {weights.length === 0 ? (
@@ -511,11 +575,35 @@ function WeightsCard({
            * expects a phone book: reading order across two columns would put
            * consecutive entries side by side and make the ordering look random,
            * which is the exact complaint that produced `sortWeights`.
+           *
+           * ## The context step is the eighth row, not a block of its own
+           *
+           * It started below a rule, on the reasoning that it is a different
+           * *kind* of number — per dimension, 0 to 5 in steps of 0.05, against
+           * whole numbers 1 to 20. The client's instruction is that it belongs
+           * in the second column, and she is right about what it looked like:
+           * seven weights split 4 and 3 leave a gap at the bottom of the right
+           * column, and an orphan row under a rule sat in the card's own
+           * whitespace rather than filling it.
+           *
+           * It goes into the **split** rather than being appended to the second
+           * column, so the two stay balanced at four and four — and because the
+           * split reads down then across, the eighth entry lands last, which is
+           * where a number that is not one of the seven belongs.
+           *
+           * ⚠ **Its scale sentence moved to the footer, and that is not
+           * tidying.** In its own full-width row the third grid cell was wide
+           * enough for it; in a column that cell is `minmax(2.5rem,5rem)` and
+           * the sentence wrapped to three lines against a one-line field. The
+           * footer already carries the weights' scale for exactly this reason,
+           * and `aria-describedby` still points at it, so the rule is announced
+           * with the field rather than being a sentence to go and find.
            */}
           <div className="grid gap-x-10 px-4 py-3.5 md:grid-cols-2">
-            {splitColumns(sortWeights(weights)).map((column, i) => (
+            {splitColumns([...sortWeights(weights), CONTEXT_ROW]).map((column, i) => (
               <div key={i} className={WEIGHT_GRID}>
                 {column.map((w) => {
+                  if (w === CONTEXT_ROW) return renderContextRow();
                   const value = shown(w);
                   const ok = inRange(value);
                   return (
@@ -583,74 +671,6 @@ function WeightsCard({
             ))}
           </div>
 
-          {/**
-           * The context step — how much one matching life-relevance value is
-           * worth, below a rule because it is a different kind of number from
-           * the seven above it.
-           *
-           * ⚠ **Editable since 8 Sep, on the client's instruction**, and that
-           * reverses the 2 Sep decision recorded here — which read: "a constant
-           * in `lib/matching.ts` … a code decision rather than something an
-           * admin sets", with the warning that "a control must not claim a
-           * state nothing maintains". That warning is why this was a migration
-           * and not a one-line change: the number moved into
-           * `matching_settings` (`drizzle/0036`) and the scorer reads it there
-           * before the field appeared, so what is typed here is what ranks.
-           *
-           * It stays read-only when the row is missing — a deployment behind on
-           * that migration — because then `RELEVANCE_STEP` really is what the
-           * scorer uses, and an input that saves nothing is the fault the old
-           * decision was guarding against.
-           */}
-          <div className="grid gap-x-10 border-t border-bark/70 px-4 py-3 md:grid-cols-2">
-            <div className={WEIGHT_GRID}>
-              <label
-                htmlFor="relevance-step"
-                className={`text-[13.5px] ${stepEditable ? "" : "text-muted"}`}
-              >
-                Any kind of similar context
-              </label>
-              {stepEditable ? (
-                <input
-                  id="relevance-step"
-                  type="number"
-                  min={0}
-                  max={5}
-                  /* 0.05, matching the route and `numeric(4,2)`: a finer value
-                     would be **rounded** by Postgres rather than refused, and the
-                     page would come back showing a number nobody typed. */
-                  step={0.05}
-                  inputMode="decimal"
-                  disabled={busy}
-                  aria-invalid={stepBad}
-                  aria-describedby="step-scale"
-                  className={`${controlClass} w-full text-right tabular-nums ${
-                    stepBad ? "ring-1 ring-alert-line" : ""
-                  }`}
-                  value={shownStep}
-                  onChange={(e) => setStepDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && pending > 0 && !blocked) void save();
-                  }}
-                />
-              ) : (
-                <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-right text-[14px] tabular-nums text-muted">
-                  {RELEVANCE_STEP}
-                </span>
-              )}
-              <span
-                id="step-scale"
-                className={`self-center text-[11.5px] max-md:col-span-2 ${
-                  stepBad ? "text-alert" : "text-muted"
-                }`}
-              >
-                {stepEditable
-                  ? "Per dimension, 0 to 5, in steps of 0.05."
-                  : "Set in code — run the latest migration to change it here."}
-              </span>
-            </div>
-          </div>
-
           <div className="flex flex-wrap items-center gap-3 border-t border-bark/70 px-4 py-2.5">
             <Button
               tone="primary"
@@ -680,6 +700,17 @@ function WeightsCard({
             >
               A weight is a whole number from 1 to 20.
             </span>
+            {/* The context step's own rule, here rather than in its row: in a
+                column the third cell is ~5rem and this wrapped to three lines
+                against a one-line field. */}
+            <span
+              id="step-scale"
+              className={`text-[12.5px] ${stepBad ? "text-alert" : "text-muted"}`}
+            >
+              {stepEditable
+                ? "Similar context is per dimension, 0 to 5, in steps of 0.05."
+                : "Similar context is set in code — run the latest migration to change it here."}
+            </span>
             {note && <ResultNote inline>{note}</ResultNote>}
             {failed && <span className="text-[12.5px] text-alert">{failed}</span>}
           </div>
@@ -688,6 +719,17 @@ function WeightsCard({
     </Card>
   );
 }
+
+/**
+ * The eighth row, as a value the split can carry.
+ *
+ * A sentinel rather than a flag on the array, so the column maths stays one
+ * expression and the context step cannot end up in the wrong column by
+ * arithmetic. Matched by **reference**, never by its `affinity_type` — the real
+ * rows are fresh objects from a fetch, so nothing else can ever equal it, and
+ * the reserved slug is only there to satisfy the shape.
+ */
+const CONTEXT_ROW = { affinity_type: "__context_step__", weight: 0 };
 
 /**
  * Down the first column, then down the second.
