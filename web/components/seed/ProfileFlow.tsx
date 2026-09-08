@@ -27,7 +27,12 @@ import {
 } from "@/components/ui/Screen";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { saveProfile, verifyStatus, type VerifyStatus } from "@/lib/api-client";
+import {
+  fetchMe,
+  saveProfile,
+  verifyStatus,
+  type VerifyStatus,
+} from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
 import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import {
@@ -43,6 +48,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  pruneAnswers,
   sameForAllChildren,
   searchableCategory,
   selectionsFor,
@@ -50,7 +56,12 @@ import {
   visibleQuestions,
   visibleScreens,
 } from "@/lib/questions";
-import { loadSession, newSession, saveSession } from "@/lib/storage";
+import {
+  loadSession,
+  newSession,
+  normaliseAnswers,
+  saveSession,
+} from "@/lib/storage";
 import { useStepChange } from "@/lib/use-step-change";
 import { useMarketOptions } from "@/lib/use-market-options";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
@@ -135,7 +146,48 @@ export function ProfileFlow() {
      * point here. An unfinished session is untouched: the field is null until
      * the profile is written, so resume still lands where they stopped.
      */
-    if (existing?.profile_saved_at) setStage("review");
+    if (!existing?.profile_saved_at) return;
+    setStage("review");
+
+    /**
+     * A saved profile is re-read from the database, and the device copy loses.
+     *
+     * The client's report, 8 Sep: a parent coming back is shown what
+     * `localStorage` holds rather than what Pando actually has. Both exist
+     * because the flow is autosaved to the phone, and they diverge the moment
+     * the same parent fills the form on a second device (the write is an upsert
+     * on the number, invariant 10) or an admin corrects a record. Once the
+     * profile is **in the database, the database owns it** — the phone is a
+     * cache, and a cache that outranks the record is `persisted: false`
+     * inverted.
+     *
+     * On mount only, deliberately, so it can never overwrite an edit somebody is
+     * in the middle of making: it runs before the review is touched and never
+     * again.
+     *
+     * Answers and the referral code, and nothing else. The name is not refreshed
+     * because the server holds only a first name and `prev.name` is usually both
+     * — replacing "Alice Probe" with "Alice" would be the record losing to a
+     * narrower copy of itself. Anything the server could not answer (no cookie,
+     * no database, a profile written before `raw_answers` was populated) leaves
+     * the device copy exactly as it was: a refresh that fails is silence, never
+     * an empty review.
+     */
+    void (async () => {
+      const me = await fetchMe();
+      if (!me.ok || !me.found || !me.profile_saved) return;
+      setSession((prev) =>
+        prev
+          ? saveSession({
+              ...prev,
+              referral_code: me.referral_code ?? prev.referral_code,
+              answers: me.answers
+                ? pruneAnswers(normaliseAnswers(me.answers))
+                : prev.answers,
+            })
+          : prev,
+      );
+    })();
   }, []);
 
   const answers: ProfileAnswers | null = session?.answers ?? null;
@@ -628,26 +680,18 @@ export function ProfileFlow() {
    * come back would turn a warning into an outage.
    */
   async function afterVerified(current: SeedSession) {
-    try {
-      const res = await fetch("/api/seed/me");
-      const body = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        found?: boolean;
-        profile_saved?: boolean;
-        first_name?: string | null;
-        referral_code?: string | null;
-      } | null;
-      if (body?.ok && body.found && body.profile_saved) {
-        setExisting({
-          first_name: body.first_name ?? null,
-          referral_code: body.referral_code ?? null,
-        });
-        track("seed_profile_exists_shown");
-        return;
-      }
-    } catch {
-      /* See above: a warning that cannot be fetched must not become a wall. */
+    const me = await fetchMe();
+    if (me.ok && me.found && me.profile_saved) {
+      setExisting({
+        first_name: me.first_name ?? null,
+        referral_code: me.referral_code ?? null,
+      });
+      track("seed_profile_exists_shown");
+      return;
     }
+    /* Every other outcome falls through to saving — see above: a warning that
+       could not be fetched must not become a wall. `fetchMe` reports a failure
+       as a state rather than throwing, so there is nothing to catch. */
     await persist(current);
   }
 

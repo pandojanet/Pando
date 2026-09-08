@@ -30,7 +30,10 @@ import type {
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
-import { ReferralDialog } from "@/components/seed/ReferralInvite";
+import {
+  ReferralDialog,
+  ReferralHeaderInvite,
+} from "@/components/seed/ReferralInvite";
 import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import type { SeedSession } from "@/lib/types";
 import { Bubble, CardRecap, TypingDots } from "./Bubble";
@@ -712,7 +715,19 @@ export function ChatSeeding() {
       {/* No running "N cards ready" counter: the saved cards are already on the
           screen as recaps, so the pill only repeated what the parent could see —
           and a count in the header edges towards scorekeeping. */}
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        /* Her instruction of 8 Sep: the invite link within reach on the screen
+           a parent actually spends time on, not only in the popup they see
+           once and on a thank-you screen two taps further on. It renders only
+           when there is a code — the anonymous path has no person row and
+           therefore no link, so it needs no condition of its own. */
+        right={
+          session?.referral_code ? (
+            <ReferralHeaderInvite code={session.referral_code} />
+          ) : undefined
+        }
+      />
 
       {/**
         * The referral popup, over this page (7 Sep, her third instruction).

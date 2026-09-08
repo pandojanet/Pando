@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   const result = await withDb(async (db) => {
     const rows = (await db.execute(
       sql`select p.id, p.first_name, p.market_id, p.wants_founding, p.founding,
-                 p.profile_captured_at,
+                 p.profile_captured_at, p.raw_answers,
                  (select i.code from invites i where i.referrer_person_id = p.id limit 1)
                    as referral_code
             from people p
@@ -66,6 +66,7 @@ export async function GET(request: Request) {
       wants_founding: boolean;
       founding: string;
       profile_captured_at: string | null;
+      raw_answers: unknown;
       referral_code: string | null;
     }>;
     const person = rows[0];
@@ -121,5 +122,36 @@ export async function GET(request: Request) {
     founding: person.founding,
     profile_saved: person.profile_captured_at !== null,
     referral_code: person.referral_code,
+    /**
+     * Their own answers, so the database can be the source of truth instead of
+     * the phone.
+     *
+     * ⚠ **This reverses the 7 Sep decision** — *"What signing in restores ... not
+     * the answers. Those live on the device that gave them"* — and the reason
+     * that decision held has since been spent. It rested on there being no
+     * per-parent token (31 Jul, 12 Aug, 27 Aug), so nothing could prove a
+     * stranger's browser belonged to a stranger's profile. `/signin` is that
+     * proof: the OTP is the token, and it is the same proof `submitGate` demands
+     * before anything may be **written**. Handing a caller their own answers is
+     * strictly less than what the same cookie already lets them overwrite.
+     *
+     * The client's report is what forced it: a returning parent was shown
+     * whatever `localStorage` held rather than what Pando actually has, and
+     * those diverge the moment they fill the form on a second device or an admin
+     * edits a record. A cache that outranks the record is the `persisted: false`
+     * fault inverted.
+     *
+     * Three things it is not. It is **not** cross-device *session* resume: no
+     * `screen_index`, no chat draft, no half-finished card travels — only the
+     * answers of a profile that is already saved, and the caller re-derives
+     * nothing from them (the graph is computed server-side, 11 Aug). It is
+     * **not** anybody else's data: the phone comes from the verification record,
+     * never from the request. And it is **not** logged — invariant 7 is about
+     * logs, and `other` here is free text a parent typed.
+     *
+     * `null` for a profile written before this column was populated, which the
+     * caller reads as "keep what the device has".
+     */
+    answers: person.raw_answers ?? null,
   });
 }

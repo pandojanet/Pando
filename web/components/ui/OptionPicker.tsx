@@ -12,7 +12,7 @@ import {
 } from "react";
 import { cn } from "@/lib/cn";
 import type { Option } from "@/lib/types";
-import { CustomChip } from "./Chip";
+import { CustomChip, otherActionLabel } from "./Chip";
 import { fieldShell } from "./Field";
 import { OtherSheet } from "./OtherSheet";
 
@@ -519,7 +519,7 @@ export function OptionPicker({
                   >
                     {typed
                       ? `Can’t find it? Add “${typed}”`
-                      : (otherLabel ?? "Add your own")}
+                      : otherActionLabel(otherLabel ?? "Add your own")}
                   </button>
                 )}
               </div>
@@ -554,7 +554,7 @@ export function OptionPicker({
       {onAddCustom && (
         <OtherSheet
           open={sheetOpen}
-          title={otherLabel ?? "Add your own"}
+          title={otherActionLabel(otherLabel ?? "Add your own")}
           onClose={() => setSheetOpen(false)}
           onSubmit={(value) => {
             onAddCustom(value);

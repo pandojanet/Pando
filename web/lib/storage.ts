@@ -13,7 +13,42 @@ import type { MarketId, ProfileAnswers, SeedSession } from "./types";
  * Everything is wrapped in try/catch — Safari private mode throws on write.
  */
 
-const KEY = "pando.seed.v1";
+/**
+ * ## The key carries a version, and bumping it is how every device is reset
+ *
+ * The client's report, 8 Sep: a parent coming back is shown what is on the
+ * phone rather than what is in the database, and could every browser be reset.
+ * The second half is this line. `pando.seed.v1` accumulated sessions from every
+ * build since July — test walks, abandoned drafts, profiles saved under an older
+ * question set — and there was no way to end them: `clearSession` is reachable
+ * only from a control on `/join` that somebody has to find and press.
+ *
+ * A new key retires all of them at once, on the next visit, with nothing to
+ * deploy twice and nothing for a parent to do. The old one is **removed** rather
+ * than left to sit, or a browser carries a dead 20KB blob for ever.
+ *
+ * ⚠ What that costs, stated rather than discovered: anybody mid-questionnaire
+ * when this deploys loses their unsaved answers and starts again. That is the
+ * price of the reset she asked for, it is bounded (the profile is fifteen
+ * screens of taps, not typing), and a saved profile loses nothing at all —
+ * `loadSession` below is not the record, the database is.
+ */
+const KEY = "pando.seed.v2";
+
+/**
+ * Every key this app has ever written, so a bump can clean up after itself.
+ * Append here rather than editing `KEY` alone.
+ */
+const RETIRED_KEYS = ["pando.seed.v1"];
+
+function dropRetired(): void {
+  try {
+    for (const key of RETIRED_KEYS) window.localStorage.removeItem(key);
+  } catch {
+    /* Storage unavailable — nothing to drop, and nothing to report. */
+  }
+}
+
 
 export function newSession(init: {
   invite_code: string | null;
@@ -245,6 +280,7 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
 
 export function loadSession(): SeedSession | null {
   if (typeof window === "undefined") return null;
+  dropRetired();
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return null;

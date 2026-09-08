@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Check, Copy, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { Eyebrow } from "@/components/ui/Screen";
@@ -117,6 +117,94 @@ function CopyLink({ code }: { code: string }) {
             ? "Couldn't copy — select the link and copy it by hand."
             : ""}
       </p>
+    </div>
+  );
+}
+
+
+/**
+ * The same link as a small box in a screen header — her instruction of 8 Sep:
+ * on the sharing screen, beside the Pando wordmark, a little highlighted
+ * window with a way to copy.
+ *
+ * ## Why a box behind a pill, rather than a copy button on its own
+ *
+ * A header at 375px has about 200px to the right of the wordmark, which is a
+ * pill and not a link — and a pill that copies straight away has nowhere to put
+ * the one sentence that matters when the clipboard is **refused**. That refusal
+ * is real (some webviews, and any browser with site data blocked), and every
+ * previous version of this pattern in the app swallowed it: the parent taps,
+ * something says "copied", nothing is on the clipboard, and they paste the
+ * previous clipboard into a group chat. So the pill opens the box, the box
+ * carries the link itself, and `CopyLink` — the same one the popup and the
+ * thank-you panel use — owns the copying and the honest failure line.
+ *
+ * That also makes the link **readable** rather than merely copyable, which is
+ * the only fallback there is when the clipboard cannot be reached.
+ *
+ * ## Three mechanics worth not undoing
+ *
+ * It is `absolute` inside a `relative` wrapper rather than `fixed`: the header
+ * is sticky and paints above the transcript, and a `fixed` overlay here would
+ * be clipped by any animated ancestor — the 5 Aug bug, which is why the popup
+ * two functions down is a real `<dialog>` and this deliberately is not. It is
+ * not a modal: nothing behind it needs to be inert, and trapping focus for a
+ * link somebody may want to read beside the conversation would be hostile.
+ *
+ * Escape and a pointer outside both close it, because a panel with no way out
+ * but the control that opened it is the "dead button" complaint one step along.
+ *
+ * ⚠ The pill's wording is new user-facing copy and is on the list for the
+ * client, along with everything else in this file.
+ */
+export function ReferralHeaderInvite({ code }: { code: string }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement | null>(null);
+  const panelId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrap} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((o) => !o)}
+        /* `select-none` for the same reason `Chip` has it: a tap-and-hold on a
+           phone otherwise selects the label instead of pressing the control. */
+        className="inline-flex min-h-11 select-none items-center gap-1.5 rounded-full border border-green/30 bg-green-wash px-3 text-dock font-semibold text-green-deep transition-colors hover:border-green/60 active:scale-[0.97]"
+      >
+        <Link2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        Invite link
+      </button>
+
+      {open && (
+        <div
+          id={panelId}
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-green/25 bg-card p-3.5 text-left shadow-card"
+        >
+          <p className="text-[13.5px] leading-relaxed text-ink-soft">
+            Anyone who joins through this link is recorded as having come from
+            you.
+          </p>
+          <CopyLink code={code} />
+        </div>
+      )}
     </div>
   );
 }

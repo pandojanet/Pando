@@ -150,6 +150,29 @@ export function CustomChip({
   );
 }
 
+/**
+ * The `+` on this control is drawn once, and the label is where it was drawn twice.
+ *
+ * The client's 1 Sep instruction named the copy verbatim — *"Keep only
+ * '+ Something else,' which opens a short optional field"* — so `SOMETHING_ELSE`
+ * in `questions.ts` carries a literal plus, and this control draws its own glyph
+ * beside it. Each is right on its own; together they render **two** pluses, an
+ * outer icon and an inner character, which is what the client reported.
+ *
+ * The glyph wins, because it is the affordance: it is the same mark on every one
+ * of these controls, including the eight whose labels never carried a plus
+ * ("Another school", "Another camp"). Stripping it from the *text* leaves her
+ * wording intact where it is stored, stops the screen saying it twice, and fixes
+ * an accessible name that read "plus Something else".
+ *
+ * In the primitive rather than at the five call sites, so a future question that
+ * copies her label cannot bring the duplicate back — and the "Other" sheet's own
+ * heading takes it too, because that heading is the same string.
+ */
+export function otherActionLabel(label: string): string {
+  return label.replace(/^\s*\+\s*/, "");
+}
+
 export function AddOtherChip({
   label,
   onClick,
@@ -181,7 +204,7 @@ export function AddOtherChip({
           strokeLinecap="round"
         />
       </svg>
-      {label}
+      {otherActionLabel(label)}
     </button>
   );
 }

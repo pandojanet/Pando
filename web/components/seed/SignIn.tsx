@@ -18,8 +18,15 @@ import { Wordmark } from "@/components/ui/Logo";
 import { TextAction } from "@/components/ui/TextAction";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { track } from "@/lib/analytics";
+import { fetchMe } from "@/lib/api-client";
 import { isPhoneComplete, toE164 } from "@/lib/phone";
-import { loadSession, newSession, saveSession } from "@/lib/storage";
+import { pruneAnswers } from "@/lib/questions";
+import {
+  loadSession,
+  newSession,
+  normaliseAnswers,
+  saveSession,
+} from "@/lib/storage";
 
 /**
  * Coming back — her second instruction: authenticate again with a number and a
@@ -41,18 +48,22 @@ import { loadSession, newSession, saveSession } from "@/lib/storage";
  *
  * ## What signing in gives them, and what it deliberately does not
  *
- * It restores **identity**, not answers: their name, whether the profile is in,
- * and their own referral link — which is what her third instruction asks to be
- * on the thank-you screen for a returning parent. It does **not** reconstruct
- * the questionnaire from the server. The answers are on the device that gave
- * them, `raw_answers` is a record rather than a source, and rebuilding a
- * session from it would be a second way to produce one — with all the drift
- * that implies — for a screen a returning parent has already finished.
+ * It restores their **profile**: their name, whether it is in, their own
+ * referral link, and — since 8 Sep — the answers themselves, read back from
+ * `people.raw_answers`.
  *
- * ⚠ So a parent signing in on a new device sees the thank-you screen and their
- * link, not their filled-in profile. That is the honest consequence of the
- * device-local decision the client has taken three times, and it is worth
- * saying out loud rather than discovering.
+ * ⚠ **The answers are new here and reverse the 7 Sep note this replaces**,
+ * which read *"It restores identity, not answers … rebuilding a session from
+ * `raw_answers` would be a second way to produce one."* That held while nothing
+ * could prove a browser belonged to a profile; this screen is that proof, and it
+ * is the same proof `submitGate` demands before anything may be written. The
+ * client's report is what forced it: a returning parent was being shown whatever
+ * was on the phone rather than what Pando holds.
+ *
+ * ⚠ What still does **not** travel, and the screen says so: the session itself.
+ * No `screen_index`, no chat draft, no half-finished recommendation — those are
+ * autosaved to the device that is making them, and a card is not a fact Pando
+ * has agreed to keep until it is saved.
  */
 export function SignIn() {
   const router = useRouter();
@@ -75,23 +86,15 @@ export function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/seed/me");
-      const body = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        found?: boolean;
-        first_name?: string | null;
-        referral_code?: string | null;
-        profile_saved?: boolean;
-        wants_founding?: boolean;
-      } | null;
+      const body = await fetchMe();
 
-      if (res.status === 503) {
+      if (body.reason === "unavailable") {
         setError(
           "Pando can't reach its records right now. Your number is confirmed — try again in a minute.",
         );
         return;
       }
-      if (!body?.ok) {
+      if (!body.ok) {
         setError("That confirmation has expired. Ask for a fresh code.");
         setStage("phone");
         return;
@@ -134,6 +137,26 @@ export function SignIn() {
         referral_shown_at:
           existing.referral_shown_at ?? new Date().toISOString(),
         profile_saved_at: existing.profile_saved_at ?? new Date().toISOString(),
+        /**
+         * Their profile, from the database — which on a new phone is the only
+         * place it exists.
+         *
+         * Until 8 Sep this screen restored an identity and an empty
+         * questionnaire, and said so on the screen because that was the honest
+         * consequence of there being no per-parent token. `/signin` **is** that
+         * token, so the answers can come back with the name; see the note on
+         * `GET /api/seed/me`.
+         *
+         * The server wins over the device here, unlike `first_name` and `name`
+         * above, and for the same reason it does in `ProfileFlow`: an answer is
+         * a fact Pando holds, while a name on this device may be the fuller
+         * version of one the server only has half of. Null answers — a profile
+         * written before the column carried anything — leave the device copy
+         * alone.
+         */
+        answers: body.answers
+          ? pruneAnswers(normaliseAnswers(body.answers))
+          : existing.answers,
       });
       track("seed_signin_completed", { has_referral: Boolean(body.referral_code) });
       router.push("/done");
@@ -199,14 +222,17 @@ export function SignIn() {
             <PhoneField label="Mobile number" value={phone} onChange={setPhone} />
             {error && <Note>{error}</Note>}
             {/**
-              * ⚠ Said here rather than discovered on the next screen: signing in
-              * restores who they are and their invite link, not the answers they
-              * tapped. Those live on the device that gave them (31 Jul), and
-              * this screen must not imply otherwise.
+              * ⚠ Said here rather than discovered on the next screen — and it is
+              * a **narrower** promise than it was before 8 Sep, not a bigger
+              * one. The profile comes back, because Pando has it. A
+              * recommendation somebody was part-way through does not: that is
+              * autosaved to the phone making it and has never been written
+              * anywhere else. New user-facing copy, on the list for the client.
               */}
             <p className="mt-3 text-[13.5px] leading-relaxed text-muted">
-              This brings back your place and your invite link. Answers you
-              typed on another phone stay on that phone.
+              This brings back your profile, your place and your invite link. A
+              recommendation you were part-way through stays on the phone you
+              started it on.
             </p>
           </Panel>
 

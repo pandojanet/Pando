@@ -149,20 +149,38 @@ function ReferralCard({
   code: string | null;
 }) {
   const link = code ? `pando.is/join?i=${code}` : "pando.is/join";
-  const message =
+  /**
+   * Three parts rather than one string, so the **rendered** message can pick the
+   * link out and the **copied** one cannot tell the difference.
+   *
+   * The client's instruction of 8 Sep: highlight the invite link here. It was a
+   * run of plain grey inside a grey paragraph, so the one thing on this card
+   * that has to be recognised — the address a parent is about to paste into a
+   * group chat — looked exactly like the sentence around it.
+   *
+   * ⚠ `message` is byte-identical to what it was, and it must stay that way:
+   * it is what `CopyButton` puts on the clipboard, so any markup that reached
+   * it would arrive in somebody's chat as literal angle brackets. That is why
+   * the highlight is a *third* rendered node and not a wrapper around the whole
+   * thing — the plain text and the styled text are built from the same three
+   * pieces and cannot drift apart.
+   */
+  const intro =
     `I just joined Pando — it's a private network of local parents that answers the ` +
     `questions you'd normally ask in a group chat, except the answers come from ` +
     `parents whose kids are the same age as yours.
 
 ` +
-    `They're building the Pasadena network now: ${link}` +
-    (code
+    `They're building the Pasadena network now: `;
+  const tail =
+    code
       ? ""
       : firstName
         ? `
 
 (If you sign up, mention ${firstName} sent you.)`
-        : "");
+        : "";
+  const message = `${intro}${link}${tail}`;
 
   return (
     <Panel
@@ -183,7 +201,26 @@ function ReferralCard({
         size="inset"
         className="mt-3 whitespace-pre-line leading-relaxed text-help"
       >
-        {message}
+        {intro}
+        {/**
+          * A green token, and the radius is an existing step rather than a new
+          * one: `rounded-2xl` is the input radius the design system already
+          * names, and on a single line it reads as the same pill the `/share`
+          * header's invite control wears — so the two places a parent meets
+          * their own link look like one thing.
+          *
+          * `inline-block` with `break-all` so a longer code grows the token to
+          * two lines instead of pushing the card off a 375px screen; a plain
+          * inline span would have to be broken across two half-pills.
+          *
+          * green-deep on green-wash is 7.0:1 (measured 3 Sep), against
+          * `text-muted` body copy — so the contrast is what makes it read as
+          * the link rather than the weight alone.
+          */}
+        <span className="inline-block break-all rounded-2xl bg-green-wash px-2.5 py-1 font-semibold text-green-deep">
+          {link}
+        </span>
+        {tail}
       </Panel>
       <CopyButton
         className="mt-3"

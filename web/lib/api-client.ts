@@ -117,6 +117,45 @@ export async function checkVerification(code: string): Promise<VerifyCheckResult
   return data;
 }
 
+/**
+ * Who the confirmed number belongs to, and what Pando already holds for them.
+ *
+ * One typed shape rather than three inline ones: `ProfileFlow`, `SignIn` and
+ * anything after them read the same fields, and the third hand-written copy is
+ * where a field quietly stops being read.
+ *
+ * Every failure is a *state* rather than a throw, because all three of them mean
+ * something different to a parent: 401 is a confirmation that ran out, 503 is
+ * Pando unable to look (never "you have no profile" — the `persisted: false`
+ * rule applied to a read), and `found: false` is a number with nothing behind
+ * it, which is not an error at all.
+ */
+export interface MeResult {
+  ok: boolean;
+  found: boolean;
+  first_name?: string | null;
+  wants_founding?: boolean;
+  founding?: string;
+  profile_saved?: boolean;
+  referral_code?: string | null;
+  /** The parent's own stored answers, or null when there are none to hand back. */
+  answers?: unknown;
+  /** "unavailable" is a database Pando could not reach; "expired" is the cookie. */
+  reason?: "unavailable" | "expired" | "failed";
+}
+
+export async function fetchMe(): Promise<MeResult> {
+  try {
+    const res = await fetch("/api/seed/me");
+    if (res.status === 503) return { ok: false, found: false, reason: "unavailable" };
+    const body = (await res.json().catch(() => null)) as MeResult | null;
+    if (!body?.ok) return { ok: false, found: false, reason: "expired" };
+    return { ...body, found: body.found === true };
+  } catch {
+    return { ok: false, found: false, reason: "failed" };
+  }
+}
+
 export interface SaveProfileResult {
   ok: true;
   contributor_id: string | null;

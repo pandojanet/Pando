@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import type { Option } from "@/lib/types";
-import { AddOtherChip, Chip, CustomChip } from "./Chip";
+import { AddOtherChip, Chip, CustomChip, otherActionLabel } from "./Chip";
 import { OtherSheet } from "./OtherSheet";
 
 interface Props {
@@ -242,7 +242,10 @@ export function ChipGroup({
       {onAddCustom && (
         <OtherSheet
           open={sheetOpen}
-          title={otherLabel ?? "Add your own"}
+          /* Her label carries its own "+" and the sheet has no icon to pair
+             it with, so a heading reading "+ Something else" is the same
+             duplicate one screen along. */
+          title={otherActionLabel(otherLabel ?? "Add your own")}
           onClose={() => setSheetOpen(false)}
           onSubmit={(value) => {
             onAddCustom(value);
