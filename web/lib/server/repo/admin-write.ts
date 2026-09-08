@@ -1,7 +1,11 @@
 import "server-only";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
-import { createBlastIn, sendBlast } from "@/lib/server/repo/blast";
+import {
+  createBlastIn,
+  deliverBlastAnswers,
+  sendBlast,
+} from "@/lib/server/repo/blast";
 import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
@@ -76,7 +80,14 @@ export type ActionOutcome =
         | "blast_already_sent"
         | "blast_not_ready"
         | "blast_contacts_nobody"
-        | "blast_nobody_reachable";
+        | "blast_nobody_reachable"
+        /* M7's exit (8 Sep). Four more, for the same reason as the six above:
+           each names a different next step — approve a reply, find the asker a
+           number, or simply try the send again. */
+        | "blast_nothing_approved"
+        | "blast_answers_already_sent"
+        | "blast_no_asker_phone"
+        | "blast_answers_not_sent";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -337,6 +348,52 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "blast", resource_id: target };
     }
 
+
+    /**
+     * M7's exit — text the approved replies back to the asker.
+     *
+     * ⚠ **The chain had no way out until this existed.** A parent could pay
+     * $15, five parents could answer, an admin could approve every reply, and
+     * the asker would hear nothing: `blast.fulfil` set a status and a note,
+     * `blast_response.approve` wrote the reply into the graph, and neither
+     * addressed the person who asked.
+     *
+     * A **separate button from `blast.fulfil`**, on 14.2's rule: marking an Ask
+     * answered is a judgement with a note, delivering is a carrier round trip
+     * that can fail and be retried without anybody re-judging anything.
+     *
+     * Same transaction shape as `blast.send` and `answer.send`: the repo
+     * function opens its own connections and makes one HTTP call while this
+     * transaction is held. Acceptable at pilot volume, `sendSms` never throws,
+     * and it is written down here as it is there so the day that changes there
+     * is one rule to move rather than three.
+     */
+    case "blast.deliver": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+
+      const outcome = await deliverBlastAnswers(target);
+      if (!outcome.ok) {
+        /* Each refusal keeps its own name for the reason `blast.send` records:
+           collapsing them to `not_found` told an admin the row had changed when
+           what really happened was that nobody had approved a reply yet. */
+        console.info("[blast] delivery refused", { reason: outcome.reason });
+        return {
+          applied: false,
+          reason:
+            outcome.reason === "already_sent"
+              ? "blast_answers_already_sent"
+              : outcome.reason === "nothing_approved"
+                ? "blast_nothing_approved"
+                : outcome.reason === "no_phone"
+                  ? "blast_no_asker_phone"
+                  : outcome.reason === "not_sent"
+                    ? "blast_answers_not_sent"
+                    : "not_found",
+        };
+      }
+      return { applied: true, resource: "blast", resource_id: target };
+    }
 
     /* ── 14.3 / 13.5–13.7 The blast manager, and the money ───────────────── */
 

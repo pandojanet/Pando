@@ -58,6 +58,8 @@ const ACTIONS = new Set([
   /* 7.1's entry (7 Sep). `createBlast` had no caller at all before it. */
   "blast.create",
   "blast.send",
+  /* M7's exit — the approved replies, back to the parent who asked (8 Sep). */
+  "blast.deliver",
   /* 14.3 / 13.5–13.7 — the blast manager's three verbs and the money. */
   "blast.checkout",
   "blast.fulfil",
@@ -630,6 +632,17 @@ export async function POST(request: Request) {
         "A passive entry is a question on the demand map — it contacts nobody by design.",
       blast_not_ready:
         "This Ask is not in a state that can be sent — it may have been fulfilled, expired or refunded.",
+      /* M7's exit (8 Sep). Each of these is a different next step, which is the
+         whole reason they are four sentences and not one: approve a reply, find
+         the asker a number, or try the send again. */
+      blast_nothing_approved:
+        "No reply has been approved yet. Read the replies first — only approved ones are sent, because that review is what makes forwarding a parent's own words safe.",
+      blast_answers_already_sent:
+        "The answers have already gone to this parent. Sending again would text them the same message twice.",
+      blast_no_asker_phone:
+        "Pando has no number for whoever asked this, so there is nowhere to send the answers.",
+      blast_answers_not_sent:
+        "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

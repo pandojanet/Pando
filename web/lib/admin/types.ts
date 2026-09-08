@@ -837,6 +837,14 @@ export type AdminAction =
     }
   | { action: "blast.send"; id: string }
   /**
+   * M7's exit — text the approved replies to the parent who asked (8 Sep).
+   *
+   * Its own verb rather than a side effect of `blast.fulfil`, on 14.2's split:
+   * fulfilling is a judgement with a note, delivering is a send that can fail
+   * on a carrier and be retried without anybody re-judging anything.
+   */
+  | { action: "blast.deliver"; id: string }
+  /**
    * 14.3 / 13.5 — open a Stripe checkout for a paid Ask.
    *
    * An admin action rather than something the parent's own flow does, for the
@@ -1236,6 +1244,12 @@ export interface BlastRow {
   pool_target: number;
   expires_at: string | null;
   fulfilled_at: string | null;
+  /**
+   * When the approved replies were texted to the asker. Null means they were
+   * not — which is a parent still waiting, not a finished Ask, and is why this
+   * is separate from `fulfilled_at` (see `blast.deliver`).
+   */
+  answers_sent_at: string | null;
   created_at: string;
   asker: { id: string; name: string | null; phone_masked: string | null } | null;
   /**

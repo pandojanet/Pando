@@ -1908,6 +1908,7 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
            b.pool_target                                     as pool_target,
            b.expires_at                                      as expires_at,
            b.fulfilled_at                                    as fulfilled_at,
+           b.answers_sent_at                                 as answers_sent_at,
            b.created_at                                      as created_at,
            b.payment_status                                  as payment_status,
            b.price_cents                                     as price_cents,
@@ -1947,6 +1948,7 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
     pool_target: Number(r.pool_target ?? 0),
     expires_at: (r.expires_at as string | null) ?? null,
     fulfilled_at: (r.fulfilled_at as string | null) ?? null,
+    answers_sent_at: (r.answers_sent_at as string | null) ?? null,
     created_at: String(r.created_at),
     asker: r.asker_id
       ? {

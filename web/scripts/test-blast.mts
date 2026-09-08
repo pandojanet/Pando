@@ -282,5 +282,96 @@ ok(
   "a credit and a refund for one failure is paying twice",
 );
 
+console.log("\n=== M7's exit: what the asker is finally told ===");
+{
+  const a = (await import(
+    `../lib/blast-answer.ts?v=${Date.now()}`
+  )) as typeof import("../lib/blast-answer.ts");
+  const answer = (await import(
+    `../lib/answer.ts?v=${Date.now()}`
+  )) as typeof import("../lib/answer.ts");
+
+  const reply = (text: string, quality: number | null = null) => ({ text, quality });
+
+  ok(
+    "no replies is nothing to send, not an empty message",
+    a.composeBlastAnswer({ budget: answer.SMS_BUDGET, replies: [] }) === null,
+    "a bare header reads as 'we asked and nobody helped' to somebody who paid",
+  );
+  ok(
+    "a reply that is only whitespace does not count as one",
+    a.composeBlastAnswer({ budget: answer.SMS_BUDGET, replies: [reply("   ")] }) === null,
+  );
+
+  const one = a.composeBlastAnswer({ budget: answer.SMS_BUDGET, replies: [reply("Try Rose Bowl Aquatics.")] });
+  ok("one reply is 'One parent', not '1 parents'", one?.text.startsWith("One parent") === true, one?.text);
+  ok("and the reply travels in the parent's own words", one?.text.includes("Try Rose Bowl Aquatics.") === true);
+  ok("with the source stated", one?.text.includes("local parents Pando matched") === true);
+
+  /* Rated first, unrated last, and never dropped for being unrated. */
+  const ranked = a.composeBlastAnswer({
+    budget: answer.SMS_BUDGET,
+    replies: [reply("unrated one"), reply("rated five", 5), reply("rated two", 2)],
+  });
+  ok(
+    "an admin's rating orders the replies",
+    ranked !== null &&
+      ranked.text.indexOf("rated five") < ranked.text.indexOf("rated two") &&
+      ranked.text.indexOf("rated two") < ranked.text.indexOf("unrated one"),
+    ranked?.text,
+  );
+  ok("an unrated reply is still sent", ranked?.used === 3);
+
+  /* Ties keep arrival order, so a second send composes the same message. */
+  const tied = { budget: answer.SMS_BUDGET, replies: [reply("first", 3), reply("second", 3)] };
+  ok(
+    "ties are stable, so sending twice would say the same thing",
+    a.composeBlastAnswer(tied)?.text === a.composeBlastAnswer(tied)?.text &&
+      a.composeBlastAnswer(tied)!.text.indexOf("first") <
+        a.composeBlastAnswer(tied)!.text.indexOf("second"),
+  );
+
+  /* Whole replies are dropped, never truncated — the `composeAnswer` rule. */
+  const long = a.composeBlastAnswer({
+    budget: answer.SMS_BUDGET,
+    replies: [reply("A".repeat(300)), reply("B".repeat(300)), reply("C".repeat(300))],
+  });
+  ok("a message too long drops whole replies", long?.used === 1 && long?.dropped === 2, String(long?.used));
+  ok("and stays inside the budget", (long?.text.length ?? 0) <= answer.SMS_BUDGET, String(long?.text.length));
+  ok(
+    "the count is what was sent, not what was approved",
+    long?.text.startsWith("One parent") === true,
+    "counting before the budget loop is the 4 Sep fault this repeats",
+  );
+
+  /* A parent's own newline would read as a second answer. */
+  const messy = a.composeBlastAnswer({ budget: answer.SMS_BUDGET, replies: [reply("line one\nline two")] });
+  ok(
+    "a reply's own line breaks are flattened",
+    messy?.text.split("\n").filter((l) => l.startsWith('"')).length === 1,
+    messy?.text,
+  );
+
+  /* One character outside GSM-7 cuts the per-segment budget from 153 to 67. */
+  const seg = (await import(
+    `../lib/sms-segments.ts?v=${Date.now()}`
+  )) as typeof import("../lib/sms-segments.ts");
+  const plain = a.composeBlastAnswer({
+    budget: answer.SMS_BUDGET,
+    replies: [reply("Kidspace is great for a 3 year old.")],
+  })!;
+  ok(
+    "the wrapper is GSM-7, so a short answer is one segment",
+    seg.planSegments(plain.text).encoding === "gsm7",
+    seg.planSegments(plain.text).offenders?.join("") ?? "",
+  );
+  ok(
+    "and a parent's own em dash is their cost, not the wrapper's",
+    seg.planSegments(a.composeBlastAnswer({ budget: answer.SMS_BUDGET, replies: [reply("great — really")] })!.text)
+      .encoding === "ucs2",
+    "the reply is verbatim on purpose; only the words Pando adds are constrained",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

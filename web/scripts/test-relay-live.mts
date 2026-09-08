@@ -247,6 +247,9 @@ const settle = async (done: () => boolean | Promise<boolean>, ms = 12000) => {
   }
 };
 
+/** Set by the sign-in below, and used again by the M7 walk. */
+let adminCookie = "";
+
 const message = (text: string, extra: Record<string, unknown> = {}) => ({
   type: "event_callback",
   event: { type: "message", user: "U0TESTER", channel: "C0RELAYWALK", ts: "1788401111.1", text, ...extra },
@@ -292,12 +295,29 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
   const res = await slackEvent(message(`${PHONE}: any good toddler classes near South Pasadena?`));
   ok("the event is accepted", res.ok);
 
-  /* The pipeline runs in `after()`, so wait for its last write rather than for
-     a number: the queued answer is the end of this branch. */
-  await settle(async () => {
-    const [row] = await sql`select count(*)::int n from answers where phone = ${PHONE}`;
-    return row.n > 0;
-  });
+  /**
+   * The pipeline runs in `after()`, so wait for its last write rather than for
+   * a number: the queued answer is the end of this branch.
+   *
+   * ⚠ **35 seconds, not the default 12, and the reason is a change nobody
+   * re-ran this suite after.** Since 8 Sep the pipeline also searches the open
+   * web, and `retrieveFor` runs *before* it so the search can be told what the
+   * answer already found — measured at 4-9s on its own, on top of the intent
+   * call and two queries. At 12s this timed out and six assertions failed in a
+   * row, the first of them "the question reached the answer queue", which reads
+   * exactly like the wiring having come undone. It had not; the row landed
+   * about a second later.
+   *
+   * ⚠ And the **result is checked**. `settle` returns false on a timeout and
+   * every caller here was discarding it, so a slow pipeline produced a cascade
+   * of failed assertions rather than one that says "this timed out" — which is
+   * the difference between twenty minutes of debugging and none.
+   */
+  const landed = await settle(async () => {
+    const [row] = await sql`select status from answers where phone = ${PHONE}`;
+    return row?.status === "sent";
+  }, 35000);
+  ok("the pipeline finished inside its budget", landed, "web search is 4-9s of it");
 
   const [person] = await sql`
     select id, first_name, phone_verified_at from people where phone = ${PHONE}`;
@@ -330,9 +350,23 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
     select id, hold_reason, next_step, public_only, answer_text, status
       from answers where phone = ${PHONE}`;
   ok("the question reached the answer queue", Boolean(queued), "5.8");
+  /**
+   * ⚠ **This asserted the opposite until 8 Sep, and the suite had not been
+   * re-run since.** It read *"held for a person, because the pilot holds
+   * everything"*, which was true while `PILOT_HOLD_EVERYTHING` was on. The
+   * client turned it off that morning: only sensitive, caregiver-related and
+   * generator-asked answers wait now, and an ordinary question about toddler
+   * classes is **sent**. A stale assertion here is worse than none — it would
+   * have failed a correct build for months.
+   *
+   * `not_held` is asserted by name because it is a real value rather than an
+   * absence: before the send path existed, the no-hold branch still returned
+   * `pilot_review_all`, so every automatically sent answer would have been
+   * recorded as *"held because the pilot reads everything"*.
+   */
   ok(
-    "held for a person, because the pilot holds everything",
-    queued && queued.status === "pending_review" && Boolean(queued.hold_reason),
+    "an ordinary question is sent rather than held",
+    queued && queued.status === "sent" && queued.hold_reason === "not_held",
     JSON.stringify({ status: queued?.status, hold: queued?.hold_reason }),
   );
   ok(
@@ -403,14 +437,20 @@ console.log("\n=== a cold inbound, addressed by number (5.9) ===");
   );
 
   /**
-   * And the parent hears something. A held answer used to mean silence until an
-   * admin opened the queue, which is indistinguishable from a dead number on the
-   * one message that is a stranger's whole first impression of Pando.
+   * And the parent hears something — which since 8 Sep is **the answer itself**
+   * rather than "somebody will look".
+   *
+   * ⚠ The old assertion looked for *"Someone at Pando"*, `heldReply`'s wording,
+   * and that is now the wrong branch for an ordinary question: it is what a
+   * *sensitive* one still gets. Asserted against the stored `answer_text`, so
+   * this says the thing that matters — the parent received what the pipeline
+   * composed, verbatim — instead of matching a sentence.
    */
   const ack = posted[posted.length - 1];
   ok(
-    "the parent is told a person is on it",
-    Boolean(ack?.text.includes("Someone at Pando")),
+    "the parent receives the composed answer itself",
+    Boolean(queued?.answer_text) &&
+      ack?.text.includes(String(queued?.answer_text).split("\n")[0]) === true,
     ack?.text.slice(0, 90),
   );
   ok(
@@ -522,8 +562,61 @@ console.log("\n=== a threaded reply resolves back to that parent ===");
  */
 console.log("\n=== an admin approves it, and it lands in the parent's thread ===");
 {
+  /**
+   * ⚠ **This section needed a held answer, and since 8 Sep an ordinary question
+   * no longer produces one.** It used to take the latest row for this number,
+   * which was the toddler-classes answer waiting for a reviewer under
+   * `PILOT_HOLD_EVERYTHING`. That answer is now *sent* automatically, so
+   * `answer.send` correctly refused it and four assertions failed — the suite
+   * describing a build that no longer exists.
+   *
+   * So the walk asks something **sensitive** first. That still holds, and
+   * permanently: health, legal and safety questions are the class §19 keeps a
+   * person on for ever, which makes this the honest subject for a test about a
+   * person approving something. It also exercises the 8 Sep detection — the
+   * three layers that decide `sensitive` — on the live path rather than only in
+   * `test:intent`.
+   */
+  /**
+   * ⚠ **A caregiver question, and not a health one, and that is a finding
+   * rather than a preference.** The obvious subject was *"my 4 year old keeps
+   * having nosebleeds, is that normal?"* — the sentence the 8 Sep word list was
+   * rebuilt around. Walked live, it produces **no answer row and no reply at
+   * all**: `classifyDemand` correctly says `high_stakes` and `routeAnswer`
+   * correctly holds, but nothing gets that far, because retrieval finds no
+   * record about paediatric health and `composeAnswer` returns null, so
+   * `answerQuestion` returns before anything is queued.
+   *
+   * That is the 7 Sep review's second gap — *"a sensitive question over SMS is
+   * held, and answered with nothing"* — one step worse than it was recorded:
+   * not a generic holding line, silence. It is on the list for the client and
+   * is deliberately not fixed inside a test.
+   *
+   * A caregiver question holds permanently for its own reason (§19 keeps human
+   * eyes on everything caregiver-related) *and* retrieves records, so it is the
+   * subject that actually exercises approve-then-send.
+   */
+  const heldRes = await slackEvent(message(`${PHONE}: any good nannies near Altadena?`));
+  ok("a caregiver question is accepted", heldRes.ok);
+  const wasHeld = await settle(async () => {
+    const [row] = await sql`
+      select status from answers where phone = ${PHONE} order by created_at desc limit 1`;
+    return row?.status === "pending_review";
+  }, 35000);
+  ok(
+    "and it waits for a person rather than going out on its own",
+    wasHeld,
+    "everything caregiver-related keeps human eyes permanently (§19)",
+  );
+
   const [queued] = await sql`
-    select id, status from answers where phone = ${PHONE} order by created_at desc limit 1`;
+    select id, status, hold_reason from answers where phone = ${PHONE}
+     order by created_at desc limit 1`;
+  ok(
+    "held for a reason that names what is in it, not the blanket rule",
+    queued?.hold_reason === "caregiver",
+    String(queued?.hold_reason),
+  );
 
   await sql`
     insert into admin_users (name, password_hash, active)
@@ -542,6 +635,10 @@ console.log("\n=== an admin approves it, and it lands in the parent's thread ===
     .getSetCookie()
     .map((c) => c.split(";")[0])
     .join("; ");
+  /* Kept for the M7 walk further down, which drives five admin actions of its
+     own. One sign-in rather than two, so the suite exercises one session the
+     way an admin has one. */
+  adminCookie = cookie;
   ok("an admin can sign in", session.status === 200, `status ${session.status}`);
 
   const before = posted.length;
@@ -655,6 +752,168 @@ console.log("\n=== STOP still stops, relay or not ===");
     posted.length === before,
     "the opt-out check runs before the provider step, whichever provider it is",
   );
+}
+
+/**
+ * M7 end to end — the chain that had no way out.
+ *
+ * Reviewed on 7 Sep and recorded as having "no entry point and no exit". The
+ * entry was built the same day (`blast.create`); this walks what happens after
+ * it, because two of the three links were still missing when the client asked
+ * on 8 Sep whether the blast process works: **`blast.send` had no button in the
+ * admin at all**, and nothing ever sent the approved replies back to the asker.
+ *
+ * ⚠ **What this deliberately does not do is call `blast.send` for real.** That
+ * runs `selectPool` against the live cohort and would text real demo
+ * contributors through the stub — writing `blast_recipients` and `message_log`
+ * rows for people who did not ask to be in a test, spending their 48-hour gap
+ * and their monthly allowance. So the send is asserted through its **refusals**,
+ * which are deterministic and are where its logic lives, and the recipient this
+ * walk needs is inserted directly. Pool selection itself is `test:matching` (53)
+ * and the live pool preview on `/admin/blasts`.
+ */
+console.log("\n=== M7: a question, a reply, and the answer back to the asker ===");
+{
+  const ASKER = "+16265559482";
+  const RESPONDER = "+16265559483";
+  const QUESTION = "any good swim classes for a 4 year old?";
+
+  await sql`delete from people where phone in (${ASKER}, ${RESPONDER})`;
+  const [asker] = await sql`
+    insert into people (phone, first_name, market_id, is_test, phone_verified_at)
+    values (${ASKER}, 'Asker', 'pasadena', true, now()) returning id`;
+  const [responder] = await sql`
+    insert into people (phone, first_name, market_id, is_test, phone_verified_at)
+    values (${RESPONDER}, 'Responder', 'pasadena', true, now()) returning id`;
+
+  const act = (body: unknown) =>
+    fetch(`http://127.0.0.1:${APP_PORT}/api/admin/action`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adminCookie },
+      body: JSON.stringify(body),
+    });
+
+  /* 7.1 — the entry. `last_minute` is free, so no checkout stands between the
+     Ask and the rest of the walk; the paid path is `test:payments-live`. */
+  const created = await act({
+    action: "blast.create",
+    asker_id: String(asker.id),
+    question_text: QUESTION,
+    tier: "last_minute",
+  });
+  ok("an Ask can be created", created.status === 200, `status ${created.status}`);
+  const [blast] = await sql`
+    select id, status, human_review from blasts where asker_id = ${asker.id}::uuid`;
+  ok("and it lands as a row with the question on it", Boolean(blast?.id));
+
+  /**
+   * Last-Minute Care always carries `human_review` (7.2), so this is also the
+   * check that the send refuses on it — the one thing standing between a
+   * mis-scored pool and five strangers' phones.
+   */
+  const early = await act({ action: "blast.send", id: String(blast.id) });
+  ok(
+    "sending is refused while it waits for a person, in words",
+    early.status === 409,
+    `status ${early.status}`,
+  );
+  const earlyBody = (await early.json()) as { reason?: string; error?: string };
+  ok(
+    "and the refusal says which one it is",
+    earlyBody.reason === "blast_needs_review",
+    String(earlyBody.reason),
+  );
+
+  /* Delivering before anybody has been asked is its own refusal, not "not found". */
+  const tooEarly = await act({ action: "blast.deliver", id: String(blast.id) });
+  const tooEarlyBody = (await tooEarly.json()) as { reason?: string };
+  ok(
+    "and delivering with nothing approved is refused separately",
+    tooEarly.status === 409 && tooEarlyBody.reason === "blast_nothing_approved",
+    `${tooEarly.status} ${tooEarlyBody.reason}`,
+  );
+
+  /* The recipient a real send would have written. See the note above. */
+  await sql`
+    insert into blast_recipients (blast_id, person_id, match_score, sent_at)
+    values (${blast.id}::uuid, ${responder.id}::uuid, 5, now())`;
+  await sql`update blasts set status = 'active', human_review = false
+             where id = ${blast.id}::uuid`;
+
+  /* 7.5 — the reply comes in through the real inbound door. */
+  await slackEvent(message(`${RESPONDER}: Rose Bowl Aquatics parent and me is great.`));
+  const attached = await settle(async () => {
+    const [r] = await sql`
+      select response_text from blast_recipients where blast_id = ${blast.id}::uuid`;
+    return r?.response_text !== null && r?.response_text !== undefined;
+  });
+  ok("an inbound reply attaches to the Ask it answers", attached);
+
+  /* 7.6 / 7.9 — a person reads it. This is what makes forwarding it safe. */
+  const rated = await act({
+    action: "blast_response.rate",
+    blast_id: String(blast.id),
+    person_id: String(responder.id),
+    quality: 5,
+  });
+  ok("an admin can rate the reply", rated.status === 200, `status ${rated.status}`);
+  const approved = await act({
+    action: "blast_response.approve",
+    blast_id: String(blast.id),
+    person_id: String(responder.id),
+    share_name: "Rose Bowl Aquatics",
+    share_kind: "activity",
+  });
+  ok("and approve it", approved.status === 200, `status ${approved.status}`);
+
+  /* M7's exit. */
+  const before = posted.length;
+  const delivered = await act({ action: "blast.deliver", id: String(blast.id) });
+  ok("the answers can be sent to the asker", delivered.status === 200, `status ${delivered.status}`);
+  await settle(() => posted.length > before);
+
+  const out = posted[posted.length - 1];
+  ok("something reached the channel", posted.length > before, `${posted.length} posts`);
+  ok(
+    "carrying the parent's own words",
+    out?.text.includes("Rose Bowl Aquatics parent and me is great.") === true,
+    out?.text.split("\n").slice(-2).join(" "),
+  );
+  ok(
+    "and saying where they came from",
+    out?.text.includes("local parents Pando matched") === true,
+  );
+  ok(
+    "the asker's number is masked in the channel, like every other post",
+    out?.text.includes("6265559482") === false,
+    out?.text.split("\n")[0],
+  );
+
+  const [stamped] = await sql`
+    select answers_sent_at, status from blasts where id = ${blast.id}::uuid`;
+  ok(
+    "the row says delivered only because the send layer said so",
+    stamped?.answers_sent_at !== null,
+  );
+  ok(
+    "and delivering does not mark the Ask fulfilled — that is a separate judgement",
+    stamped?.status !== "fulfilled",
+    String(stamped?.status),
+  );
+
+  /* The column earns itself here: without it a second press texts them twice. */
+  const again = await act({ action: "blast.deliver", id: String(blast.id) });
+  const againBody = (await again.json()) as { reason?: string };
+  ok(
+    "a second press is refused rather than sending the same message twice",
+    again.status === 409 && againBody.reason === "blast_answers_already_sent",
+    `${again.status} ${againBody.reason}`,
+  );
+
+  await sql`delete from blast_recipients where blast_id = ${blast.id}::uuid`;
+  await sql`delete from impact_events where blast_id = ${blast.id}::uuid`;
+  await sql`delete from blasts where id = ${blast.id}::uuid`;
+  await sql`delete from people where phone in (${ASKER}, ${RESPONDER})`;
 }
 
 /* ── cleanup ───────────────────────────────────────────────────────────────── */

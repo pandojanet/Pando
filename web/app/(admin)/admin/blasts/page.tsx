@@ -457,6 +457,65 @@ export default function BlastsPage() {
                         </Button>
                       ) : null}
 
+                      {/**
+                        * ⚠ **7.8 had no button anywhere in the admin until
+                        * 8 Sep.** `blast.send` was implemented, allowlisted, and
+                        * given six named refusals and a 409 for each — and
+                        * nothing called it, so an Ask could be created and its
+                        * pool previewed and then never sent. The
+                        * written-and-never-called fault, on the middle of the
+                        * chain.
+                        *
+                        * Hidden only where it could **only** fail: a passive
+                        * entry contacts nobody by design (`pool_target === 0`),
+                        * and an Ask that has already gone out has recipients.
+                        * Everything else shows and lets the refusal do the
+                        * explaining — unpaid, waiting for a person, outside
+                        * quiet hours — because those sentences say what to do
+                        * next and a hidden button says nothing at all.
+                        */}
+                      {row.pool_target > 0 &&
+                        row.recipients === 0 &&
+                        (row.status === "draft" || row.status === "active") && (
+                          <Button
+                            tone="primary"
+                            disabled={busy === row.id}
+                            title="Texts the matched pool. Every send still runs opt-out, quiet hours and the contributor-protection rules."
+                            subject={row.question_text}
+                            onClick={() =>
+                              void run(row.id, "The Ask went out.", async () =>
+                                adminAction({ action: "blast.send", id: row.id }),
+                              )
+                            }
+                          >
+                            Send the Ask
+                          </Button>
+                        )}
+
+                      {/**
+                        * M7's exit, and the other half of the same hole: until
+                        * this existed nothing sent the approved replies back to
+                        * the parent who asked. Offered only once a reply has
+                        * been approved — an unapproved one is refused, and a
+                        * button that can only fail is one the admin learns to
+                        * distrust.
+                        */}
+                      {row.approved_responses > 0 && !row.answers_sent_at && (
+                        <Button
+                          tone="primary"
+                          disabled={busy === row.id}
+                          title="Texts the approved replies to whoever asked, in the parents' own words. Only approved ones go."
+                          subject={row.question_text}
+                          onClick={() =>
+                            void run(row.id, "The answers went to the parent.", async () =>
+                              adminAction({ action: "blast.deliver", id: row.id }),
+                            )
+                          }
+                        >
+                          Send the answers
+                        </Button>
+                      )}
+
                       <Button
                         tone="secondary"
                         disabled={busy === row.id}
@@ -532,6 +591,20 @@ export default function BlastsPage() {
                         ? `Closes ${when(row.expires_at)}`
                         : "No window — nobody is contacted"}
                     </Fact>
+                    {/**
+                      * 14.2's gold card, one surface along: **an approved answer
+                      * nobody sent is a parent still waiting.** Before M7 had an
+                      * exit there was nothing to say here at all, so an Ask with
+                      * five approved replies and a silent asker read exactly
+                      * like a finished one.
+                      */}
+                    {(row.approved_responses > 0 || row.answers_sent_at) && (
+                      <Fact label="The asker">
+                        {row.answers_sent_at
+                          ? `Answered ${when(row.answers_sent_at)}`
+                          : "Still waiting — the answers have not gone out"}
+                      </Fact>
+                    )}
                   </FactGrid>
 
                   {/* 7.7's guarantee, said in words on the row it applies to

@@ -6,6 +6,8 @@ import {
   paymentFor,
   type BlastTier,
 } from "@/lib/blast-tiers";
+import { SMS_BUDGET } from "@/lib/answer";
+import { composeBlastAnswer } from "@/lib/blast-answer";
 import { decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
 import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-templates";
 import { withDb, type Db } from "@/lib/server/db";
@@ -577,6 +579,143 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
      look at. */
   if (sent === 0) return { ok: false, sent, skipped, reason: "nobody_reachable" };
   return { ok: true, sent, skipped };
+}
+
+/* ── M7's exit ─────────────────────────────────────────────────────────── */
+
+export type DeliverReason =
+  | "not_found"
+  | "already_sent"
+  | "nothing_approved"
+  | "no_phone"
+  | "not_sent";
+
+export interface DeliverResult {
+  ok: boolean;
+  /** How many approved replies the message carried. */
+  used?: number;
+  /** Approved replies that did not fit the budget. */
+  dropped?: number;
+  reason?: DeliverReason;
+}
+
+/**
+ * Send the approved replies back to the parent who asked.
+ *
+ * ⚠ **This is the end of the chain M7 did not have.** Reviewed end to end on
+ * 7 Sep: `blast.create` starts an Ask, `sendBlast` asks the pool,
+ * `attachResponse` catches the replies, `blast_response.approve` writes them
+ * into the graph — and **nothing addressed the asker**. A parent could pay $15,
+ * five parents could answer, an admin could approve every one, and the person
+ * who asked would hear nothing. The only outbound path to a parent was
+ * `answer.send`, whose rows come from the *inbound* pipeline and know nothing
+ * about blasts.
+ *
+ * ## Five refusals, each with its own name
+ *
+ * `sendBlast` already learned this lesson the expensive way: it distinguished
+ * six outcomes and the action collapsed them all to `not_found`, so an admin
+ * pressing a button was told the row had changed. Each of these means something
+ * different and something different should be done about it.
+ *
+ * `already_sent` is the one that earns the column (`drizzle/0037`). Without it a
+ * second press would text the asker their answers twice, and there would be
+ * nothing on the page to say the first press had worked — 14.2's gold card for
+ * "approved but not sent", one surface along.
+ *
+ * ## What it will not do
+ *
+ * **It does not approve anything.** Only replies an admin has already marked
+ * `approved` are read, which is what makes forwarding free text safe at all
+ * (invariant 8: never published verbatim *without human review*). A blast whose
+ * replies are all unread refuses with `nothing_approved` rather than sending the
+ * best of them.
+ *
+ * **It does not mark the Ask fulfilled.** That is `blast.fulfil`, a judgement
+ * with a note, and this is a carrier round trip that can fail and be retried —
+ * the same split as `answer.approve` and `answer.send` (14.2), for the same
+ * reason: one button would make a failed send look like an un-made decision.
+ *
+ * **The row is stamped only when the send actually went.** A row saying
+ * delivered for a message the carrier refused is `persisted: true` on a failed
+ * write, and here it would also hide the commonest refusal, which is an asker
+ * who has since texted STOP.
+ *
+ * ⚠ **`transactional`, not `outreach`, and that is deliberate rather than
+ * convenient.** Quiet hours exist so a phone does not buzz at midnight with
+ * something nobody asked for; this is the answer to a question the asker paid
+ * for and is waiting on, which is what the exemption is for (12.1: "direct
+ * replies in a live conversation are exempt"). It also means the asker's own
+ * monthly allowance is not spent on it — that ceiling is about how often Pando
+ * *asks* them things, and this is them being answered.
+ */
+export async function deliverBlastAnswers(blastId: string): Promise<DeliverResult> {
+  const loaded = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select b.answers_sent_at, p.phone, p.id::text as asker_id
+        from blasts b
+        left join people p on p.id = b.asker_id
+       where b.id = ${blastId}::uuid
+    `)) as unknown as Array<Record<string, unknown>>;
+    if (rows.length === 0) return null;
+    const replies = (await db.execute(sql`
+      select br.response_text, br.quality
+        from blast_recipients br
+       where br.blast_id = ${blastId}::uuid
+         and br.review_status = 'approved'
+         and br.response_text is not null
+       order by br.responded_at asc
+    `)) as unknown as Array<Record<string, unknown>>;
+    return { blast: rows[0], replies };
+  });
+
+  /* An unreachable database is not "no such blast": refusing to send is the
+     safe direction here, and the admin can press it again. */
+  if (!loaded.persisted || !loaded.data) return { ok: false, reason: "not_found" };
+  const { blast, replies } = loaded.data;
+
+  if (blast.answers_sent_at) return { ok: false, reason: "already_sent" };
+  const phone = blast.phone ? String(blast.phone) : null;
+  const askerId = blast.asker_id ? String(blast.asker_id) : null;
+  if (!phone || !askerId) return { ok: false, reason: "no_phone" };
+
+  const composed = composeBlastAnswer({
+    /* One budget for everything Pando sends. Passed rather than imported by the
+       composer — see its own note on why that keeps it node-testable. */
+    budget: SMS_BUDGET,
+    replies: replies.map((r) => ({
+      text: String(r.response_text ?? ""),
+      quality:
+        r.quality === null || r.quality === undefined ? null : Number(r.quality),
+    })),
+  });
+  if (!composed) return { ok: false, reason: "nothing_approved" };
+
+  const result = await sendSms({
+    to: phone,
+    body: composed.text,
+    category: "transactional",
+    personId: askerId,
+    template: "blast_answers",
+    templateVersion: SMS_TEMPLATE_VERSION,
+  });
+  if (!result.sent) return { ok: false, reason: "not_sent" };
+
+  await withDb(async (db: Db) => {
+    await db.execute(sql`
+      update blasts set answers_sent_at = now() where id = ${blastId}::uuid
+    `);
+    return true;
+  });
+
+  /* Counts only (invariant 7): never the question, never a reply. `dropped`
+     is the one worth watching — approved answers a parent paid for and did not
+     receive, which is a budget decision somebody may want to revisit. */
+  console.info("[blast] answers delivered", {
+    used: composed.used,
+    dropped: composed.dropped,
+  });
+  return { ok: true, used: composed.used, dropped: composed.dropped };
 }
 
 async function phoneFor(personId: string): Promise<string | null> {
