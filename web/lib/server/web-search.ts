@@ -48,8 +48,9 @@ import { readFindings, type PublicFinding } from "@/lib/public-info";
  * ⚠ **It sends the parent's question to a search engine.** Invariant 7 is about
  * logs and this is not one, but it is a third party seeing what a parent asked —
  * a wider disclosure than the classification call, which goes to the same model
- * vendor and no further. Worth the client knowing before it is switched on: it
- * is off unless `WEB_SEARCH_ENABLED=1`, so shipping this does not turn it on.
+ * vendor and no further. It is **on by default** wherever there is an API key —
+ * see `isWebSearchConfigured` for why that direction changed on the day it
+ * shipped — and `WEB_SEARCH_ENABLED=0` is how it is switched off.
  */
 
 const MODEL = "claude-haiku-4-5";
@@ -85,10 +86,35 @@ export interface PublicSearchResult {
 
 const NOTHING: PublicSearchResult = { findings: [], configured: false };
 
+/**
+ * On wherever there is a key, off only when somebody says so.
+ *
+ * ⚠ **This reverses the switch's direction, on the same day it was written, and
+ * the reason is worth keeping.** It shipped as `=== "1"` — opt-in — because the
+ * search sends the parent's question to a third party, and a disclosure like
+ * that is the client's to make rather than mine to default. That reasoning still
+ * holds for the *disclosure*; what it got wrong is who was being protected.
+ *
+ * The variable was set **nowhere**: not in `.env.local`, not on the VPS, not in
+ * the deploy workflow. So the feature the client asked for was built, tested,
+ * documented, deployed — and inert in every environment they could look at. They
+ * asked twice why they could not see it. A switch that has to be found before a
+ * feature exists is the "written and never called" fault dressed as caution.
+ *
+ * So the asymmetry follows `SEED_REQUIRE_VERIFICATION`'s, which is the same shape
+ * for the same reason: **on unless the value is literally `"0"`**, so deleting
+ * the line leaves the working setting and turning it off is a deliberate act. It
+ * still needs `ANTHROPIC_API_KEY`, so an unconfigured deployment silently gets no
+ * public information rather than an error — the ordinary honesty rule.
+ *
+ * The disclosure has not gone away and is not mine to close: a parent's question
+ * reaches a search engine. It is written into `.env.example` next to the switch,
+ * and it is on the list for the client.
+ */
 export function isWebSearchConfigured(): boolean {
   const key = process.env.ANTHROPIC_API_KEY;
   return (
-    process.env.WEB_SEARCH_ENABLED === "1" &&
+    process.env.WEB_SEARCH_ENABLED !== "0" &&
     typeof key === "string" &&
     key.trim().length > 0
   );
@@ -107,6 +133,10 @@ const SYSTEM = [
   "- `area` is the town or neighbourhood, or null if the page did not say.",
   "- If the search finds nothing solid, return an empty list. An empty list is a",
   "  correct answer; a plausible guess is not.",
+  "",
+  "Your final message must be the JSON object and nothing else — no summary,",
+  "no citation sentence, no preamble. If you searched and found nothing solid,",
+  "the object with an empty list is the correct final message.",
   "",
   "Return JSON only, with no prose around it:",
   '{"findings":[{"name":"...","what":"...","area":"..."|null}]}',
@@ -174,7 +204,28 @@ export async function searchPublicInformation(input: {
       .join("")
       .trim();
 
-    return { findings: readFindings(text, (name) => looksLikePerson(name)), configured: true };
+    const findings = readFindings(text, (name) => looksLikePerson(name));
+
+    /**
+     * ⚠ **A miss and a refusal look identical from the outside**, and both come
+     * back as no public line. Measured: the same Glendora question returned a
+     * finding on one run and nothing on the next, so the two have to be told
+     * apart in the log or the next person debugging it has nothing to go on.
+     *
+     * Counts and a boolean only (invariant 7): never the question, never the
+     * reply. `parsed: false` on a long reply means the model wrote prose instead
+     * of the object it was asked for, which is a prompt problem; `parsed: true`
+     * with nothing found means it searched and had nothing, which is an honest
+     * answer and needs no fixing.
+     */
+    if (findings.length === 0) {
+      console.info("[web-search] nothing to add", {
+        parsed: text.includes("findings"),
+        reply_length: text.length,
+      });
+    }
+
+    return { findings, configured: true };
   } catch (err) {
     /**
      * Status and the API's own error *type*, and nothing else.
