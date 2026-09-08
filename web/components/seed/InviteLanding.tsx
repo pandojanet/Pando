@@ -19,7 +19,11 @@ import { Field } from "@/components/ui/Field";
 import { Consent } from "@/components/ui/Consent";
 import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { identifyArrival, track } from "@/lib/analytics";
-import { verifyStatus, type VerifyStatus } from "@/lib/api-client";
+import {
+  isNumberRegistered,
+  verifyStatus,
+  type VerifyStatus,
+} from "@/lib/api-client";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -66,6 +70,15 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * box that can never be satisfied is not.
    */
   const [gate, setGate] = useState<VerifyStatus | null>(null);
+  /**
+   * The number check on the way through, and its answer.
+   *
+   * `registered` is the refusal, and it is cleared the moment the number is
+   * edited — a parent who mistyped a digit into somebody else's number must not
+   * be left staring at a wall that no longer applies to what is in the field.
+   */
+  const [checking, setChecking] = useState(false);
+  const [registered, setRegistered] = useState(false);
 
   const identityComplete =
     firstName.trim().length > 0 &&
@@ -140,7 +153,53 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * cannot receive a code finds out in the first ten seconds rather than after
    * fifteen screens of work.
    */
-  function begin(mode: "new" | "resume") {
+  async function begin(mode: "new" | "resume") {
+    const e164 = anonymous ? null : toE164(phone);
+
+    /**
+     * Is this number already in Pando? Asked **here**, on the client's
+     * instruction of 8 Sep, and it is the one place in this app that answers a
+     * question about somebody who has proved nothing.
+     *
+     * Her report: entering a registered number threw the parent into the
+     * questionnaire and *"інформація затирається"*. Both halves are true. The
+     * write is an upsert on the number (invariant 10) and every derived set is
+     * **replaced rather than merged**, so filling the form again from a second
+     * device overwrote the richer profile — and the only warning came after the
+     * code, i.e. after eighteen screens.
+     *
+     * ⚠ **This is a reversal of the 8 Sep decision that put the check behind
+     * the code, and the reason that decision existed has not gone away** — it is
+     * an enumeration oracle, and who is in the network is what this product does
+     * not publish. The cost was put to her in those words and she chose the
+     * overwrite as the bigger harm. `app/api/seed/registered/route.ts` carries
+     * the four rules that narrow it; read those before touching this.
+     *
+     * **It refuses rather than warns**, which is her wording — *"не пропускає"*.
+     * The way forward is `/signin`, which since 8 Sep restores the profile
+     * *including the answers*, so updating a profile is still possible and is
+     * now the honest route to it: prove the number, then edit what is there,
+     * rather than retyping it and hoping the upsert keeps the rest.
+     *
+     * ⚠ **The anonymous path is never checked**, because it has no number to
+     * check and no `people` row to overwrite.
+     *
+     * And a failure is not a wall: `isNumberRegistered` answers `false` on any
+     * error, so an unreachable database lets the parent through to the flow that
+     * has always caught this at the end.
+     */
+    if (e164) {
+      setChecking(true);
+      const taken = await isNumberRegistered(e164);
+      setChecking(false);
+      if (taken) {
+        setRegistered(true);
+        /* Counts and a boolean, never the number (invariant 7). */
+        track("seed_number_already_registered", { source });
+        return;
+      }
+    }
+
     const existing = loadSession();
 
     const base =
@@ -156,7 +215,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             source,
           });
 
-    const e164 = anonymous ? null : toE164(phone);
     const first = anonymous ? null : firstName.trim() || null;
     const last = anonymous ? null : lastName.trim() || null;
 
@@ -360,7 +418,11 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 label="Mobile number"
                 hint={SMS_CONSENT_REASSURANCE}
                 value={phone}
-                onChange={setPhone}
+                onChange={(next) => {
+                  setPhone(next);
+                  /* The refusal belongs to the number that produced it. */
+                  setRegistered(false);
+                }}
               />
             </div>
 
@@ -454,6 +516,34 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           </Panel>
         )}
 
+        {registered && (
+          /**
+           * Gold, not red: this is not an error and they have done nothing
+           * wrong — `warning` is *pending or needs care* in this design system,
+           * and `alert` is reserved for what is owed a person today (and never
+           * appears in the parent flow at all).
+           *
+           * It says **what would have happened**, because "this number is
+           * already registered" on its own reads as a refusal to let them in
+           * rather than as a protection of their own answers — and the whole
+           * reason the client asked for this screen is the overwrite.
+           *
+           * ⚠ New user-facing copy, on the list for the client.
+           */
+          <Panel className="mt-6" tone="warning">
+            <p className="text-[14.5px] leading-relaxed">
+              This number already has a Pando profile. Filling the questions in
+              again would replace what is there, so sign in instead — you can
+              change any answer once you&apos;re in.
+            </p>
+            <div className="mt-3">
+              <TextAction href="/signin">
+                Sign in with this number
+              </TextAction>
+            </div>
+          </Panel>
+        )}
+
         {(canResume || alreadySaved) && (
           <Panel className="mt-6" tone="positive">
             <p className="text-[14.5px] leading-relaxed text-green-deep">
@@ -479,8 +569,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
         ) : (
           <Button
             full
-            disabled={!canBegin}
-            onClick={() => begin(canResume ? "resume" : "new")}
+            /* Disabled *while* checking rather than only afterwards: the check
+               is a round trip, and a second tap would run it twice and race
+               its own `setChecking`. `registered` keeps it disabled after, so
+               the refusal cannot be tapped past — editing the number clears
+               both. */
+            disabled={!canBegin || checking || registered}
+            onClick={() => void begin(canResume ? "resume" : "new")}
           >
             {/**
              * 1 Sep, items 1 and 16: the primary action is *"Join the founding
@@ -489,12 +584,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
              * routes must preserve saved answers and continue from the same
              * point."*
              */}
-            {canResume
-              ? "Continue where you left off"
-              : anonymous
-                ? "Start — about two minutes"
-                : "Start — about two minutes"}
-            <ArrowRight />
+            {checking
+              ? "Checking…"
+              : canResume
+                ? "Continue where you left off"
+                : anonymous
+                  ? "Start — about two minutes"
+                  : "Start — about two minutes"}
+            {!checking && <ArrowRight />}
           </Button>
         )}
         {/**

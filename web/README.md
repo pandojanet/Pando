@@ -48,6 +48,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. Since 3 Sep the `children` rows are **derived here** from `answers.child_ages` and the optional `answers.child_months` (age id → 1–12) rather than read from the body — a month outside 1–12, or one against a child nobody tapped, is dropped instead of aborting the write on a CHECK. |
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
+| `POST /api/seed/registered` | Does this number already have a profile? A boolean and nothing else. ⚠ The one route that answers about somebody who has proved nothing — read its header and the 8 Sep Decisions row before touching it. |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
 | `/caregiver`             | 2C — the caregiver's own flow (G1–G10). Writes a **claim**, never a listing. |

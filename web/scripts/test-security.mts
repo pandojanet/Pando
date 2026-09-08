@@ -173,7 +173,17 @@ console.log("\n=== 15.4: the limits themselves are sane ===");
   /* Reads are cheap and constant; writes cost rows, money or messages. */
   ok(
     "every write limit is tighter than the read limit",
-    (["verify_start", "verify_check", "seed_write", "caregiver_claim", "invite_check"] as const)
+    /* `phone_lookup` is a read and belongs here anyway: what it spends is not a
+       row or a message but a fact about somebody who has proved nothing, so it
+       has to stay far below the ceiling for browsing a tap list. */
+    ([
+      "verify_start",
+      "verify_check",
+      "seed_write",
+      "caregiver_claim",
+      "invite_check",
+      "phone_lookup",
+    ] as const)
       .every((n) => perMinute(n) < perMinute("market_read")),
     rates,
   );

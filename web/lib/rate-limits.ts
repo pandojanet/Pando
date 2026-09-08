@@ -103,7 +103,8 @@ export type RateLimitName =
   | "seed_write"
   | "market_read"
   | "caregiver_claim"
-  | "invite_check";
+  | "invite_check"
+  | "phone_lookup";
 
 export const LIMITS: Record<RateLimitName, RateLimit> = {
   /**
@@ -195,6 +196,33 @@ export const LIMITS: Record<RateLimitName, RateLimit> = {
     max: 60,
     windowSeconds: 600,
     message: "Too many tries from here. Check the message the code came in, then try again.",
+  },
+
+  /**
+   * "Is this number already registered", asked on `/join` before the code.
+   *
+   * ⚠ **This is the one endpoint in Pando that answers a question about
+   * somebody who has not proved anything**, and the client took that decision
+   * knowingly on 8 Sep — see the Decisions row. Everything else here throttles
+   * cost; this throttles *disclosure*, and the two want different reasoning.
+   *
+   * The floor is the same as everywhere else: one address is often ten parents
+   * at a meetup, and a limit that refuses a roomful is a limit that breaks
+   * Pando's own distribution model. So it is sized like `verify_start` — three
+   * a minute, thirty in ten — which a room of parents tapping Start will never
+   * reach and a script wanting thousands a minute will.
+   *
+   * ⚠ **Say what this does not do.** It makes enumeration slow, not impossible:
+   * at this rate one address can ask about ~1,400 numbers a day, and a hundred
+   * addresses can do the same list in an afternoon. Nothing keyed to the caller
+   * can close that — the only thing that closes it is refusing to answer before
+   * the caller has proved they hold the number, which is what the code at the
+   * end of the profile does and what this deliberately steps in front of.
+   */
+  phone_lookup: {
+    max: 30,
+    windowSeconds: 600,
+    message: "Too many checks from here just now. Try again in a few minutes.",
   },
 };
 

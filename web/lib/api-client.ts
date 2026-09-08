@@ -130,6 +130,32 @@ export async function checkVerification(code: string): Promise<VerifyCheckResult
  * rule applied to a read), and `found: false` is a number with nothing behind
  * it, which is not an error at all.
  */
+/**
+ * Whether this number already has a profile — asked on `/join`, before the code.
+ *
+ * A boolean and nothing else, by design; see the route for why, and for what the
+ * client accepted in exchange. It **never throws and never blocks**: a failure
+ * of any kind answers `false`, because the alternative is refusing entry to a
+ * parent because a fetch did not come back, and the check at the end of the
+ * profile still catches the case.
+ */
+export async function isNumberRegistered(phone: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/seed/registered", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone }),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json().catch(() => null)) as {
+      registered?: boolean;
+    } | null;
+    return body?.registered === true;
+  } catch {
+    return false;
+  }
+}
+
 export interface MeResult {
   ok: boolean;
   found: boolean;

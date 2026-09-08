@@ -16,6 +16,11 @@ export type SeedEvent =
   | "seed_invite_invalid"
   | "seed_phone_captured"
   | "seed_phone_skipped"
+  /* Turned away on `/join` because the number already has a profile (8 Sep).
+     Worth measuring rather than assuming: it is the client's own case, and how
+     often it fires is what says whether the disclosure this check costs is
+     buying anything. Props are counts and enums only — never the number. */
+  | "seed_number_already_registered"
   | "seed_profile_started"
   | "seed_profile_resumed"
   | "seed_question_answered"
