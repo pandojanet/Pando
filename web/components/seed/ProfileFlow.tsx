@@ -94,6 +94,15 @@ export function ProfileFlow() {
   );
   /** Configuration, not a person: whether a code can be asked for at all. */
   const [gate, setGate] = useState<VerifyStatus | null>(null);
+  /**
+   * Set once a confirmed number turns out to already have a profile — see
+   * `afterVerified`. Null means "not asked yet, or nothing there", and the
+   * question is never asked before the code is confirmed.
+   */
+  const [existing, setExisting] = useState<{
+    first_name: string | null;
+    referral_code: string | null;
+  } | null>(null);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -587,6 +596,61 @@ export function ProfileFlow() {
     await persist(session);
   }
 
+  /**
+   * Between confirming the number and writing the profile: does one already
+   * exist on it?
+   *
+   * ## Why this is here and not on `/join`
+   *
+   * The client's report is that a number already in the database can register
+   * again and nothing says so — and it is worse than a missing message: the
+   * write is `onConflictDoUpdate` on `people.phone` (invariant 10), and every
+   * derived set is **replaced rather than merged**, deliberately, so a parent
+   * filling the form again from a second device silently overwrites the richer
+   * profile they gave the first time.
+   *
+   * ⚠ **The obvious place to say it is the number field, and that place is
+   * wrong.** `/join` takes a phone with nothing proving it belongs to whoever
+   * typed it, so an answer there is an oracle: anybody could work through a
+   * list of numbers and learn which of their neighbours is in the network. The
+   * network *is* the asset, and who is in it is exactly what Pando does not
+   * publish. So the question is only answered once the code has been confirmed,
+   * which is the same proof `submitGate` requires before anything is stored —
+   * and `GET /api/seed/me` reads the phone from that record rather than from
+   * the request, so this cannot be asked about somebody else's number.
+   *
+   * It **asks rather than refuses**. Updating your own profile is legitimate
+   * and is what the upsert is for; what was missing is the parent knowing that
+   * is what will happen.
+   *
+   * A failed check falls through to saving. The parent has answered eighteen
+   * screens and holds a confirmed code; blocking that on a read that did not
+   * come back would turn a warning into an outage.
+   */
+  async function afterVerified(current: SeedSession) {
+    try {
+      const res = await fetch("/api/seed/me");
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        found?: boolean;
+        profile_saved?: boolean;
+        first_name?: string | null;
+        referral_code?: string | null;
+      } | null;
+      if (body?.ok && body.found && body.profile_saved) {
+        setExisting({
+          first_name: body.first_name ?? null,
+          referral_code: body.referral_code ?? null,
+        });
+        track("seed_profile_exists_shown");
+        return;
+      }
+    } catch {
+      /* See above: a warning that cannot be fetched must not become a wall. */
+    }
+    await persist(current);
+  }
+
   async function persist(current: SeedSession) {
     setSaving(true);
     setSaveError(null);
@@ -674,16 +738,46 @@ export function ProfileFlow() {
             </p>
           </div>
 
-          <VerifyPhone
-            phone={session.phone}
-            onVerified={() => {
-              const verified: SeedSession = { ...session, phone_verified: true };
-              saveSession(verified);
-              setSession(verified);
-              track("seed_verified", { at: "profile_end" });
-              void persist(verified);
-            }}
-          />
+          {existing ? (
+            <ExistingProfile
+              firstName={existing.first_name}
+              busy={saving}
+              onReplace={() => {
+                setExisting(null);
+                void persist({ ...session, phone_verified: true });
+              }}
+              onKeep={() => {
+                /* Nothing is written. The session is marked finished so `/done`
+                   treats them as the returning parent they are, and carries the
+                   link `/api/seed/me` just handed back. */
+                update((s) => ({
+                  ...s,
+                  /* The stored name, not the one they just typed: they chose to
+                     keep the profile, so "Thank you, Alice Probe" on the next
+                     screen would greet them as the version they discarded. */
+                  name: existing.first_name ?? s.name,
+                  first_name: existing.first_name ?? s.first_name,
+                  last_name: existing.first_name ? null : s.last_name,
+                  profile_saved_at: s.profile_saved_at ?? new Date().toISOString(),
+                  referral_code: existing.referral_code ?? s.referral_code,
+                  referral_shown_at: s.referral_shown_at ?? new Date().toISOString(),
+                }));
+                track("seed_profile_exists_kept");
+                router.push("/done");
+              }}
+            />
+          ) : (
+            <VerifyPhone
+              phone={session.phone}
+              onVerified={() => {
+                const verified: SeedSession = { ...session, phone_verified: true };
+                saveSession(verified);
+                setSession(verified);
+                track("seed_verified", { at: "profile_end" });
+                void afterVerified(verified);
+              }}
+            />
+          )}
 
           {saving && (
             <p role="status" className="mt-4 text-[13.5px] text-muted">
@@ -1493,5 +1587,54 @@ function BackButton({ onClick }: { onClick: () => void }) {
         />
       </svg>
     </button>
+  );
+}
+
+/**
+ * "This number already has a profile" — the choice, not a refusal.
+ *
+ * The parent has just proved the number is theirs, so re-filling the form is a
+ * legitimate thing to be doing and the upsert is what invariant 10 asks for.
+ * What was missing is that the write **replaces** every derived set, on purpose
+ * (a parent who removes a school must stop matching on it) — so a second pass
+ * with fewer answers quietly loses the richer profile, and nothing said so.
+ *
+ * ⚠ Both options are safe and neither is destructive by accident: keeping
+ * writes nothing at all, and replacing is the behaviour that already existed,
+ * now chosen rather than stumbled into. `Replace` is the primary because it is
+ * what somebody who has just answered eighteen screens almost certainly wants.
+ *
+ * ⚠ The wording is new user-facing copy and is on the list for the client.
+ */
+function ExistingProfile({
+  firstName,
+  busy,
+  onReplace,
+  onKeep,
+}: {
+  firstName: string | null;
+  busy: boolean;
+  onReplace: () => void;
+  onKeep: () => void;
+}) {
+  return (
+    <Panel tone="warning" className="mt-7">
+      <h2 className="font-display text-card-title font-semibold text-gold-ink">
+        {firstName
+          ? `You already have a profile, ${firstName}.`
+          : "You already have a profile."}
+      </h2>
+      <p className="mt-2 text-control leading-relaxed text-ink-soft">
+        This number is already in Pando. Saving now replaces what is on it with
+        the answers you have just given — including anything you skipped this
+        time.
+      </p>
+      <Button className="mt-4" full disabled={busy} onClick={onReplace}>
+        {busy ? "Saving…" : "Replace it with these answers"}
+      </Button>
+      <TextAction full className="mt-2" tone="quiet" disabled={busy} onClick={onKeep}>
+        Keep what I had
+      </TextAction>
+    </Panel>
   );
 }

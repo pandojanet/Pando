@@ -457,5 +457,150 @@ ok(
   "an unescaped control character makes the whole reply unparseable, and the honest reading of that is nothing rather than a guess at what was meant",
 );
 
+/**
+ * Naming one place twice under two different trust labels.
+ *
+ * The worst thing this half of the answer can do, and the reason the exclusion
+ * exists at all: the record from a parent says "Validated by multiple parents"
+ * and the web line says "Public/general information" about the same class, so
+ * the answer contradicts itself on the one axis the product sells.
+ */
+const withExclude = (json: string, exclude: string[]) =>
+  pi.readFindings(json, (n) => np.looksLikePerson(n), exclude);
+
+const three = JSON.stringify({
+  findings: [
+    { name: "The Little Gym of Pasadena", what: "toddler gym classes", area: "Pasadena" },
+    { name: "Rose Bowl Aquatics", what: "swim lessons", area: "Pasadena" },
+    { name: "Kidspace Museum", what: "indoor play", area: "Pasadena" },
+  ],
+});
+
+ok("with nothing to exclude, all three come back", withExclude(three, []).length === 3);
+ok(
+  "a record the parents already backed is dropped",
+  withExclude(three, ["Rose Bowl Aquatics"]).every((f) => f.name !== "Rose Bowl Aquatics"),
+);
+ok(
+  "even when the page writes it longer",
+  withExclude(three, ["Little Gym"]).every((f) => !/Little Gym/.test(f.name)),
+  "the page's 'The Little Gym of Pasadena' is the same place, and an exact key would miss it",
+);
+ok(
+  "and when the record writes it longer",
+  withExclude(three, ["Kidspace Museum, Pasadena"]).every((f) => f.name !== "Kidspace Museum"),
+);
+ok(
+  "a different business sharing a first word is kept",
+  withExclude(three, ["Little Gymnastics Academy"]).some((f) => /Little Gym of/.test(f.name)),
+  "token prefix, never string prefix: 'little gymnastics' starts with 'little gym' as a string, and they are two businesses",
+);
+ok(
+  "a one-word exclusion has to match exactly",
+  pi.sameName("Waldorf", "Waldorf Early Childhood") === false,
+  "or one common word would swallow every place beginning with it",
+);
+ok(
+  "the possessive does not leave a stray letter",
+  pi.normaliseName("Kidspace Children's Museum") === pi.normaliseName("Kidspace Museum"),
+);
+ok(
+  "an accent is not a different place",
+  pi.normaliseName("Café Con Leche") === pi.normaliseName("Cafe Con Leche"),
+  "NFKD leaves a combining mark, and the alphanumeric pass would otherwise turn it into a space",
+);
+ok(
+  "a name made only of shared words still dedupes against itself",
+  pi.sameName("The Kids Club", "the kids club") && !pi.sameName("The Kids Club", "The Play Club"),
+  "it normalises to nothing, so it falls back to the plain name rather than colliding with every other",
+);
+ok(
+  "the reply cannot repeat itself either",
+  pi.readFindings(
+    '{"findings":[{"name":"Rose Bowl Aquatics","what":"swim"},{"name":"Rose Bowl Aquatics - Pasadena","what":"swim lessons"}]}',
+    (n) => np.looksLikePerson(n),
+  ).length === 1,
+);
+
+/**
+ * The town, said once — and what it is, said at all.
+ */
+const oneFinding = (row: Record<string, unknown>) =>
+  pi.readFindings(JSON.stringify({ findings: [row] }), (n) => np.looksLikePerson(n))[0];
+
+ok(
+  "a name that already carries the town does not repeat it",
+  oneFinding({ name: "Encore Music South Pasadena", what: "music classes", area: "South Pasadena" })
+    ?.area === null,
+  "the composer renders `Name - what in Area`, so this read 'Encore Music South Pasadena in South Pasadena'",
+);
+ok(
+  "a trailing branch suffix that is the town comes off the name",
+  oneFinding({ name: "Wonderland 4 Kids - Pasadena", what: "indoor playspace", area: "Pasadena" })
+    ?.name === "Wonderland 4 Kids",
+);
+ok(
+  "but a trailing half that says what it is stays",
+  oneFinding({ name: "Rose Bowl Aquatics - Parent & Me", what: "swim lessons", area: "Pasadena" })
+    ?.name === "Rose Bowl Aquatics - Parent & Me",
+);
+ok(
+  "a neighbouring town is not the same town",
+  oneFinding({ name: "Pasadena Humane", what: "family events", area: "South Pasadena" })?.area ===
+    "South Pasadena",
+  "matched token-wise, or 'Pasadena' would count as carrying 'South Pasadena'",
+);
+ok(
+  "a disagreement is left visible rather than guessed away",
+  oneFinding({ name: "Swimphi Altadena", what: "swim lessons", area: "Pasadena" })?.area === "Pasadena",
+  "this module has no list of the market's areas, so a town inside a name cannot be told from a brand word",
+);
+
+/**
+ * The three words saying what it is, which the renderer silently dropped.
+ *
+ * `KIND_WORD` translates a `share_kind` and a public finding carries its own
+ * words, so a miss used to render the area alone: eight of eight live public
+ * lines read "Tinkergarten in South Pasadena" with the description thrown away
+ * one function after it was validated and capped.
+ */
+{
+  const composed = a.composeAnswer({
+    has_question: true,
+    candidates: [
+      {
+        name: "Tinkergarten",
+        kind: "outdoor play classes",
+        area: "south-pasadena",
+        trust: { labels: [t.TRUST_LABEL.PUBLIC], freshness: "fresh", public_only: true },
+        firsthand_count: 0,
+      },
+    ],
+  });
+  ok(
+    "general information says what the thing is",
+    composed.text.includes("outdoor play classes"),
+    composed.text,
+  );
+  ok(
+    "and a record's own kind is still translated, not printed raw",
+    a
+      .composeAnswer({
+        has_question: true,
+        candidates: [
+          {
+            name: "Little Maestros",
+            kind: "activity",
+            area: "south-pasadena",
+            trust: { labels: [t.TRUST_LABEL.SHARED], freshness: "fresh", public_only: false },
+            firsthand_count: 1,
+          },
+        ],
+      })
+      .text.includes("- class in"),
+    "a parent asks about a class, never an 'activity'",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

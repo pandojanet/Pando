@@ -879,7 +879,7 @@ async function answerQuestion(input: {
   const wantsCare = aboutCare || (focus !== null && CARE_TOPICS.includes(focus));
 
   /**
-   * The graph and the open web, together and in parallel.
+   * The graph first, then the open web with what the graph found.
    *
    * The client's instruction: an answer carries what is generally known **and**
    * what parents here have backed. So this is not a fallback for an empty graph
@@ -888,31 +888,48 @@ async function answerQuestion(input: {
    * thing to go when there is not room. That ordering is the product's whole
    * claim: AI knows things, Pando knows someone.
    *
-   * In parallel because they are independent and the web half is seconds rather
-   * than milliseconds. It cannot fail the answer: `searchPublicInformation`
-   * returns rather than throws, and is inert unless `WEB_SEARCH_ENABLED=1`.
+   * ⚠ **These used to run in parallel, and the comment saying they are
+   * independent was what made the sequencing look free.** They are not: the
+   * search has to be told which places the parents' half already names, or one
+   * place can reach a parent **twice in one answer under two different trust
+   * labels** — "Validated by multiple parents" on one line and
+   * "Public/general information" on the next, about the same class. That is the
+   * answer contradicting itself on the one axis this product sells.
+   *
+   * The cost is one database round trip (~200ms warm) in front of a search that
+   * measures 4–9 seconds, so serialising is ~2% of the path. `readFindings`
+   * enforces the exclusion afterwards regardless — the prompt only saves a
+   * wasted slot.
+   *
+   * It still cannot fail the answer: `searchPublicInformation` returns rather
+   * than throws, is bounded by its own timeout, and is inert with no API key.
    */
-  const [retrieved, publicInfo] = await Promise.all([
-    retrieveFor({
-      area: profile?.neighborhood ?? null,
-      bands: asked.length > 0 ? asked : known,
-      focus,
-      shares: !wantsCare,
-      caregivers: wantsCare,
-    }),
-    /* Never for a question about care. A page saying somebody is a wonderful
-       nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
-       name is the one thing that must not arrive from the open web. */
-    wantsCare
-      ? Promise.resolve<PublicSearchResult>({ findings: [], configured: false })
-      : searchPublicInformation({
-          question: body,
-          /* One market in the pilot, and  defaults a cold
-             number to the same one. */
-          market: "pasadena",
-          area: profile?.neighborhood ?? null,
-        }),
-  ]);
+  const retrieved = await retrieveFor({
+    area: profile?.neighborhood ?? null,
+    bands: asked.length > 0 ? asked : known,
+    focus,
+    shares: !wantsCare,
+    caregivers: wantsCare,
+  });
+
+  const publicInfo: PublicSearchResult = wantsCare
+    ? /* Never for a question about care. A page saying somebody is a wonderful
+         nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
+         name is the one thing that must not arrive from the open web. */
+      { findings: [], configured: false }
+    : await searchPublicInformation({
+        question: body,
+        /* One market in the pilot, and the profile defaults a cold number to
+           the same one. */
+        market: "pasadena",
+        area: profile?.neighborhood ?? null,
+        /* The same bands and topic the retrieval above was narrowed by, so the
+           two halves of one answer are looking for the same thing. Before this
+           the web half got the raw question and nothing else. */
+        bands: asked.length > 0 ? asked : known,
+        focus,
+        exclude: retrieved.shares.map((share) => share.name),
+      });
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
      when the truth is that Pando could not look is the `persisted: false` rule

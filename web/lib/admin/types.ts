@@ -86,6 +86,20 @@ export interface MatchingResult {
    * coefficients are configuration rather than a property of one run.
    */
   weights: Array<{ affinity_type: string; weight: number }>;
+  /**
+   * What one matching life-relevance value is worth — the context step.
+   *
+   * ⚠ **Editable since 8 Sep, on the client's instruction**, which reverses the
+   * 2 Sep decision that it is "set in code" and shown only so the badges add
+   * up. That decision's reason was sound, and it is what made this a migration
+   * rather than a field: a control must not claim a state nothing maintains, so
+   * the number moved into `matching_settings` before the input appeared.
+   *
+   * Null when the row is missing — a deployment that has not run `0036`. The
+   * scorer then uses `RELEVANCE_STEP` and the page says so, rather than showing
+   * an editable value nothing reads.
+   */
+  relevance_step: number | null;
   /** Contributors to choose between, so the page needs no second request. */
   people: Array<{ person_id: string; name: string | null; neighborhood: string | null }>;
 }
@@ -803,6 +817,8 @@ export type AdminAction =
    * cannot be invented from a screen.
    */
   | { action: "matching.weight"; affinity_type: string; weight: number }
+  /** The context step (8 Sep). A fraction, so it is `matching_settings`. */
+  | { action: "matching.relevance_step"; value: number }
   /**
    * 7.1's entry, added 7 Sep — `createBlast` had been written since 27 Aug with
    * no caller at all, so a Network Ask could be managed and never begun.

@@ -1125,6 +1125,27 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "affinity_weight", resource_id: type };
     }
 
+    /**
+     * The context step — what one matching life-relevance value is worth.
+     *
+     * A conditional UPDATE and never an upsert, exactly like `matching.weight`
+     * above: `matching_settings_key_check` allows one key, so a row that is not
+     * there means the migration has not run, and inserting one here would put a
+     * number on a screen that the scorer's own query would then read — which is
+     * fine — while hiding the fact that the deployment is behind. Zero rows
+     * updated answers `not_found`, which the page can explain.
+     */
+    case "matching.relevance_step": {
+      const value = Number(b.value);
+      const [row] = (await tx.execute(
+        sql`update matching_settings set value = ${value}
+             where key = 'relevance_step'
+         returning key`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (!row) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "matching_setting", resource_id: "relevance_step" };
+    }
+
     /* ── 2.7 Flags and demand ────────────────────────────────────────────── */
 
     case "flag.resolve": {

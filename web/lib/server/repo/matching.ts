@@ -188,7 +188,9 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
         coalesce((select json_agg(json_build_object(
              'area_a', area_a, 'area_b', area_b))
            from neighborhood_adjacency where market_id = ${marketId}), '[]'::json)
-                                                                     as adjacency
+                                                                     as adjacency,
+        (select value from matching_settings where key = 'relevance_step')
+                                                                     as relevance_step
     `)) as unknown as Array<Record<string, unknown>>;
     return rows[0] ?? null;
   });
@@ -207,9 +209,22 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
   /* Weights come from the table on every call rather than from a cached copy —
      spec §18.1 over §8.1, so a config edit takes effect on the next question and
      never needs a backfill of `weight_at_capture`. */
+  /**
+   * The context step, from the table rather than from the constant.
+   *
+   * `numeric` arrives as a **string** from postgres.js, so it is parsed here
+   * and not trusted to coerce — `Number("")` is 0, which would silently turn
+   * every context point off. A missing row falls through to `RELEVANCE_STEP`
+   * inside the scorer, which is what keeps a deployment that has not run
+   * `0036` ranking exactly as it did before.
+   */
+  const step = Number(row.relevance_step);
   const config: MatchConfig = {
     weights,
     adjacency: (row.adjacency ?? []) as MatchConfig["adjacency"],
+    ...(Number.isFinite(step) && row.relevance_step !== null
+      ? { relevanceStep: step }
+      : {}),
   };
 
   return {

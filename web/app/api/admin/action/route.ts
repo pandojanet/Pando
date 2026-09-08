@@ -82,6 +82,7 @@ const ACTIONS = new Set([
   "flag.escalate",
   "demand.status",
   "matching.weight",
+  "matching.relevance_step",
   "founding.approve",
   "founding.request_invite",
   "contributor.note",
@@ -510,6 +511,38 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json(
         { error: "A weight is a whole number between 1 and 20" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /**
+   * The context step is a fraction, and that is the whole reason it is not a
+   * weight.
+   *
+   * `numeric(4,2)` is the column, so anything finer than two decimal places is
+   * **rounded by Postgres** rather than refused — 0.555 would be stored as 0.56
+   * and the page would come back showing a number nobody typed, which is the
+   * exact failure the weight check above was written after. So the step is a
+   * multiple of 0.05, checked in hundredths to keep binary floating point out of
+   * it (`0.15 * 100` is 15.000000000000002, and `% 5` on that is not 0).
+   *
+   * The ceiling is 5, matching the CHECK: it is what one shared *school* is
+   * worth, and a context step above that would make five life-relevance
+   * dimensions outrank every real connection in the graph — which is the
+   * balance §8.1 exists to set.
+   */
+  if (action === "matching.relevance_step") {
+    const value = Number(body?.value);
+    const hundredths = Math.round(value * 100);
+    if (
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 5 ||
+      hundredths % 5 !== 0
+    ) {
+      return NextResponse.json(
+        { error: "The context step is between 0 and 5, in steps of 0.05" },
         { status: 422 },
       );
     }

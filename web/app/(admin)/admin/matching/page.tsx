@@ -189,6 +189,7 @@ export default function MatchingPage() {
       <div className="mt-5">
         <WeightsCard
           weights={data?.weights ?? []}
+          relevanceStep={data?.relevance_step ?? null}
           configured={configured}
           onSaved={reload}
         />
@@ -374,10 +375,17 @@ export default function MatchingPage() {
  */
 function WeightsCard({
   weights,
+  relevanceStep,
   configured,
   onSaved,
 }: {
   weights: Array<{ affinity_type: string; weight: number }>;
+  /**
+   * Null on a deployment that has not run `drizzle/0036` — the scorer then uses
+   * `RELEVANCE_STEP` and the field below says so rather than offering a value
+   * nothing reads.
+   */
+  relevanceStep: number | null;
   /**
    * Without a database there are no weights *because there is no table* —
    * "nothing has been seeded yet" would be a guess presented as a fact, which
@@ -388,6 +396,13 @@ function WeightsCard({
 }) {
   /** Only the fields somebody has touched; everything else reads from `weights`. */
   const [draft, setDraft] = useState<Record<string, string>>({});
+  /**
+   * The context step's own draft, separate because it is a different kind of
+   * value: `null` means "not touched", where the weights use the absence of a
+   * key. Kept out of `draft` so a `Record<string, string>` does not have to
+   * carry one entry that is not an `affinity_type`.
+   */
+  const [stepDraft, setStepDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
@@ -408,6 +423,24 @@ function WeightsCard({
      button rather than travelling to the server to be refused. */
   const bad = changed.filter((w) => !inRange(shown(w)));
 
+  /**
+   * The context step, treated exactly like a weight and validated differently.
+   *
+   * ⚠ It is only editable when the row exists. A deployment behind on
+   * `drizzle/0036` has nothing to update, so `matching.relevance_step` would
+   * answer `not_found` — and offering a field that cannot save is the "control
+   * claiming a state nothing maintains" fault that kept this number read-only
+   * until now.
+   */
+  const stepEditable = relevanceStep !== null;
+  const shownStep = stepDraft ?? (relevanceStep === null ? "" : String(relevanceStep));
+  const stepChanged =
+    stepEditable && stepDraft !== null && shownStep !== String(relevanceStep);
+  const stepBad = stepChanged && !stepInRange(shownStep);
+
+  const pending = changed.length + (stepChanged ? 1 : 0);
+  const blocked = bad.length > 0 || stepBad;
+
   async function save() {
     setBusy(true);
     setFailed(null);
@@ -420,12 +453,24 @@ function WeightsCard({
           weight: Number(shown(w)),
         });
       }
+      /* Its own action and its own audit row, for the same reason each weight
+         gets one: "who changed the context step, and when" has to be answerable
+         on its own rather than folded into a row named after something else. */
+      if (stepChanged) {
+        await adminAction({
+          action: "matching.relevance_step",
+          value: Number(shownStep),
+        });
+      }
       setNote(
-        changed.length === 1
-          ? `Saved. ${affinityLabel(changed[0].affinity_type)} is now ${shown(changed[0])} — the next ranking uses it.`
-          : `Saved ${changed.length} weights. The next ranking uses them.`,
+        pending === 1
+          ? stepChanged
+            ? `Saved. Similar context is now worth ${shownStep} a dimension — the next ranking uses it.`
+            : `Saved. ${affinityLabel(changed[0].affinity_type)} is now ${shown(changed[0])} — the next ranking uses it.`
+          : `Saved ${pending} changes. The next ranking uses them.`,
       );
       setDraft({});
+      setStepDraft(null);
       onSaved();
     } catch (err) {
       setFailed(err instanceof Error ? err.message : "That didn't save");
@@ -453,125 +498,175 @@ function WeightsCard({
       ) : (
         <>
           {/**
-           * One row per kind of connection, in **one grid**, so the numbers form
-           * a column.
+           * Two columns, on the client's instruction (8 Sep).
            *
-           * The measurement that decided this: as a wrapping row of inline
-           * label-and-input pairs, the seven inputs sat at **seven different x
-           * positions** (378 · 445 · 464 · 553 · 635 · 700 · 769 at a 940px
-           * viewport) across three ragged rows. Seven numbers that exist to be
-           * compared with each other, and not one of them lined up with
-           * another — which is what the client saw as unstructured, and no
-           * amount of explanatory text would have fixed it.
+           * One column of seven rows capped at 36rem used a third of a 1440px
+           * card and ran 525px tall; the same rows in two columns are 3 and 4
+           * deep. The cap stays *per column* rather than on the pair, because
+           * what it protects is the label-to-number distance — unconstrained,
+           * "Same school" and the 5 that belongs to it sat ~500px apart.
            *
-           * `htmlFor` rather than a wrapping `<label>`: the three cells are
-           * direct children of the grid, and tying them together by id keeps the
-           * association independent of the layout instead of depending on
-           * `display: contents` behaving well on a form control.
+           * ⚠ Split **down then across**, not across then down. The list is
+           * alphabetical by label, and a reader scanning for "Same school"
+           * expects a phone book: reading order across two columns would put
+           * consecutive entries side by side and make the ordering look random,
+           * which is the exact complaint that produced `sortWeights`.
            */}
-          <div className={`${WEIGHT_GRID} px-4 py-3.5`}>
-            {sortWeights(weights).map((w) => {
-              const value = shown(w);
-              const ok = inRange(value);
-              return (
-                <Fragment key={w.affinity_type}>
-                  <label
-                    htmlFor={`weight-${w.affinity_type}`}
-                    className="text-[13.5px]"
-                  >
-                    {affinityLabel(w.affinity_type)}
-                  </label>
-                  <input
-                    id={`weight-${w.affinity_type}`}
-                    type="number"
-                    min={1}
-                    max={20}
-                    step={1}
-                    inputMode="numeric"
-                    disabled={busy}
-                    aria-invalid={!ok}
-                    aria-describedby="weight-scale"
-                    /* A **ring**, not a border colour. `controlClass` already
-                       sets `border-bark`, and two utilities for one property in
-                       the same layer are resolved by Tailwind's output order
-                       rather than by where they sit in the string — the trap
-                       `controlClass` itself is named after. A ring is a
-                       different property, so it cannot lose that argument. */
-                    className={`${controlClass} w-full text-right tabular-nums ${
-                      ok ? "" : "ring-1 ring-alert-line"
-                    }`}
-                    value={value}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, [w.affinity_type]: e.target.value }))
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && changed.length > 0 && bad.length === 0)
-                        void save();
-                    }}
-                  />
-                  {/**
-                   * The ranking, without reordering the fields.
-                   *
-                   * This is the part that lets somebody who has never seen the
-                   * platform read the card: "school is the strongest connection
-                   * there is, a neighbouring area is the weakest" is visible at
-                   * a glance, where seven numbers in a ragged row is arithmetic
-                   * homework. It is derived from the value in the field beside
-                   * it, so it moves as you type and cannot disagree with it —
-                   * and it is `aria-hidden`, because the number is already
-                   * there and a screen reader does not need it twice.
-                   */}
-                  <span
-                    aria-hidden="true"
-                    className="hidden h-1.5 rounded-full bg-bark/50 md:block"
-                  >
-                    <span
-                      className={`block h-full rounded-full ${ok ? "bg-green" : "bg-alert-line"}`}
-                      style={{
-                        width: `${Math.min(100, Math.max(4, (Number(value) / heaviest) * 100))}%`,
-                      }}
-                    />
-                  </span>
-                </Fragment>
-              );
-            })}
+          <div className="grid gap-x-10 px-4 py-3.5 md:grid-cols-2">
+            {splitColumns(sortWeights(weights)).map((column, i) => (
+              <div key={i} className={WEIGHT_GRID}>
+                {column.map((w) => {
+                  const value = shown(w);
+                  const ok = inRange(value);
+                  return (
+                    <Fragment key={w.affinity_type}>
+                      <label
+                        htmlFor={`weight-${w.affinity_type}`}
+                        className="text-[13.5px]"
+                      >
+                        {affinityLabel(w.affinity_type)}
+                      </label>
+                      <input
+                        id={`weight-${w.affinity_type}`}
+                        type="number"
+                        min={1}
+                        max={20}
+                        step={1}
+                        inputMode="numeric"
+                        disabled={busy}
+                        aria-invalid={!ok}
+                        aria-describedby="weight-scale"
+                        /* A **ring**, not a border colour. `controlClass` already
+                           sets `border-bark`, and two utilities for one property in
+                           the same layer are resolved by Tailwind's output order
+                           rather than by where they sit in the string — the trap
+                           `controlClass` itself is named after. A ring is a
+                           different property, so it cannot lose that argument. */
+                        className={`${controlClass} w-full text-right tabular-nums ${
+                          ok ? "" : "ring-1 ring-alert-line"
+                        }`}
+                        value={value}
+                        onChange={(e) =>
+                          setDraft((d) => ({ ...d, [w.affinity_type]: e.target.value }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && pending > 0 && !blocked) void save();
+                        }}
+                      />
+                      {/**
+                       * The ranking, without reordering the fields.
+                       *
+                       * This is the part that lets somebody who has never seen the
+                       * platform read the card: "school is the strongest connection
+                       * there is, a neighbouring area is the weakest" is visible at
+                       * a glance, where seven numbers in a ragged row is arithmetic
+                       * homework. It is derived from the value in the field beside
+                       * it, so it moves as you type and cannot disagree with it —
+                       * and it is `aria-hidden`, because the number is already
+                       * there and a screen reader does not need it twice.
+                       */}
+                      <span
+                        aria-hidden="true"
+                        className="hidden h-1.5 rounded-full bg-bark/50 md:block"
+                      >
+                        <span
+                          className={`block h-full rounded-full ${ok ? "bg-green" : "bg-alert-line"}`}
+                          style={{
+                            width: `${Math.min(100, Math.max(4, (Number(value) / heaviest) * 100))}%`,
+                          }}
+                        />
+                      </span>
+                    </Fragment>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           {/**
-           * The one number on this card that is not a knob, below a rule so it
-           * cannot read as a broken field.
+           * The context step — how much one matching life-relevance value is
+           * worth, below a rule because it is a different kind of number from
+           * the seven above it.
            *
-           * It was in the same wrapping row as the seven editable ones, with a
-           * greyed box and an "in code" tag — which is a control that looks
-           * disabled for no stated reason. `RELEVANCE_STEP` is a constant in
-           * `lib/matching.ts`: the whole of life relevance is deliberately
-           * worth less than one shared school, and that balance is a code
-           * decision rather than something an admin sets. It is shown because
-           * the badges on every row include context points, so a reader
-           * checking a score needs the number.
+           * ⚠ **Editable since 8 Sep, on the client's instruction**, and that
+           * reverses the 2 Sep decision recorded here — which read: "a constant
+           * in `lib/matching.ts` … a code decision rather than something an
+           * admin sets", with the warning that "a control must not claim a
+           * state nothing maintains". That warning is why this was a migration
+           * and not a one-line change: the number moved into
+           * `matching_settings` (`drizzle/0036`) and the scorer reads it there
+           * before the field appeared, so what is typed here is what ranks.
+           *
+           * It stays read-only when the row is missing — a deployment behind on
+           * that migration — because then `RELEVANCE_STEP` really is what the
+           * scorer uses, and an input that saves nothing is the fault the old
+           * decision was guarding against.
            */}
-          <div
-            className={`${WEIGHT_GRID} border-t border-bark/70 px-4 py-3 text-muted`}
-          >
-            <span className="text-[13.5px]">Any kind of similar context</span>
-            <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-right text-[14px] tabular-nums">
-              {RELEVANCE_STEP}
-            </span>
-            <span className="self-center text-[11.5px] uppercase tracking-[0.06em] max-md:col-span-2">
-              set in code
-            </span>
+          <div className="grid gap-x-10 border-t border-bark/70 px-4 py-3 md:grid-cols-2">
+            <div className={WEIGHT_GRID}>
+              <label
+                htmlFor="relevance-step"
+                className={`text-[13.5px] ${stepEditable ? "" : "text-muted"}`}
+              >
+                Any kind of similar context
+              </label>
+              {stepEditable ? (
+                <input
+                  id="relevance-step"
+                  type="number"
+                  min={0}
+                  max={5}
+                  /* 0.05, matching the route and `numeric(4,2)`: a finer value
+                     would be **rounded** by Postgres rather than refused, and the
+                     page would come back showing a number nobody typed. */
+                  step={0.05}
+                  inputMode="decimal"
+                  disabled={busy}
+                  aria-invalid={stepBad}
+                  aria-describedby="step-scale"
+                  className={`${controlClass} w-full text-right tabular-nums ${
+                    stepBad ? "ring-1 ring-alert-line" : ""
+                  }`}
+                  value={shownStep}
+                  onChange={(e) => setStepDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && pending > 0 && !blocked) void save();
+                  }}
+                />
+              ) : (
+                <span className="rounded-lg border border-bark bg-paper px-3 py-2 text-right text-[14px] tabular-nums text-muted">
+                  {RELEVANCE_STEP}
+                </span>
+              )}
+              <span
+                id="step-scale"
+                className={`self-center text-[11.5px] max-md:col-span-2 ${
+                  stepBad ? "text-alert" : "text-muted"
+                }`}
+              >
+                {stepEditable
+                  ? "Per dimension, 0 to 5, in steps of 0.05."
+                  : "Set in code — run the latest migration to change it here."}
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 border-t border-bark/70 px-4 py-2.5">
             <Button
               tone="primary"
-              disabled={busy || changed.length === 0 || bad.length > 0}
+              disabled={busy || pending === 0 || blocked}
               onClick={() => void save()}
             >
-              {busy ? "Saving…" : saveLabel(changed.length)}
+              {busy ? "Saving…" : saveLabel(pending)}
             </Button>
-            {changed.length > 0 && !busy && (
-              <Button tone="ghost" onClick={() => setDraft({})}>
+            {pending > 0 && !busy && (
+              <Button
+                tone="ghost"
+                onClick={() => {
+                  setDraft({});
+                  setStepDraft(null);
+                }}
+              >
                 Undo
               </Button>
             )}
@@ -592,6 +687,36 @@ function WeightsCard({
       )}
     </Card>
   );
+}
+
+/**
+ * Down the first column, then down the second.
+ *
+ * A phone book, not reading order: the list is alphabetical by label, and
+ * splitting it across then down would put consecutive entries side by side —
+ * which makes an alphabetical list look unordered, the exact complaint
+ * `sortWeights` was written to fix.
+ *
+ * The taller column is the first, so an odd count leaves the gap at the bottom
+ * right where a reader is already finished rather than in the middle.
+ */
+function splitColumns<T>(rows: T[]): [T[], T[]] {
+  const half = Math.ceil(rows.length / 2);
+  return [rows.slice(0, half), rows.slice(half)];
+}
+
+/**
+ * The context step's range, and it is not the weights' range.
+ *
+ * Checked in **hundredths** rather than with `% 0.05`, because binary floating
+ * point does not represent 0.05: `0.15 % 0.05` is 0.049999999999999996 and a
+ * perfectly ordinary value would be refused. The same arithmetic runs in the
+ * route, so the page and the server agree on what is typeable.
+ */
+function stepInRange(value: string): boolean {
+  const n = Number(value);
+  if (value.trim() === "" || !Number.isFinite(n)) return false;
+  return n >= 0 && n <= 5 && Math.round(n * 100) % 5 === 0;
 }
 
 /** The same range the route enforces, and the database's `weight > 0` above it. */
@@ -619,7 +744,7 @@ const WEIGHT_GRID =
      pair: unconstrained, the 1fr label column stretched to the full content
      width and put ~500px of empty paper between "Same school" and the 5 that
      belongs to it at 1440px. */
-  "grid max-w-[36rem] grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(3rem,7rem)]";
+  "grid max-w-[30rem] grid-cols-[minmax(0,1fr)_4.5rem] items-center content-start gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(2.5rem,5rem)]";
 
 /**
  * By the label a reader can see, not by the slug underneath it.

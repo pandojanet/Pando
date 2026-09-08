@@ -1217,6 +1217,22 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
   const askerId = String(params.asker ?? "");
   const wanted = Math.min(20, Math.max(1, Number(params.wanted ?? 5) || 5));
 
+  /**
+   * The context step, read the same way for both branches below.
+   *
+   * `numeric` arrives as a **string** from postgres.js, and null when the row
+   * is missing — a deployment that has not run `0036`. Null is passed through
+   * rather than defaulted to `RELEVANCE_STEP`, because the page has to be able
+   * to say "this is what the code uses, and nothing here can change it" instead
+   * of offering a field whose value nothing reads.
+   */
+  const [setting] = await rows(
+    db,
+    sql`select value from matching_settings where key = 'relevance_step'`,
+  );
+  const parsed = setting ? Number(setting.value) : NaN;
+  const step = Number.isFinite(parsed) ? parsed : null;
+
   if (!askerId) {
     /**
      * The coefficients come back even with nobody picked, and that is not
@@ -1240,6 +1256,7 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
           weight: Number(r.weight),
         })),
       ),
+      relevance_step: step,
       people,
     } satisfies MatchingResult;
   }
@@ -1314,6 +1331,7 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
         weight: Number(weight),
       })),
     ),
+    relevance_step: step,
     people,
   } satisfies MatchingResult;
 }

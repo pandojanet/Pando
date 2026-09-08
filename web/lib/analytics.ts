@@ -65,6 +65,9 @@ export type SeedEvent =
    */
   | "seed_verify_reached"
   | "seed_verified"
+  /** A confirmed number that already had a profile, and which way they went. */
+  | "seed_profile_exists_shown"
+  | "seed_profile_exists_kept"
   /** A write was refused mid-flow: the session fell back to holding on the phone. */
   | "seed_verification_expired"
   | "seed_demand_response_shown"

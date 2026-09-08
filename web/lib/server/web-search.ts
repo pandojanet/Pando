@@ -76,6 +76,9 @@ const MODEL = "claude-haiku-4-5";
  */
 const SEARCH_TOOL = "web_search_20250305" as const;
 
+/** See the `timeout` argument below for why this exists and why it is 20s. */
+const SEARCH_TIMEOUT_MS = 20_000;
+
 export type { PublicFinding };
 
 export interface PublicSearchResult {
@@ -128,8 +131,15 @@ const SYSTEM = [
   "- Only places, classes, camps, programmes or venues. Never an individual person,",
   "  tutor, nanny, sitter or coach, even if a page recommends one by name.",
   "- Only things that plainly exist and serve the area asked about.",
-  "- `what` is three or four words saying what it is. No adjectives of praise,",
-  "  no marketing language, no claim about quality.",
+  "- Match the child's age when the brief gives one. A class with a minimum age",
+  "  above it, or aimed at a different stage, is the wrong answer even if the",
+  "  place is well known.",
+  "- Prefer the nearest towns first, but a strong option one town over is better",
+  "  than a weak one in the right town. Say where it is and let the parent judge.",
+  "- Skip anything under `Pando already has`. Those are already in the reply.",
+  "- `what` is three or four words saying what it is, in a parent's words —",
+  '  "toddler swim lessons", "drop-in indoor playspace". No adjectives of praise,',
+  "  no marketing language, no claim about quality, no opening hours, no prices.",
   "- `area` is the town or neighbourhood, or null if the page did not say.",
   "- If the search finds nothing solid, return an empty list. An empty list is a",
   "  correct answer; a plausible guess is not.",
@@ -141,6 +151,90 @@ const SYSTEM = [
   "Return JSON only, with no prose around it:",
   '{"findings":[{"name":"...","what":"...","area":"..."|null}]}',
 ].join("\n");
+
+/**
+ * A band, as a phrase a search engine and a page can both be read against.
+ *
+ * The taxonomy's own names go no further than this module: "grade" means
+ * nothing on a website, and a model asked to match it will guess. The ages are
+ * `bandsForAge`'s ladder written out, so the two cannot drift into describing
+ * different children — ⚠ if that ladder changes, this changes with it.
+ */
+const BAND_PHRASE: Record<string, string> = {
+  expecting: "a baby on the way",
+  baby: "a baby under 1",
+  toddler: "a toddler of 1 or 2",
+  preschool: "a preschooler of 3 or 4",
+  grade: "a school-age child of 5 to 10",
+  tween: "a tween of 11 to 13",
+  teen: "a teenager of 14 or over",
+};
+
+/**
+ * What Pando knows about the asker, as a short brief beside their question.
+ *
+ * ## Why it is a separate block and not merged into the question
+ *
+ * The question is the parent's own words and has to stay that way: it is what a
+ * search engine reads best, and rewriting it is how a question about "swim
+ * classes" quietly becomes one about "swimming pools". So the brief sits under
+ * it, labelled, and everything in it is a **hint** — the same rule the starter
+ * lists follow, where the area ranks and never filters.
+ *
+ * ## Every line here was already computed and thrown away
+ *
+ * `answerQuestion` works out the age bands (from the question first, the
+ * profile second) and the focus topic before it calls retrieval, and passed the
+ * search neither. So the two halves of one answer were looking for different
+ * things: the parents' half was filtered to a toddler in Altadena, and the web
+ * half got "any good classes?" with no age and no subject at all — which is
+ * exactly the fault that put a trail in an answer about toddler classes, one
+ * module along.
+ *
+ * The date is here for the same reason: a model has no clock, and "summer
+ * camps" asked in September is a question about next year.
+ */
+function brief(input: {
+  area?: string | null;
+  bands?: readonly string[];
+  focus?: string | null;
+  exclude?: readonly string[];
+  now?: Date;
+}): string[] {
+  const lines: string[] = [];
+
+  if (input.area) lines.push(`Parent's area: ${input.area.replace(/-/g, " ")}`);
+
+  const phrases = (input.bands ?? [])
+    .map((band) => BAND_PHRASE[band])
+    .filter((p): p is string => Boolean(p));
+  if (phrases.length > 0) lines.push(`Child: ${phrases.join(", or ")}`);
+
+  /* The slug reads as words. It is `market_options.focus`, so it is a curated
+     value rather than a guess — `focusInQuestion` already checked it against
+     what this market offers. */
+  if (input.focus) lines.push(`Topic: ${input.focus.replace(/_/g, " ")}`);
+
+  const now = input.now ?? new Date();
+  lines.push(
+    `Today: ${now.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "America/Los_Angeles",
+    })}`,
+  );
+
+  /**
+   * ⚠ The names the parents' half already carries. This is the half that saves
+   * a wasted result; `readFindings` is the half that guarantees the answer
+   * cannot name one place twice under two different trust labels, because a
+   * model told not to repeat a name will still return it under a longer one.
+   */
+  const exclude = (input.exclude ?? []).filter((n) => n.trim().length > 0).slice(0, 8);
+  if (exclude.length > 0) lines.push(`Pando already has: ${exclude.join("; ")}`);
+
+  return lines;
+}
 
 /** Pasadena is the pilot market; anything else searches without a location. */
 const MARKET_LOCATION: Record<
@@ -158,53 +252,85 @@ const MARKET_LOCATION: Record<
 /**
  * What is generally known about this question.
  *
- * `area` is the asker's own neighborhood when Pando knows it — a hint for the
- * search, never a filter, the same rule the starter lists follow.
+ * Everything past `question` is context Pando already worked out for the
+ * parents' half of the same answer — the area, the child's age band, the topic,
+ * and what the records already name. All of it is a **hint**: the area ranks
+ * and never filters, the same rule the starter lists follow, and the exclusions
+ * are enforced after the fact rather than trusted to the prompt. See `brief`.
  */
 export async function searchPublicInformation(input: {
   question: string;
   market: string;
   area?: string | null;
+  /** `AgeBand`s, from the question first and the profile second. */
+  bands?: readonly string[];
+  /** The `market_options.focus` topic, already validated against this market. */
+  focus?: string | null;
+  /** What the parents' half of the answer already names. */
+  exclude?: readonly string[];
 }): Promise<PublicSearchResult> {
   const question = input.question.trim();
   if (question.length === 0) return NOTHING;
   if (!isWebSearchConfigured()) return NOTHING;
 
-  const where = input.area ? input.area.replace(/-/g, " ") : null;
   const location = MARKET_LOCATION[input.market] ?? null;
+  const context = brief(input);
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 1024,
-      system: SYSTEM,
-      tools: [
-        {
-          type: SEARCH_TOOL,
-          name: "web_search",
-          max_uses: 2,
-          ...(location
-            ? { user_location: { type: "approximate" as const, ...location } }
-            : {}),
-        },
-      ],
-      messages: [
-        {
-          role: "user",
-          content: where
-            ? `${question}\n\n(The parent is in ${where}.)`
-            : question,
-        },
-      ],
-    });
+    const response = await anthropic.messages.create(
+      {
+        model: MODEL,
+        max_tokens: 1024,
+        system: SYSTEM,
+        tools: [
+          {
+            type: SEARCH_TOOL,
+            name: "web_search",
+            max_uses: 2,
+            ...(location
+              ? { user_location: { type: "approximate" as const, ...location } }
+              : {}),
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: `A parent asked:\n${question}\n\nWhat Pando knows:\n${context
+              .map((line) => `- ${line}`)
+              .join("\n")}`,
+          },
+        ],
+      },
+      /**
+       * ⚠ **A timeout, because nothing above this has one.**
+       *
+       * The pipeline moved into `after()` on 4 Sep, so a slow search no longer
+       * holds the webhook's response open — which removed the pressure and not
+       * the problem. Two searches plus a model turn is the slowest thing in the
+       * answer path by an order of magnitude, and with no bound a hung request
+       * leaves the parent's answer unqueued for as long as the socket lives:
+       * not an error anybody sees, just an answer that never arrives.
+       *
+       * Twenty seconds is past the measured spread (4–9s for two searches) and
+       * short enough that the parent is still in the conversation. On expiry
+       * the SDK throws, the catch below reports it, and the answer composes
+       * from the parents' records alone — which is the honest degradation and
+       * the same one an unconfigured key produces.
+       */
+      { timeout: SEARCH_TIMEOUT_MS },
+    );
 
     const text = response.content
       .map((block) => (block.type === "text" ? block.text : ""))
       .join("")
       .trim();
 
-    const findings = readFindings(text, (name) => looksLikePerson(name));
+    const findings = readFindings(
+      text,
+      (name) => looksLikePerson(name),
+      input.exclude ?? [],
+    );
 
     /**
      * ⚠ **A miss and a refusal look identical from the outside**, and both come

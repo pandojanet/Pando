@@ -417,6 +417,29 @@ export const affinityWeights = pgTable(
   (t) => [check("affinity_weights_weight_check", sql`${t.weight} > 0`)],
 );
 
+/**
+ * The matcher's scalar knobs — everything that is not a per-connection weight.
+ *
+ * One row per setting rather than one column per setting, so the next knob is a
+ * row and not a migration. `affinity_weights` could not hold this one: its
+ * column is `integer` and the context step is 0.5.
+ */
+export const matchingSettings = pgTable(
+  "matching_settings",
+  {
+    key: text("key").primaryKey(),
+    /** `numeric` comes back from the driver as a **string**. Parse it. */
+    value: numeric("value", { precision: 4, scale: 2 }).notNull(),
+  },
+  (t) => [
+    /* A typo would otherwise create a setting nothing reads and nothing
+       reports: the admin saves 0.8, the page shows 0.8, and the scorer uses the
+       default for ever. */
+    check("matching_settings_key_check", sql`${t.key} in ('relevance_step')`),
+    check("matching_settings_value_check", sql`${t.value} >= 0 and ${t.value} <= 5`),
+  ],
+);
+
 /** P5: a former school is a different signal from a current one, and both matter. */
 export const personSchools = pgTable(
   "person_schools",

@@ -49,7 +49,8 @@
     "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
     "test:relay-live": "tsx scripts/test-relay-live.mts",
-    "test:referral-live": "node scripts/test-referral-live.mjs"
+    "test:referral-live": "node scripts/test-referral-live.mjs",
+    "probe:web-search": "node --experimental-strip-types --no-warnings scripts/probe-web-search.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

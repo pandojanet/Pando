@@ -53,6 +53,11 @@ export interface AnswerCandidate {
   id?: string | null;
   name: string;
   venue?: string | null;
+  /**
+   * A `share_kind` for a record, and for general information **the words it
+   * came back with** — see `KIND_WORD`, which translates the first and passes
+   * the second through.
+   */
   kind: string;
   /**
    * Where it is, in the market's own vocabulary — one neighborhood slug.
@@ -254,6 +259,23 @@ export function rankForAnswer(candidates: AnswerCandidate[]): AnswerCandidate[] 
  * parent asks about a class, not an "activity", and "place" tells them nothing
  * a park does not. Kept beside the renderer rather than in `labels.ts`, which
  * is the admin's vocabulary — this is the parent's.
+ *
+ * ## Anything not in this map is already a parent's words, and is used as-is
+ *
+ * ⚠ A public finding carries `what` here — "toddler swim lessons",
+ * "drop-in indoor playspace" — and the lookup **silently dropped it**, because
+ * a miss is `undefined` and `describes` then falls back to the area alone. So
+ * every general-information line a parent has ever been sent read
+ * *"Tinkergarten in South Pasadena"* while the three words saying what it is
+ * had been asked for, length-capped, stripped of praise and thrown away one
+ * function later. Measured across ten live questions: **eight of eight** public
+ * lines were missing it.
+ *
+ * That is the 4 Sep finding — "the line never said what the thing *was*" — on
+ * the half of the answer that was built after it. The fallback is a `??` rather
+ * than a second field because the two cases are the same sentence slot: what is
+ * this thing, in words a parent would use. A share's four enum members can
+ * never reach it, so nothing about a record's rendering changes.
  */
 const KIND_WORD: Record<string, string> = {
   activity: "class",
@@ -306,7 +328,9 @@ function areaWords(slug: string): string {
  * exactly this argument on the other side.
  */
 function line(candidate: AnswerCandidate, labels: readonly string[]): string {
-  const what = candidate.care ? `${candidate.care.toLowerCase()} care` : KIND_WORD[candidate.kind];
+  const what = candidate.care
+    ? `${candidate.care.toLowerCase()} care`
+    : (KIND_WORD[candidate.kind] ?? candidate.kind);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   const venue = candidate.venue ? `, ${candidate.venue}` : "";
   const describes = what ? ` - ${what}${where}${venue}` : `${where}${venue}`;
