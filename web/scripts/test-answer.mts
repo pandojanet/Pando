@@ -347,5 +347,115 @@ console.log("\n=== a claim every record shares is made once, not on each line ==
   );
 }
 
+console.log("\n=== general information sits under the parents, never over them ===");
+/* The client's instruction is that an answer carries both: what is generally
+   known, and what parents here have backed. These are the checks that keep the
+   second half from being diluted by the first. */
+const web = (name: string, over: Partial<AnswerCandidate> = {}): AnswerCandidate => ({
+  name,
+  kind: "indoor play space",
+  firsthand_count: 0,
+  trust: { labels: [t.TRUST_LABEL.PUBLIC], freshness: "fresh", public_only: true },
+  ...over,
+});
+
+ok(
+  "a parent-backed record outranks a web result",
+  a.rankForAnswer([web("Kidspace"), parent()])[0].name === "Toddler Tunes",
+);
+ok(
+  "even a secondhand, stale one",
+  a.rankForAnswer([
+    web("Kidspace"),
+    parent({ name: "Old Gym", firsthand_count: 0, trust: { labels: [t.TRUST_LABEL.SHARED], freshness: "stale", public_only: false } }),
+  ])[0].name === "Old Gym",
+  "firsthand_count 0 + stale would lose on every other key — this is why public_only is its own",
+);
+ok(
+  "an answer built from both is not public_only",
+  a.composeAnswer({ candidates: [parent(), web("Kidspace")], has_question: true }).public_only === false,
+);
+ok(
+  "and a web result never wears a parent label",
+  (() => {
+    const out = a.composeAnswer({ candidates: [web("Kidspace")], has_question: true });
+    return PARENT_LABELS.every((l) => !out.text.includes(l));
+  })(),
+);
+ok(
+  "parent_used counts the parents, not the pages",
+  (() => {
+    const out = a.composeAnswer({
+      candidates: [parent(), web("Kidspace"), web("Rose Bowl"), web("The Arroyo")],
+      has_question: true,
+    });
+    return out.used > out.parent_used && out.parent_used === 1;
+  })(),
+);
+ok(
+  "so one parent plus three pages still offers to ask the network",
+  a.composeAnswer({
+    candidates: [parent(), web("Kidspace"), web("Rose Bowl"), web("The Arroyo")],
+    has_question: true,
+  }).next_step === "offer_blast",
+  "without parent_used this reads as four records and stops offering",
+);
+ok(
+  "two parents do not",
+  a.composeAnswer({
+    candidates: [parent(), parent({ name: "Baby Beats" }), web("Kidspace")],
+    has_question: true,
+  }).next_step === "none",
+);
+
+console.log("\n=== reading what came back from the web ===");
+const pi = (await import(`../lib/public-info.ts?v=${Date.now()}`)) as typeof import("../lib/public-info.ts");
+const np = (await import(`../lib/named-person.ts?v=${Date.now()}`)) as typeof import("../lib/named-person.ts");
+const found = (json: string) => pi.readFindings(json, (n) => np.looksLikePerson(n));
+
+ok(
+  "prose around the JSON is tolerated",
+  found('Here is what I found:\n{"findings":[{"name":"Kidspace","what":"childrens museum","area":"Pasadena"}]}\nHope that helps.').length === 1,
+);
+ok("nothing parseable is nothing", found("I could not find anything useful.").length === 0);
+ok("a findings key that is not a list is nothing", found('{"findings":"lots"}').length === 0);
+ok(
+  "a row missing what it is gets dropped",
+  found('{"findings":[{"name":"Kidspace"},{"name":"Rose Bowl","what":"public park"}]}').length === 1,
+);
+ok(
+  "a person is refused",
+  found('{"findings":[{"name":"Ms. Diane Kovalenko","what":"piano tutor"}]}').length === 0,
+  "invariant 11.4 — a record whose own name is a person, arriving from a page nobody vetted",
+);
+ok(
+  "a business named after its founder is not",
+  found('{"findings":[{"name":"Coach Pattys Gymnastics","what":"gymnastics classes"}]}').length === 1,
+  "the venue-word veto: this is a real record in this market",
+);
+ok(
+  "the same place twice is once",
+  found('{"findings":[{"name":"Kidspace","what":"museum"},{"name":"kidspace","what":"childrens museum"}]}').length === 1,
+);
+ok(
+  "and it stops at three",
+  found(
+    '{"findings":[' +
+      ["A Place", "B Place", "C Place", "D Place"].map((n) => `{"name":"${n}","what":"indoor play"}`).join(",") +
+      "]}",
+  ).length === pi.MAX_PUBLIC_FINDINGS,
+);
+ok(
+  "a name spread over lines is flattened",
+  found(String.raw`{"findings":[{"name":"Kidspace\n  Museum","what":"indoor play"}]}`)[0]
+    ?.name === "Kidspace Museum",
+  "a newline would break the one-line-per-record shape the composer renders into",
+);
+ok(
+  "and a raw newline in the JSON is dropped, not repaired",
+  found(`{"findings":[{"name":"Kidspace${"\n"}Museum","what":"x"}]}`).length === 0,
+  "an unescaped control character makes the whole reply unparseable, and the honest reading of that is nothing rather than a guess at what was meant",
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

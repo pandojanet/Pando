@@ -181,6 +181,10 @@ export function ScreenDock({
 }) {
   return (
     <div
+      /* Findable from a component that must not open on top of it: the dock is
+         `z-30` and sticky, so anything opening near the bottom of a flow screen
+         has to know where its ceiling is. `OptionPicker` measures this. */
+      data-screen-dock=""
       className={cn(
         "sticky bottom-0 z-30 border-t border-bark/70 bg-paper/95 backdrop-blur-md",
         !stickyOnDesktop && "md:static md:bg-transparent md:backdrop-blur-none",

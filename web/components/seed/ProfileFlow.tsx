@@ -16,6 +16,7 @@ import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
+import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Progress } from "@/components/ui/Progress";
 import {
   Eyebrow,
@@ -74,6 +75,17 @@ const SUBBLOCK = "rounded-2xl border border-bark bg-card p-3";
  * (ordering, gating, weights, "prefer not to say") lives in lib/questions.ts —
  * this component only renders it and moves the parent forward.
  */
+/**
+ * The accessible name for a dropdown that has no directory search behind it.
+ *
+ * The four searchable questions carry the client's own wording per category;
+ * this covers the one that does not, and it says what the box actually does —
+ * it filters the options this question offers, and reaches nothing further.
+ */
+function pickerLabel(question: Question): string {
+  return question.label ? `Search ${question.label.toLowerCase()}` : "Search the list";
+}
+
 export function ProfileFlow() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
@@ -1073,8 +1085,14 @@ export function ProfileFlow() {
                               market={market}
                               area={answers.neighborhood}
                               wholeList={directory.wholeList}
+                  dropdown={directory.dropdown}
                               searchLabel={directory.searchLabel}
                               footnote={last ? directory.footnote : undefined}
+                            />
+                          ) : question.source.type === "market" ? (
+                            <OptionPicker
+                              {...perChild}
+                              searchLabel={pickerLabel(question)}
                             />
                           ) : (
                             <ChipGroup {...perChild} layout="wrap" />
@@ -1155,8 +1173,29 @@ export function ProfileFlow() {
                   /* The neighborhood question sets the area, so it cannot be
                      filtered by it — see `wholeList`. */
                   wholeList={directory.wholeList}
+                  dropdown={directory.dropdown}
                   searchLabel={directory.searchLabel}
                   footnote={directory.footnote}
+                />
+              ) : question.source.type === "market" ? (
+                /**
+                 * A market question with no directory behind it — camps, today.
+                 *
+                 * It gets the dropdown too, and the reason is the screen rather
+                 * than the question: camps sits between classes, clubs and faith
+                 * on one page, and leaving it as the single wall of buttons
+                 * among three dropdowns is exactly the "some do, some don't"
+                 * the client has already reported once on the admin.
+                 *
+                 * Deliberately **not** routed through `SearchableChipGroup`:
+                 * that would also apply the area trimming and the twelve-item
+                 * cap, which camps has never had. This changes how the options
+                 * are presented and not which ones are offered.
+                 */
+                <OptionPicker
+                  key={question.id}
+                  {...shared}
+                  searchLabel={pickerLabel(question)}
                 />
               ) : (
               <ChipGroup

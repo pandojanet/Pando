@@ -18,11 +18,17 @@ import {
   routeAnswer,
   mentionsCaregiver as answerMentionsCaregiver,
 } from "@/lib/answer-routing";
-import { classifyDemand } from "@/lib/demand";
+import { TRUST_LABEL } from "@/lib/trust-labels";
+import { classifyDemand, escalateSensitivity } from "@/lib/demand";
 import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
 import { CLARIFYING_COPY, clarifyTemplate, nextQuestion } from "@/lib/onboarding";
 import { focusOptions, retrieveFor } from "@/lib/server/repo/retrieval";
-import { queueAnswer } from "@/lib/server/repo/answers";
+import {
+  searchPublicInformation,
+  type PublicFinding,
+  type PublicSearchResult,
+} from "@/lib/server/web-search";
+import { markAnswerSent, queueAnswer } from "@/lib/server/repo/answers";
 import {
   isSettingsCommand,
   parseAllowanceChoice,
@@ -590,6 +596,10 @@ export async function handleInboundMessage(input: {
   console.info("[sms:inbound] read as", {
     intent: reading.intent,
     source: reading.source,
+    /* A boolean, so invariant 7 is untouched — and the one field that decides
+       whether a health question is read by a person. It has been wrong once
+       already and was invisible in the log while it was. */
+    sensitive: reading.sensitive,
     attached: attached.attached,
   });
 
@@ -617,23 +627,27 @@ export async function handleInboundMessage(input: {
     body,
     person,
     caregiverIntent: reading.intent === "ask_caregiver",
+    sensitive: reading.sensitive,
   });
 }
 
 /**
  * Compose an answer from records, put it in the queue, and say so.
  *
- * ## It never sends the answer itself, and that is the design rather than a stub
+ * ## It sends an ordinary answer itself, since 8 Sep
  *
- * `PILOT_HOLD_EVERYTHING` is true, so `routeAnswer` holds everything today and an
- * auto-send path would be a code path nothing exercises — this codebase's own
- * most expensive repeated lesson (`bands`, `area_slug`, the starter list: each
- * written, reviewed, and silently never run). The answer goes to
- * `/admin/answers`, where 14.2's approve-then-send already works and a person
- * decides. The day the flag comes off is a deliberate decision with somebody
- * watching, and wiring the send then is a small change.
+ * `PILOT_HOLD_EVERYTHING` came off on the client's instruction — only sensitive
+ * messages reach the admin — so `routeAnswer` is now what decides, per answer,
+ * rather than a blanket rule that made the decision moot. Three verdicts are
+ * permanent and no configuration reaches them: **sensitive**, **caregiver-
+ * related**, and *the generator asked for a person*. Two more hold until the
+ * base fills: an answer with **no parent behind it**, and one with **only one**.
  *
- * What the parent gets instead of silence is `heldReply`.
+ * Everything else is composed, stored, and sent in the same pass. The row still
+ * goes into `answers` first and the send marks it — never the other way round,
+ * so a refusal leaves it in the queue rather than losing it.
+ *
+ * A held answer still gets `heldReply`, so the parent is never met with silence.
  *
  * ## The area and the ages come from the person, never from the message
  *
@@ -646,11 +660,52 @@ export async function handleInboundMessage(input: {
  * never filters by it, so a stranger gets the market's best-supported records
  * rather than nothing.
  */
+/**
+ * How much general information this answer carries.
+ *
+ * **At least one line, always, when the search found something** — that is the
+ * client's instruction read literally: every answer carries public information
+ * *and* what parents have backed. More when the parents are thin, up to three.
+ *
+ * ## Why "fill the gap the parents left" was tried and is wrong
+ *
+ * The first version gave public results only when fewer than two parent-backed
+ * records came back, which is the estimate's own framing ("falls back to
+ * clearly-labeled public info when there is no parent-backed match") and reads
+ * as the careful choice. Walked live, it never fired once: `retrieveFor` reads
+ * no *subject*, so it always returns its best-ranked records — a question about
+ * indoor climbing in Duarte came back with a park in Altadena and a camps tip.
+ * There is never a gap, so a rule keyed on one is a feature that cannot run.
+ *
+ * ⚠ **And the cost is not only space, which is why the cut is here rather than
+ * in the composer.** Every candidate handed to `composeAnswer` takes part in
+ * `sharedLabels`, which hoists a claim true of *all* of them into one footer —
+ * and a web result carries only "Public/general information", so its presence
+ * empties the shared set. Measured on a live answer: three parent records under
+ * a hoisted "All of these: Human-reviewed" became **two**, because every line
+ * had to carry its own labels again. So one reserved slot costs roughly one
+ * parent record, and that is the trade being made deliberately rather than
+ * discovered later.
+ *
+ * ⚠ **What this cannot fix, and the client should hear it:** with 23 records in
+ * the market, the parents' half of an answer is frequently not about what was
+ * asked. Adding general information makes the answer *more* relevant, and it
+ * leaves that untouched.
+ */
+function publicSlots(
+  parentBacked: number,
+  info: { findings: PublicFinding[] },
+): PublicFinding[] {
+  return info.findings.slice(0, Math.max(1, 3 - parentBacked));
+}
+
 async function answerQuestion(input: {
   from: string;
   body: string;
   person: ColdPerson | null;
   caregiverIntent: boolean;
+  /** The model's escalation flag — see `escalateSensitivity`. */
+  sensitive: boolean;
 }): Promise<void> {
   const { from, body, person } = input;
   const profile = person?.profile;
@@ -721,13 +776,41 @@ async function answerQuestion(input: {
   const CARE_TOPICS = ["nannies", "babysitters", "newborn_care"];
   const wantsCare = aboutCare || (focus !== null && CARE_TOPICS.includes(focus));
 
-  const retrieved = await retrieveFor({
-    area: profile?.neighborhood ?? null,
-    bands: asked.length > 0 ? asked : known,
-    focus,
-    shares: !wantsCare,
-    caregivers: wantsCare,
-  });
+  /**
+   * The graph and the open web, together and in parallel.
+   *
+   * The client's instruction: an answer carries what is generally known **and**
+   * what parents here have backed. So this is not a fallback for an empty graph
+   * — both run, and the composer puts the parents first because the budget drops
+   * whole records from the end, which makes "general information" the first
+   * thing to go when there is not room. That ordering is the product's whole
+   * claim: AI knows things, Pando knows someone.
+   *
+   * In parallel because they are independent and the web half is seconds rather
+   * than milliseconds. It cannot fail the answer: `searchPublicInformation`
+   * returns rather than throws, and is inert unless `WEB_SEARCH_ENABLED=1`.
+   */
+  const [retrieved, publicInfo] = await Promise.all([
+    retrieveFor({
+      area: profile?.neighborhood ?? null,
+      bands: asked.length > 0 ? asked : known,
+      focus,
+      shares: !wantsCare,
+      caregivers: wantsCare,
+    }),
+    /* Never for a question about care. A page saying somebody is a wonderful
+       nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
+       name is the one thing that must not arrive from the open web. */
+    wantsCare
+      ? Promise.resolve<PublicSearchResult>({ findings: [], configured: false })
+      : searchPublicInformation({
+          question: body,
+          /* One market in the pilot, and  defaults a cold
+             number to the same one. */
+          market: "pasadena",
+          area: profile?.neighborhood ?? null,
+        }),
+  ]);
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
      when the truth is that Pando could not look is the `persisted: false` rule
@@ -778,6 +861,10 @@ async function answerQuestion(input: {
    */
   const candidates: AnswerCandidate[] = [
     ...retrieved.shares.map((share) => ({
+      /* Not rendered — this is what `answers.share_ids` is written from, and
+         therefore the only path by which 9.2 can ever find the contributors
+         behind an answer that helped. */
+      id: share.share_id,
       name: share.name,
       venue: share.venue,
       kind: share.kind,
@@ -811,6 +898,32 @@ async function answerQuestion(input: {
       trust: caregiver.trust,
       firsthand_count: caregiver.firsthand_count,
     })),
+
+    /**
+     * What is generally known, last in the list and last to survive the budget.
+     *
+     * ⚠ **The labels are built here and are the public one alone.** That is
+     * invariant 3 made structural rather than remembered: a web result has no
+     * `share_contributions` behind it, so there is nothing that could compute a
+     * parent claim for it, and `firsthand_count: 0` keeps it out of every count
+     * the composer makes about people.
+     *
+     * `freshness: "fresh"` is the honest reading and not a flattering one: the
+     * page was read moments ago. What it is **not** is `last_confirmed_at`,
+     * which is a parent saying a record still holds — the composer only prints a
+     * date for records that carry one, so this adds no claim.
+     */
+    ...publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo).map((finding) => ({
+      name: finding.name,
+      kind: finding.what,
+      area: finding.area,
+      trust: {
+        labels: [TRUST_LABEL.PUBLIC],
+        freshness: "fresh" as const,
+        public_only: true,
+      },
+      firsthand_count: 0,
+    })),
   ];
 
   const composed = composeAnswer({ candidates, has_question: true });
@@ -824,12 +937,29 @@ async function answerQuestion(input: {
   const caregiverRelated = wantsCare || retrieved.caregivers.length > 0;
 
   const verdict = routeAnswer({
-    /* Rules only, and they may only ever escalate. There is no category tap on
-       an SMS, so the text is all there is. */
-    sensitivity: classifyDemand(body, null),
+    /**
+     * Two readings, and the more cautious one wins.
+     *
+     * `classifyDemand` is the rule-based classifier and it stays the authority
+     * on *which* class a question is, because each class is owed something
+     * different (11 Aug). What it cannot do over SMS is find a class at all
+     * without a category tap: its keyword net has no medical vocabulary, so
+     * *"my 4 year old keeps having nosebleeds"* comes back `ordinary` — which
+     * was harmless while every answer waited for a person and is not any more.
+     *
+     * So the model's `sensitive` flag can lift an `ordinary` reading to
+     * `high_stakes`, and can never lower one. ⚠ **It lifts to `high_stakes` and
+     * never to `named_allegation`**, deliberately: the flag is coarse and that
+     * class carries its own storage rule (never circulated, review-only), which
+     * is not something a boolean has said.
+     */
+    sensitivity: escalateSensitivity(classifyDemand(body, null), input.sensitive),
     caregiver_related: caregiverRelated,
     public_only: composed.public_only,
-    used: composed.used,
+    /* The parents' half only. A web result is information, never evidence:
+       counting it here would let three pages lift an answer out of
+       `low_evidence` and past the reviewer that thinness exists to summon. */
+    used: composed.parent_used,
     next_step: composed.next_step,
   });
 
@@ -842,6 +972,7 @@ async function answerQuestion(input: {
     labels: composed.labels,
     publicOnly: composed.public_only,
     holdReason: verdict.reason,
+    shareIds: composed.used_ids,
   });
 
   /* Counts and enums only (invariant 7) — never the question, never the answer. */
@@ -872,12 +1003,56 @@ async function answerQuestion(input: {
       ? nextQuestion(person.profile)
       : null;
 
-  await sendSms({
+  /**
+   * The answer itself when nothing needs a person, and the holding line when
+   * something does.
+   *
+   * ⚠ **This path is new on 8 Sep and is the whole of the automation.** Until
+   * then `PILOT_HOLD_EVERYTHING` held every answer and this function only ever
+   * sent `heldReply`; the client's instruction is that only sensitive messages
+   * reach the admin. What decides is `routeAnswer` and nothing here: sensitive,
+   * caregiver-related and "the generator asked for a person" are permanent
+   * holds, and thin or parent-less answers wait too.
+   *
+   * **The text sent is the text that was stored**, which is 5.8's rule arriving
+   * one path earlier: `answer_text` went into the queue a moment ago and this
+   * sends that same string, so what a reviewer reads afterwards in
+   * `/admin/answers` is exactly what the parent received.
+   *
+   * **The row is marked sent only if the send went**, never on the attempt —
+   * `sendSms` runs opt-out, quiet hours and the protection rules and can refuse,
+   * and a row claiming `sent` for a message a carrier rejected is the same lie
+   * as `persisted: true` on a failed write. A refusal leaves it in the queue,
+   * where an admin can send it by hand.
+   *
+   * The clarifying question rides along either way: it is one outbound per
+   * inbound, and this is the only one.
+   */
+  const clarifier = asking ? CLARIFYING_COPY[asking] : null;
+  const sending = !verdict.hold;
+
+  const result = await sendSms({
     to: from,
-    body: heldReply(asking ? CLARIFYING_COPY[asking] : null),
+    body: sending
+      ? clarifier
+        ? `${composed.text}\n\n${clarifier}`
+        : composed.text
+      : heldReply(clarifier),
     category: "transactional",
     personId: person?.person_id,
-    template: asking ? clarifyTemplate(asking) : "answer_queued",
+    template: asking
+      ? clarifyTemplate(asking)
+      : sending
+        ? "answer_sent"
+        : "answer_queued",
     templateVersion: SMS_TEMPLATE_VERSION,
+  });
+
+  if (sending && result.sent) await markAnswerSent(answerId);
+
+  console.info("[sms:answer] delivered", {
+    auto: sending,
+    sent: result.sent,
+    reason: result.sent ? null : result.reason,
   });
 }

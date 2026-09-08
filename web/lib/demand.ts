@@ -59,16 +59,48 @@ export const DEMAND_CATEGORIES: DemandCategory[] = [
 ];
 
 /**
- * Words that escalate a question filed as ordinary. Deliberately short and
- * deliberately blunt: this is a net for the case where a parent picks "Childcare"
- * and then describes something nobody should answer with "you'll hear at launch".
+ * Words that escalate a question filed as ordinary.
+ *
+ * It was written as a **net under a category tap** — short and blunt, for the
+ * parent who picks "Childcare" and then describes something nobody should answer
+ * with "you'll hear at launch". Over SMS there is no tap, so from 4 Sep it has
+ * been the only reading, and from 8 Sep — with `PILOT_HOLD_EVERYTHING` off — the
+ * only thing between a health question and an unread automatic answer.
+ *
+ * It was not up to that. Measured: *"my 4 year old keeps having nosebleeds, is
+ * that normal?"* returned `ordinary`, because the list carried **no medical
+ * vocabulary at all**; *"is it legal to leave a 9 year old home alone?"* came
+ * back `peer_support`, because "alone" is in the peer-support list and nothing
+ * read the word "legal".
+ *
+ * ## What was added, and the line drawn
+ *
+ * **Symptoms and conditions, not specialities.** "fever", "rash", "seizure",
+ * "medication" describe a child who is unwell — that is the client's
+ * health-legal-safety class (3 Aug) and it is owed professional resources. But
+ * *"any good pediatricians near me?"* is a **recommendation**, the commonest
+ * question this product exists to answer, and filing it as high-stakes would
+ * bury the ordinary case in the queue and answer a request for a name with a
+ * resource list. So "doctor", "pediatrician" and "dentist" are deliberately
+ * absent.
+ *
+ * ⚠ **No word list is complete, and this one is a floor rather than a
+ * guarantee.** The model's `sensitive` flag escalates on top of it
+ * (`escalateSensitivity`), and that flag is probabilistic — on the nosebleed
+ * sentence it comes back `true` at 0.35 confidence, i.e. correct and unsure. Two
+ * imperfect layers, and with automatic sending on, something sensitive will
+ * eventually reach a parent unread. `PILOT_HOLD_EVERYTHING = true` is the
+ * one-line answer if it does.
  */
 const HIGH_STAKES_TERMS = [
   "abuse",
+  "abused",
   "hurt",
+  "hurting",
   "hit",
   "unsafe",
   "danger",
+  "dangerous",
   "emergency",
   "hospital",
   "self-harm",
@@ -80,12 +112,68 @@ const HIGH_STAKES_TERMS = [
   "neglect",
   "overdose",
   "assault",
+
+  /**
+   * Medical — a child who is unwell, never a speciality somebody is looking for.
+   *
+   * ⚠ **The plurals are written out**, because `mentions` matches whole words:
+   * a parent writes "nosebleeds", not "nosebleed", and the singular alone is
+   * what let that sentence through. See the note on `mentions` for why matching
+   * a prefix instead was tried and reverted.
+   */
+  "fever",
+  "fevers",
+  "rash",
+  "rashes",
+  "vomit",
+  "vomiting",
+  "vomited",
+  "nosebleed",
+  "nosebleeds",
+  "seizure",
+  "seizures",
+  "asthma",
+  "allergic",
+  "allergy",
+  "allergies",
+  "infection",
+  "infections",
+  "medication",
+  "medications",
+  "prescription",
+  "prescriptions",
+  "antibiotic",
+  "antibiotics",
+  "symptom",
+  "symptoms",
+  "diagnosis",
+  "diagnosed",
+  "choking",
+  "concussion",
+  "dehydrated",
+  "urgent care",
+  "emergency room",
+
+  /* Legal, beyond the custody words above. "is it legal" is how a parent
+     actually asks, and nothing here read the word at all. */
+  "legal",
+  "lawyer",
+  "lawyers",
+  "attorney",
+  "police",
+  "social services",
 ];
 
 const PEER_SUPPORT_TERMS = [
   "alone",
   "lonely",
   "loneliness",
+  /* How a parent who has just moved actually says it — the market's own new-to-
+     area case, and the list had every synonym but this one. */
+  "isolated",
+  "isolation",
+  "overwhelmed",
+  "struggling",
   "depressed",
   "depression",
   "anxious",
@@ -162,6 +250,28 @@ const PERSON_CUES = [
 
 function mentions(text: string, terms: string[]): boolean {
   const haystack = ` ${text.toLowerCase().replace(/[^a-z\s-]/g, " ")} `;
+  /**
+   * Whole words, and the inflections are spelled out in the lists.
+   *
+   * ⚠ **Prefix matching was tried on 8 Sep and reverted the same hour.** The
+   * miss that prompted it is real — *"my 4 year old keeps having nosebleeds"*
+   * did not match `nosebleed`, and the same hole was already in the original
+   * list where nobody had looked (`abuse` missed "abused", `danger` missed
+   * "dangerous"). But matching a term at the start of a word instead put six
+   * plainly ordinary sentences into the high-stakes class, measured: *"the
+   * school has a lovely **courtyard**"*, *"my toddler **hit** a growth spurt"*,
+   * *"is there a **rash guard** requirement at the pool"*, *"best
+   * **legal-sized** soccer field"*, *"any classes near the **courthouse**"*.
+   *
+   * On SMS that costs one extra reading. **On the web D1 flow it costs more**:
+   * `high_stakes` there means professional resources are shown immediately (3
+   * Aug), so a question about swim kit would have been answered with a health
+   * resource list. A net that catches the pool is not a net.
+   *
+   * So the lists carry their own plurals. It is more lines and it is
+   * predictable, which is what a rule standing between a health question and an
+   * automatic answer has to be.
+   */
   return terms.some((term) => haystack.includes(` ${term} `));
 }
 
@@ -202,4 +312,31 @@ export function classifyDemand(
  */
 export function needsHumanReview(sensitivity: DemandSensitivity): boolean {
   return sensitivity !== "ordinary";
+}
+
+/**
+ * Raise a rule-based reading when the model thought the message was sensitive.
+ *
+ * **One direction only.** `classifyDemand` stays the authority on *which* class
+ * a question belongs to, because each is owed something different — a safety
+ * question gets professional resources, an allegation gets silence until a
+ * person has read it — and a boolean has not said which. So this can lift
+ * `ordinary` and can never lower anything.
+ *
+ * ⚠ It lifts to `high_stakes`, never to `named_allegation`. That class carries a
+ * storage rule of its own (`demand_signals_allegation_review_check`: never
+ * circulated, human review only), and claiming it on a coarse flag would file
+ * an ordinary health question as an accusation.
+ *
+ * Why it exists at all: with `PILOT_HOLD_EVERYTHING` off (8 Sep), the keyword
+ * net is the only thing between a health question and an unread automatic
+ * answer, and over SMS it runs without the category tap it was designed as a
+ * net underneath.
+ */
+export function escalateSensitivity(
+  ruled: DemandSensitivity,
+  modelSaidSensitive: boolean,
+): DemandSensitivity {
+  if (!modelSaidSensitive) return ruled;
+  return ruled === "ordinary" ? "high_stakes" : ruled;
 }

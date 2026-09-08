@@ -560,6 +560,7 @@ export function affinityLabel(type: string): string {
  */
 const ANSWER_HOLD_REASON: Record<string, string> = {
   pilot_review_all: "Routine — every answer is read",
+  not_held: "Sent without review — nothing needed a person",
   sensitive: "Health, legal or safety",
   caregiver: "Mentions a caregiver",
   public_only: "No parent behind it",

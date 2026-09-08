@@ -357,7 +357,7 @@ const sql = postgres(process.env.DATABASE_URL, { max: 2, prepare: false, onnotic
  * The bound is still real. If nothing is scored inside it, the checks below fail
  * exactly as they did — which is the honest answer when the provider is down.
  */
-{
+async function settleExtraction() {
   const deadline = Date.now() + 60_000;
   for (;;) {
     const [{ waiting }] = await sql`
@@ -371,6 +371,18 @@ const sql = postgres(process.env.DATABASE_URL, { max: 2, prepare: false, onnotic
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
+
+/**
+ * Called here, and **again before the extraction checks**.
+ *
+ * ⚠ Once was not enough, and the failure told on itself: a run printed `3 of 4`
+ * with an **empty** unscored list — three numbers read at three moments and
+ * compared as though they were one. Between them, an admin edit further down
+ * deliberately clears a score (an edit that kept the old number would be
+ * describing a sentence that no longer exists) and the sweep re-scores it
+ * asynchronously, so the count was taken while the fourth card was in flight.
+ */
+await settleExtraction();
 
 /* A Ukrainian number, end to end (20 Aug).
  *
@@ -845,6 +857,9 @@ ok("and it cannot be stored without a human attached", allegation && allegation.
 ok("it raised its own escalation, under its own reason", (await sql`select 1 from flags where reason = 'named_allegation' and status = 'open'`).length > 0);
 
 head("1.8 / 1.9  extraction and flags");
+/* Again, because an admin edit above cleared a score and the sweep re-scores it
+   in the background — see the note on the function. */
+await settleExtraction();
 const scored = await sql`
   select sc.confidence, sc.confidence_note
   from share_contributions sc

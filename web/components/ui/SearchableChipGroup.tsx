@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
+import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { searchMarketOptions } from "@/lib/api-client";
@@ -55,6 +56,13 @@ interface Props {
    * either — and an empty `area` still hits the twelve-item slice.
    */
   wholeList?: boolean;
+  /**
+   * Render as a searchable dropdown instead of chips plus a search box.
+   *
+   * Set per question in `SEARCHABLE_QUESTIONS`, so the questions that get one
+   * are named rather than inferred from what they are not.
+   */
+  dropdown?: boolean;
   /** "Search all schools, preschools and daycares" — her wording per category. */
   searchLabel: string;
   /**
@@ -103,6 +111,7 @@ export function SearchableChipGroup({
   market,
   area,
   wholeList,
+  dropdown,
   searchLabel,
   footnote,
   options,
@@ -302,6 +311,86 @@ export function SearchableChipGroup({
   /* Only results not already on screen as chips — a result that is already a
      starter would otherwise appear twice, once above and once below the box. */
   const unshown = results.filter((r) => !merged.some((m) => m.id === r.id));
+
+  /**
+   * Picking a record that came from the directory, rather than from the
+   * starters.
+   *
+   * `OptionPicker` calls `onChange` straight through, so this is where a found
+   * record has to be kept — in `found`, which is what puts it in `merged` once
+   * the query clears, and in the shared runtime table, which is what lets
+   * `labelForOption`, the review screen and the next reload print its name
+   * instead of the slug.
+   */
+  const onPick = useCallback(
+    (next: string[], changed: { id: string; on: boolean }) => {
+      if (changed.on) {
+        const record = results.find((r) => r.id === changed.id);
+        if (record) {
+          setFound((prev) =>
+            prev.some((o) => o.id === record.id) ? prev : [...prev, record],
+          );
+          registerFoundOptions(market as MarketId, category, [record]);
+        }
+      }
+      rest.onChange(next, changed);
+    },
+    [results, market, category, rest],
+  );
+
+  /**
+   * The dropdown, on the questions that ask for one and no others.
+   *
+   * The client asked for the circles questions — schools, classes, camps, clubs,
+   * faith — to offer a searchable dropdown rather than a wall of buttons.
+   *
+   * ⚠ **Opted into per question, never derived.** This first read "everything
+   * except `wholeList`", and deciding by the absence of an unrelated property is
+   * how it swept in *"where have you lived before?"* — a question on the tenure
+   * screen that the client never mentioned and that had **no option buttons to
+   * replace**, since it has no starters at all. The rule now names its subjects,
+   * so a directory added tomorrow keeps the chips until somebody says otherwise.
+   *
+   * The seventeen approved towns keep theirs for a second, stronger reason:
+   * she requires them read whole, and hiding them behind a tap is the 1 Sep bug
+   * (five cities nobody could see) arriving by another route.
+   */
+  if (dropdown) {
+    return (
+      <OptionPicker
+        {...rest}
+        options={merged}
+        extra={unshown}
+        selected={selected}
+        onChange={onPick}
+        otherLabel={otherLabel}
+        onAddCustom={onAddCustom}
+        searchLabel={searchLabel}
+        query={query}
+        onQueryChange={(q) => setQuery(q.slice(0, 60))}
+        footnote={[otherLabel, footnote].filter(Boolean).join(". ") || undefined}
+        /**
+         * Only the failure, and deliberately only the failure.
+         *
+         * `OptionPicker` already carries a `role="status"` region for how many
+         * options there are, so repeating the count here would announce one
+         * fact twice in two wordings. What that region cannot say is that the
+         * directory did not answer — which is the honesty rule this app applies
+         * everywhere: say the search broke, rather than showing an empty list,
+         * which reads as "your school is not in Pando".
+         */
+        status={
+          failed ? (
+            <p role="status" aria-live="polite" className="text-help text-gold-ink">
+              Search isn&apos;t answering just now. You can still add it below.
+            </p>
+          ) : searching ? (
+            <p className="text-help text-muted">Looking…</p>
+          ) : null
+        }
+      />
+    );
+  }
 
   return (
     <div>

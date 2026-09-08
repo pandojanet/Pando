@@ -41,19 +41,31 @@ const good = (over: Partial<RoutingInput> = {}): RoutingInput => ({
 });
 const route = (over: Partial<RoutingInput> = {}) => r.routeAnswer(good(over));
 
-console.log("\n=== the pilot reads everything ===");
-ok("the blanket rule is on", r.PILOT_HOLD_EVERYTHING === true, "strategy §19");
+console.log("\n=== only what needs a person waits for one ===");
+/* The blanket rule came off on 8 Sep (the client: only sensitive messages go
+   to the admin). These are the checks that the automation is exactly as wide
+   as it was meant to be and no wider. */
 ok(
-  "so even a solid ordinary answer waits",
-  route().hold === true,
-  "for the first months every answer is read by a person",
+  "the blanket rule is off",
+  r.PILOT_HOLD_EVERYTHING === false,
+  "and turning it back on is the response to a bad answer reaching a parent",
 );
 ok(
-  "and it says that is the only reason",
-  route().reason === "pilot_review_all",
-  "an answer held only because everything is held reads differently from one that will always wait",
+  "a solid ordinary answer goes out by itself",
+  route().hold === false,
 );
-ok("which is not permanent", route().permanent === false);
+ok(
+  "two parent-backed records is the floor, and one is not enough",
+  route({ used: 1 }).hold === true && route({ used: 1 }).reason === "low_evidence",
+);
+ok(
+  "nor is an answer with no parent behind it at all",
+  route({ public_only: true }).reason === "public_only",
+);
+ok(
+  "and neither of those is permanent — they clear as the base fills",
+  route({ used: 1 }).permanent === false && route({ public_only: true }).permanent === false,
+);
 
 console.log("\n=== the rules that will still hold when the blanket comes off ===");
 for (const sensitivity of ["high_stakes", "peer_support", "named_allegation"] as const) {

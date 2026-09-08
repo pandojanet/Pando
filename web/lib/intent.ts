@@ -85,6 +85,27 @@ export interface IntentResult {
   source: "context" | "model" | "fallback";
   /** One line, for the log and the admin. Never the message itself. */
   reason: string;
+  /**
+   * The message reads as health, legal, safety or a claim about a named
+   * person.
+   *
+   * ⚠ **This is an escalation signal and never a clearance.** `false` means
+   * "the model did not say so", not "checked and safe": the rule-based scan in
+   * `classifyDemand` still runs and can raise the sensitivity on its own, and
+   * the caller takes whichever of the two is higher.
+   *
+   * It exists because turning `PILOT_HOLD_EVERYTHING` off (8 Sep) made
+   * `classifyDemand` the only thing between a health question and an
+   * unread automatic answer — and measured against real phrasings it is not
+   * enough on its own: *"my 4 year old keeps having nosebleeds, is that
+   * normal?"* came back `ordinary`, because that list carries no medical
+   * vocabulary at all. It was written as a safety net **on top of a category
+   * tap**, and over SMS there is no tap.
+   *
+   * Free: the model is already reading this message for its intent, so this
+   * is one more field on a request that was being made anyway.
+   */
+  sensitive: boolean;
 }
 
 const CAREGIVER_WORDS =
@@ -120,6 +141,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 1,
       source: "context",
       reason: "they were asked something and have not answered or passed",
+      sensitive: false,
     };
   }
 
@@ -129,6 +151,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 0.7,
       source: "fallback",
       reason: "names a kind of care",
+      sensitive: false,
     };
   }
 
@@ -138,6 +161,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 0.7,
       source: "fallback",
       reason: "asks to change how often Pando writes",
+      sensitive: false,
     };
   }
 
@@ -147,6 +171,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 0.65,
       source: "fallback",
       reason: "reads as a question",
+      sensitive: false,
     };
   }
 
@@ -158,6 +183,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 0.6,
       source: "fallback",
       reason: "short message from a known contributor",
+      sensitive: false,
     };
   }
 
@@ -166,6 +192,7 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
     confidence: 0,
     source: "fallback",
     reason: "no confident reading — routed to a person",
+    sensitive: false,
   };
 }
 
@@ -177,7 +204,13 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
  * fall to the same place.
  */
 export function applyThreshold(
-  model: { intent: string; confidence: number; reason?: string } | null,
+  model: {
+    intent: string;
+    confidence: number;
+    reason?: string;
+    /** See `IntentResult.sensitive` — an escalation signal, never a clearance. */
+    sensitive?: boolean;
+  } | null,
   text: string,
   context: IntentContext,
 ): IntentResult {
@@ -191,12 +224,33 @@ export function applyThreshold(
       confidence: 1,
       source: "context",
       reason: "they were asked something and have not answered or passed",
+      sensitive: false,
     };
   }
 
   const known = (INTENTS as string[]).includes(model.intent);
   if (!known || model.confidence < INTENT_CONFIDENCE_FLOOR) {
-    return fallbackIntent(text, context);
+    /**
+     * The reading is discarded; the **caution is not**.
+     *
+     * ⚠ This one line is the difference between a health question being read by
+     * a person and being answered automatically, and getting it wrong is how it
+     * behaved for its first hour. The floor is about *which intent* this is —
+     * a low score there means the model could not tell a question from a
+     * contribution, and the rules are better at that than a hesitant guess. It
+     * says nothing about whether the message touches a child's health.
+     *
+     * Measured, which is the only reason it was caught: *"my 4 year old keeps
+     * having nosebleeds, is that normal?"* comes back `sensitive: true` at
+     * **confidence 0.35** — correctly unsure what the parent wants, correctly
+     * certain it is medical. Dropping the whole result threw the flag away at
+     * precisely the moment it mattered most, and the answer went out unread.
+     *
+     * So the flag survives the fallback. It can only ever escalate, so carrying
+     * it forward can only ever hold something back.
+     */
+    const ruled = fallbackIntent(text, context);
+    return model.sensitive === true ? { ...ruled, sensitive: true } : ruled;
   }
 
   return {
@@ -204,5 +258,6 @@ export function applyThreshold(
     confidence: model.confidence,
     source: "model",
     reason: model.reason?.slice(0, 200) ?? "",
+    sensitive: model.sensitive === true,
   };
 }

@@ -1860,26 +1860,45 @@ const SEARCHABLE_QUESTIONS: Partial<
       footnote?: string;
       /** See `SearchableChipGroup`'s own `wholeList`. */
       wholeList?: boolean;
+      /**
+       * Render as a searchable dropdown rather than as chips plus a search box.
+       *
+       * **Stated per question, never derived.** The first cut of this said
+       * "a dropdown everywhere except `wholeList`" — a rule that decides by the
+       * *absence* of another property, which quietly swept in "where have you
+       * lived before?", a question the client never asked about and one that had
+       * no option buttons to replace in the first place. A directory added here
+       * tomorrow would have been swept in the same way, with nothing on screen
+       * looking wrong.
+       *
+       * So the four the client named say so, and everything else keeps what it
+       * has.
+       */
+      dropdown?: boolean;
     }
   >
 > = {
   schools: {
     category: "schools",
+    dropdown: true,
     searchLabel: "Search all schools, preschools and daycares",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
   classes: {
     category: "baby_activities",
+    dropdown: true,
     searchLabel: "Search all activities and classes",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
   clubs: {
     category: "clubs",
+    dropdown: true,
     searchLabel: "Search all private clubs and member organizations",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
   faith: {
     category: "worship",
+    dropdown: true,
     searchLabel: "Search all faith communities and places of worship",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
@@ -2005,6 +2024,7 @@ export function searchableCategory(
   searchLabel: string;
   footnote?: string;
   wholeList?: boolean;
+  dropdown?: boolean;
 } | null {
   /* Only a market-sourced question can be searched — a static list has nothing
      behind it to find. */

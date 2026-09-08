@@ -34,6 +34,16 @@ export interface QueuedAnswer {
   labels: string[];
   publicOnly: boolean;
   holdReason: string;
+  /**
+   * The `shares` rows the answer was actually built from.
+   *
+   * `drizzle/0026` added `share_ids` so 9.1 could join to 9.2 — and until now
+   * **nothing wrote it**. `repo/thanks.ts` inner-joins contributions on this
+   * array, so an empty one finds no contributor and the thank-you loop could
+   * not fire for any answer this pipeline composed; `/admin/impact` showed the
+   * same absence as "no records named".
+   */
+  shareIds?: string[];
   marketId?: string;
   isTest?: boolean;
 }
@@ -44,15 +54,22 @@ export async function queueAnswer(input: QueuedAnswer): Promise<string | null> {
     /* An array literal rather than a bound JS array — the trap documented in
        `repo/caregiver.ts` and `option.promote`. */
     const labels = `{${input.labels.map((l) => `"${l.replace(/"/g, '\\"')}"`).join(",")}}`;
+    /* Same literal form, and the ids are checked against a uuid shape first:
+       they come from our own rows, but this string is interpolated into SQL and
+       a shape check costs nothing. An empty array is `{}`. */
+    const shareIds = `{${(input.shareIds ?? [])
+      .filter((id) => /^[0-9a-f-]{36}$/i.test(id))
+      .join(",")}}`;
     const rows = (await db.execute(sql`
       insert into answers
         (market_id, person_id, phone, question_text, answer_text, next_step,
-         labels, public_only, hold_reason, is_test)
+         labels, public_only, hold_reason, share_ids, is_test)
       values
         (${input.marketId ?? "pasadena"},
          ${input.personId ? sql`${input.personId}::uuid` : sql`null`},
          ${input.phone}, ${input.question}, ${input.answerText}, ${input.nextStep},
          ${labels}::text[], ${input.publicOnly}, ${input.holdReason},
+         ${shareIds}::uuid[],
          ${input.isTest === true})
       returning id
     `)) as unknown as Array<Record<string, unknown>>;
@@ -167,4 +184,27 @@ export async function editAnswer(input: {
     return true;
   });
   return result.persisted === true;
+}
+
+/**
+ * An answer that went out on its own, marked as gone.
+ *
+ * Separate from `approveAndSend`, and deliberately not a call to it: that one
+ * fetches the row, sends it, and records **who approved it**. Nobody approved
+ * this one — `routeAnswer` found nothing that needed a person, which is a
+ * different fact and has to read as one in the queue. So `reviewed_by` stays
+ * null and the row says `sent` with no reviewer, which is exactly what happened.
+ *
+ * Called only after `sendSms` reports the message went, so a refused send leaves
+ * the row in the queue for somebody to send by hand.
+ */
+export async function markAnswerSent(id: string): Promise<void> {
+  await withDb(async (db: Db) => {
+    await db.execute(sql`
+      update answers
+         set status = 'sent', sent_at = now()
+       where id = ${id}::uuid and status = 'pending_review'
+    `);
+    return true;
+  });
 }

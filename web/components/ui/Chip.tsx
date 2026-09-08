@@ -101,18 +101,41 @@ function Tick({ selected }: { selected: boolean }) {
 export function CustomChip({
   label,
   onRemove,
+  tone = "gold",
 }: {
   label: string;
   onRemove: () => void;
+  /**
+   * Gold for a value the parent typed, green for one they picked.
+   *
+   * Not decoration: gold means *pending* in this design system, and a typed
+   * answer is exactly that — unmatchable until an admin promotes it into
+   * `market_options` (invariant 9). A record chosen from the directory is
+   * already canonical, so it wears the same green a selected chip does.
+   */
+  tone?: "gold" | "green";
 }) {
+  const green = tone === "green";
   return (
-    <span className="inline-flex min-h-12 items-center gap-1 rounded-full border border-gold-line bg-gold-wash pl-4 pr-1.5 text-control font-medium text-gold-ink">
+    <span
+      className={cn(
+        "inline-flex min-h-12 items-center gap-1 rounded-full border pl-4 pr-1.5 text-control font-medium",
+        green
+          ? "border-green-deep bg-green-deep text-white"
+          : "border-gold-line bg-gold-wash text-gold-ink",
+      )}
+    >
       {label}
       <button
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${label}`}
-        className="grid h-9 w-9 place-items-center rounded-full text-gold-ink/70 transition-colors hover:bg-gold-line/50 hover:text-gold-ink"
+        className={cn(
+          "grid h-9 w-9 place-items-center rounded-full transition-colors",
+          green
+            ? "text-white/75 hover:bg-white/20 hover:text-white"
+            : "text-gold-ink/70 hover:bg-gold-line/50 hover:text-gold-ink",
+        )}
       >
         <svg viewBox="0 0 14 14" className="h-3.5 w-3.5" fill="none">
           <path

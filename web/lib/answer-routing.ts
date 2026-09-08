@@ -30,6 +30,16 @@ import type { DemandSensitivity } from "./demand";
 export type HoldReason =
   /** Nothing specific — the pilot reads everything. */
   | "pilot_review_all"
+  /**
+   * Nothing held it, and it went out on its own.
+   *
+   * Its own value rather than reusing `pilot_review_all`, which is what the
+   * no-hold branch used to return: with the blanket rule off, that left every
+   * automatically sent answer recorded as *"held because the pilot reads
+   * everything"* — a reason for something that did not happen, on rows a
+   * reviewer reads afterwards to see what went out unread.
+   */
+  | "not_held"
   /** Health, legal, safety, or a claim about a named person. */
   | "sensitive"
   /** Mentions a caregiver. Every caregiver path keeps human eyes permanently. */
@@ -44,14 +54,39 @@ export type HoldReason =
 /**
  * The pilot reads everything.
  *
- * Turning this off is a product decision, not a tuning change: it is the moment
- * Pando starts answering parents without anybody having read the answer. §19
- * calls that safe only once "the knowledge base grows" enough that "ordinary
- * recommendations from contributors with a track record can pass automatically" —
- * and even then, "anything sensitive, anything about a named person, and
- * everything caregiver-related keeps human eyes permanently".
+ * **Off since 8 Sep, on the client's instruction** — *"тільки чутливі
+ * повідомлення до адміна"*. Pando now answers an ordinary question without
+ * anybody having read the answer first, and the specific rules below are what
+ * stands between a parent and an unread one. They were written a fortnight
+ * before this switch precisely so that the day it flipped, they would already
+ * be right.
+ *
+ * ## What still always waits for a person, and always will
+ *
+ * §19: *"anything sensitive, anything about a named person, and everything
+ * caregiver-related keeps human eyes permanently."* Those are the three
+ * `permanent: true` verdicts below — `sensitive`, `caregiver`,
+ * `generator_asked` — and no configuration reaches them.
+ *
+ * ## What now sends by itself, and the two guards on it
+ *
+ * An ordinary question, answered from **two or more parent-backed records**.
+ * Below that it is still held: `public_only` when nothing has a parent behind
+ * it, `low_evidence` when only one record does. Those two are the whole of the
+ * automation, and they are deliberately conservative — a one-record answer is
+ * the one most likely to be wrong and least likely to be missed.
+ *
+ * ⚠ **`low_evidence` counts parents, not records.** `composeAnswer` returns
+ * `parent_used` separately for this: an answer carrying general information from
+ * the web could otherwise show four "records" and one parent, and would leave
+ * the queue on the strength of pages nobody wrote.
+ *
+ * ⚠ **Turning it back on is one line**, and it is the right response to a bad
+ * answer reaching a parent: the reason a held answer carries is already recorded
+ * on every row, so the queue can be re-read afterwards to see what would have
+ * gone out.
  */
-export const PILOT_HOLD_EVERYTHING = true;
+export const PILOT_HOLD_EVERYTHING = false;
 
 export interface RoutingInput {
   /** From `classifyDemand` — rule-based, and it may only ever escalate. */
@@ -119,7 +154,7 @@ export function routeAnswer(input: RoutingInput): RoutingVerdict {
     return { hold: true, reason: "pilot_review_all", permanent: false };
   }
 
-  return { hold: false, reason: "pilot_review_all", permanent: false };
+  return { hold: false, reason: "not_held", permanent: false };
 }
 
 /**

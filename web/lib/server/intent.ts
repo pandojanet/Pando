@@ -23,11 +23,22 @@ import {
  * in the webhook before this is reached — 5.3's own requirement, and the reason
  * is that a classifier is probabilistic while a compliance keyword cannot be.
  *
- * **It never decides anything sensitive.** Whether a question is high-stakes,
- * peer support or an allegation is `classifyDemand`'s job (11 Aug), it is rule-
- * based, and a keyword scan there may only ever *escalate*. This model answers
- * one narrow question — what does this person want — and a wrong answer routes a
- * message to the wrong queue rather than mislabelling a safety question.
+ * **It cannot clear a message, only raise it.** Which *class* of sensitive a
+ * question is — high-stakes, peer support, an allegation — remains
+ * `classifyDemand`'s job (11 Aug), rule-based, where a keyword scan may only
+ * ever escalate. What this model now also returns is a single `sensitive`
+ * boolean, and the caller takes whichever of the two readings is higher, so the
+ * model can add caution and can never remove it.
+ *
+ * ⚠ **Why that field was added on 8 Sep**, and it is the safety half of turning
+ * `PILOT_HOLD_EVERYTHING` off. While every answer waited for a person,
+ * `classifyDemand` missing something cost nothing. It is now the thing standing
+ * between a health question and an unread automatic reply — and measured against
+ * real phrasings it does not stand: *"my 4 year old keeps having nosebleeds, is
+ * that normal?"* returns `ordinary`, because `HIGH_STAKES_TERMS` carries no
+ * medical vocabulary whatsoever. That list was written as a net **under a
+ * category tap**, and an SMS has no tap. One boolean on a request already being
+ * made is the cheapest honest cover for the gap.
  *
  * **It never writes.** It returns a reading; the caller decides.
  */
@@ -47,6 +58,12 @@ const SYSTEM = [
   "- settings: changing how often they are contacted, or what the service knows",
   "- chitchat: thanks, a greeting, a wrong number, nothing to act on",
   "- unclear: you cannot tell",
+  "",
+  "Set sensitive when the message touches health, medical symptoms, medication,",
+  "legal questions, a child's safety, or makes a claim about a named person.",
+  "⚠ When you are unsure, set it. A sensitive message is read by a person before",
+  "anything is sent, so a false positive costs one extra reading and a miss sends",
+  "an unread answer about a child's health. The two are not comparable.",
   "",
   "Use unclear whenever you are not sure. It is routed to a person, which is the",
   "correct outcome for an ambiguous message — a confident wrong guess is worse",
@@ -81,13 +98,18 @@ const SCHEMA = {
   properties: {
     intent: { type: "string", enum: INTENTS },
     confidence: { type: "number" },
+    sensitive: {
+      type: "boolean",
+      description:
+        "Health, legal, safety, or a claim about a named person. When unsure, true.",
+    },
     reason: {
       type: "string",
       maxLength: 200,
       description: "One short clause. Never quote the message.",
     },
   },
-  required: ["intent", "confidence", "reason"],
+  required: ["intent", "confidence", "reason", "sensitive"],
   additionalProperties: false,
 } as const;
 
@@ -115,6 +137,7 @@ export async function classifyIntent(input: {
       confidence: 0,
       source: "fallback",
       reason: "empty message",
+      sensitive: false,
     };
   }
 
@@ -187,7 +210,12 @@ export async function classifyIntent(input: {
 
 function safeParse(
   raw: string,
-): { intent: string; confidence: number; reason?: string } | null {
+): {
+  intent: string;
+  confidence: number;
+  reason?: string;
+  sensitive?: boolean;
+} | null {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
     if (typeof value.intent !== "string" || typeof value.confidence !== "number") {
@@ -197,6 +225,7 @@ function safeParse(
       intent: value.intent,
       confidence: value.confidence,
       reason: typeof value.reason === "string" ? value.reason : undefined,
+      sensitive: false,
     };
   } catch {
     return null;

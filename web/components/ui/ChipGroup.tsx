@@ -89,11 +89,32 @@ export function ChipGroup({
     if (on && blocked(option)) return;
 
     if (mode === "single") {
-      /* Radio semantics: tapping the chosen one keeps it chosen. Allowing a
-         deselect meant the pre-set answer (the monthly allowance defaults to 3)
-         was cleared by the first tap, which is the opposite of what tapping it
-         means. */
-      onChange([option.id], { id: option.id, on: true });
+      /**
+       * Tapping the chosen one clears it.
+       *
+       * ⚠ **This reverses the 3 Aug decision, and the reason that decision
+       * existed is spent.** It read: *"tapping the chosen chip keeps it chosen.
+       * Deselecting cleared the pre-set monthly allowance on the first tap,
+       * which is the opposite of what the tap means."* True at the time — the
+       * allowance was preselected at 3. On 1 Sep the client made participation
+       * a required choice with **nothing preselected**, and today every
+       * single-select question in `EMPTY_ANSWERS` starts `null`. So the tap that
+       * this rule protected can no longer happen, while the cost it imposed is
+       * what the client reported: an answer you cannot take back.
+       *
+       * It bit hardest on `grew_up_here`, whose own comment in `questions.ts`
+       * says *"the one option toggles — which is what a checkbox is"*. It did
+       * not: one tap and a parent was permanently recorded as having grown up
+       * here, on an optional question.
+       *
+       * **The radio semantics survive intact**, which is why this needs no
+       * change to the roles: a radiogroup with nothing checked is legal — it is
+       * the initial state of every one of these questions — so clearing returns
+       * it to a state it is already allowed to be in. What is non-standard is
+       * the interaction, not the state, and the alternative (toggle buttons)
+       * would cost a screen-reader user the "2 of 5" position they get now.
+       */
+      onChange(on ? [option.id] : [], { id: option.id, on });
       return;
     }
 

@@ -36,6 +36,21 @@ import type { FreshnessState, TrustLabels } from "./trust-labels";
 
 /** One record, already retrieved and labelled (5.5 → 5.6). */
 export interface AnswerCandidate {
+  /**
+   * The `shares` row this came from, when it came from one.
+   *
+   * **Never rendered** — it exists so the caller can record *which* records an
+   * answer was built from, which is the join `drizzle/0026` added `share_ids`
+   * for and which nothing had ever written. Without it 9.2 cannot fire at all:
+   * the thank-you query inner-joins contributions on that array, so an empty one
+   * finds nobody and the contributors behind a recommendation that helped are
+   * never thanked.
+   *
+   * Absent on a caregiver and on general information: `share_ids` joins
+   * `shares`, and an id from anywhere else would join nothing or, worse, the
+   * wrong row.
+   */
+  id?: string | null;
   name: string;
   venue?: string | null;
   kind: string;
@@ -117,6 +132,29 @@ export interface ComposedAnswer {
   public_only: boolean;
   /** How many records the answer actually used. */
   used: number;
+  /**
+   * How many of those a parent actually stands behind.
+   *
+   * Separate from `used` because the answer now carries **general information
+   * alongside** the parents' records, and every judgement downstream is about
+   * the parents' half: whether to offer a Network Ask, and whether the answer is
+   * thin enough to need a person (5.8's `low_evidence`).
+   *
+   * Without it those judgements silently improve when the web finds three
+   * things: one parent plus three public results reads as four records, so Pando
+   * would stop offering to ask the network on the strength of pages it did not
+   * write. The comment on `next_step` below has always said the line is drawn at
+   * parent-backed records; this is what makes the code say it too.
+   */
+  parent_used: number;
+  /**
+   * The `shares` rows behind the records that were actually rendered.
+   *
+   * The ones **used**, never the ones retrieved: an answer that mentions two of
+   * five records was built from two, and thanking the other three would be
+   * thanking people whose recommendation nobody saw.
+   */
+  used_ids: string[];
   /** Every label that appears, for the acceptance checks and the admin queue. */
   labels: string[];
 }
@@ -177,6 +215,21 @@ const FRESHNESS_RANK: Record<FreshnessState, number> = { fresh: 0, ageing: 1, st
 export function rankForAnswer(candidates: AnswerCandidate[]): AnswerCandidate[] {
   return [...candidates].sort(
     (a, b) =>
+      /**
+       * A parent-backed record always outranks general information, whatever
+       * else is true of either.
+       *
+       * Stated as its own key rather than left to fall out of the counts, and
+       * the case that forces it is the quiet one: a record with only secondhand
+       * contributions has `firsthand_count: 0` and may be ageing, so on the
+       * remaining keys a freshly-fetched web result would beat it. That is the
+       * product's own claim inverted — "AI knows things. Pando knows someone."
+       *
+       * It is also what makes the budget honest. Records are dropped from the
+       * end when there is no room, so this is what guarantees the thing that
+       * goes first is the page nobody vouched for.
+       */
+      Number(a.trust.public_only) - Number(b.trust.public_only) ||
       Number(b.answer_ready ?? false) - Number(a.answer_ready ?? false) ||
       b.firsthand_count - a.firsthand_count ||
       FRESHNESS_RANK[a.trust.freshness] - FRESHNESS_RANK[b.trust.freshness] ||
@@ -358,6 +411,8 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       next_step: input.can_offer_blast === false ? "human_review" : "offer_blast",
       public_only: false,
       used: 0,
+      parent_used: 0,
+      used_ids: [],
       labels: [],
     };
   }
@@ -415,17 +470,59 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const footer = hoisted.length > 0 ? `All of these: ${hoisted.join(". ")}.` : "";
 
   const lines: string[] = [];
-  let used = 0;
+  /**
+   * The records that actually made it in, not how many.
+   *
+   * It was a count read back as `ranked.slice(0, used)`, which held only while
+   * the loop below could never skip: it now can, because a parent record too
+   * long for the reserved budget is stepped over rather than ending the run. A
+   * prefix of `ranked` would then name the wrong records in `labels` and count
+   * the wrong ones in `parent_used`.
+   */
+  const chosen: AnswerCandidate[] = [];
   let length = head.length + (footer ? footer.length + 1 : 0);
   const tail = input.forwardable ? `\n${SHARE_LINE}` : "";
+
+  /**
+   * One line of general information keeps its place, and the parents fill the
+   * rest around it.
+   *
+   * ## Why a reservation and not simply an ordering
+   *
+   * Public candidates rank last, deliberately — a parent-backed record always
+   * outranks a page. But "last" and "dropped" are the same thing against a fixed
+   * budget: measured live, three parent records filled all 459 characters and
+   * the web result never once reached a parent, so the feature existed and
+   * produced nothing. The client asked for an answer that carries **both**, and
+   * both is not a preference the budget can be left to break.
+   *
+   * So while the loop is on parent-backed records the budget is short by the
+   * cost of the first public line, and that line is then allowed the full
+   * budget. Public candidates sort last, so this reads in one pass.
+   *
+   * ⚠ The reservation is **one** line, whatever the search found. Two would buy
+   * a second page at the price of a second parent, and a parent is the thing the
+   * answer is for.
+   */
+  const firstPublic = ranked.find((c) => c.trust.public_only);
+  const reserved = firstPublic ? line(firstPublic, perLine(firstPublic)).length + 1 : 0;
 
   for (const candidate of ranked) {
     const rendered = line(candidate, perLine(candidate));
     const cost = rendered.length + 1;
-    if (length + cost + tail.length > SMS_BUDGET) break;
+    /* The reserve applies to everything ahead of the public line and is released
+       for the line it was held for. */
+    const ceiling = candidate.trust.public_only ? SMS_BUDGET : SMS_BUDGET - reserved;
+    if (length + cost + tail.length > ceiling) {
+      if (candidate.trust.public_only) break;
+      /* A parent record that does not fit is skipped rather than ending the
+         loop: a shorter one behind it may still fit, and the public line it is
+         making room for certainly does. */
+      continue;
+    }
     lines.push(rendered);
     length += cost;
-    used += 1;
+    chosen.push(candidate);
   }
 
   /**
@@ -434,10 +531,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * it with. Rendered again with its own labels, which is cheaper than it looks
    * — the loop above has already told us the record fits.
    */
-  const collapse = used === 1 && footer !== "";
+  const collapse = chosen.length === 1 && footer !== "";
   if (collapse) {
     lines.length = 0;
-    lines.push(line(ranked[0], ranked[0].trust.labels));
+    lines.push(line(chosen[0], chosen[0].trust.labels));
   }
 
   /* Everything was too long to fit even once. Send the best one alone rather than
@@ -445,8 +542,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   if (lines.length === 0) {
     const only = line(ranked[0], ranked[0].trust.labels);
     lines.push(only.slice(0, SMS_BUDGET - head.length - tail.length - 2));
-    used = 1;
+    chosen.push(ranked[0]);
   }
+
+  const used = chosen.length;
 
   /**
    * The next step.
@@ -457,10 +556,12 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * any *parent-backed* record made it in — public information is an answer, but
    * it is not the answer they came for.
    */
+  const parentUsed = chosen.filter((c) => !c.trust.public_only).length;
+
   const next_step: NextStep =
     input.can_offer_blast === false
       ? "none"
-      : publicOnly || used < 2
+      : publicOnly || parentUsed < 2
         ? "offer_blast"
         : "none";
 
@@ -479,7 +580,9 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     next_step,
     public_only: publicOnly,
     used,
-    labels: [...new Set(ranked.slice(0, used).flatMap((c) => c.trust.labels))],
+    parent_used: parentUsed,
+    used_ids: chosen.map((c) => c.id).filter((id): id is string => typeof id === "string" && id !== ""),
+    labels: [...new Set(chosen.flatMap((c) => c.trust.labels))],
   };
 }
 
