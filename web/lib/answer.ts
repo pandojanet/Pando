@@ -69,10 +69,10 @@ export interface AnswerCandidate {
    * the record holds; the renderer is the only place that has to know how to say
    * it out loud.
    *
-   * ⚠ Structured fields only, and that boundary is invariant 11.4's: this type
-   * has **no free-text field at all**, so a named person in a parent's note
-   * cannot structurally reach another parent. Adding "what the parent said" here
-   * would open exactly the hole the absence closes.
+   * ⚠ This used to be followed by "structured fields only — this type has no
+   * free-text field at all". **That stopped being true on 9 Sep**: see `notes`,
+   * which the client's own strategy requires, and which carries the guards the
+   * absence used to stand in for.
    */
   area?: string | null;
   /**
@@ -113,6 +113,47 @@ export interface AnswerCandidate {
   firsthand_count: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
   answer_ready?: boolean;
+  /**
+   * What a parent actually wrote about it, already approved.
+   *
+   * ⚠ **This reverses the 11.4 boundary — `AnswerCandidate` had no free-text
+   * field at all, deliberately — and the client reversed it on 9 Sep by sending
+   * the strategy, whose own example answer is made of exactly this material:**
+   * *"Two said the 9am class is calmer than the 10:30 … one tip: it fills fast
+   * after Labor Day."*
+   *
+   * The old boundary read invariant 8 as forbidding it. It does not. The
+   * invariant is that free text **about a named person** is never published
+   * verbatim **without human review**, and both halves are satisfied here: these
+   * sentences are about a class or a place, and `share_contributions.status =
+   * 'approved'` *is* the human review — the contributions queue, where an admin
+   * read this exact sentence before letting it into the graph.
+   *
+   * Measured before building it: eight approved contributions on the live graph
+   * already carry one — *"Saturdays are packed, take the 9am"*, *"Sign up the
+   * week registration opens or you are on a waitlist"* — and **not one had ever
+   * reached a parent.** The knowledge the product is built to move was in the
+   * database, reviewed, and structurally unable to leave it.
+   *
+   * ⚠ **Two guards, and neither is optional.** The caller must pass text only
+   * from an **approved** contribution on an **approved** share, and must skip a
+   * record carrying an open `possible_named_person` flag — because 11.4's
+   * detector is about a record's own *name*, and a sentence naming somebody is
+   * the case invariant 8 is actually written for.
+   */
+  notes?: {
+    /** R6 — what makes it good, in their words. */
+    great?: string | null;
+    /** R7 — the caveat, which is often the most useful sentence there is. */
+    caveat?: string | null;
+  };
+  /**
+   * When a parent last confirmed it, so the evidence can be said in prose.
+   *
+   * The same date `lastConfirmedLabel` renders; carried separately because the
+   * label is now a sentence rather than a suffix.
+   */
+  last_confirmed?: string | null;
   /**
    * Where retrieval put this record — 0 is the most relevant. Lower wins.
    *
@@ -370,6 +411,180 @@ function areaWords(slug: string): string {
  * "em dashes are fine" is a rule about screens; `sms-segments.ts` exists for
  * exactly this argument on the other side.
  */
+/**
+ * The labels `evidenceSentence` now says in prose, so they are not printed twice.
+ *
+ * ⚠ **A second copy of approved copy, and that is a known cost paid deliberately
+ * here as it is in `test:answer`.** This module imports nothing at runtime — that
+ * is what lets a plain node test load it — so it cannot read `TRUST_LABEL`. The
+ * suite checks this list against `trust-labels.ts` character for character, so an
+ * edit there that is not made here fails rather than silently printing a claim
+ * twice or dropping one.
+ *
+ * The three parent-strength labels and the confirmation date become *"Two parents
+ * near you have used it, last confirmed Aug 2026"*. `Human-reviewed` is dropped
+ * outright: it is a process fact rather than a source, and the client's own label
+ * format ("3 parents · confirmed 4 weeks ago") omits it.
+ *
+ * Everything else — `Public/general information`, `Fresh network answer`,
+ * `Reference available` — is untouched and still printed verbatim.
+ */
+export const SAID_IN_PROSE: readonly string[] = [
+  "Shared by a local parent",
+  "Vouched by a local parent",
+  "Validated by multiple parents",
+  "Human-reviewed",
+];
+
+function extrasOf(labels: readonly string[]): string[] {
+  return labels.filter(
+    (l) => !SAID_IN_PROSE.includes(l) && !l.startsWith("Last confirmed"),
+  );
+}
+
+/**
+ * The evidence, in a sentence rather than as a chain of labels.
+ *
+ * ⚠ **This is a re-approval under invariant 3, taken by the client on 9 Sep**,
+ * and the wording is hers: the strategy writes the trust claim as *"Three
+ * parents near you have used Toddler Tunes in the last six months"* and gives
+ * the compact form as *"3 parents · confirmed 4 weeks ago"*. What it replaces is
+ * `Validated by multiple parents. Human-reviewed. Last confirmed Aug 2026.` —
+ * 71 characters a record, repeated on every line, and measured at **53% of every
+ * message Pando sends**.
+ *
+ * **It says more, not less.** "Two parents" is a number where "multiple" was a
+ * word, and it is computed from the same `firsthand_count` 5.6 labels from — so
+ * the claim is the same claim, stated precisely. `Human-reviewed` is dropped
+ * because it is a process fact rather than a source, and the strategy's own
+ * label format omits it.
+ *
+ * ⚠ **What is *not* softened is the public branch.** `TRUST_LABEL.PUBLIC` stays
+ * verbatim, because invariant 4 is the one this prose could actually break: a
+ * page must never read as a parent's experience, and "Public/general
+ * information" is the sentence that stops it.
+ *
+ * ⚠ And the interpunct in her own example (`3 parents · confirmed`) is outside
+ * GSM-7 and would halve every message's budget, so the separator is a comma.
+ */
+function evidenceSentence(candidate: AnswerCandidate): string {
+  /* Verbatim, from the labels 5.6 computed — never a local copy of approved
+     copy, which is the duplication invariant 3 exists to prevent. */
+  if (candidate.trust.public_only) return `${candidate.trust.labels.join(". ")}.`;
+
+  const n = candidate.firsthand_count;
+  const who =
+    n <= 0
+      ? "A local parent has shared"
+      : n === 1
+        ? "One parent near you has used"
+        : `${n} parents near you have used`;
+  const when = candidate.last_confirmed
+    ? `, last confirmed ${monthOf(candidate.last_confirmed)}`
+    : "";
+  return `${who} ${candidate.name}${placeOf(candidate)}${when}.`;
+}
+
+/**
+ * ", a class in South Pasadena" — what it is and where.
+ *
+ * ⚠ **The kind is not decoration and must not be dropped to shorten this.** It
+ * was added on 4 Sep after a live answer named two records and said what neither
+ * of them *was*: "a parent reading 'Little Maestros' has to already know it is a
+ * music class in South Pasadena, which is precisely what they were asking."
+ * `KIND_WORD` is what makes it a word a parent would use — nobody says
+ * "activity".
+ */
+function placeOf(candidate: AnswerCandidate): string {
+  const what = candidate.care
+    ? `${candidate.care.toLowerCase()} care`
+    : (KIND_WORD[candidate.kind] ?? candidate.kind);
+  const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
+  return what ? `, ${article(what)}${what}${where}` : where;
+}
+
+function article(what: string): string {
+  return /^[aeiou]/i.test(what) ? "an " : "a ";
+}
+
+function monthOf(at: string): string {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "recently";
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "America/Los_Angeles",
+  });
+}
+
+/**
+ * The lead record, in the shape the strategy asks for.
+ *
+ * Evidence, then **what a parent actually said**, then the caveat, then the
+ * money. The client chose this over the catalogue line on 9 Sep, with the second
+ * record kept as a single line so an answer still offers a comparison — which is
+ * why `SMS_BUDGET` was raised to three segments on 4 Sep and is why depth alone
+ * was not the choice.
+ *
+ * ⚠ **A parent's sentence is never edited** — not truncated, not re-punctuated,
+ * not rewritten into GSM-7. A note that does not fit is dropped whole, exactly
+ * as a record is. Altering what somebody said and then attributing it to them is
+ * a worse failure than sending one line fewer.
+ */
+function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): string {
+  const parts = [evidenceSentence(candidate)];
+
+  const great = clean(candidate.notes?.great);
+  if (great) parts.push(`One said: "${great}"`);
+
+  const caveat = clean(candidate.notes?.caveat);
+  if (caveat) parts.push(`Heads up: ${caveat}`);
+
+  const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
+  /* "About" because the bands are bands and the client's own example says it:
+     *"It runs about $30 a session."* Omitted for a free record, where "about
+     free" is nonsense. */
+  if (money) parts.push(candidate.price === "Free" ? `${money}.` : `About ${money}.`);
+
+  if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
+  parts.push(freshnessNote(candidate));
+
+  return parts.filter(Boolean).join("\n");
+}
+
+/** A parent's own words, whitespace-normalised and never otherwise touched. */
+function clean(text: string | null | undefined): string | null {
+  const flat = (text ?? "").replace(/\s+/g, " ").trim();
+  return flat === "" ? null : flat;
+}
+
+function freshnessNote(candidate: AnswerCandidate): string {
+  return candidate.trust.freshness === "fresh"
+    ? ""
+    : candidate.trust.freshness === "ageing"
+      ? "Worth checking it hasn't changed."
+      : "This one is old, so treat it as a starting point.";
+}
+
+/**
+ * Every record after the lead: one line, so the answer still offers a choice.
+ *
+ * Deliberately not a second deep block. Two of those is four segments and reads
+ * as a brochure; the strategy's example answers with one recommendation, and the
+ * client's instruction was that a short second option keeps the comparison the
+ * 4 Sep budget decision was made for.
+ */
+function alsoLine(candidate: AnswerCandidate): string {
+  if (candidate.trust.public_only) return line(candidate, candidate.trust.labels);
+
+  const n = candidate.firsthand_count;
+  const who = n === 1 ? "1 parent" : `${n} parents`;
+  const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
+  return `Also nearby: ${candidate.name}${placeOf(candidate)}, ${who}${
+    money ? `, ${money}` : ""
+  }.`;
+}
+
 function line(candidate: AnswerCandidate, labels: readonly string[]): string {
   const what = candidate.care
     ? `${candidate.care.toLowerCase()} care`
@@ -517,9 +732,22 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * The public-information branch is untouched: it never says "parents" at all,
    * which is 5.6's guard arriving in the prose.
    */
+  /**
+   * ⚠ **The opening is gone for a parent-backed answer** (9 Sep).
+   *
+   * "Here's what local parents have shared:" is 38 characters saying what the
+   * very next sentence — *"Two parents near you have used Little Maestros in
+   * South Pasadena"* — says better and with a number in it. The client's own
+   * example answer has no preamble at all; it opens on the evidence.
+   *
+   * The public branch keeps its sentence, because there it is the **guard**
+   * rather than a preamble: it is what stops a page reading as a parent's
+   * experience, which is invariant 4 and the one thing this pass must not
+   * loosen.
+   */
   const head = publicOnly
     ? "Here's what I can tell you. This is general information, not from a parent:"
-    : "Here's what local parents have shared:";
+    : "";
 
   /**
    * The labels every record shares come out of the lines and go under them once.
@@ -529,7 +757,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * the talking and a sentence introducing them would be a gloss on wording
    * nobody may gloss.
    */
-  const hoisted = sharedLabels(ranked);
+  /* Filtered through `extrasOf` as well, or the footer prints the very claim
+     the evidence sentence just made: "All of these: Validated by multiple
+     parents" under "2 parents near you have used it" (9 Sep). */
+  const hoisted = extrasOf(sharedLabels(ranked));
   const perLine = (c: AnswerCandidate) =>
     hoisted.length === 0
       ? c.trust.labels
@@ -574,8 +805,25 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const firstPublic = ranked.find((c) => c.trust.public_only);
   const reserved = firstPublic ? line(firstPublic, perLine(firstPublic)).length + 1 : 0;
 
+  /**
+   * The lead is the first parent-backed record, and it is the only one rendered
+   * in depth (9 Sep, the client's choice).
+   *
+   * Identified by identity rather than by index, because the loop below can skip
+   * a record that does not fit — so "the first one that was actually rendered"
+   * and "`ranked[0]`" are different things, and the deep block must go to the
+   * one the reader sees.
+   */
+  const leadOf = ranked.find((c) => !c.trust.public_only) ?? null;
+  let leadRendered = false;
+
   for (const candidate of ranked) {
-    const rendered = line(candidate, perLine(candidate));
+    const isLead = candidate === leadOf && !leadRendered;
+    const rendered = isLead
+      ? leadBlock(candidate, extrasOf(perLine(candidate)))
+      : candidate.trust.public_only
+        ? line(candidate, perLine(candidate))
+        : alsoLine(candidate);
     const cost = rendered.length + 1;
     /* The reserve applies to everything ahead of the public line and is released
        for the line it was held for. */
@@ -590,6 +838,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     lines.push(rendered);
     length += cost;
     chosen.push(candidate);
+    if (isLead) leadRendered = true;
   }
 
   /**
@@ -601,13 +850,20 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const collapse = chosen.length === 1 && footer !== "";
   if (collapse) {
     lines.length = 0;
-    lines.push(line(chosen[0], chosen[0].trust.labels));
+    lines.push(
+      chosen[0] === leadOf
+        ? leadBlock(chosen[0], extrasOf(chosen[0].trust.labels))
+        : line(chosen[0], chosen[0].trust.labels),
+    );
   }
 
   /* Everything was too long to fit even once. Send the best one alone rather than
      an opening sentence with nothing under it. */
   if (lines.length === 0) {
-    const only = line(ranked[0], ranked[0].trust.labels);
+    const only =
+      ranked[0] === leadOf
+        ? leadBlock(ranked[0], extrasOf(ranked[0].trust.labels))
+        : line(ranked[0], ranked[0].trust.labels);
     lines.push(only.slice(0, SMS_BUDGET - head.length - tail.length - 2));
     chosen.push(ranked[0]);
   }
@@ -641,7 +897,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     /* The footer sits under the records and above anything offered, because it
        describes them and not the offer. Dropped when a single record collapsed
        back to carrying its own labels. */
-    text: `${head}\n${lines.join("\n")}${
+    text: `${head ? `${head}\n` : ""}${lines.join("\n")}${
       footer && !collapse ? `\n${footer}` : ""
     }${offer}${tail}`,
     next_step,

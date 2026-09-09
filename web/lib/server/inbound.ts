@@ -12,7 +12,7 @@ import { classifyIntent } from "@/lib/server/intent";
 import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
-import { toGsm7 } from "@/lib/sms-segments";
+import { planSegments, toGsm7 } from "@/lib/sms-segments";
 import { SHARE_INVITE, SMALL_TALK } from "@/lib/replies";
 import {
   heldReply,
@@ -771,6 +771,28 @@ export async function handleInboundMessage(input: {
 }
 
 /**
+ * A parent's note, ready to send — or nothing.
+ *
+ * ⚠ **`toGsm7` returns null for two opposite reasons** and a caller that treats
+ * them alike is wrong either way: bare, it drops every note that was already
+ * clean; with `?? text`, it sends the one thing it exists to catch. Its own
+ * source says so — `if (encodingFor(body) === "gsm7") return null` on the first
+ * line, and the same null again at the end when the substitutions were not
+ * enough. So the two cases are separated here by asking what the *original*
+ * encodes as.
+ *
+ * The result: typography normalised where it can be, the note dropped whole
+ * where it cannot, and a parent's words never altered beyond a curly quote and
+ * an em dash.
+ */
+function sendableNote(text: string | null): string | null {
+  if (!text) return null;
+  const cleaned = toGsm7(text);
+  if (cleaned) return cleaned;
+  return planSegments(text).encoding === "gsm7" ? text : null;
+}
+
+/**
  * Compose an answer from records, put it in the queue, and say so.
  *
  * ## It sends an ordinary answer itself, since 8 Sep
@@ -1036,6 +1058,28 @@ async function answerQuestion(input: {
       trust: share.trust,
       firsthand_count: share.firsthand_count,
       answer_ready: share.answer_ready,
+      /**
+       * A parent's own words, approved, and guarded in the SQL against a record
+       * anybody flagged as naming a person.
+       *
+       * ⚠ **Typography is normalised; the words never are.** Measured on the
+       * live graph the moment this shipped: one parent's caveat — *"Saturdays
+       * are packed — take the 9am."* — carries an em dash, and one character
+       * outside GSM-7 took a 304-character answer from **2 segments to 5**.
+       * `toGsm7` only ever swaps a curly quote for a straight one and an em dash
+       * for a hyphen, so nothing a parent *said* changes; and when it cannot
+       * reach GSM-7 without dropping content it returns null, in which case the
+       * note is **dropped whole** rather than mangled. Never truncated.
+       *
+       * ⚠ This is the opposite call from `blast-answer.ts`, deliberately: there
+       * the asker paid $15 for those exact words and the segments are the cost
+       * of the thing they bought. Here Pando is paying, on every answer.
+       */
+      notes: {
+        great: sendableNote(share.note_great),
+        caveat: sendableNote(share.note_caveat),
+      },
+      last_confirmed: share.last_confirmed_at,
     })),
     /**
      * A caregiver's line said "Elena V. - caregiver." and nothing else, while

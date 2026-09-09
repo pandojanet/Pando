@@ -120,6 +120,11 @@ export interface ShareCandidate {
    * same money and thought less of it.
    */
   worth_it: string | null;
+  /** A firsthand parent's own words, approved and unedited. See the SQL. */
+  note_great: string | null;
+  note_caveat: string | null;
+  /** So the evidence can be said in prose rather than as a label. */
+  last_confirmed_at: string | null;
 }
 
 export interface CaregiverCandidate {
@@ -246,6 +251,50 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       select
         s.id, s.kind, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
+        /**
+         * What a parent actually wrote, and the two guards on it.
+         *
+         * ⚠ The client's strategy is built on this material — *"two said the
+         * 9am class is calmer than the 10:30"* — and it had never left the
+         * database. Invariant 8 permits it: the sentence is about a class, and
+         * sc.status = approved (already in the WHERE) is the human review, and no
+         * backtick appears in this comment: one inside a sql template closes it,
+         * which is now the fifth time that has cost a debugging round.
+         *
+         * **Ordered by the extraction score**, which is exactly the question that
+         * pass answers: how much could another parent act on this text (12 Aug).
+         * Recency alone picked "Lovely for the little ones" over "Small groups and
+         * the teacher is unbelievably patient with the ones who won't join in" --
+         * measured on the live graph, and the score already knew which was which.
+         *
+         * **From a firsthand contribution only.** "We heard it's good" is not a
+         * sentence to put in another parent's hands as experience.
+         *
+         * **Null for a record anybody flagged as naming a person**, open or
+         * escalated. 11.4's detector reads a record's *name*; a note naming
+         * somebody is the case the invariant is actually written for, and this
+         * is the one place a reviewer's doubt has to win over their approval.
+         */
+        (case when exists (
+               select 1 from flags f
+                where f.subject_id = s.id
+                  and f.reason = 'possible_named_person'
+                  and f.status in ('open', 'escalated')
+             ) then null
+             else (array_remove(array_agg(
+                     case when sc.firsthand then nullif(btrim(sc.what_makes_it_great), '') end
+                     order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
+        end)                                                            as note_great,
+        (case when exists (
+               select 1 from flags f
+                where f.subject_id = s.id
+                  and f.reason = 'possible_named_person'
+                  and f.status in ('open', 'escalated')
+             ) then null
+             else (array_remove(array_agg(
+                     case when sc.firsthand then nullif(btrim(sc.caveat), '') end
+                     order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
+        end)                                                            as note_caveat,
         count(sc.id) filter (where sc.firsthand)                        as firsthand,
         count(sc.id) filter (where not sc.firsthand)                    as secondhand,
         count(sc.id) filter (where sc.firsthand
@@ -383,6 +432,11 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       price_band: Number(r.price_bands) === 1 ? String(r.price_band) : null,
       price_unit: Number(r.price_units) === 1 ? String(r.price_unit) : null,
       worth_it: Number(r.worths) === 1 ? String(r.worth_it) : null,
+      /* Already approved and already guarded in the SQL above. Verbatim: a
+         parent's sentence is never edited before another parent reads it. */
+      note_great: r.note_great ? String(r.note_great) : null,
+      note_caveat: r.note_caveat ? String(r.note_caveat) : null,
+      last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
     });
   }
 

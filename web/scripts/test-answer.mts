@@ -76,10 +76,30 @@ ok(
 
 console.log("\n=== invariant 3  the labels are pasted, never reworded ===");
 const one = compose([parent()]);
+/**
+ * ⚠ **Re-approved by the client on 9 Sep.** The three parent-strength labels and
+ * the confirmation date are said in prose now — *"2 parents near you have used
+ * it, last confirmed Aug 2026"* — which is her strategy's own wording and says
+ * *more* than "Validated by multiple parents" did, because it carries a number.
+ * What still has to hold is that the claim is exact and never paraphrased upward.
+ */
 ok(
-  "the exact approved string appears",
-  one.text.includes(t.TRUST_LABEL.VALIDATED),
+  "the count is stated, not described",
+  /^2 parents near you have used /.test(one.text),
   one.text,
+);
+ok(
+  "the local copy of what prose replaced matches trust-labels.ts exactly",
+  a.SAID_IN_PROSE.includes(t.TRUST_LABEL.SHARED) &&
+    a.SAID_IN_PROSE.includes(t.TRUST_LABEL.VOUCHED) &&
+    a.SAID_IN_PROSE.includes(t.TRUST_LABEL.VALIDATED) &&
+    a.SAID_IN_PROSE.includes(t.TRUST_LABEL.HUMAN_REVIEWED),
+  a.SAID_IN_PROSE.join(" | "),
+);
+ok(
+  "and none of them is printed as well",
+  a.SAID_IN_PROSE.every((l) => !one.text.includes(l)),
+  "saying one claim twice is how a reader stops believing either",
 );
 ok(
   "and nothing paraphrases it",
@@ -119,9 +139,12 @@ ok(
   "firsthand_count is per record, and one parent can stand behind several",
 );
 ok(
-  "one record and two read the same way",
-  compose([parent()]).text.split("\n")[0] ===
-    compose([parent(), parent({ name: "Little Maestros" })]).text.split("\n")[0],
+  "a lower-ranked second record does not displace the lead",
+  compose([parent({ rank: 0 })]).text.split("\n")[0] ===
+    compose([parent({ rank: 0 }), parent({ name: "Little Maestros", rank: 5 })]).text.split(
+      "\n",
+    )[0],
+  "the first sentence is the lead record's own evidence, so only relevance may move it",
 );
 ok(
   "and it still never says parents about public information",
@@ -130,8 +153,9 @@ ok(
   "5.6's guard arriving in the prose, where it is easiest to lose",
 );
 ok(
-  "a parent-backed record still opens as parent-backed",
-  /^Here's what local parents have shared/.test(compose([parent(), publicRecord()]).text),
+  "a parent-backed answer opens on the evidence, with no preamble",
+  /^\d+ parents? near you (have|has) used /.test(compose([parent(), publicRecord()]).text),
+  "the old 38-character opening said what the next sentence says, with a number in it",
 );
 
 console.log("\n=== order: evidence first, freshness only as a tiebreak ===");
@@ -301,9 +325,9 @@ console.log("\n=== a record says what it is, and the whole answer stays in GSM-7
   ok("it names the kind in a word a parent would use", /class/.test(one), one);
   ok("and where it is, from the slug", /South Pasadena/.test(one), one);
   ok(
-    "the labels themselves are untouched",
-    /Validated by multiple parents/.test(one),
-    "approved copy, verbatim - only the punctuation between them is ours",
+    "the strength is a number now, and it is the right number",
+    /^2 parents near you have used Little Maestros, a class in South Pasadena/.test(one),
+    one,
   );
 
   /* One character outside GSM-7 halves the budget, and the old separator was
@@ -341,37 +365,48 @@ console.log("\n=== a claim every record shares is made once, not on each line ==
      shortened is the repetition: 70 characters per line saying the same thing,
      roughly half the message. Nothing is reworded and no record loses a claim
      - the identical string is printed once about the set. */
-  const same = ["Validated by multiple parents", "Human-reviewed"];
+  /* ⚠ Hoisting now applies only to the labels prose did **not** absorb.
+     `Reference available` is the live one: a caregiver carries it, it is
+     approved copy, and it says something the evidence sentence does not. */
+  const same = ["Reference available"];
   const three = compose([
     backed("A", same),
     backed("B", same),
     backed("C", same),
   ]).text;
   ok(
-    "the shared chain appears once",
-    three.match(/Human-reviewed/g)?.length === 1,
+    "a label prose did not absorb still hoists, once",
+    three.match(/Reference available/g)?.length === 1,
     three,
   );
-  ok("and it is still verbatim", /Validated by multiple parents/.test(three));
+  ok("and it is still verbatim", /All of these: Reference available\./.test(three), three);
+  ok(
+    "while the ones prose absorbed are never printed at all",
+    !/Validated by multiple parents|Human-reviewed/.test(
+      compose([backed("A", ["Validated by multiple parents", "Human-reviewed"])]).text,
+    ),
+  );
 
   /* The interesting case, and the one that must not be flattened: two records
      of different strength. What they share hoists; what distinguishes them
      stays where a reader can see which is which. */
+  /* ⚠ **The distinction survived the rewrite, and it is carried better.** It
+     used to be "Validated by multiple parents" against "Shared by a local
+     parent"; it is now three parents against one, on the face of each line. */
   const mixed = compose([
-    backed("Strong", ["Validated by multiple parents", "Human-reviewed"]),
-    backed("Weaker", ["Shared by a local parent", "Human-reviewed"]),
+    backed("Strong", ["Reference available"], { firsthand_count: 3, rank: 0 }),
+    backed("Weaker", ["Reference available"], { firsthand_count: 1, rank: 1 }),
   ]).text;
-  const strongLine = mixed.split("\n").find((l) => l.startsWith("Strong")) ?? "";
-  const weakLine = mixed.split("\n").find((l) => l.startsWith("Weaker")) ?? "";
   ok(
-    "the distinction stays on the lines",
-    /Validated by multiple parents/.test(strongLine) &&
-      /Shared by a local parent/.test(weakLine),
-    "hoisting what differs would tell the reader both were equally backed",
+    "the difference in strength is visible per record",
+    /3 parents near you have used Strong/.test(mixed) &&
+      /Also nearby: Weaker[^\n]*1 parent/.test(mixed),
+    mixed,
   );
   ok(
-    "and only what they share is hoisted",
-    !/Human-reviewed/.test(strongLine) && /All of these: Human-reviewed/.test(mixed),
+    "and what they genuinely share is still hoisted once",
+    mixed.match(/Reference available/g)?.length === 1,
+    mixed,
   );
 
   ok(
@@ -641,8 +676,8 @@ ok(
           },
         ],
       })
-      .text.includes("- class in"),
-    "a parent asks about a class, never an 'activity'",
+      .text.includes("a class in South Pasadena"),
+    "a parent asks about a class, never an 'activity' - the wording moved into the evidence sentence on 9 Sep; the translation itself did not change",
   );
 }
 
