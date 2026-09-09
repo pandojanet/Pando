@@ -39,7 +39,31 @@ export async function answersDuePrompt(limit = 25): Promise<DueAnswer[]> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select a.id::text          as answer_id,
-             a.person_id::text   as person_id,
+             /*
+              * Resolved from the PHONE when the answer row has no id (9 Sep).
+              *
+              * Invariant 10 is that a phone is an identity, and sendSms REFUSES
+              * an outreach send carrying no personId — policy_reason
+              * "no_person", deliberately, so a missing id can never be a way
+              * round the contributor-protection rules.
+              *
+              * Together those two meant a prompt that could never go out. Found
+              * on live data: one of six sent answers carries a null person_id
+              * while a people row for its phone exists — a cold inbound whose
+              * answer was written before ensureInboundPerson stamped it. Every
+              * run refused it, markPrompted was never reached, and it sat in the
+              * queue until it aged past its window, silently, because a refusal
+              * is a skip and a skip is the system working.
+              *
+              * people.phone is unique, so this cannot attribute the prompt to
+              * anybody but the person who was texted.
+              *
+              * (No backticks in here: they close the sql template. Sixth time.)
+              */
+             coalesce(
+               a.person_id,
+               (select p.id from people p where p.phone = a.phone)
+             )::text             as person_id,
              a.phone             as phone,
              a.sent_at           as sent_at,
              coalesce(
