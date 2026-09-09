@@ -130,8 +130,20 @@ export function CustomChip({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${label}`}
+        /**
+         * 44px, not 36 — raised 9 Sep after walking the whole flow.
+         *
+         * It was the smallest target in the onboarding, and what changed is not
+         * the button but its job: since the long lists became dropdowns, a
+         * green chip is the **only** way to undo an answer. The options behind
+         * it are hidden, so a parent who mistapped has this × and nothing else.
+         * 36px was survivable while every answer was also a chip you could tap
+         * off; it is not survivable as the sole exit.
+         *
+         * It fits: the chip is `min-h-12`, so 44 leaves 2px either side.
+         */
         className={cn(
-          "grid h-9 w-9 place-items-center rounded-full transition-colors",
+          "grid h-11 w-11 place-items-center rounded-full transition-colors",
           green
             ? "text-white/75 hover:bg-white/20 hover:text-white"
             : "text-gold-ink/70 hover:bg-gold-line/50 hover:text-gold-ink",

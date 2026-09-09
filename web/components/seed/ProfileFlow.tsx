@@ -1334,9 +1334,15 @@ export function ProfileFlow() {
                       };
                       return (
                         <div key={`${question.id}-${block.age}`}>
-                          <h3 className="mb-2.5 text-[15px] font-semibold text-ink">
+                          {/* `h2`, not `h3` (9 Sep). These blocks are the only
+                              headings under the screen's `h1`, so an `h3` made
+                              the document jump a level on both per-child
+                              screens — the same fault the admin's record queues
+                              were fixed for on 7 Sep, one surface along. Size is
+                              unchanged; only the tag is. */}
+                          <h2 className="mb-2.5 text-[15px] font-semibold text-ink">
                             {block.heading}
-                          </h3>
+                          </h2>
                           {directory ? (
                             <SearchableChipGroup
                               {...perChild}

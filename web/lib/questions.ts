@@ -176,6 +176,10 @@ const TIME_IN_AREA: Option[] = [
  * thing, which is the pattern the rest of this questionnaire avoids.
  */
 const GREW_UP_HERE: Option[] = [
+  /* ⚠ "this area", not "your area" — the title above it moved to *your* on
+     9 Sep and this must not follow it for consistency: the heading is Pando
+     addressing the parent, and this option is the parent speaking about
+     themselves, where "I grew up in your area" is nonsense. */
   { id: "grew_up_here", label: "I grew up in this area", wide: true },
 ];
 
@@ -996,7 +1000,7 @@ export const SCREENS: Screen[] = [
        this market and not the parent's — seventeen towns are on offer, and a
        parent in Monrovia was being asked how long they had lived in somebody
        else's. "This area" is the same question with the assumption removed. */
-    title: "How long have you lived in this area?",
+    title: "How long have you lived in your area?",
     /**
      * ## Why this line says what it counts (7 Sep)
      *
@@ -1007,7 +1011,7 @@ export const SCREENS: Screen[] = [
      *
      * **The question never said what it measured.** For a parent who grew up in
      * Pasadena, left for a decade and came back three years ago, *"How long
-     * have you lived in this area?"* has two truthful answers — 10+ for
+     * have you lived in your area?"* has two truthful answers — 10+ for
      * a lifetime, 1–3 for the current stretch — and the screen gave no rule. So
      * two identical families answered differently and `time_in_area` became
      * noise in the one dimension it exists to measure.
