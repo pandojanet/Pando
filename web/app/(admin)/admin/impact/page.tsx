@@ -114,10 +114,7 @@ export default function ImpactPage() {
 
   return (
     <>
-      <PageHead
-        title="Thanks and impact"
-        intro="Whether the answers Pando sent actually helped, and whether the parents behind them have heard about it."
-      />
+      <PageHead title="Thanks and impact" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -171,18 +168,13 @@ export default function ImpactPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There is no sample impact on purpose: a fabricated “it helped” is the one claim this page exists to count."
+              noSample
             />
           </Card>
         ) : filtered.length === 0 ? (
           <Card>
             <Empty
               title={all.length === 0 ? "No answers have gone out yet" : "Nothing in this view"}
-              body={
-                all.length === 0
-                  ? "Once an answer is approved and sent, it shows up here — and a few days later Pando asks whether it helped."
-                  : undefined
-              }
             />
           </Card>
         ) : (
@@ -250,19 +242,18 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
         <>
           {row.is_test && <Badge tone="neutral">Test</Badge>}
           {row.helped === true && (
-            <Badge tone="green" hint="The parent replied YES when Pando asked whether it helped.">
+            <Badge tone="green">
               It helped
             </Badge>
           )}
           {row.helped === false && (
-            <Badge tone="gold" hint="The parent replied NO. Not a fault of the record — a recommendation can be excellent and wrong for one family.">
+            <Badge tone="gold">
               It didn&apos;t help
             </Badge>
           )}
           {row.helped === null && row.helped_asked_at !== null && (
             <Badge
               tone="neutral"
-              hint="Asked and no reply. Never recorded as a no — a silence is not a verdict."
             >
               No reply
             </Badge>
@@ -270,7 +261,6 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
           {row.helped_asked_at === null && (
             <Badge
               tone="muted"
-              hint="Pando has not asked yet. The window is 3–5 days for a class and 7–14 for a caregiver, and past it the question is not asked at all."
             >
               Not asked
             </Badge>
@@ -278,7 +268,6 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
           {row.helped === true && unthanked.length > 0 && (
             <Badge
               tone="red"
-              hint="The parent said it helped, and these contributors have never been thanked. The weekly batch should pick them up — if it does not, the loop has stopped."
             >
               {owedBadge(unthanked.length)}
             </Badge>
@@ -329,8 +318,8 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
 
 function owedNote(n: number): string {
   return n === 1
-    ? "1 answer helped somebody and the parent behind it has never been thanked. The weekly batch should pick it up — if it has not, the thanks job is not running."
-    : `${n} answers helped somebody and the parents behind them have never been thanked. The weekly batch should pick them up — if it has not, the thanks job is not running.`;
+    ? "1 answer helped somebody and the parent behind it has not been thanked."
+    : `${n} answers helped somebody and the parents behind them have not been thanked.`;
 }
 
 function owedBadge(n: number): string {

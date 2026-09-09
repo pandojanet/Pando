@@ -14,60 +14,38 @@
  */
 
 /** What a flag is, said as a person would say it. */
-const FLAG_REASONS: Record<string, { title: string; meaning: string }> = {
+const FLAG_REASONS: Record<string, { title: string }> = {
   possible_named_person: {
     title: "Someone is named",
-    meaning:
-      "A person is named or clearly identifiable in what this parent wrote. Read it before it is used anywhere — that is the only reason it is here, and it does not mean the note is bad.",
   },
   named_allegation: {
     title: "A claim about someone",
-    meaning:
-      "A parent said something negative about a named person. Read it, and nothing else — this is never quoted in an answer, never circulated, and never added to what Pando knows.",
   },
   high_stakes_demand: {
     title: "Health, legal or safety question",
-    meaning:
-      "The parent was shown professional resources straight away. This is here so somebody follows up properly — Pando does not answer these itself.",
   },
   low_confidence: {
     title: "Not much to go on",
-    meaning:
-      "Another parent probably could not act on what was written. Worth a read: sometimes it is a good recommendation that just needs one more detail.",
   },
   stale_at_capture: {
     title: "Already out of date",
-    meaning:
-      "The parent said themselves it was over a year ago. Still usable, but it should be labelled as old — prices and teachers change.",
   },
   named_person_record: {
     title: "This record is a person",
-    meaning:
-      "The name looks like an individual — a tutor, a coach, a teacher — rather than a place or a programme. That matters because a caregiver gets protections this record does not: nobody asked whether they are 18, and nobody asked them anything at all. If it is a business, approve it and this goes away. If it is a person, it belongs in the caregiver flow with its own consent, and should not be answered with until it is.",
   },
   unreadable_question: {
     title: "A question Pando could not read",
-    meaning:
-      "A parent wrote in, Pando asked twice what they were looking for, and still could not tell. They have been told a person will read it and come back to them — so this one is owed a reply today, and the words they used are on the flag.",
   },
   recommendation_withdrawn: {
     title: "A parent took it back",
-    meaning:
-      "Someone who recommended this said it is no longer worth recommending. It is marked as out of date, not removed — other parents may still stand behind it, and one changed mind is evidence rather than a verdict.",
   },
   possible_duplicate_share: {
     title: "Might be a duplicate",
-    meaning:
-      "This looks like somewhere Pando already knows about under a slightly different name. Worth checking before it becomes a second entry.",
   },
 };
 
 export function flagTitle(reason: string): string {
   return FLAG_REASONS[reason]?.title ?? sentence(reason);
-}
-
-export function flagMeaning(reason: string): string | null {
-  return FLAG_REASONS[reason]?.meaning ?? null;
 }
 
 /** How urgent, in words rather than a severity enum. */

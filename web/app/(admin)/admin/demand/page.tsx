@@ -164,10 +164,7 @@ export default function DemandPage() {
 
   return (
     <>
-      <PageHead
-        title="What parents asked for"
-        intro="What parents asked, in their own words. Health, legal and safety ones need a person today."
-      />
+      <PageHead title="What parents asked for" />
 
       {/* Banners above the filter — see `/admin/activities` for why: a wrapped
           filter row pushes a confirmation off a phone screen. */}
@@ -226,12 +223,7 @@ export default function DemandPage() {
           <NotConfigured demo={demo} onDemo={setDemo} />
         ) : visible.length === 0 ? (
           <Empty
-            title="Nothing in this view"
-            body={
-              filter === "urgent"
-                ? "Nothing is waiting on a person. That is the state you want."
-                : "Switch the filter, or wait for new sessions."
-            }
+            title={filter === "urgent" ? "Nothing needs a person" : "Nothing in this view"}
           />
         ) : (
           <RecordList>
@@ -301,7 +293,6 @@ export default function DemandPage() {
                           tone="primary"
                           disabled={busy === row.id}
                           subject={`"${row.question_text.slice(0, 44).trimEnd()}"`}
-                          title="Writes a note against this question, with your name on it. Nothing goes to the parent."
                           onClick={() => setNoteFor(noteFor === row.id ? null : row.id)}
                         >
                           {needsNote
@@ -314,7 +305,6 @@ export default function DemandPage() {
                           tone="secondary"
                           disabled={busy === row.id}
                           subject={`"${row.question_text.slice(0, 44).trimEnd()}"`}
-                          title="Takes it off the list without a note — for a question that needs nothing from you."
                           onClick={() =>
                             void run(row.id, "Closed", async () =>
                               adminAction({
@@ -358,7 +348,7 @@ export default function DemandPage() {
                             ? "What you did about it"
                             : "Who or what could answer this"
                         }
-                        hint="Saved with your name, for other admins. It never reaches the parent."
+                        hint="Saved with your name. Never reaches the parent."
                       >
                         <input
                           className={inputClass}
@@ -407,9 +397,6 @@ export default function DemandPage() {
         <Card className="mt-4">
           <div className="px-4 py-3">
             <h2 className="text-[14px] font-semibold">Where the demand is</h2>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
-              Where the parents asking actually live.
-            </p>
             <ul className="mt-3 space-y-1.5">
               {byArea.rows.map((r) => (
                 <li key={r.area} className="flex items-baseline gap-2 text-[13.5px]">

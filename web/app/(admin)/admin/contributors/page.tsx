@@ -106,10 +106,7 @@ export default function ContributorsPage() {
 
   return (
     <>
-      <PageHead
-        title="Contributors"
-        intro="Everyone who filled in a profile."
-      />
+      <PageHead title="Contributors" />
 
       {/**
        * 2 Sep — the controls moved out of `PageHead`'s `right` slot, and this is
@@ -210,11 +207,6 @@ export default function ContributorsPage() {
         ) : filtered.length === 0 ? (
           <Empty
             title={all.length === 0 ? "No contributors yet" : "Nothing matches"}
-            body={
-              all.length === 0
-                ? "They appear here as soon as somebody finishes the profile."
-                : "Try a shorter search."
-            }
           />
         ) : (
           <TableWrap label="Contributors">
@@ -226,7 +218,7 @@ export default function ContributorsPage() {
                     whose, because a column of bare years reads as theirs. Matches
                     the wording on the detail page rather than inventing a second. */}
                 <Th>Children born</Th>
-                <Th className="text-right" hint="Everything they shared, whether or not you have looked at it yet.">
+                <Th className="text-right">
                   Shared
                 </Th>
                 {/* "Qualifying" is the word the estimate and the checklist both
@@ -237,14 +229,14 @@ export default function ContributorsPage() {
                     the next two columns you happened to be looking at. The
                     heading has to stand on its own, so it names the bigger of the
                     two thresholds and the tooltip carries both. */}
-                <Th className="text-right" hint="Approved, firsthand, recent enough and complete. Both thresholds read this number, and they are not the same: one earns the reward, two activates Founding. A “+ 1 caregiver” beside it counts caregivers this family put forward that you have accepted and are not holding.">
+                <Th className="text-right">
                   Counts for Founding
                 </Th>
-                <Th hint="Paid for one qualifying contribution.">Reward</Th>
-                <Th hint="Activates on the second qualifying contribution, and never automatically — you confirm it.">
+                <Th>Reward</Th>
+                <Th>
                   Founding
                 </Th>
-                <Th hint="Whether they agreed another parent may come back to them about something they shared.">
+                <Th>
                   Open to questions
                 </Th>
                 <Th>Joined</Th>
@@ -303,7 +295,7 @@ export default function ContributorsPage() {
                     {row.founding_status === "founding" ? (
                       <Badge tone="green">Confirmed</Badge>
                     ) : row.founding_status === "request_invite" ? (
-                      <Badge tone="muted" hint="Not a rejection — they keep everything they shared and become an ordinary user at launch.">
+                      <Badge tone="muted">
                         Not from the group
                       </Badge>
                     ) : (

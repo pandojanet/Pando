@@ -149,10 +149,7 @@ export default function ClaimsPage() {
 
   return (
     <>
-      <PageHead
-        title="Caregiver sign-ups"
-        intro="Caregivers who signed themselves up. Say which family put each one forward."
-      />
+      <PageHead title="Caregiver sign-ups" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -174,7 +171,6 @@ export default function ClaimsPage() {
         <Card>
           <Empty
             title="No sign-ups yet"
-            body="They appear here once a family invites them and they fill in a profile."
           />
         </Card>
       ) : (
@@ -399,11 +395,6 @@ function DeleteRequest({
     <div className="mt-2 rounded-xl border border-alert-line bg-alert-wash p-3">
       <p className="text-[13px] font-semibold text-alert">
         This deletes their profile, their sign-up and their consent records.
-      </p>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-alert/90">
-        It cannot be undone from here, and it is what we promised them. The family&apos;s
-        own card stays — it is that parent&apos;s contribution, and it holds no way to
-        contact anybody.
       </p>
       <input
         value={via}

@@ -15,7 +15,7 @@ import {
   Th,
   Toolbar,
 } from "@/components/admin/ui";
-import { Hint, SegmentedFilter } from "@/components/admin/kit";
+import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
 import { TIERS, type TierId } from "@/lib/tiers";
 import type { StandingRow } from "@/lib/admin/types";
@@ -134,7 +134,7 @@ export function Standing() {
           right={
             governed > 0 ? (
               <span className="text-[12.5px] text-gold-ink">
-                {beingAskedLess(governed)}{" "}<Hint label="Why Pando is asking them less">{"Their response rate is under a quarter over 30 days, so Pando has lowered how often it asks them — never below five a month, which is the community minimum."}</Hint></span>
+                {beingAskedLess(governed)}</span>
             ) : undefined
           }
         >
@@ -146,16 +146,11 @@ export function Standing() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample standings on purpose: a tier is earned access, and inventing one puts a rung against a real person's name."
+              noSample
             />
           ) : filtered.length === 0 ? (
             <Empty
               title={all.length === 0 ? "Nobody has a standing yet" : "Nothing in this view"}
-              body={
-                all.length === 0
-                  ? "A standing is built from approved contributions, answered Asks and confirmed freshness checks. Approve a contribution and the first one appears."
-                  : undefined
-              }
             />
           ) : (
             <TableWrap label="Contributor standing">
@@ -165,13 +160,11 @@ export function Standing() {
                   <Th>Standing</Th>
                   <Th
                     className="text-right"
-                    hint="Approved contributions · Asks answered · freshness checks confirmed · times a recommendation of theirs reached a parent."
                   >
                     What they have done
                   </Th>
                   <Th
                     className="text-right"
-                    hint="Proactive messages in the last 30 days and how many they answered. Below four requests no rate is shown — one miss out of one is not a pattern."
                   >
                     Answering
                   </Th>
@@ -236,7 +229,6 @@ function StandingTableRow({ row }: { row: StandingRow }) {
         {row.governed && (
           <Badge
             tone="gold"
-            hint="Pando has lowered how often it asks them, because they have not been answering. It never goes below five a month."
           >
             Lowered
           </Badge>

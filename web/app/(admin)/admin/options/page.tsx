@@ -20,7 +20,6 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { PendingOptionRow } from "@/lib/admin/types";
 import { CATEGORY_LABEL } from "@/lib/admin/labels";
@@ -71,10 +70,7 @@ export default function PendingOptionsPage() {
 
   return (
     <>
-      <PageHead
-        title="Names & places"
-        intro="Things parents typed because they weren't on the list. Add the real ones."
-      />
+      <PageHead title="Names & places" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -90,7 +86,6 @@ export default function PendingOptionsPage() {
         ) : pending.length === 0 ? (
           <Empty
             title="Nothing waiting"
-            body="New ones appear as parents type them."
           />
         ) : (
           <TableWrap label="Answers parents typed, waiting to be promoted">
@@ -98,7 +93,7 @@ export default function PendingOptionsPage() {
               <tr>
                 <Th>What they typed</Th>
                 <Th>Category</Th>
-                <Th className="text-right" hint="How many parents typed this. More than one is the strongest reason to add it.">
+                <Th className="text-right">
                   Parents who typed it
                 </Th>
                 <Th>First from</Th>
@@ -120,7 +115,7 @@ export default function PendingOptionsPage() {
                   <Td className="text-right">
                     {row.occurrences > 1 ? (
                       <span className="font-semibold text-green-deep">
-                        {row.occurrences}{" "}<Hint label="What the number of parents means">{"More than one parent typed this, which is the strongest reason to add it."}</Hint></span>
+                        {row.occurrences}</span>
                     ) : (
                       row.occurrences
                     )}
@@ -170,9 +165,6 @@ export default function PendingOptionsPage() {
         <RevealMore n={hidden} onClick={revealAll} />
       </Card>
 
-      <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-        Adding one connects everyone who typed it, straight away.
-      </p>
     </>
   );
 }

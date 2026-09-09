@@ -266,16 +266,6 @@ ok(
   lbl.flagTitle(np.NAMED_PERSON_FLAG) === "This record is a person",
   lbl.flagTitle(np.NAMED_PERSON_FLAG),
 );
-ok(
-  "with an instruction, not just a description",
-  /caregiver flow/i.test(lbl.flagMeaning(np.NAMED_PERSON_FLAG) ?? ""),
-  "an admin has to know that approving is not the only option",
-);
-ok(
-  "and it says what the record is missing",
-  /18/.test(lbl.flagMeaning(np.NAMED_PERSON_FLAG) ?? ""),
-  "nobody asked whether they are 18 — that is the whole point",
-);
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

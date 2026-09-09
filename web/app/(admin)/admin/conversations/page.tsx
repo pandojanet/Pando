@@ -19,7 +19,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint, SegmentedFilter } from "@/components/admin/kit";
+import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import { slugLabel } from "@/components/admin/ui";
@@ -136,10 +136,7 @@ export default function ConversationsPage() {
 
   return (
     <>
-      <PageHead
-        title="Conversations"
-        intro="Every parent Pando has exchanged a message with. Nothing is sent from this page."
-      />
+      <PageHead title="Conversations" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -162,11 +159,6 @@ export default function ConversationsPage() {
         )}
       </Toolbar>
 
-      {/**
-       * Said once, at the top, where a reader meets it before they go looking
-       * for message text and conclude the page is broken.
-       */}
-
       <div className="mb-4">
         <SegmentedFilter
           unknown={!rows}
@@ -188,7 +180,7 @@ export default function ConversationsPage() {
           right={
             rows && rows.unattributed > 0 ? (
               <span className="text-[12.5px] text-muted">
-                {rows.unattributed} unattributed{" "}<Hint label="What “unattributed” means">{"A message from a number Pando had not yet made a person for, or one whose caregiver profile has since been deleted — the log row survives without them."}</Hint></span>
+                {rows.unattributed} unattributed</span>
             ) : undefined
           }
         >
@@ -200,16 +192,11 @@ export default function ConversationsPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There is no sample history on purpose — this page answers “did Pando really text her”, and invented rows answer yes."
+              noSample
             />
           ) : filtered.length === 0 ? (
             <Empty
               title={all.length === 0 ? "No messages yet" : "Nothing in this view"}
-              body={
-                all.length === 0
-                  ? "Pando hasn't exchanged a message with anybody. Once it has, every one of them shows up here."
-                  : undefined
-              }
             />
           ) : (
             <TableWrap label="Parents Pando has messaged">
@@ -221,7 +208,6 @@ export default function ConversationsPage() {
                   <Th className="text-right">Replies</Th>
                   <Th
                     className="text-right"
-                    hint="Proactive messages in the last 30 days, and how many of them she answered. This is the window the response-rate governor uses."
                   >
                     Last 30 days
                   </Th>
@@ -360,8 +346,7 @@ function History({ detail }: { detail: ConversationDetail }) {
       </p>
       {detail.opted_out && (
         <p className="border-b border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert">
-          They have texted STOP. Nothing proactive reaches them — the send layer
-          refuses it before anything else runs.
+          They have texted STOP. Nothing proactive reaches them.
         </p>
       )}
       <ol className="divide-y divide-bark/70">
@@ -377,7 +362,6 @@ function History({ detail }: { detail: ConversationDetail }) {
             {m.answered_something && (
               <Badge
                 tone="green"
-                hint="This reply answered something Pando had asked, which is what the response-rate governor counts."
               >
                 Answered a request
               </Badge>

@@ -141,7 +141,6 @@ export function QuickFind() {
         open={open}
         onClose={() => setOpen(false)}
         title="Find a parent"
-        description="Searches the name and neighbourhood of everyone who came through, and opens their page."
       >
         <input
           ref={inputRef}

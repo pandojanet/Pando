@@ -251,20 +251,11 @@ export function Stat({
   label,
   value,
   hint,
-  explain,
   tone = "plain",
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
-  /**
-   * A sentence the reader can actually reach, next to the label.
-   *
-   * Delivery's "Still in flight" carried its only explanation in a `title=` —
-   * unreachable by touch and by keyboard, which is the fault both this file and
-   * `kit.tsx` document at length and which has already cost two client reports.
-   */
-  explain?: ReactNode;
   /**
    * `alert` rather than `warn` for a number that is *wrong*, not pending. Gold
    * already means "not finished yet" everywhere on this surface; a delivery rate
@@ -288,7 +279,6 @@ export function Stat({
     >
       <p className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
         {label}
-        {explain && <Hint label={`What "${label}" means`}>{explain}</Hint>}
       </p>
       <p
         className={cn(
@@ -361,13 +351,10 @@ function hintLabel(children: ReactNode, kind: "badge" | "column"): string {
 export function Badge({
   children,
   tone = "neutral",
-  title,
   hint,
 }: {
   children: ReactNode;
   tone?: BadgeTone;
-  /** Deprecated: reachable by a mouse and nothing else. Prefer `hint`. */
-  title?: string;
   hint?: ReactNode;
 }) {
   const tones: Record<BadgeTone, string> = {
@@ -379,7 +366,6 @@ export function Badge({
   };
   return (
     <span
-      title={title}
       className={cn(
         "inline-flex items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[11.5px] font-semibold",
         tones[tone],
@@ -439,15 +425,11 @@ export function TableWrap({
 export function Th({
   children,
   className,
-  title,
   hint,
   scope = "col",
 }: {
   children?: ReactNode;
   className?: string;
-  /** Hover explanation, same as `Td` — a column heading has to fit in two words
-      more often than it can explain itself in two words. */
-  title?: string;
   /**
    * The reachable version of `title`, for a heading whose second sentence is the
    * only place a fact is stated. The worst instance was the contributors table,
@@ -460,7 +442,6 @@ export function Th({
 }) {
   return (
     <th
-      title={title}
       scope={scope}
       className={cn(
         "border-b border-bark/70 bg-paper/60 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted",
@@ -483,18 +464,14 @@ export function Td({
   children,
   className,
   colSpan,
-  title,
 }: {
   children?: ReactNode;
   className?: string;
   colSpan?: number;
-  /** Hover explanation — used where a number needs one word of context. */
-  title?: string;
 }) {
   return (
     <td
       colSpan={colSpan}
-      title={title}
       className={cn("border-b border-bark/50 px-3 py-2.5 align-top", className)}
     >
       {children}
@@ -524,8 +501,6 @@ interface ButtonCommon {
   children: ReactNode;
   tone?: ButtonTone;
   className?: string;
-  /** For a control whose label has to stay short — this table is dense on purpose. */
-  title?: string;
   /**
    * What this button acts on, appended to its accessible name.
    *
@@ -588,7 +563,7 @@ type ButtonProps =
     });
 
 export function Button(props: ButtonProps) {
-  const { children, tone = "secondary", className, title, subject } = props;
+  const { children, tone = "secondary", className, subject } = props;
   const box = cn(BUTTON_BOX, BUTTON_TONES[tone], className);
 
   /* Built from the visible label, so the accessible name still *starts* with
@@ -601,7 +576,7 @@ export function Button(props: ButtonProps) {
 
   if (props.href !== undefined) {
     return (
-      <Link href={props.href} title={title} aria-label={label} className={box}>
+      <Link href={props.href} aria-label={label} className={box}>
         {children}
       </Link>
     );
@@ -612,7 +587,6 @@ export function Button(props: ButtonProps) {
       type={props.type ?? "button"}
       onClick={props.onClick}
       disabled={props.disabled}
-      title={title}
       aria-label={label}
       className={box}
     >
@@ -736,8 +710,7 @@ export function Empty({
 export function SampleBanner() {
   return (
     <div className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-4 py-2.5 text-[13px] font-medium text-gold-ink">
-      Sample data — invented rows for reviewing the layout. Nothing here is real, and
-      no action you take is stored.
+      Sample data — nothing here is real, and nothing you do is stored.
     </div>
   );
 }
@@ -750,43 +723,22 @@ export function NotConfigured({
   demo: boolean;
   onDemo: (on: boolean) => void;
   /**
-   * Why this resource has no sample rows, in one sentence.
+   * Set on a resource whose sample is deliberately empty.
    *
-   * Nine resources answer with a deliberately **empty** sample — money,
-   * payments, conversation histories, blast pools, matching rankings, freshness,
-   * impact, delivery, answers — and each has its reason written beside it in
-   * `app/api/admin/query/route.ts`: a fabricated $15 payment answers "has
-   * anybody actually paid?" with a yes, and an invented ranking is the one thing
-   * the matching harness must never show, because judging the real ranking is
-   * its whole purpose.
-   *
-   * The defect this closes is small and corrosive: those pages still offered a
-   * **"Show sample data" button that does nothing**, because there is nothing to
-   * show. A control that visibly does not respond reads as a broken page, so an
-   * admin concludes the tool is broken rather than that the deployment has no
-   * database. Passing the reason replaces the button with it — and the text
-   * comes from the same decision as the empty sample rather than being written
-   * again here, so the two cannot drift.
+   * Nine of them are — money, payments, conversation histories, blast pools,
+   * matching rankings, freshness, impact, delivery, answers — each for the
+   * reason written beside it in `app/api/admin/query/route.ts`. Without this
+   * those pages offered a **"Show sample data" button that does nothing**, and a
+   * control that visibly does not respond reads as a broken page: an admin
+   * concludes the tool is broken rather than that this deployment has no
+   * database. It replaces the button with one line saying so.
    */
-  noSample?: string;
+  noSample?: boolean;
 }) {
   return (
     <Empty
       title="No database connected yet"
-      body={
-        noSample ? (
-          <>
-            This page reads from the pilot database, and this deployment
-            isn&apos;t connected to one. {noSample}
-          </>
-        ) : (
-          <>
-            This page reads from the pilot database, and this deployment
-            isn&apos;t connected to one. Until it is there is nothing to show —
-            you can switch on sample rows to review the layout.
-          </>
-        )
-      }
+      body={noSample ? "No sample rows for this page." : undefined}
       action={
         noSample ? undefined : (
           <Button tone="secondary" onClick={() => onDemo(!demo)}>
@@ -1220,20 +1172,10 @@ export function whenExact(iso: string | null): string {
 
 export function ProvenanceBadge({ provenance }: { provenance: string }) {
   if (provenance === "parent_submitted") {
-    /* No hint: "A real parent submitted this" restates the word on the badge,
-       and on a queue where every row is a parent submission that was eight
-       identical `?` triggers on one page. `admin_entered` keeps its sentence,
-       because that one carries a rule the label does not say (invariant 4). The
-       rule this leaves behind is legible: a badge has a hint exactly when the
-       sentence says something its label does not. */
     return <Badge tone="green">Parent</Badge>;
   }
   if (provenance === "admin_entered") {
-    return (
-      <Badge tone="gold" hint="Entered by an admin — can never carry a parent-vouched label">
-        Admin-entered
-      </Badge>
-    );
+    return <Badge tone="gold">Admin-entered</Badge>;
   }
   return <Badge tone="muted">{slugLabel(provenance)}</Badge>;
 }
@@ -1255,14 +1197,7 @@ export function ConfidenceBadge({
   note?: string | null;
 }) {
   if (value === null) {
-    return (
-      <Badge
-        tone="muted"
-        hint="Not reviewed yet. A card of pure taps has no free text to judge, and a wrong score would sort a card out of the very queue meant to catch it — so this stays empty rather than becoming a guess."
-      >
-        —
-      </Badge>
-    );
+    return <Badge tone="muted">—</Badge>;
   }
   /**
    * A word first, the number second — the same treatment the Flags page uses,

@@ -56,10 +56,7 @@ export default function AuditPage() {
 
   return (
     <>
-      <PageHead
-        title="Audit log"
-        intro="Who did what, and when."
-      />
+      <PageHead title="Audit log" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -74,7 +71,6 @@ export default function AuditPage() {
         ) : entries.length === 0 ? (
           <Empty
             title="Nothing recorded yet"
-            body="Actions appear here as soon as an admin makes one."
           />
         ) : (
           <TableWrap label="Audit log entries">

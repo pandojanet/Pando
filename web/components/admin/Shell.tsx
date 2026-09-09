@@ -58,8 +58,6 @@ interface NavItem {
    * anchor on while it scrolls.
    */
   icon: LucideIcon;
-  /** Shown under the label when this is the page you're on. */
-  hint: string;
   /** How many things are waiting here. Omitted for pages that aren't queues. */
   count?: (o: Overview) => number;
   /**
@@ -89,7 +87,6 @@ const NAV: NavSection[] = [
         href: "/admin",
         icon: Gauge,
         label: "Overview",
-        hint: "Where the pilot stands",
       },
     ],
   },
@@ -100,14 +97,12 @@ const NAV: NavSection[] = [
         href: "/admin/founding",
         icon: BadgeCheck,
         label: "Founding queue",
-        hint: "Is this really who they say? Approve, or ask for an invite.",
         count: (o) => o.founding.pending,
       },
       {
         href: "/admin/contributors",
         icon: Users,
         label: "Contributors",
-        hint: "Everyone who came through: what each of them shared, and what they agreed to.",
       },
     ],
   },
@@ -118,28 +113,24 @@ const NAV: NavSection[] = [
         href: "/admin/activities",
         icon: ClipboardList,
         label: "Contributions",
-        hint: "Everything parents have recommended, newest first.",
         count: (o) => o.quality.pending_contributions,
       },
       {
         href: "/admin/caregivers",
         icon: Heart,
         label: "Caregivers",
-        hint: "Who a family put forward, who has said yes, and what's being held back.",
         count: (o) => o.quality.review_holds,
       },
       {
         href: "/admin/claims",
         icon: IdCard,
         label: "Caregiver sign-ups",
-        hint: "A caregiver signed up herself — which family put her forward?",
         count: (o) => o.quality.pending_claims,
       },
       {
         href: "/admin/demand",
         icon: ListChecks,
         label: "What parents asked for",
-        hint: "The questions parents asked. Anything about a named person comes first.",
         count: (o) =>
           o.demand.ordinary +
           o.demand.peer_support +
@@ -161,7 +152,6 @@ const NAV: NavSection[] = [
         href: "/admin/answers",
         icon: Send,
         label: "Answers to send",
-        hint: "What Pando would reply, waiting for you to read it. Nothing goes out unread.",
         count: (o) => o.answers?.waiting ?? 0,
       },
       {
@@ -180,21 +170,18 @@ const NAV: NavSection[] = [
         href: "/admin/freshness",
         icon: Flag,
         label: "Withdrawn recommendations",
-        hint: "A contributor said one of these is no longer worth recommending. Retire it, or keep it marked old.",
         count: (o) => o.quality.withdrawn_records,
       },
       {
         href: "/admin/options",
         icon: Tags,
         label: "Names & places",
-        hint: "A parent typed something new — add it to the lists everyone picks from.",
         count: (o) => o.quality.pending_options,
       },
       {
         href: "/admin/flags",
         icon: Flag,
         label: "Flags",
-        hint: "Anything a parent wrote that you should read before Pando uses it.",
         count: (o) => o.quality.open_flags,
         urgent: (o) => o.quality.escalations,
       },
@@ -222,7 +209,6 @@ const NAV: NavSection[] = [
         href: "/admin/blasts",
         icon: Megaphone,
         label: "Network Asks",
-        hint: "Questions parents paid Pando to ask. Preview the pool, see the replies, mark them answered.",
         count: (o) => o.blasts?.open ?? 0,
         urgent: (o) => o.blasts?.refunds_owed ?? 0,
       },
@@ -235,7 +221,6 @@ const NAV: NavSection[] = [
         href: "/admin/responses",
         icon: MessageSquareReply,
         label: "Network answers",
-        hint: "Replies to Network Asks. Rate them, and decide what enters the knowledge base.",
         count: (o) => o.answers?.replies ?? 0,
       },
       {
@@ -251,7 +236,6 @@ const NAV: NavSection[] = [
         href: "/admin/payments",
         icon: CreditCard,
         label: "Payments",
-        hint: "What parents paid for an Ask, and what Pando owes back.",
         count: (o) => o.blasts?.refunds_owed ?? 0,
         urgent: (o) => o.blasts?.refunds_owed ?? 0,
       },
@@ -278,7 +262,6 @@ const NAV: NavSection[] = [
         href: "/admin/invites",
         icon: Link2,
         label: "Invites",
-        hint: "One link per group, and which group actually brought contributors.",
       },
       {
         /**
@@ -290,7 +273,6 @@ const NAV: NavSection[] = [
         href: "/admin/matching",
         icon: Search,
         label: "Who Pando would ask",
-        hint: "Try a question against the real data: who Pando would go to, and why. Nothing is sent.",
       },
       {
         /**
@@ -302,7 +284,6 @@ const NAV: NavSection[] = [
         href: "/admin/delivery",
         icon: CalendarClock,
         label: "Message delivery",
-        hint: "Did the texts arrive? The rate, and the carrier errors worth acting on.",
       },
       {
         /**
@@ -315,7 +296,6 @@ const NAV: NavSection[] = [
         href: "/admin/conversations",
         icon: MessageSquareReply,
         label: "Conversations",
-        hint: "Who Pando has messaged, whether it arrived, and who replied. No message text is kept.",
       },
       {
         /**
@@ -330,13 +310,11 @@ const NAV: NavSection[] = [
         href: "/admin/impact",
         icon: Heart,
         label: "Thanks and impact",
-        hint: "Did the answers help, and have the parents behind them heard about it?",
       },
       {
         href: "/admin/audit",
         icon: ScrollText,
         label: "Audit log",
-        hint: "Who changed what, and when.",
       },
     ],
   },
@@ -531,9 +509,6 @@ function NavGroup({
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              /* The hint is worth having *before* you click; on the page
-               you are already on, the page's own intro says it. */
-              title={item.hint}
               className={cn(
                 /*
                 44px on a phone, 40 from `md`. The admin is a denser
@@ -633,14 +608,6 @@ export function AdminShell({
             ))}
           </nav>
 
-          {/*
-          The hint used to be *rendered* here, for the current page only. It read
-          as a helpful line and was pure duplication: every page has a `PageHead`
-          intro saying the same thing, so the sidebar and the page said it twice,
-          side by side, on every single visit. It lives on the nav link's `title`
-          now — which is where it is actually useful, because there you have not
-          yet arrived and the page's own intro has not answered you.
-        */}
           <div className="hidden border-t border-bark/70 px-4 py-3 md:block">
             <p className="text-[12px] text-muted">Signed in as</p>
             <p className="text-[13.5px] font-semibold">{user}</p>

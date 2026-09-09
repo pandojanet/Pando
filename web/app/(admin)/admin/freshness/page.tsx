@@ -127,10 +127,7 @@ export default function FreshnessPage() {
 
   return (
     <>
-      <PageHead
-        title="Withdrawn recommendations"
-        intro="A contributor said one of these is no longer worth recommending. Retire it, or keep it marked out of date."
-      />
+      <PageHead title="Withdrawn recommendations" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {message && <ResultNote>{message}</ResultNote>}
@@ -168,7 +165,7 @@ export default function FreshnessPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample withdrawals on purpose: retiring a record is a decision, and practising it on a parent who never withdrew anything teaches the wrong thing."
+              noSample
             />
           </Card>
         ) : filtered.length === 0 ? (
@@ -178,11 +175,6 @@ export default function FreshnessPage() {
                 all.length === 0
                   ? "Nothing has been withdrawn"
                   : "Nothing matching that"
-              }
-              body={
-                all.length === 0
-                  ? "When a contributor answers a freshness check with no, the record shows up here for a decision."
-                  : undefined
               }
             />
           </Card>
@@ -208,14 +200,12 @@ export default function FreshnessPage() {
                   {row.recommending_count === 0 ? (
                     <Badge
                       tone="red"
-                      hint="Nobody else has recommended it, so the withdrawal is the only firsthand opinion Pando holds."
                     >
                       No other support
                     </Badge>
                   ) : (
                     <Badge
                       tone="green"
-                      hint="Other parents still recommend it, so one withdrawal is not the whole picture."
                     >
                       {stillRecommend(row.recommending_count)}
                     </Badge>
@@ -276,12 +266,7 @@ export default function FreshnessPage() {
               : `Keep ${deciding.row.name}`
           }
         >
-          <p className="text-[13.5px] leading-relaxed text-ink-soft">
-            {deciding.outcome === "retire"
-              ? "It stops appearing in answers straight away. The contributions parents made about it are kept — if it comes back, approving it again is all it takes."
-              : "It keeps answering, and keeps showing its age. Pando will ask about it again on the next freshness round."}
-          </p>
-          <label className="mt-3 block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+          <label className="block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
             Why
           </label>
           <textarea
@@ -295,10 +280,7 @@ export default function FreshnessPage() {
                 : "Two other families still recommend it."
             }
           />
-          <p className="mt-1 text-[12.5px] text-muted">
-            Required. The audit row is the only record of why this record stopped
-            answering — or kept going after somebody said it should not.
-          </p>
+          <p className="mt-1 text-[12.5px] text-muted">Required.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               onClick={decide}

@@ -50,30 +50,15 @@ export function RecordList({ children }: { children: ReactNode }) {
 }
 
 /**
- * A run of records that share a reason, with the reason said **once**.
- *
- * This is the third time the same fault has been fixed on this surface, so it
- * gets a component. CLAUDE.md records the first two: the Flags page printing
- * both the specific reason and the generic meaning of that kind of flag on
- * every card ("twelve cards each explaining themselves twice"), and the nav
- * hint duplicating each page's own intro. The version that survived both passes
- * is subtler — the card shows the specific reason *or* the generic one, which
- * is correct per card and still means that when no specific reason exists, the
- * identical paragraph appears on all twelve.
- *
- * A heading is where a fact that is true of many rows belongs. What is left on
- * the card is what differs between them.
+ * A run of records that share a reason, under one heading with a count.
  */
 export function RecordGroup({
   title,
   count,
-  meaning,
   children,
 }: {
   title: string;
   count: number;
-  /** What this kind of thing is, in one sentence, for the whole run. */
-  meaning?: string | null;
   children: ReactNode;
 }) {
   const level = useHeadingLevel();
@@ -88,11 +73,6 @@ export function RecordGroup({
           {title}
           <span className="ml-2 font-normal tabular-nums text-muted">{count}</span>
         </Heading>
-        {meaning && (
-          <p className="mt-0.5 max-w-[80ch] text-[12.5px] leading-relaxed text-muted">
-            {meaning}
-          </p>
-        )}
       </header>
       {/* The cards inside are one level under the group's own heading, so a
           record was previously a *sibling* of the heading that names its run. */}

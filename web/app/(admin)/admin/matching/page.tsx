@@ -20,7 +20,7 @@ import {
 } from "@/components/admin/ui";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { RELEVANCE_DIMENSIONS, RELEVANCE_STEP } from "@/lib/matching";
+import { RELEVANCE_STEP } from "@/lib/matching";
 import { affinityLabel, matchReason, matchReasonValue } from "@/lib/admin/labels";
 import type { MatchCandidateRow, MatchingResult } from "@/lib/admin/types";
 
@@ -109,10 +109,7 @@ export default function MatchingPage() {
 
   return (
     <>
-      <PageHead
-        title="Who Pando would ask"
-        intro="Pick a parent and see who Pando would ask, and why. Nothing is sent from this page."
-      />
+      <PageHead title="Who Pando would ask" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -124,7 +121,6 @@ export default function MatchingPage() {
             people={people}
             value={asker}
             onChange={setAsker}
-            hint="Type a name or a town — “south pas” finds South Pasadena."
             emptyLabel="No contributors in the database yet."
           />
 
@@ -146,10 +142,6 @@ export default function MatchingPage() {
             />
             {/* On the page, not in the header's tooltip: the number only means
                 something if you know what a real Ask would want. */}
-            <p className="mt-1 max-w-[16rem] text-[12px] leading-relaxed text-muted">
-              A Targeted Ask goes to three to five parents. This is only used to
-              tell you when the network cannot fill that.
-            </p>
           </div>
         </div>
 
@@ -208,19 +200,17 @@ export default function MatchingPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There is no sample ranking on purpose: judging whether the real ranking is any good is this page's whole purpose, so a made-up one is the single thing it must never show."
+              noSample
             />
           ) : !asker ? (
             <Empty
               title="Choose a parent above"
-              body="You'll see who Pando would go to, and what makes each of them relevant."
             />
           ) : !data?.asker ? (
             <Empty title="That parent has no record to score" />
           ) : data.ranked.length === 0 ? (
             <Empty
               title="Nobody is connected to this parent yet"
-              body="Not a fault — an early network is sparse. Every approved contribution adds connections."
             />
           ) : (
             <>
@@ -315,11 +305,6 @@ export default function MatchingPage() {
                 </tbody>
               </TableWrap>
 
-              <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
-                Only <strong className="font-semibold text-ink">approved</strong>{" "}
-                contributions put a parent in this graph at all — somebody whose
-                cards are still in the review queue is not yet someone Pando asks.
-              </p>
             </>
           )}
         </Card>
@@ -597,11 +582,6 @@ function WeightsCard({
              fault `labels.ts` exists to end, surviving in prose rather than in a
              value. `DATABASE_URL` stays: it names a thing whoever reads that
              branch has to go and set, and there is no other word for it. */
-          body={
-            configured
-              ? "No weights have been set up yet, so no kind of shared connection counts for anything and nobody can be ranked."
-              : "There is nothing to change until DATABASE_URL is set."
-          }
         />
       ) : (
         <>
@@ -758,8 +738,8 @@ function WeightsCard({
               className={`text-[12.5px] ${stepBad ? "text-alert" : "text-muted"}`}
             >
               {stepEditable
-                ? `Similar context is per dimension, 0 to 5, in steps of 0.05 — up to ${RELEVANCE_DIMENSIONS} dimensions can match at once.`
-                : "Similar context is set in code — run the latest migration to change it here."}
+                ? `Similar context: 0 to 5 per dimension, in steps of 0.05.`
+                : "Similar context is set in code."}
             </span>
             {note && <ResultNote inline>{note}</ResultNote>}
             {failed && <span className="text-[12.5px] text-alert">{failed}</span>}
@@ -920,12 +900,12 @@ function ReasonBadge({
  * string has no whitespace rules to fall foul of.
  */
 function shortfall(found: number, wanted: number): string {
-  return `Only ${found} of the ${wanted} wanted. In the pilot this is the ordinary case — a Targeted Ask would widen the area or say so honestly rather than fill the gap with people it doesn't suit.`;
+  return `Only ${found} of the ${wanted} wanted.`;
 }
 
 /** The flat-tail line — one string, for the whitespace reason above. */
 function tiedTail(count: number): string {
-  return `The last ${count} rows score exactly the same. Their order below is a tiebreaker, not a ranking — the network doesn't yet distinguish between them.`;
+  return `The last ${count} rows score exactly the same — their order is a tiebreaker, not a ranking.`;
 }
 
 /** 7.5 rather than 7.5000000001, and 7 rather than 7.0. */

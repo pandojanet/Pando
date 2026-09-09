@@ -21,7 +21,6 @@ import {
   Th,
   when,
 } from "@/components/admin/ui";
-import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { InviteRow } from "@/lib/admin/types";
 
@@ -150,10 +149,7 @@ export default function InvitesPage() {
 
   return (
     <>
-      <PageHead
-        title="Invites"
-        intro="One link per group. A link is never tied to one person."
-      />
+      <PageHead title="Invites" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -189,7 +185,7 @@ export default function InvitesPage() {
               onChange={(e) => setLabel(e.target.value.slice(0, 80))}
             />
           </Field>
-          <Field label="Code" hint="Goes in the link. Lowercase and hyphenated.">
+          <Field label="Code">
             <input
               className={inputClass}
               value={code}
@@ -211,7 +207,6 @@ export default function InvitesPage() {
             */}
           <Field
             label="What is this link for?"
-            hint="All three record where somebody came from. None of them ever claims they belong to it."
           >
             <select
               className={inputClass}
@@ -228,7 +223,6 @@ export default function InvitesPage() {
           {kind === "group" && (
             <Field
               label="Which group in the tap lists?"
-              hint="Optional. Records which group somebody came through — it never claims they belong to it."
             >
               <select
                 className={inputClass}
@@ -247,7 +241,6 @@ export default function InvitesPage() {
           {kind === "school" && (
             <Field
               label="Which school?"
-              hint="The same list the questionnaire offers, so an arrival can be attributed to a school a chip can match."
             >
               <select
                 className={inputClass}
@@ -263,7 +256,7 @@ export default function InvitesPage() {
               </select>
             </Field>
           )}
-          <Field label="Note" hint="Yours. Where it was posted, who runs the group.">
+          <Field label="Note">
             <input
               className={inputClass}
               value={note}
@@ -303,7 +296,6 @@ export default function InvitesPage() {
           ) : live.length === 0 ? (
             <Empty
               title="No invites yet"
-              body="Make one above, and the link works straight away."
             />
           ) : (
             <InviteTable
@@ -456,13 +448,13 @@ function InviteTable({
           {/* The denominator estimate 2.2 asks for. Without it "four joined" is
               unreadable: four out of six is a good channel and four out of two
               hundred is a bad one, and the page could not tell them apart. */}
-          <Th hint="How many times the link was opened. Not a headcount — it counts opens, so a parent who came back twice counts twice, and link previews count. Read it against the next column rather than on its own.">
+          <Th>
             Opened
           </Th>
-          <Th hint="People who opened this link and filled in a profile.">
+          <Th>
             Joined
           </Th>
-          <Th hint="How many of those went on to share something you added to Pando. A group with thirty joins and two of these is telling you something.">
+          <Th>
             Gave something
           </Th>
           <Th>Created</Th>
@@ -507,7 +499,7 @@ function InviteTable({
                   slugLabel(row.group_option_value))
               ) : (
                 <span className="text-muted">
-                  not linked{" "}<Hint label="What “not linked” means">{"Nothing is recorded about which group these contributors came from"}</Hint></span>
+                  not linked</span>
               )}
             </Td>
             <Td className="tabular-nums text-muted">{row.opens}</Td>
@@ -548,7 +540,6 @@ function InviteTable({
                   tone="secondary"
                   disabled={busy === row.id}
                   subject={row.label}
-                  title="Stops this link being handed out. Anyone already holding it still gets in — it just stops counting towards this group."
                   onClick={() =>
                     void onAction(row.id, "Stopped sharing", async () =>
                       adminAction({ action: "invite.retire", id: row.id }),

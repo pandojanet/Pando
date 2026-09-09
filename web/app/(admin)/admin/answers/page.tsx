@@ -17,7 +17,6 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { holdReasonLabel, sentence } from "@/lib/admin/labels";
 import type { AnswerRow } from "@/lib/admin/types";
@@ -84,14 +83,8 @@ function AnswerCard({
         </p>
         <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
           {row.asker ?? (
-            /* 5.9's subject. A stranger's first reply is their whole first
-               impression of Pando, which is worth the reviewer knowing. */
-            <span>
-              New number{" "}
-              <Hint label="What “New number” means">
-                No profile — they texted cold, usually from a forwarded answer.
-              </Hint>
-            </span>
+            /* 5.9's subject: a stranger with no profile, texting cold. */
+            <span>New number</span>
           )}
           {row.asker_phone_masked && <span>{row.asker_phone_masked}</span>}
           <span>·</span>
@@ -131,7 +124,7 @@ function AnswerCard({
           Claims
         </span>
         {row.public_only ? (
-          <Badge tone="neutral" hint="Nothing here rests on a parent's experience. It says so, and that is worth checking.">
+          <Badge tone="neutral">
             General information only
           </Badge>
         ) : row.labels.length === 0 ? (
@@ -152,7 +145,7 @@ function AnswerCard({
           {holdReasonLabel(row.hold_reason)}
         </Badge>
         {row.next_step === "offer_blast" && (
-          <Badge tone="gold" hint="The answer offers to ask nearby parents for more.">
+          <Badge tone="gold">
             Offers a Network Ask
           </Badge>
         )}
@@ -165,7 +158,6 @@ function AnswerCard({
               tone="primary"
               subject={`"${row.question.slice(0, 44).trimEnd()}"`}
               disabled={busy}
-              title="Records your decision. Sending is the next button — a carrier failure must not undo an approval."
               onClick={() =>
                 void run("Approved. Send it when you're ready.", async () =>
                   adminAction({ action: "answer.approve", id: row.id }),
@@ -186,7 +178,6 @@ function AnswerCard({
               tone="danger"
               subject={`"${row.question.slice(0, 44).trimEnd()}"`}
               disabled={busy}
-              title="Nothing is sent. The text is kept as the record of what was refused."
               onClick={() =>
                 void run("Set aside — nothing sent.", async () =>
                   adminAction({ action: "answer.reject", id: row.id, reason: "not_good_enough" }),
@@ -203,7 +194,6 @@ function AnswerCard({
             <Button
               tone="primary"
               disabled={busy}
-              title="Replaces the text. The labels stay as they are — they describe the records, not the wording."
               onClick={() =>
                 void run("Rewritten.", async () => {
                   const out = await adminAction({
@@ -243,7 +233,6 @@ function AnswerCard({
             tone="primary"
             subject={`"${row.question.slice(0, 44).trimEnd()}"`}
             disabled={busy}
-            title="Goes through the same send layer as everything else — opt-out and quiet hours still apply."
             onClick={() =>
               void run("Sent.", async () => adminAction({ action: "answer.send", id: row.id }))
             }
@@ -300,10 +289,7 @@ export default function AnswersPage() {
 
   return (
     <>
-      <PageHead
-        title="Answers to send"
-        intro="What Pando would reply, waiting for you. Nothing goes out unread during the pilot."
-      />
+      <PageHead title="Answers to send" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {message && <ResultNote>{message}</ResultNote>}
@@ -318,12 +304,11 @@ export default function AnswersPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample answers on purpose: an invented reply, shown next to the trust labels a reviewer is meant to check, is practice at approving something nobody wrote."
+              noSample
             />
           ) : waiting.length === 0 ? (
             <Empty
               title="Nothing waiting"
-              body="Answers appear here as parents ask questions."
             />
           ) : (
             <ul className="divide-y divide-bark/50">
@@ -388,15 +373,6 @@ export default function AnswersPage() {
           reader to hold a rule for work that does not exist — the "say it once,
           where it is needed" rule from the 19 Aug pass, applied to *when* as
           well as where. */}
-      {all.length > 0 && (
-        <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-          You are checking the claim, not the wording: the labels say what the records
-        support. If a label looks wrong, the fix is in the contributions queue — the
-        labels are not editable here, because they describe the records rather than
-        the sentence. {sentence("send")} goes through the same layer as every other
-          message, so somebody who texted STOP still cannot be reached.
-        </p>
-      )}
     </>
   );
 }

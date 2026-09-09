@@ -156,7 +156,7 @@ export default function ContributorDetailPage({
         </Card>
       ) : !c ? (
         <Card>
-          <Empty title="Not found" body="No contributor with that id." />
+          <Empty title="Not found" />
         </Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
@@ -297,7 +297,7 @@ export default function ContributorDetailPage({
                   })}
                 </ul>
                 <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
-                  A mention never carries their name. Wording version{" "}
+                  Wording version{" "}
                   <span className="font-mono">
                     {c.affiliation_visibility[0].consent_text_version ?? "—"}
                   </span>
@@ -502,9 +502,6 @@ export default function ContributorDetailPage({
                   Credits are earned in Network Asks, and those do not exist until
                   Phase 2 — so this records who to credit, and nothing is credited.
                 */}
-                <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                  Noted so you can thank them later. Nothing is paid out from here.
-                </p>
                 {refMessage && (
                   <p className="mt-2 text-[12.5px] text-muted">{refMessage}</p>
                 )}

@@ -193,10 +193,7 @@ export default function ContributionsPage() {
 
   return (
     <>
-      <PageHead
-        title="Contributions"
-        intro="Add the ones you'd be happy for Pando to pass on. Hold the ones missing something."
-      />
+      <PageHead title="Contributions" />
 
       {/* Banners **above** the filter. At 375px this six-pill row wraps to three
           lines, so a green "Approved" confirmation rendered underneath it landed
@@ -233,7 +230,6 @@ export default function ContributionsPage() {
         ) : visible.length === 0 ? (
           <Empty
             title="Nothing in this view"
-            body="Switch the filter, or wait for new submissions."
           />
         ) : (
           <RecordList>
@@ -299,7 +295,6 @@ export default function ContributionsPage() {
                           tone="primary"
                           disabled={busy === row.id}
                           subject={row.share.name}
-                          title="Make this usable in an answer to a parent"
                           onClick={() =>
                             void run(row.id, "Added to Pando.", async () =>
                               adminAction({
@@ -338,11 +333,6 @@ export default function ContributionsPage() {
                           tone="secondary"
                           disabled={busy === row.id}
                           subject={row.share.name}
-                          title={
-                            row.share.answer_ready
-                              ? "Stop treating it as good enough to answer with"
-                              : "Good enough to answer a parent on its own, with nobody asked"
-                          }
                           onClick={() =>
                             void run(
                               row.id,
@@ -368,7 +358,6 @@ export default function ContributionsPage() {
                           tone="danger"
                           disabled={busy === row.id}
                           subject={row.share.name}
-                          title="Set it aside. Nothing is sent to the parent."
                           onClick={() =>
                             void run(row.id, "Set aside.", async () =>
                               adminAction({
@@ -433,21 +422,14 @@ export default function ContributionsPage() {
                           : undefined
                       }
                     >
-                      <span title={FRESHNESS[row.share.freshness_state]?.meaning}>
-                        {FRESHNESS[row.share.freshness_state]?.label ??
+                      {FRESHNESS[row.share.freshness_state]?.label ??
                           sentence(row.share.freshness_state)}
-                      </span>
                     </Fact>
                     {/* R11 — a permission, so it belongs with the recommendation
                         it applies to rather than in the badge row, where it was
                         a fourth pill competing with the review status. */}
                     <Fact
                       label="Follow-up"
-                      hint={
-                        row.follow_up_ok
-                          ? "Costs one of their monthly questions"
-                          : undefined
-                      }
                     >
                       {row.follow_up_ok
                         ? "Happy to be asked more about this one"
@@ -513,8 +495,7 @@ export default function ContributionsPage() {
                       )}
                       {row.status === "needs_detail" && row.needs_detail_note && (
                         <p className="rounded-lg border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
-                          You asked: “{row.needs_detail_note}” — nothing has been
-                          sent to the parent.
+                          You asked: “{row.needs_detail_note}”
                         </p>
                       )}
                     </RecordNotes>
@@ -598,7 +579,6 @@ export default function ContributionsPage() {
                       <RecordDrawer title="Hold it for one missing detail">
                         <Field
                           label="What's missing?"
-                          hint="Stays in your queue. Nothing is sent to the parent."
                         >
                           <input
                             className={inputClass}

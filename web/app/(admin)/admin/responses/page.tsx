@@ -17,7 +17,6 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
-import { Hint } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { BlastResponseRow } from "@/lib/admin/types";
 
@@ -101,7 +100,7 @@ function ResponseCard({
         {row.responder_phone_masked && <span>{row.responder_phone_masked}</span>}
         <span>·</span>
         <span>
-          {row.responder_contributions} added before{" "}<Hint label="What “added before” means">{"Approved contributions they already have. A track record is not a reason to approve, but it is a reason to read differently."}</Hint></span>
+          {row.responder_contributions} added before</span>
         {row.responded_at && (
           <>
             <span>·</span>
@@ -133,7 +132,6 @@ function ResponseCard({
               key={q}
               tone={row.quality === q ? "primary" : "secondary"}
               disabled={busy}
-              title="Feeds their credits and tier. Separate from whether it goes into the graph."
               onClick={() =>
                 void run(`Rated ${q}/5.`, async () =>
                   adminAction({
@@ -164,7 +162,6 @@ function ResponseCard({
                 key={c.share_id}
                 tone="secondary"
                 disabled={busy}
-                title={`Adds their experience to this record instead of creating a second one. ${c.firsthand_count} parent${c.firsthand_count === 1 ? "" : "s"} already on it.`}
                 onClick={() =>
                   void run("Added to the existing record.", async () =>
                     adminAction({
@@ -208,7 +205,6 @@ function ResponseCard({
           <Button
             tone="primary"
             disabled={busy}
-            title="Creates a record for a human to read again in the contributions queue — not straight into answers."
             onClick={() =>
               void run(
                 typed.trim()
@@ -229,7 +225,6 @@ function ResponseCard({
           <Button
             tone="danger"
             disabled={busy}
-            title="Takes it off the list and adds nothing."
             onClick={() =>
               void run("Set aside.", async () =>
                 adminAction({
@@ -282,10 +277,7 @@ export default function BlastResponsesPage() {
 
   return (
     <>
-      <PageHead
-        title="Network answers"
-        intro="Replies to Network Asks. Rating feeds their credits; approving sends it to the contributions queue."
-      />
+      <PageHead title="Network answers" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {message && <ResultNote>{message}</ResultNote>}
@@ -300,12 +292,11 @@ export default function BlastResponsesPage() {
             <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample replies on purpose: a made-up answer from a parent is exactly the thing this queue exists to judge."
+              noSample
             />
           ) : waiting.length === 0 ? (
             <Empty
               title="Nothing waiting"
-              body="Replies appear here as contributors answer a Network Ask."
             />
           ) : (
             <ul className="divide-y divide-bark/50">
@@ -346,14 +337,6 @@ export default function BlastResponsesPage() {
           reader to hold a rule for work that does not exist — the "say it once,
           where it is needed" rule from the 19 Aug pass, applied to *when* as
           well as where. */}
-      {all.length > 0 && (
-        <p className="mt-4 text-[12.5px] leading-relaxed text-muted">
-          Nothing here reaches an answer directly. A record created from a reply enters
-        the contributions queue and is read again — this page judges the reply, not the
-        claim about a place. A reply that names a caregiver adds nothing on its own:
-          a caregiver only ever appears through her own consent.
-        </p>
-      )}
     </>
   );
 }

@@ -123,10 +123,7 @@ export default function PaymentsPage() {
 
   return (
     <>
-      <PageHead
-        title="Payments"
-        intro="What parents have paid for a Network Ask, and what Pando owes back."
-      />
+      <PageHead title="Payments" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {message && <ResultNote>{message}</ResultNote>}
@@ -145,12 +142,7 @@ export default function PaymentsPage() {
       {stripe && !stripe.provisioned && (
         <div className="mb-4 rounded-2xl border border-gold-line bg-gold-wash p-4">
           <p className="text-[14.5px] font-semibold text-gold-ink">
-            Stripe is not switched on yet.
-          </p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-gold-ink/90">
-            No payment link can be created and no refund can be made until{" "}
-            <code>STRIPE_SECRET_KEY</code> is set on the server. Everything else on
-            this page still reads correctly — there is simply nothing to read yet.
+            Stripe is not switched on yet — <code>STRIPE_SECRET_KEY</code> is unset.
           </p>
         </div>
       )}
@@ -159,22 +151,13 @@ export default function PaymentsPage() {
           <p className="text-[14.5px] font-semibold text-gold-ink">
             Stripe is in test mode.
           </p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-gold-ink/90">
-            Everything below is sandbox money. Nobody has been charged and no refund
-            here reaches a real card.
-          </p>
         </div>
       )}
       {stripe?.provisioned && !stripe.webhook_configured && (
         <div className="mb-4 rounded-2xl border border-alert-line bg-alert-wash p-4">
           <p className="text-[14.5px] font-semibold text-alert">
-            Payments can be taken, but Pando will never hear about them.
-          </p>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-alert/90">
-            <code>STRIPE_WEBHOOK_SECRET</code> is unset, so the webhook refuses every
-            delivery — fail-closed, deliberately. A parent could pay and their Ask
-            would sit unpaid forever. This is the one thing on this page worth fixing
-            before the next checkout.
+            Payments can be taken, but Pando will never hear about them —
+            <code>STRIPE_WEBHOOK_SECRET</code> is unset.
           </p>
         </div>
       )}
@@ -223,16 +206,11 @@ export default function PaymentsPage() {
           <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample payments on purpose — invented money is worse than invented anything else, and a fabricated $15 payment answers “has anybody actually paid?” with a yes."
+              noSample
             />
         ) : visible.length === 0 ? (
           <Empty
             title={filter === "owed" ? "Nothing is owed" : "Nothing in this view"}
-            body={
-              filter === "owed"
-                ? "No Ask is waiting on a refund. That is the state you want."
-                : "Switch the filter, or wait for a parent to pay for an Ask."
-            }
           />
         ) : (
           <RecordList>
@@ -280,7 +258,6 @@ export default function PaymentsPage() {
                       {refund.outside_window && row.payment_status !== "refunded" && (
                         <Badge
                           tone="gold"
-                          hint={`Past the ${REFUND_WINDOW_DAYS}-day pilot window. Still refundable — the window is guidance, not a lock.`}
                         >
                           Older than {REFUND_WINDOW_DAYS} days
                         </Badge>
@@ -300,11 +277,6 @@ export default function PaymentsPage() {
                         <Button
                           tone="danger"
                           disabled={busy === row.blast_id || stripe?.provisioned === false}
-                          title={
-                            stripe?.provisioned === false
-                              ? "Stripe is not switched on, so this could only fail."
-                              : "Refunds the whole amount in Stripe, then records it here."
-                          }
                           onClick={() => {
                             setRefunding(row.blast_id);
                             setReason(row.refund_reason ?? "");
@@ -327,11 +299,6 @@ export default function PaymentsPage() {
                     <Fact label="The Ask">{sentence(row.status)}</Fact>
                     <Fact
                       label="Approved replies"
-                      hint={
-                        row.approved_responses === 0
-                          ? "The guarantee is about a useful answer, so none means it is owed"
-                          : undefined
-                      }
                     >
                       {row.approved_responses}
                     </Fact>
@@ -365,7 +332,6 @@ export default function PaymentsPage() {
                     <RecordDrawer title={`Refund ${formatCents(row.price_cents)}`}>
                       <Field
                         label="Why"
-                        hint="Your name goes on this. It is the only record of the decision, and it never reaches the parent."
                       >
                         <input
                           className={inputClass}
@@ -373,11 +339,6 @@ export default function PaymentsPage() {
                           onChange={(e) => setReason(e.target.value.slice(0, 300))}
                         />
                       </Field>
-                      <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                        This refunds the whole amount in Stripe first, and records it
-                        here second. If Stripe refuses, nothing changes and you can
-                        try again — the same Ask cannot be refunded twice.
-                      </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           tone="danger"

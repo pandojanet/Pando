@@ -71,10 +71,7 @@ export default function AccountPage() {
 
   return (
     <>
-      <PageHead
-        title="Your account"
-        intro="Change your own password. Adding or removing someone else — ask a developer."
-      />
+      <PageHead title="Your account" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -127,7 +124,7 @@ export default function AccountPage() {
             </Field>
             <Field
               label="New password"
-              hint={`At least ${MIN_LENGTH} characters. A passphrase of a few words beats a short one with symbols in it.`}
+              hint={`At least  characters.`}
             >
               <input
                 className={inputClass}
@@ -166,10 +163,6 @@ export default function AccountPage() {
             <Button type="submit" tone="primary" disabled={!ready}>
               {busy ? "Changing…" : "Change password"}
             </Button>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-              Your password is never stored anywhere it could be read back. If you
-              forget it, a developer can set a new one — nobody can recover the old.
-            </p>
           </div>
           </form>
         </Card>

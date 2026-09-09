@@ -72,10 +72,7 @@ export default function FoundingQueuePage() {
 
   return (
     <>
-      <PageHead
-        title="Founding queue"
-        intro="Confirm each one really is from the group. Nothing happens automatically, and a yes is never taken back."
-      />
+      <PageHead title="Founding queue" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -97,7 +94,6 @@ export default function FoundingQueuePage() {
         <Card>
           <Empty
             title="Nobody waiting"
-            body="New arrivals appear here as they finish a profile."
           />
         </Card>
       ) : (
@@ -148,7 +144,6 @@ export default function FoundingQueuePage() {
                             {offList && (
                               <Badge
                                 tone="gold"
-                                hint="No group was recorded when they arrived — they came on a link that is not tied to one, or on no link at all. Not a mark against them; it just means there is nothing to check them against."
                               >
                                 no group recorded
                               </Badge>
@@ -209,7 +204,6 @@ export default function FoundingQueuePage() {
                             tone="secondary"
                             disabled={busy !== null}
                             subject={row.name ?? "this contributor"}
-                            title="Not a rejection — they keep everything they shared and become an ordinary user at launch."
                             onClick={() =>
                               void act(
                                 "founding.request_invite",

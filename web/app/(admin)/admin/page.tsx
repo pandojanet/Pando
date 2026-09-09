@@ -151,10 +151,7 @@ export default function AdminOverviewPage() {
 
   return (
     <>
-      <PageHead
-        title="Overview"
-        intro="Where the pilot stands."
-      />
+      <PageHead title="Overview" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -301,7 +298,6 @@ export default function AdminOverviewPage() {
             <Stat
               label="Shared two or more"
               value={twoPlus === null ? "—" : `${twoPlus}%`}
-              hint="What the pilot is judged on"
               tone={twoPlus !== null && twoPlus >= 50 ? "good" : "plain"}
             />
             <Stat
@@ -384,10 +380,6 @@ export default function AdminOverviewPage() {
                 n={o.consent.reference_willing}
               />
             </dl>
-            <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] leading-relaxed text-muted">
-              A reference is the <em>parent</em> vouching for a caregiver they
-              employed — never the caregiver agreeing to anything.
-            </p>
           </Card>
 
           {/* The funnel, only when there is one. It used to render as an empty

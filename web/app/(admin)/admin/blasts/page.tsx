@@ -140,12 +140,12 @@ function QuietHoursNote({ relay }: { relay: boolean }) {
           : "border-bark bg-paper text-muted"
       }`}
     >
-      <strong>{time} in Pasadena.</strong>{" "}
+      {time} in Pasadena —{" "}
       {blocked
-        ? "That is outside 8am–9pm Pacific, so nothing will send — every recipient is skipped and the Ask comes back marked for review. Replies still arrive."
+        ? "outside 8am–9pm Pacific, so nothing will send."
         : quiet
-          ? "That is outside 8am–9pm Pacific, but sends are going to the Slack test channel, where nobody’s phone buzzes — so the window is not enforced and you can send now."
-          : "Inside 8am–9pm Pacific, so sending is open."}
+          ? "sending is open (Slack test channel)."
+          : "sending is open."}
     </p>
   );
 }
@@ -267,10 +267,7 @@ export default function BlastsPage() {
 
   return (
     <>
-      <PageHead
-        title="Network Asks"
-        intro="Every question a parent paid Pando to ask, who it went to, and what it owes them."
-      />
+      <PageHead title="Network Asks" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -297,10 +294,9 @@ export default function BlastsPage() {
             people={matching?.people ?? []}
             value={asker}
             onChange={setAsker}
-            hint="Type a name or a town — “south pas” finds South Pasadena."
             emptyLabel="No contributors in the database yet."
           />
-          <Field label="Tier" hint={TIERS[tier].note}>
+          <Field label="Tier">
             <Select
               label="Which tier this Ask is"
               value={tier}
@@ -316,7 +312,6 @@ export default function BlastsPage() {
           </Field>
           <Field
             label="The question"
-            hint="Their words, not a summary — this is the text five parents read."
           >
             <textarea
               className={`${inputClass} min-h-[4.5rem]`}
@@ -373,16 +368,11 @@ export default function BlastsPage() {
           <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There are no sample Asks on purpose — invented money is worse than invented anything else, and a fabricated $15 payment answers “has anybody actually paid?” with a yes."
+              noSample
             />
         ) : visible.length === 0 ? (
           <Empty
-            title="Nothing in this view"
-            body={
-              filter === "owed"
-                ? "No Ask is waiting on an answer or a refund. That is the state you want."
-                : "Switch the filter, or wait for a parent to ask something."
-            }
+            title={filter === "owed" ? "Nothing is owed" : "Nothing in this view"}
           />
         ) : (
           <RecordList>
@@ -444,7 +434,6 @@ export default function BlastsPage() {
                         <Button
                           tone="primary"
                           disabled={busy === row.id}
-                          title="Creates a Stripe payment link. You pass it to the parent — Pando has no web channel for an Ask yet."
                           onClick={() =>
                             void run(row.id, "Checkout opened.", async () =>
                               adminAction({ action: "blast.checkout", id: row.id }),
@@ -480,7 +469,6 @@ export default function BlastsPage() {
                           <Button
                             tone="primary"
                             disabled={busy === row.id}
-                            title="Texts the matched pool. Every send still runs opt-out, quiet hours and the contributor-protection rules."
                             subject={row.question_text}
                             onClick={() =>
                               void run(row.id, "The Ask went out.", async () =>
@@ -504,7 +492,6 @@ export default function BlastsPage() {
                         <Button
                           tone="primary"
                           disabled={busy === row.id}
-                          title="Texts the approved replies to whoever asked, in the parents' own words. Only approved ones go."
                           subject={row.question_text}
                           onClick={() =>
                             void run(row.id, "The answers went to the parent.", async () =>
@@ -530,7 +517,6 @@ export default function BlastsPage() {
                         <Button
                           tone="secondary"
                           disabled={busy === row.id}
-                          title="Your judgement that the parent got a useful answer. Replies alone are not an answer."
                           onClick={() => {
                             setNoteFor({ id: row.id, kind: "fulfil" });
                             setNote("");
@@ -544,7 +530,6 @@ export default function BlastsPage() {
                         <Button
                           tone="danger"
                           disabled={busy === row.id}
-                          title="Flags that a refund is owed. Making it is a separate step on the payments page."
                           onClick={() => {
                             setNoteFor({ id: row.id, kind: "refund_due" });
                             setNote(owed?.why ?? "");
@@ -645,7 +630,7 @@ export default function BlastsPage() {
                     >
                       <Field
                         label={drawer === "fulfil" ? "Your note" : "Your reason"}
-                        hint="Saved with your name. It never reaches the parent."
+                        hint="Saved with your name. Never reaches the parent."
                       >
                         <input
                           className={inputClass}
@@ -736,16 +721,13 @@ function PoolPreview({ blastId }: { blastId: string }) {
       {rows.human_review.required && (
         <p className="mb-3 rounded-lg border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
           A person has to read this match before it goes out
-          {rows.human_review.reason ? ` — ${sentence(rows.human_review.reason)}` : ""}. That
-          is 7.3 working: an unusual or stacked request is exactly where a scorer is
-          confident and wrong.
+          {rows.human_review.reason ? ` — ${sentence(rows.human_review.reason)}` : ""}.
         </p>
       )}
 
       {rows.chosen.length === 0 ? (
         <p className="text-[13px] text-muted">
-          Nobody is eligible right now. The held list below says why — an early
-          network is sparse, and that is not a fault.
+          Nobody is eligible right now — the held list below says why.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -797,10 +779,6 @@ function PoolPreview({ blastId }: { blastId: string }) {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[12px] leading-relaxed text-muted">
-            Every one of these is a contributor&apos;s own agreement being kept. A
-            short pool is usually this list, not a thin network.
-          </p>
         </div>
       )}
     </RecordDrawer>

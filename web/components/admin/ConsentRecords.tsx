@@ -67,10 +67,6 @@ export function ConsentRecords() {
   return (
     <>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-        <p className="max-w-[40rem] text-[13.5px] leading-relaxed text-muted">
-          Every yes and every no, with the wording it was given under. Numbers are
-          shown in full here — this is the record that answers a complaint.
-        </p>
         <div className="flex flex-wrap gap-1">
             {scopes.map((key) => (
               <Button
@@ -86,7 +82,6 @@ export function ConsentRecords() {
               tone="secondary"
               disabled={visible.length === 0}
               onClick={() => downloadCsv(visible)}
-              title="Downloads exactly the rows shown, as a CSV"
             >
               Download CSV
             </Button>
@@ -106,7 +101,6 @@ export function ConsentRecords() {
         ) : visible.length === 0 ? (
           <Empty
             title="No consent records"
-            body="They are written as parents give their number and finish the flow."
           />
         ) : (
           <TableWrap label="Consent records">

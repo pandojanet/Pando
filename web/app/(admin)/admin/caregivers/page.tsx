@@ -153,10 +153,7 @@ export default function CaregiversPage() {
 
   return (
     <>
-      <PageHead
-        title="Caregivers"
-        intro="Everyone a family has put forward. Nobody reaches a parent until she says yes herself and you switch her on."
-      />
+      <PageHead title="Caregivers" />
 
       {(caregivers.error || duplicates.error) && (
         <ErrorNote>{caregivers.error ?? duplicates.error}</ErrorNote>
@@ -256,7 +253,6 @@ export default function CaregiversPage() {
                         {answerable ? (
                           <Badge
                             tone="green"
-                            hint="She said yes and you switched her on — families can see her"
                           >
                             Families can see her
                           </Badge>
@@ -266,7 +262,6 @@ export default function CaregiversPage() {
                         {row.review_hold && (
                           <Badge
                             tone="gold"
-                            hint="Nothing happens with this one until you clear it. A parent hesitated about a named person, and releasing it is a decision with your name on it."
                           >
                             On hold
                           </Badge>
@@ -274,7 +269,7 @@ export default function CaregiversPage() {
                         {row.has_restricted_notes && (
                           <Badge
                             tone="red"
-                            hint="Never shown to a family or to the caregiver, and never summarized by a model. Opening it is recorded against your name."
+                            hint="Opening it is recorded against your name."
                           >
                             Private note
                           </Badge>
@@ -324,11 +319,6 @@ export default function CaregiversPage() {
                                 key={to}
                                 disabled={busy === row.id}
                                 tone={to === "declined" ? "danger" : "plain"}
-                                hint={
-                                  to === "declined"
-                                    ? "She said no. Nothing about her is shown again."
-                                    : "You have asked her, and are waiting."
-                                }
                                 onSelect={() =>
                                   void run(row.id, `Marked ${to}`, async () =>
                                     adminAction({
@@ -360,7 +350,6 @@ export default function CaregiversPage() {
                           {row.consent_status === "consented" && (
                             <MenuItem
                               disabled={busy === row.id}
-                              hint="Whether Pando may use her at all. Nothing shows a family until the next step too."
                               onSelect={() =>
                                 void run(
                                   row.id,
@@ -384,7 +373,6 @@ export default function CaregiversPage() {
                           {row.consent_status === "consented" && row.active && (
                             <MenuItem
                               disabled={busy === row.id}
-                              hint="Whether a family asking about care may be shown her at all."
                               onSelect={() =>
                                 void run(
                                   row.id,
@@ -466,19 +454,6 @@ export default function CaregiversPage() {
                       </Fact>
                       <Fact
                         label="Pay"
-                        /* "not poolable" was our word for it. What the admin needs
-                           to know is what they may do with the number: look at
-                           it, not publish an average from it. And only when there
-                           *is* a rate — on a row where the family preferred not
-                           to say, this line guarded a number that does not
-                           exist. */
-                        hint={
-                          row.pay_band &&
-                          row.pay_band !== "prefer_not_to_say" &&
-                          !row.pay_benchmark_consent
-                            ? "For your eyes only — not for a published average"
-                            : undefined
-                        }
                       >
                         {row.pay_band
                           ? optionLabel(CAREGIVER_PAY_BANDS, row.pay_band)
@@ -514,7 +489,6 @@ export default function CaregiversPage() {
                         /* Whose willingness this is, because it is the one fact
                            here that is not about the caregiver: it is the family
                            offering to vouch for her. */
-                        hint="The family who put her forward"
                       >
                         {row.contributor_reference_opt_in
                           ? (REFERENCE_WILLING[row.contributor_reference_opt_in] ??
@@ -548,7 +522,6 @@ export default function CaregiversPage() {
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field
                             label="How did they say yes?"
-                            hint="Referral of caregivers needs an auditable artefact, not a checkbox."
                           >
                             <select
                               className={inputClass}
@@ -568,7 +541,6 @@ export default function CaregiversPage() {
                                 ? "Note (required)"
                                 : "Note (optional)"
                             }
-                            hint="What was said, and when. Stored with your name."
                           >
                             <input
                               className={inputClass}
@@ -577,12 +549,6 @@ export default function CaregiversPage() {
                             />
                           </Field>
                         </div>
-                        <p className="mt-3 text-[12px] leading-relaxed text-muted">
-                          Consent covers being <em>listed</em>. It is not permission to
-                          be contacted — Pando never contacts a nominated caregiver —
-                          and it is not permission to be a reference. That one comes
-                          from the parent who nominated them.
-                        </p>
                         <div className="mt-3">
                           <Button
                             tone="primary"
@@ -612,7 +578,7 @@ export default function CaregiversPage() {
                       <RecordDrawer title="Release the hold">
                         <Field
                           label="Why is this safe to release?"
-                          hint="Your name goes on this in the audit log. A hold exists because a parent hesitated."
+                          hint="Your name goes on this in the audit log."
                         >
                           <input
                             className={inputClass}
@@ -676,12 +642,10 @@ export default function CaregiversPage() {
                     <span className="font-semibold">
                       {group.members.length} records
                     </span>
-                    {/* "score 87%" told the reader a number and not what to do
-                        with it. A word first, the number in the tooltip — same
-                        treatment as the usefulness score on Flags. */}
+                    {/* A word rather than "score 87%": the number told the reader
+                        nothing about what to do with it. */}
                     <Badge
                       tone={group.score >= 0.8 ? "gold" : "neutral"}
-                      title={`How alike they look: ${Math.round(group.score * 100)}%. Pando will not merge two people on a first name and an initial, so this is your call.`}
                     >
                       {group.score >= 0.8
                         ? "Probably the same person"
@@ -725,10 +689,6 @@ export default function CaregiversPage() {
                   </ul>
                   {/* Kept, unlike the other footnotes cut in this pass: this one
                       is about an action that cannot be undone, and it is short. */}
-                  <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                    If you&apos;re not sure, leave them as two. Merging the wrong
-                    people puts someone else&apos;s caveats on a real person.
-                  </p>
                 </li>
               ))}
             </ul>
@@ -759,7 +719,7 @@ export default function CaregiversPage() {
           setNoteError(null);
         }}
         title="Restricted — this screen only"
-        description="Never shown to a family or to the caregiver, and never summarized by a model. Opening it is recorded."
+        description="Opening it is recorded against your name."
         footer={
           <Button
             tone="secondary"

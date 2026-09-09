@@ -50,7 +50,6 @@ export default function DeliveryPage() {
     <>
       <PageHead
         title="Message delivery"
-        intro="Whether the texts actually arrived, and the carrier errors worth doing something about."
         right={
           /* The shared control, not a row of primary buttons. A window picker
              changes what you are looking at; it is not the loudest thing on a
@@ -81,10 +80,7 @@ export default function DeliveryPage() {
         */}
       {data?.relay && (
         <p className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
-          <strong>Messages are going to the Slack test channel, not to phones.</strong>{" "}
-          Every rate below describes posts in that channel. Verification codes
-          are the exception — those always go by SMS. Quiet hours are not
-          enforced against the channel, because nobody&apos;s phone buzzes.
+          Messages are going to the Slack test channel, not to phones.
         </p>
       )}
 
@@ -101,7 +97,7 @@ export default function DeliveryPage() {
           <NotConfigured
               demo={demo}
               onDemo={setDemo}
-              noSample="There is no sample delivery rate on purpose — a page that cannot reach the database must say so rather than report perfect delivery."
+              noSample
             />
         </Card>
       ) : (
@@ -140,7 +136,6 @@ export default function DeliveryPage() {
             {data.settled === 0 && data.in_flight === 0 ? (
               <Empty
                 title="Nothing has been sent yet"
-                body="Delivery only becomes measurable once Twilio is provisioned and the first message goes out."
               />
             ) : (
               <>
@@ -162,7 +157,6 @@ export default function DeliveryPage() {
                     label="Still in flight"
                     value={data.in_flight}
                     hint="not counted either way"
-                    explain="Twilio accepted these and has not reported back yet. They are neither delivered nor failed, so they are left out of the rate rather than counted against it."
                   />
                 </div>
 
@@ -178,21 +172,15 @@ export default function DeliveryPage() {
                   }
                 >
                   {data.rate === null
-                    ? "Nothing has a final answer yet, so there is no rate to judge. That is not a failure."
+                    ? "No message has a final answer yet."
                     : data.below_floor
-                      ? `Below the 95% floor. At this level the problem is the sender, the wording or the numbers — not one recipient.`
+                      ? `Below the 95% floor.`
                       : `At or above the 95% floor.`}
                 </p>
               </>
             )}
           </Card>
 
-          <p className="text-[12.5px] leading-relaxed text-muted">
-            Delivery status arrives on Twilio&apos;s status callback. If this page stays
-            empty while messages are going out, the Messaging Service has no status
-            callback pointing at <code>/api/sms/status</code> — the sends are real, the
-            statuses simply never come back.
-          </p>
         </div>
       )}
     </>

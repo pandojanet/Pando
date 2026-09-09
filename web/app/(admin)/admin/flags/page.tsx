@@ -20,7 +20,7 @@ import {
 } from "@/components/admin/ui";
 import { Quote, RecordGroup } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { FIELD_LABEL, flagMeaning, flagTitle, sentence } from "@/lib/admin/labels";
+import { FIELD_LABEL, flagTitle, sentence } from "@/lib/admin/labels";
 import type { FlagRow } from "@/lib/admin/types";
 
 /**
@@ -175,9 +175,7 @@ function FlagCard({
         </p>
       )}
 
-      {/* Only the *specific* reason the review pass wrote, if it wrote one.
-          The generic meaning of this kind of flag is in the group heading, so
-          printing it here would be the duplication this pass removed. */}
+      {/* Only the *specific* reason the review pass wrote, if it wrote one. */}
       {/* A `<div>`, not a `<p>`: `ConfidenceBadge` returns a `<div>`, and a
           `<div>` inside a `<p>` is invalid markup that React hydrates as a
           mismatch. Same classes, so nothing moves. */}
@@ -218,7 +216,6 @@ function FlagCard({
             tone="primary"
             disabled={busy}
             subject={subject}
-            title="Saves your comment and takes this off the list"
             onClick={() =>
               void run("Marked as read.", async () =>
                 adminAction({
@@ -236,7 +233,6 @@ function FlagCard({
               tone="danger"
               disabled={busy}
               subject={subject}
-              title="Saves your comment and moves this to the top of the page"
               onClick={() =>
                 void run("Moved to the top.", async () =>
                   adminAction({
@@ -282,7 +278,6 @@ function Grouped({
           key={group.reason}
           title={flagTitle(group.reason)}
           count={group.flags.length}
-          meaning={flagMeaning(group.reason)}
         >
           {group.flags.map((flag) => (
             <FlagCard
@@ -339,10 +334,7 @@ export default function FlagsPage() {
 
   return (
     <>
-      <PageHead
-        title="Flags"
-        intro="What a parent wrote, for you to read before Pando uses it. Your notes stay between admins."
-      />
+      <PageHead title="Flags" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -360,7 +352,7 @@ export default function FlagsPage() {
           ) : !configured && open.length === 0 ? (
             <NotConfigured demo={demo} onDemo={setDemo} />
           ) : urgent.length === 0 ? (
-            <Empty title="Nothing urgent" body="This is the one you want empty." />
+            <Empty title="Nothing urgent" />
           ) : (
             <Grouped flags={urgent} notes={notes} busy={busy} setNotes={setNotes} run={run} />
           )}
