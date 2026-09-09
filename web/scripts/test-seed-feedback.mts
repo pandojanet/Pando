@@ -602,8 +602,8 @@ ok(
   "including for a parent who has not reached the ages screen yet",
 );
 ok(
-  "an expecting-only parent walks twelve screens, and none is about a child",
-  q.visibleScreens(expectingOnly).length === 12,
+  "an expecting-only parent walks eleven screens, and none is about a child",
+  q.visibleScreens(expectingOnly).length === 11,
   String(q.visibleScreens(expectingOnly).length),
 );
 ok(
@@ -840,8 +840,8 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
     on("priorities").join(",") || "no such screen",
   );
   ok(
-    "a two-child family walks fourteen screens, not seventeen",
-    screens.length === 14,
+    "a two-child family walks thirteen screens, not seventeen",
+    screens.length === 13,
     String(screens.length),
   );
   /* The instruction each question carried as its screen's `help` is kept
@@ -892,6 +892,74 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
     "except the one where each option is its own opt-in",
     questionById("topics_lived")?.dropdown !== true && staticCount("topics_lived") === 14,
     "topics_lived is 14 options and stays chips — on the list for her",
+  );
+}
+
+console.log("\n=== 9 Sep, items 8 and 10: A–Z in a box, and one screen fewer ===");
+{
+  const alpha: QuestionId[] = [
+    "family_structure",
+    "work_setup",
+    "childcare_now",
+    "childcare_backup",
+    "logistics",
+    "trust_circles",
+  ];
+  const a: ProfileAnswers = { ...q.EMPTY_ANSWERS, neighborhood: "pasadena", child_ages: [3, 9] };
+  for (const id of alpha) {
+    const shown = q.optionsFor(questionById(id)!, "pasadena", a);
+    const answersOnly = shown.filter((o) => !o.exclusive).map((o) => o.label);
+    const sorted = [...answersOnly].sort((x, y) => x.localeCompare(y, "en"));
+    ok(
+      `${id} reads A–Z`,
+      JSON.stringify(answersOnly) === JSON.stringify(sorted),
+      answersOnly.join(" | "),
+    );
+    /* The refusal is furniture, not an answer — sorted into the middle it reads
+       as one of the choices. */
+    const firstRefusal = shown.findIndex((o) => o.exclusive);
+    ok(
+      `${id} keeps its refusals at the end`,
+      firstRefusal === -1 || shown.slice(firstRefusal).every((o) => o.exclusive),
+      shown.map((o) => (o.exclusive ? `*${o.label}` : o.label)).join(" | "),
+    );
+  }
+  /**
+   * ⚠ The one dropdown that must **not** be sorted. Its options are a scale —
+   * free-or-low-cost through best-fit-even-if-costlier — and A–Z would open it
+   * on "Ask me each time", which is the least informative answer on the list and
+   * says nothing about there being an order at all.
+   */
+  ok(
+    "but the price scale is left in its own order",
+    questionById("budget")?.alphabetical !== true &&
+      optionsOf("budget")[0]?.id === "prioritize_low_cost",
+    optionsOf("budget").map((o) => o.id).join(" | "),
+  );
+
+  /* Item 10 — the interstitial goes, the compliance opt-in and the privacy
+     disclosure stay, and the one sentence that was said nowhere else moved
+     rather than went. */
+  ok(
+    "“The Pando promise” screen is gone",
+    screenById("promise") === undefined,
+    "an informational screen immediately before the one that says the same thing",
+  );
+  ok(
+    "its no-ads promise survives on the participation screen",
+    /no ads/i.test(screenById("allowance")?.footnote ?? ""),
+    screenById("allowance")?.footnote ?? "nothing",
+  );
+  ok(
+    "the privacy disclosure is kept",
+    screenById("privacy_disclosure") !== undefined,
+    "she named the promise screens; a privacy disclosure is not one",
+  );
+  ok(
+    "and the recurring-messages consent is untouched",
+    q.EMPTY_ANSWERS.recurring_messages === null &&
+      questionById("allowance")?.required === true,
+    "the compliance opt-in is a checkbox on that screen, not a screen of its own",
   );
 }
 

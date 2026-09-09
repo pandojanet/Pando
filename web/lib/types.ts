@@ -300,6 +300,27 @@ export interface Question {
    * search behind the box behaves. This one is for the static lists.
    */
   dropdown?: boolean;
+  /**
+   * Order the options A–Z, with any refusal left at the end.
+   *
+   * Her instruction of 9 Sep pairs this with the dropdown — *"довгі переліки,
+   * особливо childcare-related, відобразити як dropdown; бажано alphabetical"*.
+   * In a box that is right for the same reason it is right in a directory: the
+   * parent is looking for an answer they already hold, and a list they can scan
+   * by first letter is faster than one in whatever order it was written.
+   *
+   * ⚠ **Opt-in, and the exception is why.** `budget` is a dropdown and is **not**
+   * alphabetical: its options are a *scale* — free-or-low-cost, best value,
+   * across price points, best fit even if it costs more — and sorting a scale
+   * produces a list that reads as random. Making this the default would have
+   * scrambled it, and would scramble the next scale somebody adds with nothing
+   * on screen looking wrong. Same rule as `dropdown` itself: name the subjects.
+   *
+   * ⚠ A refusal keeps its place at the end rather than being sorted into the
+   * middle — "Prefer not to say" is the question's own furniture, not one of its
+   * answers, and `SPECIAL_OPTIONS` is appended after it for the same reason.
+   */
+  alphabetical?: boolean;
   /** Offer a free-text fallback → pending_options for admin review. */
   allowOther?: boolean;
   otherLabel?: string;

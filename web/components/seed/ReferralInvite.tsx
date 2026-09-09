@@ -123,6 +123,31 @@ function CopyLink({ code }: { code: string }) {
 
 
 /**
+ * Why a parent would bother — her item 15, and the constraint on it is sharper
+ * than "write something motivating".
+ *
+ * All three places a parent meets their link said only the **mechanic**:
+ * *"anyone who joins through it is recorded as having come from you."* True,
+ * and it answers a question nobody asked.
+ *
+ * ⚠⚠ **It must not promise a reward, and the obvious motivating sentence
+ * would.** A referral credit is denominated in Network Asks, which do not exist
+ * yet (10 Aug), so "invite three parents and get a free Ask" is a balance
+ * nothing can spend. What is left is the honest motivation, and it happens to be
+ * the true one: this product answers with what local parents know, so who is in
+ * it *is* the quality of the answers.
+ *
+ * One constant, used in all three, so the day Janet supplies her wording it is
+ * one string rather than three that have drifted.
+ *
+ * ⚠ Provisional copy. Her note on this item is *"погоджено; final wording
+ * немає"* — the text is agreed in principle and not in words, so this is on the
+ * list for her like everything else in this file.
+ */
+const WHY_INVITE =
+  "Pando answers with what local parents know, so it is only as good as who is in it. Every parent you bring makes the answers you get better.";
+
+/**
  * The same link as a small box in a screen header — her instruction of 8 Sep:
  * on the sharing screen, beside the Pando wordmark, a little highlighted
  * window with a way to copy.
@@ -198,10 +223,7 @@ export function ReferralHeaderInvite({ code }: { code: string }) {
           id={panelId}
           className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-green/25 bg-card p-3.5 text-left shadow-card"
         >
-          <p className="text-[13.5px] leading-relaxed text-ink-soft">
-            Anyone who joins through this link is recorded as having come from
-            you.
-          </p>
+          <p className="text-[13.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
           <CopyLink code={code} />
         </div>
       )}
@@ -217,10 +239,7 @@ export function ReferralPanel({ code }: { code: string }) {
       <h2 className="mt-2 font-display text-[1.1rem] font-semibold text-green-deep">
         Know a parent everyone asks for recommendations?
       </h2>
-      <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
-        This link is yours. Anyone who joins through it is recorded as having
-        come from you.
-      </p>
+      <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
       <CopyLink code={code} />
     </Panel>
   );
@@ -287,9 +306,7 @@ export function ReferralDialog({
         >
           Your invite link is ready.
         </h2>
-        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">
-          Anyone who joins through it is recorded as having come from you.
-        </p>
+        <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
         <CopyLink code={code} />
       </div>
       <div className="flex justify-end border-t border-bark/70 px-5 py-3">

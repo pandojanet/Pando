@@ -1099,6 +1099,7 @@ export const SCREENS: Screen[] = [
       {
         id: "family_structure",
         label: "Family",
+        alphabetical: true,
         help: "This helps Pando find parents who understand your family’s day-to-day. Select all that apply.",
         /* Measured before deciding: as two chip lists this merged screen was
            1,168px, because six labels this long are six full-width rows each.
@@ -1119,6 +1120,7 @@ export const SCREENS: Screen[] = [
            stored, so nothing downstream and no migration. */
         id: "work_setup",
         label: "Work",
+        alphabetical: true,
         help: "This helps Pando tailor answers to your schedule and logistics. Select all that apply.",
         dropdown: true,
         kind: "multi",
@@ -1169,6 +1171,9 @@ export const SCREENS: Screen[] = [
       {
         id: "childcare_now",
         label: "Regular care",
+        /* The list she named: eleven arrangements, and a parent is looking up
+           their own rather than reading them all. */
+        alphabetical: true,
         /* Item 10, her wording. The old line ended "Select all that apply"
            while the cap hint underneath said "One per child" — two instructions
            that contradicted each other on one screen. */
@@ -1199,6 +1204,7 @@ export const SCREENS: Screen[] = [
            per child would be inventing a distinction the parent did not make. */
         id: "childcare_backup",
         label: "Backup",
+        alphabetical: true,
         /* Item 11 adds the instruction; the question keeps its own framing. */
         help: "What can you usually rely on when regular childcare falls through? Select everything you can usually rely on.",
         dropdown: true,
@@ -1263,6 +1269,7 @@ export const SCREENS: Screen[] = [
       {
         id: "logistics",
         label: "Logistics",
+        alphabetical: true,
         /* Nine options of which three may be picked, under a four-chip question
            on the same screen — the longest static list left standing after the
            9 Sep merges, and the same lookup case as the trust circles. */
@@ -1309,6 +1316,12 @@ export const SCREENS: Screen[] = [
         /* Single-select, and the box is the compact form of one: it closes on
            the pick and leaves the answer on screen as a removable chip. */
         dropdown: true,
+        /* ⚠ **Deliberately not `alphabetical`**, and the only dropdown that is
+           not. These options are a **scale** — free-or-low-cost, best value,
+           across price points, best fit even if it costs more — and A–Z turns
+           that into "Ask me each time · Prioritize free… · Prioritize the best
+           fit… · Prioritize the best value… · Show me…", which reads as random
+           and hides that there is an order at all. */
         /* Item 13, verbatim: *"'How should Pando weigh cost?' / 'Pando weigh'
            sounds weird."* This was the screen's title and is the question's
            instruction; her sentence is unchanged. */
@@ -1322,6 +1335,7 @@ export const SCREENS: Screen[] = [
       {
         id: "trust_circles",
         label: "Trust circles",
+        alphabetical: true,
         /**
          * Item 16, and this line is the correction. The old one said Pando
          * weighs these *first*, which was wrong and was the client's main
@@ -1511,20 +1525,36 @@ export const SCREENS: Screen[] = [
         answers.faith.length >
         0,
   },
-  {
-    id: "promise",
-    eyebrow: "Why this works",
-    title: "The Pando promise",
-    statement: {
-      body: [
-        "Pando works because parents help one another. There are no ads. No business or provider can ever pay to change an answer.",
-        "What the community knows is shared give-to-get: contribute what you know, and Pando becomes more useful for everyone — including you.",
-        "In return, we may occasionally ask you a question when your experience could genuinely help another parent.",
-      ],
-      note: "You can always skip a question. The next screen sets your own limit — and it is the last one.",
-    },
-    questions: [],
-  },
+  /**
+   * ## "The Pando promise" is gone (9 Sep — her item 10)
+   *
+   * *"Є декілька проміжних informational screens. Прибрати ті, що не несуть
+   * необхідної функції."* This was one: a screen that asked nothing, placed
+   * **immediately before** the screen that says the same thing while asking for
+   * a decision.
+   *
+   * Three of its four sentences were restated one tap later. *"Shared
+   * give-to-get: contribute what you know, and Pando becomes more useful for
+   * everyone"* and *"we may occasionally ask you a question"* are what the
+   * participation screen's own help and its three columns say; *"You can always
+   * skip a question"* is that screen's *"Every question is optional"*; and its
+   * last clause — *"the next screen sets your own limit"* — was furniture about
+   * navigation.
+   *
+   * ⚠ **One sentence was not said anywhere else, so it moved rather than went.**
+   * *"There are no ads. No business or provider can ever pay to change an
+   * answer."* is the strongest trust claim in the product and appeared exactly
+   * once in the whole app; grepped before deleting. It is the participation
+   * screen's `footnote` now, verbatim — under the levels rather than a screen
+   * ahead of them, which is where a reason to believe the bargain belongs.
+   *
+   * ⚠ **The privacy disclosure is kept**, and it is the other statement screen.
+   * She named the promise screens; a privacy disclosure is not one, it carries
+   * the example sentences a parent needs *before* the attribution decision, and
+   * its caveat is on the list for her rather than ours to remove (2 Sep).
+   * ⚠ **The compliance opt-in is untouched**, as she required — it is the
+   * recurring SMS/RCS checkbox on the screen below, not a screen of its own.
+   */
   {
     id: "allowance",
     eyebrow: "Community",
@@ -1570,6 +1600,13 @@ export const SCREENS: Screen[] = [
         required: true,
       },
     ],
+    /* The one sentence rescued from "The Pando promise" when that screen was
+       removed (9 Sep) — verbatim, and the only place in the app it is said. It
+       sits under the levels because it is the reason to believe the bargain
+       they are agreeing to, and above the recurring-messages consent because
+       that is the act it qualifies. */
+    footnote:
+      "There are no ads. No business or provider can ever pay to change an answer.",
   },
   /**
    * **The listening-ear screen is gone** (1 Sep), on her explicit
@@ -1741,11 +1778,34 @@ export function optionsFor(
             marketOptions(market, question.source.category),
             ageBandsOf(answers.child_ages),
           );
+  const ordered = question.alphabetical ? alphabetical(base) : base;
   /* Appended rather than merged into the directory, so they sit at the end of the
      list where a refusal belongs — and so an importer can never introduce or
      remove one. */
   const special = SPECIAL_OPTIONS[question.id];
-  return special ? [...base, ...special] : base;
+  return special ? [...ordered, ...special] : ordered;
+}
+
+/**
+ * A–Z, with the refusals left where they were (9 Sep — her item 8).
+ *
+ * `localeCompare` against a **named** locale rather than the runtime's: this
+ * runs on the server and in the browser, and a list whose order depends on the
+ * reader's machine is a list two parents see differently. Same reasoning as the
+ * audit page's `whenExact`.
+ *
+ * ⚠ An `exclusive` option is the question's furniture — "Prefer not to say",
+ * "No reliable backup childcare" — and sorting it into the middle of the answers
+ * makes a refusal look like one of them. They keep their authored order at the
+ * end, which is where `SPECIAL_OPTIONS` already goes.
+ */
+function alphabetical(options: Option[]): Option[] {
+  const answersOnly = options.filter((o) => !o.exclusive);
+  const refusals = options.filter((o) => o.exclusive);
+  return [
+    ...[...answersOnly].sort((a, b) => a.label.localeCompare(b.label, "en")),
+    ...refusals,
+  ];
 }
 
 /**

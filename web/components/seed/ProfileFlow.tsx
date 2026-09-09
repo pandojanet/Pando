@@ -1001,6 +1001,32 @@ export function ProfileFlow() {
               )}
             </Panel>
 
+            {/**
+              * Her item 14, and it is a reminder rather than a rule — the logic
+              * is unchanged.
+              *
+              * A parent who chose to stay private has, seven screens earlier,
+              * answered a question about *credit*. What they may not have
+              * carried this far is that their recommendation is still used —
+              * only the name is withheld. Saying it here, on the screen before
+              * everything is saved, is the last honest moment to say it.
+              *
+              * ⚠ It also fires for a parent who **skipped** the question, and
+              * that is the more important half: skipping defaults to private
+              * server-side (`derive.ts` fails closed to anonymous), so they are
+              * private without ever having read what that means.
+              *
+              * Green rather than gold: this is reassurance about a choice that
+              * is working, not a warning about one that needs attention.
+              */}
+            {(answers.attribution === "name_private" ||
+              answers.attribution === null) && (
+              <Panel as="p" tone="positive" size="inset" className="mt-5 leading-relaxed text-green-deep text-help">
+                Your name stays private. What you recommend can still be used in
+                answers to other parents — never with your name on it.
+              </Panel>
+            )}
+
             <p className="mt-5 text-[13.5px] leading-relaxed text-muted">
               You can change any of this later — just text Pando once your
               neighborhood goes live.
