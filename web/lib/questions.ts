@@ -569,7 +569,18 @@ const ATTRIBUTION: Option[] = [
   {
     id: "name_private",
     label: "Keep my name private",
-    hint: "“A local parent recommends this.”",
+    /**
+     * 9 Sep, her copy list — the private option gets a reminder of what
+     * anonymous attribution actually is.
+     *
+     * The example sentence alone was ambiguous in the one direction that
+     * matters: "keep my name private" reads to some parents as *"then nothing I
+     * say gets shared"*, which would make the whole screen look like a choice
+     * about whether to contribute at all. It is not — the recommendation
+     * reaches other parents either way, and only the name is withheld. So the
+     * second clause says the thing the example implies and never states.
+     */
+    hint: "“A local parent recommends this.” Your recommendation is still shared — your name is not.",
   },
   {
     id: "first_name",
@@ -627,35 +638,77 @@ const SHARED_CONNECTIONS: Option[] = [
  * no-commitment path is "still use Pando, pay full price," never a fourth chip
  * here pretending a lighter version of the same agreement exists.
  */
+/**
+ * ## 9 Sep — the same three levels, presented as a comparison
+ *
+ * Her report: she does not understand the current presentation — *"once a week
+ * / up to five questions / etc."* — and she wants the pattern a pricing page
+ * uses, **without it being pricing**: a column per level, and the same three
+ * rows down every column, with Active Contributor marked Recommended.
+ *
+ * The rows are hers: **Participation · Questions · Benefits**.
+ *
+ * ⚠ **Nothing here is new copy.** Every sentence below is the clause that was
+ * already in that level's `hint`, moved into the row it answers — the old hint
+ * ran all three of them together in one line, which is exactly the reading
+ * problem she reported. `hint` is gone from these three because a plan column
+ * has nowhere to put a fourth, unlabelled sentence.
+ *
+ * ⚠⚠ **Community member has no `benefits`, and that is deliberate.** She said
+ * in so many words that she will supply the benefits, so the cell is left
+ * **empty** rather than filled with something Pando made up. The other two
+ * carry the sentence she already approved on 1 Sep, which is a benefit and was
+ * only ever presented as the tail of a hint. Filling the third is one line in
+ * this file.
+ *
+ * ⚠ **The 48-hour gap reads as Open Contributor's alone**, because her own
+ * wording put it there and the chip layout had the same asymmetry. It is
+ * actually true of every level (invariant 5) and the screen's `help` says so
+ * above the columns. Reworded, it would be our sentence rather than hers — so
+ * it stays as written and goes on the list for her.
+ */
 const ALLOWANCE: Option[] = [
   {
     id: "5",
-    label: "Community member · required minimum",
-    hint: "About once a week — up to 5 questions a month",
+    label: "Community member",
     wide: true,
+    plan: {
+      participation: "Required minimum",
+      questions: "About once a week — up to 5 questions a month",
+    },
   },
   {
     id: "10",
     /**
      * 1 Sep, item 18: *"Highlight Active Contributor as **Recommended**. Do not
-     * call it 'Most popular' without supporting usage data."*
+     * call it 'Most popular' without supporting usage data."* — which is now the
+     * badge rather than two words appended to the name.
      *
-     * The hint carries her reciprocity argument rather than a nudge: the reason
-     * to help more is that Pando can then ask the community for *you* more
-     * often. Note what it must not say — access to what Pando already knows is
-     * never restricted by this choice ("Do not restrict access to useful
-     * information Pando already has"), so the benefit is worded as new outreach
+     * The benefit carries her reciprocity argument rather than a nudge: the
+     * reason to help more is that Pando can then ask the community for *you*
+     * more often. Note what it must not say — access to what Pando already
+     * knows is never restricted by this choice ("Do not restrict access to
+     * useful information Pando already has"), so it is worded as new outreach
      * and nothing else.
      */
-    label: "Active contributor · recommended",
-    hint: "Happy to help more — up to 10 a month. Pando can ask the community for a fresh answer for you more often.",
+    label: "Active contributor",
+    recommended: true,
     wide: true,
+    plan: {
+      participation: "Happy to help more",
+      questions: "Up to 10 a month",
+      benefits: "Pando can ask the community for a fresh answer for you more often.",
+    },
   },
   {
     id: "as_relevant",
     label: "Open contributor",
-    hint: "Ask me whenever it’s genuinely relevant — never more than one question every 48 hours. Pando can ask the community for you most often.",
     wide: true,
+    plan: {
+      participation: "Ask me whenever it’s genuinely relevant",
+      questions: "Never more than one question every 48 hours",
+      benefits: "Pando can ask the community for you most often.",
+    },
   },
 ];
 
@@ -939,7 +992,11 @@ export const SCREENS: Screen[] = [
      */
     id: "time_in_area",
     eyebrow: "Life context",
-    title: "How long have you lived in the Pasadena area?",
+    /* 9 Sep, her copy list: the town comes out of the question. Pasadena is
+       this market and not the parent's — seventeen towns are on offer, and a
+       parent in Monrovia was being asked how long they had lived in somebody
+       else's. "This area" is the same question with the assumption removed. */
+    title: "How long have you lived in this area?",
     /**
      * ## Why this line says what it counts (7 Sep)
      *
@@ -950,7 +1007,7 @@ export const SCREENS: Screen[] = [
      *
      * **The question never said what it measured.** For a parent who grew up in
      * Pasadena, left for a decade and came back three years ago, *"How long
-     * have you lived in the Pasadena area?"* has two truthful answers — 10+ for
+     * have you lived in this area?"* has two truthful answers — 10+ for
      * a lifetime, 1–3 for the current stretch — and the screen gave no rule. So
      * two identical families answered differently and `time_in_area` became
      * noise in the one dimension it exists to measure.
@@ -1312,10 +1369,13 @@ export const SCREENS: Screen[] = [
   },
   {
     /* "Ordinary recommendations" meant nothing to a parent — her word. The
-       question is what credit they get, so that is what the title asks. */
+       question is what credit they get, so that is what the title asks.
+       ⚠ 9 Sep: "credit" was the system's word for it. Hers is the parent's —
+       what this screen decides is what another parent sees, so that is the
+       question, and every option below already answers it in those terms. */
     id: "attribution",
     eyebrow: "Privacy",
-    title: "How should Pando credit your recommendations?",
+    title: "How do you want others to see you?",
     help: "Choose a default. You’ll see it and can change it each time before your recommendation is shared.",
     questions: [
       {

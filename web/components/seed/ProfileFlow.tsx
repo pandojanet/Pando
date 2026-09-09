@@ -17,6 +17,9 @@ import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import { OptionPicker } from "@/components/ui/OptionPicker";
+import { PlanGroup } from "@/components/ui/PlanGroup";
+import { PhoneField } from "@/components/ui/PhoneField";
+import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import { Progress } from "@/components/ui/Progress";
 import {
   Eyebrow,
@@ -117,6 +120,8 @@ export function ProfileFlow() {
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** Non-null while the parent is correcting the number the code goes to. */
+  const [editingPhone, setEditingPhone] = useState<string | null>(null);
 
   // A parent can deep-link straight here from a forwarded URL; don't block them.
   useEffect(() => {
@@ -776,9 +781,12 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
               Confirm your number and this is saved.
             </h1>
+            {/* 9 Sep, her copy list: "ten seconds", "the last thing standing
+                between these answers and your place in the pilot" — a sales
+                line on the screen where somebody is trying to type a code. What
+                is left is the only part of it that was a fact. */}
             <p className="mt-2.5 text-[15px] leading-relaxed text-ink-soft">
-              Ten seconds, and it&apos;s the last thing standing between these
-              answers and your place in the pilot. Nothing has left this phone yet.
+              Nothing has left this phone yet.
             </p>
           </div>
 
@@ -810,9 +818,39 @@ export function ProfileFlow() {
                 router.push("/done");
               }}
             />
+          ) : editingPhone !== null ? (
+            /**
+             * 9 Sep — correcting the number the code goes to.
+             *
+             * Her second UX note, and until now this flow had no answer to it
+             * at all: the number was typed on `/join`, eighteen screens back,
+             * and a parent who mistyped a digit reached this screen, sent a code
+             * to a phone they do not hold, and had nowhere to go. Back leads to
+             * the review, not to `/join`.
+             *
+             * ⚠ **The duplicate check on `/join` is not re-run here**, and it
+             * does not need to be: `afterVerified` reads `/api/seed/me` after a
+             * confirmed code and shows the "you already have a profile" panel
+             * (8 Sep), which is the same check one step later and the one that
+             * cannot be walked around.
+             */
+            <ChangeNumber
+              initial={session.phone}
+              onCancel={() => setEditingPhone(null)}
+              onSave={(e164) => {
+                update((s) => ({ ...s, phone: e164, phone_verified: false }));
+                setEditingPhone(null);
+                track("seed_verify_number_changed");
+              }}
+            />
           ) : (
             <VerifyPhone
+              /* Remounted when the number changes, or a code already sent to
+                 the old one leaves the box waiting for something that will
+                 never arrive. */
+              key={session.phone}
               phone={session.phone}
+              onChangeNumber={() => setEditingPhone(session.phone)}
               onVerified={() => {
                 const verified: SeedSession = { ...session, phone_verified: true };
                 saveSession(verified);
@@ -1297,9 +1335,28 @@ export function ProfileFlow() {
                 );
               }
 
+              /**
+               * A question whose options carry a `plan` is a comparison, not a
+               * row of chips (9 Sep — the participation screen).
+               *
+               * Keyed on the **data** rather than on the question id, so the
+               * next question she wants presented this way is a `plan` block in
+               * `questions.ts` and nothing here changes — the same rule the
+               * directory branch below follows.
+               */
+              const plans = shared.options.every((o) => o.plan);
+
               return (
               <div key={`${question.id}-group`}>
-              {directory ? (
+              {plans ? (
+                <PlanGroup
+                  key={question.id}
+                  options={shared.options}
+                  selected={shared.selected}
+                  onChange={shared.onChange}
+                  groupLabel={shared.groupLabel}
+                />
+              ) : directory ? (
                 <SearchableChipGroup
                   key={question.id}
                   {...shared}
@@ -1631,6 +1688,58 @@ function BackButton({ onClick }: { onClick: () => void }) {
         />
       </svg>
     </button>
+  );
+}
+
+/**
+ * Correcting the number before the code goes out (9 Sep, her second UX note).
+ *
+ * A panel rather than a route back to `/join`: that screen is the whole
+ * name-and-consent card and re-entering it mid-flow would ask a parent who has
+ * answered eighteen questions to agree to everything again. What is being
+ * changed is one field, so one field is what is on screen.
+ *
+ * Three rules worth keeping. It seeds from the **stored** number, formatted
+ * nationally, so nobody retypes what is already right. It refuses to save an
+ * incomplete number rather than storing a half one — `phone_verified` is
+ * cleared by the caller on save, so a half number would leave the flow unable
+ * to finish at the one step that finishes it. And Cancel leaves the stored
+ * number exactly as it was, which is what makes opening this to *check* the
+ * number costless.
+ */
+function ChangeNumber({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (e164: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(() => formatPhone(initial));
+  const e164 = toE164(value);
+  const ready = isPhoneComplete(value) && e164 !== null && e164 !== initial;
+
+  return (
+    <Panel className="mt-7" tone="card" raised>
+      <h2 className="font-display text-card-title font-semibold">
+        Which number should the code go to?
+      </h2>
+      {/* `PhoneField` renders its own label — wrapping it in `Field` would give
+          the input two, and its accessible name would be both concatenated. */}
+      <div className="mt-3">
+        <PhoneField label="Mobile number" value={value} onChange={setValue} />
+      </div>
+      <p className="mt-2 text-muted text-help">
+        Your answers stay on this phone either way.
+      </p>
+      <Button className="mt-4" full disabled={!ready} onClick={() => onSave(e164!)}>
+        Send the code here
+      </Button>
+      <TextAction full className="mt-2" tone="quiet" onClick={onCancel}>
+        Keep the number I gave
+      </TextAction>
+    </Panel>
   );
 }
 

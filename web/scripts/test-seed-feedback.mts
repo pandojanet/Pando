@@ -383,15 +383,31 @@ ok(
 );
 const levels = optionsOf("allowance");
 ok("there are three levels", levels.length === 3, levels.map((o) => o.id).join(","));
+/**
+ * 9 Sep — the same three instructions, now carried by the comparison layout
+ * rather than by two words appended to a label. Her rules did not change; where
+ * they live did, so these assert the fields the screen actually renders.
+ */
 ok(
   "the minimum is named as required",
-  /required minimum/i.test(levels[0]?.label ?? ""),
-  levels[0]?.label,
+  /required minimum/i.test(levels[0]?.plan?.participation ?? ""),
+  levels[0]?.plan?.participation,
 );
 ok(
   "the middle one is Recommended, not “most popular”",
-  /recommended/i.test(levels[1]?.label ?? "") && !/popular/i.test(levels[1]?.label ?? ""),
+  levels[1]?.recommended === true &&
+    !/popular/i.test(JSON.stringify(levels[1] ?? {})),
   "“Do not call it ‘Most popular’ without supporting usage data”",
+);
+ok(
+  "every level answers all three of her rows, benefits included where written",
+  levels.every((o) => o.plan?.participation && o.plan?.questions),
+  "Participation · Questions · Benefits, one column each",
+);
+ok(
+  "and no benefit was invented for the level she has not written one for",
+  levels[0]?.plan?.benefits === undefined,
+  "“Janet прямо сказала, що ще дасть benefits” — the cell stays empty",
 );
 ok(
   "48 hours is stated on the screen",
@@ -399,8 +415,8 @@ ok(
 );
 ok(
   "and the benefit is new outreach, never access to what Pando already knows",
-  /ask the community/i.test(levels[1]?.hint ?? "") &&
-    !/access/i.test(levels[1]?.hint ?? ""),
+  /ask the community/i.test(levels[1]?.plan?.benefits ?? "") &&
+    !/access/i.test(levels[1]?.plan?.benefits ?? ""),
   "“Do not restrict access to useful information Pando already has”",
 );
 

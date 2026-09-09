@@ -509,8 +509,12 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 * mistake is to start filling the form in again — and the moment
                 * they notice is when they are looking at it.
                 */}
+              {/* 9 Sep, her copy list. "I've joined before" described a fact
+                  about the past; what a returning parent is looking for on this
+                  screen is the way in, and every product they use calls it
+                  logging in. */}
               <TextAction href="/signin" tone="quiet">
-                I&apos;ve joined before
+                Already have an account? Log in
               </TextAction>
             </div>
           </Panel>

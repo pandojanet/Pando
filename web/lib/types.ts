@@ -134,6 +134,38 @@ export interface Option {
    * never become the displayed identity.
    */
   section?: string;
+  /**
+   * Marked as the suggested choice.
+   *
+   * Her 1 Sep instruction on the participation levels was *"highlight Active
+   * Contributor as **Recommended**. Do not call it 'Most popular' without
+   * supporting usage data"* — which lived inside the option's own label until
+   * the comparison layout gave it somewhere to be. It is a badge now, so the
+   * label can be the plan's name and nothing else.
+   */
+  recommended?: boolean;
+  /** Rendered as a plan card rather than as a chip. See `OptionPlan`. */
+  plan?: OptionPlan;
+}
+
+/**
+ * One column of a comparison, for a question presented as plans rather than as
+ * a row of chips (9 Sep, her participation-level request).
+ *
+ * The three fields are her own rows, in her order: **Participation** (what
+ * agreeing to this level means), **Questions** (how many, and how often) and
+ * **Benefits** (what the parent gets for it).
+ *
+ * ⚠ **`benefits` is optional because two of the three levels have one written
+ * and the third does not.** Her instruction was explicit — the benefits are
+ * hers to supply — so a level with nothing here renders an **empty cell**
+ * rather than a sentence Pando invented. Filling it is a data edit in
+ * `questions.ts` and touches no component.
+ */
+export interface OptionPlan {
+  participation: string;
+  questions: string;
+  benefits?: string;
 }
 
 export type QuestionId =

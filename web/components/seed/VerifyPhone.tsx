@@ -71,6 +71,33 @@ interface Props {
    */
   autoStart?: boolean;
   /**
+   * Let them send the code somewhere else (9 Sep, her two UX notes).
+   *
+   * ## Why it lives in this panel rather than at the call site
+   *
+   * `/signin` already had a "Use a different number" action and it sat **under**
+   * the whole panel, separated from everything else on the page — her report,
+   * and it is worse than untidy: the number this screen is about is in the
+   * sentence at the top, and the only control that can correct it was a
+   * screenful below, after the code box and the resend. So the control belongs
+   * beside the number it corrects, and putting it here is what makes that true
+   * for every caller instead of one.
+   *
+   * ## And it is what the registration flow was missing entirely
+   *
+   * At the end of the profile the number came from `/join`, eighteen screens
+   * earlier, and a parent who mistyped it had **no way to fix it** — the code
+   * goes to a phone they do not hold, and the flow's only exits are Back to the
+   * review or abandoning it. Her second note. The caller decides what changing
+   * it means: `/signin` steps back to its own phone field, the profile flow
+   * edits the session in place.
+   *
+   * ⚠ The caller must remount this panel when the number changes (a `key` on
+   * the phone) — otherwise a code already sent to the old number leaves the box
+   * on screen, waiting for a code that will never arrive.
+   */
+  onChangeNumber?: () => void;
+  /**
    * True where confirming also *sends* something — the completion screen, which
    * flushes a held session, and the caregiver flow, which writes the claim. At the
    * entry screen it does not: there is nothing to submit yet, and a button saying
@@ -88,6 +115,7 @@ export function VerifyPhone({
   audience = "parent",
   submits = false,
   autoStart = false,
+  onChangeNumber,
   onVerified,
   busy,
 }: Props) {
@@ -206,10 +234,13 @@ export function VerifyPhone({
             {" a six-digit code so we know it's you."}
           </>
         ) : (
+          /* 9 Sep, her copy list: the OTP screen sold Founding Status at the
+             moment the parent is trying to type a code. What the code is for is
+             the only thing this sentence has to say. */
           <>
-            {"Founding Status is tied to a real, reachable parent — so we text "}
+            {"We text "}
             <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
-            {" a six-digit code. Until you confirm it, nothing you write reaches us at all."}
+            {" a six-digit code to check the number is yours. Until you confirm it, nothing you write reaches us."}
           </>
         )}
       </p>
@@ -221,6 +252,17 @@ export function VerifyPhone({
             ? `At most ${allowance} ${allowance === 1 ? "question" : "questions"} a month, and STOP ends it any time.`
             : "STOP ends it any time."}
       </p>
+
+      {/* Beside the number it corrects, and above the box asking for a code
+          that would go to the wrong phone — not under the whole panel, which is
+          where `/signin` had it and what she reported. */}
+      {onChangeNumber && (
+        <div className="mt-3">
+          <TextAction tone="quiet" onClick={onChangeNumber} disabled={busy}>
+            Use a different number
+          </TextAction>
+        </div>
+      )}
 
       {stage === "idle" && (
         <Button

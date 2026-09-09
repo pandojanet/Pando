@@ -53,6 +53,14 @@ export type SeedEvent =
   | "seed_verify_requested"
   | "seed_verify_send_blocked"
   | "seed_verify_failed"
+  /**
+   * They corrected the number at the code step (9 Sep). Worth its own event
+   * rather than folding into a resend: a mistyped number reaching this screen
+   * at all means it survived `/join` and eighteen questions, and how often that
+   * happens is the measure of whether the phone field needs work upstream. No
+   * property carries the number, either version — invariant 7.
+   */
+  | "seed_verify_number_changed"
   | "seed_verify_confirmed"
   /**
    * Coming back (7 Sep). Three events, because the drop-off worth measuring is

@@ -183,18 +183,24 @@ export function SignIn() {
               */}
             <h1 className="sr-only">Sign in — confirm your number</h1>
             {error && <Note>{error}</Note>}
+            {/**
+              * 9 Sep — "Use a different number" moved **into** the panel.
+              *
+              * It used to sit in a `mt-5` div under the whole thing, which is
+              * what she reported: the number this screen is about is in the
+              * panel's first sentence, and the only control that could correct
+              * it was below the code box, the resend and the validity line,
+              * detached from everything else on the page. It is `VerifyPhone`'s
+              * own `onChangeNumber` now, rendered beside the number.
+              */}
             <VerifyPhone
               phone={toE164(phone) ?? ""}
               audience="returning"
               autoStart
               busy={busy}
+              onChangeNumber={() => setStage("phone")}
               onVerified={() => void land()}
             />
-            <div className="mt-5">
-              <TextAction tone="quiet" onClick={() => setStage("phone")}>
-                Use a different number
-              </TextAction>
-            </div>
           </div>
         </ScreenBody>
       </Screen>
