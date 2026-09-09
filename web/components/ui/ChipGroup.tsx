@@ -9,6 +9,8 @@ import { OtherSheet } from "./OtherSheet";
 interface Props {
   /** Shown when a screen carries more than one question. */
   label?: string;
+  /** That question's own instruction, under its label. See `Question.help`. */
+  help?: string;
   options: Option[];
   mode: "single" | "multi";
   selected: string[];
@@ -35,6 +37,7 @@ interface Props {
 
 export function ChipGroup({
   label,
+  help,
   options,
   mode,
   selected,
@@ -154,6 +157,13 @@ export function ChipGroup({
         <p className="mb-2.5 font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
           {label}
         </p>
+      )}
+      {/* The question's own instruction, under its own label. A screen
+          carrying one question puts the same sentence above the title as
+          `Screen.help` instead — see `Question.help` for why it had to be
+          able to travel. */}
+      {help && (
+        <p className="mb-3 -mt-1 leading-relaxed text-muted text-help">{help}</p>
       )}
 
       <div

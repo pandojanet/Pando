@@ -97,7 +97,28 @@ const SUBBLOCK = "rounded-2xl border border-bark bg-card p-3";
  * it filters the options this question offers, and reaches nothing further.
  */
 function pickerLabel(question: Question): string {
+  /* A static list is not searched, it is chosen from — and "Search family" is
+     what the directory wording produced when the 9 Sep merges routed these
+     questions here. */
+  if (question.dropdown && question.label) {
+    return `${question.label} — choose from the list`;
+  }
   return question.label ? `Search ${question.label.toLowerCase()}` : "Search the list";
+}
+
+/**
+ * What the box invites you to do, which is not the same on both kinds of it.
+ *
+ * `OptionPicker`'s default is "Start typing a name", written for a directory of
+ * hundreds where typing is the only way to reach most of them. On a closed list
+ * of eleven childcare arrangements it is wrong twice over: there is no name to
+ * think of, and it hides that tapping the box shows every option there is —
+ * which for these questions is the whole interaction.
+ *
+ * ⚠ New user-facing copy, on the list for the client.
+ */
+function pickerPlaceholder(question: Question): string | undefined {
+  return question.dropdown ? "Tap to choose, or type to filter" : undefined;
 }
 
 export function ProfileFlow() {
@@ -1174,6 +1195,10 @@ export function ProfileFlow() {
               const directory = searchableCategory(question);
               const shared = {
                 label: questions.length > 1 ? question.label : undefined,
+                /* Its own instruction, beside its own label — the merged
+                   screens of 9 Sep carry two questions with two different
+                   ones, which is what `Question.help` exists for. */
+                help: question.help,
                 groupLabel: question.label ?? screen.title,
                 mode: (question.kind === "single" ? "single" : "multi") as
                   | "single"
@@ -1215,6 +1240,35 @@ export function ProfileFlow() {
               if (blocks.length > 0) {
                 return (
                   <div key={`${question.id}-perchild`} className="space-y-6">
+                    {/**
+                      * The question's label and its instruction, once, above
+                      * every block — because they are true of the whole run and
+                      * not of one child.
+                      *
+                      * Each block renders the shared props with `label` and
+                      * `help` blanked, so before this the instruction appeared
+                      * **once per child**: "Select all regular care
+                      * arrangements that apply." twice on a two-child screen,
+                      * which is the repetition this repo has already paid for
+                      * on the admin's record queues. And with the 9 Sep merge
+                      * putting a second question underneath, a per-child
+                      * question with no label at all sat above one that had
+                      * one.
+                      */}
+                    {(shared.label || question.help) && (
+                      <div className="space-y-1">
+                        {shared.label && (
+                          <p className="font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
+                            {shared.label}
+                          </p>
+                        )}
+                        {question.help && (
+                          <p className="leading-relaxed text-muted text-help">
+                            {question.help}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {question.sameForAll && (
                       <TextAction
                         onClick={() => applySameForAll(question)}
@@ -1228,6 +1282,9 @@ export function ProfileFlow() {
                       const perChild = {
                         ...shared,
                         label: undefined,
+                        /* Both live above the run of blocks — see the note
+                           there. Left on, the instruction repeats once a child. */
+                        help: undefined,
                         groupLabel: block.heading,
                         options: block.options,
                         selected: block.selected,
@@ -1265,10 +1322,18 @@ export function ProfileFlow() {
                               searchLabel={directory.searchLabel}
                               footnote={last ? directory.footnote : undefined}
                             />
-                          ) : question.source.type === "market" ? (
+                          ) : question.source.type === "market" ||
+                            question.dropdown ? (
                             <OptionPicker
                               {...perChild}
-                              searchLabel={pickerLabel(question)}
+                              /* The block's own heading, not the question's
+                                 label: one screen carries a box per child, and
+                                 naming all of them "Regular care — choose from
+                                 the list" would give a screen-reader user two
+                                 controls with one name. */
+                              searchLabel={block.heading}
+                              placeholder={pickerPlaceholder(question)}
+                              wrapLabels={question.dropdown}
                             />
                           ) : (
                             <ChipGroup {...perChild} layout="wrap" />
@@ -1372,9 +1437,18 @@ export function ProfileFlow() {
                   searchLabel={directory.searchLabel}
                   footnote={directory.footnote}
                 />
-              ) : question.source.type === "market" ? (
+              ) : question.source.type === "market" || question.dropdown ? (
                 /**
-                 * A market question with no directory behind it — camps, today.
+                 * A market question with no directory behind it — camps — and,
+                 * since 9 Sep, a static question that asked for a dropdown.
+                 *
+                 * The second is her instruction that long option lists become a
+                 * compact control, and it reuses this rather than growing a
+                 * second dropdown: a closed list of eleven and a directory of
+                 * hundreds want the same box, and two boxes would be two things
+                 * to keep in step. What differs is only the placeholder, since
+                 * there is nothing to *search* in a closed list — see
+                 * `pickerPlaceholder`.
                  *
                  * It gets the dropdown too, and the reason is the screen rather
                  * than the question: camps sits between classes, clubs and faith
@@ -1391,6 +1465,8 @@ export function ProfileFlow() {
                   key={question.id}
                   {...shared}
                   searchLabel={pickerLabel(question)}
+                  placeholder={pickerPlaceholder(question)}
+                  wrapLabels={question.dropdown}
                 />
               ) : (
               <ChipGroup

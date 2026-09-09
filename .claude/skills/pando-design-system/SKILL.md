@@ -77,6 +77,9 @@ components/ui/Panel.tsx     the block on a flow screen: card | positive | warnin
 components/ui/Note.tsx      something didn't work, said out loud (`role="alert"`)
 components/ui/Chip.tsx      Chip · CustomChip · AddOtherChip
 components/ui/ChipGroup.tsx selection semantics, exclusive options, "other" sheet
+components/ui/OptionPicker.tsx the same question as a dropdown — see the rule below
+components/ui/PlanGroup.tsx a single-select shown as a comparison: one column per
+                             option, the same rows down every column
 components/ui/Progress.tsx  segmented step progress
 components/ui/OtherSheet.tsx bottom sheet for free text
 components/ui/PhoneField.tsx E.164-aware phone input
@@ -89,6 +92,27 @@ components/ui/BrandPanel.tsx the moss sidebar beside the app on lg+ —
                              route-aware: per-step headline, promises, step rail
 components/seed/chat/*      Bubble · TypingDots · CardRecap · ShareMenu · StepWidget
 ```
+
+### Chips, a dropdown, or a comparison — a property of the question
+
+**Chips** for a set the parent is meant to read whole: the ages, the seventeen
+approved towns, and any list of **five or fewer**.
+
+**A dropdown** (`OptionPicker`) for a directory of hundreds, and — since 9 Sep,
+on the client's "onboarding is too long and too heavy" — for a static list of
+**six or more**. Selections stay above the box as removable chips: what a
+dropdown hides is the offers, never the answers. ⚠ **Opted into per question
+(`Question.dropdown`), never derived from the count**; the count is how the set
+was chosen, not what the code reads, or the next long question is swept in with
+nothing on screen looking wrong. ⚠ **One exception, and it is the longest list
+in the flow:** `topics_lived` keeps its chips, because there each option is its
+own opt-in rather than a lookup — hiding them loses opt-ins.
+
+**A comparison** (`PlanGroup`) when the options are alternatives a parent weighs
+against each other rather than items they pick from a list. Rows are shared and
+aligned across the columns with `grid-rows-subgrid`; an empty cell still holds
+its track. It is not a price list — no currency, no ordering by cost, no action
+per column, and the dock still carries the one action.
 
 The public site (pando.is) is a separate shell — a normal responsive website, not
 the phone frame:

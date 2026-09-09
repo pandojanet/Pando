@@ -1066,14 +1066,44 @@ export const SCREENS: Screen[] = [
     ],
   },
   {
-    id: "family_structure",
+    /**
+     * ## 9 Sep — two screens, because they were always one question
+     *
+     * Her report, repeated: onboarding is too long and visually overloaded, and
+     * *"Parenting setup / Work setup / Childcare, backup childcare"* are the
+     * screens she named to merge. These two were split on **24 Aug** (item 12)
+     * and the reason for the split is worth reading before undoing this: the old
+     * single screen ran the two together into options nobody could compare —
+     * *"Two parents, one at home"* meant a stay-at-home parent **or** one
+     * working from home.
+     *
+     * That fix was to the **options**, and it holds untouched: two questions,
+     * two option lists, two answers, the same `family_setup` dimension. What is
+     * reversed is only that each got a screen of its own — a page with one
+     * six-chip question on it, twice in a row, which is the shape she is
+     * complaining about.
+     *
+     * ⚠ **Nothing about the data moves.** `family_structure` and `work_setup`
+     * are still separate answers with separate ids, so `derive.ts`, the payload,
+     * the review screen and the admin are untouched and there is no migration.
+     * ⚠ And the two instruction lines are kept **verbatim**, one per question —
+     * which is what `Question.help` was added for; picking one for the merged
+     * screen would have deleted an instruction a parent acts on.
+     */
+    id: "household_setup",
     eyebrow: "Life context",
-    title: "Your parenting setup",
-    help: "This helps Pando find parents who understand your family’s day-to-day. Select all that apply.",
+    /* Her own two titles, joined. "Your parenting setup" alone would have left
+       the work question sitting under a heading that does not cover it. */
+    title: "Your parenting and work setup",
     questions: [
       {
         id: "family_structure",
         label: "Family",
+        help: "This helps Pando find parents who understand your family’s day-to-day. Select all that apply.",
+        /* Measured before deciding: as two chip lists this merged screen was
+           1,168px, because six labels this long are six full-width rows each.
+           As two boxes it is a screen. */
+        dropdown: true,
         kind: "multi",
         source: { type: "static", options: PARENTING_SETUP },
         relevance: "family_setup",
@@ -1083,20 +1113,14 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
       },
-    ],
-  },
-  {
-    /* Item 12, second screen. Same `family_setup` dimension as the one above —
-       the split is about what a parent is asked, not about how it is stored, so
-       nothing downstream and no migration. */
-    id: "work_setup",
-    eyebrow: "Life context",
-    title: "Your family’s work setup",
-    help: "This helps Pando tailor answers to your schedule and logistics. Select all that apply.",
-    questions: [
       {
+        /* Item 12's second question. Same `family_setup` dimension as the one
+           above — the split is about what a parent is asked, not about how it is
+           stored, so nothing downstream and no migration. */
         id: "work_setup",
         label: "Work",
+        help: "This helps Pando tailor answers to your schedule and logistics. Select all that apply.",
+        dropdown: true,
         kind: "multi",
         source: { type: "static", options: WORK_SETUP },
         relevance: "family_setup",
@@ -1120,17 +1144,36 @@ export const SCREENS: Screen[] = [
      * No `perChildLimit` — unlike a school, a child can genuinely have several
      * arrangements at once (preschool in the morning, a sitter after).
      */
-    id: "childcare_now",
+    id: "childcare",
     eyebrow: "Life context",
-    title: "Your child’s current care",
-    /* Item 10, her wording. The old line ended "Select all that apply" while
-       the cap hint underneath said "One per child" — two instructions that
-       contradicted each other on one screen. */
-    help: "Select all regular care arrangements that apply.",
+    /**
+     * ## 9 Sep — "Childcare / backup childcare" as one item, which is how she
+     * wrote it
+     *
+     * The two were split on 24 Aug (item 13) because a regular arrangement and
+     * a fallback are different facts, and they still are — two questions, two
+     * answers, one screen. The backup question keeps its own `when`, moved off
+     * the screen and onto itself: for an expecting-only parent both questions
+     * are hidden (the regular one by the `perChild` rule) and `visibleScreens`
+     * drops a screen with nothing left on it, so the behaviour the screen-level
+     * gate produced is unchanged.
+     *
+     * ⚠ **Both lists are dropdowns.** Eleven options plus seven is what made
+     * merging these two look impossible; as two compact controls the screen is
+     * shorter than either of the pages it replaces. A parent choosing childcare
+     * knows their own arrangement before they read the list — the list is a
+     * lookup, which is the case a dropdown is for.
+     */
+    title: "Your childcare",
     questions: [
       {
         id: "childcare_now",
         label: "Regular care",
+        /* Item 10, her wording. The old line ended "Select all that apply"
+           while the cap hint underneath said "One per child" — two instructions
+           that contradicted each other on one screen. */
+        help: "Select all regular care arrangements that apply.",
+        dropdown: true,
         kind: "multi",
         source: { type: "static", options: CHILDCARE_REGULAR },
         relevance: "childcare",
@@ -1150,44 +1193,43 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
       },
-    ],
-  },
-  {
-    /* Item 13, second screen. Asked once, at household level: a grandmother who
-       can come over covers every child, so attributing it per child would be
-       inventing a distinction the parent did not make. */
-    id: "childcare_backup",
-    /**
-     * Not asked when the only child is on the way — and the argument is
-     * structural rather than a matter of taste, which is why this screen gets a
-     * gate that the `perChild` rule could not give it.
-     *
-     * This is deliberately **not** a per-child question (see the comment above),
-     * so the 7 Sep gate in `isQuestionVisible` does not touch it. But the thing
-     * it is the backup *to* — "Your child's current care" — **is** per-child and
-     * is therefore hidden for an expecting-only parent. So the flow asked *"What
-     * can you usually rely on when regular childcare falls through?"* of a
-     * parent it had never asked about childcare, about a child who is not born:
-     * a fallback with no antecedent, on the screen after they said they were
-     * expecting.
-     *
-     * The other reason is the one this repo keeps applying: every option here
-     * would be answered about a hypothetical, and `relevance: "childcare"`
-     * derived from a hypothetical is a fact the parent did not state.
-     *
-     * ⚠ The signal is not lost for long — the question returns the moment a
-     * child is recorded as born, and an expecting parent is asked their work
-     * setup, their circles and their practical priorities either way.
-     */
-    when: hasBornChild,
-    eyebrow: "Life context",
-    title: "Your backup childcare",
-    /* Item 11 adds the instruction; the question keeps its own framing. */
-    help: "What can you usually rely on when regular childcare falls through? Select everything you can usually rely on.",
-    questions: [
       {
+        /* Item 13's second question. Asked once, at household level: a
+           grandmother who can come over covers every child, so attributing it
+           per child would be inventing a distinction the parent did not make. */
         id: "childcare_backup",
         label: "Backup",
+        /* Item 11 adds the instruction; the question keeps its own framing. */
+        help: "What can you usually rely on when regular childcare falls through? Select everything you can usually rely on.",
+        dropdown: true,
+        /**
+         * Not asked when the only child is on the way — and the argument is
+         * structural rather than a matter of taste, which is why this question
+         * carries a gate the `perChild` rule could not give it.
+         *
+         * This is deliberately **not** a per-child question (see above), so the
+         * 7 Sep gate in `isQuestionVisible` does not touch it. But the thing it
+         * is the backup *to* — the regular arrangement above — **is** per-child
+         * and is therefore hidden for an expecting-only parent. So the flow
+         * asked *"What can you usually rely on when regular childcare falls
+         * through?"* of a parent it had never asked about childcare, about a
+         * child who is not born: a fallback with no antecedent, immediately
+         * after they said they were expecting.
+         *
+         * The other reason is the one this repo keeps applying: every option
+         * here would be answered about a hypothetical, and `relevance:
+         * "childcare"` derived from a hypothetical is a fact the parent did not
+         * state.
+         *
+         * ⚠ It sat on the **screen** until 9 Sep, and it works identically on
+         * the question because both questions here are then hidden and
+         * `visibleScreens` drops a screen with nothing left on it.
+         *
+         * ⚠ The signal is not lost for long — the question returns the moment a
+         * child is recorded as born, and an expecting parent is asked their work
+         * setup, their circles and their practical priorities either way.
+         */
+        when: hasBornChild,
         kind: "multi",
         source: { type: "static", options: CHILDCARE_BACKUP },
         relevance: "childcare",
@@ -1221,6 +1263,10 @@ export const SCREENS: Screen[] = [
       {
         id: "logistics",
         label: "Logistics",
+        /* Nine options of which three may be picked, under a four-chip question
+           on the same screen — the longest static list left standing after the
+           9 Sep merges, and the same lookup case as the trust circles. */
+        dropdown: true,
         kind: "multi",
         source: { type: "static", options: PRACTICAL_PRIORITIES },
         relevance: "logistics",
@@ -1233,47 +1279,61 @@ export const SCREENS: Screen[] = [
     ],
   },
   {
-    id: "budget",
+    /**
+     * ## 9 Sep — *"Budget / What should Pando prioritize?" → one screen*, her words
+     *
+     * They are the same question asked twice: what Pando should weigh when it
+     * has more than one honest answer to give. Price was its own screen only
+     * because it was written first, and it is one six-chip question.
+     *
+     * ⚠ The **title is hers, already** — the trust screen's own, and it covers
+     * both halves without a word being invented. Each question keeps its own
+     * instruction verbatim under its own label.
+     *
+     * ⚠ The eyebrow is `Preferences` rather than `Trust`: the screen is now
+     * about both, and *Trust* would name the second question over the first.
+     */
+    id: "priorities",
     /* Her point, and it is a real one: this is a recommendation *preference*, not
        life context. "Which describes you?" also made a spending preference sound
-       like a personal identity, which is why the title is now about Pando's
+       like a personal identity, which is why the title is about Pando's
        behaviour rather than about the parent. */
     eyebrow: "Preferences",
-    /* Item 13, verbatim: *"‘How should Pando weigh cost?’ / ‘Pando weigh’
-       sounds weird."* Hers reads as a question a person would ask. */
-    title: "How would you like Pando to consider price?",
-    help: "Choose one — what usually works best for you. You can change this for any specific question.",
+    title: "What should Pando prioritize?",
     questions: [
       {
         id: "budget",
-        /* Her label (2 Sep). Only ever rendered on the review screen and as the
-           chip group's accessible name — a question label is shown above the
-           chips only on a screen carrying more than one question, and this
-           screen has one. */
+        /* Her label (2 Sep). Rendered above the chips now that the screen
+           carries two questions, as well as on the review row. */
         label: "Price & value",
+        /* Single-select, and the box is the compact form of one: it closes on
+           the pick and leaves the answer on screen as a removable chip. */
+        dropdown: true,
+        /* Item 13, verbatim: *"'How should Pando weigh cost?' / 'Pando weigh'
+           sounds weird."* This was the screen's title and is the question's
+           instruction; her sentence is unchanged. */
+        help: "Choose one — what usually works best for you. You can change this for any specific question.",
         /* Single, not multi — see COST_PREFERENCE. A default instruction cannot
            be five simultaneous answers. */
         kind: "single",
         source: { type: "static", options: COST_PREFERENCE },
         relevance: "budget",
       },
-    ],
-  },
-  {
-    id: "trust_circles",
-    eyebrow: "Trust",
-    /**
-     * Item 16, and the help text is the correction. The old line said Pando
-     * weighs these *first*, which was wrong and was the client's main objection:
-     * relevant, firsthand, recent-enough experience always comes first, and these
-     * only choose between parents who are already relevant.
-     */
-    title: "What should Pando prioritize?",
-    help: "Relevant firsthand experience always comes first. Choose up to three other things that matter to you — three at most.",
-    questions: [
       {
         id: "trust_circles",
         label: "Trust circles",
+        /**
+         * Item 16, and this line is the correction. The old one said Pando
+         * weighs these *first*, which was wrong and was the client's main
+         * objection: relevant, firsthand, recent-enough experience always comes
+         * first, and these only choose between parents who are already
+         * relevant.
+         */
+        help: "Relevant firsthand experience always comes first. Choose up to three other things that matter to you — three at most.",
+        /* Ten options of which three may be picked: the parent is choosing a
+           short list out of a menu, which is the lookup case rather than the
+           read-every-line case. */
+        dropdown: true,
         kind: "multi",
         source: { type: "static", options: TRUST_CIRCLES },
         maxSelections: 3,
@@ -1323,6 +1383,27 @@ export const SCREENS: Screen[] = [
     questions: [
       {
         id: "topics_lived",
+        /**
+         * ⚠ **The longest static list in the flow, and deliberately not a
+         * dropdown** (9 Sep).
+         *
+         * Her instruction was long option lists → compact dropdown, and this is
+         * fourteen options. It is also the one question here where each option
+         * is **its own decision** rather than a lookup: the parent is not
+         * finding an answer they already hold, they are reading down a list of
+         * parenting experiences and deciding, one at a time, which they are
+         * willing to be asked about. This screen carries the topic-level
+         * consent the 1 Sep round folded the listening-ear page into.
+         *
+         * A dropdown hides what is not chosen. On a lookup that costs nothing;
+         * here it costs opt-ins that would have been given — a parent does not
+         * open a box to consider whether they would talk about loneliness. Her
+         * own words on this pass were *"без втрати даних"*, and this is the one
+         * list where the change would lose some.
+         *
+         * On the list for her rather than decided against her: if she wants it
+         * boxed anyway, it is `dropdown: true` on this line.
+         */
         kind: "multi",
         source: { type: "static", options: TOPICS_LIVED },
         /* Item 17: *"Add 'Something else' for relevant experiences Pando has

@@ -13,6 +13,8 @@ import type { MarketCategory, MarketId, Option } from "@/lib/types";
 
 interface Props {
   label?: string;
+  /** Passed straight through to whichever control renders. */
+  help?: string;
   groupLabel: string;
   /** The curated starter set — 8-12 familiar choices, from `/api/market/options`. */
   options: Option[];

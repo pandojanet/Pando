@@ -557,7 +557,7 @@ ok(
 ok(
   "the schools screen is gone rather than empty",
   !q.visibleScreens(expectingOnly).some((s) => s.id === "schools") &&
-    !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare_now"),
+    !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare"),
   "a screen with two options about an unborn child is a dead end",
 );
 ok(
@@ -581,20 +581,29 @@ ok(
  * is per-child and therefore hidden, so the flow asked for a fallback to
  * something it had never asked about.
  */
+/* 9 Sep: the two childcare questions share one screen, so the gate moved from
+   the screen onto the backup **question** — and with both hidden the screen
+   drops out on its own. Asserted on the question, which is where the rule now
+   lives, plus on the screen, which is what a parent sees. */
+const asks = (a: ProfileAnswers, id: string) =>
+  q
+    .visibleScreens(a)
+    .flatMap((s) => q.visibleQuestions(s, a))
+    .some((x) => x.id === id);
 ok(
-  "the backup-childcare screen goes with it",
-  !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare_backup"),
-  "a fallback with no antecedent — its own antecedent screen is hidden",
+  "the backup-childcare question goes with it, and the screen with both",
+  !asks(expectingOnly, "childcare_backup") &&
+    !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare"),
+  "a fallback with no antecedent — its own antecedent question is hidden",
 );
 ok(
   "and it comes back the moment one child is born",
-  q.visibleScreens(oneOnTheWay).some((s) => s.id === "childcare_backup") &&
-    q.visibleScreens(q.EMPTY_ANSWERS).some((s) => s.id === "childcare_backup"),
+  asks(oneOnTheWay, "childcare_backup") && asks(q.EMPTY_ANSWERS, "childcare_backup"),
   "including for a parent who has not reached the ages screen yet",
 );
 ok(
-  "an expecting-only parent walks fourteen screens, and none is about a child",
-  q.visibleScreens(expectingOnly).length === 14,
+  "an expecting-only parent walks twelve screens, and none is about a child",
+  q.visibleScreens(expectingOnly).length === 12,
   String(q.visibleScreens(expectingOnly).length),
 );
 ok(
@@ -793,6 +802,96 @@ console.log("\n=== 9 Sep: a refusal chip never becomes a connection ===");
     ["none", "homeschool", "not_in_school_yet", "not_doing_any_yet"].every((v) =>
       d.NON_ANSWERS.has(v),
     ),
+  );
+}
+
+console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
+/**
+ * Her report, repeated: onboarding is too long and visually overloaded. Three
+ * merges and one presentation rule, pinned here because every one of them is a
+ * property of the *data* and a future session reading an older document would
+ * see three screens each doing one thing and split them again.
+ */
+{
+  const twoChildren: ProfileAnswers = {
+    ...q.EMPTY_ANSWERS,
+    neighborhood: "pasadena",
+    child_ages: [3, 9],
+  };
+  const screens = q.visibleScreens(twoChildren);
+  const on = (screenId: string) =>
+    (screens.find((s) => s.id === screenId)?.questions ?? []).map((x) => x.id);
+
+  ok(
+    "parenting setup and work setup are one screen",
+    on("household_setup").join(",") === "family_structure,work_setup",
+    on("household_setup").join(",") || "no such screen",
+  );
+  ok(
+    "childcare and backup childcare are one screen",
+    on("childcare").join(",") === "childcare_now,childcare_backup",
+    on("childcare").join(",") || "no such screen",
+  );
+  ok(
+    "price and priorities are one screen, under her own title",
+    on("priorities").join(",") === "budget,trust_circles" &&
+      screens.find((s) => s.id === "priorities")?.title ===
+        "What should Pando prioritize?",
+    on("priorities").join(",") || "no such screen",
+  );
+  ok(
+    "a two-child family walks fourteen screens, not seventeen",
+    screens.length === 14,
+    String(screens.length),
+  );
+  /* The instruction each question carried as its screen's `help` is kept
+     verbatim on the question, or a merge would have deleted one of the two. */
+  ok(
+    "and every merged question kept its own instruction",
+    ["family_structure", "work_setup", "childcare_now", "childcare_backup", "budget", "trust_circles"].every(
+      (id) => (questionById(id as QuestionId)?.help ?? "").length > 0,
+    ),
+    "picking one for the screen would have dropped an instruction a parent acts on",
+  );
+
+  /* Six or more static options become a box — see `Question.dropdown`. */
+  const staticCount = (id: QuestionId) => optionsOf(id).length;
+  const shouldBox: QuestionId[] = [
+    "family_structure",
+    "work_setup",
+    "budget",
+    "childcare_backup",
+    "logistics",
+    "trust_circles",
+    "childcare_now",
+  ];
+  ok(
+    "every long static list is a dropdown",
+    shouldBox.every((id) => questionById(id)?.dropdown === true),
+    shouldBox.filter((id) => questionById(id)?.dropdown !== true).join(",") || "",
+  );
+  ok(
+    "and every one of them really is long",
+    shouldBox.every((id) => staticCount(id) >= 6),
+    shouldBox.map((id) => `${id}:${staticCount(id)}`).join(" "),
+  );
+  ok(
+    "the short ones keep their chips",
+    (["travel_time", "time_in_area", "attribution", "shared_connections"] as QuestionId[]).every(
+      (id) => questionById(id)?.dropdown !== true && staticCount(id) <= 5,
+    ),
+    "a box costs a tap to open and saves no height at four options",
+  );
+  /**
+   * ⚠ The exception, and it is the longest list of all. Each option there is an
+   * opt-in rather than a lookup, and a parent does not open a box to consider
+   * whether they would talk about loneliness — hiding them loses opt-ins, which
+   * is the one thing her own *"без втрати даних"* rules out.
+   */
+  ok(
+    "except the one where each option is its own opt-in",
+    questionById("topics_lived")?.dropdown !== true && staticCount("topics_lived") === 14,
+    "topics_lived is 14 options and stays chips — on the list for her",
   );
 }
 

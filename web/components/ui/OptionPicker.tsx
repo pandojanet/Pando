@@ -25,6 +25,8 @@ const MAX_LIST = 288;
 interface Props {
   /** Shown when a screen carries more than one question. */
   label?: string;
+  /** That question's own instruction, under its label. See `Question.help`. */
+  help?: string;
   groupLabel: string;
   /** What this question offers — starters, already ranked by the caller. */
   options: Option[];
@@ -48,6 +50,17 @@ interface Props {
   maxHint?: string;
   /** The box's accessible name — "Search all schools, preschools and daycares". */
   searchLabel: string;
+  /**
+   * Let a row wrap instead of truncating.
+   *
+   * A directory row stays on one line so a long list scans, and the tail of a
+   * school name is usually the part a parent can infer. A **closed** list is the
+   * opposite: the label is the whole of the meaning, and measured at 375px two
+   * of the six household options were being cut — *"Parenting with a partner in
+   * m…"*, *"Grandparent or family caregiver invo…"*. Set by the static
+   * dropdowns of 9 Sep and by nothing else.
+   */
+  wrapLabels?: boolean;
   placeholder?: string;
   /** Controlled, so a caller can run a directory search behind the same box. */
   query?: string;
@@ -58,16 +71,27 @@ interface Props {
 }
 
 /**
- * A searchable dropdown for a question whose options are a directory.
+ * The dropdown: a directory of hundreds, or a static list too long to be a wall
+ * of buttons.
  *
  * ## Why this sits next to `ChipGroup` rather than replacing it
  *
  * The client asked for the "circles" questions — schools, classes, camps, clubs,
  * faith communities — to offer a dropdown with search instead of a wall of
- * option buttons. A chip list is still right for a short, closed set a parent is
- * meant to read whole: the ages, the seventeen approved towns, and every static
- * question. So `ChipGroup` keeps those and this takes the ones backed by
- * hundreds of records.
+ * option buttons, and `ChipGroup` kept everything else.
+ *
+ * ⚠ **That last part changed on 9 Sep and the old sentence is worth quoting,
+ * because it read as a rule and is now half a rule:** *"a chip list is still
+ * right for a short, closed set a parent is meant to read whole: the ages, the
+ * seventeen approved towns, and every static question."* The client's report
+ * that onboarding is too long and too heavy applies to a static list of eleven
+ * exactly as it did to a directory, so **six or more static options come here
+ * too** — see `Question.dropdown` for the seven and for the one long list that
+ * is deliberately not among them.
+ *
+ * What survives of the old sentence is the part that was about *reading whole*
+ * rather than about where the options came from: the ages and the seventeen
+ * approved towns keep their chips, and so does every list of five or fewer.
  *
  * ## What deliberately stays a button
  *
@@ -89,6 +113,7 @@ interface Props {
  */
 export function OptionPicker({
   label,
+  help,
   groupLabel,
   options,
   extra = [],
@@ -102,6 +127,7 @@ export function OptionPicker({
   max,
   maxHint,
   searchLabel,
+  wrapLabels = false,
   placeholder = "Start typing a name",
   query: controlledQuery,
   onQueryChange,
@@ -325,6 +351,13 @@ export function OptionPicker({
           {label}
         </p>
       )}
+      {/* The question's own instruction, under its own label. A screen
+          carrying one question puts the same sentence above the title as
+          `Screen.help` instead — see `Question.help` for why it had to be
+          able to travel. */}
+      {help && (
+        <p className="mb-3 -mt-1 leading-relaxed text-muted text-help">{help}</p>
+      )}
 
       {(selected.length > 0 || custom.length > 0) && (
         <ul
@@ -441,7 +474,12 @@ export function OptionPicker({
                   >
                     <Tick on={on} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-control font-medium text-ink">
+                      <span
+                        className={cn(
+                          "block text-control font-medium text-ink",
+                          wrapLabels ? "break-words" : "truncate",
+                        )}
+                      >
                         {option.label}
                       </span>
                       {/* The area is what tells three "Willard Elementary

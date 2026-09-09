@@ -232,6 +232,21 @@ export interface Question {
   id: QuestionId;
   /** Label shown above the chips when a screen holds more than one question. */
   label?: string;
+  /**
+   * The instruction for **this** question, under its label.
+   *
+   * Added 9 Sep, and it is what made merging screens free of copy changes. The
+   * client's report is that onboarding is too long and too heavy, and four of
+   * the screens she named carried one question each — so the merge is obvious
+   * and the obstacle was that `help` belonged to the *screen*: two questions
+   * with different instructions could not share one, and picking a winner would
+   * have deleted an instruction a parent acts on.
+   *
+   * So the sentence travels with the question it belongs to, verbatim, and a
+   * merged screen carries both. A screen with one question keeps using
+   * `Screen.help` — nothing moved for its own sake.
+   */
+  help?: string;
   kind: "single" | "multi" | "ages";
   required?: boolean;
   /** Where the chips come from. */
@@ -253,6 +268,38 @@ export interface Question {
   affinity?: { type: AffinityType; weight: number };
   /** Writes a life_relevance row per selection. */
   relevance?: RelevanceDimension;
+  /**
+   * Render this question as a compact dropdown instead of a wall of chips.
+   *
+   * Her instruction of 9 Sep, alongside merging the one-question screens — and
+   * the two go together rather than being two ideas: a screen carrying three
+   * questions is only shorter than three screens if each question is a control
+   * rather than a list, and `childcare_now` alone is eleven chips.
+   *
+   * **The rule the seven were chosen by**, so the eighth is a decision rather
+   * than a guess: a static list of **six or more** options becomes a box —
+   * `family_structure`, `work_setup`, `budget`, `childcare_backup`,
+   * `logistics`, `trust_circles`, `childcare_now`. Four or five stay chips,
+   * because a box costs a tap to open and saves almost no height at that
+   * length: `travel_time`, `time_in_area`, `grew_up_here`, `attribution`,
+   * `shared_connections`.
+   *
+   * ⚠ **One exception, and it is the longest list of the lot.** `topics_lived`
+   * is fourteen options and keeps its chips, because there each option is its
+   * own opt-in rather than a lookup — see the note on that question.
+   *
+   * ⚠ **Named per question, never derived from the option count.** The count is
+   * how the seven were *chosen*; it is not what the code reads. That is the
+   * mistake `SEARCHABLE_QUESTIONS.dropdown` already records paying for: a rule
+   * keyed on a number sweeps in the next question somebody adds, with nothing
+   * on screen looking wrong — and it would have swept in `topics_lived` on the
+   * day this was written.
+   *
+   * For a question backed by a directory the flag lives in
+   * `SEARCHABLE_QUESTIONS` instead, because that one also decides how the
+   * search behind the box behaves. This one is for the static lists.
+   */
+  dropdown?: boolean;
   /** Offer a free-text fallback → pending_options for admin review. */
   allowOther?: boolean;
   otherLabel?: string;
