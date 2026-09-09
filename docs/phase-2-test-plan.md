@@ -271,7 +271,34 @@ This is the loop that was joined up on 4 Sep, and the one most worth walking.
 16265559999: any good toddler classes near South Pasadena?
 ```
 
-**Step 1 — the channel.** Within a second or two:
+**Step 1 — the channel.** ⚠ **Give it up to 30 seconds, not "a second or two".**
+The pipeline searches the open web (4–9s) after retrieval, on top of the intent
+call, and the reply lands when that finishes. A suite that waited 12s failed six
+assertions in a row on 8 Sep, the first of them reading exactly like broken
+wiring.
+
+What arrives is **the answer itself** for an ordinary question — auto-send came
+on 8 Sep — and it must carry **both halves**:
+
+> 3 parents near you have used Little Maestros, a class in South Pasadena, last
+> confirmed Aug 2026.
+> Best for: a cautious toddler who warms up slowly.
+> One said: "Small groups and the teacher is unbelievably patient with the ones
+> who won't join in for the first month."
+> Heads up: Saturdays are packed - take the 9am.
+> About $50-100 a month.
+> Also nearby: Rose Bowl Aquatics parent & me, a class in Old Pasadena, 2 parents.
+>
+> Public/general information:
+> LoveBug & Me Music - baby and toddler music classes. Ages 0-5 years.
+
+**Pass, and check each separately:** the evidence is a **number** and not the
+word "multiple"; a parent's own sentence is in quotation marks and **unedited**;
+the public block has its own heading and its lines carry **no** parent claim; and
+the whole thing is GSM-7 (an em dash in it triples the bill — `test:answer` pins
+the encoding, but a parent's own punctuation is normalised, never their words).
+
+A **sensitive** question still holds and gets `heldReply` instead:
 
 > Got it. Someone at Pando is putting an answer together from local parents, and
 > will text it to you. One thing that'll make my answers much better, how old is
@@ -289,12 +316,14 @@ seed paragraph.
 - **the trust labels it rests on, as their own row.** This is what a reviewer is
   actually checking. "Validated by multiple parents" on a record one parent used
   is the most damaging thing Pando can say.
-- a hold reason. `pilot_review_all` means *everything is held*;
-  `caregiver`, `sensitive` and `generator_asked` mean **this one always will
-  be**.
+- a hold reason. ⚠ `pilot_review_all` is **gone** — the blanket rule came off on
+  8 Sep. `not_held` means it was sent automatically; `caregiver`, `sensitive`
+  and `generator_asked` mean **this one always waits**; `low_evidence` and
+  `public_only` wait until the base fills.
 
-**Step 4 — approve and send.** The answer arrives **in the same thread**, and
-the row turns `sent` only because the send layer said it went.
+**Step 4 — approve and send** *(only for a held answer; an ordinary one is
+already `sent` by step 1)*. The answer arrives **in the same thread**, and the
+row turns `sent` only because the send layer said it went.
 
 **Step 5 — the clarifying question.** Reply in the thread with an age:
 
@@ -325,11 +354,22 @@ purpose. `unclear` is supposed to reach a person and **there is no queue for it*
 
 Admin-driven. Two active blasts already exist in the demo data.
 
-1. `/admin/blasts` → open one → **the pool preview**. It calls the same
-   `selectPool` a live send calls, and shows the **held** list as prominently as
-   the chosen one. A short pool is usually contributors inside their 48-hour gap
-   rather than a thin network, and only that list can tell you which.
-2. **Send.** Each recipient gets their own thread.
+Admin-driven, and **walk it in order** — until 8 Sep two of these five steps had
+no button at all, which is the kind of gap only a walk finds.
+
+0. **Create one.** `/admin/blasts` → *Record a question* (`blast.create`). This
+   is the pilot's manual entry; there is deliberately no automatic one, because
+   a parent's "yes" to Pando's own offer would have to be priced first.
+1. **The pool preview** → *Who would be asked*. It calls the same `selectPool` a
+   live send calls, and shows the **held** list as prominently as the chosen one.
+   A short pool is usually contributors inside their 48-hour gap rather than a
+   thin network, and only that list can tell you which.
+2. **Send the Ask.** ⚠ Offered only where it could work — a passive entry
+   contacts nobody by design, and an Ask already sent has recipients. Everything
+   else shows the button and lets the refusal explain: *unpaid*, *waiting for a
+   person*, *already sent*, *nothing went out*. **Pass:** each of those is a
+   different sentence naming a different next step, never "that has changed".
+   Each recipient gets their own thread.
 3. Reply as one of them, and as another:
 
 ```
@@ -344,9 +384,22 @@ enthusiasm is how a network stops hearing from polite people.
    graph as `pending_review` with `firsthand: false` — a text never establishes
    that the writer used the thing themselves — and merge candidates are offered
    beside creating a new record.
+5. **Send the answers.** Back on `/admin/blasts`, the card now reads
+   *"Still waiting — the answers have not gone out"* and offers *Send the
+   answers* (`blast.deliver`). **Pass:** the asker's thread receives the approved
+   replies **in the parents' own words**, ranked by the admin's rating; the card
+   flips to *Answered*; and pressing it again is **refused** rather than texting
+   them twice.
 
-**What must not happen:** a blast marked `human_review` sending at all, and a
-paid Ask sending before its checkout completed.
+**What must not happen:** a blast marked `human_review` sending at all; a paid
+Ask sending before its checkout completed; an *unapproved* reply reaching the
+asker; or the card reading as finished while the asker has heard nothing.
+
+⚠ **`npm run test:relay-live` walks 0 → 5 automatically** (65 checks), including
+every refusal. What it deliberately does **not** do is call `blast.send` for
+real: that runs `selectPool` against the live cohort and would text real demo
+contributors, spending their 48-hour gap for a test. Step 2 is the one step you
+have to walk by hand, and only against an Ask you created yourself.
 
 ---
 
@@ -446,26 +499,46 @@ bad, and how much is not yet known.
 
 Run these before any manual walk; they are faster and they assert refusals.
 
+**Counts are as of 9 Sep.** They move, and a stale one here is worse than none —
+if a number below does not match, the table is out of date and not the suite.
+
+**Pure — no database, no server, seconds each.** Run all of these first.
+
 | Command | Checks | What it holds |
 |---|---|---|
-| `test:relay` | 31 | the routing decision, the signature, and Slack's own markup |
-| `test:relay-live` | 38 | a **real server** against a stubbed Slack and the live database — the full question → queue → approve → threaded answer loop |
-| `test:inbound` | 49 | the keyword order, mostly forged requests |
-| `test:capture` | 54 | the five-question script, and which words a step accepts |
-| `test:outreach` | 50 | the gap, the ceiling, the governor |
-| `test:blast` | 42 | tiers, pool selection, the guarantee |
-| `test:payments` | 87 | segmentation, prices, the Stripe signature, the retry policy |
-| `test:payments-live` | 18 | `drizzle/0029`'s constraints against the real schema |
-| `test:jobs` | 33 | the lock, and which jobs may send |
+| `test:answer` | 89 | composition: relevance before evidence, the parents' own words, the public block, the budget |
+| `test:routing` | 45 | what waits for a person, and the two replies to a message that is not a question |
+| `test:intent` · `test:onboarding` | 69 · 38 | reading a message, and the one question to ask next |
 | `test:trust` | 47 | the labels — most of them asserting one does **not** appear |
-| `test:answer` · `test:routing` | 34 · 36 | composition, and what waits for a person |
-| `test:intent` · `test:onboarding` | 31 · 38 | reading a message, and the one question to ask next |
-| `test:security` | 64 | every route is guarded, and invariant 7 by shape |
-| `test:compliance` | 5 | the acceptance checks, against the live database |
+| `test:matching` | 53 | the two-layer scorer, the age ladder, the topic reader |
+| `test:starters` · `test:derive` | 27 · 21 | which taps a screen offers; a place → the tenure signal |
+| `test:blast` | 64 | tiers, the guarantee, and what the asker is finally told |
+| `test:outreach` | 57 | the gap, the ceiling, the governor, quiet hours |
+| `test:inbound` | 49 | the keyword order, mostly forged requests |
+| `test:capture` | 66 | the five-question script, and which words a step accepts |
+| `test:caregiver` | 68 | the four consent scopes, the 18+ gate, the named-person detector |
+| `test:payments` | 90 | segmentation, prices, the Stripe signature, the retry policy |
+| `test:jobs` · `test:tiers` · `test:thanks` · `test:vouch` | 33 · 32 · 41 · 32 | the lock; the ladder; the two thank-you loops; refresh vs vouch |
+| `test:feedback` | 117 | every client feedback item, pinned by her own number |
+| `test:security` | 67 | every route is guarded, the limits are sane, invariant 7 by shape |
+| `test:relay` · `test:phone` · `test:person-search` · `test:auth` · `test:confirm` | 33 · 35 · 24 · 45 · 9 | the transport decision; US/UA numbers; the admin picker; sign-in; the vagueness follow-up |
 
-⚠ **`test:e2e` (285) has not been run since 3 Sep.** It needs a live database and
-a dev server on port 3000, and it now walks through the invite gate. Run it
-before the client sees anything.
+**Live — need `.env.local`, the database, and (where noted) a build.**
+
+| Command | Checks | What it needs |
+|---|---|---|
+| `test:relay-live` | 65 | `npm run build` first. A **real server** against a stubbed Slack: the question → answer loop, and the whole blast chain including the exit |
+| `test:e2e` | 285 | a **dev server** (not a build) and a live database. Walks all of Phase 1 |
+| `test:compliance` | 26 | the five acceptance checks, against the live database |
+| `test:payments-live` | 18 | `drizzle/0029`'s constraints against the real schema |
+| `test:referral-live` | 21 | the referral chain and the identity endpoint's refusals |
+| `probe:web-search` | 10 cases | ⚠ **spends real API calls and searches the live web.** Ten questions through the real pipeline, printing what a parent would receive. It **reports rather than gates** — a model plus a live web is not deterministic |
+
+⚠ **Never run a live suite and a dev server against the same `.next`.** A
+production build writes into it, and afterwards some route handlers answer from
+a stale module graph while others recompile — the symptom is `test:e2e` failing
+at a *different* assertion each run, each looking like a real bug. Stop the dev
+server, `rm -rf .next`, restart.
 
 ---
 
@@ -475,8 +548,9 @@ Reporting these as failures wastes a round.
 
 | Thing | Why it is absent |
 |---|---|
-| **Auto-send** | `PILOT_HOLD_EVERYTHING` is true, so the branch is unreachable. Writing it now would be code nothing can execute — and its first run would be against a real parent |
-| **`unclear` → a person** | 5.3 says route it to a human; no queue exists for a question with no answer, so it is logged |
+| ~~**Auto-send**~~ | **Built 8 Sep** on the client's instruction. `PILOT_HOLD_EVERYTHING` is `false`; only sensitive, caregiver-related and generator-asked answers wait. Every row carries the reason it was or was not held, so the queue can be re-read afterwards |
+| ~~**`unclear` → a person**~~ | **Built 8 Sep.** `pending_questions` asks for the detail twice, then hands over — and the handover raises an `unreadable_question` escalation carrying the words, rather than closing into a table nobody reads |
+| **The automatic entry to a Network Ask** | a thin answer offers *"want me to ask a few nearby parents?"* and nothing reads the yes. Wiring it means saying what that reply costs — a decision, not missing code |
 | **The Pando Digest** (§10) | in the strategy, in **no estimate row**, unquoted |
 | **The grove** (§13) | same — a ledger with published exchange rates, and M9 is not it |
 | **The open board** ($5 Board Ask) | a surface, not a feature of Blast; answering there must not spend the allowance |
