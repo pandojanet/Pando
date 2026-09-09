@@ -107,12 +107,19 @@ export async function GET(request: Request) {
          screen a parent sees. `area` comes back so a starter can be ranked
          against where the parent said they live — she is explicit that the home
          area affects ranking and never eligibility. */
-      sql`select category, option_value, label, bands, area, area_slug, section
+      /* ⚠ **Every** active neighborhood comes back, starter or not** — and only
+         the starters are rendered. The extra rows build `areas` below, the
+         id → city roll-up without which a parent living in a Pasadena district
+         is treated as living nowhere (8 Sep). One query rather than two,
+         because against the pooler the cost that matters is the round trip. */
+      sql`select category, option_value, label, bands, area, area_slug, section,
+                 starter, status
             from market_options
            where market_id = ${marketId}
              and active
-             and (category not in ('schools', 'baby_activities', 'clubs',
-                                   'worship', 'previous_places', 'neighborhoods')
+             and (category = 'neighborhoods'
+                  or category not in ('schools', 'baby_activities', 'clubs',
+                                      'worship', 'previous_places')
                   or (starter and status = 'active'))
            order by label`,
     )) as unknown as Array<Record<string, unknown>>;
@@ -131,8 +138,41 @@ export async function GET(request: Request) {
   }
 
   const options: Partial<Record<MarketCategory, Option[]>> = {};
+  /**
+   * Which **city** each neighborhood belongs to — the roll-up the chip lists,
+   * the matcher and retrieval all need and none of them had (8 Sep).
+   *
+   * `market_options.neighborhoods` holds 79 values for this market: the
+   * seventeen curated towns **plus** fourteen Pasadena districts (Old Pasadena,
+   * Bungalow Heaven, Linda Vista, Hastings Ranch…) and Altadena Foothills, each
+   * of which already carries `area_slug = 'pasadena'` / `'altadena'`. Every
+   * starter in every other category is tagged with the **city**, so a parent who
+   * picked a district matched nothing: measured on the live cohort, fourteen of
+   * thirty-nine contributors were offered eight schools from Highland Park,
+   * Alhambra and Monterey Park while seven curated Pasadena schools went
+   * unoffered. That is the 27 Aug report arriving through a second door — not
+   * display-name-versus-slug this time, but district-versus-city.
+   *
+   * ⚠ **It has to be served rather than derived on the client**: only the
+   * seventeen starters are in `options.neighborhoods`, so a district reaches the
+   * browser only if the parent happened to search for it, and on the *next*
+   * screen it would be gone again.
+   *
+   * Only the entries that actually roll up are sent — a town whose city is
+   * itself says nothing, and `neighborhoodCity` falls back to the id.
+   */
+  const areas: Record<string, string> = {};
   for (const row of result.data) {
     const category = String(row.category ?? "") as MarketCategory;
+
+    if (category === "neighborhoods") {
+      const id = String(row.option_value);
+      const city = row.area_slug ? String(row.area_slug) : null;
+      if (city && city !== id) areas[id] = city;
+      /* The chip list is still the curated seventeen; the rest are searchable
+         and are here only for the map above. */
+      if (!(row.starter === true && row.status === "active")) continue;
+    }
     /* Only the categories the questionnaire draws chips from. `focus` and any
        future value live in the table for promotion and import, and are not
        something a screen knows how to render. */
@@ -159,7 +199,7 @@ export async function GET(request: Request) {
     });
   }
 
-  const body = { configured: true, market_id: marketId, options };
+  const body = { configured: true, market_id: marketId, options, areas };
   cacheOptions(marketId, body);
   return NextResponse.json(body);
 }

@@ -68,6 +68,15 @@ export interface Person {
    */
   child_birth_years: number[];
   neighborhood: string | null;
+  /**
+   * The **city** that neighborhood sits in, where it differs.
+   *
+   * `market_options.neighborhoods` mixes towns with districts of one town, and
+   * `neighborhood_adjacency` is keyed on the towns — so without this a district
+   * is an island. See the note in `scorePerson`. Optional and defaulting to
+   * `neighborhood`, so every existing caller and fixture is unchanged.
+   */
+  city?: string | null;
 }
 
 export interface MatchConfig {
@@ -114,6 +123,19 @@ export interface ScoredPerson {
  * scoring system.
  */
 export const RELEVANCE_STEP = 0.5;
+
+/**
+ * Life-relevance values that mean **"no preference"**, and therefore score zero.
+ *
+ * Two of them are written by `deriveLifeRelevance` when the parent *skipped* the
+ * question, and the third is an explicit refusal. Sharing any of them says
+ * nothing about how alike two families are — see the note in `scorePerson`.
+ */
+export const NO_PREFERENCE: ReadonlySet<string> = new Set([
+  "across_price_points",
+  "no_fixed_preference",
+  "prefer_not_to_say",
+]);
 
 /**
  * How many life-relevance dimensions can match at once — the ceiling on the
@@ -215,7 +237,21 @@ const BAND_WORDS: ReadonlyArray<readonly [RegExp, AgeBand]> = [
   [/\b(expecting|pregnan\w*|due in|newborn on the way)\b/i, "expecting"],
   [/\b(baby|babies|infant|infants|newborn|newborns)\b/i, "baby"],
   [/\b(toddler|toddlers)\b/i, "toddler"],
-  [/\b(preschool|pre-?k|nursery|kindergart\w+)\b/i, "preschool"],
+  [/\b(preschool\w*|pre-?k|nurser\w+)\b/i, "preschool"],
+  /**
+   * ⚠ **Kindergarten is both bands, and the two halves of this ladder used to
+   * disagree about it** (9 Sep). It mapped to `preschool` alone, while
+   * `bandsForAge(5)` — the same child, described as "my 5 year old" — returns
+   * `grade`. So *"kindergarten options"* filtered retrieval to preschool records
+   * and *"options for my 5 year old"* filtered it to grade ones, and neither
+   * reader could see the other.
+   *
+   * It genuinely straddles: a kindergartener is five, which this ladder puts in
+   * `grade`, and the *question* is asked alongside preschools. Both is the
+   * honest answer, and bands rank rather than exclude anyway.
+   */
+  [/\bkindergart\w+\b/i, "preschool"],
+  [/\bkindergart\w+\b/i, "grade"],
   [/\b(grade ?school|elementary|primary)\b/i, "grade"],
   [/\b(tween|tweens|middle ?school)\b/i, "tween"],
   [/\b(teen|teens|teenager|teenagers|high ?school)\b/i, "teen"],
@@ -258,20 +294,46 @@ export function bandsInQuestion(text: string): AgeBand[] {
  * than sharing, and "swim class" is sport rather than the generic activities
  * bucket, so the specific topics are tested before the general ones.
  */
+/**
+ * ⚠ **Nine of twenty-four realistic questions matched nothing until 9 Sep**, and
+ * both causes were invisible in review.
+ *
+ * *Plurals.* `\bpreschool\b` does not match "preschool**s**" — there is no word
+ * boundary between `l` and `s` — and the same held for `school`, `park`,
+ * `nursery`, `playground`, `trail`, `library`, `museum`, `outing`, `doctor`,
+ * `dentist`, `therapist` and `club`. A list of singular nouns matched against
+ * real sentences fires about half the time. Every plural-capable noun now ends
+ * `\w*`, which also picks up "daycares" and "tutors".
+ *
+ * *Order.* The file's own rule is that the specific topics are tested before the
+ * general ones, and two were not: the bare `school\w*` sat above `after ?school`
+ * and above `sport\w*`, so **"after school care options"** read as
+ * `preschools_schools` and "high school sports" read as schools rather than
+ * sport. `working_parent_logistics` and `sports` now sit above it.
+ *
+ * ⚠ And a limitation worth naming rather than fixing here: records are tagged by
+ * the extraction model over an **open** vocabulary while questions are read by
+ * these thirteen hand-written patterns, so a record tagged `outings` and named
+ * "Birthday party venues" still cannot be reached by a question containing the
+ * words "birthday party". That asymmetry is the accepted cost of the 4 Sep
+ * decision, and it is survivable only because focus **ranks and never filters**.
+ */
 const FOCUS_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\b(nanny|nannies|au ?pair|childminder|full ?time care)\b/i, "nannies"],
-  [/\b(sitter|babysitter|babysitting|date ?night)\b/i, "babysitters"],
-  [/\b(newborn|night nurse|postpartum|doula|new ?born care)\b/i, "newborn_care"],
-  [/\b(pediatric\w*|paediatric\w*|doctor|dentist|therapist|speech|allerg\w+)\b/i, "pediatric_health"],
+  [/\b(sitter\w*|babysitter\w*|babysitting|date ?night)\b/i, "babysitters"],
+  [/\b(newborn\w*|night nurse|postpartum|doula|new ?born care)\b/i, "newborn_care"],
+  [/\b(pediatric\w*|paediatric\w*|doctor\w*|dentist\w*|therapist\w*|speech|allerg\w+)\b/i, "pediatric_health"],
   [/\b(special ?needs|iep|autis\w+|adhd|sensory)\b/i, "special_needs_resources"],
-  [/\b(preschool|pre-?k|school|kindergart\w+|nursery)\b/i, "preschools_schools"],
-  [/\b(camp|camps)\b/i, "camps"],
+  /* Above `preschools_schools`, or the bare "school" in "after school care"
+     and "high school sports" swallows both of them. */
+  [/\b(childcare logistics|after ?school|daycare hours|work\w* parent|commut\w+|tutor\w*|tutoring)\b/i, "working_parent_logistics"],
   [/\b(swim\w*|soccer|football|gymnastic\w*|karate|martial arts|sport\w*|ballet|dance|tennis|basketball)\b/i, "sports"],
-  [/\b(music|piano|guitar|violin|singing|art|arts|painting|drawing|pottery|theat\w+|drama)\b/i, "arts_music"],
-  [/\b(park|playground|trail|hike|hiking|library|museum|outing|day ?trip|rainy ?day)\b/i, "outings"],
-  [/\b(childcare logistics|after ?school|daycare hours|work\w* parent|commut\w+)\b/i, "working_parent_logistics"],
+  [/\b(preschool\w*|pre-?k|school\w*|kindergart\w+|nurser\w+|daycare\w*|day ?care\w*)\b/i, "preschools_schools"],
+  [/\b(camp|camps)\b/i, "camps"],
+  [/\b(music|piano|guitar|violin|singing|art|arts|painting|drawing|potter\w+|theat\w+|drama)\b/i, "arts_music"],
+  [/\b(park\w*|playground\w*|trail\w*|hike|hiking|librar\w+|museum\w*|outing\w*|day ?trip\w*|rainy ?day|birthday part\w+)\b/i, "outings"],
   [/\b(just moved|new to (the )?area|moving here|relocat\w+)\b/i, "new_to_area_help"],
-  [/\b(class|classes|lesson|lessons|activit\w+|club)\b/i, "activities"],
+  [/\b(class\w*|lesson\w*|activit\w+|club\w*)\b/i, "activities"],
 ];
 
 export function focusInQuestion(
@@ -429,15 +491,39 @@ export function scorePerson(
   /* ── 6.3 — the adjacent credit, and never on top of the same-area one ──── */
   const sameArea =
     asker.neighborhood !== null && asker.neighborhood === candidate.neighborhood;
-  if (!sameArea && asker.neighborhood && candidate.neighborhood) {
-    const neighbours = adjacencyIndex(config.adjacency).get(asker.neighborhood);
-    if (neighbours?.has(candidate.neighborhood)) {
+  /**
+   * ⚠ **The city, not the district — without which 14 of 39 contributors could
+   * never score a neighborhood point at all** (9 Sep).
+   *
+   * `neighborhood_adjacency` is keyed on the seventeen **towns**, while a
+   * parent's stored neighborhood may be one of fourteen Pasadena districts or
+   * Altadena Foothills. Measured on the live cohort: 14 of 39 people had a
+   * neighborhood that appears nowhere in that table, 8 of the 17 adjacency areas
+   * had zero residents, and `pasadena` — which alone appears in 6 of the 29
+   * seeded pairs — was one of them. So a parent in Old Pasadena and one in
+   * Madison Heights, adjoining districts, scored **zero**: not same-area
+   * (different slug), not adjacent (both absent from the table).
+   *
+   * `city` defaults to `neighborhood`, so a town behaves exactly as it did.
+   *
+   * Two districts of one city fall through the **adjacent** path rather than
+   * counting as the same area: they are genuinely closer than two towns, and
+   * weight 1 understates that — but claiming the full same-area 3 would say two
+   * families are in the same place when they are not, and inventing a fourth
+   * weight is a change to the model rather than a fix to a lookup.
+   */
+  const myCity = asker.city ?? asker.neighborhood;
+  const theirCity = candidate.city ?? candidate.neighborhood;
+  if (!sameArea && myCity && theirCity) {
+    const sameCity = myCity === theirCity;
+    const neighbours = adjacencyIndex(config.adjacency).get(myCity);
+    if (sameCity || neighbours?.has(theirCity)) {
       const points = weight("adjacent_neighborhood");
       if (points > 0) {
         affinity += points;
         reasons.push({
           kind: "adjacent_neighborhood",
-          value: candidate.neighborhood,
+          value: candidate.neighborhood ?? theirCity,
           points,
         });
       }
@@ -470,6 +556,23 @@ export function scorePerson(
   const countedDimensions = new Set<string>();
   for (const r of candidate.relevance) {
     if (!mineRelevance.has(`${r.dimension}|${r.value}`)) continue;
+    /**
+     * ⚠ **A shared "no preference" is not a similarity** (9 Sep).
+     *
+     * `deriveLifeRelevance` writes a server-side default when a parent **skips**
+     * the cost or the trust-circles question — `across_price_points` and
+     * `no_fixed_preference` — and that is right for the parent (1 Sep: skipping
+     * must opt them into nothing) and wrong for the matcher. Measured on the
+     * live graph: **26 of 109** relevance rows are those two defaults, 14 people
+     * share `no_fixed_preference`, and two parents who both skipped both
+     * questions were collecting **1.0 of the 3.0 relevance maximum for having
+     * said nothing**. Visible in a real ranking as
+     * `relevance:trust_circle:no_fixed_preference=0.5`.
+     *
+     * They are still **written**, because downstream reads them and because the
+     * default itself is the 1 Sep decision. They simply do not score.
+     */
+    if (NO_PREFERENCE.has(r.value)) continue;
     /**
      * One point per **dimension**, not per value.
      *

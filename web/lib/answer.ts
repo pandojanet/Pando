@@ -113,6 +113,28 @@ export interface AnswerCandidate {
   firsthand_count: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
   answer_ready?: boolean;
+  /**
+   * Where retrieval put this record — 0 is the most relevant. Lower wins.
+   *
+   * ⚠ **Without this the whole of 5.5's relevance work reached no parent.**
+   * `retrieveFor` orders by the question's topic and the asker's area and hands
+   * the list over in that order; `rankForAnswer` then re-sorted by evidence and
+   * *reversed* it. Measured on the live graph, every band holds fewer records
+   * than retrieval's own `limit`, so the SQL `ORDER BY` could not even change
+   * which rows were fetched — it ordered them and the composer threw the order
+   * away. `focusInQuestion`, `drizzle/0032`, `focus:backfill` and the area rank
+   * were all computed, carried, and read by nothing.
+   *
+   * What that looked like on a phone, from `answers` on 8 Sep: *"Please give me
+   * some great school in Passadena"* was answered with a **watershed park** and
+   * a **summer camp**, and the only school on the page was the one public line.
+   * That is the client's *"недостатньо інформації"* — the information was in the
+   * graph and the ordering put it out of reach.
+   *
+   * Absent means "retrieval did not rank this", which is true of general
+   * information: it is ranked last by `public_only` anyway.
+   */
+  rank?: number;
 }
 
 export type NextStep =
@@ -235,6 +257,27 @@ export function rankForAnswer(candidates: AnswerCandidate[]): AnswerCandidate[] 
        * goes first is the page nobody vouched for.
        */
       Number(a.trust.public_only) - Number(b.trust.public_only) ||
+      /**
+       * **Then relevance, because an answer about the wrong subject is not an
+       * answer** (8 Sep).
+       *
+       * This key was missing and it is what the client reported. Evidence used
+       * to come first, so a park two parents had used beat the only school on a
+       * question about schools — and `answer_ready` beat it too, which is worse,
+       * because that flag says a record is *complete enough to answer with*
+       * (§17.1) and says nothing whatever about **this** question.
+       *
+       * ⚠ It ranks and never filters, which is the 4 Sep rule this has to keep:
+       * `focus` is written by the extraction model, so a wrong tag re-orders and
+       * can never drop the right record and leave nothing on screen saying so.
+       * And it is retrieval's *index* rather than the topic itself, so the rule
+       * lives in one place — the SQL that already knows the question's topic,
+       * the asker's area and their bands.
+       *
+       * Evidence and the golden flag still decide everything *within* one level
+       * of relevance, which is where they belong.
+       */
+      (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) ||
       Number(b.answer_ready ?? false) - Number(a.answer_ready ?? false) ||
       b.firsthand_count - a.firsthand_count ||
       FRESHNESS_RANK[a.trust.freshness] - FRESHNESS_RANK[b.trust.freshness] ||

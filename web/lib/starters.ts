@@ -43,6 +43,27 @@ export interface StarterInput {
   options: Option[];
   /** The parent's neighborhood **id**, never its display name. */
   area?: string | null;
+  /**
+   * The **city** that neighborhood belongs to, where they differ.
+   *
+   * ⚠ **The third instance of one bug, and the reason this argument exists.**
+   * Twice the area comparison has silently matched nothing (27 Aug: compared
+   * against a display name; 1 Sep: the list was capped before the area was
+   * known). This is the same shape again: `market_options.neighborhoods` holds
+   * the seventeen towns **plus** fourteen Pasadena districts and Altadena
+   * Foothills, while every starter in every other category is tagged with the
+   * **city** — so a parent in Old Pasadena matched no school, no activity and
+   * no place, and was shown the alphabetically-first records from Alhambra and
+   * Monterey Park. Measured on the live cohort: **fourteen of thirty-nine**
+   * contributors, four of them real rather than demo rows.
+   *
+   * Passed in rather than looked up, so this module keeps its whole point — no
+   * runtime imports, loadable by `npm run test:starters` in plain node. The
+   * caller resolves it with `neighborhoodCity`, whose identity fallback means a
+   * plain town, a failed fetch and an unconfigured deployment all arrive here
+   * as the same value as `area` and behave exactly as they did before.
+   */
+  areaCity?: string | null;
   /** Ids already chosen. Never dropped, whichever branch runs. */
   selected: string[];
   /**
@@ -87,8 +108,15 @@ export function visibleStarters(input: StarterInput): Option[] {
   if (input.wholeList) return [...records, ...special];
 
   /* On the slug, never on `area` — that is the display name, and comparing it
-     to a neighborhood id matched single-word names only (27 Aug). */
-  const isHome = (o: Option) => home !== "" && o.area_slug === home;
+     to a neighborhood id matched single-word names only (27 Aug).
+
+     And against the **city** as well as the district (8 Sep): records are tagged
+     by city, so `old-pasadena` had to be allowed to match `pasadena` or a
+     Pasadena parent saw no Pasadena school. `areaCity` defaults to `home`, so
+     for the seventeen towns this is the single comparison it always was. */
+  const city = (input.areaCity ?? "").trim() || home;
+  const isHome = (o: Option) =>
+    home !== "" && (o.area_slug === home || o.area_slug === city);
 
   /* How many starters each area contributes, so the top-up can prefer the areas
      a family in a thin one would actually travel to. */

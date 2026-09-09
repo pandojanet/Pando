@@ -42,6 +42,8 @@ async function load(market: MarketId): Promise<void> {
     const body = (await res.json()) as {
       configured?: boolean;
       options?: Record<string, Option[]>;
+      /** Neighborhood id → the city it belongs to. See `neighborhoodCity`. */
+      areas?: Record<string, string>;
     };
     if (!body.configured || !body.options) return;
 
@@ -50,7 +52,9 @@ async function load(market: MarketId): Promise<void> {
       const list = body.options[category];
       if (Array.isArray(list) && list.length > 0) table[category] = list;
     }
-    if (Object.keys(table).length > 0) setRuntimeOptions(market, table);
+    const areas =
+      body.areas && typeof body.areas === "object" ? body.areas : undefined;
+    if (Object.keys(table).length > 0) setRuntimeOptions(market, table, areas);
   } catch {
     /* Offline, or the route is unreachable. The built-in lists still work — this
        is the same rule as `persisted: false`: degrade honestly, never blank. */

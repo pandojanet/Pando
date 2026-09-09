@@ -6,7 +6,8 @@ import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { searchMarketOptions } from "@/lib/api-client";
-import { registerFoundOptions } from "@/lib/market-options";
+import { neighborhoodCity, registerFoundOptions } from "@/lib/market-options";
+import { useMarketOptions } from "@/lib/use-market-options";
 import { visibleStarters } from "@/lib/starters";
 import type { MarketCategory, MarketId, Option } from "@/lib/types";
 
@@ -232,9 +233,26 @@ export function SearchableChipGroup({
    *    rare, but a parent who skipped it gets the old alphabetical twelve rather
    *    than an empty screen.
    */
+  /**
+   * The city behind the neighborhood, so a Pasadena district matches Pasadena's
+   * records (8 Sep).
+   *
+   * `useMarketOptions` is called here for its **subscription**, not for the
+   * fetch — that is guarded per market and the parent screen has already
+   * started it. Without it this memo would never recompute when the roll-up
+   * lands, and the fix would work only for a parent who happened to arrive
+   * after the response. Before it lands `neighborhoodCity` returns the id
+   * unchanged, which is exactly the old behaviour.
+   */
+  const version = useMarketOptions(market as MarketId);
+  const areaCity = useMemo(
+    () => neighborhoodCity(market as MarketId, area),
+    [market, area, version],
+  );
+
   const visible = useMemo(
-    () => visibleStarters({ options, area, selected, wholeList }),
-    [options, area, selected, wholeList],
+    () => visibleStarters({ options, area, areaCity, selected, wholeList }),
+    [options, area, areaCity, selected, wholeList],
   );
 
   /* The visible starters plus anything searched up, de-duplicated by id with the

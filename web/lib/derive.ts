@@ -31,7 +31,40 @@ import type {
  * convenience, never the source of truth.
  */
 
-const NON_ANSWERS = new Set(["prefer_not_to_say"]);
+/**
+ * Chips that are the **question's own furniture**, never a connection.
+ *
+ * ⚠ Only `prefer_not_to_say` was here until 9 Sep, and the affinity-bearing
+ * questions carry four more refusals: `none` on faith and clubs, `homeschool`
+ * and `not_in_school_yet` on schools, `not_doing_any_yet` on activities. Every
+ * one of them was being written into `social_affinities` as an edge — so two
+ * families **not** being at a school would have shared `school:homeschool`,
+ * which is the heaviest edge in the graph at **5 points**, and Pando would have
+ * ranked them as the strongest possible match for having each answered "none of
+ * these".
+ *
+ * `faith_community:none` is live on one person today, so the mechanism is real
+ * and only the volume is not. It is the same class as invariant 9's rule that a
+ * typed answer is unmatchable until an admin promotes it: an answer that means
+ * *no connection* must not become one.
+ *
+ * Kept as an explicit list rather than read from `questions.ts`'s `exclusive`
+ * flag, because this module is deliberately free of runtime imports so
+ * a plain node test can load it — the same trade `matching.ts` makes.
+ * `test:feedback` asserts the list against every exclusive option on a
+ * graph-writing question, so the two cannot drift apart silently.
+ */
+export const NON_ANSWERS = new Set([
+  "prefer_not_to_say",
+  "none",
+  "homeschool",
+  "not_in_school_yet",
+  "not_doing_any_yet",
+  /* The topics-lived opt-out. Without it a parent who said "please don't ask me
+     about parenting topics" was stored as volunteering for the topic
+     `no_parenting_questions` — live on one person. */
+  "no_parenting_questions",
+]);
 
 /**
  * Ages are what a parent can answer; birth years are what stays true. The taps are

@@ -13,6 +13,7 @@ import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { toGsm7 } from "@/lib/sms-segments";
+import { SHARE_INVITE, SMALL_TALK } from "@/lib/replies";
 import {
   heldReply,
   routeAnswer,
@@ -709,6 +710,42 @@ export async function handleInboundMessage(input: {
     return;
   }
 
+  /**
+   * ⚠ **Everything that is not a question used to fall off the end here in
+   * silence** — the 7 Sep review's first gap, closed 9 Sep.
+   *
+   * The 8 Sep `pending_questions` work covered `unclear` and a `chitchat` that
+   * arrives *mid-exchange*. What was still dropped is a **cold** `chitchat` and
+   * **any** free-form `contribute`, and the second is the worse of the two: a
+   * parent writing *"we loved Little Gym"* is trying to give Pando something and
+   * is met with nothing at all. Driven live through the built app, both produced
+   * no reply, no queued answer and no pending question.
+   *
+   * Two replies, and each is the honest one for its case rather than a generic
+   * acknowledgement. An offer goes to the flow that can take it properly — the
+   * same call `lib/capture.ts` already makes for a caregiver, and for the same
+   * reason: five closed questions collect a record, a stray sentence does not.
+   * Small talk gets one line saying what the number is for, because a stranger's
+   * first message is their whole impression of Pando (5.9) and silence reads as
+   * a dead number.
+   *
+   * `contribute` deliberately does **not** reach here when a capture is already
+   * open — that branch is handled far above, and answering it twice would be
+   * Pando talking over its own script.
+   */
+  if (reading.intent === "contribute" || reading.intent === "chitchat") {
+    await sendSms({
+      to: from,
+      body: reading.intent === "contribute" ? SHARE_INVITE : SMALL_TALK,
+      category: "transactional",
+      personId: person?.person_id,
+      template: reading.intent === "contribute" ? "share_invite" : "small_talk",
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] answered a non-question", { intent: reading.intent });
+    return;
+  }
+
   if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
     return;
   }
@@ -979,7 +1016,11 @@ async function answerQuestion(input: {
    * here has consented, is active, is discoverable and is an adult.
    */
   const candidates: AnswerCandidate[] = [
-    ...retrieved.shares.map((share) => ({
+    ...retrieved.shares.map((share, i) => ({
+      /* Where retrieval put it. See AnswerCandidate.rank: without this the topic
+         and the area it ranked by were computed and then thrown away, and a
+         question about schools came back with a park (8 Sep). */
+      rank: i,
       /* Not rendered — this is what `answers.share_ids` is written from, and
          therefore the only path by which 9.2 can ever find the contributors
          behind an answer that helped. */
@@ -1008,7 +1049,12 @@ async function answerQuestion(input: {
      * Both are missing on a caregiver with no profile of their own (Maria G.
      * today), and the line falls back to the plain word.
      */
-    ...retrieved.caregivers.map((caregiver) => ({
+    ...retrieved.caregivers.map((caregiver, i) => ({
+      /* Their own list's order. Shares and caregivers are retrieved separately
+         and a question is narrowed to one half or the other, so the two index
+         spaces do not compete in practice — and where they would, the evidence
+         keys below still decide. */
+      rank: i,
       name: caregiver.display,
       kind: "caregiver",
       care:
@@ -1033,9 +1079,24 @@ async function answerQuestion(input: {
      * date for records that carry one, so this adds no claim.
      */
     ...publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo).map((finding) => ({
-      name: finding.name,
-      kind: finding.what,
-      area: finding.area,
+      /**
+       * ⚠ **Through `toGsm7`, and this is a billing fix rather than a nicety.**
+       * A business name on a web page routinely carries a curly apostrophe or an
+       * en dash — "Kidspace Children’s Museum" — and one character outside
+       * GSM-7 moves the **whole message** to UCS-2, where the per-segment budget
+       * falls from 153 to 67. Measured on a real answer: 426 chars / 3 segments
+       * clean, and 439 chars / **7 segments** with one U+2019 in a finding's
+       * name. `SMS_BUDGET` is documented as exactly three segments and is
+       * counted in characters, so the constant's own invariant broke silently.
+       *
+       * Safe to rewrite, unlike everything in `sms-templates.ts`: a name Pando
+       * read off a web page is neither registered copy nor a parent's own words.
+       * `blast-answer.ts` keeps the opposite rule for exactly that reason — a
+       * parent's em dash is forwarded verbatim, at their cost.
+       */
+      name: toGsm7(finding.name) ?? finding.name,
+      kind: finding.what ? (toGsm7(finding.what) ?? finding.what) : finding.what,
+      area: finding.area ? (toGsm7(finding.area) ?? finding.area) : finding.area,
       trust: {
         labels: [TRUST_LABEL.PUBLIC],
         freshness: "fresh" as const,

@@ -187,5 +187,53 @@ console.log("\n=== what the parent hears while a person reads it ===");
   );
 }
 
+console.log("\n=== 9 Sep: a message that is not a question is answered, not ignored ===");
+{
+  /**
+   * The 7 Sep review's first gap. `unclear` and a mid-exchange `chitchat` were
+   * closed on 8 Sep; a **cold** `chitchat` and **any** free-form `contribute`
+   * still fell off the end of `handleInboundMessage` in silence — verified live
+   * against the built app on 9 Sep, with *"we loved Little Gym"* producing no
+   * reply, no queued answer and no pending question.
+   */
+  const r = (await import(
+    `../lib/replies.ts?v=${Date.now()}`
+  )) as typeof import("../lib/replies.ts");
+  const s = (await import(
+    `../lib/sms-segments.ts?v=${Date.now()}`
+  )) as typeof import("../lib/sms-segments.ts");
+
+  for (const [name, text] of [
+    ["the share invite", r.SHARE_INVITE],
+    ["the small-talk reply", r.SMALL_TALK],
+  ] as const) {
+    const plan = s.planSegments(text);
+    ok(
+      `${name} is GSM-7`,
+      plan.encoding === "gsm7",
+      plan.offenders?.join("") ?? "",
+    );
+    ok(
+      `${name} is one segment`,
+      plan.segments === 1,
+      `${text.length} chars, ${plan.segments} segments`,
+    );
+    ok(
+      `${name} ends with the compliance line, like every other reply`,
+      /Reply STOP to opt out, HELP for help\.$/.test(text),
+    );
+  }
+  ok(
+    "the share invite points at /share, never /caregiver",
+    r.SHARE_INVITE.includes("pando.is/share") && !r.SHARE_INVITE.includes("/caregiver"),
+    "sending a nominating parent to the caregiver's own sign-up is the wrong flow",
+  );
+  ok(
+    "and small talk asks no question of its own",
+    !r.SMALL_TALK.includes("?"),
+    "5.4 owns onboarding; a second question here makes the next reply ambiguous",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

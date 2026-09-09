@@ -166,6 +166,50 @@ ok(
   "it is a human having already looked",
 );
 
+console.log("\n=== relevance outranks evidence, which is what the client reported ===");
+/**
+ * ⚠ **The whole of 5.5's relevance work reached no parent until 9 Sep.**
+ * `retrieveFor` orders by the question's topic and the asker's area and hands
+ * the list over in that order; `rankForAnswer` re-sorted by evidence and
+ * reversed it. Every band holds fewer records than retrieval's own limit, so
+ * the SQL could not even change *which* rows came back — it ordered them and
+ * the composer threw the order away.
+ *
+ * From `answers` on 8 Sep, sent to a real phone: *"Please give me some great
+ * school in Passadena"* answered with a watershed park and a summer camp, the
+ * only school on the page being the single public line.
+ */
+ok(
+  "the most relevant record leads, even against more evidence",
+  a.rankForAnswer([
+    parent({ name: "Popular park", rank: 2, firsthand_count: 9 }),
+    parent({ name: "The actual school", rank: 0, firsthand_count: 1 }),
+  ])[0].name === "The actual school",
+  "count is not relevance; a park two parents used is not an answer about schools",
+);
+ok(
+  "and even against an admin's golden flag",
+  a.rankForAnswer([
+    parent({ name: "Golden but off-topic", rank: 3, answer_ready: true }),
+    parent({ name: "On topic", rank: 0 }),
+  ])[0].name === "On topic",
+  "17.1 says complete enough to answer WITH, which says nothing about this question",
+);
+ok(
+  "evidence still decides among equally relevant records",
+  a.rankForAnswer([
+    parent({ name: "One parent", rank: 1, firsthand_count: 1 }),
+    parent({ name: "Three parents", rank: 1, firsthand_count: 3 }),
+  ])[0].name === "Three parents",
+);
+ok(
+  "an unranked record sorts last rather than first",
+  a.rankForAnswer([
+    parent({ name: "Unranked", firsthand_count: 9 }),
+    parent({ name: "Ranked", rank: 5, firsthand_count: 0 }),
+  ])[0].name === "Ranked",
+  "a missing rank must not read as rank 0",
+);
 console.log("\n=== a stale record is marked in the words, not dropped ===");
 const staleText = compose([stale]).text;
 ok("it is still in the answer", staleText.includes("Stale but proven"));
@@ -361,7 +405,7 @@ const web = (name: string, over: Partial<AnswerCandidate> = {}): AnswerCandidate
 
 ok(
   "a parent-backed record outranks a web result",
-  a.rankForAnswer([web("Kidspace"), parent()])[0].name === "Toddler Tunes",
+  a.rankForAnswer([web("Kidspace"), parent({ rank: 99 })])[0].name === "Toddler Tunes",
 );
 ok(
   "even a secondhand, stale one",

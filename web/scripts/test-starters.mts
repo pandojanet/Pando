@@ -243,6 +243,71 @@ ok(
   labelsOf(withSpecial).filter((l) => !l.startsWith("LCF")).length === 2,
 );
 
+console.log("\n=== a district is its city, which is the third time this broke ===");
+/**
+ * ⚠ Measured on the live cohort before this existed: **fourteen of thirty-nine**
+ * contributors live in a Pasadena district (`old-pasadena`, `bungalow-heaven`,
+ * `linda-vista`, `hastings-ranch`, …) or in `altadena-foothills`, every starter
+ * is tagged with the **city**, and so every one of them matched nothing and was
+ * shown the alphabetically-first records from Alhambra, Highland Park and
+ * Monterey Park — while seven curated Pasadena schools went unoffered. Four of
+ * those parents were real rather than demo rows.
+ *
+ * The same shape as 27 Aug (display name vs slug) and 1 Sep (capped before the
+ * area was known): typecheck clean, suite green, feature doing the opposite of
+ * its purpose, visible only to somebody holding a phone.
+ */
+const district = s.visibleStarters({
+  options: schools,
+  area: "old-pasadena",
+  areaCity: "pasadena",
+  selected: [],
+});
+ok(
+  "a Pasadena district is offered Pasadena's schools",
+  labelsOf(district).every((l) => l.startsWith("Pasadena")),
+  labelsOf(district).slice(0, 3).join(", "),
+);
+ok(
+  "and gets its city's whole set rather than the alphabetical fill",
+  labelsOf(district).length === schools.filter((o) => o.area_slug === "pasadena").length,
+  `${labelsOf(district).length} shown`,
+);
+ok(
+  "a town whose city is itself is unchanged",
+  labelsOf(
+    s.visibleStarters({
+      options: schools,
+      area: "la-canada-flintridge",
+      areaCity: "la-canada-flintridge",
+      selected: [],
+    }),
+  ).join("|") === labelsOf(lcf).join("|"),
+  "areaCity defaults to area, so the seventeen towns take the path they always did",
+);
+ok(
+  "and so is a parent whose roll-up has not arrived yet",
+  labelsOf(s.visibleStarters({ options: schools, area: "old-pasadena", selected: [] })).length > 0,
+  "an absent areaCity must degrade to the old behaviour, never to an empty screen",
+);
+/* The city must not swallow a *different* town: `pasadena` and `south-pasadena`
+   are two areas, and a prefix or substring test would merge them. */
+const southPas: Option[] = [
+  ...Array.from({ length: 8 }, (_, i) => rec(`South Pas School ${i + 1}`, "south-pasadena")),
+  ...Array.from({ length: 11 }, (_, i) => rec(`Pasadena School ${i + 1}`, "pasadena")),
+];
+ok(
+  "South Pasadena is not a Pasadena district",
+  labelsOf(
+    s.visibleStarters({
+      options: southPas,
+      area: "south-pasadena",
+      areaCity: "south-pasadena",
+      selected: [],
+    }),
+  ).every((l) => l.startsWith("South Pas")),
+);
+
 console.log("\n=== an unanswered area filters nothing ===");
 const noArea = s.visibleStarters({ options: schools, area: null, selected: [] });
 ok(

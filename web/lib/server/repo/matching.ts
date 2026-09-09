@@ -84,7 +84,25 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
 
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      with asker as (
+      with city as (
+        /* The city each neighborhood rolls up to (9 Sep).
+           market_options mixes the seventeen towns with fourteen Pasadena
+           districts and Altadena Foothills, while neighborhood_adjacency is
+           keyed on the towns -- so without this a district is an island.
+           Measured on the live cohort: 14 of 39 contributors had a neighborhood
+           that appears nowhere in that table, and 8 of its 17 areas had no
+           residents at all, pasadena among them. coalesce keeps a town, an
+           unknown value and an unseeded market identical to the bare column. */
+        select p.id,
+               coalesce(m.area_slug, p.neighborhood) as area
+          from people p
+          left join market_options m
+            on m.market_id = ${marketId}
+           and m.category = 'neighborhoods'
+           and m.active
+           and m.option_value = p.neighborhood
+      ),
+      asker as (
         select p.id, p.neighborhood
           from people p
          where p.id = ${query.askerId}::uuid
@@ -110,16 +128,25 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
            and ae.affinity_value = sa.affinity_value
          where sa.person_id <> ${query.askerId}::uuid
         union
+        /* On the city rather than the raw neighborhood, and same-city counts:
+           two Pasadena districts are a near match that neither branch could see
+           before. See the city CTE above. */
         select p.id
-          from people p, asker a
+          from people p
+          join city pc on pc.id = p.id
+          cross join asker a
+          join city ac on ac.id = a.id
          where p.id <> a.id
-           and p.neighborhood is not null
-           and a.neighborhood is not null
-           and exists (
-             select 1 from neighborhood_adjacency na
-              where na.market_id = ${marketId}
-                and ((na.area_a = a.neighborhood and na.area_b = p.neighborhood)
-                  or (na.area_b = a.neighborhood and na.area_a = p.neighborhood))
+           and pc.area is not null
+           and ac.area is not null
+           and (
+             pc.area = ac.area
+             or exists (
+               select 1 from neighborhood_adjacency na
+                where na.market_id = ${marketId}
+                  and ((na.area_a = ac.area and na.area_b = pc.area)
+                    or (na.area_b = ac.area and na.area_a = pc.area))
+             )
            )
         union
         /* A neighbouring age band (6.4). Cheap because the children table is
@@ -157,6 +184,7 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
         (select json_build_object(
            'person_id', a.id::text,
            'neighborhood', a.neighborhood,
+           'city', (select area from city where id = a.id),
            'child_birth_years', (select years from asker_kids),
            'edges', coalesce((select json_agg(json_build_object(
                 'affinity_type', affinity_type,
@@ -170,6 +198,7 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
         coalesce((select json_agg(json_build_object(
              'person_id', e.id::text,
              'neighborhood', e.neighborhood,
+             'city', (select area from city where id = e.id),
              'child_birth_years', coalesce(
                (select array_agg(c.birth_year) from children c where c.person_id = e.id),
                '{}'),

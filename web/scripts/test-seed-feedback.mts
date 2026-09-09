@@ -702,5 +702,83 @@ console.log("\n=== 8 Sep: the context step's ceiling is one number, in one place
   );
 }
 
+console.log("\n=== 9 Sep: a refusal chip never becomes a connection ===");
+{
+  /**
+   * ⚠ `deriveAffinities` pushed **every** selected value and filtered only
+   * `prefer_not_to_say`, so the other refusals on the affinity-bearing questions
+   * were written into `social_affinities` as edges. The expensive one is
+   * `school:homeschool`: two families **not** at a school would have shared the
+   * heaviest edge in the graph — **5 points**, more than any real connection —
+   * for each having answered "none of these". `faith_community:none` is live on
+   * one person today, so the mechanism was real and only the volume was not.
+   *
+   * The list lives in `derive.ts` as literals rather than being read from here,
+   * because that module is deliberately free of runtime imports so it can be
+   * loaded in a plain node test. This is what stops the two drifting: any
+   * exclusive option on a question that writes an affinity or a relevance row
+   * has to be in it.
+   */
+  const d = (await import(
+    `../lib/derive.ts?v=${Date.now()}`
+  )) as typeof import("../lib/derive.ts");
+
+  const m = (await import(
+    `../lib/matching.ts?v=${Date.now()}`
+  )) as typeof import("../lib/matching.ts");
+
+  /**
+   * ⚠ **`exclusive` is not the same thing as "a refusal", and the first version
+   * of this check conflated them.** It clears the rest of the page, which two
+   * genuine answers also do:
+   *
+   *  - `childcare_backup:no_reliable_backup` — *"there is nobody I can call"* is
+   *    a real and rather important fact about a family's life, and two parents
+   *    who share it are genuinely alike. It is exclusive because it contradicts
+   *    every other option, not because it declines the question.
+   *  - `trust_circles:no_fixed_preference` — the server-side default the 1 Sep
+   *    decision requires when the question is skipped. It is deliberately
+   *    written (downstream reads it) and deliberately scores nothing, which is
+   *    `NO_PREFERENCE`'s job rather than this one.
+   *
+   * So the rule is: every exclusive option on a graph-writing question is either
+   * dropped before the graph, or scores zero, or is on this list with a reason.
+   * A **new** one fails here until somebody decides which — which is the drift
+   * guard, and it is what the flat `exclusive` test could not give.
+   */
+  const REAL_ANSWERS = new Set(["no_reliable_backup"]);
+
+  const missing: string[] = [];
+  for (const screen of q.SCREENS) {
+    for (const question of screen.questions) {
+      if (!question.affinity && !question.relevance) continue;
+      for (const option of q.optionsFor(question, "pasadena", q.EMPTY_ANSWERS)) {
+        if (!option.exclusive) continue;
+        if (d.NON_ANSWERS.has(option.id)) continue;
+        if (m.NO_PREFERENCE.has(option.id)) continue;
+        if (REAL_ANSWERS.has(option.id)) continue;
+        missing.push(`${question.id}:${option.id}`);
+      }
+    }
+  }
+  ok(
+    "every exclusive option on a graph-writing question is triaged",
+    missing.length === 0,
+    missing.join(", "),
+  );
+  ok(
+    "a shared “no preference” is worth nothing, so skipping is not a similarity",
+    m.NO_PREFERENCE.has("no_fixed_preference") &&
+      m.NO_PREFERENCE.has("across_price_points"),
+    "26 of 109 live relevance rows are those two server-side defaults",
+  );
+  ok(
+    "and the four that were missing are named",
+    ["none", "homeschool", "not_in_school_yet", "not_doing_any_yet"].every((v) =>
+      d.NON_ANSWERS.has(v),
+    ),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

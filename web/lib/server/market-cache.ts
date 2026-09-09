@@ -21,6 +21,15 @@ export interface MarketOptionsBody {
   configured: boolean;
   market_id: string;
   options: Partial<Record<MarketCategory, Option[]>>;
+  /**
+   * Neighborhood id → the city it belongs to, for the ones that differ.
+   *
+   * Served rather than derived because `options.neighborhoods` holds only the
+   * seventeen curated towns, while the table holds seventy-nine — the fourteen
+   * Pasadena districts and Altadena Foothills reach a screen only by search.
+   * See `lib/market-options.ts`'s `neighborhoodCity`.
+   */
+  areas?: Record<string, string>;
 }
 
 const TTL_MS = 60_000;

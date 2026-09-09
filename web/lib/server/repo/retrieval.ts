@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
+import { areaGroup } from "@/lib/server/repo/areas";
 import {
   labelsFor,
   usable,
@@ -207,6 +208,22 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
     ? question.kinds
     : ["activity", "camp", "place", "tip"];
   const area = question.area ?? "";
+  /**
+   * The area **and every neighborhood that means the same place** (8 Sep).
+   *
+   * `shares.neighborhoods` and a parent's stored neighborhood are drawn from the
+   * same 79-value list, which mixes seventeen towns with fourteen Pasadena
+   * districts — so an exact comparison made a district an island. Measured: 13
+   * of 39 contributors matched no approved record's area at all. See
+   * `repo/areas.ts`; the group always contains the area itself, so this can only
+   * ever widen a match.
+   */
+  const areaIds = await areaGroup(marketId, area);
+  /* A Postgres array **literal**, never a JS array: drizzle expands one into a
+     record and the `&&` then fails. The same trap `kindList` above documents,
+     and `repo/caregiver.ts` and `option.promote` have each paid for it. Slugs
+     only, so nothing here needs escaping beyond the quotes. */
+  const areas = `{${areaIds.map((a) => `"${a}"`).join(",")}}`;
   const wantShares = question.shares !== false;
   const focus = question.focus ?? "";
   const wantCaregivers = question.caregivers !== false;
@@ -260,16 +277,24 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
       group by s.id
       order by
-        -- Golden answers first (17.1), then the topic the question is about,
-        -- then the asker's own area, then how many parents stand behind it.
-        -- All three rank and none of them filters, which for the topic is a
-        -- deliberate guard rather than symmetry: see QuestionContext.focus,
-        -- and note the backtick this comment deliberately does not contain: one
-        -- inside a sql template closes it. That is documented in CLAUDE.md and
-        -- has now cost a fourth debugging round.
-        s.answer_ready desc,
+        -- The topic the question is about, then the asker's own area, then a
+        -- golden answer (17.1), then how many parents stand behind it. All four
+        -- rank and none of them filters, which for the topic is a deliberate
+        -- guard rather than symmetry: see QuestionContext.focus, and note the
+        -- backtick this comment deliberately does not contain: one inside a sql
+        -- template closes it. That is documented in CLAUDE.md and has now cost a
+        -- fourth debugging round.
+        --
+        -- The golden flag used to be FIRST, and that was the wrong reading of
+        -- 17.1 (8 Sep). It means "complete enough to answer a question with" --
+        -- a statement about the record, not about THIS question -- and six of
+        -- fifteen live records carry it, so any golden record beat the only
+        -- record about the subject. Measured: for three of the seven populated
+        -- topics the first on-topic record sat at rank 7, and the budget fits
+        -- about three. It is a tiebreak among equally relevant records now.
         case when ${focus} <> '' and s.focus = ${focus} then 0 else 1 end,
-        case when ${area} <> '' and s.neighborhoods && array[${area}]::text[] then 0 else 1 end,
+        case when ${area} <> '' and s.neighborhoods && ${areas}::text[] then 0 else 1 end,
+        s.answer_ready desc,
         count(sc.id) filter (where sc.firsthand) desc,
         s.last_confirmed_at desc nulls last
       limit ${limit}

@@ -191,13 +191,42 @@ const runtime = new Map<MarketId, Partial<Record<MarketCategory, Option[]>>>();
 let version = 0;
 const listeners = new Set<() => void>();
 
+/**
+ * Which city each neighborhood belongs to, from `/api/market/options`.
+ *
+ * Only the entries that actually roll up: fourteen Pasadena districts and
+ * Altadena Foothills. A town whose city is itself is absent, and
+ * `neighborhoodCity` falls back to the id — so an unconfigured deployment, a
+ * failed fetch and a plain town all behave identically, which is what keeps the
+ * built-in lists working. See the endpoint for why this cannot be derived from
+ * `options.neighborhoods` (it holds the seventeen starters only).
+ */
+const areaRollup = new Map<MarketId, Record<string, string>>();
+
 export function setRuntimeOptions(
   market: MarketId,
   table: Partial<Record<MarketCategory, Option[]>>,
+  areas?: Record<string, string>,
 ): void {
   runtime.set(market, table);
+  if (areas) areaRollup.set(market, areas);
   version += 1;
   for (const listener of listeners) listener();
+}
+
+/**
+ * The city a neighborhood sits in — itself, for the seventeen towns.
+ *
+ * Used wherever a parent's stated neighborhood is compared against a record's
+ * `area_slug`, because records are tagged with the **city** and a parent may
+ * have picked a district. Never throws and never returns empty for a non-empty
+ * id: the identity fallback is what makes this safe to call before the fetch
+ * has landed.
+ */
+export function neighborhoodCity(market: MarketId, id: string | null | undefined): string {
+  const area = (id ?? "").trim();
+  if (area === "") return "";
+  return areaRollup.get(market)?.[area] ?? area;
 }
 
 /**
