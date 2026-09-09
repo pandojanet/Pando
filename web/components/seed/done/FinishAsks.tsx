@@ -82,9 +82,26 @@ export function FinishAsks() {
 
   const count = session?.chat?.submissions.length ?? 0;
   const hasPhone = Boolean(session?.phone);
-  const allowance = session?.answers.allowance
-    ? Number(session.answers.allowance)
-    : 3;
+  /**
+   * The level they chose, as a number of questions a month — or **null** for
+   * the open-ended one, which has no monthly number at all.
+   *
+   * ⚠ This was `Number(session.answers.allowance)`, and `Number("as_relevant")`
+   * is **NaN**. Two things came of it, and the second is what the client
+   * reported: the confirmation read *"At most NaN a month"*, and the same
+   * expression in `flushSession` sent `NaN` — which `JSON.stringify` writes as
+   * `null` — to `/api/seed/complete`, where the fallback turned it into 5 and
+   * the write then violated `allowance_shape`. See `repo/completion.ts`.
+   *
+   * ⚠ The old fallback for an unanswered question was **3**, which has not been
+   * a valid allowance since 18 Aug. It is 5 now, the community minimum, which is
+   * what `derive.ts` falls back to for the same reason — never the open-ended
+   * level, which would claim the parent granted the most permissive answer on
+   * the screen.
+   */
+  const chosen = session?.answers.allowance ?? null;
+  const allowance: number | null =
+    chosen === "as_relevant" ? null : chosen ? Number(chosen) : 5;
 
   /**
    * Everything held on the phone goes up in one pass, once the code is confirmed.
@@ -184,7 +201,8 @@ export function FinishAsks() {
         name: session.name,
         phone: session.phone,
         follow_up_opt_in: optedIn,
-        monthly_contact_allowance: allowance,
+        /* Not sent: the profile write owns the allowance and the mode it has to
+           agree with. See `repo/completion.ts` for what sending it cost. */
         demand: session.demand,
         shared: counts,
         profile_saved_at: session.profile_saved_at,
@@ -288,7 +306,10 @@ export function FinishAsks() {
           {session?.phone && needsVerify && !done && gate?.sendable !== false && (
             <VerifyPhone
               phone={session.phone}
-              allowance={allowance}
+              /* `undefined` for the open-ended level, so that panel drops the
+                 "at most N a month" clause rather than printing a number this
+                 parent did not choose — its copy already handles the absence. */
+              allowance={allowance ?? undefined}
               submits
               busy={saving}
               onVerified={() => void flush(answer === true, true)}
@@ -338,8 +359,12 @@ function FollowUpCard({
   done: boolean;
   saving: boolean;
   hasPhone: boolean;
-  /** The cap the parent set on the profile screen, echoed back to them here. */
-  allowance: number;
+  /**
+   * The cap the parent set on the profile screen, echoed back to them here —
+   * **null** for the open-ended level, which has no monthly number and whose
+   * ceiling is the 48-hour gap instead.
+   */
+  allowance: number | null;
   onAnswer: (value: boolean) => void;
 }) {
   if (done && answer !== null) {
@@ -359,7 +384,12 @@ function FollowUpCard({
         </p>
         <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
           {answer
-            ? `At most ${allowance} a month — the limit you set — and never a marketing message. Reply STOP any time once we're live.`
+            ? /* The open-ended level has no monthly number, so it echoes the
+                 ceiling it does have — her own 48-hour wording, the one thing
+                 that is true of every level. */
+              allowance === null
+              ? "Never more than one question every 48 hours — the level you chose — and never a marketing message. Reply STOP any time once we're live."
+              : `At most ${allowance} a month — the limit you set — and never a marketing message. Reply STOP any time once we're live.`
             : "You'll still be a founding parent. We just won't text you about what you shared."}
         </p>
         <TextAction className="mt-3" onClick={() => onAnswer(!answer)} disabled={saving}>

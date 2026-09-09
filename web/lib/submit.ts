@@ -125,9 +125,10 @@ export async function flushSession(
     name: session.name,
     phone: session.phone,
     follow_up_opt_in: completion.follow_up_opt_in,
-    monthly_contact_allowance: session.answers.allowance
-      ? Number(session.answers.allowance)
-      : 3,
+    /* The allowance is not sent: `saveProfile` above wrote it, from the tap,
+       with the mode it has to agree with. This line used to be
+       `Number(session.answers.allowance)`, which is **NaN** for the
+       open-ended level — see `repo/completion.ts`. */
     demand: session.demand,
     shared: counts,
     profile_saved_at: session.profile_saved_at,

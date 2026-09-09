@@ -298,11 +298,24 @@ export async function extractCard(
       focus,
     };
   } catch (err) {
-    // Error class only. The request body is a parent's own words.
-    console.error(
-      "[extract] failed:",
-      err instanceof Error ? err.constructor.name : "unknown",
-    );
+    /**
+     * Counts and enums only — never the SDK's `message`, which can carry the
+     * request body, and the request body here is a parent's own words.
+     *
+     * ⚠ **The class name on its own was not usable, and this is the third time
+     * that has cost something** (9 Sep). Every call was failing with
+     * `BadRequestError`, which is what a malformed request, a rejected schema
+     * and *an account out of credit* all look like — and it was the last of
+     * those. Found only by replaying the request by hand. `intent.ts` already
+     * logs the status for the same reason; the API's error `type` goes with it
+     * because both are enums and neither can carry text a parent wrote.
+     */
+    const e = err as { status?: unknown; error?: { error?: { type?: unknown } } };
+    console.error("[extract] failed", {
+      status: typeof e?.status === "number" ? e.status : null,
+      type: typeof e?.error?.error?.type === "string" ? e.error.error.type : null,
+      klass: err instanceof Error ? err.constructor.name : "unknown",
+    });
     return null;
   }
 }

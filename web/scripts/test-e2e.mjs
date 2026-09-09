@@ -739,6 +739,87 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
     !recurring.some((c) => c.first_name === "AuditTenAllowance"),
     "the checkbox gates the screen, so 'declined' is a state the flow cannot produce",
   );
+
+  /**
+   * ⚠⚠ 9 Sep — the third participation level, all the way to the end.
+   *
+   * The client's report was that the thanks screen's yes/no *"just didn't save
+   * the option to the database"*. It didn't: `/api/seed/complete` answered
+   * **502** for every parent who chose **Open contributor**, and the screen
+   * reported it as "that didn't save".
+   *
+   * `as_relevant` stores as `allowance_mode = 'as_relevant'` with a **null**
+   * number, and the two are held together by the `allowance_shape` CHECK. The
+   * completion write set the number without the mode, from a value the browser
+   * restated out of `localStorage` — `Number("as_relevant")` is NaN, which
+   * `JSON.stringify` sends as null, which the route's fallback turned into 5 —
+   * so the row became `as_relevant` + 5, the CHECK fired, and the transaction
+   * rolled back with the follow-up consent, the founding standing and the D1
+   * question inside it.
+   *
+   * **Every check in this suite used `allowance: "5"`, which is why none of them
+   * saw it.** So this one walks the level that breaks, and asserts the landed
+   * rows rather than the 200 — the rule this file already learned twice.
+   */
+  const openPhone = `+1626556${RUN}9`;
+  const s3 = session();
+  const st3 = await s3.post("/api/seed/verify/start", { phone: openPhone, sms_consent: true });
+  await s3.post("/api/seed/verify/check", { code: st3.json.dev_code });
+  await s3.post("/api/seed/profile", {
+    invite_code: "sgv-founding", phone: openPhone, wants_founding: true, first_name: "AuditOpenAllowance",
+    sms_consent: { status: "opted_in", text_version: "seed-sms-2026-08-01" },
+    /* What `buildProfilePayload` sends for this level: the mode, and no number.
+       The profile route pairs them in one expression, which is why that write
+       has never been the one at fault. */
+    allowance_mode: "as_relevant", monthly_contact_allowance: null,
+    children: [{ birth_year: 2020 }], child_ages_at_capture: [5],
+    answers: { neighborhood: "altadena", child_ages: [5], allowance: "as_relevant", other: {} },
+  });
+  const [openRow] = await sql`
+    select id, allowance_mode, monthly_contact_allowance, founding
+    from people where first_name = 'AuditOpenAllowance'`;
+  ok(
+    "the open-ended level stores as as_relevant with no number",
+    openRow &&
+      openRow.allowance_mode === "as_relevant" &&
+      openRow.monthly_contact_allowance === null,
+    JSON.stringify(openRow),
+  );
+
+  const openDone = await s3.post("/api/seed/complete", {
+    invite_code: "sgv-founding", phone: openPhone, follow_up_opt_in: true,
+    demand: { question_text: "Any good toddler swim classes near here?", category: "classes" },
+  });
+  ok(
+    "completing on that level is not a 502",
+    openDone.status === 200 && openDone.json.persisted === true,
+    "-> " + openDone.text,
+  );
+  const openConsent = await sql`
+    select status from consents where person_id = ${openRow?.id ?? null} and scope = 'follow_up'`;
+  ok(
+    "and the follow-up answer is actually in the database",
+    openConsent.length === 1 && openConsent[0].status === "opted_in",
+    JSON.stringify(openConsent),
+  );
+  const [openAfter] = await sql`
+    select allowance_mode, monthly_contact_allowance, founding
+    from people where first_name = 'AuditOpenAllowance'`;
+  ok(
+    "the standing moved and the allowance pair was left alone",
+    openAfter &&
+      openAfter.founding === "pending_founding" &&
+      openAfter.allowance_mode === "as_relevant" &&
+      openAfter.monthly_contact_allowance === null,
+    JSON.stringify(openAfter),
+  );
+  const openDemand = await sql`
+    select question_text from demand_signals where person_id = ${openRow?.id ?? null}`;
+  ok(
+    "and the question they asked went with it, rather than down with the rollback",
+    openDemand.length === 1,
+    JSON.stringify(openDemand),
+  );
 }
 
 const [p] = await sql`select * from people where first_name = 'Audit' order by created_at desc limit 1`;

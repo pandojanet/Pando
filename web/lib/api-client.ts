@@ -225,7 +225,9 @@ export function completeSeed(payload: {
   name: string | null;
   phone: string | null;
   follow_up_opt_in: boolean;
-  monthly_contact_allowance: number;
+  /* ⚠ No `monthly_contact_allowance` — the profile write owns it, together with
+     the `allowance_mode` it has to agree with. Sending it from here is what
+     broke this endpoint for the open-ended level (9 Sep). */
   demand: {
     question_text: string;
     category: string | null;

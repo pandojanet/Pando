@@ -24,7 +24,6 @@ export interface CompletionInput {
   person_id: string | null;
   follow_up_opt_in: boolean;
   consent_text_version: string;
-  monthly_contact_allowance: number | null;
   demand: {
     question_text: string;
     category: string | null;
@@ -49,14 +48,33 @@ export async function writeCompletion(
      * Founding is never self-granted. Finishing the form moves a named parent to
      * `pending_founding` — the admin queue is what makes it real, and the screen
      * they just saw promises a text, not a badge.
+     *
+     * ⚠⚠ **It writes the standing and nothing else. It used to write
+     * `monthly_contact_allowance` too, and that is what broke this screen for a
+     * third of the cohort** (found 9 Sep, on the client's report that the
+     * follow-up answer was not being saved).
+     *
+     * The allowance is a **pair** of columns — `monthly_contact_allowance` and
+     * `allowance_mode` — held together by the `allowance_shape` CHECK: either
+     * `as_relevant` with a null number, or `fixed` with 5 or 10. `derive.ts`
+     * sets both from the parent's tap and the profile write stores them
+     * together. This update set the number **without the mode**, from a value
+     * the browser restated out of `localStorage`, so for anybody who chose the
+     * open-ended level the row became `as_relevant` + 5, the CHECK fired, and
+     * the whole transaction rolled back — taking the follow-up consent, the
+     * founding standing and the D1 question with it, behind a 502 the screen
+     * reported as "that didn't save".
+     *
+     * ⚠ **Do not restore it "with the mode this time".** The profile write
+     * already stored both, server-side, from sanitised answers — this was a
+     * *second writer* of one fact, and the second writer is the one that got it
+     * wrong. That is the 11 Aug rule (the graph is derived here and never taken
+     * from the request body) applied to the one field that had escaped it.
      */
     if (input.person_id) {
       await tx
         .update(people)
-        .set({
-          founding: "pending_founding",
-          monthlyContactAllowance: input.monthly_contact_allowance,
-        })
+        .set({ founding: "pending_founding" })
         .where(eq(people.id, input.person_id));
 
       /**

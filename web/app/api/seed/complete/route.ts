@@ -26,6 +26,15 @@ import { rateLimited } from "@/lib/server/rate-limit";
  *    promises confirmation, not the badge.
  *  - counts of what was shared, so the workflow can log the funnel without the
  *    client asserting anything about stored rows.
+ *
+ * ⚠⚠ **It does not take the monthly allowance, and must not be given one again**
+ * (9 Sep). It used to accept `monthly_contact_allowance` from the body and write
+ * it, which broke this endpoint outright for every parent who chose the
+ * open-ended participation level — see the note in `repo/completion.ts` for the
+ * mechanism. The profile write owns that field, sets it together with
+ * `allowance_mode`, and derives both server-side from the parent's tap. An older
+ * client still sending the key is simply ignored, which is the correct outcome:
+ * it was never the authority on it.
  */
 
 const KINDS = ["activity", "caregiver", "place", "tip"] as const;
@@ -43,7 +52,6 @@ export async function POST(request: Request) {
     phone?: unknown;
     is_test?: unknown;
     follow_up_opt_in?: unknown;
-    monthly_contact_allowance?: unknown;
     demand?: unknown;
     shared?: unknown;
     profile_saved_at?: unknown;
@@ -110,17 +118,6 @@ export async function POST(request: Request) {
       reachable: optedIn && phone !== null,
     },
     /**
-     * The cap Pando must honour, not a preference. 5/10 (18 Aug — supersedes
-     * 1/3/5, same allow-list as `/api/seed/profile` and the same DB-level
-     * `allowance_shape` CHECK): all three have to agree, or a value one of
-     * them accepts aborts the write at whichever of the other two runs it.
-     */
-    monthly_contact_allowance:
-      typeof raw.monthly_contact_allowance === "number" &&
-      [5, 10].includes(raw.monthly_contact_allowance)
-        ? raw.monthly_contact_allowance
-        : 5,
-    /**
      * D1. Three things the client asked for, none of which the browser is trusted
      * with: the classification is re-derived here, a peer-support question is only
      * stored when the parent agreed, and anything not ordinary is flagged for a
@@ -166,7 +163,6 @@ export async function POST(request: Request) {
     follow_up_opt_in: record.follow_up_opt_in,
     reachable: record.consent.reachable,
     consent_version: CONSENT_TEXT_VERSION,
-    allowance: record.monthly_contact_allowance,
     has_demand_signal: record.demand !== null,
     demand_sensitivity: record.demand?.sensitivity ?? null,
     demand_needs_review: record.demand?.requires_human_review ?? null,
@@ -179,7 +175,6 @@ export async function POST(request: Request) {
       person_id: person?.id ?? null,
       follow_up_opt_in: record.follow_up_opt_in,
       consent_text_version: CONSENT_TEXT_VERSION,
-      monthly_contact_allowance: record.monthly_contact_allowance,
       demand: record.demand,
       is_test: record.is_test,
     });
