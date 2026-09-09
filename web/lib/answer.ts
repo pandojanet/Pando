@@ -109,6 +109,17 @@ export interface AnswerCandidate {
    * back to the plain word.
    */
   care?: string | null;
+  /**
+   * One short factual thing about a **public** finding — the ages it takes,
+   * when it runs, drop-in or a term, a published price.
+   *
+   * Only ever set on general information, and only when the page actually said
+   * it. It is what turns a public line from a bare name into something a parent
+   * can act on, and it is honest there precisely because that block is headed
+   * "Public/general information": the same sentence under a parent's record
+   * would be a claim about what parents found, which nobody made.
+   */
+  detail?: string | null;
   trust: TrustLabels;
   firsthand_count: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
@@ -146,6 +157,25 @@ export interface AnswerCandidate {
     great?: string | null;
     /** R7 — the caveat, which is often the most useful sentence there is. */
     caveat?: string | null;
+    /**
+     * R5 — **who it suits**, and it is the closest thing in the graph to the
+     * strategy's own *"all with high-energy kids around that age"*.
+     *
+     * A parent choosing between two classes is choosing on whether it fits
+     * *their* child, and this is the only field that speaks to that: "A cautious
+     * toddler who warms up slowly", "First-time parents who want to be told what
+     * to do", "A child who is not sporty yet". Captured since 1.5, approved with
+     * the contribution, and never sent.
+     */
+    who_for?: string | null;
+    /**
+     * The practical thing a parent would not know to ask — her example's *"one
+     * tip: it fills fast after Labor Day"*.
+     *
+     * Distinct from the caveat: a caveat is a reason to hesitate, a tip is how
+     * to do it well. Both are worth the characters and both were unused.
+     */
+    tip?: string | null;
   };
   /**
    * When a parent last confirmed it, so the evidence can be said in prose.
@@ -557,11 +587,22 @@ function monthOf(at: string): string {
 function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): string {
   const parts = [evidenceSentence(candidate)];
 
+  /* Who it suits, before what one parent thought of it: a reader deciding
+     between two classes is deciding whether it fits their child, and that
+     question comes first. */
+  const whoFor = clean(candidate.notes?.who_for);
+  if (whoFor) parts.push(`Best for: ${lowerFirst(whoFor)}.`);
+
   const great = clean(candidate.notes?.great);
   if (great) parts.push(`One said: "${great}"`);
 
   const caveat = clean(candidate.notes?.caveat);
   if (caveat) parts.push(`Heads up: ${caveat}`);
+
+  /* A tip is how to do it well; a caveat is a reason to hesitate. Both, when
+     both exist — they are different sentences and a parent uses each. */
+  const tip = clean(candidate.notes?.tip);
+  if (tip) parts.push(`One tip: ${lowerFirst(tip)}`);
 
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
   /* "About" because the bands are bands and the client's own example says it:
@@ -585,6 +626,23 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
   parts.push(freshnessNote(candidate));
 
   return parts.filter(Boolean).join("\n");
+}
+
+/**
+ * "A cautious toddler" → "a cautious toddler", so it reads as the rest of the
+ * sentence Pando started rather than as a new one.
+ *
+ * ⚠ The **only** change ever made to a parent's own words besides collapsing
+ * whitespace, and it is made only where the field is a fragment that Pando has
+ * introduced ("Best for:", "One tip:"). A quoted sentence is never touched — an
+ * altered sentence in quotation marks attributed to somebody is the thing
+ * invariant 8 is about.
+ */
+function lowerFirst(text: string): string {
+  /* Left alone when it starts with something that is capitalised for its own
+     reasons — a name, an acronym — which a lower-case second letter reveals. */
+  if (/^[A-Z][A-Z]/.test(text)) return text;
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /** A parent's own words, whitespace-normalised and never otherwise touched. */
@@ -650,7 +708,12 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
      answer never carried it. Omitted rather than guessed when the parents who
      reported it did not agree — see `ShareCandidate.price_band`. */
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
-  const cost = money ? ` ${money}.` : "";
+  /* A public finding carries a fact the page stated instead of a price band —
+     the ages it takes, when it runs, what it publishes as its price. It is what
+     turns a bare name into something a parent can act on, and it is honest only
+     because the heading above it says where it came from. */
+  const extra = [money, candidate.detail].filter(Boolean).join(". ");
+  const cost = extra ? ` ${extra}.` : "";
 
   const claims = labels.join(". ");
   const age =

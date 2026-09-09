@@ -517,12 +517,19 @@ ok(
   found('{"findings":[{"name":"Kidspace","what":"museum"},{"name":"kidspace","what":"childrens museum"}]}').length === 1,
 );
 ok(
-  "and it stops at three",
+  "and it stops at the cap, whatever the cap is",
   found(
     '{"findings":[' +
-      ["A Place", "B Place", "C Place", "D Place"].map((n) => `{"name":"${n}","what":"indoor play"}`).join(",") +
+      Array.from(
+        { length: pi.MAX_PUBLIC_FINDINGS + 2 },
+        (_, i) => `{"name":"Place ${i}","what":"indoor play"}`,
+      ).join(",") +
       "]}",
   ).length === pi.MAX_PUBLIC_FINDINGS,
+  /* Sized from the constant rather than hard-coded at four, which is what broke
+     here when the cap went three -> five on 9 Sep: the fixture was testing the
+     number instead of the rule. */
+  `cap is ${pi.MAX_PUBLIC_FINDINGS}`,
 );
 ok(
   "a name spread over lines is flattened",

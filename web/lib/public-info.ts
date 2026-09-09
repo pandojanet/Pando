@@ -15,8 +15,16 @@
  * was actually on a page.
  */
 
-/** Bounded on purpose: an answer is 459 characters and parents come first. */
-export const MAX_PUBLIC_FINDINGS = 3;
+/**
+ * Bounded on purpose, and raised from three to five on 9 Sep.
+ *
+ * The client asked for more general information twice, and the budget stopped
+ * being the constraint the same day. Parents still come first — the composer
+ * reserves the public block and fills the rest around it, never the other way
+ * round — so this is a ceiling on what the search may offer rather than a
+ * promise about how much gets sent.
+ */
+export const MAX_PUBLIC_FINDINGS = 5;
 
 export interface PublicFinding {
   /** The place, class or programme. Never a person. */
@@ -25,6 +33,17 @@ export interface PublicFinding {
   what: string;
   /** Where, if the page said so plainly. */
   area: string | null;
+  /**
+   * One short factual thing the page states and a parent would want: the ages
+   * it takes, when it runs, drop-in or a term, a published price.
+   *
+   * The prompt forbids inferring, rounding or guessing, and this reader drops
+   * rather than repairs — so a missing detail is a page that did not say it,
+   * never Pando filling a gap. It sits under the "Public/general information"
+   * heading, which is what makes stating a price here honest where stating one
+   * as a parent's claim would not be.
+   */
+  detail: string | null;
 }
 /**
  * Read the model's reply, refusing anything that is not plainly a finding.
@@ -92,7 +111,14 @@ export function readFindings(
     if (taken.some((already) => sameName(already, name))) continue;
     taken.push(name);
 
-    out.push(placed(name, what, clean((row as Record<string, unknown>).area, 40)));
+    out.push(
+      placed(
+        name,
+        what,
+        clean((row as Record<string, unknown>).area, 40),
+        clean((row as Record<string, unknown>).detail, 60),
+      ),
+    );
     if (out.length === MAX_PUBLIC_FINDINGS) break;
   }
 
@@ -210,11 +236,16 @@ export function sameName(a: string, b: string): boolean {
  * defect worth fixing; saying two different ones is a signal worth leaving
  * visible.
  */
-function placed(name: string, what: string, area: string | null): PublicFinding {
-  if (!area) return { name, what, area: null };
+function placed(
+  name: string,
+  what: string,
+  area: string | null,
+  detail: string | null,
+): PublicFinding {
+  if (!area) return { name, what, area: null, detail };
 
   const areaKey = normaliseName(area);
-  if (areaKey.length === 0) return { name, what, area };
+  if (areaKey.length === 0) return { name, what, area, detail };
 
   /* "Wonderland 4 Kids - Pasadena" → "Wonderland 4 Kids". */
   const trimmed = name.replace(/\s+[-–—,]\s*([^-–—,]+)$/, (whole, tail: string) =>
@@ -227,7 +258,7 @@ function placed(name: string, what: string, area: string | null): PublicFinding 
   const words = new Set(normaliseName(shown).split(" ").filter(Boolean));
   const carries = areaKey.split(" ").filter(Boolean).every((w) => words.has(w));
 
-  return { name: shown, what, area: carries ? null : area };
+  return { name: shown, what, area: carries ? null : area, detail };
 }
 
 function clean(value: unknown, max: number): string | null {

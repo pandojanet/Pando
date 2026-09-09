@@ -123,6 +123,10 @@ export interface ShareCandidate {
   /** A firsthand parent's own words, approved and unedited. See the SQL. */
   note_great: string | null;
   note_caveat: string | null;
+  /** R5 -- who it suits, the closest thing the graph has to fit. */
+  note_who_for: string | null;
+  /** The practical thing a parent would not know to ask. */
+  note_tip: string | null;
   /** So the evidence can be said in prose rather than as a label. */
   last_confirmed_at: string | null;
 }
@@ -295,6 +299,26 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
                      case when sc.firsthand then nullif(btrim(sc.caveat), '') end
                      order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
         end)                                                            as note_caveat,
+        (case when exists (
+               select 1 from flags f
+                where f.subject_id = s.id
+                  and f.reason = 'possible_named_person'
+                  and f.status in ('open', 'escalated')
+             ) then null
+             else (array_remove(array_agg(
+                     case when sc.firsthand then nullif(btrim(sc.who_for), '') end
+                     order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
+        end)                                                            as note_who_for,
+        (case when exists (
+               select 1 from flags f
+                where f.subject_id = s.id
+                  and f.reason = 'possible_named_person'
+                  and f.status in ('open', 'escalated')
+             ) then null
+             else (array_remove(array_agg(
+                     case when sc.firsthand then nullif(btrim(sc.tip_text), '') end
+                     order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
+        end)                                                            as note_tip,
         count(sc.id) filter (where sc.firsthand)                        as firsthand,
         count(sc.id) filter (where not sc.firsthand)                    as secondhand,
         count(sc.id) filter (where sc.firsthand
@@ -436,6 +460,8 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
          parent's sentence is never edited before another parent reads it. */
       note_great: r.note_great ? String(r.note_great) : null,
       note_caveat: r.note_caveat ? String(r.note_caveat) : null,
+      note_who_for: r.note_who_for ? String(r.note_who_for) : null,
+      note_tip: r.note_tip ? String(r.note_tip) : null,
       last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
     });
   }

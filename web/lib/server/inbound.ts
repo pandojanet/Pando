@@ -869,8 +869,20 @@ function publicSlots(
   parentBacked: number,
   info: { findings: PublicFinding[] },
 ): PublicFinding[] {
+  /**
+   * ⚠ **Two at minimum, and up to four when the parents are thin** (9 Sep,
+   * her second ask: *"трішки побільше паблік інфа"*).
+   *
+   * One was the old floor and it was set when the budget was three segments and
+   * every public line cost a parent record. Neither is true now: `SMS_BUDGET` is
+   * five segments, and the reservation means the public block is filled first
+   * and the parents' half takes what is left — so the trade this ceiling used to
+   * arbitrate is one she has now made explicitly, twice.
+   *
+   * Parents still lead the answer. What changes is how much follows them.
+   */
   const shown = Math.min(parentBacked, 2);
-  return info.findings.slice(0, Math.max(1, 3 - shown));
+  return info.findings.slice(0, Math.max(2, 4 - shown));
 }
 
 async function answerQuestion(input: {
@@ -1091,6 +1103,8 @@ async function answerQuestion(input: {
       notes: {
         great: sendableNote(share.note_great),
         caveat: sendableNote(share.note_caveat),
+        who_for: sendableNote(share.note_who_for),
+        tip: sendableNote(share.note_tip),
       },
       last_confirmed: share.last_confirmed_at,
     })),
@@ -1152,6 +1166,9 @@ async function answerQuestion(input: {
        * parent's em dash is forwarded verbatim, at their cost.
        */
       name: toGsm7(finding.name) ?? finding.name,
+      /* The one fact the page stated, through the same GSM-7 normalisation as the
+         name — a published price with an en dash would double the whole bill. */
+      detail: finding.detail ? (toGsm7(finding.detail) ?? finding.detail) : null,
       kind: finding.what ? (toGsm7(finding.what) ?? finding.what) : finding.what,
       area: finding.area ? (toGsm7(finding.area) ?? finding.area) : finding.area,
       trust: {
