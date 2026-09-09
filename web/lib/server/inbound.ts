@@ -1012,7 +1012,32 @@ async function answerQuestion(input: {
            the web half got the raw question and nothing else. */
         bands: asked.length > 0 ? asked : known,
         focus,
-        exclude: retrieved.shares.map((share) => share.name),
+        /**
+         * ⚠ **Every record except the one the answer leads on** (9 Sep).
+         *
+         * The exclusion exists so a place cannot reach a parent twice under two
+         * different trust labels — the answer contradicting itself on the one
+         * axis this product sells. That reasoning holds for the *alternatives*:
+         * offering the same class as both "Validated by multiple parents" and
+         * "Public/general information" says the two are equivalent, and they
+         * are not.
+         *
+         * It does not hold for the record the question is **about**, and
+         * excluding that one deleted the public half of exactly the answers
+         * most likely to want it. Measured on the client's own message,
+         * *"What locals tell about Tom Sawyer Camps?"*: the search ran, the
+         * model replied with 871 characters, and **every finding was dropped** —
+         * the log line read `nothing to add { parsed: true }`, which is the
+         * feature working perfectly and producing nothing.
+         *
+         * Under the 9 Sep block heading the two lines are complementary rather
+         * than competing: the parents say what it was like, the page says the
+         * ages it takes and when it runs, and the heading says which is which.
+         * The lead is `shares[0]` because `rankForAnswer` preserves retrieval's
+         * order among parent records — a caregiver can outrank it only on a care
+         * question, where the search does not run at all.
+         */
+        exclude: retrieved.shares.slice(1).map((share) => share.name),
       });
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"

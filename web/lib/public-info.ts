@@ -267,5 +267,26 @@ function clean(value: unknown, max: number): string | null {
      the composer renders into. */
   const flat = value.replace(/\s+/g, " ").trim();
   if (flat.length === 0) return null;
-  return flat.slice(0, max);
+  if (flat.length <= max) return flat;
+
+  /**
+   * ⚠ **Cut on a word, never mid-word** (9 Sep).
+   *
+   * A bare `slice(0, max)` sent a real parent *"Summer day camp with horseback
+   * riding an in Altadena"* and *"door-to-door transportatio."* — the first is a
+   * severed "and", the second a severed word wearing the full stop the composer
+   * adds. Both read as Pando being unable to spell, on the one block whose whole
+   * job is to look like a page somebody could go and check.
+   *
+   * This is a presentational trim and not a repair: the words that remain are
+   * the words the model wrote, in order. Nothing is reworded, and if there is no
+   * whole word inside the budget there is nothing honest to show, so it drops —
+   * which is the rule the rest of this module already follows.
+   */
+  const cut = flat.slice(0, max);
+  const atWord = cut.slice(0, cut.lastIndexOf(" "));
+  /* A trailing connector or separator is a sentence that stops in the middle of
+     itself; take it off so the line ends where a reader expects. */
+  const tidy = atWord.replace(/[\s,;:.\-—]+$/, "").replace(/\s+(?:and|or|with|for|in|at|to|of|the|a|an)$/i, "");
+  return tidy.length > 0 ? tidy : null;
 }

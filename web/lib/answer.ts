@@ -669,7 +669,11 @@ function freshnessNote(candidate: AnswerCandidate): string {
  */
 function alsoLine(candidate: AnswerCandidate): string {
   if (candidate.trust.public_only) return line(candidate, candidate.trust.labels);
-  return `Also nearby: ${alsoPart(candidate)}.`;
+  /* Only ever used for the cost estimate below; the printed line is built from
+     `alsoParts` and `tipLines`, either of which may skip this record. */
+  if (candidate.kind === "tip") return tipPart(candidate) ?? "";
+  const part = alsoPart(candidate);
+  return part === null ? "" : `Also nearby: ${part}.`;
 }
 
 /**
@@ -681,12 +685,49 @@ function alsoLine(candidate: AnswerCandidate): string {
  * repeated phrase. The client asked for one record in depth plus **a** short
  * second option; more space is not permission to turn that into a list of five.
  */
-function alsoPart(candidate: AnswerCandidate): string {
+function alsoPart(candidate: AnswerCandidate): string | null {
+  /**
+   * A tip is not a place, and its name is a filing label (9 Sep).
+   *
+   * The client's own answer ended "Also nearby: Camp registration timing, a
+   * tip, 1 parent; Kidspace summer camp..." — and "Camp registration timing"
+   * tells a parent nothing. It is what the record was called so it could be
+   * found again; the thing worth sending is the sentence inside it. Rendering
+   * the label also put a tip under a phrase claiming it was *nearby*, which a
+   * tip cannot be.
+   *
+   * So a tip is not offered as an alternative at all — `tipPart` gives it its own
+   * line, where its sentence has room to be read, and the slot it used to occupy
+   * goes to a real second option.
+   */
+  if (candidate.kind === "tip") return null;
   const n = candidate.firsthand_count;
   const who = n === 1 ? "1 parent" : `${n} parents`;
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
   return `${candidate.name}${placeOf(candidate)}, ${who}${money ? `, ${money}` : ""}`;
 }
+
+/**
+ * A tip record on its own line.
+ *
+ * ⚠ **Its own line rather than a slot in the "Also nearby" list**, and that is
+ * the second half of the same finding. Squeezed into the list it produced
+ * *"…not February.; Kidspace summer camp, a class in Playhouse District…"* — a
+ * two-sentence paragraph joined to a compact directory line by a semicolon,
+ * with a full stop butting into it. On its own line the same sentence is the
+ * most actionable thing in the answer.
+ *
+ * `name: text`, because the name is a heading here rather than a filing label —
+ * it says what the tip is about, which the sentence alone often does not. No
+ * text means nothing to say, and it is dropped.
+ */
+function tipPart(candidate: AnswerCandidate): string | null {
+  const said = candidate.notes?.tip ?? candidate.notes?.great ?? null;
+  return said ? `${candidate.name}: ${said}` : null;
+}
+
+/** One. A second is a newsletter, not an answer. */
+const TIP_LIMIT = 1;
 
 /**
  * How many records follow the lead.
@@ -951,6 +992,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   let publicOpened = publicOnly;
   /* Collected during the loop and joined into one line after it. */
   const alsoParts: string[] = [];
+  const tipLines: string[] = [];
 
   for (const candidate of ranked) {
     const isLead = candidate === leadOf && !leadRendered;
@@ -992,8 +1034,22 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
        opening their own — see `alsoPart`. Held aside and joined after the loop,
        because how many fit is not known until it has run. */
     if (!isLead && !candidate.trust.public_only) {
+      /* A tip is not an alternative, so it neither takes an `ALSO_LIMIT` slot
+         nor joins that line — see `tipPart`. With nothing to say it is dropped
+         rather than sent as a filing label. */
+      if (candidate.kind === "tip") {
+        if (tipLines.length >= TIP_LIMIT) continue;
+        const said = tipPart(candidate);
+        if (said === null) continue;
+        tipLines.push(said);
+        length += cost;
+        chosen.push(candidate);
+        continue;
+      }
       if (alsoParts.length >= ALSO_LIMIT) continue;
-      alsoParts.push(alsoPart(candidate));
+      const part = alsoPart(candidate);
+      if (part === null) continue;
+      alsoParts.push(part);
       length += cost;
       chosen.push(candidate);
       continue;
@@ -1012,11 +1068,17 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    */
   /* One line for all of them, inserted where the first of them would have
      gone: after the lead block and before any public heading. */
-  if (alsoParts.length > 0) {
+  /* Both go where the first secondary record would have: after the lead block
+     and before any public heading. The alternatives first, then the tip, so the
+     comparison stays together and the aside follows it. */
+  const trailing = [
+    ...(alsoParts.length > 0 ? [`Also nearby: ${alsoParts.join("; ")}.`] : []),
+    ...tipLines,
+  ];
+  if (trailing.length > 0) {
     const at = lines.findIndex((l) => l.startsWith("\n"));
-    const also = `Also nearby: ${alsoParts.join("; ")}.`;
-    if (at === -1) lines.push(also);
-    else lines.splice(at, 0, also);
+    if (at === -1) lines.push(...trailing);
+    else lines.splice(at, 0, ...trailing);
   }
 
   const collapse = chosen.length === 1 && footer !== "";

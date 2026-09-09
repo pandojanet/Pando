@@ -246,6 +246,13 @@ const YEAR = new Date().getFullYear();
 
 const CASES: Case[] = [
   {
+    id: "named-place",
+    text: "What locals tell about Tom Sawyer Camps?",
+    context: { area: "altadena", children: [YEAR - 7] },
+    about:
+      "the question names a place the graph already holds — the case where the exclusion can eat the one finding the parent actually asked about",
+  },
+  {
     id: "toddler-classes-cold",
     text: "any good toddler classes near South Pasadena?",
     context: { cold: true },
@@ -468,9 +475,20 @@ for (const { c, row, asked, ms, logs } of report) {
   if (logs.length > 0) for (const l of logs) console.log(`   log: ${l}`);
 
   const hasPublic = row.answer_text.includes(PUBLIC_LABEL);
-  const publicLines = row.answer_text
-    .split("\n")
-    .filter((l) => l.includes(PUBLIC_LABEL));
+  /**
+   * The lines *under* the heading, not the heading itself.
+   *
+   * This filtered on `includes(PUBLIC_LABEL)` and therefore matched exactly one
+   * line — the heading — from the moment the label became a heading on 9 Sep
+   * rather than a suffix on each line. Every check below it was reading our own
+   * approved copy and passing on it, which is a check that cannot fail.
+   */
+  const allLines = row.answer_text.split("\n");
+  const headingAt = allLines.findIndex((l) => l.includes(PUBLIC_LABEL));
+  const publicLines =
+    headingAt === -1
+      ? []
+      : allLines.slice(headingAt + 1).filter((l) => l.trim().length > 0);
 
   ok(`${c.id}: an answer was queued`, true);
 
@@ -492,19 +510,37 @@ for (const { c, row, asked, ms, logs } of report) {
   }
 
   /**
-   * The double-labelled answer this pass exists to prevent: one name appearing
-   * on a parent-backed line and again on a public one.
+   * The rule, restated after 9 Sep — and it is narrower than it was.
    *
-   * Compared on the rendered name, which is what a parent actually reads — the
-   * composer writes `Name (venue): labels`, so the name is everything before
-   * the first colon or bracket.
+   * ⚠ The old version split every line on `:` or `(` because the composer once
+   * wrote `Name (venue): labels`. It has written prose since 9 Sep, so the
+   * "name" it extracted was usually a whole sentence and the check **could not
+   * fire at all**. It passed on this probe's own worst case and told us nothing.
+   *
+   * What must still never happen is an *alternative* appearing under both
+   * headings: offering the same class as "Validated by multiple parents" and
+   * again as general information says the two are equivalent, and they are not.
+   *
+   * What is now allowed on purpose is the **lead** appearing in both. When the
+   * question is about one place, the parents' experience and the page's own
+   * facts are complementary, the heading says which is which, and excluding it
+   * deleted the public half of exactly the answers most likely to want one.
    */
-  const names = row.answer_text
-    .split("\n")
-    .map((l) => l.split(/[:(]/)[0]?.trim().toLowerCase() ?? "")
+  const alsoLine = allLines.find((l) => l.startsWith("Also nearby:")) ?? "";
+  const alsoNames = alsoLine
+    .replace("Also nearby:", "")
+    .split(";")
+    .map((part) => part.split(",")[0]?.trim().toLowerCase() ?? "")
     .filter((n) => n.length > 2);
-  const dupes = names.filter((n, i) => names.indexOf(n) !== i);
-  ok(`${c.id}: no place is named twice`, dupes.length === 0, dupes.join(", "));
+  const publicNames = publicLines
+    .map((l) => l.split(" - ")[0]?.trim().toLowerCase() ?? "")
+    .filter((n) => n.length > 2);
+  const bothWays = alsoNames.filter((n) => publicNames.includes(n));
+  ok(
+    `${c.id}: no alternative is offered under both headings`,
+    bothWays.length === 0,
+    bothWays.join(", "),
+  );
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
