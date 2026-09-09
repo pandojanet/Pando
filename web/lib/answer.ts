@@ -262,7 +262,30 @@ export interface ComposedAnswer {
  * sentence mid-word — an answer that ends in "recommended by three par" is worse
  * than one that mentions two places.
  */
-export const SMS_BUDGET = 459;
+/**
+ * ## 765 since 9 Sep, and the client lifted the constraint herself
+ *
+ * Her words: *"мені не важливий наразі розмір повідомлення, але має бути як
+ * паблік інфа, так і від батьків"* — size is not the constraint right now, and
+ * an answer must carry **both** halves. At 459 they competed for the same space:
+ * a lead block in the parents' own words runs 250-350 characters, a second
+ * option is ~90, and general information got whatever was left, which was
+ * frequently nothing.
+ *
+ * Five segments (153 × 5), kept a whole number of them because a budget that
+ * ends mid-segment wastes one. ⚠ **Roughly 67% more per answer than three
+ * segments**, and "наразі" is her own word for how long that stands.
+ */
+export const SMS_BUDGET = 765;
+
+/**
+ * The blank line plus "Public/general information:" that opens that block.
+ *
+ * Budgeted as a constant rather than measured, because the heading is written
+ * inside the loop and the reservation has to be made before it — and it is the
+ * one line in the answer whose length does not vary.
+ */
+const PUBLIC_HEADING_COST = 32;
 
 /**
  * How records are ordered — "by category / risk / evidence, **not a fixed
@@ -544,7 +567,19 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
   /* "About" because the bands are bands and the client's own example says it:
      *"It runs about $30 a session."* Omitted for a free record, where "about
      free" is nonsense. */
-  if (money) parts.push(candidate.price === "Free" ? `${money}.` : `About ${money}.`);
+  /**
+   * "About" because the bands are bands, and the client's own example says it:
+   * *"It runs about $30 a session."*
+   *
+   * ⚠ Dropped where the label is already hedged or exact — "About Over $200 a
+   * camp week" and "About Free" both came out of the live probe. `Over` and
+   * `Under` are the band labels' own comparatives, and a price of Free is not
+   * approximate.
+   */
+  if (money) {
+    const hedged = /^(over|under|free)\b/i.test(candidate.price ?? "");
+    parts.push(hedged ? `${money}.` : `About ${money}.`);
+  }
 
   if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
   parts.push(freshnessNote(candidate));
@@ -576,14 +611,33 @@ function freshnessNote(candidate: AnswerCandidate): string {
  */
 function alsoLine(candidate: AnswerCandidate): string {
   if (candidate.trust.public_only) return line(candidate, candidate.trust.labels);
+  return `Also nearby: ${alsoPart(candidate)}.`;
+}
 
+/**
+ * One secondary record, without the prefix, so several can share a line.
+ *
+ * ⚠ **Found by the live probe the moment the budget went to five segments.**
+ * With room for five records every one of them opened *"Also nearby:"* — the
+ * answer read as a stutter, and the probe's own duplicate check fired on the
+ * repeated phrase. The client asked for one record in depth plus **a** short
+ * second option; more space is not permission to turn that into a list of five.
+ */
+function alsoPart(candidate: AnswerCandidate): string {
   const n = candidate.firsthand_count;
   const who = n === 1 ? "1 parent" : `${n} parents`;
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
-  return `Also nearby: ${candidate.name}${placeOf(candidate)}, ${who}${
-    money ? `, ${money}` : ""
-  }.`;
+  return `${candidate.name}${placeOf(candidate)}, ${who}${money ? `, ${money}` : ""}`;
 }
+
+/**
+ * How many records follow the lead.
+ *
+ * Two, so a parent has something to compare against and the answer still reads
+ * as a recommendation rather than a directory. The budget is no longer what
+ * decides this (9 Sep, when it stopped being scarce) — the shape is.
+ */
+const ALSO_LIMIT = 2;
 
 function line(candidate: AnswerCandidate, labels: readonly string[]): string {
   const what = candidate.care
@@ -802,8 +856,21 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * a second page at the price of a second parent, and a parent is the thing the
    * answer is for.
    */
-  const firstPublic = ranked.find((c) => c.trust.public_only);
-  const reserved = firstPublic ? line(firstPublic, perLine(firstPublic)).length + 1 : 0;
+  /**
+   * ⚠ **Every public line is reserved for, not just the first** (9 Sep).
+   *
+   * The client's instruction is that an answer carries general information *and*
+   * what parents backed — *"має бути як паблік інфа, так і від батьків"* — so a
+   * public line losing a race against a long parent quote is the feature not
+   * working. Reserving only the first meant a second one was dropped silently
+   * whenever the parents' half ran long.
+   */
+  const publicOnes = ranked.filter((c) => c.trust.public_only);
+  const reserved =
+    publicOnes.reduce(
+      (sum, c) => sum + line(c, publicOnly ? perLine(c) : []).length + 1,
+      0,
+    ) + (publicOnes.length > 0 && !publicOnly ? PUBLIC_HEADING_COST : 0);
 
   /**
    * The lead is the first parent-backed record, and it is the only one rendered
@@ -816,13 +883,20 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    */
   const leadOf = ranked.find((c) => !c.trust.public_only) ?? null;
   let leadRendered = false;
+  /* The heading is written once, and never when the whole answer is public —
+     `head` already says it there, and saying it twice is worse than not at all. */
+  let publicOpened = publicOnly;
+  /* Collected during the loop and joined into one line after it. */
+  const alsoParts: string[] = [];
 
   for (const candidate of ranked) {
     const isLead = candidate === leadOf && !leadRendered;
     const rendered = isLead
       ? leadBlock(candidate, extrasOf(perLine(candidate)))
       : candidate.trust.public_only
-        ? line(candidate, perLine(candidate))
+        ? /* No label on the line: the heading above it carries the only one it
+             has, and repeating it under its own heading is noise. */
+          line(candidate, publicOnly ? perLine(candidate) : [])
         : alsoLine(candidate);
     const cost = rendered.length + 1;
     /* The reserve applies to everything ahead of the public line and is released
@@ -833,6 +907,32 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       /* A parent record that does not fit is skipped rather than ending the
          loop: a shorter one behind it may still fit, and the public line it is
          making room for certainly does. */
+      continue;
+    }
+    /**
+     * ⚠ **The two kinds of material are separated by a blank line and a heading
+     * of their own** (9 Sep), because the strategy's rule is that an answer
+     * "always says which is which". As one flat list a page read as the third
+     * recommendation with a label after it — the same shape as a parent's
+     * record, distinguished only by a trailing sentence nobody reads to the end.
+     *
+     * The heading is `TRUST_LABEL.PUBLIC` **verbatim**, taken from the labels
+     * 5.6 computed rather than written here: it is approved copy, it is
+     * invariant 4's guard, and a heading is a stronger place to say it than a
+     * suffix. Each line under it then drops the label it would have repeated.
+     */
+    if (candidate.trust.public_only && !publicOpened) {
+      lines.push(`\n${candidate.trust.labels.join(". ")}:`);
+      publicOpened = true;
+    }
+    /* The secondary records share one "Also nearby:" line rather than each
+       opening their own — see `alsoPart`. Held aside and joined after the loop,
+       because how many fit is not known until it has run. */
+    if (!isLead && !candidate.trust.public_only) {
+      if (alsoParts.length >= ALSO_LIMIT) continue;
+      alsoParts.push(alsoPart(candidate));
+      length += cost;
+      chosen.push(candidate);
       continue;
     }
     lines.push(rendered);
@@ -847,6 +947,15 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * it with. Rendered again with its own labels, which is cheaper than it looks
    * — the loop above has already told us the record fits.
    */
+  /* One line for all of them, inserted where the first of them would have
+     gone: after the lead block and before any public heading. */
+  if (alsoParts.length > 0) {
+    const at = lines.findIndex((l) => l.startsWith("\n"));
+    const also = `Also nearby: ${alsoParts.join("; ")}.`;
+    if (at === -1) lines.push(also);
+    else lines.splice(at, 0, also);
+  }
+
   const collapse = chosen.length === 1 && footer !== "";
   if (collapse) {
     lines.length = 0;

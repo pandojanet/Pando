@@ -853,11 +853,24 @@ function sendableNote(text: string | null): string | null {
  * asked. Adding general information makes the answer *more* relevant, and it
  * leaves that untouched.
  */
+/**
+ * ⚠ **`3 - parentBacked` was measured against what was *retrieved*, not against
+ * what a parent would see, so "more when the parents are thin" could never
+ * fire** (9 Sep). `retrieveFor`'s limit is 10 and every age band holds fewer
+ * records than that, so the count handed in here was routinely 8-10 and the
+ * expression was always `max(1, negative)` — one line, every single time,
+ * whatever the search found.
+ *
+ * The composer renders at most a lead plus one "also nearby", so **two** is what
+ * a parent actually reads from the parents' half. Measuring against that makes
+ * the rule mean what its own sentence says.
+ */
 function publicSlots(
   parentBacked: number,
   info: { findings: PublicFinding[] },
 ): PublicFinding[] {
-  return info.findings.slice(0, Math.max(1, 3 - parentBacked));
+  const shown = Math.min(parentBacked, 2);
+  return info.findings.slice(0, Math.max(1, 3 - shown));
 }
 
 async function answerQuestion(input: {

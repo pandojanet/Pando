@@ -332,9 +332,18 @@ console.log("\n=== M7's exit: what the asker is finally told ===");
   );
 
   /* Whole replies are dropped, never truncated — the `composeAnswer` rule. */
+  /* ⚠ Sized **from** the budget rather than hard-coded at 300, which is what
+     broke here when `SMS_BUDGET` went 459 -> 765 on 9 Sep: the fixture was
+     testing the constant instead of the dropping rule. Each reply is comfortably
+     over half the budget, so exactly one can ever fit whatever the budget is. */
+  const tooLong = Math.ceil(answer.SMS_BUDGET * 0.7);
   const long = a.composeBlastAnswer({
     budget: answer.SMS_BUDGET,
-    replies: [reply("A".repeat(300)), reply("B".repeat(300)), reply("C".repeat(300))],
+    replies: [
+      reply("A".repeat(tooLong)),
+      reply("B".repeat(tooLong)),
+      reply("C".repeat(tooLong)),
+    ],
   });
   ok("a message too long drops whole replies", long?.used === 1 && long?.dropped === 2, String(long?.used));
   ok("and stays inside the budget", (long?.text.length ?? 0) <= answer.SMS_BUDGET, String(long?.text.length));
