@@ -1,6 +1,6 @@
 "use client";
 
-import { EMPTY_ANSWERS, pruneAnswers } from "./questions";
+import { EMPTY_ANSWERS, MAX_CHILDREN, pruneAnswers } from "./questions";
 import { childAgeFromStored, cleanId } from "./sanitize";
 import type { MarketId, ProfileAnswers, SeedSession } from "./types";
 
@@ -33,13 +33,22 @@ import type { MarketId, ProfileAnswers, SeedSession } from "./types";
  * screens of taps, not typing), and a saved profile loses nothing at all —
  * `loadSession` below is not the record, the database is.
  */
-const KEY = "pando.seed.v2";
+/**
+ * ⚠ **Bumped to v3 on 10 Sep, and this one is a correctness reset rather than a
+ * cleanup.** `child_of` and `child_months` changed key: they held a child's
+ * *age* and now hold their **index**, because duplicate birth years are allowed
+ * and an age stopped identifying a child. Both maps are plain numbers either
+ * way, so a v2 session would be read without complaint and would attribute a
+ * school to the wrong sibling — silently, which is the one failure a shape
+ * check cannot catch. A new key is the only honest answer.
+ */
+const KEY = "pando.seed.v3";
 
 /**
  * Every key this app has ever written, so a bump can clean up after itself.
  * Append here rather than editing `KEY` alone.
  */
-const RETIRED_KEYS = ["pando.seed.v1"];
+const RETIRED_KEYS = ["pando.seed.v1", "pando.seed.v2"];
 
 function dropRetired(): void {
   try {
@@ -147,15 +156,37 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
        * session is untrusted input) applied to the **domain** and not only to the
        * shape.
        */
+      /**
+       * ⚠⚠ **The `Set` and the `sort` are gone, and both were destroying data**
+       * (10 Sep). They were right while this question was a grid of chips,
+       * where an age was a *selection*: tapping 2023 twice deselected it, so a
+       * duplicate could not be meant and an order was never chosen.
+       *
+       * The client's instruction turned it into a list — *"Create one Child
+       * record per child … allow duplicate birth years"* — and `ChildList`
+       * implements exactly that, with **the index as the child's identity**
+       * because two children born in one year are told apart by nothing else.
+       * Against that shape both operations are silent corruption:
+       *
+       *  - the `Set` collapsed twins into one child on the next reload, which is
+       *    the very bug the new control was written to fix, surviving one layer
+       *    below it;
+       *  - the `sort` **re-keyed the indexes**, so `child_months` and
+       *    `child_of` — both keyed by position — came back pointing at a
+       *    different child than the parent tapped.
+       *
+       * The server has agreed all along: `cleanAges` filters the domain, keeps
+       * order and duplicates, and caps the count. This now says the same thing,
+       * so a session and a save can no longer disagree about how many children
+       * a family has.
+       */
       out.child_ages = Array.isArray(value)
-        ? [
-            ...new Set(
-              value.filter(
-                (v): v is number =>
-                  typeof v === "number" && Number.isInteger(v) && v >= -1 && v <= 25,
-              ),
-            ),
-          ].sort((a, b) => a - b)
+        ? value
+            .filter(
+              (v): v is number =>
+                typeof v === "number" && Number.isInteger(v) && v >= -1 && v <= 25,
+            )
+            .slice(0, MAX_CHILDREN)
         : [];
       continue;
     }
@@ -271,6 +302,27 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
       // A single-select answer that later became a multi-select still counts.
       out[key] = (typeof value === "string" ? [value] : strings(value)) as never;
     } else if (typeof value === "string") {
+      out[key] = value as never;
+    } else if (typeof value === "boolean") {
+      /**
+       * ⚠⚠ **Booleans were silently dropped, and `wants_detail` is one** (10 Sep).
+       *
+       * Every answer in this file was a string or a list of them until the fork
+       * arrived, so the generic branch handled two kinds and quietly discarded
+       * a third. What that cost is the whole of the client's 10 Sep instruction:
+       * a parent taps *"Add optional details"*, answers a screen, reloads — or
+       * simply comes back tomorrow, which this autosave exists for — and the
+       * fork answer is gone, so `visibleScreens` drops all four optional
+       * screens and sends them straight to the participation question. The
+       * storage still held `true`; nothing read it back.
+       *
+       * Found by walking the flow in a browser rather than by reading, because
+       * within one session it is invisible: the value lives in React state and
+       * only the *reload* consults this function.
+       *
+       * There is no domain to check on a boolean, which is why this is the last
+       * branch and not a special case above: the shape **is** the value.
+       */
       out[key] = value as never;
     }
   }

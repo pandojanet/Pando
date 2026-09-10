@@ -141,7 +141,7 @@ export default function PrivacyPage() {
           Reply <strong>STOP</strong> to stop all text messages.
         </li>
         <li>
-          Text <strong>BLAST SETTINGS</strong> to change how often you’re asked for
+          Text <strong>SETTINGS</strong> to change how often you’re asked for
           recommendations.
         </li>
         <li>

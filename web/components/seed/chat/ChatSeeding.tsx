@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
 import { saveSubmission } from "@/lib/api-client";
+import { hasReason, rewardStatus, REWARD_CONFIRMATION } from "@/lib/rewards";
 import {
   buildSubmission,
   formatAnswer,
@@ -106,27 +107,45 @@ export function ChatSeeding() {
         submissions: [],
         messages: [
           {
+            /**
+             * ⚠ **One opening bubble, not three** — the client, 10 Sep:
+             * *"Three opening bubbles before Step 2 → 'Thanks, {first name}.
+             * What's one thing you'd recommend to another parent?'"*
+             *
+             * Her sentence does two jobs the three did between them: it thanks
+             * them and it asks the question, so the menu underneath reads as an
+             * answer to something rather than as a fourth thing to get through.
+             * What went with the other two was a line about how the flow works
+             * ("one thing at a time, mostly taps"), which the flow demonstrates
+             * one tap later, and an "activity, camp, caregiver or tip" list,
+             * which is the menu's own four buttons written out as prose.
+             *
+             * ⚠ **The two disclosures did not go with them** — they are not
+             * conversation. The first is what her own question set opens
+             * Part 2A with, reworded to her line ("Pando may use what you
+             * share…"); the second is the only statement of the name default
+             * anywhere in the product, now that the attribution screen sits
+             * behind the optional fork. Both are the `aside` on this one
+             * bubble, which is the slot for a disclosure that belongs *beside*
+             * the ask rather than as its own turn.
+             *
+             * ⚠ The rail that used to sit next to this said *"Your name is
+             * never shown with what you share"* — an absolute promise the
+             * attribution question made false, which is the contradiction she
+             * reported. It is gone (10 Sep), and what the aside states now is
+             * the two rules as they are actually enforced: a name appears only
+             * where the parent turned it on for that one recommendation
+             * (`show_name` on the card, default off), and a school, class or
+             * childcare arrangement is never named to another parent at all
+             * (`mayBeNamed` — see `lib/affiliations.ts`).
+             */
             id: uid(),
             role: "pando",
             text: existing.name
-              ? `Thanks, ${existing.name}. Now the part only you can answer.`
-              : "Now for the part only you can answer.",
+              ? `Thanks, ${existing.name}. What’s one thing you’d recommend to another parent?`
+              : "What’s one thing you’d recommend to another parent?",
             aside:
-              "One thing at a time, mostly taps. Add as many as you like — or just one.",
-          },
-          {
-            /* The reuse disclosure the client's question set opens Part 2A with.
-               Said once, before the first question, not buried in a footer. */
-            id: uid(),
-            role: "pando",
-            text: "Pando may summarize and reuse what you share in future answers, using only the privacy settings you chose.",
-            aside:
-              "We never reveal your identity or private affiliations without permission.",
-          },
-          {
-            id: uid(),
-            role: "pando",
-            text: "What would you like to share first — an activity or class your kids loved, a camp, a caregiver, or a local tip?",
+              "Pando may use what you share to answer other parents’ questions, following your privacy settings. Your name stays private unless you choose to show it, and your schools, classes and childcare are never named to anyone.",
           },
         ],
       };
@@ -183,6 +202,16 @@ export function ChatSeeding() {
   }, []);
 
   const chat = session?.chat ?? null;
+  /**
+   * Has anything of theirs actually reached Pando? (10 Sep — the invite
+   * control waits for it.)
+   *
+   * `persisted` rather than a count of cards: on the founding path a card is
+   * written to the phone and held until a code is confirmed, and "saved" in
+   * her sentence means saved. On the anonymous path a card posts as soon as it
+   * is finished, so it is true a moment after the first one.
+   */
+  const hasSavedRecommendation = (chat?.submissions ?? []).some((s) => s.persisted);
   const draft = chat?.draft ?? null;
   const script = draft ? scripts[draft.kind] : null;
   const step = script && draft ? script.steps[draft.step_index] : null;
@@ -360,7 +389,14 @@ export function ChatSeeding() {
     });
   }
 
-  function answer(value: FieldValue) {
+  /**
+   * ⚠ `extra` is for the one widget that answers more than one question:
+   * `place` writes the name **and** the town the matched record already
+   * carries (10 Sep), which is what lets the town step disappear and takes the
+   * activity card to six questions. It is spread into `fields` exactly as
+   * `holdIf` already spreads its two, so nothing else about this path changes.
+   */
+  function answer(value: FieldValue, extra?: Fields) {
     if (!draft || !script || !step) return;
 
     if (draft.editing) {
@@ -401,6 +437,7 @@ export function ChatSeeding() {
     const fields: Fields = {
       ...draft.fields,
       [step.id]: value,
+      ...(extra ?? {}),
       ...(hold ? { review_hold: "true", hold_reason: step.id } : {}),
     };
     if (hold) track("seed_card_review_hold", { kind: draft.kind, step: step.id });
@@ -434,7 +471,47 @@ export function ChatSeeding() {
   }
 
   function finishCard(kind: ShareKind, draftId: string, fields: Fields) {
-    const submission = buildSubmission({ id: draftId, kind, fields, step_index: 0 });
+    /**
+     * The standing answer is the **default**, never the decision (10 Sep).
+     *
+     * `people.attribution` is what the parent said in general; this is what they
+     * say about this one recommendation, and the client asked for the second
+     * precisely because one enum cannot answer for both — a parent is willing to
+     * be named on the swim class and not on the therapist.
+     *
+     * Anything but an explicit "use my first name" arrives as `false`, including
+     * the null carried by a parent who never reached that screen — it is behind
+     * the optional fork since 10 Sep, so most will not have. Naming somebody is
+     * the one mistake this flag can make, so every path that is not an explicit
+     * yes has to land on no.
+     *
+     * Deliberately absent on a caregiver card: that card is about a named person
+     * already, it writes no `share_contributions` row, and the toggle is not
+     * offered on it.
+     */
+    /**
+     * Does this card meet her four conditions, and is it the first that does?
+     * (10 Sep §6.) Computed before the card joins the list, so "first" means
+     * first — a second qualifying card must not repeat the promise.
+     */
+    const firstQualifying =
+      kind !== "caregiver" &&
+      !(chat?.submissions ?? []).some((s) => hasReason(String(s.fields.what_makes_it_great ?? ""))) &&
+      rewardStatus({
+        phone_verified: session?.phone_verified === true,
+        neighborhood_answered: Boolean(session?.answers.neighborhood),
+        children_answered: (session?.answers.child_ages ?? []).length > 0,
+        recommendations: 1,
+        reason: String(fields.what_makes_it_great ?? ""),
+        has_invite: Boolean(session?.invite_code),
+      }) === "eligible";
+
+    const submission: Submission = {
+      ...buildSubmission({ id: draftId, kind, fields, step_index: 0 }),
+      ...(kind === "caregiver"
+        ? {}
+        : { show_name: session?.answers.attribution === "first_name" }),
+    };
 
     patchChat((c) => ({
       ...c,
@@ -447,10 +524,30 @@ export function ChatSeeding() {
         {
           id: uid(),
           role: "pando",
+          /**
+           * Her confirmation copy, on the first qualifying recommendation only
+           * (10 Sep §6): *"Done — watch out for your payment this week"*.
+           *
+           * ⚠ **On the first, and only when it actually qualifies.** The four
+           * conditions are `rewardStatus`'s, evaluated here from what this
+           * device can see — a verified number, both required answers, and a
+           * reason in the card that was just finished. Saying it on a card
+           * without a reason would promise money her own trigger does not owe.
+           *
+           * ⚠ **What this screen cannot know, it does not claim.** *"One
+           * reward per verified phone"* and *"no duplicate payouts"* are
+           * server-side facts, so this is the offer being *met*, not a payment
+           * being confirmed — and the admin still computes eligibility from
+           * the same rule (`reward_status`). If the two ever disagree the
+           * server wins, which is why the sentence promises a payment "this
+           * week" rather than stating one has been made.
+           */
           text:
             kind === "caregiver"
               ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
-              : "Got it, thank you. Anything else you'd pass on?",
+              : firstQualifying
+                ? `${REWARD_CONFIRMATION}. Anything else you'd pass on?`
+                : "Got it, thank you. Anything else you'd pass on?",
         },
         // C11: the invite is the parent's to send, so it appears here as text to
         // copy rather than as something Pando promises to do.
@@ -598,6 +695,10 @@ export function ChatSeeding() {
         submission: {
           id: submission.id,
           kind: submission.kind,
+          /* Its own field rather than an entry in `fields`, which is the
+             verbatim record of what the parent said about the *place*. A
+             privacy decision about Pando does not belong in the evidence. */
+          show_name: submission.show_name === true,
           /* `__confirm_back_asked` is a fact about the conversation, not about
              the recommendation, and `/api/seed/save` would have no field to put
              it in. Stripped here rather than never stored, because it has to
@@ -629,6 +730,26 @@ export function ChatSeeding() {
       markSubmission(submission.id, { persisted: false, error: true });
       track("seed_card_save_failed", { kind: submission.kind });
     }
+  }
+
+  /**
+   * The client's per-recommendation name toggle (10 Sep).
+   *
+   * ⚠ **It re-sends the card, and that is the point rather than a side effect.**
+   * The decision lives on `share_contributions.show_first_name`, so a flag that
+   * only moved in local state would be a control that visibly works and changes
+   * nothing another parent ever sees — the fault this repository has now paid
+   * for five times. Every write is keyed by `client_id`, so the save upserts.
+   *
+   * ⚠ The local state is patched **first**, so the switch answers the tap even
+   * when the send is slow or the session is holding the card until a code is
+   * confirmed. On that path `persist` marks it held and returns, and the flag
+   * travels with everything else in `flushSession`.
+   */
+  function toggleName(card: Submission, next: boolean) {
+    markSubmission(card.id, { show_name: next });
+    track("seed_card_name_toggled", { kind: card.kind, on: next });
+    void persist({ ...card, show_name: next });
   }
 
   function markSubmission(id: string, patch: Partial<Submission>) {
@@ -717,13 +838,25 @@ export function ChatSeeding() {
           and a count in the header edges towards scorekeeping. */}
       <ScreenHeader
         left={<Wordmark />}
-        /* Her instruction of 8 Sep: the invite link within reach on the screen
-           a parent actually spends time on, not only in the popup they see
-           once and on a thank-you screen two taps further on. It renders only
-           when there is a code — the anonymous path has no person row and
-           therefore no link, so it needs no condition of its own. */
+        /**
+         * Her instruction of 8 Sep put the invite link within reach on the
+         * screen a parent actually spends time on, rather than only in the
+         * popup they see once and on a thank-you screen two taps further on.
+         *
+         * ⚠ **And 10 Sep adds when**: *"The Invite button appears only after
+         * the first recommendation is saved."* Which is the stronger version
+         * of the same idea — asking somebody to bring their friends before
+         * they have given anything themselves is asking for a favour on the
+         * strength of nothing, and it puts a share control on a screen whose
+         * whole job at that moment is the first contribution.
+         *
+         * `submissions.some(persisted)` rather than `length`, deliberately: a
+         * card held on the founding path until a code is confirmed has been
+         * *written* and not saved, and the sentence is "after the first
+         * recommendation is **saved**".
+         */
         right={
-          session?.referral_code ? (
+          session?.referral_code && hasSavedRecommendation ? (
             <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }
@@ -736,8 +869,12 @@ export function ChatSeeding() {
         * code that has not been shown yet. So it appears once, survives a
         * reload, cannot come back on a re-save, and needs nothing from the
         * screen that navigated here.
+        *
+        * ⚠ It waits for the same first saved recommendation as the pill above,
+        * for the same reason and one degree more so: a modal asking for
+        * referrals is the first thing a parent met on arriving at this screen.
         */}
-      {session?.referral_code && !session.referral_shown_at && (
+      {session?.referral_code && hasSavedRecommendation && !session.referral_shown_at && (
         <ReferralDialog
           code={session.referral_code}
           onClose={() =>
@@ -776,6 +913,14 @@ export function ChatSeeding() {
                     ? (field) => startFieldEdit(message.card as Submission, field)
                     : undefined
                 }
+                /* Same gate as Edit, and for the same reason: mid-card the dock
+                   belongs to the question on screen. */
+                onToggleName={
+                  chat.mode === "menu"
+                    ? (next) => toggleName(message.card as Submission, next)
+                    : undefined
+                }
+                firstName={session?.first_name ?? session?.name ?? null}
               />
             ) : (
               <Bubble
@@ -846,6 +991,10 @@ export function ChatSeeding() {
             onAnswer={answer}
             onSkip={() => answer(step.widget === "text" || step.widget === "phone" ? "" : [])}
             onUndo={undoLast}
+            /* `place` only: which directory to search, and the parent's own
+               town to rank by — a hint after relevance, never a filter. */
+            market={session?.market_id ?? "pasadena"}
+            area={session?.answers.neighborhood ?? null}
           />
         ) : (
           <ShareMenu

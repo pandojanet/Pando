@@ -41,6 +41,14 @@ export interface CardInput {
   /** Resolved from the verified phone; null on the anonymous path. */
   person_id: string | null;
   fields: Record<string, unknown>;
+  /**
+   * May this one recommendation carry the contributor's first name? (10 Sep.)
+   *
+   * Optional and **false when absent**, so a caller that has never heard of it
+   * — the admin write path, a script, an older client — produces a private row
+   * rather than a named one.
+   */
+  show_first_name?: boolean;
   /** Caregiver only — split out by the route, never stored as a full surname. */
   first_name?: string | null;
   last_initial?: string | null;
@@ -224,6 +232,21 @@ async function writeShareCard(
     worthIt: str(f.worth_it),
     followUpOk: bool(f.follow_up_ok),
     tipText: str(f.tip ?? f.tip_text),
+    /**
+     * The client's per-recommendation name toggle (10 Sep), `drizzle/0038`.
+     *
+     * ⚠ **In `values`, so it is in the `onConflictDoUpdate` set too** — which is
+     * the whole reason the toggle can be turned back off. The card re-saves
+     * under the same `client_id`, and a field left out of this object would be
+     * one the parent could switch on and never switch off again.
+     *
+     * ⚠ It is deliberately **not** derived from `people.attribution` here. The
+     * standing preference is the default the *client* seeds when the card is
+     * finished; reading it again at write time would re-name every earlier
+     * recommendation of a parent who has since changed their standing answer,
+     * which is the opposite of what "per recommendation" means.
+     */
+    showFirstName: input.show_first_name === true,
     isTest: input.is_test,
   };
 

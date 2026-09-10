@@ -132,6 +132,7 @@ export async function POST(request: Request) {
       kind?: unknown;
       fields?: RawFields;
       created_at?: unknown;
+      show_name?: unknown;
     };
   } | null;
 
@@ -175,6 +176,17 @@ export async function POST(request: Request) {
     contributor_phone: contributorPhone,
     contributor_phone_verified_at: gate.verified_at,
     client_id: cleanText(raw.submission.id, 64),
+    /**
+     * The per-recommendation name toggle (10 Sep) — **`=== true`, never
+     * truthiness**, and never read from inside `fields`.
+     *
+     * Same rule as `is_test` above and for a sharper reason: this is the one
+     * flag in this payload that can put a real parent's name in front of a
+     * stranger. A missing key, a string, a null and an older client all have to
+     * arrive at `false`, because the only safe reading of "we are not sure" is
+     * the private one.
+     */
+    show_first_name: raw.submission.show_name === true,
     fields,
     received_at: new Date().toISOString(),
   };
@@ -281,6 +293,7 @@ export async function POST(request: Request) {
       is_test: raw.is_test === true,
       client_id: (record.client_id as string | null) ?? null,
       person_id: person?.id ?? null,
+      show_first_name: record.show_first_name === true,
       fields,
       first_name: (record.first_name as string | null) ?? null,
       last_initial: (record.last_initial as string | null) ?? null,

@@ -15,6 +15,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track } from "@/lib/analytics";
+import { REWARD_OFFER } from "@/lib/rewards";
 import { NoSession, Next, useDoneSession } from "./shared";
 
 /**
@@ -77,7 +78,7 @@ export function WhatsNext() {
             <Next
               n={count === 0 ? "5" : "4"}
               title="Pasadena goes live"
-              body="Founding parents get first access, permanent Founding Status, and their first Network Ask on us."
+              body="Founding parents get first access, permanent Founding Status, and their first Network Check on us."
             />
           </ol>
 
@@ -172,14 +173,33 @@ function ReferralCard({
 
 ` +
     `They're building the Pasadena network now: `;
+  /**
+   * The launch offer, in the invite itself — the client, 10 Sep §6: *"add the
+   * offer to the invite (can we include it in the invite link?)"*, and
+   * *"use the exact offer sentence in the invite text"*.
+   *
+   * ⚠ **Not in the link — in the message around it.** A URL cannot carry a
+   * sentence, and encoding one into a query string would put a payment promise
+   * somewhere it can be edited by whoever forwards it. The link stays the bare
+   * `referralLink(code)` it has always been, byte-identical on the clipboard,
+   * and the offer is a paragraph after it.
+   *
+   * ⚠ **After the link rather than before it.** The first thing the person
+   * reads should be what Pando is, not what they get paid — and it is the tail
+   * that survives being truncated in a group chat preview, which is the right
+   * way round for a promise that has terms attached.
+   */
+  const offer = `
+
+${REWARD_OFFER} Terms: pando.is/terms`;
   const tail =
-    code
+    (code
       ? ""
       : firstName
         ? `
 
 (If you sign up, mention ${firstName} sent you.)`
-        : "";
+        : "") + offer;
   const message = `${intro}${link}${tail}`;
 
   return (
@@ -190,7 +210,7 @@ function ReferralCard({
     >
       <p className="mt-1 leading-relaxed text-muted text-help">
         When someone you invite completes their profile and has a contribution
-        approved, you earn a free Targeted Network Ask.
+        approved, you earn a free Targeted Network Check.
         {code
           ? " The link below is yours — anyone who joins through it is recorded as having come from you."
           : ""}

@@ -14,6 +14,15 @@ export type ShareKind = "activity" | "caregiver" | "place" | "tip";
 
 export type WidgetKind =
   | "quick" // one tap, advances immediately
+  /**
+   * A searchable single-select over one of the market directories, with the
+   * typed name as a first-class fallback (10 Sep).
+   *
+   * ⚠ It is the only widget that writes **two** fields: the canonical name and,
+   * when the record is one Pando already holds, the town it is in. That is what
+   * takes the activity card from seven questions to her six — see `PlaceStep`.
+   */
+  | "place"
   | "chips" // multi-select, then Continue
   | "text" // short free text
   | "ages" // the age grid
@@ -36,6 +45,12 @@ export interface Step {
   optional?: boolean;
   /** `text` only. */
   maxLength?: number;
+  /**
+   * `place` only — which directory to search. A `MarketCategory`, kept as a
+   * string here so this file stays free of the market types the engine tests
+   * load without.
+   */
+  searchCategory?: string;
   placeholder?: string;
   /**
    * Wording for the way out, when "Skip" is the wrong word for it. The caveat
@@ -84,6 +99,20 @@ export interface Submission {
   persisted: boolean;
   /** The request itself failed — worth offering a retry. */
   error?: boolean;
+  /**
+   * May this one recommendation carry the parent's first name? (10 Sep.)
+   *
+   * Its own field rather than an entry in `fields`, and the distinction is the
+   * one `submissions.fields` exists to keep: that map is the verbatim record of
+   * what the parent answered about the *place*, and this is a decision about
+   * Pando. Mixing them would put a privacy setting into the evidence of what
+   * somebody said.
+   *
+   * Seeded from `people.attribution` when the card is finished and false
+   * wherever that is anything but "use my first name" — the standing answer is
+   * the default, never the decision.
+   */
+  show_name?: boolean;
 }
 
 export interface ChatMessage {

@@ -102,6 +102,8 @@ export function CardRecap({
   held,
   onRetry,
   onEditField,
+  onToggleName,
+  firstName,
 }: {
   submission: Submission;
   script: Script;
@@ -115,6 +117,14 @@ export function CardRecap({
   onRetry?: () => void;
   /** Tap a row to correct that one answer. Omitted while a card is open. */
   onEditField?: (field: string) => void;
+  /**
+   * The client's per-recommendation name toggle (10 Sep). Omitted while a card
+   * is open, like `onEditField`, and omitted on a caregiver card — that one is
+   * about a named person and its own panel already says who sees what.
+   */
+  onToggleName?: (next: boolean) => void;
+  /** The parent's first name, so the control can show what turning it on means. */
+  firstName?: string | null;
 }) {
   const rows = recapRows(script, submission.fields);
   /* Every field name in this card belongs to a script we no longer have — it was
@@ -159,6 +169,67 @@ export function CardRecap({
           You filled this in before an update, so we can&apos;t show it back to you
           here. It&apos;s still on this phone, and still counts.
         </p>
+      )}
+
+      {onToggleName && submission.kind !== "caregiver" && (
+        /**
+         * ⚠ **Per recommendation, and off unless it is on** (10 Sep).
+         *
+         * The old model was one standing answer on the privacy screen, and the
+         * client's note is what it cost: the flow offered *"Use my first name"*
+         * and then promised, one screen later, that a name is never shown. Both
+         * could not be true. A parent is willing to be named on the swim class
+         * and not on the therapist, so the decision belongs here — beside the
+         * one recommendation it is about, after they have seen what it says.
+         *
+         * The sentence names the consequence rather than the setting: "Show my
+         * first name" is a switch, *"Janet recommends this"* is what another
+         * parent reads.
+         */
+        <div className="flex items-start gap-3 border-t border-bark/70 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13.5px] font-semibold">
+              {submission.show_name
+                ? "Your first name can appear on this"
+                : "Your name stays private on this"}
+            </p>
+            <p className="mt-0.5 text-[13px] leading-snug text-muted">
+              {/**
+                * ⚠ **"can appear", not "will"** — and the difference is a fact
+                * about the composer rather than hedging. A name is attached to
+                * the sentence the parent wrote, or to the evidence line where
+                * they are the only parent behind the record; on a record three
+                * families have used, an answer says *three* rather than naming
+                * one of them. So permission granted is not appearance
+                * guaranteed, which is the same shape as every other consent
+                * here — a caregiver may consent and still not be surfaced.
+                *
+                * The earlier wording promised a literal sentence Pando does not
+                * send (*"Janet recommends this."*), which is the client's own
+                * example rather than the composed answer. Quoting copy the
+                * product cannot produce is exactly the contradiction she caught
+                * between this screen and the privacy screen.
+                */}
+              {submission.show_name
+                ? `Answers can say “${firstName ?? "your first name"} said …” or “${firstName ?? "your first name"} has used …”.`
+                : "Answers say a local parent, never who. The recommendation is shared either way."}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={submission.show_name === true}
+            aria-label="Show my first name on this recommendation"
+            onClick={() => onToggleName(!submission.show_name)}
+            className={
+              submission.show_name
+                ? "min-h-11 shrink-0 rounded-full border border-green bg-green-wash px-3.5 text-[13.5px] font-semibold text-green-deep"
+                : "min-h-11 shrink-0 rounded-full border border-bark px-3.5 text-[13.5px] font-medium text-ink-soft"
+            }
+          >
+            {submission.show_name ? "On" : "Off"}
+          </button>
+        </div>
       )}
 
       {submission.kind === "caregiver" && (

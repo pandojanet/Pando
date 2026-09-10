@@ -65,9 +65,56 @@ export function affiliationRef(questionId: QuestionId, optionId: string): string
   return `${questionId}:${optionId}`;
 }
 
-/** Whether this question produces connections a parent can grant. */
+/**
+ * ## Which affiliations may ever be named to another parent — the client, 10 Sep
+ *
+ * *"Use these affiliations only for private matching. Never name them to another
+ * parent or use them in shared-connection attribution, regardless of the general
+ * setting."*
+ *
+ * ⚠⚠ **"Regardless of the general setting" is the load-bearing clause**, and it
+ * is why this is a set here rather than a default on the question. A parent who
+ * answered *"yes, mention shared connections"* on the old attribution screen
+ * still gets nothing named: this beats the answer, rather than seeding it.
+ *
+ * ⚠⚠ **It is empty, and that is the current state rather than a placeholder.**
+ * Every affiliation Pando collects is one of the five below, and her instruction
+ * plus her note about the golf club covers all of them — a school and a class by
+ * name, and a club or a faith community because *"a golf club membership is
+ * exactly the kind of private affiliation a parent might not consider themselves
+ * to have given permission to reveal by tapping a default during onboarding."*
+ *
+ * **So the mechanism is kept and the list is empty.** Deleting
+ * `affiliation_visibility`, the grant path and the 24 Aug Privacy Guidance §A
+ * work would be a bigger decision than she asked for, and the day she names one
+ * type as shareable it is one entry here — with the screen, the derivation and
+ * the table all still in place and all still tested.
+ */
+const NAMEABLE: ReadonlySet<AffinityType> = new Set<AffinityType>([]);
+
+/**
+ * May this connection ever be named to another parent?
+ *
+ * Read at three layers on purpose, because one is not enough for a rule this
+ * absolute: the option list (so there is nothing to toggle), the derivation (so
+ * no grant row is written even if a client posts one), and the screen gate (so
+ * a question with no answers left does not render).
+ */
+export function mayBeNamed(type: AffinityType): boolean {
+  return NAMEABLE.has(type);
+}
+
+/**
+ * Whether this question produces connections a parent can grant.
+ *
+ * ⚠ Two conditions since 10 Sep: the question has to map to an edge **and** that
+ * edge has to be one a parent may name. A question that maps but may not be
+ * named still writes its affinity row — private matching is exactly what it is
+ * for — it simply never becomes something another parent reads.
+ */
 export function producesAffiliation(questionId: QuestionId): boolean {
-  return questionId in AFFILIATION_TYPES;
+  const type = AFFILIATION_TYPES[questionId];
+  return type !== undefined && mayBeNamed(type);
 }
 
 /**
@@ -81,7 +128,13 @@ export function resolveAffiliations(refs: string[]): Affiliation[] {
   const seen = new Map<string, Affiliation>();
   for (const ref of refs) {
     const resolved = resolveAffiliation(ref);
-    if (resolved) seen.set(`${resolved.type}/${resolved.value}`, resolved);
+    /* ⚠ The second layer of the 10 Sep rule. A grant can only reach here from a
+       request body, and a body is not a decision the parent made on a screen —
+       so a ref naming a type that may never be shown is dropped rather than
+       stored, exactly as an unresolvable one is. */
+    if (resolved && mayBeNamed(resolved.type)) {
+      seen.set(`${resolved.type}/${resolved.value}`, resolved);
+    }
   }
   return [...seen.values()];
 }

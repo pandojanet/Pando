@@ -249,7 +249,20 @@ export function saveSubmission(payload: {
   is_test: boolean;
   contributor_name: string | null;
   contributor_phone: string | null;
-  submission: { id: string; kind: string; fields: Record<string, unknown>; created_at: string };
+  submission: {
+    id: string;
+    kind: string;
+    fields: Record<string, unknown>;
+    created_at: string;
+    /**
+     * May this one recommendation carry the contributor's first name? (10 Sep.)
+     *
+     * Beside `fields` rather than inside it, like `is_test` one level up: that
+     * map is what the parent answered about the place, and the route treats
+     * anything in it as evidence of what they said.
+     */
+    show_name?: boolean;
+  };
 }): Promise<SaveSubmissionResult> {
   return postJson<SaveSubmissionResult>("/api/seed/save", payload);
 }

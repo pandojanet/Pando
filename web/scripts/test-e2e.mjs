@@ -179,13 +179,28 @@ head("1.2 / 1.3  profile, and the graph derived from it");
          reaching `children` would abort the whole profile write on a
          constraint — a parent losing everything they answered because of one
          optional field. */
-      child_months: { 3: 4, 6: 13, 11: 9 },
+      /**
+       * ⚠ **Keyed by the child's index since 10 Sep, by their age before it.**
+       * Duplicate birth years are now allowed — the client asked for one Child
+       * record per child — so an age names a *year* and can no longer name a
+       * child: two siblings born in 2019 were one owner, and a month or a
+       * school could not be given to just one of them.
+       *
+       * Three entries and only the first is legitimate: 13 is outside the
+       * CHECK and index 5 is a child nobody added. Either one reaching
+       * `children` would abort the whole profile write on a constraint — a
+       * parent losing everything they answered because of one optional field.
+       */
+      child_months: { 0: 4, 1: 13, 5: 9 },
       schools: ["walden-school"],
       /* Whose it is. The 6-year-old's school, and a camp both children went to —
          plus an age nobody tapped, which must not survive. */
+      /* Indexes into `child_ages` (10 Sep — see `child_months` above): 0 is the
+         3-year-old, 1 is the 6-year-old. The school is the older child's, the
+         camp is both children's, and 11 is a position nobody added. */
       child_of: {
-        schools: { "walden-school": [6] },
-        camps: { "tom-sawyer-camps": [3, 6, 11] },
+        schools: { "walden-school": [1] },
+        camps: { "tom-sawyer-camps": [0, 1, 11] },
       },
       classes: [], camps: ["tom-sawyer-camps"], faith: [], clubs: [],
       /* Removed as a question on 12 Aug — invites carry the group now. Still sent
@@ -232,6 +247,29 @@ head("1.4 / 1.5  cards, R1-R11, fix-a-field");
 
   const place = await card({ __kind: "place", name: "Audit Park", place_type: "park", firsthand: "firsthand", child_age_at_time: [3], freshness: "over_year", what_makes_it_great: "shaded and fenced", caveat: "no toilets" }, `audit-place-${RUN}`);
   ok("a second card (stale place) saved", place.status === 200);
+
+  /**
+   * ⚠ **The per-recommendation name toggle** (10 Sep). Its own card, because
+   * every other card here sends no flag at all — exactly as an older client
+   * would — and the **default** is the half that has to hold: a missing key
+   * must mean private, not merely unset. The row is read in 1.5 below, where
+   * the database connection is; a 200 here says the card saved and says
+   * nothing about whether the parent's decision did, which is precisely how
+   * this feature came to have a column, a migration and a control with nothing
+   * in between.
+   */
+  const withName = await parent.post("/api/seed/save", {
+    invite_code: "sgv-founding", contributor_phone: PHONE,
+    submission: {
+      id: `audit-shown-${RUN}`, kind: "activity", show_name: true,
+      fields: {
+        __kind: "activity", name: "Audit Music Room", firsthand: "firsthand",
+        freshness: "recent", recommendation: "yes",
+        what_makes_it_great: "they matched my son with a teacher who gets him",
+      },
+    },
+  });
+  ok("a card whose parent turned their name on saves", withName.status === 200 && withName.json.persisted === true, "-> " + withName.text);
 
   /**
    * The card that made 1.8 wrong. It is concrete, first-hand and the most useful
@@ -440,9 +478,25 @@ head("24 Aug  per-affiliation privacy: grant, keep, revoke");
          where person_id in (select id from people where phone = ${phone})
          order by affiliation_type`;
 
-  /* 1 — granted. Both halves of the evidence are required by a CHECK, so a row
-        that reached the table at all has them; assert them anyway, because the
-        point of the column is that it can be produced later. */
+  /**
+   * ⚠⚠ **Inverted on 10 Sep, and the inversion is the client's instruction:**
+   * *"Use these affiliations only for private matching. Never name them to
+   * another parent or use them in shared-connection attribution, **regardless
+   * of the general setting**."*
+   *
+   * What this block used to assert — grant, keep, revoke, re-grant, each with
+   * its own timestamp — was the 24 Aug Privacy Guidance §A machinery working
+   * correctly, and every one of those checks now has to fail, because no grant
+   * may be stored at all. Deleting the block would have been the wrong answer:
+   * the mechanism is still there for the day she names one type as shareable,
+   * so what is checked is that **nothing reaches the table**, by every route
+   * that could put something in it.
+   *
+   * `base` carries `shared_connections: "share_connection"` — the old general
+   * setting, answered yes. That is deliberate and is the sharpest version of
+   * her clause: a parent who said yes on the older screen still gets nothing
+   * named.
+   */
   const a = await s.post("/api/seed/profile", {
     ...base,
     answers: answers(["schools:walden-school", "clubs:audit-priv-club"]),
@@ -450,77 +504,44 @@ head("24 Aug  per-affiliation privacy: grant, keep, revoke");
   ok("a profile with grants persists", a.status === 200 && a.json.persisted === true, "-> " + a.text);
 
   let got = await rows();
-  ok("both grants are stored as shared", got.length === 2 && got.every((r) => r.visibility === "shared_anonymously"), `${got.length} row(s)`);
-  ok("each carries the wording version it was given under", got.every((r) => r.consent_text_version === "seed-affiliation-2026-08-24"));
-  ok("and the moment it was given", got.every((r) => r.consented_at !== null));
-  /* The question ids are `schools` / `clubs`; the graph's are `school` /
-     `social_group`. A grant filed under the questionnaire's word would name an
-     edge nothing looks for. */
   ok(
-    "stored in the graph's vocabulary, not the questionnaire's",
-    got.some((r) => r.affiliation_type === "school") &&
-      got.some((r) => r.affiliation_type === "social_group"),
-    got.map((r) => r.affiliation_type).join(", "),
+    "and not one of them is stored — an affiliation is never named",
+    got.length === 0,
+    got.map((r) => `${r.affiliation_type}:${r.visibility}`).join(", ") || "0 rows",
   );
 
-  const firstGrantedAt = got.find((r) => r.affiliation_type === "school").consented_at;
+  /* Both halves of her sentence, separately: a school (the heaviest edge in the
+     graph) and a club (her own golf-club example). */
+  for (const [what, ref] of [
+    ["a school", "schools:walden-school"],
+    ["a club", "clubs:audit-priv-club"],
+    ["a class", "classes:audit-priv-club"],
+    ["a faith community", "faith:audit-priv-club"],
+  ]) {
+    const one = await s.post("/api/seed/profile", { ...base, answers: answers([ref]) });
+    const after = await rows();
+    ok(
+      `${what} on its own is refused too`,
+      one.status === 200 && after.length === 0,
+      `${one.status} / ${after.length} row(s)`,
+    );
+  }
 
-  /* 2 — one kept, one dropped. The kept row must not be re-stamped: the parent
-        decided once, and re-confirming is not a new decision. */
-  const b = await s.post("/api/seed/profile", {
-    ...base,
-    answers: answers(["schools:walden-school"]),
-  });
-  ok("re-saving with one grant removed goes through", b.status === 200);
-
-  got = await rows();
-  const school = got.find((r) => r.affiliation_type === "school");
-  const club = got.find((r) => r.affiliation_type === "social_group");
-
-  ok("the kept grant is still shared", school.visibility === "shared_anonymously");
+  /**
+   * ⚠ **The affinity edge is still written**, and that is the whole of *"only
+   * for private matching"*. The instruction removes what another parent can be
+   * told; it does not remove the connection from the graph, or Pando would
+   * stop being able to match on a shared school at all — the strongest signal
+   * it has.
+   */
+  const edges = await sql`
+    select affinity_type from social_affinities
+     where person_id in (select id from people where phone = ${phone})
+     order by affinity_type`;
   ok(
-    "and its original consent time is untouched",
-    String(school.consented_at) === String(firstGrantedAt),
-    `${firstGrantedAt} -> ${school.consented_at}`,
-  );
-  /* The case the whole design turns on. */
-  ok("the dropped grant became private", club.visibility === "private");
-  ok("and the revocation is timestamped, not silent", club.revoked_at !== null);
-  ok("the row is kept rather than deleted", got.length === 2);
-
-  /* 3 — granting it again clears the revocation. The CHECK refuses a row that is
-        both revoked and shareable, so this would 500 if it did not. */
-  const c = await s.post("/api/seed/profile", {
-    ...base,
-    answers: answers(["schools:walden-school", "clubs:audit-priv-club"]),
-  });
-  ok("re-granting a revoked connection goes through", c.status === 200, "-> " + c.text);
-  got = await rows();
-  const regranted = got.find((r) => r.affiliation_type === "social_group");
-  ok("it is shared again", regranted.visibility === "shared_anonymously");
-  ok("and no longer carries a revocation", regranted.revoked_at === null);
-
-  /* Nothing a parent skips may grant anything — §A: "Continue is not consent." */
-  const d = await s.post("/api/seed/profile", { ...base, answers: answers([]) });
-  ok("an empty grant list revokes everything", d.status === 200);
-  got = await rows();
-  ok(
-    "and leaves nothing shared",
-    got.every((r) => r.visibility === "private" && r.revoked_at !== null),
-    got.map((r) => r.visibility).join(", "),
-  );
-
-  /* A ref the client invented must not become a permission. */
-  const e = await s.post("/api/seed/profile", {
-    ...base,
-    answers: answers(["topics:sleep_routines", "not-a-ref", "schools:walden-school"]),
-  });
-  ok("a ref for a question that is not a connection is refused", e.status === 200);
-  got = await rows();
-  ok(
-    "only the real connection was granted",
-    got.filter((r) => r.visibility === "shared_anonymously").length === 1,
-    got.filter((r) => r.visibility === "shared_anonymously").map((r) => r.affiliation_type).join(", "),
+    "but the connection still matches privately",
+    edges.some((r) => r.affinity_type === "school"),
+    edges.map((r) => r.affinity_type).join(", ") || "no edges",
   );
 }
 
@@ -714,11 +735,20 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
   );
 
   /**
-   * 2 Sep — the recurring SMS/RCS opt-in that rides with the participation
-   * level. Asserted against the **landed row**, not the 200: it needed
-   * `consents_scope_check` widened (drizzle 0028), and a route that accepted
-   * the field while the CHECK still refused the scope would answer 502 from one
-   * layer down — which is exactly how the 18 Aug allowance change was caught.
+   * ⚠⚠ **Inverted on 10 Sep: there is one consent now, not two.**
+   *
+   * *"Two SMS consent requests look contradictory. Use one counsel-approved
+   * checkbox on Join covering verification and recurring Pando messages … do
+   * not show a second checkbox."* So `sms_recurring` is written by nothing,
+   * and both bodies above still send it — deliberately, because a session that
+   * started on the older build still will and a body that suddenly fails
+   * validation mid-flow is a dead end (the 12 Aug soft-gate rule). What is
+   * asserted is that the route **drops** it.
+   *
+   * The scope itself stays in `consents_scope_check` and rows written before
+   * today keep it: a stored consent has to keep resolving to the words that
+   * were on screen when it was given, which is why a version is never edited
+   * in place and a scope is never dropped.
    */
   const recurring = await sql`
     select p.first_name, c.status, c.text_version from consents c
@@ -727,17 +757,25 @@ head("18 Aug  five-question minimum (allowance) and the listening-ear opt-in");
       and p.first_name in ('AuditOldAllowance', 'AuditTenAllowance')
     order by p.first_name`;
   ok(
-    "the recurring SMS/RCS consent lands under its own scope and version",
-    recurring.length === 1 &&
-      recurring[0].first_name === "AuditOldAllowance" &&
-      recurring[0].status === "opted_in" &&
-      recurring[0].text_version === "seed-recurring-2026-09-02",
+    "the second consent is no longer written, even when a body sends it",
+    recurring.length === 0,
     JSON.stringify(recurring),
   );
+  /* ⚠ And exactly one consent row is left for that number. The *content* of
+     the merged text is a property of the copy rather than of a round trip, so
+     it is pinned in `test:feedback`; what this can only check here is that the
+     route did not write two rows for one tick. Deliberately not asserting the
+     version: these bodies hard-code the old one on purpose, because an older
+     client posting the version it actually displayed is correct and must keep
+     working. */
+  const smsRows = await sql`
+    select c.status from consents c
+    join people p on p.id = c.person_id
+    where c.scope = 'sms' and p.first_name = 'AuditOldAllowance'`;
   ok(
-    "and a declined one is dropped rather than stored as a refusal",
-    !recurring.some((c) => c.first_name === "AuditTenAllowance"),
-    "the checkbox gates the screen, so 'declined' is a state the flow cannot produce",
+    "and exactly one SMS consent row is written for one tick",
+    smsRows.length === 1,
+    `${smsRows.length} row(s)`,
   );
 
   /**
@@ -839,7 +877,7 @@ const thisYear = new Date().getFullYear();
 const school = aff.find((a) => a.affinity_value === "walden-school");
 ok("a school edge says which child it belongs to", school && JSON.stringify(school.child_birth_years) === JSON.stringify([thisYear - 6]));
 ok("a camp can belong to two children", camp && (camp.child_birth_years ?? []).length === 2);
-ok("an age nobody tapped is not attributed to anybody", camp && !(camp.child_birth_years ?? []).includes(thisYear - 11));
+ok("a position nobody added is not attributed to anybody", camp && !(camp.child_birth_years ?? []).includes(thisYear - 11));
 ok("household edges carry no child at all", aff.filter((a) => a.affinity_type === "neighborhood").every((a) => a.child_birth_years === null));
 ok("age bands were derived from the tapped ages", aff.some((a) => a.affinity_type === "age_range"));
 ok("weights come from the question set, not the body", aff.every((a) => Number(a.weight_at_capture) < 99));
@@ -865,9 +903,32 @@ ok("firsthand recorded", a && a.firsthand === true);
 ok("caveat_answered true", a && a.caveat_answered === true);
 ok("price band kept with its unit", a && a.price_band === "50_100" && a.price_unit === "per_month");
 ok("the correction replaced the text", a && /patient teacher/.test(a.what_makes_it_great ?? ""));
+/**
+ * The per-recommendation name toggle, on the row rather than in the response.
+ *
+ * ⚠ The second of these is the one worth keeping: every other card in this
+ * walk sends no flag, so it is the whole population of "an older client, a
+ * script, a forgotten field" — and all of it has to come back private.
+ */
+const nameFlags = await sql`
+  select pl.name, sc.show_first_name
+    from share_contributions sc join shares pl on pl.id = sc.share_id
+   where sc.person_id = ${p.id} order by pl.name`;
+ok(
+  "the name toggle reaches the row it is stored on",
+  nameFlags.some((r) => r.name === "Audit Music Room" && r.show_first_name === true),
+  JSON.stringify(nameFlags),
+);
+ok(
+  "and every card that sent no flag is private, not merely unset",
+  nameFlags.filter((r) => r.name !== "Audit Music Room").length > 0 &&
+    nameFlags.filter((r) => r.name !== "Audit Music Room").every((r) => r.show_first_name === false),
+  JSON.stringify(nameFlags.map((r) => [r.name, r.show_first_name])),
+);
 const nCards = await sql`select count(*)::int as n from share_contributions where person_id = ${p.id}`;
-/* Three cards, four saves — the activity was re-saved once as a fix-a-field. */
-ok("one contribution per card, not per save", nCards[0].n === 3, `${nCards[0].n} rows`);
+/* Four cards, five saves — the activity was re-saved once as a fix-a-field,
+   and the fourth is the one whose parent turned their name on (10 Sep). */
+ok("one contribution per card, not per save", nCards[0].n === 4, `${nCards[0].n} rows`);
 
 /* Estimate 1.8's confirm-back leaves a marker on the card so it is never asked
    twice, and the client strips every `__`-prefixed key before sending. This is
@@ -1622,7 +1683,42 @@ await sql`delete from caregivers where first_name like 'Audit%'`;
 await sql`delete from share_contributions where person_id = any(${ids}::uuid[]) or share_id in (select id from shares where name like 'Audit%') or tip_text like '%audit anonymous%'`;
 await sql`delete from shares where name like 'Audit%'`;
 await sql`delete from submissions where person_id = any(${ids}::uuid[]) or client_id like 'audit-%' or client_id like 'cg-bad-%'`;
-await sql`delete from demand_signals where person_id = any(${ids}::uuid[])`;
+/**
+ * ⚠⚠ **By the question, not only by the person — and this leaked for weeks.**
+ *
+ * Five of the six demand signals this walk writes go through the **anonymous**
+ * completion path, which has no `people` row by design (that path gives up SMS
+ * at the door). So `person_id` is null, `person_id = any(ids)` matched none of
+ * them, and every run left five behind: `is_test = false`,
+ * `provenance` indistinguishable from a real parent, and two of them classified
+ * `named_allegation` — *"Our nanny screamed at my toddler and then lied about
+ * it"* — which is the one class this product promises a person will read.
+ *
+ * Measured on the live database before this was written: **40 rows** across
+ * 26 Aug and 10 Sep, producing 25 of the 38 open flags. The client's demand
+ * queue and her flags queue were mostly this suite talking to itself. Exactly
+ * the shape of the `test:relay-live` leak found the day before, in a second
+ * table, and for the same reason: a cleanup keyed on the row's owner cannot
+ * remove a row that deliberately has none.
+ *
+ * So the questions are listed literally. A prefix or an `ilike '%audit%'` would
+ * not do it — four of the five are ordinary sentences with nothing test-shaped
+ * about them, which is what makes them convincing in a queue and is the whole
+ * reason they have to be named here. Anything added to `D1_CASES` above and
+ * not added here starts leaking on its first run.
+ */
+const WALK_QUESTIONS = [
+  "Any good swim schools near Audit Park?",
+  "Who do I call about a custody question",
+  "The sitter left my child somewhere unsafe",
+  "Some days I feel completely alone in this",
+  "Our nanny screamed at my toddler and then lied about it",
+];
+await sql`delete from flags where subject_id in (
+            select id from demand_signals where question_text = any(${WALK_QUESTIONS}))`;
+await sql`delete from demand_signals
+           where person_id = any(${ids}::uuid[])
+              or question_text = any(${WALK_QUESTIONS})`;
 await sql`delete from pending_options where submitted_by = any(${ids}::uuid[])`;
 await sql`delete from market_options where option_value = 'audit-test-club'`;
 await sql`delete from invites where code = 'audit-group'`;

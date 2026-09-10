@@ -146,7 +146,7 @@ function AnswerCard({
         </Badge>
         {row.next_step === "offer_blast" && (
           <Badge tone="gold">
-            Offers a Network Ask
+            Offers a Network Check
           </Badge>
         )}
       </p>

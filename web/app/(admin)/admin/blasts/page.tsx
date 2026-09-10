@@ -267,7 +267,7 @@ export default function BlastsPage() {
 
   return (
     <>
-      <PageHead title="Network Asks" />
+      <PageHead title="Network Checks" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}

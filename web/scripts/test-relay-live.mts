@@ -777,6 +777,14 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
   const ASKER = "+16265559482";
   const RESPONDER = "+16265559483";
   const QUESTION = "any good swim classes for a 4 year old?";
+  /**
+   * The record `blast_response.approve` creates, named once.
+   *
+   * It has to be a constant because the cleanup below deletes by it, and a name
+   * that drifted from the one the action was given would leave the row behind
+   * silently — which is exactly what happened for seventeen runs.
+   */
+  const SHARE_NAME = "Rose Bowl Aquatics";
 
   await sql`delete from people where phone in (${ASKER}, ${RESPONDER})`;
   const [asker] = await sql`
@@ -803,8 +811,15 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
   });
   ok("an Ask can be created", created.status === 200, `status ${created.status}`);
   const [blast] = await sql`
-    select id, status, human_review from blasts where asker_id = ${asker.id}::uuid`;
-  ok("and it lands as a row with the question on it", Boolean(blast?.id));
+    select id, status, human_review, question_text
+      from blasts where asker_id = ${asker.id}::uuid`;
+  /* The question itself, not just the row: selecting only the id made this a
+     second copy of the assertion above, and it would have passed on a null. */
+  ok(
+    "and it lands as a row with the question on it",
+    Boolean(blast?.id) && blast?.question_text === QUESTION,
+    String(blast?.question_text),
+  );
 
   /**
    * Last-Minute Care always carries `human_review` (7.2), so this is also the
@@ -861,7 +876,7 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
     action: "blast_response.approve",
     blast_id: String(blast.id),
     person_id: String(responder.id),
-    share_name: "Rose Bowl Aquatics",
+    share_name: SHARE_NAME,
     share_kind: "activity",
   });
   ok("and approve it", approved.status === 200, `status ${approved.status}`);
@@ -870,10 +885,12 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
   const before = posted.length;
   const delivered = await act({ action: "blast.deliver", id: String(blast.id) });
   ok("the answers can be sent to the asker", delivered.status === 200, `status ${delivered.status}`);
-  await settle(() => posted.length > before);
-
+  /* Checked, or a timeout leaves `out` holding a post from an earlier section
+     and the three assertions below fail against unrelated text — the cascade
+     this file's own `settle` note warns about. */
+  const landed = await settle(() => posted.length > before);
   const out = posted[posted.length - 1];
-  ok("something reached the channel", posted.length > before, `${posted.length} posts`);
+  ok("something reached the channel", landed, `${posted.length} posts`);
   ok(
     "carrying the parent's own words",
     out?.text.includes("Rose Bowl Aquatics parent and me is great.") === true,
@@ -910,9 +927,34 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
     `${again.status} ${againBody.reason}`,
   );
 
+  /**
+   * ⚠ **A suite that writes through an admin action writes everything that
+   * action writes** (9 Sep).
+   *
+   * `blast_response.approve` with no `merge_into` takes the create branch: a
+   * `shares` row, a `share_contributions` row, and — because "Rose Bowl
+   * Aquatics" is three capitalised words with no venue word in it —
+   * `flagNamedPersonRecord` raises an open `named_person_record` flag. None of
+   * them was deleted, and the raw INSERT does not set `is_test`, so seventeen
+   * runs had put seventeen records into the live database that were
+   * indistinguishable from a parent's own submission: **17 of 41 open flags and
+   * 17 of 24 rows in the contributions queue**, on the two screens the client
+   * actually works.
+   *
+   * Order matters: the flag and the contribution point at the share, and
+   * `message_log.person_id` is `on delete set null`, so the log rows have to go
+   * before the people they belong to or they survive as orphans.
+   */
   await sql`delete from blast_recipients where blast_id = ${blast.id}::uuid`;
   await sql`delete from impact_events where blast_id = ${blast.id}::uuid`;
+  await sql`delete from flags
+             where subject_id in (select id from shares where name = ${SHARE_NAME})`;
+  await sql`delete from share_contributions
+             where share_id in (select id from shares where name = ${SHARE_NAME})`;
+  await sql`delete from shares where name = ${SHARE_NAME}`;
   await sql`delete from blasts where id = ${blast.id}::uuid`;
+  await sql`delete from message_log
+             where person_id in (select id from people where phone in (${ASKER}, ${RESPONDER}))`;
   await sql`delete from people where phone in (${ASKER}, ${RESPONDER})`;
 }
 

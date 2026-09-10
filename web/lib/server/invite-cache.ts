@@ -23,6 +23,21 @@ export interface InviteRecord {
   market_id: MarketId;
   label: string;
   group_option_value: string | null;
+  /**
+   * The first name of the parent whose own link this is — `null` for a group
+   * or a school link, which is most of them.
+   *
+   * Only a **personal** invite (`invites.kind`, drizzle 0034) has a person
+   * behind it, so this is null wherever there is nobody to name. That is the
+   * whole of the client's rule for the join screen: *"if the invite code
+   * resolves, show '{first name} invited you'; otherwise show nothing"* — a
+   * group link resolves perfectly well and still names nobody.
+   *
+   * First name only. It is what the parent already knows, since they were sent
+   * the link by that person, and it is the least this can be and still answer
+   * "who is this from".
+   */
+  inviter_first_name: string | null;
 }
 
 const TTL_MS = 60_000;

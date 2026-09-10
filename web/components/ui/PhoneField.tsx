@@ -19,6 +19,21 @@ interface Props {
   label: string;
   hint?: string;
   id?: string;
+  /**
+   * Pin the country and render the dialling code as text instead of a picker.
+   *
+   * `/join` passes `"US"` on the client's instruction of 10 Sep (*"Fix the code
+   * to +1 vs current number"*): the market is the San Gabriel Valley, so a
+   * country selector in front of the very first field asks a founding
+   * contributor about something they have no reason to think about.
+   *
+   * ⚠ **It fixes what is offered, never what is parsed.** `phoneCountryOf` still
+   * reads the value, so a `+380` restored from a saved session or typed in full
+   * is still recognised and still formats correctly — the field simply will not
+   * *offer* the change. Anything relying on a country switch (the caregiver
+   * flow, `/signin`, the chat) leaves this unset and keeps the picker.
+   */
+  country?: PhoneCountry;
 }
 
 /**
@@ -44,9 +59,10 @@ export function PhoneField({
   label,
   hint,
   id = "phone",
+  country: fixed,
 }: Props) {
   const [picked, setPicked] = useState<PhoneCountry | null>(null);
-  const country = phoneCountryOf(value) ?? picked ?? "US";
+  const country = phoneCountryOf(value) ?? picked ?? fixed ?? "US";
 
   const complete = isPhoneComplete(value, country);
   const started = value.trim().length > 0;
@@ -78,6 +94,19 @@ export function PhoneField({
           started && !complete ? "border-gold-line" : "border-bark",
         )}
       >
+        {fixed ? (
+          /* Text, not a disabled `<select>`: a greyed-out control reads as
+             something that ought to work and does not, and there is nothing to
+             choose. It is `aria-hidden` because the input's own label and its
+             `+1` placeholder already say what number is wanted, and a lone
+             dialling code announced as its own item is noise. */
+          <div className="flex items-center" aria-hidden="true">
+            <span className="min-h-[52px] pl-4 pr-3 text-field leading-[52px] text-ink-soft">
+              {phoneCountryLabel(country)}
+            </span>
+            <span className="h-7 w-px self-center bg-bark" />
+          </div>
+        ) : (
         <div className="relative flex items-center">
           <select
             aria-label="Country code"
@@ -110,6 +139,7 @@ export function PhoneField({
           </svg>
           <span aria-hidden="true" className="h-7 w-px self-center bg-bark" />
         </div>
+        )}
 
         <div className="relative flex-1">
           <input

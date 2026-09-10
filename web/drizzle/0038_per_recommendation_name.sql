@@ -1,0 +1,33 @@
+-- Whether this one recommendation may carry the contributor's first name.
+--
+-- The client, 10 Sep: "Default to 'Keep my name private.' … Add a first-name
+-- toggle to each recommendation. Keep name attribution separate from
+-- shared-connection attribution."
+--
+-- ## Why a column here and not a setting on the person
+--
+-- `people.attribution` already exists and is the parent's *standing* answer. It
+-- cannot express what she asked for, and the gap is the reason the old screen
+-- read as a contradiction: a parent is willing to be named on the swim class
+-- they loved and not on the therapist they saw, and one enum on the person makes
+-- that one decision for both. So the standing answer becomes the **default** and
+-- this is the decision, taken per recommendation, at the moment there is
+-- something concrete to decide about.
+--
+-- ## Three rules the default encodes
+--
+-- `false`, `not null`. A row that never reaches this feature is private, a row
+-- written by an older client is private, and a NULL cannot appear and be read as
+-- "probably fine". Naming a parent is the one mistake this column can make, so
+-- every path that is not an explicit yes has to arrive at no.
+--
+-- It is deliberately **not** a copy of `people.attribution`: reading a stale
+-- copy of a standing preference is how a parent who later chose privacy stays
+-- named on everything they wrote before. The composer reads this column, and
+-- this column is only ever set by the toggle on the card.
+--
+-- And it says nothing about shared connections. Those are governed by
+-- `affiliation_visibility` and, since 10 Sep, by `mayBeNamed` above it — the two
+-- are separate decisions and this is the separation.
+ALTER TABLE "share_contributions"
+  ADD COLUMN IF NOT EXISTS "show_first_name" boolean NOT NULL DEFAULT false;

@@ -10,7 +10,7 @@ import {
   CAREGIVER_TYPES,
 } from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
-import type { Script, ShareKind } from "./types";
+import type { Fields, Script, ShareKind } from "./types";
 
 /**
  * The capture conversations.
@@ -70,6 +70,13 @@ export const WORTH_IT: Option[] = [
   { id: "free", label: "It's free" },
 ];
 
+/**
+ * Behind the recommendation card's own fork (10 Sep). `"yes"` only — an
+ * unanswered fork and a "save it" both stop the card, which is what makes the
+ * short path the default rather than something a parent opts out of.
+ */
+const wantsMore = (fields: Fields): boolean => fields.more_detail === "yes";
+
 const TIP_TOPICS: Option[] = [
   { id: "schedules", label: "Schedules & timing" },
   { id: "costs", label: "Costs & deals" },
@@ -85,6 +92,48 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
   const neighborhoods: Option[] = marketOptions(market, "neighborhoods");
 
   return {
+    /**
+     * ## Six questions, and the seventh only when Pando does not know the place
+     *
+     * The client, 10 Sep: *"Sixteen questions create drop-off at the highest-value
+     * point … no more than 6 questions. Autocomplete known places. If there is no
+     * match, ask for the town, never a street address."*
+     *
+     * The six are hers, from the provenance row of the same document: the place,
+     * whose experience it is, the child's age at the time, when they were last
+     * there, whether they would recommend it, and why. The name-display choice is
+     * the seventh thing she lists and it is **not** a question — it is the toggle
+     * on the finished card (`show_name`), which is where a decision about one
+     * recommendation belongs.
+     *
+     * ⚠ **`venue` is deleted, not moved.** *"Anything more exact, if you remember?
+     * A street or the venue"* asked a parent to type an address from memory, and
+     * her instruction is explicit that a street is never asked for. What it was
+     * for — telling two places with one name apart — is what the directory match
+     * now does properly, by storing the canonical record's own label.
+     *
+     * ⚠ **`location` is asked only when the name did not match.** `PlaceStep`
+     * writes the town from the matched record, so the step's own `when` is
+     * already false by the time it is reached. That is the whole of why six is
+     * possible: three questions used to identify one place.
+     *
+     * ## What is behind the fork, and why each of them
+     *
+     * Her sentence: *"others can be additional detail if folks want to complete —
+     * can say the more info you provide, the more targeted your responses."* So
+     * nothing was deleted for length; eight steps moved behind one tap.
+     *
+     * ⚠ **The caveat is the painful one.** This file has called it "often the most
+     * useful sentence there is" and the composer gives it its own line. It is
+     * behind the fork because her provenance row asks for *"why **or** caveat"*
+     * and the why is the one that must always be there. A parent who has a
+     * warning to give is exactly the parent who taps *Add more detail*.
+     *
+     * ⚠ **`follow_up_ok` is a permission rather than detail**, and behind a fork
+     * most cards will not carry one. That is safe in the only direction that
+     * matters: unanswered means no, so the cost is Pando asking fewer parents
+     * rather than asking one who never agreed.
+     */
     activity: {
       kind: "activity",
       label: "An activity or class",
@@ -94,29 +143,28 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
         {
           id: "name",
           prompt: "What's it called?",
-          widget: "text",
+          aside: "Start typing — Pando probably knows it, and then it fills in the rest.",
+          widget: "place",
+          searchCategory: "baby_activities",
           maxLength: 80,
           placeholder: "e.g. Little Maestros",
         },
         {
+          /**
+           * Only when the directory did not have it (10 Sep). `PlaceStep` writes
+           * this field from the matched record, so for a known place this step
+           * is already answered and never appears.
+           *
+           * Her wording, and note what it is not: *"ask for the town, never a
+           * street address."*
+           */
           id: "location",
-          prompt: "Where is it?",
+          prompt: "Which town is it in?",
           widget: "chips",
           options: neighborhoods,
           optional: true,
-          aside: "Roughly is fine — pick every area it's easy to get to from.",
-        },
-        {
-          /* The chips make it matchable; this makes it identifiable. Two places
-             share a name often enough that an admin needs one distinguishing
-             detail to tell submissions apart instead of merging them by hand. */
-          id: "venue",
-          prompt: "Anything more exact, if you remember?",
-          aside: "A street or the venue — it's what tells two places with the same name apart.",
-          widget: "text",
-          maxLength: 80,
-          optional: true,
-          placeholder: "e.g. on Mission Ave",
+          when: (fields) =>
+            !(Array.isArray(fields.location) && fields.location.length > 0),
         },
         {
           /**
@@ -133,20 +181,20 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
               id: "secondhand",
               label: "No — a friend's experience",
               hint: "Welcome, labelled secondhand",
+              wide: true,
             },
           ],
         },
         {
+          /* R3 — the age at the time, not now: a class that suited a three-year-old
+             is the answer to a question about three-year-olds, whenever it was. */
           id: "child_age",
           prompt: "How old was your child at the time?",
-          aside: "This is what lets Pando match it to the right family later.",
+          aside: "Tap every age that applies.",
           widget: "ages",
-          /* Suggested from their birth years, but any age can be tapped — a
-             friend's child isn't theirs. */
+          optional: true,
         },
         {
-          /* R4. Recency, asked where the parent is still thinking about the place
-             rather than at the end of the card. */
           id: "freshness",
           prompt: "When were you last there — still going?",
           widget: "quick",
@@ -155,20 +203,6 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
             { id: "recent", label: "Within the last year" },
             { id: "over_year", label: "Over a year ago" },
             { id: "unsure", label: "Not sure anymore" },
-          ],
-        },
-        {
-          /* R5. How much exposure is behind the recommendation. */
-          id: "how_much",
-          prompt: "How long, or how often, did you go?",
-          widget: "quick",
-          optional: true,
-          options: [
-            { id: "tried_once", label: "Tried it once" },
-            { id: "few_sessions", label: "A few sessions" },
-            { id: "a_term", label: "A term or season" },
-            { id: "a_year_plus", label: "A year or more" },
-            { id: "weekly_ongoing", label: "Weekly, ongoing" },
           ],
         },
         {
@@ -185,59 +219,87 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
         {
           id: "what_makes_it_great",
           prompt: "What makes it good?",
-          aside: "The thing you'd actually say to a friend, not a review.",
-          widget: "text",
-          maxLength: 400,
-          placeholder: "Small groups, and the teacher is unbelievably patient…",
-        },
-        {
-          /* The client calls this the single most valuable question in the product,
-             so it is asked in their words. Still skippable — a forced answer on the
-             most nuanced question invites filler. */
-          id: "caveat",
-          prompt: "Anything a parent should know before signing up — even something small?",
-          aside: "Parking, waitlists, the one teacher to avoid, the week it gets chaotic.",
+          aside: "One line is plenty — the thing you'd text a friend.",
           widget: "text",
           maxLength: 400,
           optional: true,
-          /* The client counts "nothing notable" as an answered caveat for Founding,
-             so the way out has to say that — not just "Skip". */
+          placeholder: "e.g. small groups and a very patient teacher",
+        },
+        {
+          /**
+           * The fork, and her framing rather than a nudge (10 Sep): *"the more
+           * info you provide, the more targeted your responses."* One tap, and
+           * **Save it** is the first option — a parent who stops here has given
+           * a complete recommendation, and the screen should not imply
+           * otherwise.
+           */
+          id: "more_detail",
+          prompt: "That's everything Pando needs. Anything else worth adding?",
+          aside:
+            "The more detail you give, the more targeted the answers Pando can give another parent.",
+          widget: "quick",
+          options: [
+            { id: "no", label: "That's it — save it", wide: true },
+            { id: "yes", label: "Add more detail", wide: true },
+          ],
+        },
+        {
+          /* R7 — "nothing comes to mind" is an answer, and Founding counts it. */
+          id: "caveat",
+          prompt: "Anything a parent should know before signing up — even something small?",
+          aside: "The waitlist, the parking, the one instructor to avoid.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
           skipLabel: "Nothing comes to mind",
-          placeholder: "Saturdays get packed…",
+          when: wantsMore,
+        },
+        {
+          id: "how_much",
+          prompt: "How long, or how often, did you go?",
+          widget: "quick",
+          optional: true,
+          options: [
+            { id: "tried_once", label: "Tried it once" },
+            { id: "few_sessions", label: "A few sessions" },
+            { id: "a_term", label: "A term or season" },
+            { id: "a_year_plus", label: "A year or more" },
+            { id: "weekly_ongoing", label: "Weekly, ongoing" },
+          ],
+          when: wantsMore,
         },
         {
           id: "who_for",
           prompt: "Who is it perfect for?",
-          aside: "The kind of kid or family that gets the most out of it.",
           widget: "text",
-          maxLength: 300,
+          maxLength: 200,
           optional: true,
-          placeholder: "A cautious toddler who warms up slowly…",
+          placeholder: "e.g. a cautious toddler who warms up slowly",
+          when: wantsMore,
         },
         {
           id: "who_not_for",
           prompt: "And who might it not suit?",
-          aside: "Just as useful as the recommendation itself — it's what stops a bad match.",
           widget: "text",
-          maxLength: 300,
+          maxLength: 200,
           optional: true,
-          placeholder: "Not for a kid who needs a lot of structure…",
+          placeholder: "e.g. a child who needs a lot of running around",
+          when: wantsMore,
         },
         {
           id: "price_band",
           prompt: "Roughly what did you pay?",
-          aside: "Per month, or per session for one-offs. A rough band is plenty.",
           widget: "quick",
           optional: true,
           options: PRICE_BAND,
+          when: wantsMore,
         },
         {
-          /* A band without a unit is unusable: $100 a month and $100 a term are
-             different recommendations. */
           id: "price_unit",
           prompt: "And that was per…?",
           widget: "quick",
           when: (fields) =>
+            wantsMore(fields) &&
             typeof fields.price_band === "string" &&
             fields.price_band !== "" &&
             fields.price_band !== "free" &&
@@ -249,6 +311,7 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           prompt: "Was it worth the money?",
           widget: "quick",
           options: WORTH_IT,
+          when: wantsMore,
         },
         {
           /* Per-recommendation permission, with the cost stated plainly. */
@@ -260,19 +323,19 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
             { id: "yes", label: "Yes, happy to" },
             { id: "no", label: "Not this one" },
           ],
+          when: wantsMore,
         },
       ],
       recap: [
         { field: "name", label: "Activity" },
         { field: "location", label: "Where" },
-        { field: "venue", label: "Exactly" },
         { field: "firsthand", label: "Whose experience" },
         { field: "child_age", label: "Age at the time" },
         { field: "freshness", label: "Last there" },
-        { field: "how_much", label: "How much" },
         { field: "recommendation", label: "Recommend" },
         { field: "what_makes_it_great", label: "What's good" },
         { field: "caveat", label: "Know first" },
+        { field: "how_much", label: "How much" },
         { field: "who_for", label: "Perfect for" },
         { field: "who_not_for", label: "Not for" },
         { field: "price_band", label: "Paid" },
@@ -281,7 +344,6 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
         { field: "follow_up_ok", label: "Follow-ups" },
       ],
     },
-
     caregiver: {
       kind: "caregiver",
       label: "A caregiver",

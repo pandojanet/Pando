@@ -499,7 +499,7 @@ export default function ContributorDetailPage({
                   </ul>
                 )}
                 {/*
-                  Credits are earned in Network Asks, and those do not exist until
+                  Credits are earned in Network Checks, and those do not exist until
                   Phase 2 — so this records who to credit, and nothing is credited.
                 */}
                 {refMessage && (

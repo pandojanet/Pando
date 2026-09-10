@@ -780,6 +780,18 @@ export const shareContributions = pgTable(
     tipText: text("tip_text"),
 
     /**
+     * May this one recommendation carry the contributor's first name?
+     * (`drizzle/0038`, the client's per-recommendation toggle of 10 Sep.)
+     *
+     * ⚠ False is the default at every layer — the column, the card and the
+     * composer — because naming a parent is the one mistake this field can
+     * make. `people.attribution` is the standing *default* the toggle starts
+     * from; this is the decision, and only this is read when an answer is
+     * composed.
+     */
+    showFirstName: boolean("show_first_name").notNull().default(false),
+
+    /**
      * 1.8's score for *this contribution's* free text — not for the place. The
      * extractor reads `what_makes_it_great` / `caveat` / `tip_text` / `who_for` /
      * `who_not_for`, all of which live on this row, and the admin's

@@ -1131,6 +1131,25 @@ async function answerQuestion(input: {
         who_for: sendableNote(share.note_who_for),
         tip: sendableNote(share.note_tip),
       },
+      /**
+       * The contributor's first name, where they turned it on for this one
+       * recommendation (10 Sep).
+       *
+       * ⚠ **Deliberately not through `sendableNote`**, which is the one place on
+       * this path that rule is broken and it is broken on purpose. That helper
+       * normalises typography and drops what it cannot make GSM-7 — right for a
+       * sentence, wrong for a name twice over: rewriting "Zoë" as "Zoe" alters
+       * somebody's name to save a segment, and dropping it withholds a
+       * permission they explicitly granted. An accent costs segments and
+       * `sendSms` already logs that.
+       *
+       * It survives a dropped note correctly without any handling here: the
+       * composer reads the note *after* `sendableNote` has run, so a note that
+       * could not be sent leaves `great` null and the name falls through to the
+       * evidence sentence, which is exactly where it belongs when there is no
+       * quote to attribute.
+       */
+      named_by: share.named_by,
       last_confirmed: share.last_confirmed_at,
     })),
     /**

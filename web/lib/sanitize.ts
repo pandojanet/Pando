@@ -105,11 +105,35 @@ export function childAgeFromStored(input: unknown): number | null {
   return age >= CHILD_AGE_MIN && age <= CHILD_AGE_MAX ? age : null;
 }
 
+/**
+ * The children a parent entered, in the order they entered them.
+ *
+ * ⚠⚠ **This neither de-duplicates nor sorts, and both removals are the client's
+ * instruction of 10 Sep** — *"Create one Child record per child … allow
+ * duplicate birth years."*
+ *
+ * It used to do both, and the de-duplication was a real defect rather than
+ * tidying: `childrenFromAges` maps this array 1:1 onto `children` rows, so a
+ * family with twins, or with two children born in the same calendar year,
+ * produced **one** row and Pando believed they had one child. Nothing on screen
+ * said so — the parent tapped one chip because one chip was all the control
+ * offered.
+ *
+ * ⚠ **The sort had to go with it, and that is the part to understand before
+ * "restoring" it.** The index into this array is now a child's identity:
+ * `child_of` attributes a school to child 0 or child 1, and `child_months` keys
+ * a birth month the same way. Re-ordering here would silently move a school
+ * from one sibling to another, which is invisible in every test that checks the
+ * *set* of answers rather than their pairing.
+ *
+ * Everything else is unchanged: an age outside -1..25 is refused rather than
+ * repaired (see `childAgeFromStored` above for why the client may repair and
+ * the server may not), and twelve is the ceiling.
+ */
 export function cleanAges(input: unknown): number[] {
   if (!Array.isArray(input)) return [];
-  return [...new Set(input)]
+  return input
     .filter((n): n is number => typeof n === "number" && Number.isInteger(n))
     .filter((n) => n >= CHILD_AGE_MIN && n <= CHILD_AGE_MAX)
-    .sort((a, b) => a - b)
     .slice(0, 12);
 }

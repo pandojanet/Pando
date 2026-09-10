@@ -2,6 +2,7 @@ import {
   AFFILIATION_CONSENT_CAVEAT,
   AFFILIATION_CONSENT_TEXT,
 } from "./consent";
+import { producesAffiliation } from "./affiliations";
 import { bandsForAge } from "./matching";
 import { marketOptions, optionsForBands } from "./market-options";
 import {
@@ -40,10 +41,12 @@ import {
  */
 
 export const EMPTY_ANSWERS: ProfileAnswers = {
+  wants_detail: null,
   neighborhood: null,
   child_ages: [],
   schools: [],
   school_status: {},
+  child_school_status: {},
   child_of: {},
   classes: [],
   camps: [],
@@ -65,7 +68,13 @@ export const EMPTY_ANSWERS: ProfileAnswers = {
   child_months: {},
   topics_lived: [],
   /** P13. Null until they choose; nothing is shown until they do. */
-  attribution: null,
+  /**
+   * ⚠ **Private by default** (10 Sep): *"Default to ‘Keep my name private.’"*
+   * It was `null`, and null failed closed anyway — but a default nobody chose
+   * and a choice nobody made read the same on the review screen, and only one
+   * of them is a promise Pando can repeat back.
+   */
+  attribution: "name_private",
   /* Off by default. Her rule: skipping this page keeps the name private and
      shared connections off — "Continue" is not consent. */
   shared_connections: null,
@@ -144,11 +153,36 @@ const CLUB_STATUS: Option[] = [
   { id: "former", label: "Former" },
 ];
 
-/** P5. Each school the parent taps gets one of these. */
+/**
+ * P5. Each school the parent taps gets one of these.
+ *
+ * ⚠ **"Not yet" and "Homeschool" are gone from here** (10 Sep): *"Store None yet
+ * and Homeschool as child statuses, not schools."* They never were statuses of a
+ * school — a school a child does not attend cannot be "not yet", and a
+ * homeschooling family has no school row to hang it on. They are facts about the
+ * **child**, and they live in `child_school_status` now.
+ */
 const SCHOOL_STATUS: Option[] = [
   { id: "current", label: "Current" },
   { id: "former", label: "Former" },
-  { id: "not_yet", label: "Not yet" },
+];
+
+/**
+ * A child who is not at a school, and why not.
+ *
+ * Unset is the third state and the commonest: the child attends one of the
+ * schools named below. It is not an option here because "attends a school" is
+ * answered by naming the school, and offering it as a chip would ask the same
+ * question twice.
+ *
+ * ⚠ **Never an entry in `answers.schools`.** That list feeds a `school` affinity
+ * edge at weight 5 — the heaviest in the graph — so "Homeschool" as a school
+ * would match every homeschooling family to every other as though they shared a
+ * campus. That is the 9 Sep refusal-chip bug exactly, and this is what keeps it
+ * from coming back through a different door.
+ */
+export const CHILD_SCHOOL_STATUS: Option[] = [
+  { id: "not_yet", label: "Not in school yet" },
   { id: "homeschool", label: "Homeschool" },
 ];
 
@@ -623,7 +657,7 @@ const SHARED_CONNECTIONS: Option[] = [
   {
     id: "share_connection",
     label: "Show a shared connection instead of my name when relevant",
-    hint: "“A parent at your golf club recommends this.” Only parents who share that connection see it.",
+    hint: "“A parent at your child’s preschool recommends this.” Only parents who share that connection see it.",
     wide: true,
   },
   {
@@ -671,37 +705,54 @@ const SHARED_CONNECTIONS: Option[] = [
  * above the columns. Reworded, it would be our sentence rather than hers — so
  * it stays as written and goes on the list for her.
  */
+/**
+ * ## The three levels, in the client's own words — 10 Sep
+ *
+ * She supplied the whole table this time: the question, the intro, and a
+ * "how often we may ask" and "what you get" for each of the three. Every cell
+ * below is hers, verbatim, and that closes the one thing `PlanGroup` shipped
+ * deliberately empty on 9 Sep — *"Janet прямо сказала, що ще дасть benefits"*.
+ * Community member has a benefits cell now because she wrote one.
+ *
+ * ⚠ **Three of her benefits name things that do not exist yet**, and each is
+ * labelled with her own hedge rather than promised flat: a Network Check a
+ * month, Pando+, caregiver matching. Her instruction is explicit — *"Label
+ * benefits that are not yet live 'during the pilot' or 'at launch.'"* — so the
+ * hedge is part of the sentence and must not be tidied away. A credit is
+ * denominated in Network Checks and those are not spendable yet (10 Aug), so
+ * without the hedge this screen would promise a balance nothing can pay out.
+ *
+ * ⚠ **"Recommended" stays a badge on the middle level** (`recommended`), which
+ * is where her 1 Sep instruction put it, and must never become "Most popular" —
+ * she ruled that out by name for want of usage data.
+ */
 const ALLOWANCE: Option[] = [
   {
     id: "5",
     label: "Community member",
     wide: true,
     plan: {
-      participation: "Required minimum",
-      questions: "About once a week — up to 5 questions a month",
+      participation: "Up to 5 relevant questions a month",
+      questions: "The minimum level",
+      benefits:
+        "Join Pando. Ask questions and get answers from parents with firsthand experience. Invite friends.",
     },
   },
   {
     id: "10",
     /**
      * 1 Sep, item 18: *"Highlight Active Contributor as **Recommended**. Do not
-     * call it 'Most popular' without supporting usage data."* — which is now the
+     * call it 'Most popular' without supporting usage data."* — which is the
      * badge rather than two words appended to the name.
-     *
-     * The benefit carries her reciprocity argument rather than a nudge: the
-     * reason to help more is that Pando can then ask the community for *you*
-     * more often. Note what it must not say — access to what Pando already
-     * knows is never restricted by this choice ("Do not restrict access to
-     * useful information Pando already has"), so it is worded as new outreach
-     * and nothing else.
      */
     label: "Active contributor",
     recommended: true,
     wide: true,
     plan: {
-      participation: "Happy to help more",
-      questions: "Up to 10 a month",
-      benefits: "Pando can ask the community for a fresh answer for you more often.",
+      participation: "Up to 10 relevant questions a month",
+      questions: "Happy to help more",
+      benefits:
+        "Everything above, plus one Network Check each month during the pilot, early access to caregiver matching and discounted Pando+ at launch.",
     },
   },
   {
@@ -709,9 +760,10 @@ const ALLOWANCE: Option[] = [
     label: "Open contributor",
     wide: true,
     plan: {
-      participation: "Ask me whenever it’s genuinely relevant",
-      questions: "Never more than one question every 48 hours",
-      benefits: "Pando can ask the community for you most often.",
+      participation: "Whenever it’s relevant — never more than one every 48 hours",
+      questions: "Ask me when it fits",
+      benefits:
+        "Everything above, plus Pando+ during the pilot, two Network Checks a month, priority routing for questions, timely seasonal reminders, early access to caregiver matching and additional invitations.",
     },
   },
 ];
@@ -727,7 +779,32 @@ const LISTENING_EAR: Option[] = [
   { id: "declined", label: "Not for me right now" },
 ];
 
-export const SCREENS: Screen[] = [
+/**
+ * Behind the fork. `true` only once the parent has tapped **Add optional
+ * details** — `null` (not yet asked) and `false` (Continue) both hide the
+ * screen, which is what makes the fast path the default rather than something
+ * a parent has to opt out of.
+ */
+const wantsDetail = (answers: ProfileAnswers): boolean =>
+  answers.wants_detail === true;
+
+/**
+ * ## Every screen this flow has ever asked, in order
+ *
+ * `SCREENS` is this minus `ASK_LATER` — see below. The definitions stay here
+ * rather than being deleted, because the client's instruction was *"ask the
+ * other profile questions later, when relevant"*, which is a change of **when**
+ * and not a decision that the questions were wrong.
+ *
+ * ⚠ **Exported, and `SCREENS` is still the flow.** Nothing that renders or
+ * derives may read this: `visibleScreens`, `derive.ts` and the write route all
+ * walk `SCREENS`, and a caller reaching here would put a question back in front
+ * of a parent that the client took out. It is exported for the one job that
+ * genuinely needs every definition — the suites, which assert the wording and
+ * the caps of questions the flow no longer asks, and which crashed on
+ * `questionById("logistics")` the moment those moved.
+ */
+export const ALL_SCREENS: Screen[] = [
   {
     id: "neighborhood",
     eyebrow: "Where you are",
@@ -758,8 +835,12 @@ export const SCREENS: Screen[] = [
   {
     id: "child_ages",
     eyebrow: "Your kids",
-    title: "Your kids — tap a birth year for each one.",
-    help: "So we only ask you about stages you've actually lived. Birth years, never names.",
+    /* Her heading, 10 Sep, and it describes the control now rather than
+       contradicting it: "tap a birth year for each one" was a multi-select
+       pretending to be a list, so a parent with two children born in one year
+       tapped once and Pando recorded one child. */
+    title: "Add each child's birth year.",
+    help: "So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
     questions: [
       {
         id: "child_ages",
@@ -771,8 +852,53 @@ export const SCREENS: Screen[] = [
       },
     ],
   },
+  /**
+   * ## The fork — the client's instruction of 10 Sep, and the shape of the flow now
+   *
+   * *"After location and children, show Continue and Add optional details.
+   * Continue skips all optional details … The path to the first recommendation
+   * must contain no more than 8 screens."*
+   *
+   * **What is required is two questions.** Where they live and who their
+   * children are — the two §8.5 has always called required, and the two the
+   * matcher genuinely cannot run without. Everything else on the way to a first
+   * recommendation is either a permission (the participation level and the
+   * recurring-messages opt-in) or is behind this fork.
+   *
+   * ⚠ **The count, so the next session can check it rather than trust it:**
+   * `/join` · where you live · your children · this · participation · review ·
+   * the code · `/share`. **Eight**, and seven wherever verification cannot
+   * send. `test:feedback` asserts the ceiling rather than leaving it to drift.
+   *
+   * ⚠ **The framing is hers, and it is deliberately not a nudge toward the
+   * "right" answer.** *"The more detail you give, the more custom your answers
+   * will be"* is a true statement about the matcher and it is the only argument
+   * this screen makes: no count of what is behind the door (that reads as a
+   * price), no progress penalty, no "recommended". Continue is a first-class
+   * answer, which is why it is the primary button.
+   */
+  {
+    id: "detail_fork",
+    eyebrow: "That’s the required part",
+    title: "That’s everything Pando needs.",
+    statement: {
+      body: [
+        "You can go straight to sharing a recommendation — nothing after this is required, and you can add any of it later.",
+        "The more detail you give, the more custom your answers will be: schools, regular classes or groups, childcare, and the parenting topics you have been through yourself.",
+      ],
+    },
+    fork: {
+      continueLabel: "Continue",
+      detailLabel: "Add optional details",
+    },
+    questions: [],
+  },
   {
     id: "schools",
+    /* Behind the fork (10 Sep) — one of the four the client named as optional:
+       schools, recurring classes or groups, regular childcare, and the topics a
+       parent has personally navigated. */
+    when: wantsDetail,
     eyebrow: "Your circles",
     /* The helper here said "The strongest matching signal there is. Former
        counts: a parent who's been through admissions is exactly who someone
@@ -781,7 +907,11 @@ export const SCREENS: Screen[] = [
        reads as pressure to answer a question that is optional. Her own screen
        title for this is below; "or has attended" is what still invites a former
        school, without the sales pitch. */
-    title: "Where does your child go to school, preschool or daycare?",
+    /* Her wording, 10 Sep — and the tense is the change that matters: "have
+       your children attended" invites the former school the old title had to
+       explain in a helper, and it asks about the family rather than about one
+       unnamed "your child". */
+    title: "Which schools, preschools or daycares have your children attended?",
     /* Item 4, verbatim. "This stays private" claimed less than the truth and
        explained none of it: the parent decides later, per connection, and that
        is the sentence that makes the privacy screen legible when it arrives. */
@@ -824,13 +954,32 @@ export const SCREENS: Screen[] = [
   },
   {
     id: "communities",
+    /* Behind the fork (10 Sep) — one of the four the client named as optional:
+       schools, recurring classes or groups, regular childcare, and the topics a
+       parent has personally navigated. */
+    when: wantsDetail,
     eyebrow: "Your circles",
     title: "Which local groups and communities are part of your family's life?",
     /* Item 5: her instruction for the activities section, and the three sections
        stay on one scrollable page — *"Do not split this into additional pages
        for now. Keeping the three sections on one scrollable page is acceptable
        and avoids extra work."* */
-    help: "Select all recurring activities that apply. Every one of these is optional.",
+    /**
+     * Her sentence, 10 Sep, and it carries two rules that were true and stated
+     * nowhere a parent could read them.
+     *
+     * *"Adding a place means your family takes part; it is not a
+     * recommendation"* — the "Attendance must not create a recommendation"
+     * instruction, said on the screen rather than only enforced in the write
+     * path (`repo/profile.ts` writes `person_schools` and affinity edges, and
+     * never a `shares` row).
+     *
+     * *"Faith communities, private clubs and other sensitive affiliations are
+     * used only for private matching and are never named to other parents"* —
+     * which is `mayBeNamed` on screen. It is the strongest promise this screen
+     * makes and it was enforced in three layers of code and printed in none.
+     */
+    help: "Select all that apply — every one is optional. Adding a place means your family takes part; it is not a recommendation. Faith communities, private clubs and other sensitive affiliations are used only for private matching and are never named to other parents.",
     questions: [
       {
         id: "classes",
@@ -963,8 +1112,11 @@ export const SCREENS: Screen[] = [
         "If you choose to share it, another parent with the same connection may see:",
       ],
       examples: [
-        "“A parent at your golf club recommends this.”",
-        "“Three parents at your golf club recommend this.”",
+        /* ⚠ Her example, 10 Sep: a golf club is exactly the affiliation that
+           may never be named now (`mayBeNamed`), so illustrating the feature
+           with one showed a parent something the product refuses to do. */
+        "“A parent at your child’s preschool recommends this.”",
+        "“Three parents at your child’s preschool recommend this.”",
       ],
       /* Item 6's restored sentence. After the examples, because it is the answer
          to the question they raise. */
@@ -1151,6 +1303,10 @@ export const SCREENS: Screen[] = [
      * arrangements at once (preschool in the morning, a sitter after).
      */
     id: "childcare",
+    /* Behind the fork (10 Sep) — one of the four the client named as optional:
+       schools, recurring classes or groups, regular childcare, and the topics a
+       parent has personally navigated. */
+    when: wantsDetail,
     eyebrow: "Life context",
     /**
      * ## 9 Sep — "Childcare / backup childcare" as one item, which is how she
@@ -1202,50 +1358,15 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
       },
-      {
-        /* Item 13's second question. Asked once, at household level: a
-           grandmother who can come over covers every child, so attributing it
-           per child would be inventing a distinction the parent did not make. */
-        id: "childcare_backup",
-        label: "Backup",
-        alphabetical: true,
-        /* Item 11 adds the instruction; the question keeps its own framing. */
-        help: "What can you usually rely on when regular childcare falls through? Select everything you can usually rely on.",
-        dropdown: true,
-        /**
-         * Not asked when the only child is on the way — and the argument is
-         * structural rather than a matter of taste, which is why this question
-         * carries a gate the `perChild` rule could not give it.
-         *
-         * This is deliberately **not** a per-child question (see above), so the
-         * 7 Sep gate in `isQuestionVisible` does not touch it. But the thing it
-         * is the backup *to* — the regular arrangement above — **is** per-child
-         * and is therefore hidden for an expecting-only parent. So the flow
-         * asked *"What can you usually rely on when regular childcare falls
-         * through?"* of a parent it had never asked about childcare, about a
-         * child who is not born: a fallback with no antecedent, immediately
-         * after they said they were expecting.
-         *
-         * The other reason is the one this repo keeps applying: every option
-         * here would be answered about a hypothetical, and `relevance:
-         * "childcare"` derived from a hypothetical is a fact the parent did not
-         * state.
-         *
-         * ⚠ It sat on the **screen** until 9 Sep, and it works identically on
-         * the question because both questions here are then hidden and
-         * `visibleScreens` drops a screen with nothing left on it.
-         *
-         * ⚠ The signal is not lost for long — the question returns the moment a
-         * child is recorded as born, and an expecting parent is asked their work
-         * setup, their circles and their practical priorities either way.
-         */
-        when: hasBornChild,
-        kind: "multi",
-        source: { type: "static", options: CHILDCARE_BACKUP },
-        relevance: "childcare",
-        allowOther: true,
-        otherLabel: SOMETHING_ELSE,
-      },
+      /* ⚠ **Backup childcare is gone** — the client, 10 Sep: *"Keep regular
+         childcare; let’s remove backup care — it’s not necessary."* It was
+         hers too (24 Aug, item 13), so this is a reversal rather than a trim.
+         What goes with it is one `life_relevance` dimension’s worth of signal
+         on the `childcare` axis — the regular arrangement above still writes
+         it, so the dimension survives and only the fallback half of it does
+         not. `CHILDCARE_BACKUP` and `answers.childcare_backup` stay in place:
+         parents answered this under an older build, and the field is still
+         read back on the admin side. */
     ],
   },
   {
@@ -1394,8 +1515,15 @@ export const SCREENS: Screen[] = [
        with": this list is about experience a parent lived, and the wording should
        not imply they are offering advice. */
     id: "topics_lived",
+    /* Behind the fork (10 Sep) — one of the four the client named as optional:
+       schools, recurring classes or groups, regular childcare, and the topics a
+       parent has personally navigated. */
+    when: wantsDetail,
     eyebrow: "What you know",
-    title: "Which parenting experiences would you be comfortable sharing?",
+    /* Her wording, 10 Sep. It names the two things actually being stored —
+       what the parent has been through, and whether they are willing to be
+       asked — where "comfortable sharing" named only the second. */
+    title: "Which parenting areas have you personally navigated and would be open to answering questions about?",
     /* Item 17's own words. */
     help: "Choose any topics where your firsthand experience could help. You’ll always decide whether to answer.",
     questions: [
@@ -1430,15 +1558,28 @@ export const SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
         /**
-         * Item 17: *"Remove Skip, because it duplicates the explicit opt-out.
-         * Continue should activate once the parent selects at least one topic
-         * or chooses the opt-out."*
+         * ⚠ **`required` was here and is gone** (10 Sep), and that reverses
+         * item 17 of 1 Sep: *"Continue should activate once the parent selects
+         * at least one topic or chooses the opt-out."*
          *
-         * `required` is exactly that, because the opt-out chip **is** an
-         * answer: choosing it satisfies this, so there is no third way past the
-         * screen that leaves Pando guessing what the silence meant.
+         * Her newer instruction names this question in the list that must be
+         * optional — *"Keep schools, recurring classes or groups, regular
+         * childcare and personally navigated topics optional"* — and by this
+         * file's own rule the newer document wins.
+         *
+         * The two are in genuine conflict rather than about wording: this
+         * screen now sits **behind the optional fork**, so a required question
+         * here would mean a parent who tapped *"Add optional details"* could
+         * not leave the screen without answering. Optional detail that cannot
+         * be declined is not optional, and "I opened the door" is not consent
+         * to every room behind it.
+         *
+         * ⚠ What item 17 was protecting is not lost. The explicit opt-out chip
+         * is still on the list, so a parent who means *"ask me nothing"* can
+         * still say so rather than leaving a silence — and now a silence and a
+         * refusal are two different answers again, which is what the chip was
+         * for in the first place.
          */
-        required: true,
       },
     ],
     /**
@@ -1585,7 +1726,18 @@ export const SCREENS: Screen[] = [
      *    obligation.
      */
     title: "Ask when you need help. Help when you can.",
-    help: "To join and use Pando, choose a participation level. Community member — up to five relevant questions a month — is the minimum. Every question is optional, and you’ll never receive more than one request within 48 hours.",
+    /**
+     * Her intro, verbatim (10 Sep). It replaces our paraphrase of the same
+     * three facts, and one of them changed: hers says the level can be
+     * changed at any time, which the old line did not.
+     *
+     * ⚠ **The 48-hour gap is no longer stated here**, and it is true of every
+     * level rather than of Open Contributor alone (invariant 5) — her own
+     * table puts it only in the third column, which is the asymmetry already
+     * on the list for her. Reinstating it would make this our sentence again
+     * rather than hers, so it stays as written and stays on the list.
+     */
+    help: "Pando works because parents help each other. Community Member is the minimum level. Every individual question is optional, and you can change your level at any time.",
     questions: [
       {
         id: "allowance",
@@ -1633,6 +1785,88 @@ export const SCREENS: Screen[] = [
    */
 ];
 
+/**
+ * ## The screens the flow no longer walks — the client, 10 Sep
+ *
+ * *"Ask the other profile questions later, when relevant … but optional only."*
+ * So they are **not deleted**: the wording, the option lists and every
+ * `Decisions` row behind them stay in `ALL_SCREENS` above, ready for whichever
+ * surface asks them when they become relevant. What changed is that onboarding
+ * stopped asking them, which is the only way the path to a first recommendation
+ * fits in eight screens.
+ *
+ * ⚠⚠ **The costs, stated rather than left to be discovered.**
+ *
+ * *`time_in_area`, `household_setup`, `logistics`, `priorities`* each wrote
+ * `life_relevance` rows, and `derive.ts` walks `SCREENS` — so a new parent
+ * produces **no relevance rows at all** until these are asked somewhere. That is
+ * the *second* layer of matching (social affinity × life relevance), and the
+ * whole of it is worth about half a shared school (`RELEVANCE_STEP`), so the
+ * first layer is untouched and a match is still a match. It gets less precise,
+ * not less possible.
+ *
+ * *`attribution` and `connection_visibility`* are a different case: they were
+ * **decisions**, and the decision did not go away, it moved to where it is
+ * actually made. The name is private by default (`EMPTY_ANSWERS.attribution`)
+ * with a per-recommendation toggle on the card, and no affiliation may be named
+ * at all (`mayBeNamed`), so `connection_visibility` had nothing left to offer.
+ *
+ * ⚠⚠ *`privacy_disclosure`* is the one to weigh before agreeing with this. It
+ * was a **statement**, not a question: the screen that showed a parent the
+ * sentence another parent would see. Two of its three examples describe things
+ * that can no longer happen, which is why it could not simply be moved behind
+ * the fork — a disclosure has to be true. What replaces it is the toggle's own
+ * sentence on each recommendation and the two rules stated on `/share`.
+ * Reinstating it is one id off this list plus a rewrite of its examples.
+ */
+const ASK_LATER = new Set([
+  "privacy_disclosure",
+  "time_in_area",
+  "household_setup",
+  "logistics",
+  "priorities",
+  "attribution",
+  "connection_visibility",
+]);
+
+export const SCREENS: Screen[] = ALL_SCREENS.filter((s) => !ASK_LATER.has(s.id));
+
+/**
+ * ## Questions no screen asks any more, kept resolvable — the `RETIRED_OPTIONS`
+ * rule, one level up
+ *
+ * ⚠⚠ **This exists because deleting a question outright returned a 500 on the
+ * profile write**, and it is worth reading before removing another one.
+ * *"Let's remove backup care — it's not necessary"* (10 Sep) took the question
+ * off the childcare screen and out of `ALL_SCREENS`. But `deriveLifeRelevance`
+ * asks for it **by id, unconditionally** — it derives from *stored answers*,
+ * and the answers do not know the screen has gone — so `questionById` threw
+ * `Unknown question: childcare_backup` and the whole profile was refused. For
+ * every parent whose device still held that answer, which on the day this ships
+ * is every parent who has ever filled the form.
+ *
+ * So a question, like an option, is retired rather than deleted: **a stored
+ * answer outlives the screen that asked for it.** What is kept here is only
+ * what a reader of a stored answer needs — the id, the label, the shape and the
+ * dimension it derives into. The `help`, the `dropdown`, the `when` gate and
+ * the 7 Sep reasoning behind that gate are all deliberately dropped: they are
+ * instructions to a parent looking at a screen, and there is no screen. They
+ * are in git if she ever asks for the question back.
+ *
+ * ⚠ It is **not** in `ALL_SCREENS`, so nothing that walks screens can render it
+ * or count it — only `questionById` reaches it, and only after every live
+ * screen has been searched.
+ */
+const RETIRED_QUESTIONS: Question[] = [
+  {
+    id: "childcare_backup",
+    label: "Backup",
+    kind: "multi",
+    source: { type: "static", options: CHILDCARE_BACKUP },
+    relevance: "childcare",
+  },
+];
+
 /** Questions whose chip lists are sensitive enough to always offer an out. */
 /**
  * The options the client requires on each of the four searchable questions, over
@@ -1653,18 +1887,13 @@ export const SCREENS: Screen[] = [
  * named community clears them back, which `ChipGroup` already does.
  */
 const SPECIAL_OPTIONS: Partial<Record<QuestionId, Option[]>> = {
-  schools: [
-    /* Her list. A homeschooling family had nothing to select: "Homeschool"
-       existed only as a per-school *status*, which cannot apply to a school they
-       do not attend. */
-    { id: "homeschool", label: "Homeschool", exclusive: true, wide: true },
-    {
-      id: "not_in_school_yet",
-      label: "Not in school or daycare yet",
-      exclusive: true,
-      wide: true,
-    },
-  ],
+  /* ⚠ **Schools has none** (10 Sep). "Homeschool" and "Not in school or daycare
+     yet" were added here on 1 Sep because a homeschooling family had nothing to
+     select — the right observation, the wrong place. They are answers about a
+     *child*, so they are `CHILD_SCHOOL_STATUS` now, asked once per child above
+     the list. Keeping them here as well would let a family be homeschooling and
+     at a school at once, and would put "homeschool" back into the affinity
+     graph. */
   classes: [
     { id: "not_doing_any_yet", label: "Not doing any yet", exclusive: true, wide: true },
   ],
@@ -1865,8 +2094,12 @@ function rawSelectionsFor(
  */
 /** One child's block on a `perChildRepeat` question. */
 export interface ChildBlock {
-  /** The stored age, which is the key `child_of` uses. */
-  age: number;
+  /**
+   * The child's **index** in `child_ages`, which is what `child_of` keys on
+   * since 10 Sep — never their age. Two siblings born in one year have one
+   * age between them, so an age names a year and cannot name a child.
+   */
+  child: number;
   /** The birth year, as the parent tapped it. */
   year: string;
   /** Her heading, with the year filled in. */
@@ -1893,28 +2126,33 @@ export function childBlocks(
   answers: ProfileAnswers,
 ): ChildBlock[] {
   if (!question.perChildRepeat) return [];
-  const ages = answerableChildren(answers);
+  const children = answerableChildren(answers);
   /* One child needs no blocks — there is nothing to attribute between — and a
      family with one born child and one on the way is now that case, which is
      the right answer: the household list with silent attribution. */
-  if (ages.length <= 1) return [];
+  if (children.length <= 1) return [];
 
   const attribution = answers.child_of[question.id] ?? {};
+  /* Labels rather than bare years, so two siblings born in one year are told
+     apart on the block headings exactly as they are on the chips. */
+  const labels = new Map(childOptions(answers).map((o) => [o.id, o.label]));
 
-  return ages.map((age) => {
-    const year = String(CURRENT_YEAR - age);
+  return children.map((index) => {
+    const age = answers.child_ages[index];
+    const year = labels.get(String(index)) ?? String(CURRENT_YEAR - age);
     return {
-      age,
+      child: index,
       year,
       heading: (question.childHeading ?? "For your child born in {year}").replace(
         "{year}",
         year,
       ),
       /* One child's bands, not the family's union. `optionsFor` takes the whole
-         answers object, so it is handed a copy with just this child in it. */
+         answers object, so it is handed a copy with just this child in it —
+         and that copy carries the *age*, because bands are computed from it. */
       options: optionsFor(question, market, { ...answers, child_ages: [age] }),
       selected: Object.entries(attribution)
-        .filter(([, owners]) => owners.includes(age))
+        .filter(([, owners]) => owners.includes(index))
         .map(([optionId]) => optionId),
     };
   });
@@ -1940,7 +2178,13 @@ export function childBlocks(
 export function applyChildSelections(
   question: Question,
   answers: ProfileAnswers,
-  age: number,
+  /**
+   * The child's **index** in `child_ages`, never their age (10 Sep). It was
+   * called `age` while it already carried an index, which is the naming that
+   * let `childrenFor` go on filtering positions against ages for a whole round
+   * without anything looking wrong.
+   */
+  child: number,
   next: string[],
 ): { values: string[]; attribution: Record<string, number[]> } {
   const current = answers.child_of[question.id] ?? {};
@@ -1949,12 +2193,12 @@ export function applyChildSelections(
   for (const [optionId, owners] of Object.entries(current)) {
     const kept = next.includes(optionId)
       ? owners
-      : owners.filter((owner) => owner !== age);
+      : owners.filter((owner) => owner !== child);
     if (kept.length > 0) map[optionId] = kept;
   }
   for (const optionId of next) {
     const owners = map[optionId] ?? [];
-    if (!owners.includes(age)) map[optionId] = [...owners, age];
+    if (!owners.includes(child)) map[optionId] = [...owners, child];
   }
 
   return { values: Object.keys(map), attribution: map };
@@ -1972,10 +2216,10 @@ export function sameForAllChildren(
   answers: ProfileAnswers,
 ): { values: string[]; attribution: Record<string, number[]> } {
   /* Item 10's shortcut must not hand a school to a child on the way either. */
-  const ages = answerableChildren(answers);
+  const children = answerableChildren(answers);
   const values = selectionsFor(question, answers);
   const attribution: Record<string, number[]> = {};
-  for (const optionId of values) attribution[optionId] = [...ages];
+  for (const optionId of values) attribution[optionId] = [...children];
   return { values, attribution };
 }
 
@@ -2016,17 +2260,62 @@ export function hasBornChild(answers: ProfileAnswers): boolean {
   return answers.child_ages.length === 0 || answerableChildren(answers).length > 0;
 }
 
+/**
+ * The **indexes** of the children this flow may ask about.
+ *
+ * ⚠⚠ **These are positions in `child_ages`, not ages, and that changed on 10
+ * Sep.** The client asked for one Child record per child with duplicate birth
+ * years allowed, which makes an age useless as an identity: two children born
+ * in 2019 are two children, and a `child_of` map keyed by age could only ever
+ * say "a 2019 child", never *which one*. The index is the only thing that
+ * distinguishes them, which is why `cleanAges` no longer sorts.
+ *
+ * Expecting is filtered here and nowhere else, for the reason above.
+ */
 export function answerableChildren(answers: ProfileAnswers): number[] {
-  return [...new Set(answers.child_ages)]
-    .filter((age) => age !== EXPECTING)
-    .sort((a, b) => a - b);
+  return answers.child_ages
+    .map((age, index) => ({ age, index }))
+    .filter(({ age }) => age !== EXPECTING)
+    .map(({ index }) => index);
 }
 
+/**
+ * One chip per child, labelled by the birth year the parent tapped.
+ *
+ * ⚠ **Two children of the same year are disambiguated, and only then.** A pair
+ * of chips both reading "2019" is a question a parent cannot answer, so the
+ * label gains an ordinal — but only where a year really is shared, because
+ * "2019 (1st)" on an only child is noise about a distinction that does not
+ * exist. The id is the index either way, so nothing downstream depends on the
+ * label being unique.
+ */
 export function childOptions(answers: ProfileAnswers): Option[] {
-  return answerableChildren(answers).map((age) => ({
-    id: String(age),
-    label: String(CURRENT_YEAR - age),
-  }));
+  const indexes = answerableChildren(answers);
+  const years = indexes.map((i) => CURRENT_YEAR - answers.child_ages[i]);
+  return indexes.map((index, n) => {
+    const year = years[n];
+    const shared = years.filter((y) => y === year).length > 1;
+    const ordinal = years.slice(0, n).filter((y) => y === year).length + 1;
+    return {
+      id: String(index),
+      label: shared ? `${year} (${ordinalWord(ordinal)})` : String(year),
+    };
+  });
+}
+
+/** 1 → "1st". Only ever reached for siblings sharing a birth year. */
+function ordinalWord(n: number): string {
+  const suffix =
+    n % 100 >= 11 && n % 100 <= 13
+      ? "th"
+      : n % 10 === 1
+        ? "st"
+        : n % 10 === 2
+          ? "nd"
+          : n % 10 === 3
+            ? "rd"
+            : "th";
+  return `${n}${suffix}`;
 }
 
 /**
@@ -2111,13 +2400,17 @@ const SEARCHABLE_QUESTIONS: Partial<
     category: "clubs",
     dropdown: true,
     searchLabel: "Search all private clubs and member organizations",
-    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+    /* ⚠ No footnote: the client, 10 Sep — *"(repeated three times on one
+       screen) … show once, under the first field only."* Three of the four
+       questions on the circles screen carried it, so a parent read the same
+       sentence three times on one page. `classes` is the first field there and
+       keeps it; schools is a screen of its own and keeps its own. */
   },
   faith: {
     category: "worship",
     dropdown: true,
     searchLabel: "Search all faith communities and places of worship",
-    footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
+    /* No footnote — see `clubs` above. */
   },
   neighborhood: {
     category: "neighborhoods",
@@ -2200,6 +2493,13 @@ export function affiliationOptions(
   for (const screen of SCREENS) {
     for (const question of screen.questions) {
       if (!AFFILIATION_QUESTIONS.includes(question.id)) continue;
+      /* ⚠ The first of the three layers behind the 10 Sep rule: a connection
+         that may never be named is not offered as something to name. With the
+         nameable set empty this returns nothing at all, so
+         `connection_visibility` has no answers left and does not render —
+         which is why that screen being in `ASK_LATER` is belt rather than
+         braces. See `mayBeNamed`. */
+      if (!producesAffiliation(question.id)) continue;
 
       const chosen = selectionsFor(question, answers);
       for (const optionId of chosen) {
@@ -2277,9 +2577,28 @@ export function pruneAnswers(answers: ProfileAnswers): ProfileAnswers {
   const next: ProfileAnswers = { ...answers };
   let changed = false;
 
-  for (const screen of SCREENS) {
+  /**
+   * ⚠ **`ALL_SCREENS`, not `SCREENS`** (10 Sep), and this is the one place that
+   * distinction runs the other way.
+   *
+   * Everything else here walks the flow, because the flow is what a parent
+   * sees. Pruning is not about what is on screen: it is stored-state hygiene —
+   * dropping an option a question no longer offers, and trimming a selection
+   * that predates its cap. A saved answer to a question the flow has stopped
+   * asking is exactly the answer most likely to be stale, and walking `SCREENS`
+   * would leave it unpruned until the day that screen returns, at which point
+   * the parent meets the over-cap state the client reported on 1 Sep.
+   */
+  for (const screen of ALL_SCREENS) {
     for (const question of screen.questions) {
       if (question.source.type !== "static") continue;
+      /* ⚠ The children are numbers, and everything below this line writes back
+         `string[]`. It has never fired for them — every birth year is an
+         allowed option, so `kept.length` always matched — but a stored answer
+         out of range would have put strings into `child_ages`, where
+         `childrenFromAges` would read `NaN` as a birth year. `cleanAges` and
+         `normaliseAnswers` both police this question already. */
+      if (question.kind === "ages") continue;
 
       const allowed = new Set([
         ...question.source.options.map((o) => o.id),
@@ -2395,10 +2714,32 @@ export function childrenFor(
   optionId: string,
 ): number[] {
   if (!question.perChild) return [];
-  const unique = [...new Set(answers.child_ages)];
-  if (unique.length <= 1) return unique;
+  /**
+   * ⚠⚠ **Indexes, not ages** (10 Sep), and this function was the last place
+   * still returning ages — three layers below the change that needed it.
+   *
+   * `child_of` became a map of **positions** when duplicate birth years were
+   * allowed, because an age names a year and can no longer name a child. This
+   * still built a set of unique *ages* and filtered the picked positions
+   * against it, so with two children aged 3 and 6 the school attributed to
+   * position 1 was tested as `[3,6].includes(1)` — false — and **every
+   * per-child attribution in a multi-child family was silently dropped**. The
+   * screen showed the tap, the session stored it, the route cleaned it, and it
+   * died here.
+   *
+   * ⚠ The one-child shortcut is on the **count of children**, not on the count
+   * of distinct years. `[3, 3]` is one year and two children: on `unique` it
+   * took the shortcut and attributed everything to a single child who does not
+   * exist as a position.
+   *
+   * Expecting children are excluded throughout (`answerableChildren`), because
+   * a school cannot belong to a child who is not born.
+   */
+  const born = answerableChildren(answers);
+  if (born.length === 0) return [];
+  if (born.length === 1) return born;
   const picked = answers.child_of?.[question.id]?.[optionId] ?? [];
-  return picked.filter((age) => unique.includes(age));
+  return picked.filter((index) => born.includes(index));
 }
 
 export function customEntriesFor(
@@ -2514,10 +2855,102 @@ export function profileValueLabel(value: string): string | null {
   return PROFILE_VALUE_LABELS[value] ?? null;
 }
 
+/**
+ * The definition of one question, by id.
+ *
+ * ⚠⚠ **`ALL_SCREENS`, and this threw a 500 on a real profile write for the
+ * hours it did not** (10 Sep). It searched `SCREENS`, so the moment seven
+ * screens moved behind `ASK_LATER` this function started throwing for
+ * `budget`, `logistics`, `trust_circles` and `time_in_area` — and
+ * `deriveLifeRelevance` calls it by id for every dimension it knows about,
+ * unconditionally. The result was `Error: Unknown question: budget` out of
+ * `POST /api/seed/profile`, i.e. **the entire profile refused**, for any parent
+ * whose device still held one of those answers from the older build. Which is
+ * every parent mid-flow on the day this deploys.
+ *
+ * The rule it got wrong is worth stating, because it is the same one three
+ * other call sites had to learn this week: **a stored answer outlives the
+ * screen that asked for it.** Anything reading an answer back — deriving from
+ * it, labelling it, pruning it — has to resolve against every question this
+ * questionnaire has ever defined. Only the things that decide what a parent
+ * *sees* may read `SCREENS`.
+ *
+ * It still throws on an id that does not exist anywhere, which is a programming
+ * error rather than a stale answer: `QuestionId` is a closed union, so reaching
+ * it means the union and the data disagree.
+ */
 export function questionById(id: QuestionId): Question {
-  for (const screen of SCREENS) {
+  for (const screen of ALL_SCREENS) {
     const q = screen.questions.find((x) => x.id === id);
     if (q) return q;
   }
+  /* Last, and only after every live screen: a retired question must never
+     shadow a live one that reuses its id. */
+  const retired = RETIRED_QUESTIONS.find((x) => x.id === id);
+  if (retired) return retired;
   throw new Error(`Unknown question: ${id}`);
+}
+
+/**
+ * Add one child, in the order the parent added them.
+ *
+ * The client's model, 10 Sep: *"Create one Child record per child. Add 'Add
+ * another child.' Require birth year; make month optional; allow duplicate
+ * birth years."* Appending is the whole of it — a repeat is a repeat, and the
+ * index it lands on is that child's identity from here on.
+ */
+export function addChildAt(answers: ProfileAnswers, age: number): ProfileAnswers {
+  if (answers.child_ages.length >= MAX_CHILDREN) return answers;
+  return { ...answers, child_ages: [...answers.child_ages, age] };
+}
+
+/** The ceiling `cleanAges` enforces on the server, stated once for the UI too. */
+export const MAX_CHILDREN = 12;
+
+/**
+ * Remove one child, and move every reference to the children after them.
+ *
+ * ⚠⚠ **The re-keying is the entire point of this function, and dropping it is
+ * the silent bug.** A child's index is their identity: `child_months` keys a
+ * birth month by it and `child_of` attributes a school, class or care
+ * arrangement by it. Splicing the array without moving those maps would leave a
+ * two-child family whose eldest was removed with the younger child's school
+ * filed against the *older* one — no error, no empty answer, just a fact about
+ * the wrong sibling. It is invisible on the review screen, because both
+ * children are real and both rows read plausibly.
+ *
+ * A reference **to** the removed child is dropped rather than reassigned: an
+ * answer that belonged to nobody is not an answer, which is the same rule
+ * `applyChildSelections` follows when the last owner of an option is untapped.
+ */
+export function removeChildAt(answers: ProfileAnswers, index: number): ProfileAnswers {
+  if (index < 0 || index >= answers.child_ages.length) return answers;
+
+  const shift = (i: number) => (i > index ? i - 1 : i);
+
+  const months: Record<string, number> = {};
+  for (const [key, month] of Object.entries(answers.child_months)) {
+    const i = Number(key);
+    if (!Number.isInteger(i) || i === index) continue;
+    months[String(shift(i))] = month;
+  }
+
+  const childOf: ProfileAnswers["child_of"] = {};
+  for (const [questionId, perOption] of Object.entries(answers.child_of)) {
+    const cleaned: Record<string, number[]> = {};
+    for (const [optionId, owners] of Object.entries(perOption ?? {})) {
+      const kept = owners.filter((i) => i !== index).map(shift);
+      if (kept.length > 0) cleaned[optionId] = kept;
+    }
+    if (Object.keys(cleaned).length > 0) {
+      childOf[questionId as QuestionId] = cleaned;
+    }
+  }
+
+  return {
+    ...answers,
+    child_ages: answers.child_ages.filter((_, i) => i !== index),
+    child_months: months,
+    child_of: childOf,
+  };
 }

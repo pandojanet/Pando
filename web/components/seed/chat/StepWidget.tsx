@@ -10,6 +10,8 @@ import { PhoneField } from "@/components/ui/PhoneField";
 import { AGE_OPTIONS } from "@/lib/questions";
 import { formatPhone, toE164 } from "@/lib/phone";
 import { progressOf } from "@/lib/seed-chat/engine";
+import { PlaceStep } from "@/components/seed/chat/PlaceStep";
+import type { MarketId } from "@/lib/types";
 import type { FieldValue, Fields, Script, Step } from "@/lib/seed-chat/types";
 
 /**
@@ -30,6 +32,8 @@ export function StepWidget({
   onAnswer,
   onSkip,
   onUndo,
+  market,
+  area,
 }: {
   step: Step;
   script: Script;
@@ -40,9 +44,18 @@ export function StepWidget({
   editing?: boolean;
   /** The answer already on record, so a correction starts from it. */
   initialValue?: FieldValue;
-  onAnswer: (value: FieldValue) => void;
+  /**
+   * ⚠ The second argument is for the one widget that answers more than one
+   * question at a time: `place` writes the name **and** the town the matched
+   * record already carries (10 Sep). Every other widget passes one value and
+   * ignores it.
+   */
+  onAnswer: (value: FieldValue, extra?: Fields) => void;
   onSkip: () => void;
   onUndo: () => void;
+  /** `place` only — the directory to search and the town to rank by. */
+  market: MarketId;
+  area?: string | null;
 }) {
   const { current, total } = progressOf(script, fields, stepIndex);
 
@@ -88,6 +101,8 @@ export function StepWidget({
         initialValue={initialValue}
         onAnswer={onAnswer}
         onSkip={onSkip}
+        market={market}
+        area={area}
       />
     </div>
   );
@@ -98,13 +113,19 @@ function Widget({
   initialValue,
   onAnswer,
   onSkip,
+  market,
+  area,
 }: {
   step: Step;
   initialValue?: FieldValue;
-  onAnswer: (value: FieldValue) => void;
+  onAnswer: (value: FieldValue, extra?: Fields) => void;
   onSkip: () => void;
+  market: MarketId;
+  area?: string | null;
 }) {
   switch (step.widget) {
+    case "place":
+      return <PlaceStep step={step} market={market} area={area} onAnswer={onAnswer} />;
     case "quick":
       // One tap answers, so there is no state to seed — the parent just picks again.
       return <QuickReplies step={step} onAnswer={onAnswer} />;

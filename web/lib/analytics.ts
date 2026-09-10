@@ -27,6 +27,21 @@ export type SeedEvent =
   | "seed_question_skipped"
   | "seed_other_submitted"
   | "seed_screen_advanced"
+  /* Its own event rather than a prop on the one above, because the question it
+     answers is whether auto-advance is *right*: a screen that advances itself
+     and is then reached again by Back is a parent correcting it, and that pair
+     is only countable if the two kinds of advance are two events. */
+  | "seed_screen_auto_advanced"
+  /* The fork (10 Sep). Two events rather than one with a boolean, because the
+     question they answer is "how many parents take the fast path" — and a
+     funnel steps on event names. */
+  | "seed_detail_opened"
+  | "seed_detail_skipped"
+  /* The per-recommendation name toggle (10 Sep). Carries the kind and the
+     direction and nothing else — never the name, never the record (invariant
+     7). What it answers is whether the control is used at all, which is what
+     decides if the standing question is worth asking again. */
+  | "seed_card_name_toggled"
   | "seed_screen_back"
   | "seed_profile_review_viewed"
   | "seed_profile_saved"

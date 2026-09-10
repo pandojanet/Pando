@@ -42,6 +42,7 @@
     "test:feedback": "tsx scripts/test-seed-feedback.mts",
     "test:starters": "node --experimental-strip-types --no-warnings scripts/test-starters.mts",
     "test:person-search": "node --experimental-strip-types --no-warnings scripts/test-person-search.mts",
+    "test:rewards": "node --experimental-strip-types --no-warnings scripts/test-rewards.mts",
     "test:payments": "node --experimental-strip-types --no-warnings scripts/test-payments.mts",
     "test:payments-live": "node --env-file=.env.local scripts/test-payments-live.mjs",
     "test:security": "node --experimental-strip-types --no-warnings scripts/test-security.mts",

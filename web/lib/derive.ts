@@ -5,7 +5,7 @@ import {
   childrenFor,
   profileCompleteness,
   questionById,
-  SCREENS,
+  ALL_SCREENS,
 } from "./questions";
 import { EXPECTING } from "./types";
 import type {
@@ -84,7 +84,13 @@ export function childrenFromAges(
   months: Record<string, number> = {},
 ): ChildRecord[] {
   const year = capturedAt.getFullYear();
-  return ages.map((age) => {
+  /**
+   * ⚠ **One row per entry, and entries may repeat** (10 Sep). `cleanAges` stopped
+   * de-duplicating, so twins and two children born in one calendar year now
+   * produce the two `children` rows the client asked for — this map was always
+   * 1:1 and simply never received a repeat.
+   */
+  return ages.map((age, index) => {
     if (age === EXPECTING) {
       return {
         birth_year: null,
@@ -93,7 +99,10 @@ export function childrenFromAges(
         due_year_precision: "assumed_capture_year" as const,
       };
     }
-    const month = months[String(age)];
+    /* Keyed by the child's **index**, not by their age: an age names a year and,
+       since duplicates are allowed, never a child — two siblings born in 2019
+       would otherwise have shared one birth month between them. */
+    const month = months[String(index)];
     return {
       birth_year: year - age,
       /* Bounded here as well as in the CHECK: this is derived on the server from
@@ -140,15 +149,20 @@ export function deriveAffinities(session: DerivationInput): AffinityRow[] {
        * — the same conversion `childrenFromAges` makes, and for the same reason:
        * an age stops being true in a year, a birth year does not.
        */
-      const ages = childrenFor(q, answers, value);
+      /* ⚠ **Indexes into `child_ages`**, not ages (10 Sep) — so the birth year is
+         looked up rather than subtracted. An index naming no child (a session
+         from an older build) resolves to nothing and is dropped, which is the
+         same refusal `cleanAges` makes one layer up. */
+      const owners = childrenFor(q, answers, value);
       rows.push({
         affinity_type: q.affinity.type,
         affinity_value: value,
         score_weight: q.affinity.weight,
         child_birth_years:
-          ages.length > 0
-            ? ages
-                .filter((age) => age !== EXPECTING)
+          owners.length > 0
+            ? owners
+                .map((index) => answers.child_ages[index])
+                .filter((age) => Number.isInteger(age) && age !== EXPECTING)
                 .map((age) => capturedAt.getFullYear() - age)
             : null,
       });
@@ -264,7 +278,12 @@ export function deriveLifeRelevance(session: DerivationInput): RelevanceRow[] {
  */
 export function derivePendingOptions(session: DerivationInput): PendingOptionRow[] {
   const rows: PendingOptionRow[] = [];
-  for (const screen of SCREENS) {
+  /* ⚠ ALL_SCREENS (10 Sep). This reads `answers.other`, which is a *stored*
+     answer, so it has to know every question that could have produced one —
+     against SCREENS a parent's typed answer to a question now behind the fork
+     would never reach `/admin/options`, and invariant 9 would park it under a
+     name nothing ever offers to promote. */
+  for (const screen of ALL_SCREENS) {
     for (const question of screen.questions) {
       const entries = session.answers.other[question.id] ?? [];
       for (const submitted_value of entries) {
@@ -300,7 +319,14 @@ export type GraphTarget =
   | { kind: "relevance"; dimension: RelevanceDimension };
 
 export function graphTargetForCategory(category: string): GraphTarget | null {
-  for (const screen of SCREENS) {
+  /* ⚠ ALL_SCREENS, for the sharper version of the same reason: this runs when
+     an **admin promotes** a typed answer, and the 12 Aug rule is that
+     promotion repairs the graph of whoever typed it. Against SCREENS a
+     promoted answer to an ask-later question would resolve to null and write
+     no edge at all — the promotion would look like it worked and the parent's
+     hole would stay open, which is precisely the state promotion exists to
+     end. */
+  for (const screen of ALL_SCREENS) {
     for (const question of screen.questions) {
       const key =
         question.source.type === "market" ? question.source.category : question.id;
@@ -391,17 +417,27 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
           : 5,
     allowance_mode: answers.allowance === "as_relevant" ? "as_relevant" : "fixed",
     /**
-     * P13 — the single control over how this parent is named in an answer.
+     * P13 — how this parent is named in an answer by default.
      *
-     * Narrowed here rather than passed through: this is a raw tap id, and an
-     * unrecognised one must fail closed to anonymous. Naming a parent because a
-     * stale option slipped through is the one mistake this field can make.
+     * ⚠⚠ **This mapping did not exist, and the field has been null for every
+     * parent ever stored.** The check read `first_name_safe`/`anonymous_verified`
+     * — the **column's** enum — against `answers.attribution`, which holds the
+     * **question's** ids: `name_private`, `first_name`, `ask_each_time`. The two
+     * vocabularies have never overlapped, so the condition was false for every
+     * possible answer and every parent derived `null`. Nothing failed: null is a
+     * legal value and the honest reading of it is "not set", so a screen the
+     * client redesigned twice was writing nothing at all.
+     *
+     * Found while defaulting the answer to private (10 Sep) — the default could
+     * not have worked either, because nothing downstream would have seen it.
+     *
+     * ⚠ **`ask_each_time` maps to anonymous**, and that is the whole point of
+     * it: it means *ask me*, so until somebody has been asked the answer is no.
+     * Everything unrecognised lands there too, which is the fail-closed rule the
+     * old comment described and the old code could not deliver.
      */
     attribution:
-      answers.attribution === "first_name_safe" ||
-      answers.attribution === "anonymous_verified"
-        ? answers.attribution
-        : null,
+      answers.attribution === "first_name" ? "first_name_safe" : "anonymous_verified",
     /** Disclosed, not asked, so it starts true; texting PRIVACY turns it off. */
     aggregate_display: true,
     /** What this parent is the person to ask about (users.topic_preferences). */

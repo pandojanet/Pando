@@ -460,10 +460,37 @@ export interface Screen {
     note?: string;
     link?: { href: string; label: string };
   };
+  /**
+   * A screen whose dock offers two ways on rather than one.
+   *
+   * Exactly one screen has it — the fork the client asked for on 10 Sep:
+   * *"After location and children, show Continue and Add optional details.
+   * Continue skips all optional details."* It is a fork rather than a skippable
+   * question because the two answers lead to different **flows**, and a Skip
+   * link under a Continue button says nothing about what is being skipped or
+   * how much of it there is.
+   *
+   * `detail` sets `wants_detail` true and walks the optional screens; `skip`
+   * sets it false and goes straight on. Neither is a refusal Pando records
+   * against the parent — `wants_detail` gates rendering and is not derived into
+   * anything.
+   */
+  fork?: { continueLabel: string; detailLabel: string };
   questions: Question[];
 }
 
 export interface ProfileAnswers {
+  /**
+   * Whether the parent chose to answer the optional detail questions (10 Sep).
+   *
+   * Three states and all three are real: `null` is "not asked yet", `true` is
+   * the parent tapping **Add optional details**, `false` is them tapping
+   * **Continue**. It gates which screens render and is deliberately derived
+   * into nothing — a parent who skipped the detail has not told Pando anything
+   * about themselves, and recording "declined" would turn a shortcut into a
+   * fact about them.
+   */
+  wants_detail: boolean | null;
   neighborhood: string | null;
   /**
    * The raw taps. The parent sees **birth years** (P4); the stored value is the
@@ -472,8 +499,29 @@ export interface ProfileAnswers {
    */
   child_ages: number[];
   schools: string[];
-  /** P5 — school option id → current | former | not_yet | homeschool. */
+  /**
+   * P5 — school option id → `current` | `former`.
+   *
+   * ⚠ `not_yet` and `homeschool` left on 10 Sep: they are facts about a child,
+   * not about a school, and they live in `child_school_status` below.
+   */
   school_status: Record<string, string>;
+  /**
+   * A child's index → `not_yet` | `homeschool`, for the children who are at no
+   * school at all (10 Sep: *"Store None yet and Homeschool as child statuses,
+   * not schools."*).
+   *
+   * Unset is the third and commonest state: that child attends one of the
+   * schools named in `schools`. It is not an option, because "attends a school"
+   * is answered by naming the school.
+   *
+   * ⚠ **Recorded and never derived into an edge.** "Homeschool" as an affinity
+   * value would match every homeschooling family to every other at the graph's
+   * heaviest weight — the 9 Sep refusal-chip bug — so this stays in
+   * `raw_answers`, where it answers "why has this child no school" for an admin
+   * and for nobody else.
+   */
+  child_school_status: Record<string, string>;
   /**
    * Whose it is. Question id → option id → the **ages** tapped in P4 (the same
    * numbers as `child_ages`; a birth year is what the parent sees and what gets
@@ -765,4 +813,13 @@ export interface InviteResult {
    * parent's yes turns it into an affinity edge.
    */
   group_option_value?: string | null;
+  /**
+   * The first name of the parent whose personal link this is, when it is one.
+   *
+   * The join screen shows "{first name} invited you" on it and shows nothing
+   * at all otherwise — which is the honest reading of the client's rule,
+   * because a group link resolves perfectly well and has nobody behind it to
+   * name. Only `invites.kind = 'personal'` carries a referrer.
+   */
+  inviter_first_name?: string | null;
 }

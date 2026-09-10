@@ -83,30 +83,11 @@ function normaliseSmsConsent(
   };
 }
 
-/**
- * The recurring automated SMS/RCS opt-in (2 Sep).
- *
- * `opted_in` only, and that is the shape rather than an oversight: the checkbox
- * gates the participation screen, so there is no way past it having declined.
- * Anything else — including a `declined` a hand-rolled request might send — is
- * dropped rather than stored, because a `declined` row here would assert that
- * Pando asked and was refused, which never happened.
- */
-function normaliseRecurringConsent(
-  value: unknown,
-): { status: string; text_version: string; source?: string } | null {
-  if (typeof value !== "object" || value === null) return null;
-  const record = value as Record<string, unknown>;
-  if (record.status !== "opted_in") return null;
-  return {
-    status: "opted_in",
-    text_version:
-      typeof record.text_version === "string" && record.text_version !== ""
-        ? record.text_version
-        : RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
-    source: typeof record.source === "string" ? record.source : undefined,
-  };
-}
+/* ⚠ `normaliseRecurringConsent` stood here until 10 Sep, with the consent it
+   validated. Deleted rather than left unused: a validator with no caller is
+   how a removed consent comes back through a body nobody meant to accept.
+   The field is still tolerated on the payload and dropped — see the call
+   site below. */
 
 /**
  * The listening-ear opt-in. No legacy shape to accommodate — this consent
@@ -289,17 +270,24 @@ export async function POST(request: Request) {
    * The sanitised answers, and the only thing the derivation below reads.
    *
    * `EMPTY_ANSWERS` is the base rather than a convenience: the derivation walks
-   * every question in `SCREENS`, so a key the client simply omitted has to be an
+   * every question this questionnaire defines, so a key the client simply
+   * omitted has to be an
    * empty list and not `undefined`. Every value spread over it here is
    * server-cleaned, so this is not the "stored session overwrites a default with
    * null" trap that `lib/storage.ts` exists to prevent — nothing here can be null.
    */
   /**
-   * "Whose is it" — question id → option id → the ages this answer belongs to.
+   * "Whose is it" — question id → option id → the **children** this answer
+   * belongs to, as indexes into `child_ages`.
    *
-   * Cleaned against `childAges` rather than trusted: an age nobody tapped would
-   * put a child in the graph who does not exist, and the whole point of this
-   * field is that a "same school" edge means two children of a similar age.
+   * ⚠ **Indexes since 10 Sep, ages before it.** Duplicate birth years are now
+   * allowed (the client asked for one Child record per child), so an age names
+   * a year and never a child: keyed by age, two siblings born in 2019 were one
+   * owner and a school could not be given to just one of them.
+   *
+   * Cleaned against the *positions* that exist rather than trusted, for the
+   * reason the old comment gave about ages: an index naming no child would put
+   * a child in the graph who does not exist.
    */
   const childOf: Record<string, Record<string, number[]>> = {};
   for (const [questionId, perOption] of Object.entries(
@@ -314,7 +302,13 @@ export async function POST(request: Request) {
       const option = cleanId(optionId);
       if (!option || !Array.isArray(ages)) continue;
       const kept = ages
-        .filter((a): a is number => typeof a === "number" && childAges.includes(a))
+        .filter(
+          (a): a is number =>
+            typeof a === "number" &&
+            Number.isInteger(a) &&
+            a >= 0 &&
+            a < childAges.length,
+        )
         .slice(0, 12);
       if (kept.length > 0) cleaned[option] = kept;
     }
@@ -322,12 +316,13 @@ export async function POST(request: Request) {
   }
 
   /**
-   * Which month each child was born in (3 Sep), keyed by the age id.
+   * Which month each child was born in (3 Sep), keyed by the child's **index**
+   * (10 Sep — see `child_of` above for why an age can no longer identify one).
    *
-   * Bounded to 1–12 and to an age the parent actually tapped — the same two
-   * rules `child_of` above follows, and for the same reason: this is the
-   * record of what was chosen, so a month against a child who does not exist
-   * would put a fact in `raw_answers` that no parent stated.
+   * Bounded to 1–12 and to a child who exists — the same two rules `child_of`
+   * follows, and for the same reason: this is the record of what was chosen, so
+   * a month against a child who does not exist would put a fact in
+   * `raw_answers` that no parent stated.
    */
   const capturedAt =
     typeof raw.profile_captured_at === "string" &&
@@ -336,13 +331,29 @@ export async function POST(request: Request) {
       : new Date();
 
   const childMonths: Record<string, number> = {};
-  for (const [ageId, month] of Object.entries(
+  for (const [childId, month] of Object.entries(
     (answersIn?.child_months ?? {}) as Record<string, unknown>,
   )) {
     if (typeof month !== "number" || !Number.isInteger(month)) continue;
     if (month < 1 || month > 12) continue;
-    if (!childAges.includes(Number(ageId))) continue;
-    childMonths[String(Number(ageId))] = month;
+    const index = Number(childId);
+    if (!Number.isInteger(index) || index < 0 || index >= childAges.length) continue;
+    childMonths[String(index)] = month;
+  }
+
+  /**
+   * Why a child is at no school (10 Sep). Bounded to the two answers the
+   * question offers and to a child who exists — the same two rules `child_of`
+   * and `child_months` follow, and for the same reason.
+   */
+  const childSchoolStatus: Record<string, string> = {};
+  for (const [childId, status] of Object.entries(
+    (answersIn?.child_school_status ?? {}) as Record<string, unknown>,
+  )) {
+    if (status !== "not_yet" && status !== "homeschool") continue;
+    const index = Number(childId);
+    if (!Number.isInteger(index) || index < 0 || index >= childAges.length) continue;
+    childSchoolStatus[String(index)] = status;
   }
 
   const answers = {
@@ -350,6 +361,7 @@ export async function POST(request: Request) {
     neighborhood,
     child_ages: childAges,
     child_months: childMonths,
+    child_school_status: childSchoolStatus,
     child_of: childOf as ProfileAnswers["child_of"],
     allowance: cleanId(answersIn?.allowance),
     attribution: cleanId(answersIn?.attribution),
@@ -413,7 +425,14 @@ export async function POST(request: Request) {
     phone_verified_at: gate.verified_at,
     sms_consent: normaliseSmsConsent(raw.sms_consent),
     listening_ear_consent: normaliseListeningEarConsent(raw.listening_ear_consent),
-    recurring_messages_consent: normaliseRecurringConsent(raw.recurring_messages_consent),
+    /* ⚠ **Read and dropped since 10 Sep**, deliberately rather than removed
+       from the payload type: the client folded this consent into the single
+       one on /join, so nothing sends it any more — but a session that started
+       on the older build still can, and a body that suddenly fails validation
+       mid-flow is the dead-end the 12 Aug soft-gate rule exists to prevent.
+       What was removed is the *screen*, not the tolerance. See
+       `SMS_CONSENT_TEXT`. */
+    recurring_messages_consent: null,
     wants_founding: raw.wants_founding !== false,
     neighborhood,
     /**
@@ -551,7 +570,6 @@ export async function POST(request: Request) {
     phone_verified: payload.phone_verified,
     sms_consent: payload.sms_consent?.status ?? "none",
     listening_ear_consent: payload.listening_ear_consent?.status ?? "none",
-    recurring_messages_consent: payload.recurring_messages_consent?.status ?? "none",
     wants_founding: payload.wants_founding,
     children: payload.children.length,
     allowance: payload.monthly_contact_allowance,

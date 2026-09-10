@@ -434,8 +434,8 @@ function FollowUpCard({
         </Button>
       </div>
       <p className="mt-2.5 text-center text-[12.5px] text-muted sm:text-left">
-        Separate from paid Blasts and from being a reference — those are their own
-        questions, later.
+        Separate from a paid Network Check and from being a reference — those are
+        their own questions, later.
       </p>
     </Panel>
   );

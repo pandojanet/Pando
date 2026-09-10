@@ -178,6 +178,31 @@ export interface AnswerCandidate {
     tip?: string | null;
   };
   /**
+   * The contributor's first name, where they turned it on for this one
+   * recommendation — the client's *"Janet recommends this"* (10 Sep).
+   *
+   * ## It appears in exactly one place per record, and never twice
+   *
+   * On the **quote** when there is one, because that is the sentence the name
+   * is actually attributing: *"Janet said: …"*. Otherwise on the **evidence
+   * sentence**, and only where this parent is the only firsthand one — naming
+   * one of three in a sentence whose whole job is to say there are three would
+   * trade the strongest claim Pando makes for a first name.
+   *
+   * ⚠ **A record with several contributors and no quote therefore shows no
+   * name**, even though somebody granted permission. That is the honest
+   * outcome: a permission is not a promise of appearance, exactly as a
+   * caregiver's consent is not (invariant 1). The card says "can see", not
+   * "will see", for this reason.
+   *
+   * ⚠ **It is never made GSM-7.** Every other unregistered string on this path
+   * is (a public finding's name, a price label), and a person's name is the one
+   * that must not be: "Zoë" rewritten to "Zoe" is altering somebody's name to
+   * save a segment. An accent moves the whole message to UCS-2 and roughly
+   * doubles its cost, `sendSms` already logs that, and the trade is deliberate.
+   */
+  named_by?: string | null;
+  /**
    * When a parent last confirmed it, so the evidence can be said in prose.
    *
    * The same date `lastConfirmedLabel` renders; carried separately because the
@@ -520,14 +545,20 @@ function extrasOf(labels: readonly string[]): string[] {
  * ⚠ And the interpunct in her own example (`3 parents · confirmed`) is outside
  * GSM-7 and would halve every message's budget, so the separator is a comma.
  */
-function evidenceSentence(candidate: AnswerCandidate): string {
+function evidenceSentence(candidate: AnswerCandidate, named: string | null): string {
   /* Verbatim, from the labels 5.6 computed — never a local copy of approved
      copy, which is the duplication invariant 3 exists to prevent. */
   if (candidate.trust.public_only) return `${candidate.trust.labels.join(". ")}.`;
 
   const n = candidate.firsthand_count;
   const who =
-    n <= 0
+    /* The client's own sentence, where it is true (10 Sep): one parent, and
+       that parent turned their name on for this recommendation. `named` is
+       already null wherever the caller is putting the name on a quote instead,
+       so the two can never both fire. */
+    named && n === 1
+      ? `${named} has used`
+      : n <= 0
       ? "A local parent has shared"
       : n === 1
         ? "One parent near you has used"
@@ -585,7 +616,18 @@ function monthOf(at: string): string {
  * a worse failure than sending one line fewer.
  */
 function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): string {
-  const parts = [evidenceSentence(candidate)];
+  const great = clean(candidate.notes?.great);
+  /**
+   * One name per record, and the quote wins it (10 Sep).
+   *
+   * The name and the quote come from the same contribution by construction —
+   * the SQL orders both the same way — so attributing the sentence is always
+   * truthful. When there is no sentence the name has nowhere better to go than
+   * the evidence, and `evidenceSentence` takes it only where it can be said
+   * without dropping a count.
+   */
+  const named = clean(candidate.named_by);
+  const parts = [evidenceSentence(candidate, great ? null : named)];
 
   /* Who it suits, before what one parent thought of it: a reader deciding
      between two classes is deciding whether it fits their child, and that
@@ -593,8 +635,7 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
   const whoFor = clean(candidate.notes?.who_for);
   if (whoFor) parts.push(`Best for: ${lowerFirst(whoFor)}.`);
 
-  const great = clean(candidate.notes?.great);
-  if (great) parts.push(`One said: "${great}"`);
+  if (great) parts.push(`${named ?? "One"} said: "${great}"`);
 
   const caveat = clean(candidate.notes?.caveat);
   if (caveat) parts.push(`Heads up: ${caveat}`);

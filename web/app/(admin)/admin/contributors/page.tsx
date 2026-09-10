@@ -282,6 +282,11 @@ export default function ContributorsPage() {
                   <Td>
                     {row.reward_status === "eligible" ? (
                       <Badge tone="green">Earned</Badge>
+                    ) : row.reward_status === "missed_deadline" ? (
+                      /* Everything done, and done after Oct 31. Its own badge
+                         rather than "In review", which would put them in a
+                         queue nobody can clear. */
+                      <Badge tone="muted">After the deadline</Badge>
                     ) : row.reward_status === "started" ? (
                       <Badge tone="gold">In review</Badge>
                     ) : (

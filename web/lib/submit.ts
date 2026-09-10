@@ -106,6 +106,10 @@ export async function flushSession(
       submission: {
         id: card.id,
         kind: card.kind,
+        /* Carried here too, or a card held until the code is confirmed would
+           lose the toggle at exactly the moment it finally reaches the
+           database — which is every card on the founding path. */
+        show_name: card.show_name === true,
         fields: card.fields as Record<string, unknown>,
         created_at: card.created_at,
       },

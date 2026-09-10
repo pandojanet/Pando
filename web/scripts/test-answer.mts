@@ -688,5 +688,57 @@ ok(
   );
 }
 
+console.log("\n=== 10 Sep: one name per record, and only where it was granted ===");
+{
+  /**
+   * The client's per-recommendation toggle, at the end of its chain.
+   *
+   * `named_by` arrives already meaning *this parent said yes for this record*
+   * — the SQL is where the permission and the flag are read, and it hands over
+   * the lead contributor's name or null. What is checked here is the only
+   * thing the composer decides: **where** the name goes, and that it never
+   * goes in two places at once.
+   */
+  const named = (over: Partial<AnswerCandidate> = {}) =>
+    parent({ named_by: "Janet", firsthand_count: 1, ...over });
+
+  ok(
+    "with no name granted, the evidence sentence counts parents as it always did",
+    compose([parent({ firsthand_count: 1 })]).text.includes("One parent near you has used"),
+  );
+  ok(
+    "a granted name replaces the count when they are the only parent",
+    compose([named()]).text.includes("Janet has used Toddler Tunes"),
+    compose([named()]).text,
+  );
+  ok(
+    "and it attributes their own sentence when there is one",
+    compose([named({ notes: { great: "The water is genuinely warm" } })]).text.includes(
+      'Janet said: "The water is genuinely warm"',
+    ),
+    compose([named({ notes: { great: "The water is genuinely warm" } })]).text,
+  );
+  /* The rule that stops the answer reading like a testimonial: one record, one
+     name, and the quote wins it. */
+  const both = compose([named({ notes: { great: "The water is genuinely warm" } })]).text;
+  ok(
+    "never in both places on one record",
+    both.split("Janet").length - 1 === 1,
+    both,
+  );
+  ok(
+    "and never in place of a count — three parents is the stronger claim",
+    compose([named({ firsthand_count: 3 })]).text.includes("3 parents near you have used") &&
+      !compose([named({ firsthand_count: 3 })]).text.includes("Janet"),
+    "a permission is not a promise of appearance; the card says 'can', not 'will'",
+  );
+  ok(
+    "an ungranted record with a quote still reads 'One said'",
+    compose([
+      parent({ firsthand_count: 1, notes: { great: "Small groups" } }),
+    ]).text.includes('One said: "Small groups"'),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

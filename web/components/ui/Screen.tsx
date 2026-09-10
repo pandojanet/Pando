@@ -12,8 +12,14 @@ import { BrandPanel } from "./BrandPanel";
  * widens to 40rem and the window scrolls normally — no simulated device, no
  * nested scrollbar, no 27rem ribbon to read through.
  *
- * lg and up: the moss panel becomes a full-height sidebar carrying context for
- * the current step (BrandPanel), so the app reads as a two-pane tool.
+ * lg and up: a **one-line moss bar** above the app column (`BrandPanel`), and the
+ * column then has the whole window.
+ *
+ * ⚠ **That bar used to be a 21–34rem full-height rail, and collapsing it is the
+ * client's instruction of 10 Sep** — *"Mobile is the primary experience and the
+ * desktop panel currently consumes space… Collapse the desktop panel to a
+ * one-line header."* See `BrandPanel` for what went with it. The phone layout is
+ * untouched by the change, because that rail never rendered below `lg`.
  */
 export function Screen({
   children,
@@ -39,12 +45,15 @@ export function Screen({
      * including the sheet reached from inside those screens, uses
      * `usePresence` + CSS.
      */
-    <div className="min-h-dvh bg-paper lg:flex lg:items-stretch">
+    /* A column now, not a row: the brand bar stacks above the app rather than
+       beside it. `flex-1` on the app column is what stops the two `min-h-dvh`
+       boxes adding up to more than a window once a bar sits on top of it. */
+    <div className="flex min-h-dvh flex-col bg-paper">
       <SkipLink />
       <BrandPanel />
       <div
         className={cn(
-          "flex min-h-dvh flex-col bg-paper lg:min-w-0 lg:flex-1",
+          "flex min-h-dvh flex-1 flex-col bg-paper lg:min-h-0",
           className,
         )}
       >

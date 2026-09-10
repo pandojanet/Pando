@@ -91,7 +91,10 @@ export const AFFILIATION_CONSENT_CAVEAT =
  * Bump the version if a single word changes, and never edit an old version in
  * place: stored records must stay resolvable to the text that was actually shown.
  */
-export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-08-01";
+/* ⚠ Bumped on 10 Sep, when the two SMS consents became one — see the text
+   below. Never edit a version in place: a stored row must keep resolving to
+   the words that were actually on screen. */
+export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-09-10";
 
 /**
  * 5.9 — consent given by texting first, where no wording was shown at all.
@@ -108,8 +111,44 @@ export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-08-01";
  */
 export const INBOUND_CONSENT_VERSION = "inbound-text-2026-08";
 
+/**
+ * ## One checkbox, covering verification and recurring messages — the client, 10 Sep
+ *
+ * *"Two SMS consent requests look contradictory. Use one counsel-approved
+ * checkbox on Join covering verification and recurring Pando messages. On the
+ * participation screen, show frequency only. Do not show a second checkbox."*
+ *
+ * ⚠⚠ **This is registered A2P copy and changing it is a compliance event, not
+ * a copy edit.** The campaign's opt-in description has to carry this wording
+ * verbatim (§3.7: what is registered and what is shown must match), so **the
+ * new text must be re-registered and signed off by counsel before the first
+ * real contributor**. It is on the switch-off list with the `pando` starter
+ * password and `SEED_VERIFY_DEV_CODES`.
+ *
+ * ⚠ **Nothing here is newly authored.** Every clause is lifted from one of the
+ * two paragraphs she had already approved — the registered `sms` text and the
+ * 2 Sep recurring text — because "counsel-approved" is precisely the property
+ * an invented sentence would not have. What the merge adds is three words of
+ * hers from the second paragraph ("recurring automated", "SMS and RCS") and
+ * one clause naming the thing she asked it to cover ("a verification code").
+ *
+ * ## Why merging was the only way to honour it
+ *
+ * The two consents were not duplicates: `sms` authorised texting the number at
+ * all and is what sends the code, and `sms_recurring` (2 Sep) named recurring
+ * automated messaging and RCS, which the carriers want named. A parent met them
+ * eighteen screens apart and read them as the product asking twice for the same
+ * thing — which is what she reported. Dropping the second one and leaving the
+ * first would have quietly stopped naming RCS; dropping the first is not
+ * possible. So one text says both, once, where the number is given.
+ *
+ * ⚠ **`sms_recurring` is no longer written**, and the scope stays in the CHECK
+ * for the rows that already carry it — a stored consent has to keep resolving
+ * to the words that were on screen when it was given, which is the whole reason
+ * versions are never edited in place.
+ */
 export const SMS_CONSENT_TEXT =
-  "I agree to receive text messages from Pando Systems, Inc. at the number provided — including answers to my questions, occasional requests from the parent network, and account notifications. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
+  "I agree to receive recurring automated text messages (SMS and RCS) from Pando Systems, Inc. at the number provided — including a verification code, answers to my questions, occasional requests from the parent network, and account notifications. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 /**
  * The same registered wording, split for display only — and **derived** from it, so

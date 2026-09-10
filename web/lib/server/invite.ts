@@ -79,8 +79,16 @@ async function liveInvites(): Promise<{
 
   const result = await withDb(async (db) => {
     const rows = (await db.execute(
-      sql`select id, code, market_id, label, group_option_value
-            from invites where active`,
+      /* The referrer's first name comes back with the row rather than in a
+         second query: this is read on the first screen a parent ever sees, so
+         the whole point of the 60s cache is that it is one round trip. The join
+         is left, because all but the personal links have no referrer. */
+      sql`select i.id, i.code, i.market_id, i.label, i.group_option_value,
+                 case when i.kind = 'personal' then p.first_name end
+                   as inviter_first_name
+            from invites i
+            left join people p on p.id = i.referrer_person_id
+           where i.active`,
     )) as unknown as Array<Record<string, unknown>>;
     return rows;
   });
@@ -102,6 +110,10 @@ async function liveInvites(): Promise<{
       group_option_value:
         typeof row.group_option_value === "string"
           ? row.group_option_value
+          : null,
+      inviter_first_name:
+        typeof row.inviter_first_name === "string" && row.inviter_first_name !== ""
+          ? row.inviter_first_name
           : null,
     });
   }
@@ -134,6 +146,7 @@ export async function validateInviteCode(
       invite_id: invite.id,
       group_label: invite.label,
       group_option_value: invite.group_option_value,
+      inviter_first_name: invite.inviter_first_name,
     };
   }
 

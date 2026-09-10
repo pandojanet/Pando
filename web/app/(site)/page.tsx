@@ -105,11 +105,11 @@ const FAQ = [
   },
   {
     q: "What does it cost?",
-    a: "Answers from knowledge Pando already has are free — that’s the give-to-get: everyone who opts in to occasionally help another parent (at most three community questions a month, always skippable) gets access to what the network already knows. Asking Pando is always free. A Network Ask is different: Pando goes out and asks around — a small, carefully matched group of real local parents, on your behalf. That’s a paid request, your first one is on us — and if the network can’t get you a useful answer, you’re not charged. You’re paying for the right parents, the right fit, and a fresh answer — not for access to the community’s knowledge, and not for a bigger audience.",
+    a: "Answers from knowledge Pando already has are free — that’s the give-to-get: everyone who opts in to occasionally help another parent (at most five relevant community questions a month, always skippable) gets access to what the network already knows. Asking Pando is always free. A Network Check is different: Pando goes out and asks around — a small, carefully matched group of real local parents, on your behalf. That’s a paid request, your first one is on us — and if the network can’t get you a useful answer, you’re not charged. You’re paying for the right parents, the right fit, and a fresh answer — not for access to the community’s knowledge, and not for a bigger audience.",
   },
   {
     q: "Will I get spammed if I join as a contributor?",
-    a: "No. You set a monthly limit on how often the network can reach you (default: five), there’s a minimum 48-hour gap between requests, and you can change your settings anytime by texting BLAST SETTINGS. No leaderboards, no streaks, no guilt.",
+    a: "No. You set a monthly limit on how often the network can reach you (default: five), there’s a minimum 48-hour gap between requests, and you can change your settings anytime by texting SETTINGS. No leaderboards, no streaks, no guilt.",
   },
   {
     q: "Where does Pando work?",
@@ -291,7 +291,7 @@ export default function HomePage() {
                   },
                   {
                     lead: "Contribute, and it comes back",
-                    rest: "— founding contributions are rewarded, and inviting parents who join in earns you free Network Asks for when your neighborhood goes live.",
+                    rest: "— founding contributions are rewarded, and inviting parents who join in earns you free Network Checks for when your neighborhood goes live.",
                   },
                   {
                     lead: "Founding Status, permanently",

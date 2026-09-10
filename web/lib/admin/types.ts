@@ -323,14 +323,19 @@ export interface ContributorRow {
   /** Approved caregiver nominations that are not on hold. */
   caregiver_approved: number;
   /**
-   * Whether this parent has earned the client's seed reward. One qualifying
-   * contribution *or* one approved caregiver is the whole bar — the call set it at
-   * "one activity or one caregiver", against Founding's two. Kept as its own field
-   * so raising one threshold can never silently raise the other.
+   * Whether this parent has earned the launch reward — **four conditions since
+   * 10 Sep**, computed by `lib/rewards.ts` and never here: phone verified, both
+   * required questions answered, one recommendation saved, and a reason in it.
+   * Kept as its own field so raising one threshold can never silently raise
+   * Founding's, which is still two approved contributions.
    *
-   * `none` is the case the client asked to be able to see: arrived, left nothing.
+   * `none` is the case the client asked to be able to see: arrived, left
+   * nothing. `missed_deadline` is new with the deadline — a parent who did
+   * everything and did it late is a different conversation from one who did
+   * not finish, and collapsing them into `started` would hide the only case
+   * where the answer is "yes, but the offer had closed".
    */
-  reward_status: "none" | "started" | "eligible";
+  reward_status: "none" | "started" | "eligible" | "missed_deadline";
   founding_status: FoundingStatus;
   follow_up_opt_in: boolean | null;
   /** False = the anonymous path: contributions welcome, no founding status. */

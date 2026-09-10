@@ -26,6 +26,7 @@ import type {
   MatchingResult,
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
+import { rewardStatus } from "@/lib/rewards";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -328,6 +329,15 @@ async function contributors(db: Db) {
     sql`
       select p.id, p.first_name, p.last_name, p.phone, p.neighborhood,
              p.founding, p.wants_founding, p.is_test, p.created_at,
+             -- The three facts her 10 Sep completion trigger adds to the one
+             -- this query already had. Each is a scalar sub-select rather than
+             -- a join, on the 10 Aug rule: against the pooler the cost is round
+             -- trips, and these ride on the statement that is already running.
+             p.phone_verified_at is not null                                     as phone_verified,
+             p.invite_id is not null                                             as has_invite,
+             (select max(length(btrim(sc.what_makes_it_great)))
+                from share_contributions sc
+               where sc.person_id = p.id and not sc.is_test)                     as longest_reason,
              coalesce(array_agg(c.birth_year) filter (where c.birth_year is not null), '{}') as birth_years,
              (select count(*) from submissions s where s.person_id = p.id)        as submissions,
              -- Joined, not sub-selected twice: founding_checklist runs two
@@ -362,17 +372,36 @@ async function contributors(db: Db) {
       qualifying_approved: qualifying,
       caregiver_approved: caregivers,
       /**
-       * "One activity or one caregiver" — the client's minimum, not Founding's
-       * two. `started` is the honest middle: they gave something, but nothing has
-       * been approved yet, so the answer to "do I pay this person" is *not yet*
-       * rather than no.
+       * ⚠⚠ **Four conditions since 10 Sep, and it used to be one.**
+       *
+       * Her completion trigger: *"Mark a founding contributor eligible only
+       * when all four are true: phone verified; both required questions
+       * answered; one real recommendation saved; and a reason included."* This
+       * said `eligible` on one approved contribution and nothing else — no
+       * phone check, no required questions, and nothing at all about a reason.
+       * On a guaranteed $10 payout that difference is money.
+       *
+       * The rule itself is `lib/rewards.ts`, imported rather than written here
+       * so the same arithmetic answers the admin and the suite. What this
+       * function supplies is the four facts, and `started` stays the honest
+       * middle: they have given something and the answer to *"do I pay this
+       * person"* is **not yet** rather than no.
+       *
+       * ⚠ `longest_reason` is the longest `what_makes_it_great` they have
+       * written on any non-test contribution, not the newest — a parent whose
+       * second card is thin has still met the condition with their first.
        */
-      reward_status:
-        qualifying >= 1 || caregivers >= 1
-          ? "eligible"
-          : submissions > 0
-            ? "started"
-            : "none",
+      reward_status: rewardStatus({
+        phone_verified: r.phone_verified === true,
+        neighborhood_answered: Boolean(r.neighborhood),
+        children_answered: ((r.birth_years as number[]) ?? []).length > 0,
+        recommendations: qualifying + caregivers,
+        /* A length rather than the text: the sentence itself is a parent's own
+           words and has no business travelling to a list view (invariant 7 is
+           about logs, and this is the same instinct one layer over). */
+        reason: "x".repeat(Number(r.longest_reason ?? 0)),
+        has_invite: r.has_invite === true,
+      }),
       founding_status: r.founding,
       follow_up_opt_in: r.follow_up === null ? null : r.follow_up === "opted_in",
       wants_founding: r.wants_founding,

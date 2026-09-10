@@ -120,6 +120,16 @@ export interface ShareCandidate {
    * same money and thought less of it.
    */
   worth_it: string | null;
+  /**
+   * The lead contributor's first name, and only where they turned it on for
+   * this recommendation (10 Sep). Null everywhere else, including the far
+   * commoner case of a parent who simply never touched the switch.
+   *
+   * ⚠ It belongs to whoever wrote `note_great`, when there is one — see the
+   * SQL. A name from any other contribution would attribute one parent's
+   * sentence to another, which is the one failure this field can produce.
+   */
+  named_by: string | null;
   /** A firsthand parent's own words, approved and unedited. See the SQL. */
   note_great: string | null;
   note_caveat: string | null;
@@ -319,6 +329,46 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
                      case when sc.firsthand then nullif(btrim(sc.tip_text), '') end
                      order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
         end)                                                            as note_tip,
+        /**
+         * The contributor's first name, when they turned it on for this one
+         * recommendation (10 Sep, drizzle/0038).
+         *
+         * ## It is the *lead* contributor's name, and that is the correctness rule
+         *
+         * The obvious version — "the top firsthand contributor who opted in" —
+         * misattributes. If A wrote the sentence above and never agreed to be
+         * named, and B agreed and wrote nothing, that query hands the composer
+         * B's name to put in front of A's words. So this orders by exactly what
+         * note_great orders by, with contributions that have a note first, and
+         * takes whoever that lands on. The name and the quote therefore always
+         * belong to the same person or there is no name.
+         *
+         * The empty string is a real value here and means *this contributor
+         * declined*, which is not the same as *there is no contributor* — the
+         * mapping below reads it back as null, and the distinction is what stops
+         * a declining lead being skipped over in favour of somebody else.
+         *
+         * Same named-person guard as the notes. A record a reviewer has flagged
+         * is one where nothing new gets attributed to anybody until they have
+         * looked.
+         *
+         * And no backtick appears anywhere in this comment: one inside a sql
+         * template closes it. That is now the seventh debugging round this file
+         * has cost, and the first paragraph above was written with two.
+         */
+        (case when exists (
+               select 1 from flags f
+                where f.subject_id = s.id
+                  and f.reason = 'possible_named_person'
+                  and f.status in ('open', 'escalated')
+             ) then null
+             else (array_agg(
+                     coalesce(case when sc.show_first_name
+                                   then nullif(btrim(p.first_name), '') end, '')
+                     order by (nullif(btrim(sc.what_makes_it_great), '') is null),
+                              sc.confidence desc nulls last, sc.created_at desc)
+                     filter (where sc.firsthand))[1]
+        end)                                                            as named_by,
         count(sc.id) filter (where sc.firsthand)                        as firsthand,
         count(sc.id) filter (where not sc.firsthand)                    as secondhand,
         count(sc.id) filter (where sc.firsthand
@@ -334,6 +384,10 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         min(sc.worth_it) filter (where sc.worth_it is not null)         as worth_it
       from shares s
       join share_contributions sc on sc.share_id = s.id
+      -- LEFT, because a contribution has no person on the anonymous path and an
+      -- inner join would drop the record from every answer rather than drop the
+      -- name from one line.
+      left join people p on p.id = sc.person_id
       where s.market_id = ${marketId}
         and not s.is_test
         -- s.kind is the share_kind enum, so the cast is required: comparing an
@@ -458,6 +512,10 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       worth_it: Number(r.worths) === 1 ? String(r.worth_it) : null,
       /* Already approved and already guarded in the SQL above. Verbatim: a
          parent's sentence is never edited before another parent reads it. */
+      /* The empty string is the SQL saying "the lead contributor declined",
+         which reads back as null here — the two are the same to every caller,
+         and only the query needed to tell them apart. */
+      named_by: r.named_by ? String(r.named_by) : null,
       note_great: r.note_great ? String(r.note_great) : null,
       note_caveat: r.note_caveat ? String(r.note_caveat) : null,
       note_who_for: r.note_who_for ? String(r.note_who_for) : null,

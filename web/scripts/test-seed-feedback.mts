@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { Option, ProfileAnswers, Question, QuestionId } from "../lib/types.ts";
 
 /**
@@ -26,9 +27,24 @@ const ok = (label: string, cond: boolean, detail = "") => {
   }
 };
 
-const screenById = (id: string) => q.SCREENS.find((s) => s.id === id);
+/**
+ * ⚠ **Both look in `ALL_SCREENS`, not in `SCREENS`** (10 Sep).
+ *
+ * Seven screens moved behind `ASK_LATER` when the flow was cut to eight, and
+ * every assertion in this file about their wording, their caps and their
+ * refusal chips is still worth keeping — the client's instruction was to ask
+ * them *later*, not that they were wrong. Against `SCREENS` this file crashed
+ * on the first of them (`questionById("logistics")` came back undefined and
+ * `maxSelectionsFor` read a property off it), which is a suite reporting a
+ * question as broken when it had only moved.
+ *
+ * What is asserted **about the flow** — how many screens a parent walks, which
+ * of them are visible — goes through `q.visibleScreens` and `q.SCREENS`, so
+ * nothing here can quietly start testing a screen nobody is shown.
+ */
+const screenById = (id: string) => q.ALL_SCREENS.find((s) => s.id === id);
 const questionById = (id: QuestionId): Question | undefined => {
-  for (const s of q.SCREENS) {
+  for (const s of q.ALL_SCREENS) {
     const found = s.questions.find((x) => x.id === id);
     if (found) return found;
   }
@@ -48,11 +64,17 @@ console.log("\n=== universal 1: one “Something else”, never two ===");
  * Both existed on all five of the questions she names — a chip storing an id
  * that means nothing, beside the field that actually captures the answer.
  */
+/**
+ * ⚠ **Four, not five, since 10 Sep** — *"Keep regular childcare; let's remove
+ * backup care, it's not necessary."* The backup question is asked on no screen
+ * now, so there is no chip on it to have removed twice. Its absence is
+ * asserted on its own below, which is the stronger claim: this list would have
+ * gone green for a question that had been deleted by accident.
+ */
 const FIVE: QuestionId[] = [
   "family_structure",
   "work_setup",
   "childcare_now",
-  "childcare_backup",
   "logistics",
 ];
 for (const id of FIVE) {
@@ -96,12 +118,30 @@ for (const id of FIVE) {
   const pnts = optionsOf(id).find((o) => o.id === "prefer_not_to_say");
   ok(`${id} — exclusive`, pnts?.exclusive === true, pnts ? "" : "no option at all");
 }
-const backup = optionsOf("childcare_backup").find((o) => o.id === "no_reliable_backup");
+/**
+ * ⚠ **Backup childcare is asked nowhere** (10 Sep): *"Keep regular childcare;
+ * let's remove backup care — it's not necessary."*
+ *
+ * Three claims, because removing a question badly is three different mistakes.
+ * It must be off every screen; its option list must **survive**, or a stored
+ * answer from a parent who filled it in last week renders as a raw slug on
+ * their own review screen; and `derive.ts` must still read it, or that parent
+ * silently loses the `childcare` relevance row they already earned.
+ */
 ok(
-  "“No reliable backup childcare” clears the page too",
-  backup?.exclusive === true,
-  "it is a statement that none of the others apply — item 11",
+  "the backup-childcare question is on no screen at all",
+  questionById("childcare_backup") === undefined,
+  "removed from the flow, not merely hidden",
 );
+ok(
+  "its options still resolve, so a stored answer is still words",
+  q.profileValueLabel("no_reliable_backup") === "No reliable backup childcare",
+  q.profileValueLabel("no_reliable_backup") ?? "renders as a raw slug",
+);
+/* The `exclusive` flag is deliberately no longer asserted: it governs what
+   happens when a chip is tapped, and there is no longer a screen to tap it on.
+   Asserting a property of a control nobody can reach is how a suite keeps
+   passing about a feature that has gone. */
 
 console.log("\n=== items 5 and 10: “One per child” is gone ===");
 /**
@@ -331,10 +371,28 @@ ok(
   optionsOf("topics_lived").find((o) => o.id === "no_parenting_questions")?.exclusive === true,
   "it must pause the whole category, not sit beside three chosen topics",
 );
+/**
+ * ⚠ **Inverted on 10 Sep**, and the reversal is hers rather than a relaxation.
+ *
+ * Item 17 (1 Sep) asked for Continue to activate only once a topic or the
+ * opt-out is chosen, which is `required`. Her 10 Sep list names this question
+ * among the ones that must be **optional** — and the two now sit on opposite
+ * sides of a door: the screen is behind *"Add optional details"*, so a required
+ * question here would mean opening that door commits a parent to answering.
+ *
+ * The opt-out chip is still on the list, so what item 17 protected — a refusal
+ * being a real answer rather than a silence — survives. This asserts both, so
+ * neither half can be restored without meeting the other.
+ */
 ok(
-  "the screen is required, so Skip is not needed",
-  questionById("topics_lived")?.required === true,
-  "her instruction: Continue activates once a topic or the opt-out is chosen",
+  "the screen is optional, because the whole fork behind it is",
+  questionById("topics_lived")?.required !== true,
+  "optional detail a parent cannot decline is not optional",
+);
+ok(
+  "and the explicit opt-out is still there to say “ask me nothing”",
+  optionsOf("topics_lived").some((o) => o.id === "no_parenting_questions"),
+  "a refusal and a silence must stay two different answers",
 );
 /**
  * 2 Sep — the descriptive box is off the profile pages, on the client's
@@ -366,9 +424,13 @@ ok(
 );
 ok(
   "and the parenting-experiences page is what asks it now",
-  optionsOf("topics_lived").length > 0 && questionById("topics_lived")?.required === true,
+  optionsOf("topics_lived").length > 0,
   "selecting a topic is the opt-in; the screen no longer explains that in a box",
 );
+/* ⚠ `required` was half of this check and came off on 10 Sep (see above). It
+   was never what made the page the opt-in — a topic being *selectable* is —
+   and leaving it here would have made one instruction of hers fail a test
+   written for another. */
 
 console.log("\n=== item 18: participation is chosen, never assumed ===");
 ok(
@@ -389,9 +451,9 @@ ok("there are three levels", levels.length === 3, levels.map((o) => o.id).join("
  * they live did, so these assert the fields the screen actually renders.
  */
 ok(
-  "the minimum is named as required",
-  /required minimum/i.test(levels[0]?.plan?.participation ?? ""),
-  levels[0]?.plan?.participation,
+  "the minimum is named as the minimum",
+  /minimum/i.test(JSON.stringify(levels[0]?.plan ?? {})),
+  JSON.stringify(levels[0]?.plan),
 );
 ok(
   "the middle one is Recommended, not “most popular”",
@@ -399,25 +461,71 @@ ok(
     !/popular/i.test(JSON.stringify(levels[1] ?? {})),
   "“Do not call it ‘Most popular’ without supporting usage data”",
 );
+/**
+ * ⚠⚠ **Inverted on 10 Sep, because she wrote the missing cell.**
+ *
+ * This asserted that Community Member had **no** benefits, which was the right
+ * check for four days: *"розробникам зараз можна дати layout task, але final
+ * content не можна вигадувати. Janet прямо сказала, що ще дасть benefits."* She
+ * has now given them, for all three levels, so the guard flips from "nobody
+ * invented one" to "all three are hers" — and the empty cell would now be the
+ * defect.
+ */
 ok(
-  "every level answers all three of her rows, benefits included where written",
-  levels.every((o) => o.plan?.participation && o.plan?.questions),
-  "Participation · Questions · Benefits, one column each",
+  "every level answers all three of her rows",
+  levels.every((o) => o.plan?.participation && o.plan?.questions && o.plan?.benefits),
+  levels.map((o) => `${o.id}:${o.plan?.benefits ? "has" : "MISSING"}`).join(" "),
 );
 ok(
-  "and no benefit was invented for the level she has not written one for",
-  levels[0]?.plan?.benefits === undefined,
-  "“Janet прямо сказала, що ще дасть benefits” — the cell stays empty",
+  "and the two paid ones build on the one below, in her words",
+  /^Everything above/.test(levels[1]?.plan?.benefits ?? "") &&
+    /^Everything above/.test(levels[2]?.plan?.benefits ?? ""),
+  "her table reads 'Everything above, plus …' — a level is never a different product",
 );
+/**
+ * ⚠ Her instruction: *"Label benefits that are not yet live 'during the pilot'
+ * or 'at launch.'"* Three of the things she promises do not exist — a Network
+ * Check a month, Pando+, caregiver matching — and a credit is denominated in
+ * Network Checks, which are not spendable yet (10 Aug). Without the hedge this
+ * screen promises a balance nothing can pay out, so the hedge is part of the
+ * sentence rather than a nicety.
+ */
+for (const level of [levels[1], levels[2]]) {
+  const text = level?.plan?.benefits ?? "";
+  ok(
+    `${level?.id} hedges what is not live yet`,
+    /during the pilot|at launch/.test(text),
+    text,
+  );
+}
+/**
+ * ⚠ The 48-hour gap moved out of the screen's intro when her own intro
+ * replaced ours, and it now sits in the third level's own row — which is the
+ * asymmetry already on the list for her, since invariant 5 applies it to every
+ * level. What is asserted is only that the screen still states it *somewhere*:
+ * a parent agreeing to a frequency has to be able to read the ceiling.
+ */
 ok(
-  "48 hours is stated on the screen",
-  /48 hours/.test(screenById("allowance")?.help ?? ""),
+  "48 hours is still stated on the screen",
+  /48 hours/.test(
+    (screenById("allowance")?.help ?? "") +
+      JSON.stringify(levels.map((o) => o.plan)),
+  ),
+  screenById("allowance")?.help,
 );
+/**
+ * ⚠ Restated as the rule rather than as one sentence's wording. Her 1 Sep
+ * instruction was *"Do not restrict access to useful information Pando already
+ * has"* — so what must hold is that the **base** level already grants asking
+ * and answering, and the levels above it add outreach rather than unlock
+ * access. Checking the middle level's phrasing, as this did, broke the moment
+ * she wrote her own.
+ */
 ok(
-  "and the benefit is new outreach, never access to what Pando already knows",
-  /ask the community/i.test(levels[1]?.plan?.benefits ?? "") &&
-    !/access/i.test(levels[1]?.plan?.benefits ?? ""),
-  "“Do not restrict access to useful information Pando already has”",
+  "the minimum level already includes asking and getting answers",
+  /ask questions/i.test(levels[0]?.plan?.benefits ?? "") &&
+    /answers/i.test(levels[0]?.plan?.benefits ?? ""),
+  levels[0]?.plan?.benefits,
 );
 
 console.log("\n=== item 6: the privacy screen ===");
@@ -511,9 +619,21 @@ ok(
 );
 
 console.log("\n=== 3 Sep: a child on the way is not asked about ===");
-const expectingOnly: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1] };
-const oneOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1, 4] };
-const twoOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [-1, 4, 9] };
+/**
+ * ⚠ **Every cohort here takes the fork** (`wants_detail: true`, 10 Sep), and
+ * that is load-bearing rather than boilerplate.
+ *
+ * The per-child screens moved behind *"Add optional details"*, so without it
+ * `visibleScreens` hides them for **everybody** — and this whole section would
+ * go green while asserting nothing: "the schools screen is gone" would be true
+ * of an expecting parent because of the fork, and equally true of a parent with
+ * four children. Opening the fork is what leaves the expecting gate as the only
+ * thing that can still hide the screen, which is what these check.
+ */
+const detail = { wants_detail: true } as const;
+const expectingOnly: ProfileAnswers = { ...q.EMPTY_ANSWERS, ...detail, child_ages: [-1] };
+const oneOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, ...detail, child_ages: [-1, 4] };
+const twoOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, ...detail, child_ages: [-1, 4, 9] };
 const schoolQ = questionById("schools")!;
 ok(
   "an expecting child is not offered as a “whose is it?” chip",
@@ -567,7 +687,7 @@ ok(
 );
 ok(
   "and a parent who has not reached the ages screen is asked normally",
-  perChildFor(q.EMPTY_ANSWERS).length === 4,
+  perChildFor({ ...q.EMPTY_ANSWERS, ...detail }).length === 4,
   "hiding half the flow from somebody who has not answered yet is the same bug inverted",
 );
 /**
@@ -590,20 +710,29 @@ const asks = (a: ProfileAnswers, id: string) =>
     .visibleScreens(a)
     .flatMap((s) => q.visibleQuestions(s, a))
     .some((x) => x.id === id);
+/**
+ * ⚠ The 7 Sep half of this — *"the backup question is hidden for an expecting
+ * parent, and comes back the moment one child is born"* — is **gone rather
+ * than failing**, because the question it was about is gone (10 Sep). Its
+ * absence is asserted once, above, where the removal is.
+ *
+ * What survives is the screen-level claim, which is still the client's rule and
+ * is now carried by the regular-childcare question alone.
+ */
 ok(
-  "the backup-childcare question goes with it, and the screen with both",
-  !asks(expectingOnly, "childcare_backup") &&
-    !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare"),
-  "a fallback with no antecedent — its own antecedent question is hidden",
+  "the childcare screen is hidden for a parent with no born child",
+  !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare"),
+  "every option would be answered about a hypothetical",
 );
 ok(
   "and it comes back the moment one child is born",
-  asks(oneOnTheWay, "childcare_backup") && asks(q.EMPTY_ANSWERS, "childcare_backup"),
+  q.visibleScreens(oneOnTheWay).some((s) => s.id === "childcare") &&
+    q.visibleScreens({ ...q.EMPTY_ANSWERS, ...detail }).some((s) => s.id === "childcare"),
   "including for a parent who has not reached the ages screen yet",
 );
 ok(
-  "an expecting-only parent walks eleven screens, and none is about a child",
-  q.visibleScreens(expectingOnly).length === 11,
+  "an expecting-only parent walks six screens, and none is about a child",
+  q.visibleScreens(expectingOnly).length === 6,
   String(q.visibleScreens(expectingOnly).length),
 );
 ok(
@@ -645,7 +774,9 @@ ok("and the ages question stays the required one", schoolQ !== undefined && ques
  */
 console.log("\n=== 7 Sep: the tenure screen says what it counts ===");
 {
-  const screen = q.SCREENS.find((s) => s.id === "time_in_area")!;
+  /* ALL_SCREENS: the tenure screen is behind ASK_LATER since 10 Sep, and the
+     rule it states is still the rule for the day it is asked again. */
+  const screen = q.ALL_SCREENS.find((s) => s.id === "time_in_area")!;
   ok(
     "the help line states what to count from",
     /most recent move/i.test(screen.help ?? ""),
@@ -707,7 +838,11 @@ console.log("\n=== 8 Sep: the context step's ceiling is one number, in one place
   )) as typeof import("../lib/matching.ts");
 
   const declared = new Set<string>();
-  for (const screen of q.SCREENS) {
+  /* ALL_SCREENS: the claim is about what the *question set* declares, and the
+     seven screens behind ASK_LATER still declare their dimensions — they are
+     asked later, not deleted. Against SCREENS this would read 1 and the number
+     in matching.ts would look wrong when what changed was the flow. */
+  for (const screen of q.ALL_SCREENS) {
     for (const question of screen.questions) {
       if (question.relevance) declared.add(question.relevance);
     }
@@ -774,7 +909,11 @@ console.log("\n=== 9 Sep: a refusal chip never becomes a connection ===");
   const REAL_ANSWERS = new Set(["no_reliable_backup"]);
 
   const missing: string[] = [];
-  for (const screen of q.SCREENS) {
+  /* ALL_SCREENS, because this is a drift guard: a question behind ASK_LATER
+     still carries an affinity and still writes edges on the day it is asked,
+     so letting it out of the sweep now is how an untriaged refusal chip
+     arrives with it. */
+  for (const screen of q.ALL_SCREENS) {
     for (const question of screen.questions) {
       if (!question.affinity && !question.relevance) continue;
       for (const option of q.optionsFor(question, "pasadena", q.EMPTY_ANSWERS)) {
@@ -818,9 +957,18 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
     neighborhood: "pasadena",
     child_ages: [3, 9],
   };
-  const screens = q.visibleScreens(twoChildren);
+  const screens = q.visibleScreens({ ...twoChildren, wants_detail: true });
+  /**
+   * ⚠ **The merge shapes read `ALL_SCREENS`, the counts read the flow.**
+   *
+   * Two of these three screens went behind `ASK_LATER` on 10 Sep, so against
+   * `visibleScreens` they report "no such screen" — which is true and is not
+   * what this section is about. The merge is a property of the *definitions*
+   * and it still has to hold on the day they are asked again; how many screens
+   * a parent walks is a property of the flow, and is asserted separately below.
+   */
   const on = (screenId: string) =>
-    (screens.find((s) => s.id === screenId)?.questions ?? []).map((x) => x.id);
+    (screenById(screenId)?.questions ?? []).map((x) => x.id);
 
   ok(
     "parenting setup and work setup are one screen",
@@ -828,27 +976,26 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
     on("household_setup").join(",") || "no such screen",
   );
   ok(
-    "childcare and backup childcare are one screen",
-    on("childcare").join(",") === "childcare_now,childcare_backup",
+    "regular childcare is its own screen, and backup care is gone from it",
+    on("childcare").join(",") === "childcare_now",
     on("childcare").join(",") || "no such screen",
   );
   ok(
     "price and priorities are one screen, under her own title",
     on("priorities").join(",") === "budget,trust_circles" &&
-      screens.find((s) => s.id === "priorities")?.title ===
-        "What should Pando prioritize?",
+      screenById("priorities")?.title === "What should Pando prioritize?",
     on("priorities").join(",") || "no such screen",
   );
   ok(
-    "a two-child family walks thirteen screens, not seventeen",
-    screens.length === 13,
-    String(screens.length),
+    "a two-child family who opens the fork walks eight screens",
+    screens.length === 8,
+    screens.map((s) => s.id).join(","),
   );
   /* The instruction each question carried as its screen's `help` is kept
      verbatim on the question, or a merge would have deleted one of the two. */
   ok(
     "and every merged question kept its own instruction",
-    ["family_structure", "work_setup", "childcare_now", "childcare_backup", "budget", "trust_circles"].every(
+    ["family_structure", "work_setup", "childcare_now", "budget", "trust_circles"].every(
       (id) => (questionById(id as QuestionId)?.help ?? "").length > 0,
     ),
     "picking one for the screen would have dropped an instruction a parent acts on",
@@ -860,7 +1007,6 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
     "family_structure",
     "work_setup",
     "budget",
-    "childcare_backup",
     "logistics",
     "trust_circles",
     "childcare_now",
@@ -897,11 +1043,11 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
 
 console.log("\n=== 9 Sep, items 8 and 10: A–Z in a box, and one screen fewer ===");
 {
+  /* `childcare_backup` was the seventh and is asked nowhere since 10 Sep. */
   const alpha: QuestionId[] = [
     "family_structure",
     "work_setup",
     "childcare_now",
-    "childcare_backup",
     "logistics",
     "trust_circles",
   ];
@@ -960,6 +1106,611 @@ console.log("\n=== 9 Sep, items 8 and 10: A–Z in a box, and one screen fewer =
     q.EMPTY_ANSWERS.recurring_messages === null &&
       questionById("allowance")?.required === true,
     "the compliance opt-in is a checkbox on that screen, not a screen of its own",
+  );
+}
+
+
+console.log("\n=== 10 Sep: the join page, the phone layout, and the optional screens ===");
+{
+  /**
+   * These live in components rather than in the question data, so they are
+   * pinned by reading the source — the mechanical shape `test:security` already
+   * uses for invariant 7. A grep is a blunt instrument and that is the point:
+   * each of these is a decision a future session could undo in one line, and
+   * not one of them would throw.
+   */
+  const read = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const join = read("../components/seed/InviteLanding.tsx");
+  const flow = read("../components/seed/ProfileFlow.tsx");
+  const bar = read("../components/ui/BrandPanel.tsx");
+  const site = read("../app/(site)/page.tsx");
+  const privacy = read("../app/(site)/privacy/page.tsx");
+  const finish = read("../components/seed/done/FinishAsks.tsx");
+
+  /* Join: first name and mobile only. */
+  ok(
+    "the join screen has no surname field",
+    !/id="last-name"/.test(join),
+    "Let us collect first name and mobile only",
+  );
+  ok(
+    "and the no-account route is gone from it",
+    !/Share without joining/.test(join),
+    "Remove the no-account route",
+  );
+  ok(
+    "the country code is fixed to +1 there",
+    /country="US"/.test(join),
+    "Fix the code to +1 vs current number",
+  );
+  /* Fixed on the join screen only — a number already stored as +380 has to be
+     able to sign back in, so the picker stays everywhere else. */
+  ok(
+    "but sign-in keeps the picker",
+    !/country="US"/.test(read("../components/seed/SignIn.tsx")),
+    "a stored +380 must still be able to get back in",
+  );
+
+  /* Join: the inviter line, and the case it must stay silent in. */
+  ok(
+    "the join screen names the inviter when there is one",
+    /inviter_first_name/.test(join) && /invited you/.test(join),
+    "If the invite code resolves, show {first name} invited you",
+  );
+  ok(
+    "and only a personal link can carry a name",
+    /kind = 'personal'/.test(read("../lib/server/invite.ts")),
+    "a group or school link resolves and has nobody behind it — otherwise show nothing",
+  );
+
+  /* Terminology, both halves. */
+  ok(
+    "the join screen says Founding Contributor",
+    /Founding Contributor/.test(join) && !/Founding contributor/.test(join),
+    "one capitalisation, not the current mixture",
+  );
+  ok(
+    "and San Gabriel Valley, not one town in it",
+    /San Gabriel Valley/.test(join) && !/Founding network · Pasadena/.test(join),
+    "seventeen towns are on offer; Pasadena is one of them",
+  );
+
+  /* Blast is off every surface a parent reads. */
+  const surfaces: Array<[string, string]> = [
+    ["the marketing FAQ", site],
+    ["the privacy page", privacy],
+    ["the completion screen", finish],
+  ];
+  for (const [name, src] of surfaces) {
+    ok(
+      name + " no longer says Blast to a parent",
+      !/\bBLAST\b|\bBlasts?\b/.test(src),
+      "Blast sounds spammy and undermines trust",
+    );
+  }
+  /* The keyword itself still answers, or a parent acting on an older text
+     would be met with silence. */
+  ok(
+    "but BLAST SETTINGS still works as a keyword",
+    /"BLAST SETTINGS"/.test(read("../lib/outreach-policy.ts")),
+    "printed copy changes; a text somebody sent last month does not",
+  );
+
+  /* The desktop rail is one line. */
+  ok(
+    "the desktop panel is one line, not a full-height rail",
+    !/lg:h-dvh/.test(bar) && !/21rem/.test(bar),
+    "Collapse the desktop panel to a one-line header",
+  );
+  ok(
+    "and its unread copy went rather than sitting dead",
+    !/\blead:/.test(bar) && !/\bpoints:/.test(bar),
+    "a payload nothing renders is the fault this repo has paid for three times",
+  );
+
+  /* Optional screens. */
+  ok(
+    "Skip sits in the dock, in one place",
+    /Skip this one/.test(flow) && !/>\s*Skip\s*</.test(flow),
+    "Put Skip in the same place",
+  );
+  ok(
+    "progress reads as a distance, not a position",
+    /screensLeft/.test(flow) && !/\{index \+ 1\} of \{screens\.length\}/.test(flow),
+    "Show progress as 3 left",
+  );
+  ok(
+    "a single-select screen advances itself",
+    /autoAdvances/.test(flow) && /AUTO_ADVANCE_MS/.test(flow),
+    "Auto-advance single-select screens",
+  );
+  /* Three exclusions now, and the whole of why this is safe. The fourth was
+     "no consent under this screen", which went with the second consent
+     checkbox on 10 Sep — an exclusion for a control that no longer exists is
+     a rule nobody can violate. */
+  ok(
+    "but never where the tap is not the whole answer",
+    /questions\.length === 1/.test(flow) &&
+      /!isLast/.test(flow) &&
+      /perSelectionStatus/.test(flow),
+    "one question, no follow-up tap, not the review",
+  );
+  ok(
+    "and the participation screen no longer carries a second consent",
+    !/consentBlocked/.test(flow) && !/RECURRING_MESSAGES_CONSENT/.test(flow),
+    "one counsel-approved checkbox on Join, covering verification and recurring messages",
+  );
+
+  /* The review. */
+  ok(
+    "the review collapses what was skipped",
+    /Optional details not added/.test(flow),
+    "collapse skipped fields under Optional details not added",
+  );
+  ok(
+    "and every skipped row keeps its own way back",
+    /notAdded\.map\(row\)/.test(flow),
+    "collapsed, never unreachable — the same row renderer as the answered half",
+  );
+}
+
+console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ===");
+{
+  /**
+   * *"The path to the first recommendation must contain no more than 8
+   * screens."*
+   *
+   * ⚠ **The ceiling is asserted here rather than in a comment**, which is the
+   * whole point: `questions.ts` claimed this suite pinned it while nothing did,
+   * and a count nobody checks is the one that drifts back. The eight are named
+   * so the arithmetic is legible: `/join`, the two required questions, the
+   * fork, the participation level, the review, the code and `/share`. Only the
+   * middle four are screens this file can count; the other four are routes, so
+   * they are stated as a constant and the sum is what is checked.
+   */
+  const AROUND_THE_FLOW = 4; // /join · review · the code · /share
+  const required: ProfileAnswers = {
+    ...q.EMPTY_ANSWERS,
+    neighborhood: "pasadena",
+    child_ages: [3],
+  };
+  const walked = q.visibleScreens(required);
+  ok(
+    "the required path is four question screens",
+    walked.length === 4,
+    walked.map((s) => s.id).join(","),
+  );
+  ok(
+    "so a parent reaches the first recommendation in eight, never nine",
+    walked.length + AROUND_THE_FLOW <= 8,
+    `${walked.length} + ${AROUND_THE_FLOW}`,
+  );
+  ok(
+    "and the two required questions are the only required ones on it",
+    walked
+      .flatMap((s) => q.visibleQuestions(s, required))
+      .filter((x) => x.required)
+      .map((x) => x.id)
+      .join(",") === "neighborhood,child_ages,allowance",
+    walked
+      .flatMap((s) => q.visibleQuestions(s, required))
+      .filter((x) => x.required)
+      .map((x) => x.id)
+      .join(","),
+  );
+
+  /* Her four, named as optional, and every one of them behind the fork. */
+  const OPTIONAL_SCREENS = ["schools", "communities", "childcare", "topics_lived"];
+  ok(
+    "schools, classes, childcare and lived topics are all behind the fork",
+    OPTIONAL_SCREENS.every((id) => !walked.some((s) => s.id === id)),
+    walked.map((s) => s.id).join(","),
+  );
+  ok(
+    "and all four appear the moment the parent asks for them",
+    OPTIONAL_SCREENS.every((id) =>
+      q.visibleScreens({ ...required, wants_detail: true }).some((s) => s.id === id),
+    ),
+    "Continue skips all optional details — it must not delete them",
+  );
+  /* The fork's own framing is hers, and it is the only argument the screen
+     makes: no count of what is behind the door, no "recommended". */
+  /**
+   * ⚠ *"Store None yet and Homeschool as child statuses, not schools."* The
+   * control was written inside the ordinary render, and the schools question
+   * returns early down a **per-child** path for any family with more than one
+   * child — so the two statuses reached only a one-child family, which is the
+   * one that needs them least. Pinned on the source because both branches look
+   * complete on their own.
+   */
+  {
+    const flowSrc = fs.readFileSync(
+      new URL("../components/seed/ProfileFlow.tsx", import.meta.url),
+      "utf8",
+    );
+    ok(
+      "the child-status control is offered on both render paths",
+      (flowSrc.match(/\{childStatus\}/g) ?? []).length === 2,
+      `${(flowSrc.match(/\{childStatus\}/g) ?? []).length} call site(s)`,
+    );
+    ok(
+      "and neither of them is “Homeschool” as a school",
+      !optionsOf("schools").some((o) => /homeschool|not_in_school/i.test(o.id)),
+      "a school called Homeschool is a weight-5 edge between every homeschooling family",
+    );
+  }
+
+  ok(
+    "the fork says why more detail is worth giving, and asks nothing",
+    /the more detail you give/i.test(
+      (screenById("detail_fork")?.statement?.body ?? []).join(" "),
+    ) && (screenById("detail_fork")?.questions.length ?? -1) === 0,
+    "the more detail you give, the more custom your answers will be",
+  );
+}
+
+console.log("\n=== 10 Sep: what a reload must not quietly lose ===");
+{
+  /**
+   * ⚠⚠ Both of these were found by **reloading the page in a browser**, and
+   * neither is visible from inside one session: the value lives in React state
+   * and only a reload consults `normaliseAnswers`. Both were introduced by this
+   * round's own changes, one layer below the change that needed them.
+   */
+  /* Imported here rather than at the top: `lib/storage.ts` is a "use client"
+     module, and node only tolerates that because every `window` reference in
+     it is inside a function body. Keeping the import local says so. */
+  const st = (await import(
+    `../lib/storage.ts?v=${Date.now()}`
+  )) as typeof import("../lib/storage.ts");
+
+  const stored = {
+    ...q.EMPTY_ANSWERS,
+    /* The fork. A boolean, and the generic branch handled strings and lists. */
+    wants_detail: true,
+    /* Twins, and an order that is the children's identity. */
+    child_ages: [3, 3, 9],
+    child_months: { "0": 4, "2": 11 },
+  };
+  const back = st.normaliseAnswers(stored);
+
+  ok(
+    "the fork answer survives a reload",
+    back.wants_detail === true,
+    String(back.wants_detail) + " — otherwise every optional screen vanishes on the way back",
+  );
+  ok(
+    "two children born in one year stay two children",
+    back.child_ages.length === 3 && back.child_ages.filter((a) => a === 3).length === 2,
+    JSON.stringify(back.child_ages),
+  );
+  ok(
+    "and their order is untouched, because the index is the identity",
+    JSON.stringify(back.child_ages) === JSON.stringify([3, 3, 9]),
+    JSON.stringify(back.child_ages) + " — child_months and child_of are keyed by position",
+  );
+  ok(
+    "the month still belongs to the child it was tapped for",
+    back.child_months["0"] === 4 && back.child_months["2"] === 11,
+    JSON.stringify(back.child_months),
+  );
+  /* The domain check that was the reason for the filter in the first place. */
+  ok(
+    "an age outside the range the server accepts is still dropped",
+    st.normaliseAnswers({ ...q.EMPTY_ANSWERS, child_ages: [3, 99, -4] }).child_ages.join(",") === "3",
+    "a stored value the route refuses would be re-refused on every save, silently",
+  );
+}
+
+console.log("\n=== 10 Sep: a child is a position, never a birth year ===");
+{
+  /**
+   * ⚠⚠ **`child_of` became a map of positions when duplicate birth years were
+   * allowed, and three separate readers had to be told.** The route was, the
+   * derivation was, and `childrenFor` was not — so it filtered the picked
+   * *positions* against the set of *ages* and every one failed to match:
+   * per-child attribution was silently dropped for every family with more than
+   * one child. Nothing threw, the tap was stored, and the edge came back with
+   * no child on it.
+   *
+   * These pin the model itself rather than one caller, because the next reader
+   * of `child_of` will have the same choice to get wrong.
+   */
+  const schoolQuestion = questionById("schools")!;
+  const two: ProfileAnswers = {
+    ...q.EMPTY_ANSWERS,
+    child_ages: [3, 6],
+    schools: ["walden-school"],
+    child_of: { schools: { "walden-school": [1] } },
+  };
+  ok(
+    "an attribution names the position the parent tapped",
+    JSON.stringify(q.childrenFor(schoolQuestion, two, "walden-school")) === "[1]",
+    JSON.stringify(q.childrenFor(schoolQuestion, two, "walden-school")),
+  );
+  ok(
+    "a position nobody added is dropped",
+    JSON.stringify(
+      q.childrenFor(schoolQuestion, { ...two, child_of: { schools: { "walden-school": [1, 7] } } }, "walden-school"),
+    ) === "[1]",
+  );
+  /* The shortcut, and the reason it counts children rather than years. */
+  ok(
+    "one child needs no attribution and gets position 0",
+    JSON.stringify(
+      q.childrenFor(schoolQuestion, { ...q.EMPTY_ANSWERS, child_ages: [4], schools: ["walden-school"] }, "walden-school"),
+    ) === "[0]",
+  );
+  ok(
+    "but twins are two children, not one shared year",
+    JSON.stringify(
+      q.childrenFor(
+        schoolQuestion,
+        { ...q.EMPTY_ANSWERS, child_ages: [4, 4], schools: ["walden-school"], child_of: { schools: { "walden-school": [1] } } },
+        "walden-school",
+      ),
+    ) === "[1]",
+    "on distinct ages this took the one-child shortcut and attributed to a child that is not a position",
+  );
+  ok(
+    "a child on the way owns nothing",
+    q.childrenFor(schoolQuestion, { ...q.EMPTY_ANSWERS, child_ages: [-1], schools: ["walden-school"] }, "walden-school").length === 0,
+    "a school cannot belong to a child who is not born",
+  );
+}
+
+console.log("\n=== 10 Sep: the name is private until this one card says otherwise ===");
+{
+  /* Its own copy: the helper above is scoped to that block, and hoisting it to
+     module level would put a file read at the top of a suite most of whose
+     checks are pure. */
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const bubble = src("../components/seed/chat/Bubble.tsx");
+  const chat = src("../components/seed/chat/ChatSeeding.tsx");
+  const cards = src("../lib/server/repo/cards.ts");
+  const save = src("../app/api/seed/save/route.ts");
+  const composer = src("../lib/answer.ts");
+
+  ok(
+    "the standing answer defaults to private",
+    q.EMPTY_ANSWERS.attribution === "name_private",
+    String(q.EMPTY_ANSWERS.attribution),
+  );
+  ok(
+    "and her sentence is the one the share screen states",
+    /Your name stays private unless you choose to show it/.test(chat),
+    "her wording, verbatim",
+  );
+  /**
+   * ⚠ The four links of the chain, each asserted separately, because the
+   * failure this feature shipped with was that three of them were missing and
+   * the fourth looked finished: a column, a migration and a control nobody
+   * rendered.
+   */
+  ok(
+    "the card offers the toggle",
+    /onToggleName/.test(bubble) && /onToggleName=\{/.test(chat),
+    "declared and passed — a prop nobody passes is a control nobody sees",
+  );
+  ok(
+    "toggling re-sends the card rather than only moving local state",
+    /function toggleName/.test(chat) && /void persist\(\{ \.\.\.card, show_name: next \}\)/.test(chat),
+    "the decision lives on the row, so it has to reach the row",
+  );
+  ok(
+    "the route reads it beside the fields, never from inside them",
+    /show_first_name: raw\.submission\.show_name === true/.test(save),
+    "a privacy decision is not evidence of what the parent said about the place",
+  );
+  ok(
+    "and the write is === true, so every unsure path lands on private",
+    /showFirstName: input\.show_first_name === true/.test(cards),
+    "a missing key, a string, a null and an older client all mean no",
+  );
+  ok(
+    "the composer names the parent on their own sentence",
+    /\$\{named \?\? "One"\} said:/.test(composer),
+    "the name and the quote come from one contribution or there is no name",
+  );
+  ok(
+    "and never twice on one record",
+    /evidenceSentence\(candidate, great \? null : named\)/.test(composer),
+    "the quote wins the name; the evidence line takes it only when there is none",
+  );
+}
+
+console.log("\n=== 10 Sep: the wording round, and the one consent ===");
+{
+  const c = (await import(
+    `../lib/consent.ts?v=${Date.now()}`
+  )) as typeof import("../lib/consent.ts");
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const chat = src("../components/seed/chat/ChatSeeding.tsx");
+  const join = src("../components/seed/InviteLanding.tsx");
+  const flow = src("../components/seed/ProfileFlow.tsx");
+  const bar = src("../components/ui/BrandPanel.tsx");
+
+  /**
+   * ⚠⚠ **One checkbox, and its text has to cover both things** — the client,
+   * 10 Sep: *"Two SMS consent requests look contradictory. Use one
+   * counsel-approved checkbox on Join covering verification and recurring
+   * Pando messages."*
+   *
+   * The failure mode this guards is not a missing checkbox, which anybody
+   * would notice: it is a merge that quietly drops a clause. The 2 Sep consent
+   * existed to name **recurring automated** messaging and **RCS**, which the
+   * carriers want named, and deleting it while leaving the older text would
+   * have removed both without anything looking wrong.
+   */
+  for (const [what, pattern] of [
+    ["recurring automated messaging", /recurring automated/i],
+    ["RCS by name", /RCS/],
+    ["the verification code it also covers", /verification code/i],
+    ["the frequency disclosure", /Message frequency varies/],
+    ["the rates disclosure", /rates may apply/i],
+    ["STOP and HELP", /STOP to opt out, HELP for help/],
+  ] as Array<[string, RegExp]>) {
+    ok(`the single consent names ${what}`, pattern.test(c.SMS_CONSENT_TEXT), c.SMS_CONSENT_TEXT.slice(0, 80));
+  }
+  ok(
+    "and it is a new version, because the text changed",
+    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-09-10",
+    c.SMS_CONSENT_TEXT_VERSION,
+  );
+  /* The split is derived, so the label can never carry the carrier disclosure
+     — a tap anywhere in a label toggles its checkbox. */
+  ok(
+    "the label half still stops before the disclosure",
+    !/Message frequency varies/.test(c.SMS_CONSENT_AGREEMENT) &&
+      /* Rejoined rather than counted: the agreement half is trimmed, so the
+         lengths differ by the one space at the seam and an arithmetic check
+         has to know that. This says the only thing that matters — the two
+         halves on screen are the registered text and nothing else. */
+      `${c.SMS_CONSENT_AGREEMENT} ${c.SMS_CONSENT_TERMS}` === c.SMS_CONSENT_TEXT,
+    "derived from one string, never two copies",
+  );
+  ok(
+    "the reassurance is on the join screen and out of the field hint",
+    /SMS_CONSENT_REASSURANCE/.test(join) && !/hint=\{SMS_CONSENT_REASSURANCE\}/.test(join),
+    "Keep it and make it more visible",
+  );
+
+  /* One opening bubble, not three. */
+  ok(
+    "the share screen opens with her question and nothing before it",
+    /What’s one thing you’d recommend to another parent\?/.test(chat),
+    "Thanks, {first name}. What's one thing you'd recommend to another parent?",
+  );
+  ok(
+    "and the two lines it replaced are gone",
+    !/the part only you can answer/.test(chat) &&
+      !/What would you like to share first/.test(chat),
+    "three opening bubbles became one",
+  );
+  ok(
+    "the reuse disclosure is her sentence, not ours",
+    /Pando may use what you share to answer other parents’ questions, following your privacy settings/.test(chat),
+  );
+
+  /* The invite waits for something to have been given. */
+  ok(
+    "the invite control waits for the first saved recommendation",
+    /hasSavedRecommendation/.test(chat) &&
+      /submissions \?\? \[\]\)\.some\(\(s\) => s\.persisted\)/.test(chat),
+    "The Invite button appears only after the first recommendation is saved",
+  );
+
+  /**
+   * ⚠⚠ **"Text me a code" belongs to the control that sends one** — settled
+   * 10 Sep, second round: *"Ні, код надсилаємо в кінці"*.
+   *
+   * Her list twice asked for that label on the join CTA. A button saying it
+   * has to send a code, which moves the OTP to the front door — taken off
+   * deliberately on 13 Aug. She chose the end, so the join button keeps a
+   * label describing what the tap does, and her sentence sits on the send
+   * button at the end of the flow and on `/signin`.
+   *
+   * Both halves are asserted, because either alone can be "fixed" back: a
+   * future session pasting her string onto the join CTA would rebuild the
+   * front door, and one removing it from `VerifyPhone` would lose the wording
+   * she asked for.
+   */
+  const verify = src("../components/seed/VerifyPhone.tsx");
+  ok(
+    "the join CTA does not promise a code it never sends",
+    !/"Text me a code"/.test(join.replace(/\/\*\*[\s\S]*?\*\//g, "")),
+    "the code is sent at the end of the profile",
+  );
+  ok(
+    "and the button that does send one says exactly that",
+    /"Text me a code"/.test(verify),
+    "her wording, on the control where it is true",
+  );
+
+  /* Two screens' worth of her replacements. */
+  ok("Step 2 is named for what it does", /Step 2 · Share what you know/.test(bar));
+  ok(
+    "the code screen says what it is for",
+    /Verify your number to save your profile/.test(flow) &&
+      !/Nothing has left this phone yet/.test(flow),
+  );
+
+  /* “Network Check” is her word, and it is now the product's. */
+  const parentFacing = [
+    "../app/(site)/page.tsx",
+    "../components/seed/done/WhatsNext.tsx",
+    "../components/seed/done/FinishAsks.tsx",
+  ];
+  ok(
+    "no parent-facing surface says Network Ask any more",
+    parentFacing.every((f) => !/Network Ask/.test(src(f).replace(/\/\*[\s\S]*?\*\//g, ""))),
+    parentFacing.filter((f) => /Network Ask/.test(src(f).replace(/\/\*[\s\S]*?\*\//g, ""))).join(", "),
+  );
+
+  /**
+   * ⚠⚠ **The launch offer, and "once" is the part that needs a test** (10 Sep
+   * §6). Her rules are positional as much as textual: the exact sentence, in
+   * the invite and **once** on Join, Terms as a link, separate from the SMS
+   * consent, and *"do not show the reward or add a reward step anywhere in the
+   * profile"*. Three of those five are about where it is **not**.
+   */
+  const rewards = (await import(
+    `../lib/rewards.ts?v=${Date.now()}`
+  )) as typeof import("../lib/rewards.ts");
+  ok(
+    "the offer is on the join page",
+    join.includes("REWARD_OFFER"),
+    "once, under the inviter line",
+  );
+  ok(
+    "exactly once",
+    (join.match(/\{REWARD_OFFER\}/g) ?? []).length === 1,
+    `${(join.match(/\{REWARD_OFFER\}/g) ?? []).length} occurrence(s)`,
+  );
+  ok(
+    "and in the invite a parent sends",
+    src("../components/seed/done/WhatsNext.tsx").includes("REWARD_OFFER"),
+  );
+  ok(
+    "but nowhere in the profile — no reward, no reward step",
+    !/REWARD_|reward/i.test(flow.replace(/\/\*\*[\s\S]*?\*\//g, "")),
+    "Do not show the reward or add a reward step anywhere in the profile",
+  );
+  /* Separate from SMS consent: the offer must not sit inside the label, or
+     agreeing to messages and accepting an offer become one tap. */
+  ok(
+    "and it is outside the consent label",
+    join.indexOf("{REWARD_OFFER}") < join.indexOf("<Consent"),
+    "a payment offer inside a consent label is one tap for two decisions",
+  );
+  ok(
+    "the amount and the deadline are stated once, in one module",
+    rewards.REWARD_AMOUNT_USD === 10 && /Oct 31, 2026/.test(rewards.REWARD_OFFER),
+    rewards.REWARD_OFFER,
+  );
+
+  /* The circles screen states the two rules it enforces. */
+  const circles = screenById("communities")?.help ?? "";
+  ok(
+    "adding a place is not a recommendation, and the screen says so",
+    /not a recommendation/i.test(circles),
+    circles,
+  );
+  ok(
+    "and that sensitive affiliations are never named to another parent",
+    /never named to other parents/i.test(circles),
+    circles,
+  );
+  /* Once, under the first field only. `SEARCHABLE_QUESTIONS` is private, so
+     this reads the source: the claim is about how many times the sentence is
+     written, which is exactly what a text search answers. */
+  const questionsSrc = src("../lib/questions.ts");
+  const crossTown =
+    (questionsSrc.match(/It doesn.t have to be in your own city/g) ?? []).length;
+  ok(
+    "the cross-town line is written twice, not four times",
+    crossTown === 2,
+    `${crossTown} occurrence(s) — schools has its own screen; classes is the first field on the circles page`,
   );
 }
 
