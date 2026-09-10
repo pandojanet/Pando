@@ -30,7 +30,9 @@ const ok = (label: string, cond: boolean, detail = "") => {
 /**
  * ⚠ **Both look in `ALL_SCREENS`, not in `SCREENS`** (10 Sep).
  *
- * Seven screens moved behind `ASK_LATER` when the flow was cut to eight, and
+ * Seven screens spent 10 Sep in `ASK_LATER` — i.e. asked nowhere — and came
+ * back the same day behind the fork, where they are optional. So they are on
+ * the flow again and
  * every assertion in this file about their wording, their caps and their
  * refusal chips is still worth keeping — the client's instruction was to ask
  * them *later*, not that they were wrong. Against `SCREENS` this file crashed
@@ -730,10 +732,29 @@ ok(
     q.visibleScreens({ ...q.EMPTY_ANSWERS, ...detail }).some((s) => s.id === "childcare"),
   "including for a parent who has not reached the ages screen yet",
 );
+/* ⚠ The claim, not the count. This read `length === 6` and broke the moment
+   the seven ASK_LATER screens came back behind the fork (10 Sep, second pass)
+   — the number moved, nothing about expecting-only did. A screen count is a
+   property of where screens currently sit; "none is about a child" is the rule
+   this section exists for, and it survives them moving again. */
 ok(
-  "an expecting-only parent walks six screens, and none is about a child",
-  q.visibleScreens(expectingOnly).length === 6,
-  String(q.visibleScreens(expectingOnly).length),
+  "an expecting-only parent is asked nothing about a child",
+  q
+    .visibleScreens(expectingOnly)
+    .flatMap((s) => q.visibleQuestions(s, expectingOnly))
+    .every((x) => !x.perChild),
+  q
+    .visibleScreens(expectingOnly)
+    .flatMap((s) => q.visibleQuestions(s, expectingOnly))
+    .filter((x) => x.perChild)
+    .map((x) => x.id)
+    .join(",") || "no per-child question on any of them",
+);
+ok(
+  "and walks strictly fewer screens than the same parent with a born child",
+  q.visibleScreens(expectingOnly).length <
+    q.visibleScreens({ ...expectingOnly, child_ages: [3] }).length,
+  `${q.visibleScreens(expectingOnly).length} vs ${q.visibleScreens({ ...expectingOnly, child_ages: [3] }).length}`,
 );
 ok(
   "the expecting answer itself is still recorded",
@@ -774,7 +795,7 @@ ok("and the ages question stays the required one", schoolQ !== undefined && ques
  */
 console.log("\n=== 7 Sep: the tenure screen says what it counts ===");
 {
-  /* ALL_SCREENS: the tenure screen is behind ASK_LATER since 10 Sep, and the
+  /* ALL_SCREENS: the tenure screen is behind the fork, and the
      rule it states is still the rule for the day it is asked again. */
   const screen = q.ALL_SCREENS.find((s) => s.id === "time_in_area")!;
   ok(
@@ -839,7 +860,7 @@ console.log("\n=== 8 Sep: the context step's ceiling is one number, in one place
 
   const declared = new Set<string>();
   /* ALL_SCREENS: the claim is about what the *question set* declares, and the
-     seven screens behind ASK_LATER still declare their dimensions — they are
+     the seven screens that briefly left the flow still declare their dimensions — they are
      asked later, not deleted. Against SCREENS this would read 1 and the number
      in matching.ts would look wrong when what changed was the flow. */
   for (const screen of q.ALL_SCREENS) {
@@ -909,7 +930,7 @@ console.log("\n=== 9 Sep: a refusal chip never becomes a connection ===");
   const REAL_ANSWERS = new Set(["no_reliable_backup"]);
 
   const missing: string[] = [];
-  /* ALL_SCREENS, because this is a drift guard: a question behind ASK_LATER
+  /* ALL_SCREENS, because this is a drift guard: a question behind the fork
      still carries an affinity and still writes edges on the day it is asked,
      so letting it out of the sweep now is how an untriaged refusal chip
      arrives with it. */
@@ -961,11 +982,11 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
   /**
    * ⚠ **The merge shapes read `ALL_SCREENS`, the counts read the flow.**
    *
-   * Two of these three screens went behind `ASK_LATER` on 10 Sep, so against
-   * `visibleScreens` they report "no such screen" — which is true and is not
-   * what this section is about. The merge is a property of the *definitions*
-   * and it still has to hold on the day they are asked again; how many screens
-   * a parent walks is a property of the flow, and is asserted separately below.
+   * These read the *definitions* rather than the walk. Two of the three sat in
+   * `ASK_LATER` for part of 10 Sep, where `visibleScreens` reported "no such
+   * screen" — true, and not what this section is about. The merge is a property
+   * of the definitions and has to hold wherever the screen sits; how many
+   * screens a parent walks is a property of the flow, asserted separately below.
    */
   const on = (screenId: string) =>
     (screenById(screenId)?.questions ?? []).map((x) => x.id);
@@ -986,10 +1007,54 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
       screenById("priorities")?.title === "What should Pando prioritize?",
     on("priorities").join(",") || "no such screen",
   );
+  /* ⚠ Against `SCREENS.length`, never a literal. The rule is that opening the
+     fork shows **everything the flow has** — that is what the fork promises —
+     and the single exception is `connection_visibility`, which carries a
+     narrower gate of its own (nothing to decide until they have named a
+     connection and said it may be mentioned). A literal here was 8 until the
+     seven came back behind the fork and said nothing about why. */
   ok(
-    "a two-child family who opens the fork walks eight screens",
-    screens.length === 8,
-    screens.map((s) => s.id).join(","),
+    "opening the fork shows every screen except the one with its own gate",
+    screens.length === q.SCREENS.length - 1 &&
+      !screens.some((s) => s.id === "connection_visibility"),
+    `${screens.length} of ${q.SCREENS.length}: ${screens.map((s) => s.id).join(",")}`,
+  );
+  /**
+   * ⚠⚠ **And it does not come back just because a parent named a connection**,
+   * which is what this asserted for about an hour and is worth keeping as the
+   * check rather than the story. `connection_visibility` offers a parent the
+   * choice of which connections Pando may mention; `mayBeNamed` refuses to
+   * mention **any** of them (10 Sep), so `affiliationOptions` returns nothing
+   * and the screen rendered as a heading, a promise and zero controls — found
+   * in a browser the moment `ASK_LATER` was emptied. The gate is
+   * `anyConnectionMayBeNamed()` now. Flip one entry into `NAMEABLE` and this
+   * assertion is what tells you to invert it again.
+   */
+  ok(
+    "and it stays hidden even then, while no connection may be named at all",
+    !q
+      .visibleScreens({
+        ...twoChildren,
+        wants_detail: true,
+        schools: ["field-elementary"],
+        shared_connections: "share_connection",
+      })
+      .some((s) => s.id === "connection_visibility"),
+    "a screen offering a choice nothing can honour is worse than no screen",
+  );
+  /* The disclosure has to describe what the composer actually sends. Both are
+     drift guards on one rule: no affiliation is named to another parent. */
+  ok(
+    "and the disclosure names no shared connection either",
+    !/parent at your/i.test(JSON.stringify(screenById("privacy_disclosure")?.statement ?? {})),
+    "a disclosure of something the product will not disclose",
+  );
+  ok(
+    "it states the rule outright instead",
+    /never named to another parent/i.test(
+      (screenById("privacy_disclosure")?.statement?.body ?? []).join(" "),
+    ),
+    "her 10 Sep instruction, on the screen that exists to state it",
   );
   /* The instruction each question carried as its screen's `help` is kept
      verbatim on the question, or a merge would have deleted one of the two. */
@@ -1199,7 +1264,11 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
   /* The desktop rail is one line. */
   ok(
     "the desktop panel is one line, not a full-height rail",
-    !/lg:h-dvh/.test(bar) && !/21rem/.test(bar),
+    /* The utilities as they would be **written**, not the bare tokens: the
+       first version tested for `21rem` anywhere in the file and failed on a
+       comment recording what the rail used to be. A check that a class is
+       gone must not also forbid saying so. */
+    !/lg:h-dvh/.test(bar) && !/lg:w-[21rem]/.test(bar),
     "Collapse the desktop panel to a one-line header",
   );
   ok(

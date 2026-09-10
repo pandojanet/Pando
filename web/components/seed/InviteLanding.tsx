@@ -669,7 +669,24 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       </ScreenBody>
 
 
-      <ScreenDock stickyOnDesktop>
+      {/**
+       * Not `stickyOnDesktop`, and the reason is this screen's own shape rather
+       * than a preference about docks.
+       *
+       * The button is disabled until the consent box is ticked, and that box is
+       * *below* the dock in the flow — so a dock pinned on a laptop paints a
+       * permanently dead button over the one control that would enable it, with
+       * a hint underneath naming a checkbox it is covering. Measured at
+       * 1440x720: the box sits at y=656 against a dock top of y=596, i.e.
+       * covered on first paint (it is reachable — scrolling to the bottom puts
+       * it at y=253 — but the parent has to scroll past a disabled CTA to find
+       * out why it is disabled).
+       *
+       * Pinning bought nothing here: nobody can press Start before scrolling to
+       * the box anyway. In the flow the action sits after the content, which is
+       * what every other screen in this flow already does.
+       */}
+      <ScreenDock>
         {alreadySaved ? (
           <Button full onClick={() => router.push("/done")}>
             See what happens next

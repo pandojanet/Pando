@@ -789,6 +789,26 @@ const wantsDetail = (answers: ProfileAnswers): boolean =>
   answers.wants_detail === true;
 
 /**
+ * Is there any connection a parent could grant at all?
+ *
+ * ⚠⚠ **The third layer of the 10 Sep rule, and it was being done by
+ * `ASK_LATER` rather than by anything durable.** `affiliationOptions` returns
+ * nothing while `NAMEABLE` is empty, so `connection_visibility` has no chips —
+ * and `visibleQuestions` does not consult the option list (it cannot; options
+ * need the market), so the screen rendered anyway. Measured in a browser the
+ * moment that set was emptied: a heading, a paragraph promising *"Pando may
+ * tell another parent with this same connection…"*, the caveat, and **zero
+ * controls**. A screen with nothing to answer, making the one promise the
+ * product refuses to keep.
+ *
+ * So the gate is here, where it survives the screen moving in and out of the
+ * flow. The day the client names one type as shareable it is one entry in
+ * `NAMEABLE` and this screen comes back on its own.
+ */
+const anyConnectionMayBeNamed = (): boolean =>
+  AFFILIATION_QUESTIONS.some(producesAffiliation);
+
+/**
  * ## Every screen this flow has ever asked, in order
  *
  * `SCREENS` is this minus `ASK_LATER` — see below. The definitions stay here
@@ -1066,6 +1086,8 @@ export const ALL_SCREENS: Screen[] = [
      * setting to save a screen.
      */
     id: "privacy_disclosure",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     eyebrow: "Privacy",
     /**
      * Rewritten to the client's wording, 24 Aug (item 8). Three substantive
@@ -1106,21 +1128,50 @@ export const ALL_SCREENS: Screen[] = [
      * anything.
      */
     title: "How Pando uses your connections",
+    /**
+     * ## Rewritten to the 10 Sep rule, because it had started stating something
+     * false (10 Sep, second pass)
+     *
+     * *"Use these affiliations only for private matching. Never name them to
+     * another parent or use them in shared-connection attribution, regardless of
+     * the general setting."*
+     *
+     * ⚠⚠ **A disclosure is the one screen in this flow that cannot be
+     * approximately right.** It exists to show a parent the sentence another
+     * parent will read, and every version of it up to now was built around a
+     * shared-connection mention — *"A parent at your child's preschool
+     * recommends this."* `mayBeNamed` refuses to name **any** affiliation now,
+     * so that sentence is not merely a stale example: it is Pando describing a
+     * disclosure of something it will not disclose. Changing which club it names
+     * cannot fix it, which is why the whole block is rewritten rather than
+     * patched.
+     *
+     * ⚠ **The examples are the composer's own output, not illustrations.** They
+     * are what `evidenceSentence` in `lib/answer.ts` actually builds — the
+     * count sentence every reader gets, and the named form that appears only for
+     * a single firsthand parent who turned their first name on for that one
+     * recommendation. The earlier card copy quoted *"Janet recommends this."*,
+     * a sentence the composer does not send, and this screen must not repeat
+     * that: an example a parent will never receive is the same defect one
+     * remove down.
+     *
+     * ⚠ The wording is mine and is on the list for the client. The **facts** in
+     * it are hers, from 10 Sep; what could not stand was the old copy stating
+     * the opposite of her own instruction.
+     */
     statement: {
       body: [
-        "Pando uses your connections and context to find parents whose experience fits your family. You decide whether each school, club, faith community or other connection stays private or can be shown with your recommendations.",
-        "If you choose to share it, another parent with the same connection may see:",
+        "Pando uses your connections and context to find parents whose experience fits your family. That happens privately: it decides who is asked, and it is never something another parent reads.",
+        "Your schools, classes, clubs and faith communities are never named to another parent — not with your recommendations, and not as a shared connection. What another parent sees is the recommendation and how many parents stand behind it:",
       ],
       examples: [
-        /* ⚠ Her example, 10 Sep: a golf club is exactly the affiliation that
-           may never be named now (`mayBeNamed`), so illustrating the feature
-           with one showed a parent something the product refuses to do. */
-        "“A parent at your child’s preschool recommends this.”",
-        "“Three parents at your child’s preschool recommend this.”",
+        "“Three parents near you have used Little Maestros, a class in South Pasadena.”",
+        "“Janet has used Little Maestros, a class in South Pasadena.”",
       ],
-      /* Item 6's restored sentence. After the examples, because it is the answer
-         to the question they raise. */
       bodyAfter: [
+        "The second one appears only where you have turned your first name on for that particular recommendation. Your name is off by default, and it is a separate decision every time.",
+        /* Item 6's restored sentence (1 Sep). Last, because it is the answer to
+           the question the examples raise. */
         "Your name and contact information stay private unless you separately agree to an introduction.",
       ],
       link: { href: "/privacy", label: "Learn more about privacy" },
@@ -1147,6 +1198,8 @@ export const ALL_SCREENS: Screen[] = [
      * a coarse band that `derive.ts` now computes from the city itself.
      */
     id: "time_in_area",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     eyebrow: "Life context",
     /* 9 Sep, her copy list: the town comes out of the question. Pasadena is
        this market and not the parent's — seventeen towns are on offer, and a
@@ -1247,6 +1300,8 @@ export const ALL_SCREENS: Screen[] = [
      * screen would have deleted an instruction a parent acts on.
      */
     id: "household_setup",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     eyebrow: "Life context",
     /* Her own two titles, joined. "Your parenting setup" alone would have left
        the work question sitting under a heading that does not cover it. */
@@ -1377,6 +1432,8 @@ export const ALL_SCREENS: Screen[] = [
      * screens would separate a question from its own context.
      */
     id: "logistics",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     eyebrow: "Life context",
     title: "What makes an option work for your family?",
     help: "Tell Pando what matters when comparing classes, camps or childcare.",
@@ -1426,6 +1483,8 @@ export const ALL_SCREENS: Screen[] = [
      * about both, and *Trust* would name the second question over the first.
      */
     id: "priorities",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     /* Her point, and it is a real one: this is a recommendation *preference*, not
        life context. "Which describes you?" also made a spending preference sound
        like a personal identity, which is why the title is about Pando's
@@ -1614,6 +1673,8 @@ export const ALL_SCREENS: Screen[] = [
        what this screen decides is what another parent sees, so that is the
        question, and every option below already answers it in those terms. */
     id: "attribution",
+    /* Behind the fork (10 Sep, second pass) — see the note above `ASK_LATER`. */
+    when: wantsDetail,
     eyebrow: "Privacy",
     title: "How do you want others to see you?",
     help: "Choose a default. You’ll see it and can change it each time before your recommendation is shared.",
@@ -1660,8 +1721,12 @@ export const ALL_SCREENS: Screen[] = [
     /* Her caveat, immediately underneath and never as a tooltip: the one thing
        this control cannot promise. */
     footnote: AFFILIATION_CONSENT_CAVEAT,
-    /* Nothing to decide if they named no connections at all. */
+    /* Two gates, cheapest first. `wantsDetail` is the fork (10 Sep, second
+       pass); the rest is this screen's own narrower rule — nothing to decide if
+       they named no connections at all. */
     when: (answers) =>
+      wantsDetail(answers) &&
+      anyConnectionMayBeNamed() &&
       answers.shared_connections === "share_connection" &&
       answers.schools.length +
         answers.classes.length +
@@ -1786,48 +1851,61 @@ export const ALL_SCREENS: Screen[] = [
 ];
 
 /**
- * ## The screens the flow no longer walks — the client, 10 Sep
+ * ## `ASK_LATER` is empty, and the seven screens are behind the fork instead
  *
- * *"Ask the other profile questions later, when relevant … but optional only."*
- * So they are **not deleted**: the wording, the option lists and every
- * `Decisions` row behind them stay in `ALL_SCREENS` above, ready for whichever
- * surface asks them when they become relevant. What changed is that onboarding
- * stopped asking them, which is the only way the path to a first recommendation
- * fits in eight screens.
+ * **The developer's call, 10 Sep (second pass): put them all back.** They are
+ * up for discussion with the client, and a question nobody can answer cannot be
+ * discussed against real data — which is what this set had made them.
  *
- * ⚠⚠ **The costs, stated rather than left to be discovered.**
+ * ⚠⚠ **Read this before adding an id back.** `ASK_LATER` removed a screen from
+ * `SCREENS`, and `ProfileFlow` is the only renderer in the app: it walks
+ * `visibleScreens()`, which filters `SCREENS`. So an id in here was not asked
+ * *later* — it was asked **nowhere**. There is no other surface. The client's
+ * sentence was *"ask the other profile questions later, when relevant … but
+ * optional only"*, and only its first half had been built: they were taken out
+ * of onboarding and nothing was put in their place.
  *
- * *`time_in_area`, `household_setup`, `logistics`, `priorities`* each wrote
- * `life_relevance` rows, and `derive.ts` walks `SCREENS` — so a new parent
- * produces **no relevance rows at all** until these are asked somewhere. That is
- * the *second* layer of matching (social affinity × life relevance), and the
- * whole of it is worth about half a shared school (`RELEVANCE_STEP`), so the
- * first layer is untouched and a match is still a match. It gets less precise,
- * not less possible.
+ * **What they cost while this set was populated**, measured through the real
+ * `derive.ts` on two synthetic sessions rather than reasoned about:
  *
- * *`attribution` and `connection_visibility`* are a different case: they were
- * **decisions**, and the decision did not go away, it moved to where it is
- * actually made. The name is private by default (`EMPTY_ANSWERS.attribution`)
- * with a per-recommendation toggle on the card, and no affiliation may be named
- * at all (`mayBeNamed`), so `connection_visibility` had nothing left to offer.
+ * | | Continue | Add optional details |
+ * | --- | --- | --- |
+ * | `social_affinities` rows | 2 — neighborhood, age_range | 5 |
+ * | `life_relevance` rows | 2, both defaults | 3 |
+ * | of those, rows that score | **0** | 1 |
  *
- * ⚠⚠ *`privacy_disclosure`* is the one to weigh before agreeing with this. It
- * was a **statement**, not a question: the screen that showed a parent the
- * sentence another parent would see. Two of its three examples describe things
- * that can no longer happen, which is why it could not simply be moved behind
- * the fork — a disclosure has to be true. What replaces it is the toggle's own
- * sentence on each recommendation and the two rules stated on `/share`.
- * Reinstating it is one id off this list plus a rewrite of its examples.
+ * A fast-path parent topped out at **5 points** (neighborhood 3 + age_range 2),
+ * which is what a single shared school is worth on its own — and the second
+ * matching layer was empty, because `budget`/`trust_circle` defaults are
+ * written for a parent who answered nothing and deliberately score zero
+ * (9 Sep). On the live database the two largest relevance dimensions are
+ * `logistics` (26 rows) and `tenure` (25), and both come from screens that
+ * had been put in here.
+ *
+ * **Why behind the fork rather than back on the required path.** The client's
+ * *"no more than 8 screens to the first recommendation"* is explicit and
+ * recent, and `test:feedback` pins it. Behind the fork the required path stays
+ * four screens, every question is reachable and answerable, and the fork's own
+ * screen carries her *"the more detail you give, the more custom your answers
+ * will be"* — which is her wording for exactly these questions. The cost is
+ * honest and worth stating: most parents will tap Continue, so relevance data
+ * stays thin in practice. That is the discussion, not a fault of this code.
+ *
+ * ⚠ **`privacy_disclosure` came back with a defect it did not have before.**
+ * It is a *statement*: the screen that shows a parent the sentence another
+ * parent would see. Two of its three examples describe things that can no
+ * longer happen — `mayBeNamed` now refuses to name **any** affiliation to
+ * another parent, so a shared-connection example is false whichever club or
+ * school it names. A disclosure has to be true. Its examples need rewriting,
+ * and that is new user-facing copy, so it is the client's.
+ *
+ * ⚠ The set is kept rather than deleted, and `SCREENS` still derives from it:
+ * emptying it makes `SCREENS` and `ALL_SCREENS` hold the same screens, so the
+ * rule that **anything reading an answer back resolves against `ALL_SCREENS`**
+ * stops being exercised while staying just as necessary. Do not "simplify" the
+ * two into one.
  */
-const ASK_LATER = new Set([
-  "privacy_disclosure",
-  "time_in_area",
-  "household_setup",
-  "logistics",
-  "priorities",
-  "attribution",
-  "connection_visibility",
-]);
+const ASK_LATER = new Set<string>([]);
 
 export const SCREENS: Screen[] = ALL_SCREENS.filter((s) => !ASK_LATER.has(s.id));
 

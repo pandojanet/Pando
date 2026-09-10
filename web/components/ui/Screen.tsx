@@ -182,9 +182,15 @@ export function ScreenDock({
 }: {
   children: ReactNode;
   /**
-   * Keep the dock pinned above `md` too. Only the entry screen uses it: its CTA
-   * is the entire purpose of the page, and the page is taller than a laptop
-   * window. Flow screens read better with the action at the end of the content.
+   * Keep the dock pinned above `md` too. Flow screens read better with the
+   * action at the end of the content, so this is the exception rather than the
+   * rule — the caregiver flow's opening screen is the one caller: it is a page
+   * of reassurance ending in a single "I agree" and nothing below the dock is a
+   * control.
+   *
+   * ⚠ `/join` used it until 10 Sep and must not have it back: its CTA is
+   * disabled until a checkbox that sits *below* the dock is ticked, so pinning
+   * covered the control that enables the button. See `InviteLanding`.
    */
   stickyOnDesktop?: boolean;
 }) {

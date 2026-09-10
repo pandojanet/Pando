@@ -2,7 +2,6 @@
 
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { Wordmark } from "./Logo";
 
 /**
  * The one-line moss bar above the app on desktop (lg+). Renders nothing below lg.
@@ -93,10 +92,24 @@ export function BrandPanel() {
       )}
     >
       <div className="flex min-w-0 items-center gap-2.5 text-paper">
-        <Wordmark tone="light" />
         {/* The one piece of the old rail that is still doing work on this line:
             it names the step, which is the only thing on that panel a parent was
-            reading rather than being sold. */}
+            reading rather than being sold.
+
+            ⚠ **No `Wordmark` here, and its absence is the fix rather than an
+            omission.** While this was a 21rem side rail its lockup sat *beside*
+            the app column's own header, and the two read as a frame. Collapsed
+            to a bar it sits directly *above* that header, so from `lg` every
+            flow screen carried two Pando lockups stacked — measured on `/join`
+            at 1440x900: two visible lockups inside 245px of stacked chrome
+            (52px bar + 69px header + 124px dock), 27% of the window.
+
+            Hiding the *header's* lockup instead was the obvious fix and is
+            worse: on five of the nine flow screens (`/share`, `/done`,
+            `/done/next`, `/done/ask`, `/signin`) the header's left slot holds
+            nothing else, so it would leave an empty 69px sticky band. This way
+            the logo stays in one place at every width — which is what
+            `/profile` has always done, its header having never carried one. */}
         <span className="shrink-0 rounded-full border border-gold/40 px-2.5 py-1 font-semibold uppercase text-eyebrow tracking-eyebrow text-gold">
           {badge}
         </span>
