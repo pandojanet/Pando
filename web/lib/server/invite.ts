@@ -84,6 +84,7 @@ async function liveInvites(): Promise<{
          the whole point of the 60s cache is that it is one round trip. The join
          is left, because all but the personal links have no referrer. */
       sql`select i.id, i.code, i.market_id, i.label, i.group_option_value,
+                 i.referrer_person_id,
                  case when i.kind = 'personal' then p.first_name end
                    as inviter_first_name
             from invites i
@@ -115,6 +116,8 @@ async function liveInvites(): Promise<{
         typeof row.inviter_first_name === "string" && row.inviter_first_name !== ""
           ? row.inviter_first_name
           : null,
+      referrer_person_id:
+        typeof row.referrer_person_id === "string" ? row.referrer_person_id : null,
     });
   }
   cacheInvites(table);
@@ -228,4 +231,33 @@ export async function recordInviteOpen(code: string | null | undefined): Promise
   } catch {
     /* A metric is not worth a 500 on the first screen a parent sees. */
   }
+}
+
+/**
+ * Who invited this parent, for `people.invited_by` (client §1, 9 Sep).
+ *
+ * ## Why this is its own function rather than a field on `InviteResult`
+ *
+ * ⚠ That was the first attempt and it leaks. `InviteResult` is handed to the
+ * join page, which is rendered for anybody who opens a link — so an id on it
+ * travels to a browser, and an id is a handle on another parent's record. The
+ * join screen is served the inviter's **first name**, which is what the parent
+ * already knows because that person sent them the link; the id stays here.
+ *
+ * ## Null is the ordinary answer
+ *
+ * An invite is per **group** (12 Aug) and since `drizzle/0034` may point at a
+ * school, and only `kind = 'personal'` carries a referrer. So most arrivals
+ * have no inviter, and that is a fact rather than a gap: a group invited them.
+ *
+ * Reads the same 60-second cache `validateInviteCode` just populated, so
+ * asking both costs one round trip.
+ */
+export async function inviterIdFor(
+  code: string | null | undefined,
+): Promise<string | null> {
+  const normalized = normalizeCode(code);
+  if (!normalized) return null;
+  const { table } = await liveInvites();
+  return table.get(normalized)?.referrer_person_id ?? null;
 }

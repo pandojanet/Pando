@@ -281,6 +281,13 @@
       "when": 1789300800000,
       "tag": "0039_home_place_and_zip",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789387200000,
+      "tag": "0040_invite_provenance",
+      "breakpoints": true
     }
   ]
 }

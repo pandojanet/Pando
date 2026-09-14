@@ -871,4 +871,13 @@ export interface InviteResult {
    * name. Only `invites.kind = 'personal'` carries a referrer.
    */
   inviter_first_name?: string | null;
+  /**
+   * ⚠ **The inviter's *id* is deliberately not here**, and that was the first
+   * attempt (14 Sep). `InviteResult` is handed to the join page and therefore
+   * to a browser, so putting the id on it would ship a handle on another
+   * parent's record to anybody who opens a personal link — and who is in the
+   * network is exactly what this product does not publish. `people.invited_by`
+   * is filled from `inviterIdFor()` in `lib/server/invite.ts`, which reads the
+   * same cached table on the server and never crosses the boundary.
+   */
 }

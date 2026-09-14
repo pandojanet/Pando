@@ -1329,6 +1329,24 @@ head("invites — one per group, never per parent");
      group, so there must be no edge to it. */
   ok("but the link alone writes no affinity", (await sql`select 1 from social_affinities a join people p on p.id = a.person_id where p.first_name = 'Auditinvite' and a.affinity_value = 'school-pta'`).length === 0);
 
+  /**
+   * §1, 9 Sep — *"an invitation is provenance, not proof of trust. Store
+   * invited_by, invited_at and activated_at."*
+   *
+   * This is a **group** code, so the honest inviter is nobody: an invite is
+   * per group and only `kind = 'personal'` carries a person. Null here is the
+   * answer rather than a gap, and asserting it is what stops a future session
+   * "fixing" it by attributing the arrival to whoever created the link.
+   */
+  const [prov] = await sql`select invited_by, invited_at, activated_at from people where first_name = 'Auditinvite'`;
+  ok("a group link records no inviter — nobody in particular invited them", prov && prov.invited_by === null);
+  ok("but it records when the invitation was taken up", prov && prov.invited_at !== null);
+  ok(
+    "and activation waits for founding, which is granted by a person",
+    prov && prov.activated_at === null,
+    "this contributor has not been approved, so there is nothing to stamp",
+  );
+
   const listed = (await q("invites")).json.rows.find((i) => i.code === "audit-group");
   ok("the admin list counts who arrived", listed && listed.contributors >= 1);
   ok("and how many of them delivered anything", listed && listed.delivered === 0, listed ? `${listed.delivered}/${listed.contributors}` : "");

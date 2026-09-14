@@ -12,7 +12,7 @@ import { toE164 } from "@/lib/phone";
 import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { writeProfile } from "@/lib/server/repo/profile";
-import { validateInviteCode } from "@/lib/server/invite";
+import { inviterIdFor, validateInviteCode } from "@/lib/server/invite";
 import {
   LISTENING_EAR_CONSENT_TEXT_VERSION,
   RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
@@ -203,6 +203,15 @@ export async function POST(request: Request) {
     : place && place.zips.length === 1
       ? place.zips[0]
       : null;
+
+  /**
+   * Who invited them (client §1). From the code the server validated, through
+   * a **server-only** accessor — the id never travels to a browser, because
+   * `InviteResult` does reach the join page and an id is a handle on another
+   * parent's record.
+   */
+  const invitedBy = await inviterIdFor(raw.invite_code ?? null);
+
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
   );
@@ -637,6 +646,7 @@ export async function POST(request: Request) {
          server validated — never from the body (11 Aug). */
       place_id: placeId,
       selected_zip: selectedZip,
+      invited_by: invitedBy,
       children: payload.children as never,
       child_ages_at_capture: payload.child_ages_at_capture,
       profile_captured_at: payload.profile_captured_at,

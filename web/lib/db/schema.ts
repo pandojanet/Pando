@@ -203,6 +203,22 @@ export const people = pgTable(
     }),
     /** P6: which group the link came from — the parent's own answer, not the link's. */
     invitedViaGroup: text("invited_via_group"),
+    /**
+     * Invite provenance (client §1, 9 Sep). See `drizzle/0040`.
+     *
+     * ⚠ All three are written **once** and never moved: a parent who edits
+     * their profile later, or opens a second link, keeps the provenance of the
+     * invitation that actually brought them.
+     *
+     * `invitedBy` is null for most arrivals and that is correct — an invite is
+     * per group, and only `kind = 'personal'` has a person behind it.
+     */
+    invitedBy: text("invited_by"),
+    /** When the invitation was taken up — never when it was sent, which Pando
+     *  cannot know: the parent sends a personal link themselves. */
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
+    /** When it produced a founding contributor. Stamped by `founding.approve`. */
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
     /** 'link' | 'qr' | 'direct' */
     source: text("source"),
     /** P8a */

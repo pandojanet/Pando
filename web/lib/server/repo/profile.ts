@@ -109,6 +109,12 @@ export interface ProfileInput {
    */
   place_id: string | null;
   selected_zip: string | null;
+  /**
+   * Who invited them — her §1's provenance, and null for most arrivals because
+   * only a personal link has a person behind it. Resolved server-side from the
+   * code the server validated, never from the body.
+   */
+  invited_by: string | null;
   children: ChildInput[];
   child_ages_at_capture: number[];
   profile_captured_at: string;
@@ -192,6 +198,10 @@ export async function writeProfile(
          refuses the pair coming apart, because a ZIP that cannot be aged is a
          launch decision taken on an answer of unknown vintage. */
       zipRecordedAt: input.selected_zip ? new Date() : null,
+      /* The insert's values. On a re-save `provenance` below replaces both
+         with a coalesce, so the first answer is the one that stands. */
+      invitedBy: input.invited_by,
+      invitedAt: input.invite_id ? new Date() : null,
       inviteCode: input.invite_code,
       inviteId: input.invite_id ?? null,
       invitedViaGroup: input.invited_via_group,
@@ -225,12 +235,37 @@ export async function writeProfile(
      * insert. That is correct: an anonymous contribution has no identity to
      * merge with.
      */
+    /**
+     * ⚠ **Provenance is written once and never moved** (client §1, 14 Sep).
+     *
+     * Everything else in `personValues` is *replaced* on a re-save, which is
+     * right: a parent who removes a school must stop matching on it. These two
+     * are the opposite kind of fact — they record a moment that already
+     * happened. Letting a later write win would make "who brought this
+     * contributor, and when" answerable differently depending on when you
+     * asked, and a parent who opens a second link a month later would have
+     * their original inviter quietly overwritten.
+     *
+     * `coalesce(existing, new)` rather than a read-then-branch: the upsert is
+     * one statement and a second round trip to decide this would open a race
+     * with itself on a double submit.
+     */
+    const provenance = {
+      invitedBy: sql`coalesce(${people.invitedBy}, ${input.invited_by ?? null})`,
+      invitedAt: sql`coalesce(${people.invitedAt}, case when ${
+        input.invite_id ?? null
+      }::uuid is not null then now() end)`,
+    };
+
     let personId: string;
     if (input.phone) {
       const [row] = await tx
         .insert(people)
         .values(personValues)
-        .onConflictDoUpdate({ target: people.phone, set: personValues })
+        .onConflictDoUpdate({
+          target: people.phone,
+          set: { ...personValues, ...provenance },
+        })
         .returning({ id: people.id });
       personId = row.id;
     } else {

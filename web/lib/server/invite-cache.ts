@@ -38,6 +38,16 @@ export interface InviteRecord {
    * "who is this from".
    */
   inviter_first_name: string | null;
+  /**
+   * Who this link belongs to, for `people.invited_by` — her §1's provenance
+   * trio (14 Sep). Null wherever `inviter_first_name` is, and for the same
+   * reason: only a personal link has a person behind it.
+   *
+   * ⚠ The **id** rather than the name, because this one is a join key and a
+   * first name is not unique. It never reaches the browser — the join screen
+   * is served the name, and this is read on the write path only.
+   */
+  referrer_person_id: string | null;
 }
 
 const TTL_MS = 60_000;

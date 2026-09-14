@@ -1306,8 +1306,28 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "founding.approve": {
       const targets = ids(b.ids);
       if (targets.length === 0) return { applied: false, reason: "not_implemented" };
+      /**
+       * `activated_at` is stamped here, because this is where the transition
+       * happens — client §1's *"automatically store invited_by, invited_at and
+       * activated_at"*, the third of the three.
+       *
+       * ⚠ **What "activated" means, and it is hers to confirm.** Her word
+       * admits two readings and the other is *profile completed*, which is
+       * already `profile_captured_at` and would make the column a copy.
+       * Founding is the threshold the rest of the product treats as
+       * activation — granted by a person on the second approved contribution,
+       * never self-granted — so that is what this records: the moment an
+       * invitation produced a contributor rather than an arrival.
+       *
+       * ⚠ `coalesce`, so re-approving somebody does not move the date. The
+       * whole value of this column is answering *when* a link delivered
+       * somebody, and a number that changes when an admin re-clicks answers
+       * nothing.
+       */
       await tx.execute(
-        sql`update people set founding = 'founding'
+        sql`update people
+               set founding = 'founding',
+                   activated_at = coalesce(activated_at, now())
             where id in ${sql`(${sql.join(
               targets.map((t) => sql`${t}::uuid`),
               sql`, `,
