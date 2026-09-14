@@ -296,6 +296,44 @@ export interface PaymentDecision {
   reason: "free_tier" | "credit_redeemed" | "checkout_required";
 }
 
+/**
+ * Whether an unpaid Ask is refused at the moment of sending. **Off, 14 Sep.**
+ *
+ * The developer's call, to walk the whole Network Check chain end to end on the
+ * pilot deployment without the economics in the way: *"поки повністю вимкни, а
+ * я як попрошу, то повернеш ціни"*. Restoring it is this one line.
+ *
+ * ## What it does and does not change
+ *
+ * **Prices are untouched.** `TIERS` still says $5 and $15, `paymentFor` still
+ * returns `charge: true` for them, a new Ask is still created `pending`, and
+ * `/admin/payments` still reports it as unpaid. Only the refusal in `sendBlast`
+ * is relaxed, and it logs when it is.
+ *
+ * That shape is deliberate, and the tempting alternative is worse: making
+ * `paymentFor` return `not_required` would have the row *say* no payment was
+ * required, and `blasts` stores only `payment.status` and never the `reason` —
+ * so nothing would ever tell that row apart from a genuinely free tier, long
+ * after this flag came off. Relaxing enforcement writes nothing false.
+ *
+ * ## Why it is safe today, and exactly when it stops being
+ *
+ * **Only an admin can create an Ask.** `blast.create` is an admin action behind
+ * the session gate, and M7's automatic entry — the thin answer's *"Want me to
+ * ask a few nearby parents for more?"* — reads nobody's yes (see CLAUDE.md).
+ * So there is no path by which a parent can either be charged or get something
+ * free while this is off.
+ *
+ * ⚠ **The day that automatic entry is wired, this has to be back on**, or the
+ * first thing it does is hand out $15 Asks. It is on the switch-off list with
+ * `MESSAGING_RELAY=slack` and the `pando` starter password.
+ *
+ * A named constant rather than an env var, on `PILOT_HOLD_EVERYTHING`'s
+ * precedent: it is meant to come off, and a constant comes back through a diff
+ * somebody reviews rather than through a file on a VPS that nobody re-reads.
+ */
+export const PAYMENTS_ENFORCED = false;
+
 export function paymentFor(input: {
   tier: BlastTier;
   creditRedeemed: boolean;

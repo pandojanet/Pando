@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  PAYMENTS_ENFORCED,
   TIERS,
   expiryFor,
   needsHumanReview,
@@ -492,7 +493,19 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
     creditRedeemed: blast.credit_id !== null,
   });
   if (owed.charge && blast.payment_status !== "paid") {
-    return { ok: false, sent: 0, skipped: 0, reason: "unpaid" };
+    /**
+     * ⚠ Relaxed while `PAYMENTS_ENFORCED` is off (14 Sep) — see the constant for
+     * why that is safe today and the day it stops being. Logged rather than
+     * silent: a money rule that stops applying without saying so is how it stays
+     * off past the day it should have come back.
+     */
+    if (PAYMENTS_ENFORCED) {
+      return { ok: false, sent: 0, skipped: 0, reason: "unpaid" };
+    }
+    console.warn("[blast] sending an unpaid Ask — PAYMENTS_ENFORCED is off", {
+      tier: blast.tier,
+      payment_status: blast.payment_status,
+    });
   }
   if (!blast.asker_id) return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
 

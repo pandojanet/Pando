@@ -189,6 +189,28 @@ console.log("\n=== 13.5: what a tier owes, and the credit that skips it ===");
     !credited.charge && credited.cents === 0 && credited.reason === "credit_redeemed",
   );
   ok("and it is not_required rather than paid", credited.status === "not_required");
+
+  /**
+   * The pilot switch, pinned from both sides.
+   *
+   * It is off right now (14 Sep) so the Network Check chain can be walked end to
+   * end without the economics in the way. What these check is that turning it
+   * off changed **only** enforcement: the prices, the decision and the status a
+   * new Ask is created with are all exactly as they were, so restoring the flag
+   * restores the behaviour and nothing else has quietly drifted meanwhile.
+   */
+  ok(
+    "payment enforcement is off for the pilot walk",
+    tiers.PAYMENTS_ENFORCED === false,
+    String(tiers.PAYMENTS_ENFORCED),
+  );
+  ok(
+    "and it changed nothing about what a paid tier costs or is created as",
+    targeted.charge &&
+      targeted.cents === 1500 &&
+      targeted.status === "pending" &&
+      targeted.reason === "checkout_required",
+  );
 }
 
 console.log("\n=== 13.7: whether a refund is even coherent ===");
