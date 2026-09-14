@@ -22,7 +22,12 @@ import {
 import { TRUST_LABEL } from "@/lib/trust-labels";
 import { classifyDemand, escalateSensitivity } from "@/lib/demand";
 import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
-import { CLARIFYING_COPY, clarifyTemplate, nextQuestion } from "@/lib/onboarding";
+import {
+  CLARIFYING_COPY,
+  clarifyTemplate,
+  isClarifyingAnswer,
+  nextQuestion,
+} from "@/lib/onboarding";
 import { focusOptions, retrieveFor } from "@/lib/server/repo/retrieval";
 import {
   searchPublicInformation,
@@ -32,6 +37,7 @@ import {
 import { markAnswerSent, queueAnswer } from "@/lib/server/repo/answers";
 import {
   askForDetail,
+  changedSubject,
   combined,
   contextFor,
   handingOver,
@@ -564,7 +570,10 @@ export async function handleInboundMessage(input: {
   let clarified = false;
   if (person && !attached.attached && !answeredSomething) {
     const pending = await pendingClarification(person.person_id);
-    if (pending) {
+    /* ⚠ `isClarifyingAnswer` is what stops a new question being eaten by the
+       age parser — see its own header. Without it, a question with a number in
+       it stored the number and returned before answering anything. */
+    if (pending && isClarifyingAnswer(body)) {
       const saved = await saveClarification({
         personId: person.person_id,
         question: pending,
@@ -759,11 +768,32 @@ export async function handleInboundMessage(input: {
    * `answers.question_text`, so the admin queue shows the question they actually
    * asked rather than the fragment that happened to tip the classifier over.
    */
-  if (pending) await closeQuestion(pending.id, "resolved");
+  /**
+   * ⚠ **Unless they changed the subject**, in which case gluing is the wrong
+   * answer and `changedSubject` says so — see its header for the failure it
+   * closes. The old exchange is still closed: they have moved on from it either
+   * way, and leaving it open would make the *next* message ambiguous too.
+   *
+   * `resolved` rather than a status of its own, because the CHECK on
+   * `pending_questions.status` allows three values and adding a fourth is a
+   * migration for a distinction nothing reads. What actually happened is in the
+   * log line below.
+   */
+  /* Only when there is an exchange to compare against. The list is the market
+     cache's, so this costs nothing on the common path and nothing at all when
+     no question is open. */
+  const focusList = pending ? await focusOptions() : [];
+  const switched = changedSubject(pending, body, (text) =>
+    focusInQuestion(text, focusList),
+  );
+  if (pending) {
+    await closeQuestion(pending.id, "resolved");
+    console.info("[sms:inbound] exchange closed", { glued: !switched });
+  }
 
   await answerQuestion({
     from,
-    body: combined(pending, body),
+    body: switched ? body : combined(pending, body),
     person,
     caregiverIntent: reading.intent === "ask_caregiver",
     sensitive: reading.sensitive,

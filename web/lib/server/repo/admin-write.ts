@@ -81,6 +81,7 @@ export type ActionOutcome =
         | "blast_not_ready"
         | "blast_contacts_nobody"
         | "blast_nobody_reachable"
+        | "blast_expired"
         /* M7's exit (8 Sep). Four more, for the same reason as the six above:
            each names a different next step — approve a reply, find the asker a
            number, or simply try the send again. */
@@ -338,6 +339,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                 ? "blast_unpaid"
               : outcome.reason === "needs_human_review"
                 ? "blast_needs_review"
+              : outcome.reason === "expired"
+                ? "blast_expired"
                 : outcome.reason === "already_sent"
                   ? "blast_already_sent"
                   : outcome.reason === "not_ready"
@@ -503,6 +506,45 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (!created) return { applied: false, reason: "not_found" };
 
       return { applied: true, resource: "blast", resource_id: created.blast_id };
+    }
+
+    /**
+     * 7.2 — let a blast out of human review, which nothing could do until now.
+     *
+     * `human_review` is set at creation (`last_minute` always) and by
+     * `needsHumanReview` for a short pool or stacked requirements, and
+     * `sendBlast` refuses while it is true. **No action cleared it**, so the one
+     * tier whose whole point is that a person looks first could never be sent at
+     * all, and any Ask whose pool came back short was a dead row. The
+     * written-and-never-called fault inverted: a gate with no key.
+     *
+     * The reason is **required**, on `claim.decline`'s rule: releasing is the
+     * moment somebody decided five strangers' phones may ring, and the audit row
+     * is the only record of why. `pending_review` moves to `draft` because that
+     * is the status `sendBlast` admits and the one the row was heading for
+     * before the flag stopped it.
+     *
+     * ⚠ It clears the flag and **sends nothing**. Whoever released it still has
+     * to press Send, and every refusal below it still applies — the short pool
+     * that raised the flag may still be short, and `selectPool` will say so
+     * again.
+     */
+    case "blast.release": {
+      const target = id(b.id);
+      const note = text(b.note);
+      if (!target || !note) return { applied: false, reason: "not_implemented" };
+
+      const rows = (await tx.execute(sql`
+        update blasts
+           set human_review = false,
+               status = case when status = 'pending_review' then 'draft' else status end
+         where id = ${target}::uuid
+           and human_review = true
+           and status in ('draft', 'pending_review', 'active')
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "blast", resource_id: target };
     }
 
     case "blast.fulfil": {

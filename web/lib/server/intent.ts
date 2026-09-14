@@ -225,7 +225,26 @@ function safeParse(
       intent: value.intent,
       confidence: value.confidence,
       reason: typeof value.reason === "string" ? value.reason : undefined,
-      sensitive: false,
+      /**
+       * ⚠⚠ **This read `false` unconditionally until 14 Sep, and that discarded
+       * the whole of the 8 Sep safety change.**
+       *
+       * The schema asks for `sensitive`, the prompt spends four lines telling
+       * the model to set it when unsure, and `applyThreshold` is written to take
+       * whichever of the two readings is higher — and the value never got that
+       * far, because it was dropped here on the way past. So the first rung of
+       * `routeAnswer`'s ladder rested on `classifyDemand` alone, whose word list
+       * carries **no medical vocabulary at all**: *"my 4 year old keeps having
+       * nosebleeds, is that normal?"* comes back `ordinary`, and with
+       * `PILOT_HOLD_EVERYTHING` off that answer sends itself.
+       *
+       * Invisible for two reasons worth knowing. The model half has been failing
+       * on a credit balance since 9 Sep, so the fallback ran every time and this
+       * line was never reached; and the only place the flag surfaces is a
+       * boolean in one log line, which reads the same whether the model said so
+       * or nobody asked.
+       */
+      sensitive: value.sensitive === true,
     };
   } catch {
     return null;

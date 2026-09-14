@@ -398,6 +398,8 @@ export interface SendBlastResult {
     | "nobody_reachable"
     /** 13.5 — a paid tier whose checkout has not completed. */
     | "unpaid"
+    /** The window Pando promised has already closed. */
+    | "expired"
     | "not_ready"
     | "needs_human_review"
     | "already_sent"
@@ -438,7 +440,7 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   const loaded = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select b.id, b.tier, b.status, b.human_review, b.question_text,
-             b.asker_id, b.market_id, b.payment_status, b.credit_id,
+             b.asker_id, b.market_id, b.payment_status, b.credit_id, b.expires_at,
              (select count(*)::int from blast_recipients r
                where r.blast_id = b.id and r.sent_at is not null) as already
         from blasts b where b.id = ${blastId}::uuid
@@ -470,6 +472,25 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   }
   if (blast.status !== "draft" && blast.status !== "active") {
     return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
+  }
+
+  /**
+   * 7.7 — the window Pando promised, checked at the moment of sending.
+   *
+   * The status check above is not this check, and assuming it was is what left
+   * the hole: `expire_blasts` is what moves a blast to `expired`, and until a
+   * host cron runs it the status stays `active` for ever. So an Ask created with
+   * a four-hour window sent a week later, to five parents, against a guarantee
+   * whose clock had run out before any of them could answer — and the
+   * `refundOwed` half would then have reported it owed on the same page.
+   *
+   * The **date** rather than the status, for exactly that reason: this has to be
+   * right on a deployment where the job has never run, which is every deployment
+   * today. A null window belongs to `passive`, which is refused above.
+   */
+  const closesAt = blast.expires_at ? new Date(String(blast.expires_at)) : null;
+  if (closesAt && !Number.isNaN(closesAt.getTime()) && closesAt.getTime() <= Date.now()) {
+    return { ok: false, sent: 0, skipped: 0, reason: "expired" };
   }
 
   /**
@@ -749,12 +770,45 @@ async function phoneFor(personId: string): Promise<string | null> {
  * the same approximation `recordInbound` makes for the governor, kept identical
  * on purpose so the two cannot disagree about which question was answered.
  */
+/**
+ * How long after the window closes a reply still counts as one.
+ *
+ * A parent texted at 9am with a 24-hour window who answers the next evening is
+ * plainly answering, and dropping their words to treat it as a fresh question
+ * would lose what they wrote. Two days, because the 48-hour gap means no second
+ * Ask can have reached them inside it — so there is nothing else the message
+ * could be an answer to.
+ */
+const REPLY_GRACE_HOURS = 48;
+
+/**
+ * The Ask a reply from this number belongs to — **while one is genuinely open**.
+ *
+ * ⚠⚠ **This had no time bound at all until 14 Sep, and that is a bigger fault
+ * than it looks.** `attachResponse` is a blind UPDATE: it checks nothing about
+ * the text, because any text is a valid answer to an open question. Without a
+ * bound, a parent who was sent an Ask three months ago and never replied had
+ * their **next message of any kind** — a brand new question — silently filed as
+ * the answer to it. And it does not stop there: `attached` sets
+ * `awaiting_blast_reply`, which makes `classifyIntent` skip the model, and the
+ * pipeline then returns before composing anything. So the parent got no reply
+ * at all, and the only record was somebody else's Ask quietly marked answered.
+ *
+ * Measured on the live database the day this was written: one recipient open
+ * since 2 September, twelve days, on a blast whose status was still `active`.
+ *
+ * The **date** rather than the status, for the reason the send guard uses it:
+ * `expire_blasts` is what writes `expired`, and no deployment has ever run it.
+ */
 const OPEN_FOR_SENDER = sql`
   select b.blast_id from blast_recipients b
+    join blasts bl on bl.id = b.blast_id
    where b.person_id = p.id
      and b.sent_at is not null
      and b.responded_at is null
      and b.passed_at is null
+     and (bl.expires_at is null
+          or bl.expires_at > now() - (${REPLY_GRACE_HOURS} || ' hours')::interval)
    order by b.sent_at desc
    limit 1`;
 

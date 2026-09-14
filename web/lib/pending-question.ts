@@ -83,6 +83,69 @@ export function shouldGiveUp(pending: PendingQuestion | null): boolean {
 }
 
 /**
+ * The words a parent uses when they have dropped the old question.
+ *
+ * Deliberately short, and **"actually" and "instead" are not in it**: both are
+ * ordinary inside a genuine continuation ("actually he's 4", "tuesdays instead
+ * of mondays"), and a false positive here splits one question into two and
+ * answers half of it. What is left is unambiguous — nobody writes "never mind"
+ * while still asking the same thing.
+ */
+const DROPPED = [
+  "never mind",
+  "nevermind",
+  "forget that",
+  "forget it",
+  "scratch that",
+  "different question",
+  "another question",
+  "new question",
+];
+
+/**
+ * Has the parent changed the subject rather than filled in the old one?
+ *
+ * ⚠⚠ **`combined()` used to be unconditional, and that is the fault this
+ * closes** (14 Sep). Everything in this module is built on "the exchange is one
+ * question", which is right for *"camps"* then *"for a 6 year old in Altadena"*
+ * — and wrong the moment somebody changes their mind. The concrete failure:
+ * *"soccer?"* is unreadable, Pando asks for detail, the parent writes *"actually
+ * never mind, any good summer camps in Altadena?"*, and the glued text still
+ * contains "soccer". `focusInQuestion` returns the **first** match in its own
+ * list order, where `sports` sits above `camps` — so the answer is about
+ * football, the admin queue shows both sentences as one question, and the words
+ * "never mind" are read by nobody.
+ *
+ * Two signals, and either is enough:
+ *
+ *  - the parent **said so**, in words that cannot mean anything else;
+ *  - the new message **names a topic on its own** and it is a different one from
+ *    what the exchange so far names. Both have to be known: a turn with no
+ *    topic is exactly the thin fragment this whole mechanism exists to fill in,
+ *    and treating "camps" → "for a 6 year old" as a subject change would undo
+ *    the feature.
+ *
+ * `topicOf` is passed in rather than imported, which is the rule that keeps this
+ * module loadable by a plain node test — the same call `public-info.ts` makes
+ * for its person check, and for the same reason: a dependency a caller must
+ * supply is one a caller cannot forget to configure.
+ */
+export function changedSubject(
+  pending: PendingQuestion | null,
+  latest: string,
+  topicOf: (text: string) => string | null,
+): boolean {
+  if (!pending || pending.turns.length === 0) return false;
+
+  const body = latest.trim().toLowerCase();
+  if (DROPPED.some((word) => body.includes(word))) return true;
+
+  const before = topicOf(pending.turns.join(" "));
+  const now = topicOf(latest);
+  return before !== null && now !== null && before !== now;
+}
+
+/**
  * What Pando says when it cannot read the message.
  *
  * ## Three rules in the wording

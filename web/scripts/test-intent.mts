@@ -304,5 +304,86 @@ ok(
     .join(" "),
 );
 
+
+console.log("\n=== a change of subject is not a continuation (14 Sep) ===");
+{
+  /**
+   * A stand-in for `focusInQuestion` bound to a market, which is what the
+   * pipeline passes. Kept crude on purpose: what is under test is the rule about
+   * *when* two readings mean the subject changed, not the word lists.
+   */
+  const topic = (text: string): string | null => {
+    const t = text.toLowerCase();
+    if (/\bsoccer|football|swim\b/.test(t)) return "sports";
+    if (/\bcamps?\b/.test(t)) return "camps";
+    if (/\bpreschool|school\b/.test(t)) return "preschools_schools";
+    return null;
+  };
+  const open = (...turns: string[]) => ({ id: "q1", turns, asks: 1 });
+
+  ok(
+    "a fragment that fills in the same question is still one question",
+    !pq.changedSubject(open("camps"), "for a 6 year old in Altadena", topic),
+  );
+  ok(
+    "and so is a turn that names no topic of its own",
+    !pq.changedSubject(open("camps"), "somewhere close by", topic),
+  );
+  ok(
+    "two different topics are two questions",
+    pq.changedSubject(open("soccer?"), "any good summer camps in Altadena?", topic),
+  );
+  ok(
+    "the parent saying so is enough on its own",
+    pq.changedSubject(open("camps"), "never mind, what about preschools", topic),
+  );
+  /**
+   * The two words deliberately left out of `DROPPED`, and this is what would
+   * break if somebody added them: both are ordinary inside a real answer, and a
+   * false positive here answers half the question.
+   */
+  ok(
+    "'actually' does not split a question",
+    !pq.changedSubject(open("camps"), "actually he's 4 not 5", topic),
+  );
+  ok(
+    "nor does 'instead'",
+    !pq.changedSubject(open("camps"), "tuesdays instead of mondays", topic),
+  );
+  ok(
+    "with nothing open there is nothing to change from",
+    !pq.changedSubject(null, "never mind", topic),
+  );
+}
+
+console.log("\n=== a clarifying answer is short and is not a question (14 Sep) ===");
+{
+  const ob = (await import(`../lib/onboarding.ts?v=${Date.now()}`)) as typeof import("../lib/onboarding.ts");
+
+  ok("a bare age is an answer", ob.isClarifyingAnswer("3"));
+  ok("so is a sentence-shaped one", ob.isClarifyingAnswer("he's about 18 months"));
+  ok("and a neighborhood", ob.isClarifyingAnswer("south pasadena"));
+  /**
+   * The case this exists for: `parseAge` matches a number **anywhere**, so this
+   * stored the age 6 and returned before answering — the parent's question
+   * vanished and their profile gained a field.
+   */
+  ok(
+    "a question with an age in it is not an answer",
+    !ob.isClarifyingAnswer("any camps for a 6 year old in Altadena?"),
+  );
+  ok(
+    "nor is a long sentence with no question mark",
+    !ob.isClarifyingAnswer(
+      "we just moved here last month and I am trying to work out what people do with toddlers on saturdays",
+    ),
+  );
+  ok("empty is not an answer either", !ob.isClarifyingAnswer("   "));
+  ok(
+    "and the age parser is unchanged — it still reads a number anywhere",
+    ob.parseAge("he's 3 now") === 3 && ob.parseAge("18 months") === 1,
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

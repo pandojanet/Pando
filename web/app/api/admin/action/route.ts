@@ -62,6 +62,7 @@ const ACTIONS = new Set([
   "blast.deliver",
   /* 14.3 / 13.5–13.7 — the blast manager's three verbs and the money. */
   "blast.checkout",
+  "blast.release",
   "blast.fulfil",
   "blast.refund_due",
   "blast.refund",
@@ -460,6 +461,17 @@ export async function POST(request: Request) {
    * is a person's decision rather than a count of replies. A note is what makes
    * it reviewable afterwards.
    */
+  /**
+   * Releasing a blast from human review is the moment somebody decided five
+   * strangers may be texted, so it carries a reason like a declined claim does.
+   */
+  if (action === "blast.release" && !cleanText(body?.note, 300)) {
+    return NextResponse.json(
+      { error: "Say why this is safe to send — the audit row is the only record of it." },
+      { status: 422 },
+    );
+  }
+
   if (action === "blast.fulfil" && !cleanText(body?.note, 300)) {
     return NextResponse.json(
       { error: "Say what the parent actually got — three replies is not the same as an answer." },
@@ -620,7 +632,12 @@ export async function POST(request: Request) {
       blast_unpaid:
         "This Ask has not been paid for yet — open a checkout and send the link to the parent first.",
       blast_needs_review:
-        "This Ask is waiting for a person. Preview the pool: a short one means the network could not fill the tier.",
+        "This Ask is waiting for a person. Preview the pool: a short one means the network could not fill the tier. Releasing it is a decision, and it asks for a reason.",
+      /* The window is checked by its **date**, not by the status: nothing moves
+         a blast to `expired` until a host cron runs `expire_blasts`, so on a
+         deployment without one the status stays `active` for ever. */
+      blast_expired:
+        "The window on this Ask has already closed, so nobody could answer inside the guarantee. Create a new one rather than sending this.",
       blast_already_sent: "This Ask has already gone out. Replies come back on their own.",
       /* Quiet hours is named **first** because it is the likeliest cause and the
          least obvious one: the window is 8am-9pm *Pacific* (§14, the parent's

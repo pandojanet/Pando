@@ -162,7 +162,10 @@ export default function BlastsPage() {
 
   const [filter, setFilter] = useUrlFilter(FILTERS, "open");
   const [openPool, setOpenPool] = useState<string | null>(null);
-  const [noteFor, setNoteFor] = useState<{ id: string; kind: "fulfil" | "refund_due" } | null>(
+  const [noteFor, setNoteFor] = useState<{
+    id: string;
+    kind: "fulfil" | "refund_due" | "release";
+  } | null>(
     null,
   );
   const [note, setNote] = useState("");
@@ -463,6 +466,32 @@ export default function BlastsPage() {
                         * quiet hours — because those sentences say what to do
                         * next and a hidden button says nothing at all.
                         */}
+                      {/**
+                        * The key to the gate above it (14 Sep).
+                        *
+                        * `human_review` is set at creation for `last_minute` and
+                        * by `needsHumanReview` for a short pool, and `sendBlast`
+                        * refuses while it is true — and **nothing cleared it**,
+                        * so that tier could never be sent at all and a short
+                        * pool was a dead row. Releasing is a decision about
+                        * texting strangers, so it takes a reason like a declined
+                        * claim does, and it clears the flag without sending:
+                        * every other refusal still applies afterwards.
+                        */}
+                      {row.human_review &&
+                        (row.status === "draft" ||
+                          row.status === "pending_review" ||
+                          row.status === "active") && (
+                          <Button
+                            tone="secondary"
+                            disabled={busy === row.id}
+                            subject={row.question_text}
+                            onClick={() => setNoteFor({ id: row.id, kind: "release" })}
+                          >
+                            Release for sending
+                          </Button>
+                        )}
+
                       {row.pool_target > 0 &&
                         row.recipients === 0 &&
                         (row.status === "draft" || row.status === "active") && (
@@ -625,7 +654,9 @@ export default function BlastsPage() {
                       title={
                         drawer === "fulfil"
                           ? "What did the parent actually get?"
-                          : "Why is a refund owed?"
+                          : drawer === "release"
+                            ? "Why is this safe to send?"
+                            : "Why is a refund owed?"
                       }
                     >
                       <Field
@@ -640,12 +671,16 @@ export default function BlastsPage() {
                       </Field>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
-                          tone={drawer === "fulfil" ? "primary" : "danger"}
+                          tone={drawer === "refund_due" ? "danger" : "primary"}
                           disabled={busy === row.id || note.trim().length < 3}
                           onClick={() =>
                             void run(
                               row.id,
-                              drawer === "fulfil" ? "Marked answered." : "Refund flagged.",
+                              drawer === "fulfil"
+                                ? "Marked answered."
+                                : drawer === "release"
+                                  ? "Released. It still has to be sent."
+                                  : "Refund flagged.",
                               async () =>
                                 drawer === "fulfil"
                                   ? adminAction({
@@ -653,15 +688,25 @@ export default function BlastsPage() {
                                       id: row.id,
                                       note: note.trim(),
                                     })
-                                  : adminAction({
-                                      action: "blast.refund_due",
-                                      id: row.id,
-                                      reason: note.trim(),
-                                    }),
+                                  : drawer === "release"
+                                    ? adminAction({
+                                        action: "blast.release",
+                                        id: row.id,
+                                        note: note.trim(),
+                                      })
+                                    : adminAction({
+                                        action: "blast.refund_due",
+                                        id: row.id,
+                                        reason: note.trim(),
+                                      }),
                             )
                           }
                         >
-                          {drawer === "fulfil" ? "Mark answered" : "Flag the refund"}
+                          {drawer === "fulfil"
+                            ? "Mark answered"
+                            : drawer === "release"
+                              ? "Release it"
+                              : "Flag the refund"}
                         </Button>
                         <Button
                           tone="secondary"

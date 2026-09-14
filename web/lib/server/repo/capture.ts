@@ -25,8 +25,41 @@ export interface OpenCapture {
  * the same failure the one-question-at-a-time rule exists to prevent, and a
  * constraint is the only version of that rule a future caller cannot forget.
  */
+/**
+ * How long a capture stays open without a word.
+ *
+ * ⚠ **There was no limit at all until 14 Sep**, and an open capture claims every
+ * message from that number: on a free-text step a question typed weeks later
+ * would be stored as the record's own name. Measured live the day this was
+ * written: one capture open since 4 September, ten days.
+ *
+ * Two days rather than an hour, because a capture is five questions over SMS and
+ * a parent legitimately answers the next morning — and rather than a week,
+ * because past that they have forgotten what Pando asked and the next thing they
+ * write is a new subject. It is the same 48 hours the outreach gap uses, which
+ * is not a coincidence: both are "how long may Pando still be mid-conversation".
+ */
+const CAPTURE_EXPIRY_HOURS = 48;
+
 export async function openCapture(personId: string): Promise<OpenCapture | null> {
   const result = await withDb(async (db: Db) => {
+    /**
+     * Close a stale one rather than merely ignoring it.
+     *
+     * Hiding it would be worse than leaving it: the partial unique index allows
+     * one open capture per person, so an ignored row would block this parent
+     * from ever starting another — a dead end with nothing on screen saying so.
+     * `abandoned` is already a value the status CHECK allows, and `step` must go
+     * to null with it or `sms_captures_step_check` refuses the update.
+     */
+    await db.execute(sql`
+      update sms_captures
+         set status = 'abandoned', step = null, updated_at = now()
+       where person_id = ${personId}::uuid
+         and status = 'open'
+         and updated_at < now() - (${CAPTURE_EXPIRY_HOURS} || ' hours')::interval
+    `);
+
     const rows = (await db.execute(sql`
       select id::text as capture_id, step, answers
         from sms_captures
@@ -72,6 +105,7 @@ export async function openCaptureStep(phone: string): Promise<CaptureStep | null
         from sms_captures c
         join people p on p.id = c.person_id
        where p.phone = ${phone} and c.status = 'open'
+         and c.updated_at > now() - (${CAPTURE_EXPIRY_HOURS} || ' hours')::interval
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;
     const step = rows[0]?.step;

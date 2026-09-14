@@ -82,6 +82,36 @@ export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
 };
 
 /**
+ * Is this message a reply to what Pando asked, or a fresh question?
+ *
+ * ⚠ **The parsers cannot answer this on their own, and assuming they could cost
+ * a parent their question** (14 Sep). `parseAge` matches a one or two digit
+ * number **anywhere** in the text — deliberately, because "he's 3" and "about 4
+ * I think" are ordinary answers — so after *"how old is your child?"* the
+ * message *"any camps for a 6 year old in Altadena?"* parsed as the age 6,
+ * stored it, set `clarified`, and the pipeline returned **without answering the
+ * question they had just asked**. Their age was recorded and they got silence.
+ *
+ * The discriminator is the shape of the message rather than its content, and it
+ * has to be, because the content is legitimately ambiguous: a clarifying answer
+ * is short and is not a question. A question mark is the clearest signal a
+ * parent gives, and the length floor catches the ones who leave it out. Twelve
+ * words, because "we moved to south pas last year from the valley" is still an
+ * answer and anything longer is a sentence with its own agenda.
+ *
+ * ⚠ Deliberately **not** a check for question words: "how old" appears in a
+ * parent's own answer often enough ("how old — she's 4") that a word list would
+ * refuse real answers, and refusing one costs the profile a field it will never
+ * be asked for again (one refusal is a parent who did not want to answer).
+ */
+export function isClarifyingAnswer(text: string): boolean {
+  const body = text.trim();
+  if (body.length === 0) return false;
+  if (body.includes("?")) return false;
+  return body.split(/\s+/).length <= 12;
+}
+
+/**
  * Read an age out of a reply.
  *
  * Deliberately narrow. A parent answering "3" means three years old; a parent

@@ -867,6 +867,7 @@ export type AdminAction =
    * owed. So the fulfillment flag the estimate asks for is a person's decision,
    * and it carries a note for the same reason every other decision here does.
    */
+  | { action: "blast.release"; id: string; note: string }
   | { action: "blast.fulfil"; id: string; note: string }
   /**
    * 14.5 / 13.7 — the two halves of a refund, kept apart on purpose.
