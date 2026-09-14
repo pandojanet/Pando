@@ -2544,7 +2544,10 @@ const SEARCHABLE_QUESTIONS: Partial<
      * schools, so the free-text sheet is no longer the only way out of a fixed
      * list.
      */
-    searchLabel: "Can’t find yours? Search for a town or neighborhood.",
+    /* ZIP named in the label as well as the placeholder (§5), because the
+       label is the control's accessible name — a placeholder alone tells a
+       screen-reader user nothing about the third way in. */
+    searchLabel: "Can’t find yours? Search by town, neighborhood or ZIP code.",
     /**
      * **All seventeen of her cities are taps, always.**
      *

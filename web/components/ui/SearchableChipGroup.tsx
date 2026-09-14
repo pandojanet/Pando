@@ -6,6 +6,7 @@ import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { searchMarketOptions } from "@/lib/api-client";
+import { placesForZip } from "@/lib/home-places";
 import { neighborhoodCity, registerFoundOptions } from "@/lib/market-options";
 import { useMarketOptions } from "@/lib/use-market-options";
 import { visibleStarters } from "@/lib/starters";
@@ -281,6 +282,31 @@ export function SearchableChipGroup({
       return;
     }
 
+    /**
+     * A ZIP is answered here, not by the endpoint — her §5 placeholder is
+     * *"Type your town, neighborhood or ZIP code."*
+     *
+     * `market_options` has no ZIP column and should not: the ZIPs are a
+     * matching and validation rule the server has to be able to check, so they
+     * live in `lib/home-places.ts`, which is already in this bundle. Asking the
+     * database for something it does not hold would be a round trip that can
+     * only answer nothing.
+     *
+     * ⚠ Gated on five digits rather than on "looks numeric", so a name search
+     * is untouched — and **only** for this category, because a ZIP means
+     * nothing to the schools or clubs directories.
+     *
+     * A ZIP serving several places returns all of them, which is her *"don't
+     * make users pick from duplicate city rows upfront"* satisfied from the
+     * other side: the rows appear only once a ZIP has narrowed them to three.
+     */
+    if (category === "neighborhoods" && /^\d{5}$/.test(q)) {
+      setResults(placesForZip(q).map((p) => ({ id: p.id, label: p.name })));
+      setFailed(false);
+      setResultsFor(q);
+      return;
+    }
+
     timer.current = window.setTimeout(() => {
       void searchMarketOptions({ category, market, q, area: area ?? undefined })
         .then((r) => {
@@ -331,6 +357,9 @@ export function SearchableChipGroup({
   /* Only results not already on screen as chips — a result that is already a
      starter would otherwise appear twice, once above and once below the box. */
   const unshown = results.filter((r) => !merged.some((m) => m.id === r.id));
+  /* The other half of that filter, so the status can tell "no match" from
+     "matched something you can already see". */
+  const matchedButShown = results.filter((r) => merged.some((m) => m.id === r.id));
 
   /**
    * Picking a record that came from the directory, rather than from the
@@ -440,7 +469,14 @@ export function SearchableChipGroup({
           type="search"
           enterKeyHint="search"
           autoComplete="off"
-          placeholder="Start typing a name"
+          /* Her §5 placeholder, on the one question it describes. The other
+             four directories are schools, classes, clubs and faith
+             communities, where a ZIP means nothing. */
+          placeholder={
+            category === "neighborhoods"
+              ? "Type your town, neighborhood or ZIP code"
+              : "Start typing a name"
+          }
         />
 
         {query.trim().length >= 2 && (
@@ -484,7 +520,25 @@ export function SearchableChipGroup({
                   ? "Search isn't answering just now. You can still add it below."
                   : unshown.length > 0
                     ? `${unshown.length} ${unshown.length === 1 ? "match" : "matches"} for “${query.trim()}”.`
-                    : `Nothing matching “${query.trim()}”.`}
+                    : /**
+                       * ⚠ **A match already on screen is not "nothing"**, and
+                       * saying so was a small lie this search has always told.
+                       *
+                       * `unshown` drops a result that is already a chip, which
+                       * is right — it would otherwise appear twice — but the
+                       * status read the empty list as *no match*. Typing
+                       * "Pasadena" with Pasadena among the taps answered
+                       * *"Nothing matching 'Pasadena'."*
+                       *
+                       * Rare enough to survive unnoticed until §5 made it
+                       * routine: every in-footprint ZIP resolves to a place,
+                       * and for the seventeen starter towns that place is
+                       * already a chip. So a parent typing their own ZIP was
+                       * told Pando had never heard of it.
+                       */
+                      matchedButShown.length > 0
+                      ? `${matchedButShown.map((o) => o.label).join(", ")} — already in the list above.`
+                      : `Nothing matching “${query.trim()}”.`}
             </p>
 
             {!searching && !failed && unshown.length > 0 && (

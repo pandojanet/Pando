@@ -557,7 +557,31 @@ ok(
   "the stranded “Other nearby area” label is gone",
   questionById("neighborhood")?.otherLabel === undefined,
 );
-ok("her search label", hood?.searchLabel === "Can’t find yours? Search for a town or neighborhood.");
+/**
+ * ⚠ Her 24 Aug label was pinned here verbatim and is superseded by §5 of
+ * 9 Sep, which adds a third way in: *"Type your town, neighborhood or ZIP
+ * code."* Updated rather than deleted, because the thing worth protecting is
+ * unchanged — there is **one** route out of the town list and it names every
+ * way of using it.
+ *
+ * The label is ours; the placeholder is hers, word for word, so that one is
+ * pinned against the component that renders it.
+ */
+ok(
+  "the search label names all three ways in",
+  ["town", "neighborhood", "ZIP"].every((w) => hood?.searchLabel?.includes(w)),
+  hood?.searchLabel,
+);
+ok(
+  "and her placeholder is on the control, verbatim",
+  fs
+    .readFileSync(
+      new URL("../components/ui/SearchableChipGroup.tsx", import.meta.url),
+      "utf8",
+    )
+    .includes("Type your town, neighborhood or ZIP code"),
+  "§5, 9 Sep",
+);
 ok(
   "and the town list is never filtered by the town you just picked",
   hood?.wholeList === true,
