@@ -1,4 +1,4 @@
-import type { RoutingInput } from "../lib/answer-routing.ts";
+import type { HoldReason, RoutingInput } from "../lib/answer-routing.ts";
 
 /**
  * M5.8 — what holds an answer back.
@@ -54,17 +54,27 @@ ok(
   "a solid ordinary answer goes out by itself",
   route().hold === false,
 );
+/**
+ * ⚠ These three asserted the opposite until 14 Sep, and why they were inverted
+ * rather than deleted is the finding: the condition they described is **the
+ * same expression** that offers a Network Check, so holding on it meant M7's
+ * automatic entry could never fire without an admin first releasing the answer
+ * that carries the offer.
+ */
 ok(
-  "two parent-backed records is the floor, and one is not enough",
-  route({ used: 1 }).hold === true && route({ used: 1 }).reason === "low_evidence",
+  "a thin answer goes out by itself — one parent behind it is still an answer",
+  route({ used: 1 }).hold === false && route({ used: 1 }).reason === "not_held",
+  "it is an unhelpful answer, and the honest alternative to it was silence",
 );
 ok(
-  "nor is an answer with no parent behind it at all",
-  route({ public_only: true }).reason === "public_only",
+  "so does one with no parent behind it at all",
+  route({ public_only: true }).hold === false,
+  "the label says Public/general information, so it cannot pose as a parent",
 );
 ok(
-  "and neither of those is permanent — they clear as the base fills",
-  route({ used: 1 }).permanent === false && route({ public_only: true }).permanent === false,
+  "and the two move together, because they are one set",
+  route({ public_only: true, used: 0 }).hold === false,
+  "composeAnswer offers a blast on publicOnly || parentUsed < 2 — the same test",
 );
 
 console.log("\n=== the rules that will still hold when the blanket comes off ===");
@@ -100,13 +110,8 @@ ok(
   route({ caregiver_related: true }).reason === "caregiver",
 );
 ok(
-  "and a thin answer is reported as thin",
-  route({ used: 1 }).reason === "low_evidence",
-);
-ok(
-  "public-only is its own reason, not folded into thin",
-  route({ public_only: true, used: 4 }).reason === "public_only",
-  "it changes what the reviewer is checking, not just how it reads",
+  "a thin answer has no reason to report, because it is not held",
+  route({ used: 1 }).reason === "not_held",
 );
 
 console.log("\n=== order: the costlier mistake is checked first ===");
@@ -116,20 +121,28 @@ ok(
   "a claim about a named person is owed silence, which is stricter than review",
 );
 ok(
-  "caregiver beats public_only",
-  route({ caregiver_related: true, public_only: true }).reason === "caregiver",
+  "a caregiver answer is still held even when it is thin",
+  route({ caregiver_related: true, public_only: true, used: 0 }).reason === "caregiver",
+  "dropping the thin holds must not drop the permanent one underneath them",
 );
 ok(
-  "public_only beats low_evidence",
-  route({ public_only: true, used: 1 }).reason === "public_only",
+  "and a sensitive one likewise",
+  route({ sensitivity: "high_stakes", used: 0 }).reason === "sensitive",
 );
 
-console.log("\n=== the temporary holds are marked temporary ===");
-ok("public_only is not permanent", route({ public_only: true }).permanent === false);
-ok("low_evidence is not permanent", route({ used: 1 }).permanent === false);
+console.log("\n=== the two reasons stay readable for the rows that carry them ===");
+/**
+ * Nothing produces these any more, and they must not be deleted from the union:
+ * answers written before 14 Sep carry them and `labels.ts` renders them, so
+ * removing the values breaks the admin on its own history.
+ */
+for (const reason of ["public_only", "low_evidence"] as const) {
+  const kept: HoldReason = reason;
+  ok(`${reason} is still a hold reason an old row can carry`, kept === reason);
+}
 ok(
-  "because a four-parent answer is exactly what §19 says can eventually pass",
-  route({ used: 4 }).permanent === false,
+  "and nothing routes to either of them today",
+  route({ public_only: true, used: 0 }).reason === "not_held",
 );
 
 console.log("\n=== the caregiver word scan is generous on purpose ===");

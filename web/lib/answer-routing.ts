@@ -140,15 +140,47 @@ export function routeAnswer(input: RoutingInput): RoutingVerdict {
     return { hold: true, reason: "generator_asked", permanent: true };
   }
 
-  /* Public-only and thin answers are the estimate's "low-confidence" case. They
-     are not permanent holds: as the base fills, an answer built on four parents
-     is exactly the ordinary recommendation §19 says can eventually pass. */
-  if (input.public_only) {
-    return { hold: true, reason: "public_only", permanent: false };
-  }
-  if (input.used < 2) {
-    return { hold: true, reason: "low_evidence", permanent: false };
-  }
+  /**
+   * ⚠ **Thin and public-only no longer hold** (14 Sep, the developer's call).
+   *
+   * They were the estimate's "low-confidence" case and were always the
+   * temporary half of this ladder — *"as the base fills, an answer built on
+   * four parents is exactly the ordinary recommendation §19 says can
+   * eventually pass"*. What forced the decision is that the base has not
+   * filled and the condition turned out to be **the same expression** that
+   * offers a Network Check: `composeAnswer` sets `next_step = 'offer_blast'`
+   * on `publicOnly || parentUsed < 2`, and this held on `public_only ||
+   * used < 2` with `used` being `parent_used`. Identical sets. So every
+   * answer carrying M7's automatic entry waited for an admin, and the entry
+   * wired that morning could not fire without two admin touches — approve the
+   * answer, then send the Ask.
+   *
+   * ⚠ **Both rungs had to go, not one.** Removing only `low_evidence` would
+   * have left the *thinnest* answers — no parent behind them at all — still
+   * held, so the feature would have worked for half its cases and looked
+   * broken for the other half.
+   *
+   * **What still holds, and it is the whole safety argument:** sensitive,
+   * caregiver-related and "the generator asked" are all above this line and
+   * all permanent. Those are the three §19 keeps human eyes on forever. What
+   * was removed is a *quality* gate, not a safety one — a thin answer is an
+   * unhelpful answer, and the honest alternative to sending it was silence
+   * until somebody opened a queue.
+   *
+   * ⚠ **The cost, stated rather than discovered:** a parent can now be sent an
+   * answer built on one record, or on nothing but a web search, that nobody
+   * read. The trust labels are what make that survivable — `public_only`
+   * carries *"Public/general information"* verbatim (invariant 3, enforced in
+   * a separate branch of `trust-labels.ts` rather than by a flag), so it
+   * cannot pose as something a parent said. And the answer offers to ask the
+   * network in the same message, which is the actual remedy for thinness.
+   *
+   * ⚠ **Both reasons stay in `HoldReason`** though nothing produces them any
+   * more: rows written before today carry them and `labels.ts` renders them,
+   * so deleting the values breaks the admin on its own history. The thinness
+   * of a row is still recoverable — `answers.public_only` is its own column
+   * and `share_ids` carries what it was built from.
+   */
 
   if (PILOT_HOLD_EVERYTHING) {
     return { hold: true, reason: "pilot_review_all", permanent: false };
