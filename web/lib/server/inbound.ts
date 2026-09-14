@@ -13,7 +13,7 @@ import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { planSegments, toGsm7 } from "@/lib/sms-segments";
-import { SHARE_INVITE, SMALL_TALK } from "@/lib/replies";
+import { ASK_STARTED, SHARE_INVITE, SMALL_TALK } from "@/lib/replies";
 import {
   heldReply,
   routeAnswer,
@@ -34,7 +34,12 @@ import {
   type PublicFinding,
   type PublicSearchResult,
 } from "@/lib/server/web-search";
-import { markAnswerSent, queueAnswer } from "@/lib/server/repo/answers";
+import {
+  markAnswerSent,
+  pendingBlastOffer,
+  queueAnswer,
+  spendBlastOffer,
+} from "@/lib/server/repo/answers";
 import {
   askForDetail,
   changedSubject,
@@ -55,7 +60,7 @@ import {
   settingsConfirmation,
   settingsPrompt,
 } from "@/lib/outreach-policy";
-import { attachResponse, recordPass } from "@/lib/server/repo/blast";
+import { attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
 import { isCaregiverDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
 import { deleteCaregiverByPhone } from "@/lib/server/repo/caregiver-delete";
@@ -503,14 +508,18 @@ export async function handleInboundMessage(input: {
   const attached = await attachResponse({ phone: from, text: body });
 
   /**
-   * 10.2 — a reply to a freshness ping, and 9.1's "did it help?".
+   * Three questions Pando may be waiting on, all answered with the word "yes":
+   * 10.2's freshness ping, 9.1's "did it help?", and M7's automatic entry —
+   * the offer a thin answer ends with, *"Want me to ask a few nearby parents
+   * for more?"*.
    *
-   * **They are resolved together, by which question was asked more recently.**
-   * Both are answered with the word "yes", and nothing in the message separates
-   * them — the same collision as 8.3's bare "5", and the same answer: the
-   * records decide, not the order of the code. Resolving these by whichever
-   * `if` came first would silently refresh a record when the parent was grading
-   * an answer, and both writes are invisible to whoever made the mistake.
+   * **They are resolved together, by which one was asked more recently.**
+   * Nothing in the message separates them — the same collision as 8.3's bare
+   * "5", and the same answer: the records decide, not the order of the code.
+   * Resolving them by whichever `if` came first would silently refresh a
+   * record when the parent was grading an answer, or start a Network Ask when
+   * they were confirming one, and every one of those writes is invisible to
+   * whoever made the mistake.
    *
    * A confirmation is worth more than a grade when both are open, and that falls
    * out of the timestamp rather than being asserted: a ping sent this morning
@@ -520,16 +529,18 @@ export async function handleInboundMessage(input: {
   const helpedReply = yesOrNo(body);
   let answeredSomething = false;
 
-  if (!attached.attached && (pingReply !== "unclear" || helpedReply !== null)) {
-    const [ping, prompt] = await Promise.all([
+  if (person && !attached.attached && (pingReply !== "unclear" || helpedReply !== null)) {
+    const [ping, prompt, offer] = await Promise.all([
       pingReply === "unclear" ? Promise.resolve(null) : pendingPing(from),
       helpedReply === null ? Promise.resolve(null) : pendingHelpedAnswer(from),
+      helpedReply === null ? Promise.resolve(null) : pendingBlastOffer(from),
     ]);
 
     const at = (v: string | null) => (v ? new Date(v).getTime() : 0);
-    const pingWins = ping !== null && (prompt === null || at(ping.asked_at) >= at(prompt.asked_at));
+    const asked = (c: { asked_at: string | null } | null) => (c ? at(c.asked_at) : -1);
+    const latest = Math.max(asked(ping), asked(prompt), asked(offer));
 
-    if (pingWins && ping) {
+    if (ping && asked(ping) === latest) {
       const outcome = await applyPingReply(ping, pingReply);
       /* Enums only — never the record's name or the parent's words. */
       console.info("[sms:inbound] freshness", {
@@ -537,6 +548,50 @@ export async function handleInboundMessage(input: {
         kind: outcome?.kind ?? "unknown",
         vouched: outcome?.vouched ?? false,
       });
+      answeredSomething = true;
+    } else if (offer && helpedReply !== null && asked(offer) === latest) {
+      /**
+       * M7's automatic entry, and the order here is the idempotency.
+       *
+       * The offer is **claimed first** — `spendBlastOffer` is a conditional
+       * UPDATE on `next_step = 'offer_blast'`, so a second yes matches nothing
+       * and cannot create a second Ask for one question. Creating first and
+       * spending afterwards would leave that window open. A claim that fails is
+       * either an offer somebody already answered or an unreachable database,
+       * and neither is a reason to start an Ask.
+       *
+       * A **no** spends it silently, on PASS's reasoning: they declined, and a
+       * reply saying so is a message spent telling somebody Pando heard them
+       * say nothing.
+       *
+       * The Ask is created as a `draft`: `targeted` does not carry
+       * `always_human_review`, so nothing here marks it for review, and
+       * nothing here sends it either — `blast.send` is still an admin
+       * pressing a button, which is the whole pilot's shape.
+       */
+      const claimed = await spendBlastOffer(offer.answer_id);
+      let created = false;
+
+      if (claimed && helpedReply) {
+        const blast = await createBlast({
+          askerId: person.person_id,
+          question: offer.question,
+          tier: "targeted",
+        });
+        created = blast.ok;
+        if (blast.ok) {
+          await sendSms({
+            to: from,
+            body: ASK_STARTED,
+            category: "transactional",
+            personId: person.person_id,
+            template: "ask_started",
+            templateVersion: SMS_TEMPLATE_VERSION,
+          });
+        }
+      }
+
+      console.info("[sms:inbound] ask offer", { accepted: helpedReply, claimed, created });
       answeredSomething = true;
     } else if (prompt && helpedReply !== null) {
       await recordHelped(prompt.answer_id, helpedReply);

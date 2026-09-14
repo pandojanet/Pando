@@ -208,3 +208,92 @@ export async function markAnswerSent(id: string): Promise<void> {
     return true;
   });
 }
+
+/**
+ * M7's automatic entry, finally read (14 Sep).
+ *
+ * A thin answer ends by offering to ask the network — `composeAnswer` sets
+ * `next_step = 'offer_blast'` and the text carries *"Want me to ask a few
+ * nearby parents for more?"*. **Nothing had ever read the reply.** It is the
+ * one promise in the product the code could not keep at all: the parent says
+ * yes and hears nothing, for ever.
+ *
+ * It stayed unwired because wiring it meant saying what the Ask costs and how
+ * the parent pays, and neither had an answer. Payment enforcement being off for
+ * the pilot settles the first, and the developer's call settles the second:
+ * the yes creates the Ask, an admin still presses Send.
+ *
+ * ## Why this is a pending lookup rather than a flag on the session
+ *
+ * Because a bare "yes" already means two other things — *did it help?* (9.1)
+ * and *is this still worth recommending?* (10.2) — and the rule this pipeline
+ * settled for that collision is that **the records decide, and the more
+ * recently asked question wins**. So this has to be a third candidate with its
+ * own timestamp, resolved beside the other two, and not a fourth `if`.
+ *
+ * `sent_at` is the timestamp, because that is when the parent was actually
+ * offered it. Only a **sent** answer counts: an offer still sitting in the
+ * review queue was never made.
+ *
+ * ⚠ **And it is bounded**, on the 14 Sep rule that an open question must not
+ * claim a message for ever. A yes to *"shall I ask a few parents?"* arrives in
+ * the same conversation or not at all, so an offer older than
+ * `OFFER_WINDOW_HOURS` is treated as never taken up — otherwise a parent who
+ * answers "yes" to something else entirely a month later starts (and, once
+ * enforcement is back on, pays for) an Ask about a question they have long
+ * since stopped caring about. Unlike the three mechanisms fixed that day this
+ * one is content-gated — only a plain yes or no reaches it — so the window is
+ * the second line rather than the only one.
+ */
+const OFFER_WINDOW_HOURS = 48;
+
+export interface PendingOffer {
+  answer_id: string;
+  /** The original question, which is what the Ask should carry. */
+  question: string;
+  asked_at: string | null;
+}
+
+export async function pendingBlastOffer(phone: string): Promise<PendingOffer | null> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select a.id::text as answer_id, a.question_text, a.sent_at
+        from answers a
+       where a.phone = ${phone}
+         and a.next_step = 'offer_blast'
+         and a.status = 'sent'
+         and a.sent_at > now() - (${OFFER_WINDOW_HOURS} || ' hours')::interval
+       order by a.sent_at desc
+       limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      answer_id: String(row.answer_id),
+      question: String(row.question_text ?? ""),
+      asked_at: (row.sent_at as string | null) ?? null,
+    };
+  });
+  return result.persisted ? (result.data ?? null) : null;
+}
+
+/**
+ * The offer is spent, whichever way they answered.
+ *
+ * ⚠ **Without this a second "yes" creates a second Ask** — the same shape as
+ * the double-approval that wrote two contributions from one blast reply, and
+ * here it would charge a parent twice for one question. `next_step` carries it
+ * rather than a new column: the value already exists in the CHECK, and the Ask
+ * itself is the durable record that the offer was taken up.
+ */
+export async function spendBlastOffer(answerId: string): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      update answers set next_step = 'none'
+       where id = ${answerId}::uuid and next_step = 'offer_blast'
+      returning id
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows.length > 0;
+  });
+  return result.persisted === true && result.data === true;
+}

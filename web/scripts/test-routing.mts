@@ -206,6 +206,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
   for (const [name, text] of [
     ["the share invite", r.SHARE_INVITE],
     ["the small-talk reply", r.SMALL_TALK],
+    ["the Ask acknowledgement", r.ASK_STARTED],
   ] as const) {
     const plan = s.planSegments(text);
     ok(
@@ -227,6 +228,24 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     "the share invite points at /share, never /caregiver",
     r.SHARE_INVITE.includes("pando.is/share") && !r.SHARE_INVITE.includes("/caregiver"),
     "sending a nominating parent to the caregiver's own sign-up is the wrong flow",
+  );
+  /**
+   * M7's automatic entry, wired 14 Sep. The reply a parent gets for saying yes
+   * to *"Want me to ask a few nearby parents for more?"*.
+   *
+   * It **promises no time**, for the same reason `heldReply` does not: an Ask
+   * runs on a window the parent cannot see and an admin still presses Send, so
+   * any number here is one nobody can keep.
+   */
+  ok(
+    "the Ask acknowledgement says what will happen and promises no time",
+    !/(minute|hour|today|shortly|soon)/i.test(r.ASK_STARTED),
+    r.ASK_STARTED,
+  );
+  ok(
+    "and it never says what an Ask costs",
+    !r.ASK_STARTED.includes("$"),
+    "payment is off for the pilot, and the price is not this message's to state",
   );
   ok(
     "and small talk asks no question of its own",

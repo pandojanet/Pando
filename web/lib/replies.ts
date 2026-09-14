@@ -58,3 +58,24 @@ export const SHARE_INVITE =
  */
 export const SMALL_TALK =
   "Pando: ask me about local classes, camps, activities or childcare and I'll tell you what nearby parents recommend. Reply STOP to opt out, HELP for help.";
+
+/**
+ * The yes to *"Want me to ask a few nearby parents for more?"* — acknowledged.
+ *
+ * **It promises no time**, which is the same rule `heldReply` follows and for
+ * the same reason: an Ask is sent by a person in the pilot, the parents it
+ * reaches have 48-hour gaps and monthly ceilings of their own, and nobody can
+ * keep a deadline made on their behalf.
+ *
+ * **It does not mention money.** The tier is $15 and payment enforcement is off
+ * for the pilot, so today this costs the parent nothing — and naming a price
+ * that is not being taken would be worse than saying nothing. The day the
+ * automatic entry has to charge, this sentence is where the checkout link goes,
+ * and it changes then rather than pre-announcing a charge that does not happen.
+ *
+ * ⚠ New user-facing copy, on the list for the client. Not in `sms-templates.ts`
+ * — that is registered A2P sample text where a reword is a compliance event —
+ * and written in GSM-7 so it costs one segment.
+ */
+export const ASK_STARTED =
+  "Pando: on it. I'll ask a few nearby parents who'd know, and text you what they say. Reply STOP to opt out, HELP for help.";
