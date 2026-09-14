@@ -171,6 +171,27 @@ export const people = pgTable(
     lastName: text("last_name"),
     marketId: text("market_id").notNull().default("pasadena"),
     neighborhood: text("neighborhood"),
+    /**
+     * The canonical SGV place (`lib/home-places.ts`), recorded at the moment the
+     * parent answered — client §5, 9 Sep. Distinct from `neighborhood`, which
+     * stays the finer answer: a Bungalow Heaven parent keeps the district and
+     * carries `place_id = 'pasadena'` beside it.
+     *
+     * ⚠ Not derived from `market_options.area_slug`, though that resolves to
+     * the same city today: that table is editable taxonomy, and the demand
+     * number §5 exists to produce has to keep meaning the place it meant when
+     * it was captured. See `drizzle/0039`.
+     */
+    placeId: text("place_id"),
+    /**
+     * Five digits, or null for every parent stored before the question asked
+     * for one. Never a ZIP+4 — the +4 is a delivery route, and her own note is
+     * *"No precise home address."*
+     */
+    selectedZip: text("selected_zip"),
+    /** Moves with `selected_zip`, by CHECK. A ZIP that cannot be aged is a
+     *  launch decision made on an answer of unknown vintage. */
+    zipRecordedAt: timestamp("zip_recorded_at", { withTimezone: true }),
     inviteCode: text("invite_code"),
     /**
      * The resolved `invites` row, so "which group delivered contributors" is a
