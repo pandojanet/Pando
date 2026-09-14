@@ -255,14 +255,24 @@ export const CAREGIVER_CONSENT_TEXT = {
 } as const;
 
 /**
- * 11.3 — the word that honours the sentence above.
+ * 11.3 — the word that honours the sentence above, and it is **everybody's**
+ * word now (14 Sep).
  *
  * `CAREGIVER_CONSENT_TEXT.profile` promises "I can delete it at any time by
  * texting DELETE", and the 2C flow's last screen says "Text DELETE and the whole
- * profile goes, without asking why". Those are the only two places the promise
- * is made, and the keyword lives here beside one of them so the two cannot
- * drift — the same argument that keeps `isSettingsCommand` in
+ * profile goes, without asking why". The keyword lives here beside one of them
+ * so the two cannot drift — the same argument that keeps `isSettingsCommand` in
  * `outreach-policy.ts` next to the numbers it quotes.
+ *
+ * ⚠⚠ **But those were never the only two places the promise is made, and that
+ * is why this widened.** `/privacy` has told **every** parent, since the page
+ * was ported from the client's own HTML, that *"You can request deletion of
+ * your data at any time by texting DELETE to Pando"* — while the handler
+ * resolved the number against `caregiver_claims` and answered anybody else
+ * *"there's no caregiver profile on this number"*. So a parent doing exactly
+ * what the privacy policy told them to do was turned away by the product that
+ * told them, and the nearest thing to a receipt was a mailto. The word is
+ * unchanged and the parser is unchanged; what changed is who it works for.
  *
  * **Exact on the whole message**, the rule every parser in this app follows
  * (`keywordOf`, `yesOrNo`, `readPingReply`) and here for the sharpest version of
@@ -274,12 +284,19 @@ export const CAREGIVER_CONSENT_TEXT = {
  * and a confirmation step would make the sentence false on the one screen where
  * a caregiver is deciding whether to trust Pando at all. The exact-match rule is
  * what makes immediacy safe: DELETE is not a word anybody texts by accident.
+ *
+ * ⚠ **The web control takes the opposite call, and the two are consistent
+ * rather than in conflict.** There the panel *is* the confirmation, because a
+ * button on a screen is easy to hit by mistake and nothing had promised one
+ * tap. Here a second round trip would need an **open state on the number** —
+ * the mechanism that spent 14 Sep claiming messages it had no right to — for a
+ * word nobody types by accident.
  */
-const CAREGIVER_DELETE_KEYWORDS = ["DELETE", "REMOVE ME", "DELETE MY PROFILE"];
+const DELETE_KEYWORDS = ["DELETE", "REMOVE ME", "DELETE MY PROFILE"];
 
-export function isCaregiverDeleteRequest(body: string): boolean {
+export function isDeleteRequest(body: string): boolean {
   const word = body.trim().toUpperCase().replace(/[.!]+$/, "");
-  return CAREGIVER_DELETE_KEYWORDS.includes(word);
+  return DELETE_KEYWORDS.includes(word);
 }
 
 /** The permissions, kept distinct on purpose. */

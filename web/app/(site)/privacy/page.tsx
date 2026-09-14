@@ -145,6 +145,11 @@ export default function PrivacyPage() {
           recommendations.
         </li>
         <li>
+          Text <strong>DELETE</strong> to remove your profile. It happens
+          straight away and we text you back to confirm. What you recommended
+          stays, with nothing linking it to you.
+        </li>
+        <li>
           Email us to access, correct, or delete your information. California
           residents may exercise rights under the CCPA/CPRA by contacting us at the
           address below.

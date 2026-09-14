@@ -85,37 +85,37 @@ ok(
 );
 
 console.log("\n=== 11.3  the DELETE keyword ===");
-ok("DELETE is read as a delete request", c.isCaregiverDeleteRequest("DELETE"));
-ok("lowercase too", c.isCaregiverDeleteRequest("delete"));
-ok("with a full stop", c.isCaregiverDeleteRequest("Delete."));
-ok('"remove me" too', c.isCaregiverDeleteRequest("remove me"));
-ok('and "delete my profile"', c.isCaregiverDeleteRequest("DELETE MY PROFILE"));
+ok("DELETE is read as a delete request", c.isDeleteRequest("DELETE"));
+ok("lowercase too", c.isDeleteRequest("delete"));
+ok("with a full stop", c.isDeleteRequest("Delete."));
+ok('"remove me" too', c.isDeleteRequest("remove me"));
+ok('and "delete my profile"', c.isDeleteRequest("DELETE MY PROFILE"));
 
 console.log("\n=== 11.3  and the refusals, which are the half that matters ===");
 /* Irreversible, so the parser has to be stricter here than anywhere else. */
 ok(
   '"delete my saturday slot" is NOT a delete request',
-  !c.isCaregiverDeleteRequest("delete my saturday slot"),
+  !c.isDeleteRequest("delete my saturday slot"),
   "a substring test would remove somebody's whole profile over a scheduling note",
 );
 ok(
   '"can you delete the wrong number?" is not',
-  !c.isCaregiverDeleteRequest("can you delete the wrong number?"),
+  !c.isDeleteRequest("can you delete the wrong number?"),
 );
 ok(
   '"please delete" is not — it is a sentence, not the keyword',
-  !c.isCaregiverDeleteRequest("please delete"),
+  !c.isDeleteRequest("please delete"),
 );
-ok('"deleted" is not', !c.isCaregiverDeleteRequest("deleted"));
-ok("an empty message is not", !c.isCaregiverDeleteRequest("   "));
+ok('"deleted" is not', !c.isDeleteRequest("deleted"));
+ok("an empty message is not", !c.isDeleteRequest("   "));
 ok(
   "and neither is STOP, which is a different decision entirely",
-  !c.isCaregiverDeleteRequest("STOP"),
+  !c.isDeleteRequest("STOP"),
   "STOP silences Pando; DELETE removes the profile — conflating them loses one of them",
 );
 
 console.log("\n=== 11.3  the receipts say what happened and ask nothing ===");
-const deleted = s.caregiverDeletedSms();
+const deleted = s.profileDeletedSms({ caregiver: true, profile: false, contributions: 0 });
 ok("it confirms the profile is gone", /deleted/i.test(deleted));
 ok(
   "it says families can no longer see them",
@@ -128,16 +128,51 @@ ok(
   "the 2C flow promises the profile goes without asking why",
 );
 ok("STOP and HELP last, as registered", /Reply STOP to opt out, HELP for help\.$/.test(deleted));
+ok(
+  "a caregiver who contributed nothing is sent back to /caregiver, not /join",
+  /pando\.is\/caregiver/.test(deleted),
+  "the flow they came from is the one that can take them back",
+);
+
+console.log("\n=== 14 Sep  the same word, for a parent ===");
+/**
+ * The widening. `/privacy` has told every parent they may text DELETE since the
+ * page was ported; until today the handler resolved the number against
+ * `caregiver_claims` and turned everybody else away.
+ */
+const parent = s.profileDeletedSms({ caregiver: false, profile: true, contributions: 3 });
+ok(
+  "a parent is told what STAYED, which is the thing they cannot guess",
+  /What you recommended stays/i.test(parent),
+  "the web control says it in a panel before the tap; over SMS the receipt is the only place it can be said",
+);
+ok(
+  "and is not told about a caregiver listing they never had",
+  !/families can no longer see/i.test(parent),
+  "composed per outcome rather than one string covering every case",
+);
+ok(
+  "a contributor with nothing detached is not told about recommendations",
+  !/What you recommended stays/i.test(
+    s.profileDeletedSms({ caregiver: false, profile: true, contributions: 0 }),
+  ),
+);
+const both = s.profileDeletedSms({ caregiver: true, profile: true, contributions: 2 });
+ok(
+  "somebody who is both is told about both halves",
+  /families can no longer see/i.test(both) && /What you recommended stays/i.test(both),
+  "DELETE removes everything, so the receipt has to name everything it removed",
+);
 
 const none = s.nothingToDeleteSms();
 ok(
-  "a number with no profile is told exactly that",
-  /no caregiver profile on this number/i.test(none),
+  "a number holding nothing is told exactly that",
+  /nothing on this number to delete/i.test(none),
+  "it used to read 'no caregiver profile on this number' — true when only a caregiver could delete, and actively misleading now that a parent reaching this line holds no profile either",
 );
 ok(
-  "and pointed at a person rather than offered something that does not exist",
+  "and a person stays reachable for the case where that is wrong",
   /hello@pando\.is/.test(none),
-  "there is no self-serve parent delete, and inventing one in a keyword handler would be a product decision in the wrong place",
 );
 ok(
   "the two receipts are different messages",
@@ -145,9 +180,35 @@ ok(
   "telling somebody who had a profile that they never had one is the one lie this feature must not tell",
 );
 
-console.log("\n=== both stay inside one segment ===");
-ok(`the confirmation is ${deleted.length} characters`, deleted.length <= 320, deleted);
-ok(`the not-found is ${none.length} characters`, none.length <= 320, none);
+const failed = s.deleteFailedSms();
+ok(
+  "an unreachable database says nothing was changed",
+  /nothing was changed/i.test(failed),
+  "after a destructive request, what did NOT happen is the fact the sender needs",
+);
+ok("all three receipts are distinct", new Set([deleted, none, failed]).size === 3);
+
+console.log("\n=== the receipts are GSM-7, so a dash cannot cost a segment ===");
+/**
+ * ⚠ Measured, not assumed. The version this replaces carried one em dash, which
+ * put a 192-character receipt into UCS-2 and cost a **third** segment on every
+ * single deletion.
+ */
+const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+for (const [label, body] of [
+  ["caregiver-only", deleted],
+  ["parent", parent],
+  ["both halves", both],
+  ["nothing found", none],
+  ["failed", failed],
+] as const) {
+  const plan = seg.planSegments(body);
+  ok(
+    `${label}: ${body.length} chars, ${plan.encoding}, ${plan.segments} segment(s)`,
+    plan.encoding === "gsm7" && plan.segments <= 2,
+    plan.offenders.join(" ") || body,
+  );
+}
 
 /* ── 11.4  the named-person policy ─────────────────────────────────────────── */
 

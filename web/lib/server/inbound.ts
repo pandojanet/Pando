@@ -5,7 +5,8 @@ import {
   keywordOf,
   helpSms,
   optInConfirmationSms,
-  caregiverDeletedSms,
+  profileDeletedSms,
+  deleteFailedSms,
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
@@ -61,9 +62,9 @@ import {
   settingsPrompt,
 } from "@/lib/outreach-policy";
 import { attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
-import { isCaregiverDeleteRequest } from "@/lib/consent";
+import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
-import { deleteCaregiverByPhone } from "@/lib/server/repo/caregiver-delete";
+import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 import { yesOrNo } from "@/lib/thanks";
 import { readPingReply } from "@/lib/vouch";
 import { applyPingReply, pendingPing } from "@/lib/server/repo/vouch";
@@ -221,12 +222,16 @@ export async function handleInboundMessage(input: {
   }
 
   /**
-   * 11.3 — a caregiver removing themselves, and it goes here for one reason.
+   * 11.3 — removing yourself, and since 14 Sep that is **anybody** (see
+   * `isDeleteRequest`: `/privacy` had been promising every parent this word
+   * while only a caregiver could use it). It goes here for one reason.
    *
    * **Before `ensureInboundPerson`.** That function *creates* a nameless person
    * for a number Pando has not seen (5.9), so running it first would mean
-   * answering a request to delete records by creating one. A stranger who texts
-   * DELETE must leave no trace of having done so.
+   * answering a request to delete records by creating one — and worse now than
+   * before, because the delete below would then find that row, remove it, and
+   * report a deletion to somebody Pando had held nothing about a second
+   * earlier. A stranger who texts DELETE must leave no trace of having done so.
    *
    * It sits with the keywords rather than below, because DELETE is a **decision
    * about Pando** and not an answer to anything — the same reasoning that puts
@@ -240,13 +245,28 @@ export async function handleInboundMessage(input: {
    * right shape rather than a compromise — "the whole profile goes" is about the
    * profile, not about the arithmetic of how many messages Pando has sent.
    */
-  if (isCaregiverDeleteRequest(body)) {
+  if (isDeleteRequest(body)) {
     await recordInbound({ phone: from, category: "transactional", keyword: "delete" });
-    const outcome = await deleteCaregiverByPhone(from);
+
+    /**
+     * One call, and it is the same one `/api/seed/delete` makes.
+     *
+     * ⚠ Two calls was the obvious shape — the caregiver lookup, then the
+     * person — and it is wrong for the reason the repo function's own comment
+     * gives: `caregivers.profile_person_id` is `on delete set null`, so the
+     * two halves have to come down inside **one** transaction or a failure
+     * between them leaves a revoked listing beside a live person, and the
+     * retry then reports "nothing to delete" to somebody half-deleted.
+     */
+    const outcome = await deleteParentByPhone(from, "sms:delete");
+
     /* Counts and enums only (invariant 7). */
-    console.info("[sms:inbound] caregiver delete", {
-      deleted: outcome.deleted,
-      reason: outcome.deleted ? null : outcome.reason,
+    console.info("[sms:inbound] delete", {
+      status: outcome.status,
+      caregiver: outcome.status === "deleted" ? outcome.caregiver : null,
+      profile: outcome.status === "deleted" ? outcome.profile : null,
+      contributions_detached:
+        outcome.status === "deleted" ? outcome.contributions : 0,
     });
 
     /**
@@ -261,13 +281,23 @@ export async function handleInboundMessage(input: {
      */
     await sendSms({
       to: from,
-      body: outcome.deleted
-        ? caregiverDeletedSms()
-        : outcome.reason === "no_claim"
-          ? nothingToDeleteSms()
-          : "Pando: something went wrong on our side and nothing was changed. Please try again in a few minutes. Reply STOP to opt out, HELP for help.",
+      body:
+        outcome.status === "deleted"
+          ? profileDeletedSms({
+              caregiver: outcome.caregiver,
+              profile: outcome.profile,
+              contributions: outcome.contributions,
+            })
+          : outcome.status === "no_profile"
+            ? nothingToDeleteSms()
+            : deleteFailedSms(),
       category: "transactional",
-      template: outcome.deleted ? "caregiver_deleted" : "caregiver_delete_none",
+      template:
+        outcome.status === "deleted"
+          ? "profile_deleted"
+          : outcome.status === "no_profile"
+            ? "profile_delete_none"
+            : "profile_delete_failed",
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     return;

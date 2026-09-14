@@ -22,6 +22,14 @@ import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
  * database says so rather than collapsing into "nothing to delete" — the
  * `persisted: false` rule applied to a destructive act.
  *
+ * ## It is no longer the only door (14 Sep)
+ *
+ * `DELETE` over SMS runs the same `deleteParentByPhone`, because `/privacy`
+ * had been promising every parent that word while only a caregiver could use
+ * it. Nothing here changed except what that function now also takes down: a
+ * linked caregiver listing, which `on delete set null` had been leaving
+ * behind — latent in this route from the day it shipped.
+ *
  * ## No confirmation step here
  *
  * The confirmation belongs on the screen, where the consequence can be read

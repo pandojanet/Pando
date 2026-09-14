@@ -65,6 +65,9 @@ const APP_PORT = 4187;
 const STUB_PORT = 4188;
 const SECRET = "relay-walk-signing-secret";
 const PHONE = "+16265559481";
+/** DELETE needs a number that has not opted out — see the round at the foot. */
+const DELETER = "+16265559482";
+const DELETER_TAG = "relaywalk-deleter";
 /**
  * The walk signs in as an admin it creates itself, and removes afterwards.
  *
@@ -958,8 +961,136 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
   await sql`delete from people where phone in (${ASKER}, ${RESPONDER})`;
 }
 
+console.log("\n=== DELETE, and it is everybody's word now (14 Sep) ===");
+/**
+ * ⚠ **Its own number, and that is not tidiness.** `PHONE` texted STOP three
+ * rounds ago, and `sendSms` runs opt-out before anything else (invariant 6) —
+ * so the receipt would never be posted and the assertion below would fail for
+ * a reason that has nothing to do with deleting.
+ *
+ * What this proves that `test:caregiver` cannot: the keyword reaches the
+ * pipeline over a real signed event, the cascade runs against the real schema,
+ * and — the part that was latent in the web control too — a linked caregiver
+ * listing comes **down the ladder** rather than being orphaned by
+ * `caregivers.profile_person_id`'s `on delete set null`.
+ */
+{
+  await sql`delete from people where phone = ${DELETER}`;
+  await sql`delete from caregivers where first_name = ${DELETER_TAG}`;
+
+  const [person] = await sql`
+    insert into people (phone, first_name, source, is_test, phone_verified_at, profile_captured_at)
+    values (${DELETER}, ${DELETER_TAG}, 'direct', true, now(), now())
+    returning id`;
+  await sql`insert into consents (person_id, scope, status, source, text_version)
+            values (${person.id}, 'sms', 'opted_in', 'seed', 'relay-walk')`;
+  const [share] = await sql`
+    insert into shares (market_id, kind, name, status, provenance, is_test)
+    values ('pasadena', 'activity', ${DELETER_TAG + " share"},
+            'approved', 'parent_submitted', true)
+    returning id`;
+  await sql`insert into share_contributions (share_id, person_id, firsthand, status, is_test)
+            values (${share.id}, ${person.id}, true, 'approved', true)`;
+  const [caregiver] = await sql`
+    insert into caregivers (market_id, first_name, last_initial, is_adult, consent_status,
+                            active, discoverable, provenance, profile_person_id, is_test,
+                            consent_evidence)
+    values ('pasadena', ${DELETER_TAG}, 'Z', true, 'consented',
+            true, true, 'parent_submitted', ${person.id}, true,
+            ${sql.json({ method: "relay_walk" })})
+    returning id`;
+  await sql`insert into caregiver_profiles (caregiver_id) values (${caregiver.id})`;
+  await sql`insert into caregiver_claims (person_id, first_name, consent_text_version, linked_caregiver_id, status, is_test)
+            values (${person.id}, ${DELETER_TAG}, 'relay-walk', ${caregiver.id}, 'linked', true)`;
+
+  const [before] =
+    /* The four conditions directly rather than through caregivers_answerable: that view also drops is_test rows and needs an approved nomination, so a test caregiver can never appear in it — which would make both checks pass or fail for reasons unrelated to deleting. */
+    await sql`select count(*)::int n from caregivers where id = ${caregiver.id}::uuid and consent_status = 'consented' and active and discoverable and is_adult`;
+  ok("the caregiver is answerable before the delete", before.n === 1, "invariant 1's four conditions");
+
+  const posts = posted.length;
+  await slackEvent(message(`${DELETER}: DELETE`, { ts: "1788405555.5" }));
+  await settle(async () => {
+    const [row] = await sql`select count(*)::int n from people where phone = ${DELETER}`;
+    return row.n === 0;
+  });
+
+  ok(
+    "the person is gone",
+    (await sql`select count(*)::int n from people where phone = ${DELETER}`)[0].n === 0,
+    "a parent could not do this from any surface before today",
+  );
+  ok(
+    "the claim went with them",
+    (await sql`select count(*)::int n from caregiver_claims where person_id = ${person.id}::uuid`)[0]
+      .n === 0,
+  );
+  const [cg] =
+    await sql`select consent_status, active, discoverable from caregivers where id = ${caregiver.id}::uuid`;
+  ok(
+    "and the listing came down the ladder rather than being orphaned",
+    cg.consent_status === "revoked" && !cg.active && !cg.discoverable,
+    JSON.stringify(cg),
+  );
+  ok(
+    "so they no longer meet invariant 1",
+    (await sql`select count(*)::int n from caregivers where id = ${caregiver.id}::uuid and consent_status = 'consented' and active and discoverable and is_adult`)[0]
+      .n === 0,
+    "a plain `delete from people` would have left them answerable with nothing to trace it by",
+  );
+  ok(
+    "the recommendation stays, pointing at nobody",
+    (
+      await sql`select count(*)::int n from share_contributions
+                 where share_id = ${share.id}::uuid and person_id is null`
+    )[0].n === 1,
+    "other parents' answers rest on it — the privacy screen already says so",
+  );
+
+  await settle(() => posted.length > posts);
+  const receipt = posted[posted.length - 1];
+  ok("Pando sent a receipt", posted.length > posts, `${posted.length} posts`);
+  ok(
+    "which names both halves of what went",
+    /families can no longer see/i.test(receipt?.text ?? "") &&
+      Boolean(receipt?.text.includes("What you recommended stays")),
+    receipt?.text.slice(0, 200),
+  );
+  ok(
+    "and the audit row keeps no pointer to the person it removed",
+    (
+      await sql`select count(*)::int n from audit_log
+                 where action = 'profile.delete' and resource_id is null
+                   and after->>'how' = 'sms:delete' and at > now() - interval '5 minutes'`
+    )[0].n >= 1,
+  );
+
+  /* A second DELETE finds nothing, and says so rather than reporting success. */
+  const posts2 = posted.length;
+  await slackEvent(message(`${DELETER}: DELETE`, { ts: "1788405666.6" }));
+  await settle(() => posted.length > posts2);
+  ok(
+    "a second DELETE is told there is nothing to delete",
+    Boolean(posted[posted.length - 1]?.text.includes("nothing on this number to delete")),
+    posted[posted.length - 1]?.text.slice(0, 160),
+  );
+  ok(
+    "and creating a person to answer it is exactly what did not happen",
+    (await sql`select count(*)::int n from people where phone = ${DELETER}`)[0].n === 0,
+    "the branch runs before ensureInboundPerson for this reason",
+  );
+
+  await sql`delete from audit_log where action = 'profile.delete' and at > now() - interval '5 minutes'`;
+  await sql`delete from share_contributions where share_id = ${share.id}::uuid`;
+  await sql`delete from shares where id = ${share.id}::uuid`;
+  await sql`delete from caregiver_profiles where caregiver_id = ${caregiver.id}::uuid`;
+  await sql`delete from caregivers where id = ${caregiver.id}::uuid`;
+  await sql`delete from message_log where person_id is null and sent_at > now() - interval '5 minutes'`;
+}
+
 /* ── cleanup ───────────────────────────────────────────────────────────────── */
 await sql`delete from answers where phone = ${PHONE}`;
+await sql`delete from people where phone = ${DELETER}`;
 await sql`delete from people where phone = ${PHONE}`;
 await sql`delete from sms_opt_outs where phone = ${PHONE}`;
 await sql`delete from audit_log where actor = ${ADMIN_NAME}`;

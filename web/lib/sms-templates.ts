@@ -133,7 +133,7 @@ export function thanksSms(what: string): string {
 }
 
 /**
- * M11.3 — the receipt for a caregiver who texted DELETE.
+ * M11.3 — the receipt for anybody who texted DELETE (widened 14 Sep).
  *
  * ⚠️ **Not among the registered A2P samples**, like the OTP text. It is a
  * transactional reply to a message the person just sent, which is the least
@@ -148,6 +148,21 @@ export function thanksSms(what: string): string {
  * It does say the door is open, in one clause, because that is a fact they would
  * otherwise have to ask about: signing up again is the same two minutes it was
  * the first time.
+ *
+ * ## Composed rather than three strings, because the sender decides which
+ *
+ * ⚠⚠ **The clause that must never be missing is what *stayed*.** The web
+ * control states it in a panel before the tap — *"What you recommended stays,
+ * with nothing linking it to you"* — and over SMS there is no panel, so the
+ * receipt is the only place a parent learns that a class they recommended is
+ * still being recommended. Composing it means the sentence appears exactly
+ * when it is true, rather than a caregiver who recommended nothing being told
+ * about recommendations, or a contributor never being told at all.
+ *
+ * ⚠ It is **GSM-7 by construction**, which the version it replaces was not:
+ * one em dash put a 192-character receipt into UCS-2 and cost a **third
+ * segment** on every deletion. Measured, not assumed; `test:caregiver` pins
+ * the encoding so a house-voice dash cannot quietly put it back.
  */
 /**
  * 10.3 — "is this still worth recommending?"
@@ -167,22 +182,71 @@ export function freshnessPingSms(input: { name: string }): string {
   return `Quick one — is ${input.name} still worth recommending? Reply yes, no, or PASS to skip.`;
 }
 
-export function caregiverDeletedSms(): string {
-  return "Pando: done — your profile and everything in it is deleted. Families can no longer see you. If you ever want to set one up again, it's pando.is/caregiver. Reply STOP to opt out, HELP for help.";
+export function profileDeletedSms(input: {
+  /** They had signed themselves up at `/caregiver`. */
+  caregiver: boolean;
+  /** They had finished the questionnaire, as against a bare inbound row. */
+  profile: boolean;
+  /** Recommendations left behind, pointing at nobody. */
+  contributions: number;
+}): string {
+  /* Somebody who only ever signed up to be found is told about the listing and
+     sent back to the flow they came from — /join would be the wrong door. */
+  const caregiverOnly = input.caregiver && !input.profile && input.contributions === 0;
+
+  const parts = [
+    caregiverOnly
+      ? "Pando: done. Your caregiver profile and everything in it is deleted, and families can no longer see you."
+      : "Pando: done. Your profile and your settings are deleted, and Pando stops texting you.",
+  ];
+  if (input.caregiver && !caregiverOnly) {
+    parts.push("Families can no longer see your caregiver profile.");
+  }
+  if (input.contributions > 0) {
+    parts.push("What you recommended stays, with nothing linking it to you.");
+  }
+  parts.push(
+    caregiverOnly
+      ? "You can set one up again any time at pando.is/caregiver."
+      : "You can start again any time at pando.is.",
+  );
+  parts.push("Reply STOP to opt out, HELP for help.");
+  return parts.join(" ");
 }
 
 /**
- * The answer when DELETE arrives from a number with no caregiver profile.
+ * The third outcome, and the only one that reports a failure.
  *
- * **It does not guess what they meant.** The likely sender is a parent who read
- * DELETE somewhere and wants their own data gone — a real request, and a
- * different one: there is no self-serve parent delete, a person handles it, and
- * inventing one in a keyword handler would be a product decision taken in the
- * wrong place. So this says what Pando could not find and where a person is,
- * rather than offering something that does not exist.
+ * A literal in the inbound handler until 14 Sep, which made it the one outbound
+ * message in the delete path with no definition beside its two siblings — the
+ * drift shape `freshnessPingSms` was extracted for. It says **nothing was
+ * changed**, because after a destructive request that is the fact the sender
+ * needs, and it asks them to try rather than pointing at a person: the database
+ * being unreachable for a moment is not something a person can help with.
+ */
+export function deleteFailedSms(): string {
+  return "Pando: something went wrong on our side and nothing was changed. Please try again in a few minutes. Reply STOP to opt out, HELP for help.";
+}
+
+/**
+ * The answer when DELETE arrives from a number Pando holds nothing for.
+ *
+ * ⚠ **Rewritten on 14 Sep, and the old wording is why.** It read *"there's no
+ * caregiver profile on this number to delete"* and pointed at a mailto,
+ * because at the time that sentence was true and there was no self-serve
+ * parent delete to offer. There is one now, so the same words would be
+ * actively misleading: a parent who *does* have a profile would read "no
+ * caregiver profile" and conclude the message had not been understood, when in
+ * fact their profile had just been deleted by the branch above this one.
+ *
+ * **It still does not guess what they meant.** Reaching this line means the
+ * number resolves to nobody at all — a wrong number, a phone that changed
+ * hands, or somebody who has already done this. So it says what Pando could
+ * not find and leaves a person reachable for the case where that is wrong,
+ * rather than offering a second thing to try.
  */
 export function nothingToDeleteSms(): string {
-  return "Pando: there's no caregiver profile on this number to delete. If you'd like your own information removed, email hello@pando.is and a person will handle it. Reply STOP to opt out, HELP for help.";
+  return "Pando: there is nothing on this number to delete. If you think that is wrong, email hello@pando.is and a person will check. Reply STOP to opt out, HELP for help.";
 }
 
 export const VERIFICATION_CODE_LENGTH = 6;
