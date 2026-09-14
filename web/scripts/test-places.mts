@@ -95,6 +95,48 @@ ok(
   "her table: shared ZIPs, low value as a residential choice",
 );
 
+console.log("\n=== which area a community matches on ===");
+/**
+ * The 9 Sep district roll-up arriving at the unincorporated layer. Without it
+ * each of the twelve new communities is an area of one and matches nobody —
+ * the fault that left fourteen of thirty-nine contributors on an island.
+ */
+ok(
+  "a community that shares its ZIP matches on the city it shares it with",
+  p.areaFor(p.placeById("valinda")) === "la-puente" &&
+    p.areaFor(p.placeById("mayflower-village")) === "monrovia" &&
+    p.areaFor(p.placeById("citrus")) === "azusa",
+);
+ok(
+  "and every roll-up target is a real place",
+  p.PLACES.filter((x) => x.rollsUpTo).every((x) => p.placeById(x.rollsUpTo!) !== null),
+  "a dangling target is an area nothing else is in — the island, one remove along",
+);
+ok(
+  "a roll-up never points at another roll-up",
+  p.PLACES.filter((x) => x.rollsUpTo).every((x) => !p.placeById(x.rollsUpTo!)?.rollsUpTo),
+  "two hops would make the area depend on resolution order",
+);
+ok(
+  "a place with no roll-up is its own area",
+  p.areaFor(p.placeById("pasadena")) === "pasadena" &&
+    p.areaFor(p.placeById("altadena")) === "altadena",
+);
+ok(
+  "the big communities keep their own area",
+  ["altadena", "hacienda-heights", "rowland-heights"].every(
+    (id) => p.areaFor(p.placeById(id)) === id,
+  ),
+  "tens of thousands of residents each; folding them in matches a parent on a place they do not live in",
+);
+ok("and nothing is nothing", p.areaFor(null) === null);
+ok(
+  "⚠ rolling up never widens a ZIP",
+  p.placesForZip("91744").map((x) => x.id).includes("valinda") &&
+    !p.placesForZip("91744").map((x) => x.id).includes("covina"),
+  "where somebody lives and who they match are different questions",
+);
+
 console.log("\n=== a ZIP names a place only sometimes ===");
 /**
  * ⚠ The estimate sketches this as "91106 → Pasadena", which holds for Pasadena

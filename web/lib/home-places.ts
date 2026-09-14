@@ -95,6 +95,27 @@ export interface Place {
    * neighbours, so it is reachable by name and never offered as a suggestion.
    */
   deprioritised?: true;
+  /**
+   * The city this place's families actually share a life with, for **matching
+   * only** — it becomes `market_options.area_slug`.
+   *
+   * Set exactly where a community shares its ZIP with a larger neighbour, and
+   * the reasoning is the 9 Sep district roll-up arriving at the unincorporated
+   * layer: without it a Valinda parent would be their own area of one and match
+   * nobody, which is the fault that left fourteen of thirty-nine contributors
+   * on an island. Sharing a ZIP is the strongest available evidence that two
+   * families use the same schools, shops and Saturdays.
+   *
+   * ⚠ Absent where the community is large enough to be its own world —
+   * Altadena, Hacienda Heights and Rowland Heights each have tens of thousands
+   * of residents, and folding them into a neighbour would be the opposite
+   * mistake: a parent matched on a place they do not live in.
+   *
+   * ⚠ It never widens a ZIP. `placesForZip` is untouched by this, because
+   * *where somebody lives* and *who they match* are different questions and
+   * the demand number §5 produces must answer the first one exactly.
+   */
+  rollsUpTo?: string;
 }
 
 /** Her table, in her order: incorporated cities, then unincorporated, then adjacent. */
@@ -143,31 +164,33 @@ export const PLACES: readonly Place[] = [
   { id: "west-covina", name: "West Covina", type: "city", zips: ["91790", "91791", "91792"] },
 
   { id: "altadena", name: "Altadena", type: "unincorporated", zips: ["91001"] },
-  { id: "avocado-heights", name: "Avocado Heights", type: "unincorporated", zips: ["91746"] },
-  { id: "bassett", name: "Bassett", type: "unincorporated", zips: ["91746"] },
-  { id: "charter-oak", name: "Charter Oak", type: "unincorporated", zips: ["91724"] },
-  { id: "citrus", name: "Citrus", type: "unincorporated", zips: ["91702"] },
-  { id: "east-pasadena", name: "East Pasadena", type: "unincorporated", zips: ["91107"] },
-  { id: "east-san-gabriel", name: "East San Gabriel", type: "unincorporated", zips: ["91775"] },
+  { id: "avocado-heights", name: "Avocado Heights", type: "unincorporated", rollsUpTo: "la-puente", zips: ["91746"] },
+  { id: "bassett", name: "Bassett", type: "unincorporated", rollsUpTo: "la-puente", zips: ["91746"] },
+  { id: "charter-oak", name: "Charter Oak", type: "unincorporated", rollsUpTo: "covina", zips: ["91724"] },
+  { id: "citrus", name: "Citrus", type: "unincorporated", rollsUpTo: "azusa", zips: ["91702"] },
+  { id: "east-pasadena", name: "East Pasadena", type: "unincorporated", rollsUpTo: "pasadena", zips: ["91107"] },
+  { id: "east-san-gabriel", name: "East San Gabriel", type: "unincorporated", rollsUpTo: "san-gabriel", zips: ["91775"] },
   { id: "hacienda-heights", name: "Hacienda Heights", type: "unincorporated", zips: ["91745"] },
-  { id: "mayflower-village", name: "Mayflower Village", type: "unincorporated", zips: ["91016"] },
-  { id: "north-el-monte", name: "North El Monte", type: "unincorporated", zips: ["91732"] },
+  { id: "mayflower-village", name: "Mayflower Village", type: "unincorporated", rollsUpTo: "monrovia", zips: ["91016"] },
+  { id: "north-el-monte", name: "North El Monte", type: "unincorporated", rollsUpTo: "el-monte", zips: ["91732"] },
   { id: "rowland-heights", name: "Rowland Heights", type: "unincorporated", zips: ["91748"] },
   {
     id: "south-monrovia-island",
     name: "South Monrovia Island",
     type: "unincorporated",
+    rollsUpTo: "monrovia",
     zips: ["91016"],
   },
   {
     id: "south-san-jose-hills",
     name: "South San Jose Hills",
     type: "unincorporated",
+    rollsUpTo: "la-puente",
     zips: ["91744"],
   },
-  { id: "valinda", name: "Valinda", type: "unincorporated", zips: ["91744"] },
-  { id: "vincent", name: "Vincent", type: "unincorporated", zips: ["91722"] },
-  { id: "west-puente-valley", name: "West Puente Valley", type: "unincorporated", zips: ["91746"] },
+  { id: "valinda", name: "Valinda", type: "unincorporated", rollsUpTo: "la-puente", zips: ["91744"] },
+  { id: "vincent", name: "Vincent", type: "unincorporated", rollsUpTo: "covina", zips: ["91722"] },
+  { id: "west-puente-valley", name: "West Puente Valley", type: "unincorporated", rollsUpTo: "la-puente", zips: ["91746"] },
 
   { id: "eagle-rock", name: "Eagle Rock", type: "la_neighborhood", adjacent: true, zips: ["90041"] },
   {
@@ -243,6 +266,19 @@ export function placesForZip(zip: string | null | undefined): Place[] {
   if (!z) return [];
   const found = BY_ZIP.get(z) ?? [];
   return [...found].sort((a, b) => Number(!!a.deprioritised) - Number(!!b.deprioritised));
+}
+
+/**
+ * The area this place matches on — itself, or the neighbour it shares a ZIP
+ * with. This is what `market_options.area_slug` is set from.
+ *
+ * ⚠ Matching only. Never use it to answer *where does this parent live*: the
+ * two questions differ for thirteen communities, and §5's demand number has to
+ * name the place a parent actually chose.
+ */
+export function areaFor(place: Place | null): string | null {
+  if (!place) return null;
+  return place.rollsUpTo ?? place.id;
 }
 
 /** Is Pando live here? Never a gate — see the header. */
