@@ -51,14 +51,17 @@ import { withDb, type Db } from "@/lib/server/db";
 const TTL_MS = 60_000;
 
 const store = globalThis as typeof globalThis & {
-  __pandoAreaGroups?: Map<string, { at: number; groups: Map<string, string[]> }>;
+  __pandoAreaGroups?: Map<
+    string,
+    { at: number; groups: Map<string, string[]>; cities: Map<string, string> }
+  >;
 };
 store.__pandoAreaGroups ??= new Map();
 const cache = store.__pandoAreaGroups;
 
-async function groupsFor(marketId: string): Promise<Map<string, string[]>> {
+async function loadAreas(marketId: string) {
   const hit = cache.get(marketId);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.groups;
+  if (hit && Date.now() - hit.at < TTL_MS) return hit;
 
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
@@ -72,11 +75,14 @@ async function groupsFor(marketId: string): Promise<Map<string, string[]>> {
   });
 
   const groups = new Map<string, string[]>();
+  /* id -> the one id that *is* the place, which is what `place_id` stores. */
+  const cities = new Map<string, string>();
   if (result.persisted) {
     const byCity = new Map<string, string[]>();
     for (const row of result.data) {
       const id = String(row.option_value);
       const city = String(row.city);
+      cities.set(id, city);
       (byCity.get(city) ?? byCity.set(city, []).get(city)!).push(id);
     }
     for (const [city, members] of byCity) {
@@ -89,8 +95,16 @@ async function groupsFor(marketId: string): Promise<Map<string, string[]>> {
 
   /* An unreachable database caches nothing — this is a ranking hint, and a
      minute of a wrong empty map is worse than a second round trip. */
-  if (result.persisted) cache.set(marketId, { at: Date.now(), groups });
-  return groups;
+  if (result.persisted) cache.set(marketId, { at: Date.now(), groups, cities });
+  return { at: Date.now(), groups, cities };
+}
+
+async function groupsFor(marketId: string): Promise<Map<string, string[]>> {
+  return (await loadAreas(marketId)).groups;
+}
+
+async function citiesFor(marketId: string): Promise<Map<string, string>> {
+  return (await loadAreas(marketId)).cities;
 }
 
 /**
@@ -106,6 +120,27 @@ export async function areaGroup(
   if (id === "") return [];
   const groups = await groupsFor(marketId);
   return groups.get(id) ?? [id];
+}
+
+/**
+ * The **city** a neighborhood sits in — `area_slug`, or itself.
+ *
+ * `areaGroup` above answers "which ids mean the same place", which is what a
+ * match needs. This answers "which one of them is the place", which is what
+ * §5's `place_id` and its demand number need, and the two are genuinely
+ * different: a group is a set with no head, and a stored fact has to be one id.
+ *
+ * Reuses the same cached read, so asking both costs one round trip. Returns
+ * null for anything unknown rather than echoing the input — a caller storing
+ * this wants *no place* rather than a place that is not in the list.
+ */
+export async function areaCity(
+  marketId: string,
+  area: string | null | undefined,
+): Promise<string | null> {
+  const id = (area ?? "").trim();
+  if (id === "") return null;
+  return (await citiesFor(marketId)).get(id) ?? null;
 }
 
 /** Clears the roll-up, so an `option.*` admin write is visible immediately. */

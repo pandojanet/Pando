@@ -4,6 +4,7 @@ import {
 } from "./consent";
 import { producesAffiliation } from "./affiliations";
 import { bandsForAge } from "./matching";
+import { zipChoiceNeeded, zipOptionsFor } from "./home-places";
 import { marketOptions, optionsForBands } from "./market-options";
 import {
   EXPECTING,
@@ -43,6 +44,8 @@ import {
 export const EMPTY_ANSWERS: ProfileAnswers = {
   wants_detail: null,
   neighborhood: null,
+  home_place: null,
+  home_zip: null,
   child_ages: [],
   schools: [],
   school_status: {},
@@ -849,6 +852,38 @@ export const ALL_SCREENS: Screen[] = [
            "Can't find it? Add it", so a second route was two doors to one room
            — and the label was rendered nowhere, because
            SearchableChipGroup suppresses it. */
+      },
+      {
+        /**
+         * Her §5, and the whole of it: *"Show the place name first. If the
+         * place has multiple residential ZIPs, follow with one short question:
+         * 'Which ZIP code?'"*
+         *
+         * ⚠ **Only when there is a choice to make.** Thirty-nine of the
+         * fifty-two places have exactly one residential ZIP, and asking an
+         * Altadena parent to confirm 91001 is a question with one possible
+         * answer — which is the *"repeated one-question screens and skips make
+         * optional details feel required"* complaint her own document opens
+         * with. Those are filled in on the write, from the place, which is not
+         * a guess because there is nothing to guess between.
+         *
+         * ⚠ It gates on `home_place` rather than `neighborhood`, and that is
+         * not a shortcut: a Bungalow Heaven parent must be offered Pasadena's
+         * six, and resolving a district to its city needs the market's
+         * roll-up, which `isQuestionVisible` cannot reach. The picker resolves
+         * it once and writes both.
+         *
+         * Deliberately **not** `required`. A parent who does not know or does
+         * not want to say which of six ZIPs they are in has still answered the
+         * question §8.5 makes required — the place — and §5's own purpose is a
+         * demand signal, which one missing ZIP does not break.
+         */
+        id: "home_zip",
+        label: "Which ZIP code?",
+        help: "It narrows the area Pando searches. Skip it if you would rather not say.",
+        kind: "single",
+        when: (a) => zipChoiceNeeded(a.home_place),
+        source: { type: "zips" },
       },
     ],
   },
@@ -2085,7 +2120,13 @@ export function optionsFor(
              say": this is a list of *their* answers, and declining is what an
              untoggled row already means. */
           affiliationOptions(market, answers)
-        : optionsForBands(
+        : question.source.type === "zips"
+          ? /* The ZIPs of the place they just picked, in her table's own order
+               — never sorted, because a resident reads down the list they know
+               and A–Z is the same list for a five-ZIP city anyway. The label
+               *is* the id: a ZIP has no other name. */
+            zipOptionsFor(answers.home_place).map((z) => ({ id: z, label: z }))
+          : optionsForBands(
             marketOptions(market, question.source.category),
             ageBandsOf(answers.child_ages),
           );
@@ -2140,6 +2181,8 @@ function rawSelectionsFor(
   switch (question.id) {
     case "neighborhood":
       return answers.neighborhood ? [answers.neighborhood] : [];
+    case "home_zip":
+      return answers.home_zip ? [answers.home_zip] : [];
     case "time_in_area":
       return answers.time_in_area ? [answers.time_in_area] : [];
     case "moved_from":

@@ -27,6 +27,8 @@ import {
 import { EMPTY_ANSWERS } from "@/lib/questions";
 import type { ProfileAnswers, ProfilePayload, QuestionId } from "@/lib/types";
 import { rateLimited } from "@/lib/server/rate-limit";
+import { areaCity } from "@/lib/server/repo/areas";
+import { normaliseZip, placeById, zipBelongsTo } from "@/lib/home-places";
 
 /**
  * POST /api/seed/profile — save the tap-first profile (spec §16.1).
@@ -170,6 +172,37 @@ export async function POST(request: Request) {
 
   const invite = await validateInviteCode(raw.invite_code ?? null);
   const neighborhood = cleanId(raw.answers?.neighborhood ?? raw.neighborhood);
+
+  /**
+   * Where they live, as her §5 asks it to be stored — and **derived here**
+   * rather than read from the body, which is the 11 Aug rule that the client
+   * is never the author of a fact Pando matches or reports on.
+   *
+   * Two steps, and the second is the one that can be wrong.
+   *
+   * 1. The **place** comes from the neighborhood the server just validated,
+   *    through the market's own roll-up, so a district resolves to its city.
+   *    A neighborhood outside the list resolves to no place, which is a real
+   *    answer: the parent still has a profile and simply has no SGV place.
+   *
+   * 2. The **ZIP** is the parent's answer when there was a choice, and the
+   *    place's own when there is only one. ⚠ An answered ZIP is checked
+   *    against the place it was chosen for — `zipBelongsTo` — because the two
+   *    arrive from the browser separately and a stale pair (they changed town
+   *    after answering) would file them in one place for matching and another
+   *    for the demand number §5 exists to produce. A mismatch stores no ZIP
+   *    rather than the wrong one.
+   */
+  const place = placeById(await areaCity(invite.market_id, neighborhood));
+  const placeId = place?.id ?? null;
+  const answeredZip = normaliseZip(
+    typeof raw.answers?.home_zip === "string" ? raw.answers.home_zip : null,
+  );
+  const selectedZip = zipBelongsTo(place, answeredZip)
+    ? answeredZip
+    : place && place.zips.length === 1
+      ? place.zips[0]
+      : null;
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
   );
@@ -435,6 +468,8 @@ export async function POST(request: Request) {
     recurring_messages_consent: null,
     wants_founding: raw.wants_founding !== false,
     neighborhood,
+    place_id: placeId,
+    selected_zip: selectedZip,
     /**
      * Birth years, not ages — plus the date the ages were taken.
      *
@@ -598,6 +633,10 @@ export async function POST(request: Request) {
         payload.recurring_messages_consent as ProfileConsent,
       wants_founding: payload.wants_founding,
       neighborhood,
+      /* Both resolved at the top of this handler, from the neighborhood the
+         server validated — never from the body (11 Aug). */
+      place_id: placeId,
+      selected_zip: selectedZip,
       children: payload.children as never,
       child_ages_at_capture: payload.child_ages_at_capture,
       profile_captured_at: payload.profile_captured_at,

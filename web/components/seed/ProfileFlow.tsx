@@ -69,6 +69,8 @@ import {
 } from "@/lib/storage";
 import { useStepChange } from "@/lib/use-step-change";
 import { useMarketOptions } from "@/lib/use-market-options";
+import { neighborhoodCity } from "@/lib/market-options";
+import { placeById } from "@/lib/home-places";
 import { EXPECTING } from "@/lib/types";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
 
@@ -314,6 +316,34 @@ export function ProfileFlow() {
      tap would advance the parent off the screen they just went back to. */
   useEffect(() => clearAutoAdvance, [clearAutoAdvance, index, stage]);
 
+  /**
+   * ⚠⚠ **A tap that reveals a question cancels the advance it just armed.**
+   *
+   * `autoAdvances` is computed from the questions visible *before* the tap, and
+   * that was sound while every conditional question was gated on an answer from
+   * an **earlier** screen. Her §5 broke it: picking a town is a single-select on
+   * a screen showing one question, so the advance arms — and the same tap makes
+   * the *"Which ZIP code?"* follow-up appear. Measured in a browser: picking
+   * Pasadena stored `home_place` correctly and then left for the children
+   * screen 320ms later, so the six-ZIP question never rendered at all.
+   *
+   * That is the documented per-selection-follow-up exclusion arriving from a
+   * direction the flag could not see, so the guard is placed where the fact is
+   * finally known rather than predicted: the count went up, so the tap opened
+   * something. General by construction — the next conditional question needs
+   * nobody to remember this.
+   *
+   * It cannot fire late: the re-render carrying the new answer happens in the
+   * same tick as the state update, far inside the 320ms window.
+   */
+  const visibleNow = screen && answers ? visibleQuestions(screen, answers).length : 0;
+  const visibleCount = useRef(0);
+  useEffect(() => {
+    if (visibleNow > visibleCount.current) clearAutoAdvance();
+    visibleCount.current = visibleNow;
+  }, [visibleNow, clearAutoAdvance]);
+
+
   useEffect(() => {
     if (!screen) return;
     return trackAbandonOnHide(() => ({
@@ -336,6 +366,7 @@ export function ProfileFlow() {
 
   const market = session.market_id;
   const questions = visibleQuestions(screen, answers);
+
   /**
    * ⚠⚠ **The second consent checkbox is gone, and its gate with it** — the
    * client, 10 Sep: *"On the participation screen, show frequency only. Do not
@@ -423,6 +454,29 @@ export function ProfileFlow() {
       switch (question.id) {
         case "neighborhood":
           a.neighborhood = next[0] ?? null;
+          /**
+           * ⚠ One tap, two fields — the `PlaceStep` precedent (10 Sep).
+           *
+           * `home_place` is the canonical SGV place her §5 asks to store, and
+           * it has to be resolved *here* because this is the only point that
+           * holds both the market's district roll-up and the tap. A Bungalow
+           * Heaven parent lands on `pasadena`, which is what makes the ZIP
+           * follow-up offer Pasadena's six rather than nothing.
+           *
+           * And changing the town clears the ZIP: a five-digit answer that
+           * belonged to the previous place is worse than no answer, because
+           * `zipBelongsTo` would refuse it on the write and the parent would
+           * never learn why.
+           */
+          {
+            const city = neighborhoodCity(market, a.neighborhood);
+            const resolved = placeById(city) ? city : null;
+            if (resolved !== a.home_place) a.home_zip = null;
+            a.home_place = resolved;
+          }
+          break;
+        case "home_zip":
+          a.home_zip = next[0] ?? null;
           break;
         case "time_in_area":
           a.time_in_area = next[0] ?? null;

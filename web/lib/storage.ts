@@ -2,6 +2,7 @@
 
 import { EMPTY_ANSWERS, MAX_CHILDREN, pruneAnswers } from "./questions";
 import { childAgeFromStored, cleanId } from "./sanitize";
+import { normaliseZip, placeById } from "./home-places";
 import type { MarketId, ProfileAnswers, SeedSession } from "./types";
 
 /**
@@ -294,6 +295,26 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
       /* `cleanId` is the route's own check, imported rather than copied — a
          second regex here is how the two drift apart again. */
       out.neighborhood = cleanId(value);
+      continue;
+    }
+
+    /**
+     * The two §5 fields, checked against their **domain** and not only their
+     * shape — the 27 Aug lesson, where a stored `child_ages` outside the
+     * server's range survived every reload and was refused by the route every
+     * time, with nothing on screen saying why.
+     *
+     * A ZIP that is not five digits, or a place that is not in the list, is
+     * dropped. Dropping leaves the follow-up visibly unanswered, which is a
+     * state the parent can act on; keeping it produces a save that silently
+     * stores neither.
+     */
+    if (key === "home_place") {
+      if (typeof value === "string" && placeById(value)) out.home_place = value;
+      continue;
+    }
+    if (key === "home_zip") {
+      out.home_zip = typeof value === "string" ? normaliseZip(value) : null;
       continue;
     }
 

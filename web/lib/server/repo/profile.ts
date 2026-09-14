@@ -97,6 +97,18 @@ export interface ProfileInput {
    * their entire completed session.
    */
   neighborhood: string | null;
+  /**
+   * The canonical SGV place and the ZIP that reaches it (client §5, 9 Sep).
+   *
+   * Both derived **server-side** from the answers, never taken from the body —
+   * the 11 Aug rule. The place is resolved from the neighborhood the server
+   * already validated, and the ZIP is either the parent's own answer to her
+   * *"Which ZIP code?"* follow-up or, for the thirty-nine places with exactly
+   * one, that one. The second is not a guess: there is nothing to guess
+   * between.
+   */
+  place_id: string | null;
+  selected_zip: string | null;
   children: ChildInput[];
   child_ages_at_capture: number[];
   profile_captured_at: string;
@@ -174,6 +186,12 @@ export async function writeProfile(
       lastName: input.last_name,
       marketId: input.market_id,
       neighborhood: input.neighborhood,
+      placeId: input.place_id,
+      selectedZip: input.selected_zip,
+      /* Moves with the ZIP or not at all — `people_zip_recorded_together`
+         refuses the pair coming apart, because a ZIP that cannot be aged is a
+         launch decision taken on an answer of unknown vintage. */
+      zipRecordedAt: input.selected_zip ? new Date() : null,
       inviteCode: input.invite_code,
       inviteId: input.invite_id ?? null,
       invitedViaGroup: input.invited_via_group,

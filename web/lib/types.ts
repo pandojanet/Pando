@@ -170,6 +170,17 @@ export interface OptionPlan {
 
 export type QuestionId =
   | "neighborhood"
+  /**
+   * Her §5 follow-up: *"If the place has multiple residential ZIPs, follow with
+   * one short question: 'Which ZIP code?'"*
+   *
+   * ⚠ It is asked **only** when there is a genuine choice. Thirty-nine of the
+   * fifty-two places have exactly one residential ZIP, and asking a parent in
+   * Altadena to confirm 91001 is a screen that can only be answered one way.
+   * The single-ZIP case is filled in on the write instead, from the place —
+   * which is not a guess, because there is nothing to guess between.
+   */
+  | "home_zip"
   | "child_ages"
   | "schools"
   | "classes"
@@ -263,7 +274,17 @@ export interface Question {
      * be available *separately for each affiliation* ("A parent may share their
      * school but keep their golf club or faith community private").
      */
-    | { type: "affiliations" };
+    | { type: "affiliations" }
+    /**
+     * The residential ZIPs of the place this parent just chose (client §5).
+     *
+     * A kind of its own rather than a static list for the same reason
+     * `affiliations` is: the options are different for every parent and cannot
+     * be written down in advance. It reads `answers.neighborhood`, resolves it
+     * through the market's roll-up — so a Bungalow Heaven parent is offered
+     * Pasadena's six — and asks `lib/home-places.ts` for the ZIPs.
+     */
+    | { type: "zips" };
   /** Writes a social_affinities row per selection, at this weight. */
   affinity?: { type: AffinityType; weight: number };
   /** Writes a life_relevance row per selection. */
@@ -492,6 +513,34 @@ export interface ProfileAnswers {
    */
   wants_detail: boolean | null;
   neighborhood: string | null;
+  /**
+   * The canonical SGV place the chosen neighborhood resolves to
+   * (`lib/home-places.ts`), written by the picker beside `neighborhood`.
+   *
+   * ## Why it is stored rather than derived
+   *
+   * Two reasons, and the second is what forced it. Her §5 asks for a canonical
+   * `place_id` stored separately, because *"ZIPs don't follow city lines
+   * exactly"*. And the ZIP follow-up has to be **gated** on the place having
+   * more than one — a gate that runs in `isQuestionVisible`, whose signature is
+   * `(question, answers)` and which therefore cannot reach the market's
+   * district roll-up. That is the same wall `connection_visibility` hit on
+   * 10 Sep, where the fix was likewise a predicate that needs no market.
+   *
+   * So the picker resolves it once, at the moment it has both the market and
+   * the tap, and everything downstream reads a plain id. ⚠ A picker writing two
+   * fields is the `PlaceStep` precedent (10 Sep), for the same reason: one tap
+   * genuinely answers two things.
+   */
+  home_place: string | null;
+  /**
+   * Five digits, or null — the answer to her *"Which ZIP code?"* follow-up.
+   *
+   * Null is the ordinary state rather than a gap: it is null for every place
+   * with one ZIP (the write fills those in), for every parent who arrived
+   * before the question existed, and for anyone who skipped it.
+   */
+  home_zip: string | null;
   /**
    * The raw taps. The parent sees **birth years** (P4); the stored value is the
    * age, because that is what gates later questions. It round-trips exactly — the

@@ -293,6 +293,22 @@ export function needsZipChoice(place: Place | null): boolean {
 }
 
 /**
+ * The same question by id, which is what the questionnaire's own gate can ask.
+ *
+ * `isQuestionVisible` is `(question, answers)` and has no market, so the gate
+ * cannot resolve a district itself — `answers.home_place` is already resolved
+ * by the picker, and this turns it into a yes or no with nothing else needed.
+ */
+export function zipChoiceNeeded(placeId: string | null | undefined): boolean {
+  return needsZipChoice(placeById(placeId));
+}
+
+/** The ZIPs to offer for a chosen place — her follow-up's options. */
+export function zipOptionsFor(placeId: string | null | undefined): string[] {
+  return placeById(placeId)?.zips ?? [];
+}
+
+/**
  * Is this ZIP one of the place's own?
  *
  * The pairing is checked rather than trusted, because both arrive from the
