@@ -570,21 +570,15 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               : "We'll send a 6-digit code to confirm the number when you finish."}
           </p>
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-4">
-            {/**
-              * The way back in (7 Sep, her second instruction). On this screen
-              * rather than only in the header, because a returning parent's
-              * mistake is to start filling the form in again — and the moment
-              * they notice is when they are looking at it.
-              */}
-            {/* 9 Sep, her copy list. "I've joined before" described a fact
-                about the past; what a returning parent is looking for on this
-                screen is the way in, and every product they use calls it
-                logging in. */}
-            <TextAction href="/signin" tone="quiet">
-              Already have an account? Log in
-            </TextAction>
-          </div>
+          {/**
+            * ⚠ **The way in moved to the dock on 14 Sep.** It stood here as a
+            * quiet line under the consent text, which is a footnote's slot —
+            * and her §1 asks for something else outright: *"It should be sign
+            * up or login."* Two doors, not one door and a remark about the
+            * other. Moved rather than duplicated: two links to `/signin` on
+            * one 375px screen is a parent deciding which is the real one,
+            * which is the same fault her §4 caught between two Privacy links.
+            */}
           </Panel>
 
         {registered && (
@@ -728,6 +722,33 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 : "Start — about two minutes"}
             {!checking && <ArrowRight />}
           </Button>
+        )}
+        {/**
+          * The second door — her §1: *"It should be sign up or login."*
+          *
+          * In the dock rather than in the card, in the slot the 10 Sep round
+          * created for Skip: directly under the primary, one fixed position,
+          * so a returning parent meets it where they are already looking
+          * instead of finding it as a line beneath the legal text.
+          *
+          * ⚠ **Not a second `Button`.** The design system's rule is one primary
+          * action per screen and the dock carries it; two filled buttons would
+          * make the choice look symmetrical, and it is not — most arrivals are
+          * new, and the invite they followed was an invitation to join.
+          * `TextAction` is the documented 44px quiet action beside the loud
+          * one, which is exactly this relationship.
+          *
+          * ⚠ Hidden once a profile is saved on this device: the dock then reads
+          * "See what happens next" and the panel above offers review, so a log
+          * in would be a third route to a parent Pando has already recognised.
+          *
+          * The wording is hers, from the 9 Sep copy list, and is unchanged —
+          * only where it sits.
+          */}
+        {!alreadySaved && (
+          <TextAction href="/signin" full className="mt-2">
+            Already have an account? Log in
+          </TextAction>
         )}
         {/**
          * *"The footer must not create a third competing action."*

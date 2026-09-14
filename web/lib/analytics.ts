@@ -78,6 +78,17 @@ export type SeedEvent =
   | "seed_verify_number_changed"
   | "seed_verify_confirmed"
   /**
+   * A parent deleted their own profile (client §1, 14 Sep).
+   *
+   * Worth counting because it is the one act this flow cannot undo, and how
+   * often it happens is the measure of whether something upstream is wrong —
+   * a parent who deletes minutes after saving is telling us about the save,
+   * not about deletion. ⚠ No properties: there is nothing about a departing
+   * parent worth attaching to an event (invariant 7), and a count is the
+   * whole of what this answers.
+   */
+  | "seed_profile_deleted"
+  /**
    * Coming back (7 Sep). Three events, because the drop-off worth measuring is
    * between them: a parent who asked for a code and never confirmed one is a
    * different problem from a parent whose number has no profile against it.

@@ -71,6 +71,7 @@ import { useStepChange } from "@/lib/use-step-change";
 import { useMarketOptions } from "@/lib/use-market-options";
 import { neighborhoodCity } from "@/lib/market-options";
 import { placeById } from "@/lib/home-places";
+import { DeleteProfile } from "@/components/seed/DeleteProfile";
 import { EXPECTING } from "@/lib/types";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
 
@@ -1362,6 +1363,24 @@ export function ProfileFlow() {
               You can change any of this later — just text Pando once your
               neighborhood goes live.
             </p>
+
+            {/**
+              * ⚠⚠ **The way out, and it did not exist** — her §1: *"Also how do
+              * people delete their profile if they want to?"* A caregiver has
+              * been able to text DELETE since 3 Sep; a contributing parent
+              * could not, from any surface.
+              *
+              * Here rather than on `/done`, because this is the screen her own
+              * sentence describes — *"After that you should still have a place
+              * where you can edit or update"* — and deleting belongs beside
+              * editing rather than on a thank-you page.
+              *
+              * ⚠ Only once the profile is actually saved. Before that there is
+              * nothing on a server to delete and "Start over" already clears
+              * the device, so offering both would be the *"log back in, start a
+              * fresh one"* confusion she reported, rebuilt.
+              */}
+            {session.profile_saved_at && <DeleteProfile />}
           </div>
         </ScreenBody>
         <ScreenDock>
