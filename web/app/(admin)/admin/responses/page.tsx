@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  Disclosure,
   Empty,
   ErrorNote,
   Failed,
@@ -79,6 +80,7 @@ function ResponseCard({
   run: (label: string, fn: () => Promise<{ persisted: boolean }>) => Promise<void>;
 }) {
   const k = key(row);
+  const decided = row.review_status !== "pending_review";
 
   return (
     <li className="px-4 py-4">
@@ -119,6 +121,39 @@ function ResponseCard({
           </Badge>
         )}
       </p>
+
+      {/**
+        * ⚠ **A decided reply states the decision instead of offering it again**
+        * (14 Sep).
+        *
+        * Until now "Already read" rendered this identical card — the 1-5 rating,
+        * the merge candidates, the name field, *Useful, nothing to add* and
+        * *Not useful* — with nothing saying a decision had been taken. The only
+        * evidence was which section the row had moved into and a small
+        * `rated 4/5` badge, so a reader who had just pressed a button had every
+        * reason to think it had not landed and to press again. It cost a real
+        * duplicate: one reply, two `share_contributions` rows on the same
+        * record. `blast_response.approve` now refuses a second press, and this
+        * is the half that stops it being pressed.
+        *
+        * ⚠ Deliberately **no "change your mind" control**: reversing an approval
+        * means taking a record back out of the graph, which is a decision with
+        * its own reason and its own audit row, not a fifth button on the card
+        * that made it. The contributions queue is where that record now lives.
+        */}
+      {decided ? (
+        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted">
+          <Badge tone={row.review_status === "approved" ? "green" : "neutral"}>
+            {row.review_status === "approved" ? "Approved" : "Set aside"}
+          </Badge>
+          <span>
+            {row.review_status === "approved"
+              ? "This reply has been read. Anything it named is in the contributions queue."
+              : "This reply has been read and nothing was added."}
+          </span>
+        </p>
+      ) : (
+        <>
 
       {/* 7.6 — the rating, separate from the decision. A reply can be genuinely
           useful and still be about something Pando already knows. */}
@@ -240,6 +275,8 @@ function ResponseCard({
           </Button>
         </div>
       </div>
+        </>
+      )}
     </li>
   );
 }
@@ -314,21 +351,43 @@ export default function BlastResponsesPage() {
           )}
         </Card>
 
+        {/**
+          * ⚠ **Folded away, and no document ever asked for it to be on screen**
+          * (14 Sep).
+          *
+          * Asked where the requirement came from and there is none: 7.6 is
+          * *read a reply and rate it*, 7.9 is *promote or merge it*, and 14.8 is
+          * the screen for both. Nothing in the estimate, the strategy or this
+          * file asks for a history of replies already dealt with — it was an
+          * unstated choice, and the evidence against it is in our own code: the
+          * sidebar's badge counts `review_status = 'pending_review'` only, so
+          * the nav has always called this a queue of outstanding work while the
+          * page rendered everything ever answered as though it were the work.
+          *
+          * Kept rather than deleted, because "did that land?" is a real question
+          * thirty seconds after pressing a button and `audit_log` is a poor
+          * place to ask it. Closed on arrival, on the Overview's rule that a
+          * fold which remembers being open is a page that is long again
+          * tomorrow — and the count is in the summary, because how many is what
+          * a reader decides to open on.
+          */}
         {done.length > 0 && (
-          <Card title={`Already read (${done.length})`}>
-            <ul className="divide-y divide-bark/50">
-              {done.map((r) => (
-                <ResponseCard
-                  key={key(r)}
-                  row={r}
-                  typed={names[key(r)] ?? ""}
-                  busy={busy === key(r)}
-                  setNames={setNames}
-                  run={(label, fn) => run(key(r), label, fn)}
-                />
-              ))}
-            </ul>
-          </Card>
+          <Disclosure title={`Already read (${done.length})`} flush>
+            <Card>
+              <ul className="divide-y divide-bark/50">
+                {done.map((r) => (
+                  <ResponseCard
+                    key={key(r)}
+                    row={r}
+                    typed={names[key(r)] ?? ""}
+                    busy={busy === key(r)}
+                    setNames={setNames}
+                    run={(label, fn) => run(key(r), label, fn)}
+                  />
+                ))}
+              </ul>
+            </Card>
+          </Disclosure>
         )}
       </div>
 

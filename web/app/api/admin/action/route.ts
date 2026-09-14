@@ -658,6 +658,10 @@ export async function POST(request: Request) {
         "The answers have already gone to this parent. Sending again would text them the same message twice.",
       blast_no_asker_phone:
         "Pando has no number for whoever asked this, so there is nowhere to send the answers.",
+      /* 14 Sep — a second press on a reply that was already decided. It used
+         to go through and write another contribution from the same reply. */
+      blast_reply_decided:
+        "This reply has already been read — the decision stands. Reload to see it under \"Already read\".",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
     };

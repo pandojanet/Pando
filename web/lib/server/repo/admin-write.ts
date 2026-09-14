@@ -82,6 +82,7 @@ export type ActionOutcome =
         | "blast_contacts_nobody"
         | "blast_nobody_reachable"
         | "blast_expired"
+        | "blast_reply_decided"
         /* M7's exit (8 Sep). Four more, for the same reason as the six above:
            each names a different next step — approve a reply, find the asker a
            number, or simply try the send again. */
@@ -742,10 +743,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const blastId = id(b.blast_id);
       const personId = id(b.person_id);
       if (!blastId || !personId) return { applied: false, reason: "not_implemented" };
-      await tx.execute(
-        sql`update blast_recipients set review_status = 'rejected'
-             where blast_id = ${blastId}::uuid and person_id = ${personId}::uuid`,
-      );
+      /* The same guard as approve, and for a smaller but real reason: rejecting
+         a reply that was already approved would take a record out of the graph
+         by a route that writes no reason and leaves the contribution behind. */
+      const rows = (await tx.execute(sql`
+        update blast_recipients set review_status = 'rejected'
+         where blast_id = ${blastId}::uuid
+           and person_id = ${personId}::uuid
+           and review_status = 'pending_review'
+        returning blast_id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "blast_reply_decided" };
       return { applied: true, resource: "blast_response", resource_id: blastId };
     }
 
@@ -786,6 +794,22 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const personId = id(b.person_id);
       if (!blastId || !personId) return { applied: false, reason: "not_implemented" };
 
+      /**
+       * ⚠ **`pending_review` is a guard, not a filter** (14 Sep).
+       *
+       * Without it this was re-runnable: every press wrote **another**
+       * `share_contributions` row from the same reply. Found on a live walk —
+       * one reply from one parent produced two contributions on *Rose Bowl
+       * Aquatics parent & me*, because the card in "Already read" renders the
+       * same buttons as an undecided one and gives a reader no reason to think
+       * the first press landed.
+       *
+       * The cost is not the tidiness of the row count: `firsthand_count` is
+       * what *Validated by multiple parents* is computed from, so on the
+       * firsthand path two presses would have said two parents stand behind a
+       * record that one does. `blast.deliver` has carried exactly this guard
+       * since 8 Sep (`already_sent`); approve never got one.
+       */
       const rows = (await tx.execute(sql`
         select br.response_text, br.quality, b.market_id, b.category, b.neighborhood
           from blast_recipients br
@@ -793,8 +817,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
          where br.blast_id = ${blastId}::uuid
            and br.person_id = ${personId}::uuid
            and br.response_text is not null
+           and br.review_status = 'pending_review'
       `)) as unknown as Array<Record<string, unknown>>;
-      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      if (rows.length === 0) return { applied: false, reason: "blast_reply_decided" };
       const reply = rows[0];
 
       await tx.execute(
