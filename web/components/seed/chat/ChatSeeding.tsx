@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Wordmark } from "@/components/ui/Logo";
 import {
+  BackButton,
   Screen,
   ScreenBody,
   ScreenDock,
@@ -837,7 +838,38 @@ export function ChatSeeding() {
           screen as recaps, so the pill only repeated what the parent could see —
           and a count in the header edges towards scorekeeping. */}
       <ScreenHeader
-        left={<Wordmark />}
+        /**
+         * ⚠⚠ **This screen had no way back, and that is the wall she hit** —
+         * her §1: *"I was unable to go 'back' beyond a certain point which I
+         * found very tough to manage … Should we not allow people to save
+         * progress where they are and go back until the point they see the
+         * final page of everything they have entered?"*
+         *
+         * Every other surface in the flow has one. `ProfileFlow` walks back
+         * screen by screen and from its first question to `/join`; `/done` and
+         * `/done/ask` carry a Back in the dock. This header held the wordmark
+         * and nothing else, so once the profile was saved and a parent landed
+         * here, the only route to change an answer was typing `/profile` — and
+         * the two controls that look like they might help both make it worse:
+         * "Start over" clears the device, and logging back in returns the same
+         * profile. That trio is exactly the *"super confusing"* she named.
+         *
+         * It goes to the **review**, not to the last question: `ProfileFlow`
+         * opens there for a saved profile (7 Sep), which is her own *"the
+         * final page of everything they have entered … and then edit any
+         * response"*.
+         *
+         * ⚠ Nothing is lost by leaving. A half-finished card lives in the
+         * session, which is autosaved on every answer, and the transcript is
+         * rebuilt from it on return — the same property that makes the flow
+         * resumable a day later.
+         */
+        left={
+          <div className="flex items-center gap-1">
+            <BackButton onClick={() => router.push("/profile")} />
+            <Wordmark />
+          </div>
+        }
         /**
          * Her instruction of 8 Sep put the invite link within reach on the
          * screen a parent actually spends time on, rather than only in the

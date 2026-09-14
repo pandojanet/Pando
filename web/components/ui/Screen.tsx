@@ -146,6 +146,47 @@ export function ScreenHeader({
   );
 }
 
+/**
+ * The way back, in the header's left slot.
+ *
+ * Lived inside `ProfileFlow` until 14 Sep, which was fine while that file was
+ * the only screen with a Back — and stopped being fine the moment `/share`
+ * needed one (client §1: *"unable to go 'back' beyond a certain point"*). A
+ * second hand-written chevron is how the two drift, which this surface has
+ * already paid for with the quiet text action, the panel and the logo.
+ *
+ * 44px, `-ml-2` so the glyph sits on the container's own edge rather than
+ * inset by the target's padding, and the accessible name is on the button
+ * because the chevron has none.
+ */
+export function BackButton({
+  onClick,
+  label = "Back",
+}: {
+  onClick: () => void;
+  /** Override where "Back" would be ambiguous about what it leaves. */
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="-ml-2 grid h-11 w-11 place-items-center rounded-full text-ink-soft transition-colors hover:bg-bark/50"
+    >
+      <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
+        <path
+          d="M11.5 5 6.5 10l5 5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 export function ScreenBody({
   children,
   className,

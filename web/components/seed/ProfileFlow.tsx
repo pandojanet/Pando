@@ -20,6 +20,7 @@ import { PhoneField } from "@/components/ui/PhoneField";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import { Progress } from "@/components/ui/Progress";
 import {
+  BackButton,
   Eyebrow,
   Screen,
   ScreenBody,
@@ -2137,26 +2138,6 @@ export function ProfileFlow() {
   );
 }
 
-function BackButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="Back"
-      className="-ml-2 grid h-11 w-11 place-items-center rounded-full text-ink-soft transition-colors hover:bg-bark/50"
-    >
-      <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" aria-hidden="true">
-        <path
-          d="M11.5 5 6.5 10l5 5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-  );
-}
 
 /**
  * Correcting the number before the code goes out (9 Sep, her second UX note).
