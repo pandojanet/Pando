@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, buttonClass } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
@@ -52,6 +52,7 @@ export function FinishAsks() {
   const [done, setDone] = useState(false);
   /** The founding path answered the follow-up and now owes us a code. */
   const [needsVerify, setNeedsVerify] = useState(false);
+  const verifyRef = useRef<HTMLDivElement | null>(null);
   /**
    * How this deployment is configured. Null until it answers — the follow-up buttons
    * wait for it, because the wrong branch either loses a submission or asks for a code
@@ -79,6 +80,39 @@ export function FinishAsks() {
     setAnswer(session?.follow_up_opt_in ?? null);
     setDone(Boolean(session?.completed_at));
   }, [loaded, session]);
+
+  /**
+   * ⚠⚠ **Both buttons on this screen looked dead, and this is why** — the P0
+   * the client's own analysis logged as *"CTA on permissions / texting page …
+   * 'No thanks' behaves incorrectly. Then testing the alternative 'Yes, text
+   * me', after which also 'nothing is working'. Not a wording issue — a
+   * functional bug."*
+   *
+   * It was one fault rather than two, which is exactly why it read as both
+   * branches being broken: *Yes, text me* and *No, thanks* both call
+   * `submit()`, and on the founding path `submit()` neither saves nor advances
+   * — it sets `needsVerify` and the OTP panel mounts **below** the D1 question
+   * and the consent paragraph. On a phone that is off the bottom of the
+   * screen, and the button itself does not change (`saving` is only set on the
+   * other branch), so the parent taps, nothing visibly happens, and the
+   * conclusion available to them is that the control is broken. With the code
+   * then not arriving (their BUG-1), "nothing is working" is the honest reading
+   * of what they saw.
+   *
+   * Same shape as the 3 Sep admin fix and the same three rules: `block:
+   * "nearest"` so a panel already in view does not jump, **no `smooth`**
+   * because they are trying to finish rather than watch a journey, and
+   * `tabIndex={-1}` so focus can land at all — without it the browser scrolls
+   * and leaves focus on a button that is now off-screen, so the next Tab goes
+   * straight back to where they were.
+   */
+  useEffect(() => {
+    if (!needsVerify || done) return;
+    const el = verifyRef.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest" });
+    el.focus({ preventScroll: true });
+  }, [needsVerify, done]);
 
   const count = session?.chat?.submissions.length ?? 0;
   const hasPhone = Boolean(session?.phone);
@@ -304,6 +338,7 @@ export function FinishAsks() {
           )}
 
           {session?.phone && needsVerify && !done && gate?.sendable !== false && (
+            <div ref={verifyRef} tabIndex={-1} className="outline-none">
             <VerifyPhone
               phone={session.phone}
               /* `undefined` for the open-ended level, so that panel drops the
@@ -314,6 +349,7 @@ export function FinishAsks() {
               busy={saving}
               onVerified={() => void flush(answer === true, true)}
             />
+            </div>
           )}
 
           {loaded && !session && <NoSession />}
@@ -401,8 +437,12 @@ function FollowUpCard({
 
   return (
     <Panel raised className="mt-7">
+      {/* Her wording, §4 of 9 Sep — the one row of that table still unapplied
+          when it was audited on 14 Sep. "One permission, then you're done"
+          counts the work; hers says what the decision costs, which is the
+          thing a parent is actually weighing here: it is reversible. */}
       <h2 className="font-display text-[1.15rem] font-semibold">
-        One permission, then you&apos;re done
+        Choose once. You can change it later.
       </h2>
       <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">
         When another parent asks about something you shared, may Pando text you to
