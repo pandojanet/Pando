@@ -870,6 +870,27 @@ const aff = await sql`select affinity_type, affinity_value, weight_at_capture, c
 ok("the fabricated school affinity was ignored", !aff.some((a) => a.affinity_value === "a-school-never-picked"));
 ok("the fabricated neighborhood was ignored", !aff.some((a) => a.affinity_value === "somewhere-else"));
 ok("the real neighborhood was derived", aff.some((a) => a.affinity_value === "altadena"));
+
+/**
+ * §5, 9 Sep — the place and the ZIP, both **derived on the server** from the
+ * neighborhood it validated rather than read from the body (11 Aug).
+ *
+ * This walk sends Altadena, which is one of the thirty-nine places with a
+ * single residential ZIP — so it exercises the half that has no question
+ * behind it: nothing was asked, and 91001 is filled in from the place, which
+ * is not a guess because there is nothing to guess between.
+ */
+ok("the SGV place was resolved and stored", p && p.place_id === "altadena", String(p?.place_id));
+ok(
+  "a single-ZIP place fills its own ZIP in, with no question asked",
+  p && p.selected_zip === "91001",
+  String(p?.selected_zip),
+);
+ok(
+  "and the ZIP carries the moment it was recorded",
+  p && p.selected_zip !== null && p.zip_recorded_at !== null,
+  "people_zip_recorded_together refuses the pair coming apart",
+);
 ok("the real school was derived", aff.some((a) => a.affinity_value === "walden-school"));
 const camp = aff.find((a) => a.affinity_value === "tom-sawyer-camps");
 ok("a camp is an activity edge, at the class weight (v3.2 §8.4)", !!camp && camp.affinity_type === "activity" && Number(camp.weight_at_capture) === 4);
