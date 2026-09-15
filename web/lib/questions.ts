@@ -1365,7 +1365,12 @@ export const ALL_SCREENS: Screen[] = [
        the work question sitting under a heading that does not cover it. */
     /* Her two titles joined (9 Sep), with the childcare screen's own heading
        folded in: that screen asked one question and merged in here on 15
-       Sep. Its instruction line stayed on its question, where it was. */
+       Sep. Its instruction line stayed on its question, where it was.
+       ⚠ The lived-topics question arrived later the same day and the title is
+       **not** extended for it: every question here renders its own label and
+       its own help, her question is that help in full, and a fourth clause in
+       a heading would be new copy invented for a screen whose other titles are
+       hers. On the list for her instead. */
     title: "Your parenting, work and childcare",
     questions: [
       {
@@ -1440,6 +1445,87 @@ export const ALL_SCREENS: Screen[] = [
          not. `CHILDCARE_BACKUP` and `answers.childcare_backup` stay in place:
          parents answered this under an older build, and the field is still
          read back on the admin side. */
+      {
+        id: "topics_lived",
+        /**
+         * Her screen title and her screen help (10 Sep), joined and both
+         * verbatim, moved onto the question when this screen was merged away
+         * on 15 Sep. The label is short because a label is also the review
+         * screen's row heading; her question is the help.
+         *
+         * ⚠ **It sat on the participation screen for part of that day and the
+         * developer moved it here** — *"та сторінка має бути одна … оте
+         * питання додай на іншу"*. That is the single exception to the
+         * no-single-question rule and it is theirs: the participation screen
+         * is a three-column comparison a parent reads across, and a second
+         * question under it is read as part of the bargain being chosen.
+         *
+         * ⚠⚠ **So it changed sides twice and is back where it started:
+         * behind the fork**, asked only of a parent who opened the optional
+         * detail. What that costs is what 10 Sep already named — a parent who
+         * taps Continue produces almost no relevance data — and it is the
+         * client's to weigh, not ours.
+         *
+         * This screen is where it fits: the topics are the same facts its own
+         * two questions collect, one option at a time — co-parenting across
+         * households, parenting on my own, working-parent logistics, returning
+         * to work, parenting without nearby family support. The title is
+         * unchanged, so nothing new goes on the list for her.
+         */
+        label: "What you can help with",
+        help: "Which parenting areas have you personally navigated and would be open to answering questions about? Choose any topics where your firsthand experience could help. You’ll always decide whether to answer.",
+        /**
+         * ⚠ **The longest static list in the flow, and deliberately not a
+         * dropdown** (9 Sep).
+         *
+         * Her instruction was long option lists → compact dropdown, and this is
+         * fourteen options. It is also the one question here where each option
+         * is **its own decision** rather than a lookup: the parent is not
+         * finding an answer they already hold, they are reading down a list of
+         * parenting experiences and deciding, one at a time, which they are
+         * willing to be asked about. This screen carries the topic-level
+         * consent the 1 Sep round folded the listening-ear page into.
+         *
+         * A dropdown hides what is not chosen. On a lookup that costs nothing;
+         * here it costs opt-ins that would have been given — a parent does not
+         * open a box to consider whether they would talk about loneliness. Her
+         * own words on this pass were *"без втрати даних"*, and this is the one
+         * list where the change would lose some.
+         *
+         * On the list for her rather than decided against her: if she wants it
+         * boxed anyway, it is `dropdown: true` on this line.
+         */
+        kind: "multi",
+        source: { type: "static", options: TOPICS_LIVED },
+        /* Item 17: *"Add 'Something else' for relevant experiences Pando has
+           not anticipated."* The typed route, not a chip — the universal
+           comment applies here too. */
+        allowOther: true,
+        otherLabel: SOMETHING_ELSE,
+        /**
+         * ⚠ **`required` was here and is gone** (10 Sep), and that reverses
+         * item 17 of 1 Sep: *"Continue should activate once the parent selects
+         * at least one topic or chooses the opt-out."*
+         *
+         * Her newer instruction names this question in the list that must be
+         * optional — *"Keep schools, recurring classes or groups, regular
+         * childcare and personally navigated topics optional"* — and by this
+         * file's own rule the newer document wins.
+         *
+         * The two are in genuine conflict rather than about wording: this
+         * screen now sits **behind the optional fork**, so a required question
+         * here would mean a parent who tapped *"Add optional details"* could
+         * not leave the screen without answering. Optional detail that cannot
+         * be declined is not optional, and "I opened the door" is not consent
+         * to every room behind it.
+         *
+         * ⚠ What item 17 was protecting is not lost. The explicit opt-out chip
+         * is still on the list, so a parent who means *"ask me nothing"* can
+         * still say so rather than leaving a silence — and now a silence and a
+         * refusal are two different answers again, which is what the chip was
+         * for in the first place.
+         */
+      },
     ],
   },
   {
@@ -1713,6 +1799,20 @@ export const ALL_SCREENS: Screen[] = [
      *    stays optional, and nothing anywhere may read a high allowance as an
      *    obligation.
      */
+    /**
+     * ⚠⚠ **This screen asks one question, and it is the one screen allowed
+     * to** — the developer, 15 Sep, looking at the shipped merge: *"для чого
+     * ти це додав на ту сторінку, та сторінка має бути одна"*. Their own rule
+     * that morning was that no screen may ask a single question, so this is
+     * their own exception to it and it is worth stating rather than leaving to
+     * be rediscovered: the levels are a three-column comparison a parent reads
+     * **across**, and a second question underneath reads as one more clause of
+     * the bargain being agreed to rather than as a separate, skippable thing.
+     *
+     * `topics_lived` is on `household_setup` now. The suite's
+     * no-single-question check names this screen as the exception, so nothing
+     * else can quietly become one.
+     */
     title: "Ask when you need help. Help when you can.",
     /**
      * Her intro, verbatim (10 Sep). It replaces our paraphrase of the same
@@ -1742,66 +1842,6 @@ export const ALL_SCREENS: Screen[] = [
         kind: "single",
         source: { type: "static", options: ALLOWANCE },
         required: true,
-      },
-      {
-        id: "topics_lived",
-        /* Her screen title and her screen help (10 Sep), joined and both
-           verbatim, moved onto the question when this screen merged into the
-           participation one on 15 Sep. The label is short because a label is
-           also the review screen's row heading; her question is the help. */
-        label: "What you can help with",
-        help: "Which parenting areas have you personally navigated and would be open to answering questions about? Choose any topics where your firsthand experience could help. You’ll always decide whether to answer.",
-        /**
-         * ⚠ **The longest static list in the flow, and deliberately not a
-         * dropdown** (9 Sep).
-         *
-         * Her instruction was long option lists → compact dropdown, and this is
-         * fourteen options. It is also the one question here where each option
-         * is **its own decision** rather than a lookup: the parent is not
-         * finding an answer they already hold, they are reading down a list of
-         * parenting experiences and deciding, one at a time, which they are
-         * willing to be asked about. This screen carries the topic-level
-         * consent the 1 Sep round folded the listening-ear page into.
-         *
-         * A dropdown hides what is not chosen. On a lookup that costs nothing;
-         * here it costs opt-ins that would have been given — a parent does not
-         * open a box to consider whether they would talk about loneliness. Her
-         * own words on this pass were *"без втрати даних"*, and this is the one
-         * list where the change would lose some.
-         *
-         * On the list for her rather than decided against her: if she wants it
-         * boxed anyway, it is `dropdown: true` on this line.
-         */
-        kind: "multi",
-        source: { type: "static", options: TOPICS_LIVED },
-        /* Item 17: *"Add 'Something else' for relevant experiences Pando has
-           not anticipated."* The typed route, not a chip — the universal
-           comment applies here too. */
-        allowOther: true,
-        otherLabel: SOMETHING_ELSE,
-        /**
-         * ⚠ **`required` was here and is gone** (10 Sep), and that reverses
-         * item 17 of 1 Sep: *"Continue should activate once the parent selects
-         * at least one topic or chooses the opt-out."*
-         *
-         * Her newer instruction names this question in the list that must be
-         * optional — *"Keep schools, recurring classes or groups, regular
-         * childcare and personally navigated topics optional"* — and by this
-         * file's own rule the newer document wins.
-         *
-         * The two are in genuine conflict rather than about wording: this
-         * screen now sits **behind the optional fork**, so a required question
-         * here would mean a parent who tapped *"Add optional details"* could
-         * not leave the screen without answering. Optional detail that cannot
-         * be declined is not optional, and "I opened the door" is not consent
-         * to every room behind it.
-         *
-         * ⚠ What item 17 was protecting is not lost. The explicit opt-out chip
-         * is still on the list, so a parent who means *"ask me nothing"* can
-         * still say so rather than leaving a silence — and now a silence and a
-         * refusal are two different answers again, which is what the chip was
-         * for in the first place.
-         */
       },
     ],
     /* The one sentence rescued from "The Pando promise" when that screen was

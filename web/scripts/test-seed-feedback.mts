@@ -1062,7 +1062,16 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
      ids, and backup care still gone (10 Sep). */
   ok(
     "parenting setup, work setup and childcare are one screen",
-    on("household_setup").join(",") === "family_structure,work_setup,childcare_now",
+    on("household_setup").join(",").startsWith("family_structure,work_setup,childcare_now"),
+    on("household_setup").join(",") || "no such screen",
+  );
+  /* ⚠ **The lived topics landed here later on 15 Sep**, when the developer
+     ruled that the participation screen must stand alone. Pinned on the screen
+     rather than only on the count, because the question moving is exactly what
+     decides whether Continue skips it. */
+  ok(
+    "and the lived topics are the fourth question on it",
+    on("household_setup").includes("topics_lived"),
     on("household_setup").join(",") || "no such screen",
   );
   ok(
@@ -1072,13 +1081,25 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
   );
   /* ⚠ **No screen asks exactly one question** — the developer's rule of 15 Sep,
      asserted over the definitions so a new screen cannot quietly reintroduce
-     one. A statement screen asks none and is not a question screen. */
+     one. A statement screen asks none and is not a question screen.
+
+     ⚠⚠ **`allowance` is the one exception, and it is theirs**: later the same
+     day they took the lived topics back off it — *"та сторінка має бути одна"*
+     — because the levels are a comparison read across three columns and a
+     second question under them reads as part of the bargain. Named here rather
+     than the rule being dropped, so the exception cannot spread. */
+  const SINGLE_OK = "allowance";
   ok(
-    "no screen in the flow asks a single question",
-    q.SCREENS.every((x) => x.questions.length !== 1),
-    q.SCREENS.filter((x) => x.questions.length === 1)
+    "no screen but the participation one asks a single question",
+    q.SCREENS.every((x) => x.questions.length !== 1 || x.id === SINGLE_OK),
+    q.SCREENS.filter((x) => x.questions.length === 1 && x.id !== SINGLE_OK)
       .map((x) => x.id)
       .join(",") || "none",
+  );
+  ok(
+    "and the participation screen really is the exception",
+    (screenById(SINGLE_OK)?.questions ?? []).map((x) => x.id).join(",") === "allowance",
+    (screenById(SINGLE_OK)?.questions ?? []).map((x) => x.id).join(",") || "no such screen",
   );
   ok(
     "price and priorities are one screen, under her own title",
@@ -1467,14 +1488,14 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
    * Her four, named as optional — and read as **questions** since 15 Sep, when
    * three of the four stopped being screens of their own.
    *
-   * ⚠⚠ **`topics_lived` is the one that changed sides, and it is a decision
-   * rather than a consequence.** It merged with the participation level, which
-   * is required, so it is now asked of everybody — skippable, and answering
-   * nothing still grants nothing. The alternative was leaving the last screen
-   * asking one question, which is what the developer asked to be rid of. What
-   * it buys is the thing 10 Sep named as the fork's honest cost: a parent who
-   * taps Continue produced almost no relevance data, and this is the one
-   * optional question that says what they could help with.
+   * ⚠⚠ **`topics_lived` changed sides twice on 15 Sep and is back where it
+   * started.** It merged onto the participation screen, which is required, so
+   * for part of that day it was asked of everybody; the developer then moved
+   * it to `household_setup` so the participation screen could stand alone.
+   * That screen is behind the fork, so Continue skips it again — which is the
+   * cost 10 Sep already named and the client's to weigh: a parent who taps
+   * Continue produces almost no relevance data, and this is the one optional
+   * question that says what they could help with.
    */
   const askedOn = (a: ProfileAnswers) =>
     q
@@ -1495,10 +1516,11 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
     "Continue skips all optional details — it must not delete them",
   );
   ok(
-    "lived topics are asked of everybody now, and are still optional",
-    askedOn(required).includes("topics_lived") &&
+    "lived topics are behind the fork again, and still optional",
+    !askedOn(required).includes("topics_lived") &&
+      askedOn({ ...required, wants_detail: true }).includes("topics_lived") &&
       questionById("topics_lived")?.required !== true,
-    "it shares the participation screen, so Continue no longer skips it",
+    askedOn(required).join(","),
   );
   /* The fork's own framing is hers, and it is the only argument the screen
      makes: no count of what is behind the door, no "recommended". */
@@ -1524,6 +1546,29 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
       "and neither of them is “Homeschool” as a school",
       !optionsOf("schools").some((o) => /homeschool|not_in_school/i.test(o.id)),
       "a school called Homeschool is a weight-5 edge between every homeschooling family",
+    );
+    /**
+     * ⚠⚠ **`[].every(…)` is `true`, so an empty option list matched the plan
+     * branch** and took precedence over the directory branch — a label over an
+     * empty `role="radiogroup"` and no search box. `previous_places` is empty
+     * by design (search-only, no starters curated), so from 9 Sep it had no
+     * control at all and could not be answered. Pinned on the source, because
+     * the branch is React and this suite is pure; the condition is what makes
+     * it safe, so the condition is what is asserted.
+     */
+    ok(
+      "an empty option list is not read as a comparison of plans",
+      flowSrc.includes("shared.options.length > 0 &&"),
+      flowSrc.slice(flowSrc.indexOf("const plans"), flowSrc.indexOf("const plans") + 90),
+    );
+    /* And the question it cost: still market-sourced, still searchable, so the
+       box is still the whole control rather than chips nobody curated. */
+    ok(
+      "and previous places is still the search-only directory that exposed it",
+      questionById("previous_places")?.source.type === "market" &&
+        q.searchableCategory(questionById("previous_places")!)?.category ===
+          "previous_places",
+      String(questionById("previous_places")?.source.type),
     );
   }
 

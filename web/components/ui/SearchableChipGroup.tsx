@@ -597,11 +597,20 @@ export function SearchableChipGroup({
           autoComplete="off"
           /* Her §5 placeholder, on the one question it describes. The other
              four directories are schools, classes, clubs and faith
-             communities, where a ZIP means nothing. */
+             communities, where a ZIP means nothing.
+
+             ⚠ **And a place is not a name** (15 Sep). `previous_places` is the
+             one directory with no starters at all, so this box is the whole
+             control — and it invited a parent to type "a name" for a question
+             asking which cities they have lived in. The words are her own
+             `searchLabel` for that question ("Add a city, state or country"),
+             so nothing new is invented. */
           placeholder={
             category === "neighborhoods"
               ? "Type your town, neighborhood or ZIP code"
-              : "Start typing a name"
+              : category === "previous_places"
+                ? "Type a city, state or country"
+                : "Start typing a name"
           }
         />
 

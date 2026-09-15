@@ -1863,8 +1863,24 @@ export function ProfileFlow() {
                * next question she wants presented this way is a `plan` block in
                * `questions.ts` and nothing here changes — the same rule the
                * directory branch below follows.
+               *
+               * ⚠⚠ **The length test is the whole of the bug fixed on 15 Sep,
+               * and `[].every(…)` is `true`.** So a question whose option list
+               * comes back **empty** matched this branch, took precedence over
+               * the directory branch below, and rendered as a `PlanGroup` with
+               * nothing in it — a label over an empty `role="radiogroup"`.
+               * `previous_places` is empty **by design** (search-only: no
+               * starters are curated for it, so the search box is the whole
+               * control), so from 9 Sep until this was found it had no control
+               * at all and could not be answered — the *heading over blank
+               * paper* fault this file names twice, arriving through a
+               * branch-order accident rather than through a gate. It also
+               * covers every market question on a deployment where the options
+               * fetch fails: those now fall to the search box rather than to a
+               * blank.
                */
-              const plans = shared.options.every((o) => o.plan);
+              const plans =
+                shared.options.length > 0 && shared.options.every((o) => o.plan);
 
               return (
               <div key={`${question.id}-group`}>
@@ -1874,9 +1890,18 @@ export function ProfileFlow() {
                  * ⚠ The label and the instruction are rendered here for the
                  * same reason as `ChildList` below: `PlanGroup` takes neither,
                  * because it was written for a screen of its own where the
-                 * title and help carried them. The lived-topics question merged
-                 * onto this screen on 15 Sep, so the two questions would
-                 * otherwise read as one labelled and one not.
+                 * title and help carried them.
+                 *
+                 * ⚠⚠ **Inert today, and kept deliberately.** It was written
+                 * when the lived-topics question merged onto this screen on 15
+                 * Sep; the developer moved that question off again the same
+                 * day, so the participation screen asks one question, `label`
+                 * and `help` are undefined on a one-question screen, and both
+                 * of these render nothing. What it buys is that the day a
+                 * second question joins this screen, this control is not the
+                 * one that silently arrives without a heading — which is the
+                 * fault it was written for, found in a browser rather than in
+                 * review.
                  */
                 <div key={question.id}>
                   {shared.label && (
