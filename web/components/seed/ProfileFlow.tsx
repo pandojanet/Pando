@@ -545,6 +545,27 @@ export function ProfileFlow() {
           ),
         };
       }
+      /**
+       * ⚠ **One answer, whichever chip it came from** — this is the half that
+       * runs when a *listed* option is chosen (15 Sep).
+       *
+       * A `single` question keeps its chip answer in a scalar and a place
+       * found by search in `other[id]`. Two stores, and until today only the
+       * scalar knew the question takes one answer — so choosing a town would
+       * leave a geocoded one standing beside it, and leave it in
+       * `pending_options` as a promotion request for somewhere the parent has
+       * just said they do not live.
+       *
+       * Keyed on `kind` rather than on the question id, so the next single
+       * question to get a search box needs nobody to remember this.
+       */
+      if (
+        question.kind === "single" &&
+        next.length > 0 &&
+        (a.other[question.id]?.length ?? 0) > 0
+      ) {
+        a.other = { ...a.other, [question.id]: [] };
+      }
       a.skipped = s.answers.skipped.filter((id) => id !== screen.id);
       return { ...s, answers: a };
     });
@@ -785,6 +806,40 @@ export function ProfileFlow() {
   }
 
   function addCustom(question: Question, value: string) {
+    /**
+     * ⚠ **The other half of "one answer, whichever chip it came from"**
+     * (15 Sep) — this one runs when a place found by search is chosen.
+     *
+     * The bug it closes: every one of the eleven `allowOther` questions is
+     * `multi`, so appending to `other[id]` was right for every caller this
+     * function had — until the neighborhood search box became the twelfth and
+     * the first `single` one. A parent could then hold a listed town *and* a
+     * geocoded one, and two more of the same, because `maxSelectionsFor` never
+     * consults `kind` either and returns no ceiling at all here.
+     *
+     * Cleared **through `setSelections`** rather than by nulling the field
+     * here, and that is the substance rather than tidiness: that function owns
+     * everything derived from the answer — for this question `home_place` and
+     * the `home_zip` under it — so writing the scalar directly would leave a
+     * parent looking at Santa Barbara while the profile still filed them under
+     * Altadena's postcode. A second writer of one fact is how this started.
+     */
+    if (question.kind === "single") {
+      const held = answers?.other[question.id] ?? [];
+      if (held.some((v) => v.toLowerCase() === value.toLowerCase())) return;
+      setSelections(question, []);
+      update((s) => ({
+        ...s,
+        answers: {
+          ...s.answers,
+          other: { ...s.answers.other, [question.id]: [value] },
+          skipped: s.answers.skipped.filter((id) => id !== screen.id),
+        },
+      }));
+      track("seed_other_submitted", { question: question.id });
+      return;
+    }
+
     update((s) => {
       const existing = s.answers.other[question.id] ?? [];
       if (existing.some((v) => v.toLowerCase() === value.toLowerCase())) return s;
