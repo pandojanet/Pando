@@ -5,8 +5,9 @@ import { ChipGroup } from "@/components/ui/ChipGroup";
 import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
-import { searchMarketOptions } from "@/lib/api-client";
+import { geocodePlaces, searchMarketOptions } from "@/lib/api-client";
 import { placesForZip } from "@/lib/home-places";
+import { worthGeocoding, type GeocodedPlace } from "@/lib/geo";
 import { neighborhoodCity, registerFoundOptions } from "@/lib/market-options";
 import { useMarketOptions } from "@/lib/use-market-options";
 import { visibleStarters } from "@/lib/starters";
@@ -77,6 +78,32 @@ interface Props {
    * you lived before?", where crossing town is the whole premise.
    */
   footnote?: string;
+  /**
+   * Record a place a **map** verified — which is not the permission
+   * `onAddCustom` grants, and the distinction is the client's own.
+   *
+   * Her item 2: *"Keep one autocomplete route for unlisted locations. Remove the
+   * stranded 'Other nearby area' text unless it is an actionable option."* So
+   * the neighborhood question has no `allowOther` and no free-text box, and it
+   * should not get one back. ⚠ What it had instead was **nothing**: a parent in
+   * Sylmar or Santa Barbara met a required question with no answer they could
+   * give, while the comment on that question claimed the search results carried
+   * a "Can't find it? Add it" — a control that never rendered, because
+   * `onAddCustom` is undefined there. A sentence describing a button nobody
+   * implemented, which is the fault this repository keeps naming.
+   *
+   * This is the actionable option her sentence attaches the exception to. There
+   * is still no way to type an arbitrary string here; the only way in is to tap
+   * a row that came back from the map, carrying a canonical name, a ZIP and a
+   * county — which is what makes the pending row one an admin can promote in a
+   * single step rather than a fragment they have to research.
+   *
+   * It writes to the same place a typed answer does (`answers.other`), so
+   * `derivePendingOptions` files it and `graphTargetForCategory` repairs the
+   * graph on promotion. Invariant 9 holds untouched: verified by Google is not
+   * verified by Pando, and it is not matchable until a person says so.
+   */
+  onAddPlace?: (value: string) => void;
 }
 
 /**
@@ -118,6 +145,7 @@ export function SearchableChipGroup({
   dropdown,
   searchLabel,
   footnote,
+  onAddPlace,
   options,
   selected,
   onAddCustom,
@@ -141,6 +169,30 @@ export function SearchableChipGroup({
   const [resultsFor, setResultsFor] = useState("");
   const [failed, setFailed] = useState(false);
   const searching = query.trim() !== resultsFor;
+
+  /**
+   * Places Google knows and Pando does not — the third and last thing asked.
+   *
+   * ⚠ Held apart from `results` rather than merged into it, and that is the
+   * substance rather than tidiness: a directory result **is** a
+   * `market_options` row, so tapping it stores a slug the matcher already
+   * understands. One of these is not. It has been verified by Google and by
+   * nobody at Pando, so picking it takes the typed-answer path (invariant 9:
+   * *"Other answers are not matchable until an admin promotes them"*) and the
+   * screen has to be able to say which kind of row somebody is tapping.
+   */
+  const [geo, setGeo] = useState<GeocodedPlace[]>([]);
+  /**
+   * Four states, because three of them are not "nothing found".
+   *
+   * `off` is a deployment with no `GOOGLE_MAPS_API_KEY` and `failed` is a
+   * lookup that did not run — neither may ever render as *"no such place"*.
+   * That is the 9 Sep fault (`PublicSearchResult.configured`, computed and read
+   * by nobody) kept from repeating, this time by giving each state a sentence.
+   */
+  const [geoState, setGeoState] = useState<"idle" | "looking" | "off" | "failed">(
+    "idle",
+  );
   /**
    * Every record this parent has surfaced by searching.
    *
@@ -267,10 +319,27 @@ export function SearchableChipGroup({
   }, [visible, found]);
 
   const timer = useRef<number | null>(null);
+  /** Its own timer, because a billed call waits longer than a free one. */
+  const geoTimer = useRef<number | null>(null);
+  /**
+   * Which lookup is current.
+   *
+   * A counter rather than an `AbortController`, because the thing that must not
+   * happen is a **stale answer rendering**, not a request continuing: the reply
+   * is already cached server-side by the time it lands, so letting it finish
+   * costs nothing and paying for it twice would be the alternative.
+   */
+  const geoRun = useRef(0);
 
   useEffect(() => {
     const q = query.trim();
     if (timer.current !== null) window.clearTimeout(timer.current);
+    if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
+
+    /* Every keystroke invalidates whatever Google has not answered yet. */
+    const run = ++geoRun.current;
+    setGeo([]);
+    setGeoState("idle");
 
     /* Two characters is the floor the endpoint enforces too. Below it there is
        nothing to show, and clearing the results is the honest state — not the
@@ -281,6 +350,50 @@ export function SearchableChipGroup({
       setFailed(false);
       return;
     }
+
+    /**
+     * Google, and **only ever as the third question asked**.
+     *
+     * The order is the whole cost control: the starters are on screen, then
+     * `home-places.ts` answers from the bundle for nothing, and only when both
+     * have missed does anything leave the building — where every request is
+     * billed. `local > 0` is that gate, and it counts what the parent can
+     * actually act on rather than what came back, so a town already sitting
+     * among the taps never triggers a paid lookup.
+     *
+     * ⚠ **Its own, longer timer.** The directory search debounces at 220ms
+     * because it is a query against our own table; a pause that short still
+     * fires two or three times through a word somebody is typing, and here
+     * each of those is money. 450ms is a parent having stopped, and the run
+     * counter below is what stops a slow answer landing under a newer query —
+     * Google is the slowest thing this box can do (a 4s ceiling), so a stale
+     * result is a real possibility rather than a theoretical one.
+     */
+    const widen = (local: number) => {
+      if (category !== "neighborhoods" || local > 0) return;
+      if (!worthGeocoding(q)) return;
+      /* ⚠ Nowhere to put the answer means nothing to pay for. Without a way to
+         record a place Pando has no record of, asking Google would buy a row
+         whose only button does not exist. */
+      if (!onAddPlace) return;
+      if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
+      geoTimer.current = window.setTimeout(() => {
+        setGeoState("looking");
+        void geocodePlaces({ q, market })
+          .then((r) => {
+            if (run !== geoRun.current) return;
+            /* Three states stay three. An unconfigured deployment is not an
+               empty result, and neither is a failure — see `geoState`. */
+            setGeo(r.configured ? r.places : []);
+            setGeoState(r.configured ? "idle" : "off");
+          })
+          .catch(() => {
+            if (run !== geoRun.current) return;
+            setGeo([]);
+            setGeoState("failed");
+          });
+      }, 450);
+    };
 
     /**
      * A ZIP is answered here, not by the endpoint — her §5 placeholder is
@@ -301,10 +414,16 @@ export function SearchableChipGroup({
      * other side: the rows appear only once a ZIP has narrowed them to three.
      */
     if (category === "neighborhoods" && /^\d{5}$/.test(q)) {
-      setResults(placesForZip(q).map((p) => ({ id: p.id, label: p.name })));
+      const local = placesForZip(q).map((p) => ({ id: p.id, label: p.name }));
+      setResults(local);
       setFailed(false);
       setResultsFor(q);
-      return;
+      /* One of the 62 in her table answers instantly and costs nothing; the
+         other ~41,000 US postcodes are what this widens to. */
+      widen(local.length);
+      return () => {
+        if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
+      };
     }
 
     timer.current = window.setTimeout(() => {
@@ -312,11 +431,17 @@ export function SearchableChipGroup({
         .then((r) => {
           setResults(r);
           setFailed(false);
+          widen(r.length);
         })
         .catch(() => {
           /* Same honesty rule as the rest of the app: say the search did not
              work rather than showing an empty result, which reads as "your
-             school is not in Pando". The starters and "add it" still work. */
+             school is not in Pando". The starters and "add it" still work.
+
+             ⚠ And **no widening on a failure**: the directory did not say this
+             place is missing, it said nothing at all, so paying Google to
+             second-guess a network error would spend money to answer a
+             question nobody managed to ask. */
           setResults([]);
           setFailed(true);
         })
@@ -327,8 +452,9 @@ export function SearchableChipGroup({
 
     return () => {
       if (timer.current !== null) window.clearTimeout(timer.current);
+      if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
     };
-  }, [query, category, market, area]);
+  }, [query, category, market, area, onAddPlace]);
 
   /** Merge a result in, then let `ChipGroup`'s own logic apply the selection. */
   const take = useCallback(
@@ -537,9 +663,89 @@ export function SearchableChipGroup({
                        * told Pando had never heard of it.
                        */
                       matchedButShown.length > 0
-                      ? `${matchedButShown.map((o) => o.label).join(", ")} — already in the list above.`
-                      : `Nothing matching “${query.trim()}”.`}
+                        ? `${matchedButShown.map((o) => o.label).join(", ")} — already in the list above.`
+                        : /**
+                           * Past Pando's own list, three more things can be
+                           * true, and only one of them is "no such place".
+                           *
+                           * ⚠ **An unconfigured deployment says exactly what it
+                           * says today, and that is deliberate rather than an
+                           * omission.** With no key nothing wider was ever
+                           * promised, so *"Nothing matching"* is a true
+                           * statement about Pando's list. A **failure** is
+                           * different: there we did reach for the map and it
+                           * broke, and reporting that as "no such place" is the
+                           * same small lie `unshown` was telling about a chip
+                           * already on screen.
+                           */
+                          geoState === "looking"
+                          ? "Looking further afield…"
+                          : geo.length > 0
+                            ? `${geo.length} ${geo.length === 1 ? "place" : "places"} found on the map. Pando doesn’t cover ${geo.length === 1 ? "it" : "them"} yet — you can still add ${geo.length === 1 ? "it" : "one"}.`
+                            : geoState === "failed"
+                              ? `Nothing matching “${query.trim()}”, and the wider map isn’t answering just now. You can still add it below.`
+                              : `Nothing matching “${query.trim()}”.`}
             </p>
+
+            {/**
+              * Places Google knows and Pando does not.
+              *
+              * ⚠ **Its own list, visibly not the directory above it**, because
+              * the two are different kinds of thing and the difference is what
+              * a parent is agreeing to. A directory row is a `market_options`
+              * record: tapping it stores a slug the matcher understands and
+              * the schools, classes and neighbours of that place are already
+              * in Pando. One of these is a name Google recognised and nobody
+              * at Pando has looked at, so it goes in as a **typed answer**
+              * (invariant 9) and waits for a person — and the row says so in
+              * words rather than leaving a parent to find out that picking
+              * their own town changed nothing.
+              */}
+            {!searching && geo.length > 0 && onAddPlace && (
+              <ul className="mt-2 space-y-1.5">
+                {geo.map((place) => (
+                  <li key={place.key}>
+                    <button
+                      type="button"
+                      disabled={atCap}
+                      aria-label={`Add ${place.name}`}
+                      onClick={() => {
+                        /* The canonical name, never the key — see `lib/geo.ts`.
+                           A slug written from here would be promotion by the
+                           back door, and the name is also what collapses
+                           "la canada" and "La Cañada" into one pending row an
+                           admin can act on once. */
+                        onAddPlace(place.storedValue);
+                        setQuery("");
+                        setResults([]);
+                        setResultsFor("");
+                        setGeo([]);
+                      }}
+                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-bark bg-paper px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-control font-medium">
+                          {place.name}
+                        </span>
+                        {/* The disambiguator, not decoration: two Pasadenas
+                            exist and one of them is in Texas. */}
+                        {place.where !== "" && (
+                          <span className="mt-0.5 block truncate text-dock text-muted">
+                            {place.where}
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="shrink-0 text-help font-semibold text-green-deep"
+                      >
+                        Add
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {!searching && !failed && unshown.length > 0 && (
               <ul className="space-y-1.5">

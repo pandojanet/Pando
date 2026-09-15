@@ -1837,6 +1837,18 @@ export function ProfileFlow() {
                   dropdown={directory.dropdown}
                   searchLabel={directory.searchLabel}
                   footnote={directory.footnote}
+                  /**
+                   * A place the map verified, which is a different permission
+                   * from `onAddCustom` — see `SearchableChipGroup`'s own doc.
+                   *
+                   * ⚠ Passed for **every** directory rather than only for
+                   * neighborhoods, deliberately: the one gate that decides
+                   * where this can fire lives in `widen`, and a second copy of
+                   * that condition here is a second place for the two to drift
+                   * apart. A question the geocoder never runs for simply never
+                   * calls it.
+                   */
+                  onAddPlace={(value: string) => addCustom(question, value)}
                 />
               ) : question.source.type === "market" || question.dropdown ? (
                 /**
