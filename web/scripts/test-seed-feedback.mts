@@ -403,14 +403,21 @@ ok(
  * and this check exists to make sure a future session does not put it back
  * without her asking, or remove the screen's own `help` line as well.
  */
+/* ⚠ Read off the **question** since 15 Sep, when the topics screen merged into
+   the participation one — a screen asking one question is what the developer
+   asked to be rid of. Its consent box went on 2 Sep and its help moved onto the
+   question, so the box must be absent from the screen it now shares and the
+   sentence must still be somewhere a parent reads. */
 ok(
-  "the descriptive box is gone from the parenting-experiences screen",
-  screenById("topics_lived")?.footnote === undefined,
+  "the descriptive box is gone from the parenting-experiences question",
+  !/decide for yourself|never shared|only the topics/i.test(
+    screenById("allowance")?.footnote ?? "",
+  ),
   "her 2 Sep instruction — the consent is now made by selecting a topic",
 );
 ok(
-  "and the screen still says the parent decides whether to answer",
-  /decide whether to answer/.test(screenById("topics_lived")?.help ?? ""),
+  "and it still says the parent decides whether to answer",
+  /decide whether to answer/.test(questionById("topics_lived")?.help ?? ""),
   "the one part of the removed footnote a parent acted on",
 );
 ok(
@@ -475,14 +482,34 @@ ok(
  */
 ok(
   "every level answers all three of her rows",
-  levels.every((o) => o.plan?.participation && o.plan?.questions && o.plan?.benefits),
-  levels.map((o) => `${o.id}:${o.plan?.benefits ? "has" : "MISSING"}`).join(" "),
+  levels.every(
+    (o) => o.plan?.participation && o.plan?.questions && o.plan?.benefits?.length,
+  ),
+  levels.map((o) => `${o.id}:${o.plan?.benefits?.length ?? "MISSING"}`).join(" "),
 );
+/**
+ * ⚠ **The cell is a list since 15 Sep** and every assertion below reads the
+ * whole of it — `benefitsText` is the lead plus the bullets, which is what a
+ * parent sees. Checking one bullet would pass while the rest of her sentence
+ * had been dropped, which is exactly the failure the split could cause.
+ */
+const benefitsText = (o?: { plan?: { benefitsLead?: string; benefits?: string[] } }) =>
+  [o?.plan?.benefitsLead ?? "", ...(o?.plan?.benefits ?? [])].join(" ");
 ok(
   "and the two paid ones build on the one below, in her words",
-  /^Everything above/.test(levels[1]?.plan?.benefits ?? "") &&
-    /^Everything above/.test(levels[2]?.plan?.benefits ?? ""),
+  /^Everything above/.test(levels[1]?.plan?.benefitsLead ?? "") &&
+    /^Everything above/.test(levels[2]?.plan?.benefitsLead ?? ""),
   "her table reads 'Everything above, plus …' — a level is never a different product",
+);
+/**
+ * ⚠ The bullets are a **split** of her sentences and not a rewrite (15 Sep), so
+ * this pins the words that would go first if somebody tidied the fragments into
+ * capitalised ones: her lower case, and the items she actually listed.
+ */
+ok(
+  "the bullets are her own fragments, not tidied ones",
+  (levels[1]?.plan?.benefits ?? []).every((b) => b === b.replace(/^(.)/, (c) => c.toLowerCase())),
+  JSON.stringify(levels[1]?.plan?.benefits),
 );
 /**
  * ⚠ Her instruction: *"Label benefits that are not yet live 'during the pilot'
@@ -493,7 +520,7 @@ ok(
  * sentence rather than a nicety.
  */
 for (const level of [levels[1], levels[2]]) {
-  const text = level?.plan?.benefits ?? "";
+  const text = benefitsText(level);
   ok(
     `${level?.id} hedges what is not live yet`,
     /during the pilot|at launch/.test(text),
@@ -525,9 +552,9 @@ ok(
  */
 ok(
   "the minimum level already includes asking and getting answers",
-  /ask questions/i.test(levels[0]?.plan?.benefits ?? "") &&
-    /answers/i.test(levels[0]?.plan?.benefits ?? ""),
-  levels[0]?.plan?.benefits,
+  /ask questions/i.test(benefitsText(levels[0])) &&
+    /answers/i.test(benefitsText(levels[0])),
+  benefitsText(levels[0]),
 );
 
 console.log("\n=== item 6: the privacy screen ===");
@@ -745,15 +772,24 @@ const asks = (a: ProfileAnswers, id: string) =>
  * What survives is the screen-level claim, which is still the client's rule and
  * is now carried by the regular-childcare question alone.
  */
+/* ⚠ The question rather than the screen, since 15 Sep: childcare merged onto
+   the parenting-and-work screen, which an expecting parent still sees for the
+   two questions that are not about a child. The rule was always about the
+   question — every option would be answered about a hypothetical. */
+const asked = (a: ProfileAnswers) =>
+  q
+    .visibleScreens(a)
+    .flatMap((s) => q.visibleQuestions(s, a))
+    .map((x) => x.id);
 ok(
-  "the childcare screen is hidden for a parent with no born child",
-  !q.visibleScreens(expectingOnly).some((s) => s.id === "childcare"),
+  "the childcare question is not asked of a parent with no born child",
+  !asked(expectingOnly).includes("childcare_now"),
   "every option would be answered about a hypothetical",
 );
 ok(
   "and it comes back the moment one child is born",
-  q.visibleScreens(oneOnTheWay).some((s) => s.id === "childcare") &&
-    q.visibleScreens({ ...q.EMPTY_ANSWERS, ...detail }).some((s) => s.id === "childcare"),
+  asked(oneOnTheWay).includes("childcare_now") &&
+    asked({ ...q.EMPTY_ANSWERS, ...detail }).includes("childcare_now"),
   "including for a parent who has not reached the ages screen yet",
 );
 /* ⚠ The claim, not the count. This read `length === 6` and broke the moment
@@ -774,11 +810,15 @@ ok(
     .map((x) => x.id)
     .join(",") || "no per-child question on any of them",
 );
+/* ⚠ **Questions, not screens, since 15 Sep.** Every per-child question now
+   shares a screen with one that is not about a child, so the screen count is
+   identical for both parents and only what they are *asked* differs — which is
+   what this check was ever about. Counting screens here would have gone green
+   again the day somebody merged the last one. */
 ok(
-  "and walks strictly fewer screens than the same parent with a born child",
-  q.visibleScreens(expectingOnly).length <
-    q.visibleScreens({ ...expectingOnly, child_ages: [3] }).length,
-  `${q.visibleScreens(expectingOnly).length} vs ${q.visibleScreens({ ...expectingOnly, child_ages: [3] }).length}`,
+  "and is asked strictly fewer questions than the same parent with a born child",
+  asked(expectingOnly).length < asked({ ...expectingOnly, child_ages: [3] }).length,
+  `${asked(expectingOnly).length} vs ${asked({ ...expectingOnly, child_ages: [3] }).length}`,
 );
 ok(
   "the expecting answer itself is still recorded",
@@ -1015,15 +1055,30 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
   const on = (screenId: string) =>
     (screenById(screenId)?.questions ?? []).map((x) => x.id);
 
+  /* ⚠ **Childcare joined these two on 15 Sep**, on the developer's *"всі
+     сторінки, де є лише 1 питання … об'єднай"* — it was the last screen asking a
+     single question in this part of the flow. The 9 Sep merge and the 24 Aug
+     split are both intact underneath: three questions, three answers, three
+     ids, and backup care still gone (10 Sep). */
   ok(
-    "parenting setup and work setup are one screen",
-    on("household_setup").join(",") === "family_structure,work_setup",
+    "parenting setup, work setup and childcare are one screen",
+    on("household_setup").join(",") === "family_structure,work_setup,childcare_now",
     on("household_setup").join(",") || "no such screen",
   );
   ok(
-    "regular childcare is its own screen, and backup care is gone from it",
-    on("childcare").join(",") === "childcare_now",
-    on("childcare").join(",") || "no such screen",
+    "and backup care is gone from it",
+    !on("household_setup").includes("childcare_backup"),
+    on("household_setup").join(",") || "no such screen",
+  );
+  /* ⚠ **No screen asks exactly one question** — the developer's rule of 15 Sep,
+     asserted over the definitions so a new screen cannot quietly reintroduce
+     one. A statement screen asks none and is not a question screen. */
+  ok(
+    "no screen in the flow asks a single question",
+    q.SCREENS.every((x) => x.questions.length !== 1),
+    q.SCREENS.filter((x) => x.questions.length === 1)
+      .map((x) => x.id)
+      .join(",") || "none",
   );
   ok(
     "price and priorities are one screen, under her own title",
@@ -1037,10 +1092,14 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
      narrower gate of its own (nothing to decide until they have named a
      connection and said it may be mentioned). A literal here was 8 until the
      seven came back behind the fork and said nothing about why. */
+  /* ⚠ **Every screen, with no exception, since 15 Sep.** The exception was
+     `connection_visibility`, which carried a narrower gate of its own; it is a
+     question on the attribution screen now, so the gate moved onto it and the
+     screen count no longer has a hole in it. Against `SCREENS.length` rather
+     than a literal, for the reason that number keeps moving. */
   ok(
-    "opening the fork shows every screen except the one with its own gate",
-    screens.length === q.SCREENS.length - 1 &&
-      !screens.some((s) => s.id === "connection_visibility"),
+    "opening the fork shows every screen the flow has",
+    screens.length === q.SCREENS.length,
     `${screens.length} of ${q.SCREENS.length}: ${screens.map((s) => s.id).join(",")}`,
   );
   /**
@@ -1063,8 +1122,16 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
         schools: ["field-elementary"],
         shared_connections: "share_connection",
       })
-      .some((s) => s.id === "connection_visibility"),
-    "a screen offering a choice nothing can honour is worse than no screen",
+      .flatMap((x) =>
+        q.visibleQuestions(x, {
+          ...twoChildren,
+          wants_detail: true,
+          schools: ["field-elementary"],
+          shared_connections: "share_connection",
+        }),
+      )
+      .some((x) => x.id === "shared_affiliations"),
+    "a question offering a choice nothing can honour is worse than no question",
   );
   /* The disclosure has to describe what the composer actually sends. Both are
      drift guards on one rule: no affiliation is named to another parent. */
@@ -1368,9 +1435,13 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
     child_ages: [3],
   };
   const walked = q.visibleScreens(required);
+  /* ⚠ **Three since 15 Sep, and it was four**: the two required questions
+     share a screen now (*"всі сторінки, де є лише 1 питання … об'єднай"*), so
+     the path is that screen, the fork and the participation level. Her ceiling
+     is what matters and it is checked below; this is the arithmetic behind it. */
   ok(
-    "the required path is four question screens",
-    walked.length === 4,
+    "the required path is three screens",
+    walked.length === 3,
     walked.map((s) => s.id).join(","),
   );
   ok(
@@ -1392,19 +1463,42 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
       .join(","),
   );
 
-  /* Her four, named as optional, and every one of them behind the fork. */
-  const OPTIONAL_SCREENS = ["schools", "communities", "childcare", "topics_lived"];
+  /**
+   * Her four, named as optional — and read as **questions** since 15 Sep, when
+   * three of the four stopped being screens of their own.
+   *
+   * ⚠⚠ **`topics_lived` is the one that changed sides, and it is a decision
+   * rather than a consequence.** It merged with the participation level, which
+   * is required, so it is now asked of everybody — skippable, and answering
+   * nothing still grants nothing. The alternative was leaving the last screen
+   * asking one question, which is what the developer asked to be rid of. What
+   * it buys is the thing 10 Sep named as the fork's honest cost: a parent who
+   * taps Continue produced almost no relevance data, and this is the one
+   * optional question that says what they could help with.
+   */
+  const askedOn = (a: ProfileAnswers) =>
+    q
+      .visibleScreens(a)
+      .flatMap((x) => q.visibleQuestions(x, a))
+      .map((x) => x.id);
+  const OPTIONAL_QUESTIONS: QuestionId[] = ["schools", "classes", "childcare_now"];
   ok(
-    "schools, classes, childcare and lived topics are all behind the fork",
-    OPTIONAL_SCREENS.every((id) => !walked.some((s) => s.id === id)),
-    walked.map((s) => s.id).join(","),
+    "schools, classes and childcare are all behind the fork",
+    OPTIONAL_QUESTIONS.every((id) => !askedOn(required).includes(id)),
+    askedOn(required).join(","),
   );
   ok(
-    "and all four appear the moment the parent asks for them",
-    OPTIONAL_SCREENS.every((id) =>
-      q.visibleScreens({ ...required, wants_detail: true }).some((s) => s.id === id),
+    "and they appear the moment the parent asks for them",
+    OPTIONAL_QUESTIONS.every((id) =>
+      askedOn({ ...required, wants_detail: true }).includes(id),
     ),
     "Continue skips all optional details — it must not delete them",
+  );
+  ok(
+    "lived topics are asked of everybody now, and are still optional",
+    askedOn(required).includes("topics_lived") &&
+      questionById("topics_lived")?.required !== true,
+    "it shares the participation screen, so Continue no longer skips it",
   );
   /* The fork's own framing is hers, and it is the only argument the screen
      makes: no count of what is behind the door, no "recommended". */
@@ -1685,12 +1779,26 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     /Pando may use what you share to answer other parents’ questions, following your privacy settings/.test(chat),
   );
 
-  /* The invite waits for something to have been given. */
+  /**
+   * ⚠⚠ **Narrowed on 15 Sep to the popup alone**, on the developer's *"поверни
+   * реферальне посилання … на сторінку share"*. Her 10 Sep sentence — *"The
+   * Invite button appears only after the first recommendation is saved"* — hid
+   * the pill for the whole of a parent's first visit to the one screen they
+   * sit on, so the pill now renders whenever there is a code and the modal
+   * still waits. What is asserted is the half that still holds, plus that the
+   * pill is no longer behind the gate, so a session restoring her original
+   * rule has to meet this and read why.
+   */
   ok(
-    "the invite control waits for the first saved recommendation",
-    /hasSavedRecommendation/.test(chat) &&
+    "the referral popup still waits for the first saved recommendation",
+    /hasSavedRecommendation && !session\.referral_shown_at/.test(chat) &&
       /submissions \?\? \[\]\)\.some\(\(s\) => s\.persisted\)/.test(chat),
-    "The Invite button appears only after the first recommendation is saved",
+    "a modal asking for referrals before anything has been given is what her rule protected",
+  );
+  ok(
+    "and the pill itself is not behind it",
+    /right=\{\s*session\?\.referral_code \? \(/.test(chat),
+    "the invite link is on /share whenever Pando has one to give",
   );
 
   /**

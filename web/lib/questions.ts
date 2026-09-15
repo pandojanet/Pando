@@ -695,12 +695,10 @@ const SHARED_CONNECTIONS: Option[] = [
  * problem she reported. `hint` is gone from these three because a plan column
  * has nowhere to put a fourth, unlabelled sentence.
  *
- * ⚠⚠ **Community member has no `benefits`, and that is deliberate.** She said
- * in so many words that she will supply the benefits, so the cell is left
- * **empty** rather than filled with something Pando made up. The other two
- * carry the sentence she already approved on 1 Sep, which is a benefit and was
- * only ever presented as the tail of a hint. Filling the third is one line in
- * this file.
+ * ⚠⚠ **Superseded on 10 Sep, when she wrote the third cell** — this once said
+ * Community member's `benefits` was deliberately empty, because *"Janet прямо
+ * сказала, що ще дасть benefits"* and inventing one was the thing not to do.
+ * All three are hers now. The empty cell is still what an unwritten one gets.
  *
  * ⚠ **The 48-hour gap reads as Open Contributor's alone**, because her own
  * wording put it there and the chip layout had the same asymmetry. It is
@@ -725,9 +723,17 @@ const SHARED_CONNECTIONS: Option[] = [
  * denominated in Network Checks and those are not spendable yet (10 Aug), so
  * without the hedge this screen would promise a balance nothing can pay out.
  *
- * ⚠ **"Recommended" stays a badge on the middle level** (`recommended`), which
- * is where her 1 Sep instruction put it, and must never become "Most popular" —
- * she ruled that out by name for want of usage data.
+ * ⚠ **"Recommended" stays on the middle level** (`recommended`), which is where
+ * her 1 Sep instruction put it, and must never become "Most popular" — she
+ * ruled that out by name for want of usage data. Since 15 Sep it is the band
+ * across the top of that card rather than a badge inside it; the word and the
+ * level it marks are unchanged.
+ *
+ * ⚠⚠ **The bullets are a split, not a rewrite** (15 Sep). Her sentences break
+ * at her own full stops; her comma lists become `benefitsLead` plus one bullet
+ * an item, lower case as she wrote them. A future session tidying these into
+ * Capitalised Fragments is editing copy the client approved — and the hedges
+ * above are the reason that matters.
  */
 const ALLOWANCE: Option[] = [
   {
@@ -737,8 +743,13 @@ const ALLOWANCE: Option[] = [
     plan: {
       participation: "Up to 5 relevant questions a month",
       questions: "The minimum level",
-      benefits:
-        "Join Pando. Ask questions and get answers from parents with firsthand experience. Invite friends.",
+      /* Her three sentences, split at her own full stops. No lead-in: this
+         level is not built on one below it. */
+      benefits: [
+        "Join Pando.",
+        "Ask questions and get answers from parents with firsthand experience.",
+        "Invite friends.",
+      ],
     },
   },
   {
@@ -754,8 +765,15 @@ const ALLOWANCE: Option[] = [
     plan: {
       participation: "Up to 10 relevant questions a month",
       questions: "Happy to help more",
-      benefits:
-        "Everything above, plus one Network Check each month during the pilot, early access to caregiver matching and discounted Pando+ at launch.",
+      /* Her one sentence, as the list it already was: the lead-in, then the
+         three items she separated with commas. Lower case is hers and the
+         hedges are load-bearing — see `OptionPlan`. */
+      benefitsLead: "Everything above, plus:",
+      benefits: [
+        "one Network Check each month during the pilot",
+        "early access to caregiver matching",
+        "discounted Pando+ at launch",
+      ],
     },
   },
   {
@@ -765,8 +783,15 @@ const ALLOWANCE: Option[] = [
     plan: {
       participation: "Whenever it’s relevant — never more than one every 48 hours",
       questions: "Ask me when it fits",
-      benefits:
-        "Everything above, plus Pando+ during the pilot, two Network Checks a month, priority routing for questions, timely seasonal reminders, early access to caregiver matching and additional invitations.",
+      benefitsLead: "Everything above, plus:",
+      benefits: [
+        "Pando+ during the pilot",
+        "two Network Checks a month",
+        "priority routing for questions",
+        "timely seasonal reminders",
+        "early access to caregiver matching",
+        "additional invitations",
+      ],
     },
   },
 ];
@@ -829,18 +854,39 @@ const anyConnectionMayBeNamed = (): boolean =>
  */
 export const ALL_SCREENS: Screen[] = [
   {
+    /**
+     * ## The two required questions, on one screen — 15 Sep
+     *
+     * The developer: *"всі сторінки, де є лише 1 питання, видали та об'єднай
+     * всі питання з іншими сторінками"* — no screen may ask a single question.
+     * Six did, and this is the first of five merges.
+     *
+     * ⚠ **Every sentence the two screens carried is kept**, which is the rule
+     * the 9 Sep merge round established: `Question.help` exists so two
+     * questions with different instructions can share a screen without one of
+     * them losing the line a parent acts on. The child screen's title was an
+     * instruction (*"Add each child's birth year."*) and is the first sentence
+     * of that question's help rather than a dropped heading. Only the screen
+     * title is new.
+     *
+     * ⚠ **This is the whole of the required path now**, so the fork's own note
+     * about the count is one screen lighter: `/join` · this · the fork ·
+     * participation · review · the code · `/share`. Seven.
+     */
     id: "neighborhood",
-    eyebrow: "Where you are",
+    eyebrow: "You and your family",
     /* Client's wording, 24 Aug (item 5). Her list is *cities*, not neighborhoods
        inside Pasadena — a Bungalow Heaven parent picks Pasadena, or types their
        own into "Other nearby area". The nine intra-Pasadena values were retired
        rather than deleted, so an existing answer still resolves. */
-    title: "Where do you live?",
-    help: "This helps Pando find parents whose local world overlaps with yours.",
+    title: "Where do you live, and who’s at home?",
     questions: [
       {
         id: "neighborhood",
         label: "Neighborhood",
+        /* The screen's own help, verbatim, moved onto the question it belongs
+           to when the two screens merged. */
+        help: "This helps Pando find parents whose local world overlaps with yours.",
         kind: "single",
         required: true,
         source: { type: "market", category: "neighborhoods" },
@@ -885,21 +931,15 @@ export const ALL_SCREENS: Screen[] = [
         when: (a) => zipChoiceNeeded(a.home_place),
         source: { type: "zips" },
       },
-    ],
-  },
-  {
-    id: "child_ages",
-    eyebrow: "Your kids",
-    /* Her heading, 10 Sep, and it describes the control now rather than
-       contradicting it: "tap a birth year for each one" was a multi-select
-       pretending to be a list, so a parent with two children born in one year
-       tapped once and Pando recorded one child. */
-    title: "Add each child's birth year.",
-    help: "So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
-    questions: [
       {
         id: "child_ages",
         label: "Birth years",
+        /* Her screen heading (10 Sep) and her screen help, joined and both
+           verbatim. The heading describes the control rather than
+           contradicting it: "tap a birth year for each one" was a multi-select
+           pretending to be a list, so a parent with two children born in one
+           year tapped once and Pando recorded one child. */
+        help: "Add each child's birth year. So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
         kind: "ages",
         required: true,
         source: { type: "static", options: BIRTH_YEAR_OPTIONS },
@@ -949,32 +989,46 @@ export const ALL_SCREENS: Screen[] = [
     questions: [],
   },
   {
-    id: "schools",
+    id: "communities",
     /* Behind the fork (10 Sep) — one of the four the client named as optional:
        schools, recurring classes or groups, regular childcare, and the topics a
        parent has personally navigated. */
     when: wantsDetail,
     eyebrow: "Your circles",
-    /* The helper here said "The strongest matching signal there is. Former
-       counts: a parent who's been through admissions is exactly who someone
-       needs." Removed on the client's instruction (24 Aug, item 6) — it explained
-       our matching to a parent who has not asked, and "the strongest signal"
-       reads as pressure to answer a question that is optional. Her own screen
-       title for this is below; "or has attended" is what still invites a former
-       school, without the sales pitch. */
-    /* Her wording, 10 Sep — and the tense is the change that matters: "have
-       your children attended" invites the former school the old title had to
-       explain in a helper, and it asks about the family rather than about one
-       unnamed "your child". */
-    title: "Which schools, preschools or daycares have your children attended?",
-    /* Item 4, verbatim. "This stays private" claimed less than the truth and
-       explained none of it: the parent decides later, per connection, and that
-       is the sentence that makes the privacy screen legible when it arrives. */
-    help: "Private by default. Pando uses this for matching, and you can decide later whether it may be shown as a shared connection.",
+    /* Her sentence with the word "schools" in it — the schools screen merged
+       in on 15 Sep and its own title moved onto its question, so the heading
+       has to cover both. */
+    title: "Which schools, groups and communities are part of your family's life?",
+    /* Item 5: her instruction for the activities section, and the three sections
+       stay on one scrollable page — *"Do not split this into additional pages
+       for now. Keeping the three sections on one scrollable page is acceptable
+       and avoids extra work."* */
+    /**
+     * Her sentence, 10 Sep, and it carries two rules that were true and stated
+     * nowhere a parent could read them.
+     *
+     * *"Adding a place means your family takes part; it is not a
+     * recommendation"* — the "Attendance must not create a recommendation"
+     * instruction, said on the screen rather than only enforced in the write
+     * path (`repo/profile.ts` writes `person_schools` and affinity edges, and
+     * never a `shares` row).
+     *
+     * *"Faith communities, private clubs and other sensitive affiliations are
+     * used only for private matching and are never named to other parents"* —
+     * which is `mayBeNamed` on screen. It is the strongest promise this screen
+     * makes and it was enforced in three layers of code and printed in none.
+     */
+    help: "Select all that apply — every one is optional. Adding a place means your family takes part; it is not a recommendation. Faith communities, private clubs and other sensitive affiliations are used only for private matching and are never named to other parents.",
     questions: [
       {
         id: "schools",
         label: "School, preschool or daycare",
+        /* Her screen title and her screen help, joined and both verbatim,
+           moved onto the question when the two screens merged (15 Sep). The
+           tense in the first sentence is hers and is load-bearing: "have your
+           children attended" invites the former school the old title needed a
+           helper to explain. */
+        help: "Which schools, preschools or daycares have your children attended? Private by default. Pando uses this for matching, and you can decide later whether it may be shown as a shared connection.",
         kind: "multi",
         source: { type: "market", category: "schools" },
         affinity: { type: "school", weight: 5 },
@@ -1005,37 +1059,6 @@ export const ALL_SCREENS: Screen[] = [
            in it at all, which today cannot happen and one day might. */
         showForBands: ["baby", "toddler", "preschool", "grade", "tween", "teen"],
       },
-    ],
-  },
-  {
-    id: "communities",
-    /* Behind the fork (10 Sep) — one of the four the client named as optional:
-       schools, recurring classes or groups, regular childcare, and the topics a
-       parent has personally navigated. */
-    when: wantsDetail,
-    eyebrow: "Your circles",
-    title: "Which local groups and communities are part of your family's life?",
-    /* Item 5: her instruction for the activities section, and the three sections
-       stay on one scrollable page — *"Do not split this into additional pages
-       for now. Keeping the three sections on one scrollable page is acceptable
-       and avoids extra work."* */
-    /**
-     * Her sentence, 10 Sep, and it carries two rules that were true and stated
-     * nowhere a parent could read them.
-     *
-     * *"Adding a place means your family takes part; it is not a
-     * recommendation"* — the "Attendance must not create a recommendation"
-     * instruction, said on the screen rather than only enforced in the write
-     * path (`repo/profile.ts` writes `person_schools` and affinity edges, and
-     * never a `shares` row).
-     *
-     * *"Faith communities, private clubs and other sensitive affiliations are
-     * used only for private matching and are never named to other parents"* —
-     * which is `mayBeNamed` on screen. It is the strongest promise this screen
-     * makes and it was enforced in three layers of code and printed in none.
-     */
-    help: "Select all that apply — every one is optional. Adding a place means your family takes part; it is not a recommendation. Faith communities, private clubs and other sensitive affiliations are used only for private matching and are never named to other parents.",
-    questions: [
       {
         id: "classes",
         label: "Recurring classes & activities",
@@ -1340,7 +1363,10 @@ export const ALL_SCREENS: Screen[] = [
     eyebrow: "Life context",
     /* Her own two titles, joined. "Your parenting setup" alone would have left
        the work question sitting under a heading that does not cover it. */
-    title: "Your parenting and work setup",
+    /* Her two titles joined (9 Sep), with the childcare screen's own heading
+       folded in: that screen asked one question and merged in here on 15
+       Sep. Its instruction line stayed on its question, where it was. */
+    title: "Your parenting, work and childcare",
     questions: [
       {
         id: "family_structure",
@@ -1375,49 +1401,6 @@ export const ALL_SCREENS: Screen[] = [
         allowOther: true,
         otherLabel: SOMETHING_ELSE,
       },
-    ],
-  },
-  {
-    /**
-     * Item 13, first screen: the *regular* arrangement.
-     *
-     * `perChild` because siblings genuinely differ — a toddler in daycare and a
-     * nine-year-old in an after-school programme is one household with two
-     * answers, and the old single household answer could not say that. The client
-     * asked whether to repeat the question per child or offer "same for all
-     * kids"; this keeps the developer's existing shape (one list, each selection
-     * attributed to the children it belongs to) rather than adding a screen per
-     * child, which is the same decision taken on 13 Aug for schools.
-     *
-     * No `perChildLimit` — unlike a school, a child can genuinely have several
-     * arrangements at once (preschool in the morning, a sitter after).
-     */
-    id: "childcare",
-    /* Behind the fork (10 Sep) — one of the four the client named as optional:
-       schools, recurring classes or groups, regular childcare, and the topics a
-       parent has personally navigated. */
-    when: wantsDetail,
-    eyebrow: "Life context",
-    /**
-     * ## 9 Sep — "Childcare / backup childcare" as one item, which is how she
-     * wrote it
-     *
-     * The two were split on 24 Aug (item 13) because a regular arrangement and
-     * a fallback are different facts, and they still are — two questions, two
-     * answers, one screen. The backup question keeps its own `when`, moved off
-     * the screen and onto itself: for an expecting-only parent both questions
-     * are hidden (the regular one by the `perChild` rule) and `visibleScreens`
-     * drops a screen with nothing left on it, so the behaviour the screen-level
-     * gate produced is unchanged.
-     *
-     * ⚠ **Both lists are dropdowns.** Eleven options plus seven is what made
-     * merging these two look impossible; as two compact controls the screen is
-     * shorter than either of the pages it replaces. A parent choosing childcare
-     * knows their own arrangement before they read the list — the list is a
-     * lookup, which is the case a dropdown is for.
-     */
-    title: "Your childcare",
-    questions: [
       {
         id: "childcare_now",
         label: "Regular care",
@@ -1605,103 +1588,6 @@ export const ALL_SCREENS: Screen[] = [
    * carries the topic-level consent she dictated on 1 Sep.
    */
   {
-    /* Item 17, second of two. "Comfortable sharing" rather than "could help
-       with": this list is about experience a parent lived, and the wording should
-       not imply they are offering advice. */
-    id: "topics_lived",
-    /* Behind the fork (10 Sep) — one of the four the client named as optional:
-       schools, recurring classes or groups, regular childcare, and the topics a
-       parent has personally navigated. */
-    when: wantsDetail,
-    eyebrow: "What you know",
-    /* Her wording, 10 Sep. It names the two things actually being stored —
-       what the parent has been through, and whether they are willing to be
-       asked — where "comfortable sharing" named only the second. */
-    title: "Which parenting areas have you personally navigated and would be open to answering questions about?",
-    /* Item 17's own words. */
-    help: "Choose any topics where your firsthand experience could help. You’ll always decide whether to answer.",
-    questions: [
-      {
-        id: "topics_lived",
-        /**
-         * ⚠ **The longest static list in the flow, and deliberately not a
-         * dropdown** (9 Sep).
-         *
-         * Her instruction was long option lists → compact dropdown, and this is
-         * fourteen options. It is also the one question here where each option
-         * is **its own decision** rather than a lookup: the parent is not
-         * finding an answer they already hold, they are reading down a list of
-         * parenting experiences and deciding, one at a time, which they are
-         * willing to be asked about. This screen carries the topic-level
-         * consent the 1 Sep round folded the listening-ear page into.
-         *
-         * A dropdown hides what is not chosen. On a lookup that costs nothing;
-         * here it costs opt-ins that would have been given — a parent does not
-         * open a box to consider whether they would talk about loneliness. Her
-         * own words on this pass were *"без втрати даних"*, and this is the one
-         * list where the change would lose some.
-         *
-         * On the list for her rather than decided against her: if she wants it
-         * boxed anyway, it is `dropdown: true` on this line.
-         */
-        kind: "multi",
-        source: { type: "static", options: TOPICS_LIVED },
-        /* Item 17: *"Add 'Something else' for relevant experiences Pando has
-           not anticipated."* The typed route, not a chip — the universal
-           comment applies here too. */
-        allowOther: true,
-        otherLabel: SOMETHING_ELSE,
-        /**
-         * ⚠ **`required` was here and is gone** (10 Sep), and that reverses
-         * item 17 of 1 Sep: *"Continue should activate once the parent selects
-         * at least one topic or chooses the opt-out."*
-         *
-         * Her newer instruction names this question in the list that must be
-         * optional — *"Keep schools, recurring classes or groups, regular
-         * childcare and personally navigated topics optional"* — and by this
-         * file's own rule the newer document wins.
-         *
-         * The two are in genuine conflict rather than about wording: this
-         * screen now sits **behind the optional fork**, so a required question
-         * here would mean a parent who tapped *"Add optional details"* could
-         * not leave the screen without answering. Optional detail that cannot
-         * be declined is not optional, and "I opened the door" is not consent
-         * to every room behind it.
-         *
-         * ⚠ What item 17 was protecting is not lost. The explicit opt-out chip
-         * is still on the list, so a parent who means *"ask me nothing"* can
-         * still say so rather than leaving a silence — and now a silence and a
-         * refusal are two different answers again, which is what the chip was
-         * for in the first place.
-         */
-      },
-    ],
-    /**
-     * **This screen is the listening-ear consent, and it no longer says so.**
-     *
-     * On 1 Sep the client removed the separate listening-ear page in favour of a
-     * footnote here — her words, verbatim: *"This page is unnecessary if the
-     * Parenting Experiences page already acts as the topic-level opt-in. Add the
-     * following directly beneath the topics…"* On **2 Sep** she asked for the
-     * descriptive box to come off the profile pages, and on this screen that box
-     * was the footnote. So the opt-in is now made by *selecting a topic* and is
-     * stated nowhere the parent can read it. Raised with her rather than
-     * quietly absorbed, because what went is her own consent copy.
-     *
-     * The four constraints it carried are unchanged, and all four are now
-     * code-only. Only route questions within topics the parent explicitly
-     * selected — opting into one sensitive topic is not blanket permission for
-     * every sensitive question. *Never infer* pregnancy loss, fertility
-     * treatment, mental-health history, relationship problems or disability
-     * from anything else in the profile. *Urgent* medical issues, self-harm,
-     * abuse, immediate safety concerns and legal emergencies are **never**
-     * routed as peer questions — that is `classifyDemand`'s high-stakes branch,
-     * which answers with professional resources instead. And when a question is
-     * routed, names are **not shared**: the exchange is never called anonymous,
-     * because Pando knows exactly who both parents are.
-     */
-  },
-  {
     /* "Ordinary recommendations" meant nothing to a parent — her word. The
        question is what credit they get, so that is what the title asks.
        ⚠ 9 Sep: "credit" was the system's word for it. Hers is the parent's —
@@ -1726,49 +1612,51 @@ export const ALL_SCREENS: Screen[] = [
         kind: "single",
         source: { type: "static", options: SHARED_CONNECTIONS },
       },
-    ],
-  },
-  {
-    /**
-     * Privacy Guidance §A — one decision per connection.
-     *
-     * **Only asked when the master switch above is on.** A parent who said "don't
-     * mention my connections" has answered this screen already, and asking which
-     * ones anyway would be asking them to repeat themselves in more detail.
-     *
-     * **Nothing here is pre-selected**, and that is the consent model rather than
-     * a default: §A says new affiliations default to `private`, the privacy
-     * explainer changes nothing, and "Continue" is not consent — only the toggle
-     * is. So skipping this screen grants exactly nothing, which is why it needs
-     * no "none of them" option.
-     */
-    id: "connection_visibility",
-    eyebrow: "Privacy",
-    title: "Which connections may Pando mention?",
-    help: AFFILIATION_CONSENT_TEXT,
-    questions: [
       {
+        /**
+         * Privacy Guidance §A — one decision per connection, and a screen of
+         * its own until 15 Sep, when a screen asking one question had to merge
+         * into the one beside it. This is where it belongs: the question above
+         * decides whether connections may be mentioned at all, and this one
+         * says which.
+         *
+         * ⚠⚠ **Its gate moved from the screen onto the question, and every
+         * clause of it is load-bearing.** `wantsDetail` stays on the screen;
+         * the rest is this question's own narrower rule — nothing to decide if
+         * the parent said not to mention connections, or named none. It also
+         * must not render without `anyConnectionMayBeNamed()`:
+         * `affiliationOptions` returns nothing while `NAMEABLE` is empty, and
+         * a question with no options is a heading over blank paper — measured
+         * on 10 Sep, when emptying `ASK_LATER` published exactly that.
+         *
+         * **Nothing here is pre-selected**, and that is the consent model
+         * rather than a default: §A says a new affiliation defaults to
+         * `private`, and "Continue" is not consent — only the toggle is. So
+         * skipping grants exactly nothing, which is why it needs no "none of
+         * them" option.
+         */
         id: "shared_affiliations",
+        /* The screen's own title, as the question's heading. */
+        label: "Which connections may Pando mention?",
+        help: AFFILIATION_CONSENT_TEXT,
         kind: "multi",
         source: { type: "affiliations" },
+        when: (answers) =>
+          anyConnectionMayBeNamed() &&
+          answers.shared_connections === "share_connection" &&
+          answers.schools.length +
+            answers.classes.length +
+            answers.camps.length +
+            answers.clubs.length +
+            answers.faith.length >
+            0,
       },
     ],
-    /* Her caveat, immediately underneath and never as a tooltip: the one thing
-       this control cannot promise. */
+    /* Her caveat (2 Sep), moved with the question above it: the one thing
+       this control cannot promise. ⚠ It stays on screen when that question
+       is hidden, and that is right rather than a leak — it qualifies the
+       shared-connections decision above it just as much. */
     footnote: AFFILIATION_CONSENT_CAVEAT,
-    /* Two gates, cheapest first. `wantsDetail` is the fork (10 Sep, second
-       pass); the rest is this screen's own narrower rule — nothing to decide if
-       they named no connections at all. */
-    when: (answers) =>
-      wantsDetail(answers) &&
-      anyConnectionMayBeNamed() &&
-      answers.shared_connections === "share_connection" &&
-      answers.schools.length +
-        answers.classes.length +
-        answers.camps.length +
-        answers.clubs.length +
-        answers.faith.length >
-        0,
   },
   /**
    * ## "The Pando promise" is gone (9 Sep — her item 10)
@@ -1854,6 +1742,66 @@ export const ALL_SCREENS: Screen[] = [
         kind: "single",
         source: { type: "static", options: ALLOWANCE },
         required: true,
+      },
+      {
+        id: "topics_lived",
+        /* Her screen title and her screen help (10 Sep), joined and both
+           verbatim, moved onto the question when this screen merged into the
+           participation one on 15 Sep. The label is short because a label is
+           also the review screen's row heading; her question is the help. */
+        label: "What you can help with",
+        help: "Which parenting areas have you personally navigated and would be open to answering questions about? Choose any topics where your firsthand experience could help. You’ll always decide whether to answer.",
+        /**
+         * ⚠ **The longest static list in the flow, and deliberately not a
+         * dropdown** (9 Sep).
+         *
+         * Her instruction was long option lists → compact dropdown, and this is
+         * fourteen options. It is also the one question here where each option
+         * is **its own decision** rather than a lookup: the parent is not
+         * finding an answer they already hold, they are reading down a list of
+         * parenting experiences and deciding, one at a time, which they are
+         * willing to be asked about. This screen carries the topic-level
+         * consent the 1 Sep round folded the listening-ear page into.
+         *
+         * A dropdown hides what is not chosen. On a lookup that costs nothing;
+         * here it costs opt-ins that would have been given — a parent does not
+         * open a box to consider whether they would talk about loneliness. Her
+         * own words on this pass were *"без втрати даних"*, and this is the one
+         * list where the change would lose some.
+         *
+         * On the list for her rather than decided against her: if she wants it
+         * boxed anyway, it is `dropdown: true` on this line.
+         */
+        kind: "multi",
+        source: { type: "static", options: TOPICS_LIVED },
+        /* Item 17: *"Add 'Something else' for relevant experiences Pando has
+           not anticipated."* The typed route, not a chip — the universal
+           comment applies here too. */
+        allowOther: true,
+        otherLabel: SOMETHING_ELSE,
+        /**
+         * ⚠ **`required` was here and is gone** (10 Sep), and that reverses
+         * item 17 of 1 Sep: *"Continue should activate once the parent selects
+         * at least one topic or chooses the opt-out."*
+         *
+         * Her newer instruction names this question in the list that must be
+         * optional — *"Keep schools, recurring classes or groups, regular
+         * childcare and personally navigated topics optional"* — and by this
+         * file's own rule the newer document wins.
+         *
+         * The two are in genuine conflict rather than about wording: this
+         * screen now sits **behind the optional fork**, so a required question
+         * here would mean a parent who tapped *"Add optional details"* could
+         * not leave the screen without answering. Optional detail that cannot
+         * be declined is not optional, and "I opened the door" is not consent
+         * to every room behind it.
+         *
+         * ⚠ What item 17 was protecting is not lost. The explicit opt-out chip
+         * is still on the list, so a parent who means *"ask me nothing"* can
+         * still say so rather than leaving a silence — and now a silence and a
+         * refusal are two different answers again, which is what the chip was
+         * for in the first place.
+         */
       },
     ],
     /* The one sentence rescued from "The Pando promise" when that screen was

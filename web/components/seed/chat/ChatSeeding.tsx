@@ -875,20 +875,29 @@ export function ChatSeeding() {
          * screen a parent actually spends time on, rather than only in the
          * popup they see once and on a thank-you screen two taps further on.
          *
-         * ⚠ **And 10 Sep adds when**: *"The Invite button appears only after
-         * the first recommendation is saved."* Which is the stronger version
-         * of the same idea — asking somebody to bring their friends before
-         * they have given anything themselves is asking for a favour on the
-         * strength of nothing, and it puts a share control on a screen whose
-         * whole job at that moment is the first contribution.
+         * ⚠⚠ **It waited for a saved recommendation between 10 and 15 Sep, and
+         * the developer asked for it back** — *"поверни реферальне посилання в
+         * тому вигляді, якому воно було, на сторінку share"*. That gate was
+         * the client's own (10 Sep: *"The Invite button appears only after the
+         * first recommendation is saved"*) and its reasoning was real: asking
+         * somebody to bring their friends before they have given anything is a
+         * favour asked on the strength of nothing. **This reverses it for the
+         * pill and is hers to reverse back.** What made it expensive in
+         * practice is that the control most parents will use is invisible for
+         * the whole of their first visit, on the one screen they sit on.
          *
-         * `submissions.some(persisted)` rather than `length`, deliberately: a
-         * card held on the founding path until a code is confirmed has been
-         * *written* and not saved, and the sentence is "after the first
-         * recommendation is **saved**".
+         * ⚠ The **popup** keeps the gate — see below. A pill in the corner is
+         * there when somebody looks for it; a modal on arrival is the thing her
+         * sentence was actually protecting against.
+         *
+         * ⚠ `referral_code` is still required and there is no fallback: the
+         * code is minted by the server (the profile write, or `/api/seed/me`),
+         * so no code means Pando has no link to give — the `persisted: false`
+         * rule, and the reason this renders nothing on a deployment with no
+         * database rather than an address that would 404.
          */
         right={
-          session?.referral_code && hasSavedRecommendation ? (
+          session?.referral_code ? (
             <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }

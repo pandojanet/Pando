@@ -23,7 +23,7 @@ import type { Option } from "@/lib/types";
  * levels was to read two paragraphs and hold them in your head. Rows are what
  * make a comparison a comparison.
  *
- * ## Two things not to undo
+ * ## Three things not to undo
  *
  * **It is a comparison and not a price list.** There is no currency, no "per
  * month", no cheapest-to-dearest ordering and no call-to-action per column —
@@ -34,7 +34,16 @@ import type { Option } from "@/lib/types";
  *
  * **An empty cell is honest.** A level with no `benefits` renders nothing in
  * that row rather than an em dash or a sentence — the benefits are hers to
- * supply and one of the three is still unwritten. See `OptionPlan`.
+ * supply. See `OptionPlan`.
+ *
+ * **The whole card is the control, and there is no tick** (developer, 15 Sep —
+ * *"Прибери CheckBox на кожній з опцій, це буде клікабельна карточка без
+ * нього"*). The card is already a ~300px target, and a 20px circle beside the
+ * name was a second thing to aim at that did nothing the card did not.
+ * ⚠ **The cost is stated rather than left to be discovered:** selection is now
+ * carried by the border, the ring and the wash, so a sighted parent reads it
+ * from a colour and a boundary rather than from a glyph. `aria-checked` is
+ * untouched — a screen reader was never being told by the tick.
  *
  * ## Mechanics
  *
@@ -44,12 +53,22 @@ import type { Option } from "@/lib/types";
  * (`EMPTY_ANSWERS.allowance` is null and the choice is required, so the dock
  * stays locked until one is picked).
  *
- * The rows line up across columns from `md` up through **subgrid** — each
- * column is a grid whose rows are the parent's, so the Questions row starts at
- * the same y in all three however long the Participation cell above it runs. A
- * per-column grid would let them drift, which is the one thing a comparison
- * cannot do. Below `md` the columns stack into cards and each carries its own
- * row labels, which is what keeps a stacked comparison readable on a phone.
+ * Each column is its own run of blocks, one `STEP` apart, and the three stretch
+ * to the height of the tallest — so a card reads with a single rhythm from its
+ * name to its last bullet, and the three start and end together.
+ *
+ * ⚠⚠ **This replaced `grid-rows-subgrid`, and the trade runs the other way from
+ * what it sounds like.** Subgrid put every column's Participation label at the
+ * same y, which is what a comparison seems to want — and it sized each row
+ * track to the tallest cell **across** the columns, so a level whose answer
+ * wrapped to two lines left the other two carrying a blank line before their
+ * next label. Measured: every gap 16px except one at 38px, in all three columns
+ * at once. The developer asked twice for the spacing to be even (15 Sep,
+ * *"Відстані між розділами зроби однаковими"*, then *"рівномірно розподіли
+ * текст"*) and pointed at a pricing page whose columns do **not** share row
+ * lines — each card is its own list, and only the names align. Her rows survive
+ * that intact, because every column still carries all three of her labels: what
+ * is lost is the shared y, not the comparison.
  */
 interface Props {
   options: Option[];
@@ -59,28 +78,55 @@ interface Props {
   groupLabel: string;
 }
 
-/** Her rows, in her order. The key is the field on `OptionPlan`. */
+/**
+ * Her first two rows, in her order; the key is the field on `OptionPlan`.
+ * Benefits is rendered separately because it is a list rather than a sentence.
+ */
 const ROWS = [
   { key: "participation", label: "Participation" },
   { key: "questions", label: "Questions" },
-  { key: "benefits", label: "Benefits" },
 ] as const;
+
+/**
+ * One step between every block — the band, the name, each row, and between a
+ * row's label and its answer (developer, 15 Sep: *"Відстані між розділами
+ * зроби однаковими"*). It was `gap-3` stacked against `gap-4` in columns, with
+ * an `mt-1` under each row label — so a phone and a laptop had different
+ * rhythms, and a label sat nearer its own value than to anything else on the
+ * card.
+ */
+const STEP = "gap-4";
+
+/**
+ * How far the recommended column stands above its neighbours: the band's own
+ * height, exactly.
+ *
+ * ⚠⚠ **The three classes are one number and must not drift apart.** `height`
+ * fixes the band, `pull` lifts the card by the same amount so its *name* lands
+ * level with the other two — that alignment is the point of the treatment, and
+ * it is what fixing the height buys — and `room` is the space above the row for
+ * the card to be lifted into. Change one and the three plan names stop sharing
+ * a baseline, which is the defect this shape exists to avoid: an earlier
+ * attempt gave the recommended column an extra subgrid track instead, and put
+ * that card's own heading **17px above the other two** (measured: 369 · 352 ·
+ * 369), because a subgrid's padding comes out of its *first* track.
+ *
+ * All three are `md:` only. Stacked there is nothing to stand proud of, and a
+ * card lifted on a phone would sit on the one above it.
+ */
+const BAND = { height: "md:h-8", pull: "md:-mt-8", room: "md:pt-8" };
 
 export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
   return (
     <div
       role="radiogroup"
       aria-label={groupLabel}
-      className={cn(
-        "grid gap-3",
-        /* One track per row (header + the three rows), so a column can hand its
-           rows to the parent with `grid-rows-subgrid` and every cell aligns. */
-        "md:grid-cols-3 md:grid-rows-[auto_auto_auto_auto] md:gap-4",
-      )}
+      className={cn("grid", STEP, "md:grid-cols-3", BAND.room)}
     >
       {options.map((option) => {
         const on = selected.includes(option.id);
         const plan = option.plan;
+        const recommended = option.recommended === true;
         return (
           <button
             key={option.id}
@@ -89,68 +135,52 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
             aria-checked={on}
             onClick={() => onChange(on ? [] : [option.id], { id: option.id, on: !on })}
             className={cn(
-              "grid w-full gap-3 rounded-3xl border p-4 text-left",
+              /* `content-start`: a card with less in it than its neighbours
+                 keeps the one rhythm and lets the difference fall at the foot
+                 of it. Spreading the blocks to fill the height would give each
+                 column its own spacing, which is the thing being fixed. */
+              "grid w-full content-start overflow-hidden rounded-3xl border p-4 text-left",
+              STEP,
               "transition-[background-color,border-color,box-shadow] duration-150",
               "active:scale-[0.985]",
-              "md:row-span-4 md:grid-rows-subgrid md:gap-4",
+              recommended && BAND.pull,
               on
                 ? "border-green-deep bg-green-wash ring-1 ring-green-deep"
                 : "border-bark bg-card hover:border-green/50",
             )}
           >
-            <span className="block">
-              {/* Above the name, not beside it: at 375px a badge on the same
-                  line takes enough width to wrap "Active contributor" onto two
-                  lines, which makes the one column she wants highlighted the
-                  one that reads worst. */}
-              <Recommended shown={option.recommended === true} />
-              <span className="flex items-center gap-2.5">
-                <Tick selected={on} />
-                <span
-                  className={cn(
-                    "font-display text-card-title font-semibold",
-                    on ? "text-green-deep" : "text-ink",
-                  )}
-                >
-                  {option.label}
-                </span>
-              </span>
+            {recommended && <Recommended />}
+
+            <span
+              className={cn(
+                "block font-display text-card-title font-semibold",
+                on ? "text-green-deep" : "text-ink",
+              )}
+            >
+              {option.label}
             </span>
 
-            {ROWS.map((row) => {
-              const value = plan?.[row.key];
-              return (
-                /**
-                 * An empty cell renders **nothing at all** — not the row label
-                 * over a blank, which announces "Benefits" to a screen reader
-                 * and then says nothing, and reads on the page as a heading
-                 * that failed to load.
-                 *
-                 * It still takes its place in the grid, so the alignment is
-                 * unaffected: with `grid-rows-subgrid` the track's height comes
-                 * from the tallest cell **across** the row, and the two columns
-                 * that do carry a benefit hold it open for the one that does
-                 * not.
-                 */
-                <span key={row.key} className="block">
-                  {value && (
-                    <>
-                      <span className="block text-eyebrow font-semibold uppercase tracking-eyebrow text-muted">
-                        {row.label}
-                      </span>
-                      <span
-                        className={cn(
-                          "mt-1 block leading-relaxed text-help",
-                          on ? "text-green-deep" : "text-ink-soft",
-                        )}
-                      >
-                        {value}
-                      </span>
-                    </>
-                  )}
+            {ROWS.map((row) => (
+              <Cell key={row.key} label={row.label} answered={plan?.[row.key]} on={on}>
+                {plan?.[row.key]}
+              </Cell>
+            ))}
+
+            <Cell label="Benefits" answered={plan?.benefits?.length} on={on}>
+              {plan?.benefitsLead && <span className="block">{plan.benefitsLead}</span>}
+              {plan?.benefits?.map((benefit) => (
+                /* A list inside a `<button>` is markup a button may not hold —
+                   phrasing content only — so the bullet is a glyph rather than
+                   a `<ul>`, and it is `aria-hidden` because a dot read aloud
+                   before every item is noise. */
+                <span key={benefit} className="flex gap-2">
+                  <span aria-hidden="true" className={on ? "text-green-deep" : "text-green"}>
+                    •
+                  </span>
+                  <span className="block">{benefit}</span>
                 </span>
-              );
-            })}
+              ))}
+            </Cell>
           </button>
         );
       })}
@@ -159,51 +189,70 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
 }
 
 /**
- * Her word, and only hers — never "Most popular" (1 Sep, for want of usage
- * data).
+ * One row of one column: her label, then the answer.
  *
- * A column without it still renders the badge's **box**, invisible, from `md`
- * up: the plan names would otherwise sit a line lower in the recommended
- * column than in the other two, which is the one misalignment a comparison
- * cannot afford. Rendering the same element rather than a hand-measured spacer
- * is what guarantees the two heights match. On a phone the columns are stacked
- * cards with no row to align to, so there is nothing to hold open.
+ * An unanswered row renders **nothing at all** — not the label over a blank,
+ * which announces "Benefits" to a screen reader and then says nothing, and
+ * reads on the page as a heading that failed to load.
  */
-function Recommended({ shown }: { shown: boolean }) {
+function Cell({
+  label,
+  answered,
+  on,
+  children,
+}: {
+  label: string;
+  /** Whatever says this row has something in it — a sentence, or a count. */
+  answered?: string | number;
+  on: boolean;
+  children?: React.ReactNode;
+}) {
+  if (!answered) return null;
   return (
-    <span
-      aria-hidden={!shown}
-      className={cn(
-        "mb-2 rounded-full border border-gold-line bg-gold-wash px-2.5 py-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-gold-ink",
-        shown ? "inline-flex" : "invisible hidden md:inline-flex",
-      )}
-    >
-      Recommended
+    <span className={cn("grid", STEP)}>
+      <span className="block text-eyebrow font-semibold uppercase tracking-eyebrow text-muted">
+        {label}
+      </span>
+      <span
+        className={cn(
+          "grid gap-1.5 leading-relaxed text-help",
+          on ? "text-green-deep" : "text-ink-soft",
+        )}
+      >
+        {children}
+      </span>
     </span>
   );
 }
 
-/** Empty circle → check, the same signal a chip carries. */
-function Tick({ selected }: { selected: boolean }) {
+/**
+ * Her word, and only hers — never "Most popular" (1 Sep, for want of usage
+ * data).
+ *
+ * **The top of the card, standing above its neighbours** (developer, 15 Sep,
+ * pointing at a pricing page twice: *"Recommended перенести над карткою"*, then
+ * *"зроби верх так само по формату як тут"*). It was a pill stacked on top of
+ * the plan name inside the card, which put the recommended column's name a line
+ * lower than the other two — so the card the screen wants read first was the
+ * one whose heading was out of line, and every other column had to render the
+ * pill invisibly to hold its own name down.
+ *
+ * The card is lifted by exactly the band's height (`BAND`), so the band fills
+ * the space above the row and the three plan names still share a baseline. The
+ * negative margins carry it out of the card's padding to the border, where
+ * `overflow-hidden` on the card rounds it.
+ */
+function Recommended() {
   return (
     <span
-      aria-hidden="true"
       className={cn(
-        "grid h-5 w-5 shrink-0 place-items-center rounded-full border",
-        selected ? "border-green-deep bg-green-deep" : "border-bark bg-card",
+        "-mx-4 -mt-4 flex items-center justify-center border-b border-gold-line bg-gold-wash px-4 py-2 text-eyebrow font-semibold uppercase tracking-eyebrow text-gold-ink",
+        /* Stacked, the band is simply the card's top edge and sizes itself. */
+        BAND.height,
+        "md:py-0",
       )}
     >
-      {selected && (
-        <svg viewBox="0 0 12 12" className="h-3 w-3 text-white" fill="none">
-          <path
-            d="M2.5 6.2 4.8 8.5 9.5 3.8"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
+      Recommended
     </span>
   );
 }

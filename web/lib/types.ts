@@ -156,16 +156,32 @@ export interface Option {
  * agreeing to this level means), **Questions** (how many, and how often) and
  * **Benefits** (what the parent gets for it).
  *
- * ⚠ **`benefits` is optional because two of the three levels have one written
- * and the third does not.** Her instruction was explicit — the benefits are
- * hers to supply — so a level with nothing here renders an **empty cell**
- * rather than a sentence Pando invented. Filling it is a data edit in
- * `questions.ts` and touches no component.
+ * ⚠ **`benefits` is optional** — a level with nothing here renders an **empty
+ * cell** rather than a sentence Pando invented, which is what shipped for four
+ * days in September while the third was still hers to write. Filling it is a
+ * data edit in `questions.ts` and touches no component.
+ *
+ * ⚠⚠ **`benefits` is a list because the cell is bullets** (developer, 15 Sep —
+ * *"зроби всі Benefits bullet points"*). It was one string, and a paragraph is
+ * the wrong shape for a cell whose entire job is to be read against the cell
+ * beside it. **The split is presentational and her words are untouched**: her
+ * sentences break at her own full stops, and where she wrote a comma-separated
+ * list the lead-in becomes `benefitsLead` and each item a bullet — lower case
+ * and all, because a colon followed by lower-case fragments is what that
+ * sentence already was. Nothing here may be capitalised, reworded, reordered
+ * or added to, and the hedges ("during the pilot", "at launch") are part of
+ * what she approved rather than a nicety — see `questions.ts`.
  */
 export interface OptionPlan {
   participation: string;
   questions: string;
-  benefits?: string;
+  /**
+   * The clause above the bullets — "Everything above, plus:". Hers; only the
+   * colon belongs to the list form.
+   */
+  benefitsLead?: string;
+  /** One bullet each, in her order. */
+  benefits?: string[];
 }
 
 export type QuestionId =

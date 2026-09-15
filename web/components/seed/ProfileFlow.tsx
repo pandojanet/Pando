@@ -1870,13 +1870,32 @@ export function ProfileFlow() {
               <div key={`${question.id}-group`}>
               {childStatus}
               {plans ? (
-                <PlanGroup
-                  key={question.id}
-                  options={shared.options}
-                  selected={shared.selected}
-                  onChange={shared.onChange}
-                  groupLabel={shared.groupLabel}
-                />
+                /**
+                 * ⚠ The label and the instruction are rendered here for the
+                 * same reason as `ChildList` below: `PlanGroup` takes neither,
+                 * because it was written for a screen of its own where the
+                 * title and help carried them. The lived-topics question merged
+                 * onto this screen on 15 Sep, so the two questions would
+                 * otherwise read as one labelled and one not.
+                 */
+                <div key={question.id}>
+                  {shared.label && (
+                    <p className="mb-2.5 font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
+                      {shared.label}
+                    </p>
+                  )}
+                  {shared.help && (
+                    <p className="mb-3 -mt-1 leading-relaxed text-muted text-help">
+                      {shared.help}
+                    </p>
+                  )}
+                  <PlanGroup
+                    options={shared.options}
+                    selected={shared.selected}
+                    onChange={shared.onChange}
+                    groupLabel={shared.groupLabel}
+                  />
+                </div>
               ) : directory ? (
                 <SearchableChipGroup
                   key={question.id}
@@ -1945,14 +1964,41 @@ export function ProfileFlow() {
                  * child", and duplicate years allowed; none of those is
                  * expressible in a multi-select.
                  */
-                <ChildList
-                  key={question.id}
-                  answers={answers}
-                  labels={children}
-                  onAdd={addChild}
-                  onRemove={removeChild}
-                  onMonth={setBirthMonth}
-                />
+                /**
+                 * ⚠ **The label and the instruction are rendered here rather
+                 * than by the control**, which every other branch on this
+                 * screen leaves to `shared`. `ChildList` is the one control
+                 * that takes neither — it was written for a screen of its own,
+                 * where the screen's title and help carried them.
+                 *
+                 * That stopped being true on 15 Sep, when this question merged
+                 * onto the location screen (*"всі сторінки, де є лише 1
+                 * питання … об'єднай"*): the neighborhood above it had a
+                 * heading and a sentence and this had neither, which is the
+                 * 9 Sep fault — *a per-child question with no label at all
+                 * above a merged sibling that had one* — arriving from the
+                 * other direction. Same markup as `ChipGroup`'s, so the two
+                 * questions on the screen read as the same kind of thing.
+                 */
+                <div key={question.id}>
+                  {shared.label && (
+                    <p className="mb-2.5 font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
+                      {shared.label}
+                    </p>
+                  )}
+                  {shared.help && (
+                    <p className="mb-3 -mt-1 leading-relaxed text-muted text-help">
+                      {shared.help}
+                    </p>
+                  )}
+                  <ChildList
+                    answers={answers}
+                    labels={children}
+                    onAdd={addChild}
+                    onRemove={removeChild}
+                    onMonth={setBirthMonth}
+                  />
+                </div>
               ) : (
               <ChipGroup key={question.id} {...shared} layout="wrap" />
               )}
@@ -2059,7 +2105,17 @@ export function ProfileFlow() {
             })}
           </div>
 
-          {index === 1 && (
+          {/**
+           * ⚠⚠ **Keyed on the screen, not on its position** — it was
+           * `index === 1`, which meant "the second required question" right up
+           * until 15 Sep, when the two required questions merged onto one
+           * screen and index 1 became the fork. The sentence then rendered on a
+           * screen that already says the same thing twice, under a heading
+           * reading *"That's everything Pando needs."* A position is a fact
+           * about the flow's current shape; the screen is the fact this panel
+           * is actually about.
+           */}
+          {screen.id === "neighborhood" && (
             <Panel
               as="p"
               tone="positive"
@@ -2148,9 +2204,14 @@ export function ProfileFlow() {
             <Button full variant="secondary" onClick={() => chooseDetail(true)}>
               {screen.fork.detailLabel}
             </Button>
-            <p className="pb-3 pt-1 text-center text-[12.5px] text-muted">
-              You can add any of it later.
-            </p>
+            {/* ⚠ **The line under these two buttons is gone** (15 Sep). It read
+                "You can add any of it later." — which is a clause of her own
+                statement body directly above it, and the panel at the foot of
+                the previous screen says the rest. Three sayings of one sentence
+                on one screen is what the `RecordGroup` rule calls out on the
+                admin side: a fact true of the whole screen belongs in one
+                place. Rewriting it to be more motivating (the developer's
+                instruction) only made the repetition louder. */}
           </div>
         ) : (
         <>
@@ -2194,9 +2255,16 @@ export function ProfileFlow() {
               went with the consent checkbox on 10 Sep; a sentence naming a
               control that is not on the screen is the fault this repository
               records under three names. */}
+          {/* ⚠ Both lines are **ours** rather than the client's, which is why
+              they could be rewritten on the developer's *"зроби всюди текст
+              більш мотивуючим"* (15 Sep) without a copy round. Each still does
+              the job it was put there for — the first says why the button will
+              not respond, the second is the resume promise — and now says what
+              the parent gets for it. Her own strings on these screens are
+              untouched; see the note in CLAUDE.md for which they are. */}
           {!unlocked
-            ? "Pick one to keep going"
-            : "Autosaved. You can close this and come back."}
+            ? "This one Pando needs — almost everything else is optional."
+            : "Saved as you go. The more you add, the better Pando can match you."}
         </p>
         </>
         )}
