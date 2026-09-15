@@ -1,6 +1,7 @@
 "use client";
 
 import type { Option, ProfilePayload } from "./types";
+import type { GeocodedPlace } from "./geo";
 
 /**
  * The browser only ever talks to our own route handlers. They do the work
@@ -306,4 +307,37 @@ export async function searchMarketOptions(input: {
   if (!res.ok) throw new ApiError("Search is unavailable", res.status);
   const body = (await res.json()) as { results?: Option[] };
   return Array.isArray(body.results) ? body.results : [];
+}
+
+/**
+ * Ask Google about a place neither the starters nor `home-places.ts` holds.
+ *
+ * ⚠ **Called only after both of those have missed**, which is what makes it
+ * affordable: every request here is billed, where the search above is a query
+ * against our own table. `SearchableChipGroup` owns that ordering.
+ *
+ * The three outcomes stay three all the way up to the status line — an
+ * unconfigured deployment, a real "no such place", and a lookup that did not
+ * run are different sentences, and collapsing them is the fault this app has
+ * already paid for once (`PublicSearchResult.configured`, computed and read by
+ * nobody). So this **throws** on a failure, exactly like the search, and
+ * reports `configured: false` as data rather than as an error.
+ */
+export async function geocodePlaces(input: {
+  q: string;
+  market: string;
+}): Promise<{ configured: boolean; places: GeocodedPlace[] }> {
+  const params = new URLSearchParams({ q: input.q, market_id: input.market });
+  const res = await fetch(`/api/market/geocode?${params.toString()}`, {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new ApiError("Place lookup is unavailable", res.status);
+  const body = (await res.json()) as {
+    configured?: boolean;
+    places?: GeocodedPlace[];
+  };
+  return {
+    configured: body.configured !== false,
+    places: Array.isArray(body.places) ? body.places : [],
+  };
 }

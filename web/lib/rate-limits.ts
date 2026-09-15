@@ -102,6 +102,7 @@ export type RateLimitName =
   | "verify_check"
   | "seed_write"
   | "market_read"
+  | "geocode"
   | "caregiver_claim"
   | "invite_check"
   | "phone_lookup";
@@ -170,6 +171,28 @@ export const LIMITS: Record<RateLimitName, RateLimit> = {
     max: 600,
     windowSeconds: 60,
     message: "Too many searches at once. Give it a second.",
+  },
+
+  /**
+   * Asking Google about a place the closed §5 list does not hold.
+   *
+   * ⚠ **Two orders of magnitude tighter than `market_read`, and the reason is
+   * money rather than load.** Every request that gets through here is billed by
+   * Google, which puts it in the same class as `verify_start` — the one other
+   * limit where a request costs cash — and nowhere near the search beside it,
+   * which is a pooler round trip against our own table.
+   *
+   * What makes 40 enough for real people: this fires **only after the local
+   * list has missed**, and only on the neighborhood question, and behind the
+   * same debounce. A parent naming a town Pando does not know spends one or two
+   * of these, and the second one to type it spends none at all, because the
+   * answer is cached in Postgres. A roomful at a meetup is comfortably inside
+   * it; a script working through every US postcode is not.
+   */
+  geocode: {
+    max: 40,
+    windowSeconds: 600,
+    message: "Too many place lookups from here just now. Try again in a minute.",
   },
 
   caregiver_claim: {

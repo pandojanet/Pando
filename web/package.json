@@ -19,6 +19,7 @@
     "test:auth": "node --experimental-strip-types --no-warnings scripts/test-admin-auth.mts",
     "test:phone": "node --experimental-strip-types --no-warnings scripts/test-phone.mts",
     "test:places": "node --experimental-strip-types --no-warnings scripts/test-places.mts",
+    "test:geo": "node --experimental-strip-types --no-warnings scripts/test-geo.mts",
     "places:sync": "npx tsx scripts/sync-places.mts",
     "test:e2e": "node scripts/test-e2e.mjs",
     "taxonomy:import": "node scripts/import-taxonomy.mjs",
