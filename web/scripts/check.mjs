@@ -126,13 +126,38 @@ try {
         where c.person_id = m.person_id and c.status = 'opted_in'
       )
   `);
-  /** The suppression list is the first check in the send layer, so it must hold. */
+  /**
+   * The suppression list is the first check in the send layer, so it must hold.
+   *
+   * ⚠ **It has to ask whether they were suppressed *at the moment of the send*,
+   * not merely whether a STOP exists somewhere in their history.** `sms_opt_outs`
+   * holds one upserted row per phone with both timestamps (`drizzle/0019` added
+   * `opted_in_at` precisely so START could be recorded at all), and the whole app
+   * reads the pair together — `repo/outreach.ts` (the send layer),
+   * `repo/blast.ts` (pool selection) and `admin-read.ts` all suppress on
+   * `opted_in_at is null or opted_in_at < opted_out_at`.
+   *
+   * This was the fourth reader of that fact and the only one that ignored the
+   * second half, so a parent who texted STOP and then START **nineteen seconds
+   * later** was reported as a compliance breach for ever, against a message sent
+   * ten days after they opted back in. The send layer was right; the check was
+   * wrong — and a check that cries wolf on the one rule with a regulator behind
+   * it is worse than no check, because the next real breach reads as the same
+   * false alarm. Same shape as the `test:security` signature regex that once
+   * called a signed route unguarded.
+   *
+   * Deliberately **stricter** than `isOptedOut`, which answers "are they
+   * suppressed now": a send that went out while they were opted out is still a
+   * breach even if they opted back in afterwards, so the opt-in only clears it
+   * when it came *before* the send.
+   */
   const sentAfterOptOut = await one(sql`
     select count(*)::int from message_log m
     join people p on p.id = m.person_id
     join sms_opt_outs o on o.phone = p.phone
     where m.category = 'outreach' and m.direction = 'out'
       and m.sent_at > o.opted_out_at
+      and (o.opted_in_at is null or o.opted_in_at > m.sent_at)
   `);
   /**
    * Belt to the CHECK in 0008: an admin credential that is not a scrypt record

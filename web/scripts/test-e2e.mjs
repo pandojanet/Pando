@@ -1142,7 +1142,33 @@ const loginRes = await signIn(ADMIN.name, ADMIN.password);
 const adminCookie = loginRes.cookie;
 ok("admin sign-in against the database store", loginRes.status === 200);
 ok("the password was never stored, only its scrypt record", (await sql`select password_hash from admin_users where name = ${ADMIN.name}`)[0].password_hash.startsWith("scrypt:65536:8:1:") && !adminHash.includes(ADMIN.password));
-ok("signing in stamps last_sign_in_at", (await sql`select last_sign_in_at from admin_users where name = ${ADMIN.name}`)[0].last_sign_in_at !== null);
+/**
+ * ⚠ **Polled, not read once.** `stampSignIn` is fire-and-forget by design — its
+ * own doc says so, and for a good reason: a failed stamp must never fail a
+ * sign-in that has already been proved, because this column answers "is this
+ * account still in use" and authorises nothing. So the UPDATE is in flight when
+ * the 200 comes back, and reading the column on the next round trip is a race
+ * the suite wins on a warm pooler and loses on a busy one.
+ *
+ * That is worse than a failing check, it is an *intermittently* failing one —
+ * the same fault `settleExtraction` above was written for, and the same one
+ * `test:relay-live` fixed on 4 Sep by replacing every fixed `setTimeout` with a
+ * wait on the condition. A suite that goes red for something that is not the
+ * app trains its reader to ignore red.
+ *
+ * The bound is still real: if the stamp never lands, this fails exactly as it
+ * did, which is the honest answer.
+ */
+const signInStamped = await (async () => {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const [row] = await sql`select last_sign_in_at from admin_users where name = ${ADMIN.name}`;
+    if (row?.last_sign_in_at !== null && row?.last_sign_in_at !== undefined) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+})();
+ok("signing in stamps last_sign_in_at", signInStamped);
 /* The sign-in page asks for the name; it must not offer it. The form used to be a
    <select> of everyone in the store, which published who holds admin access on an
    unauthenticated page — and made the timing equalisation in verifyCredentials
