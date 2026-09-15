@@ -1460,6 +1460,33 @@ export const seedConversations = pgTable("seed_conversations", {
     .defaultNow(),
 });
 
+/**
+ * What Google said about a place name, keyed on the name (`drizzle/0041`).
+ *
+ * ⚠ **No `person_id`, deliberately.** This is a dictionary of place names, not
+ * a record about anybody — `pending_options.submitted_value` already holds who
+ * typed what, and a second table saying it again with a timestamp would be a
+ * log of what parents write (invariant 7). Adding a person column here is the
+ * one change to this table that must not be made quietly.
+ *
+ * An empty `places` array is a real answer meaning *no such place*; a failure
+ * is never written at all. Freshness is `isFresh` in `lib/geo.ts`, because the
+ * TTL differs by outcome.
+ */
+export const geocodeCache = pgTable(
+  "geocode_cache",
+  {
+    marketId: text("market_id").notNull(),
+    /** Folded by `cacheKey`, so three spellings of one town are one lookup. */
+    query: text("query").notNull(),
+    places: jsonb("places").notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.marketId, t.query] })],
+);
+
 /* ── Row types ───────────────────────────────────────────────────────────── */
 
 export type Person = typeof people.$inferSelect;
