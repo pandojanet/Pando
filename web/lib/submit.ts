@@ -74,6 +74,58 @@ export function handleExpiredVerification(err: unknown): boolean {
   return true;
 }
 
+/**
+ * A write came back **422 with a required answer missing** — the one refusal
+ * this flow can actually recover from without the parent doing anything twice.
+ *
+ * ## Why it exists (15 Sep)
+ *
+ * The developer's report was *"I confirmed my number and it still asks me to
+ * confirm it"*, and the cause is two screens deep. `/api/seed/profile` refuses
+ * a profile whose neighborhood or children are missing — correctly, they are
+ * the two §8.5 makes required — and the flow's answer to *any* failed write was
+ * one sentence saying "try again" on the screen the parent was already on,
+ * which at that moment is the **code box**. So a parent whose answer had gone
+ * missing confirmed a code, watched it fail, and was shown a code box again: the
+ * number was confirmed the whole time and nothing on screen said so.
+ *
+ * ⚠ The route already names the fields (`fields: ["child_ages"]`) — it has since
+ * 27 Aug, when one message for two failures made exactly this undiagnosable —
+ * and **nothing read them**. This is the reader.
+ *
+ * ⚠ `ApiError.message` carries the response body verbatim (see `api-client.ts`),
+ * so the parse is defensive at every step: a body that is not JSON, or is JSON
+ * of another shape, returns null and the caller falls back to the ordinary
+ * failure. Returning `[]` — refused, but the server named no field — is
+ * deliberately distinct from null, because the first still means *an answer is
+ * missing* and the second means *something else went wrong*.
+ */
+/**
+ * ⚠ **Re-exported so a caller — including a test — reads the same class this
+ * module compares against.** `unansweredRequired` and
+ * `handleExpiredVerification` both use `instanceof`, and a module loaded
+ * twice (a cache-busting query on one import and not the other) gives two
+ * `ApiError` classes whose instances fail each other's check — silently, and
+ * in the direction that makes a correct recovery look broken.
+ */
+export { ApiError };
+
+export function unansweredRequired(err: unknown): string[] | null {
+  if (!(err instanceof ApiError) || err.status !== 422) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(err.message);
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== "object") return null;
+  const { reason, fields } = body as { reason?: unknown; fields?: unknown };
+  if (reason !== "invalid_required_answers") return null;
+  return Array.isArray(fields)
+    ? fields.filter((f): f is string => typeof f === "string")
+    : [];
+}
+
 export interface FlushResult {
   profile: boolean;
   /** Cards the server confirmed, out of how many were held. */

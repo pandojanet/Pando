@@ -46,6 +46,12 @@ export type SeedEvent =
   | "seed_profile_review_viewed"
   | "seed_profile_saved"
   | "seed_profile_save_failed"
+  /* The write refused because a required answer is missing rather than because
+     anything went wrong — how often a parent reaches the end of the flow with
+     one of the two §8.5 questions unanswered, which is the number that says
+     whether the flow can lose an answer at all. Carries the field names, which
+     are question ids and not anything a parent typed. */
+  | "seed_profile_missing_required"
   | "seed_chat_opened"
   | "seed_card_started"
   | "seed_card_step_answered"

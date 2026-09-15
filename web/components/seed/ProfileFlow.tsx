@@ -36,7 +36,11 @@ import {
   type VerifyStatus,
 } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
-import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
+import {
+  handleExpiredVerification,
+  holdsUntilVerified,
+  unansweredRequired,
+} from "@/lib/submit";
 import { ChildList } from "@/components/seed/ChildList";
 import {
   CHILD_SCHOOL_STATUS,
@@ -163,6 +167,15 @@ export function ProfileFlow() {
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  /**
+   * Why the flow sent them back to a question, shown on that question's screen.
+   *
+   * Separate from `saveError` because the two are read in different places and
+   * mean different things: one is a failure on the screen you are on, this is
+   * an explanation for a screen you did not ask to be on. It clears on the next
+   * advance, so it cannot follow them through the flow.
+   */
+  const [missingNote, setMissingNote] = useState<string | null>(null);
   /** Non-null while the parent is correcting the number the code goes to. */
   const [editingPhone, setEditingPhone] = useState<string | null>(null);
 
@@ -890,6 +903,7 @@ export function ProfileFlow() {
     }
     setDirection(1);
     track("seed_screen_advanced", { screen: screen.id, screen_index: index });
+    setMissingNote(null);
     update((s) => ({ ...s, screen_index: index + 1 }));
   }
 
@@ -919,6 +933,48 @@ export function ProfileFlow() {
       },
     }));
     goNext();
+  }
+
+  /**
+   * Take the parent to the first named question they have not answered, and
+   * say so when they get there.
+   *
+   * ⚠ **Keyed on the question, not on the screen**, because the two required
+   * questions have shared a screen and had their own twice in one day — a
+   * screen id here would have to be rewritten every time they move, and would
+   * be wrong quietly. `screens` is what the parent actually walks, so a
+   * question hidden by their own answers (an expecting-only parent's per-child
+   * questions) cannot be jumped to, and this returns false rather than
+   * stranding them on a screen that does not ask it.
+   *
+   * Returns whether it moved, so the caller can fall back to an ordinary
+   * failure instead of reporting a recovery that did not happen.
+   */
+  function goToQuestion(ids: string[]): boolean {
+    /* Called from a `catch` inside an async save, so the session — and with it
+       the answers this walks — could in principle have gone. Nothing to jump
+       to if it has. */
+    if (!answers) return false;
+    for (const id of ids) {
+      const target = screens.findIndex((sc) =>
+        visibleQuestions(sc, answers).some((qq) => qq.id === id),
+      );
+      if (target < 0) continue;
+      const question = visibleQuestions(screens[target], answers).find(
+        (qq) => qq.id === id,
+      );
+      setDirection(-1);
+      setStage("questions");
+      setSaveError(null);
+      setMissingNote(
+        question?.label
+          ? `This one is still needed before Pando can save: ${question.label.toLowerCase()}.`
+          : "One answer is still needed before Pando can save your profile.",
+      );
+      update((sc) => ({ ...sc, screen_index: target }));
+      return true;
+    }
+    return false;
   }
 
   function jumpTo(screenId: string) {
@@ -1074,6 +1130,28 @@ export function ProfileFlow() {
         router.push("/share");
         return;
       }
+      /**
+       * ⚠⚠ **The server refused because an answer is missing, and until 15 Sep
+       * that landed as "try again" on the code box.**
+       *
+       * `/api/seed/profile` refuses a profile with no neighborhood or no
+       * children — the two §8.5 makes required — and it names which. The parent
+       * had by then confirmed a code, so what they saw was a code box, an
+       * apology, and no way to learn that the problem was six screens back:
+       * *"I confirmed my number and it still asks me to confirm it"*. Nothing
+       * they could do on that screen would ever have worked.
+       *
+       * So the refusal navigates. The number stays confirmed (it is, and the
+       * session says so), the flow returns to the question that is missing, and
+       * `goToQuestion` says which. If the server named a field this flow does
+       * not have a screen for, it falls through to the ordinary failure rather
+       * than sending them nowhere.
+       */
+      const missing = unansweredRequired(err);
+      if (missing && goToQuestion(missing)) {
+        track("seed_profile_missing_required", { fields: missing.join(",") });
+        return;
+      }
       setSaveError(
         "That didn't go through. Your answers are safe on this phone — try again.",
       );
@@ -1086,6 +1164,11 @@ export function ProfileFlow() {
   /* ── The code, once the questions are answered ───────────────── */
 
   if (stage === "verify" && session.phone) {
+    /* Confirmed, and not one of the two panels that take the screen over for
+       their own reasons — an existing profile to decide about, or the number
+       being corrected. */
+    const confirmed =
+      session.phone_verified === true && !existing && editingPhone === null;
     return (
       <Screen>
         <ScreenHeader
@@ -1100,7 +1183,9 @@ export function ProfileFlow() {
           <div className="animate-step-in">
             <Eyebrow>Last step</Eyebrow>
             <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
-              Confirm your number and this is saved.
+              {confirmed
+                ? "Number confirmed."
+                : "Confirm your number and this is saved."}
             </h1>
             {/**
               * Her line, 10 Sep: *"One quick check" / "Nothing has left this
@@ -1112,7 +1197,12 @@ export function ProfileFlow() {
               * "One quick check" was the other half of the same evasion.
               */}
             <p className="mt-2.5 text-[15px] leading-relaxed text-ink-soft">
-              Verify your number to save your profile.
+              {/* One sentence in both states: what failed, or what is taking a
+                  moment, is said once below — by the status line or by the
+                  note, never by this as well. */}
+              {confirmed
+                ? "Nothing more to confirm — this is the saving step."
+                : "Verify your number to save your profile."}
             </p>
           </div>
 
@@ -1169,6 +1259,39 @@ export function ProfileFlow() {
                 track("seed_verify_number_changed");
               }}
             />
+          ) : confirmed ? (
+            /**
+             * ⚠⚠ **A confirmed number is never asked for a code again** (15 Sep),
+             * and this is the developer's report: *"I confirmed my number and it
+             * still asks me to confirm it"*.
+             *
+             * `stage` stays `verify` while the write that follows the code runs,
+             * which is right — it is the same step — and the branch below it
+             * rendered `VerifyPhone` on every pass. So a write that failed for
+             * any reason left the parent looking at a code box, an apology, and
+             * a Confirm button, with the number confirmed the whole time. Every
+             * control on that screen was the wrong one: entering the code again
+             * cannot fix a refused write, and *Send a new code* spends one of
+             * the three §19 allows on a step that is finished.
+             *
+             * What replaces it is the true state and the only action that can
+             * help. The missing-answer case never reaches here at all — it
+             * navigates (see `goToQuestion`) — so this is what is left: a
+             * refusal nothing on this phone can name, where retrying the
+             * **save** is exactly the right thing to try.
+             *
+             * ⚠ `Send a new code` is gone with it rather than disabled. A
+             * control that would work and is pointless is worse than one that
+             * is absent: it spends a send, restarts the five-minute window, and
+             * leaves the parent with a second code for a number already
+             * confirmed.
+             */
+            /* Nothing: the heading says the number is confirmed, the line
+               below says what the screen is doing, and the failure and its one
+               useful control are rendered together at the foot. A panel here
+               was a third saying of one sentence — the `RecordGroup` rule,
+               which is about admin cards and is really about screens. */
+            null
           ) : (
             <VerifyPhone
               /* Remounted when the number changes, or a code already sent to
@@ -1192,8 +1315,23 @@ export function ProfileFlow() {
               Saving your answers…
             </p>
           )}
-          {saveError && (
-            <Note className="mt-4">{saveError}</Note>
+          {saveError && <Note className="mt-4">{saveError}</Note>}
+          {/**
+            * ⚠ **The control the sentence above had been promising** (15 Sep).
+            * *"Try again"* was written on this screen from the day it was
+            * built, and until now the only buttons under it were Confirm and
+            * Send a new code — neither of which retries a save. This one does,
+            * through `afterVerified` rather than `persist`, so the
+            * already-registered check still runs on the retry.
+            *
+            * Only once the number is confirmed: before that the code box is
+            * the retry, and a second button beside it would be two answers to
+            * one question.
+            */}
+          {confirmed && saveError && !saving && (
+            <Button full className="mt-4" onClick={() => void afterVerified(session)}>
+              Try again
+            </Button>
           )}
         </ScreenBody>
       </Screen>
@@ -1537,6 +1675,19 @@ export function ProfileFlow() {
             <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
               {screen.help}
             </p>
+          )}
+
+          {/**
+            * Why they are back here, when they did not ask to be (15 Sep).
+            *
+            * Gold rather than red: `alert` means something was lost, and nothing
+            * was — the answers are on the phone, the number is confirmed, and
+            * one question is outstanding. It is the same register `/join` uses
+            * for a number that is already registered, and for the same reason:
+            * the way forward is on this screen.
+            */}
+          {missingNote && (
+            <Note className="mt-5">{missingNote}</Note>
           )}
 
           {/* Stated, not asked: the privacy disclosure and the Pando promise. */}

@@ -1578,6 +1578,35 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
      * the branch is React and this suite is pure; the condition is what makes
      * it safe, so the condition is what is asserted.
      */
+    /**
+     * ⚠⚠ **"I confirmed my number and it still asks me to confirm it"** (15 Sep).
+     *
+     * `stage` stays `verify` across the write that follows a confirmed code —
+     * correctly, it is one step — and the branch inside it rendered the code
+     * box unconditionally. So any refusal of that write left the parent looking
+     * at a Confirm button and *Send a new code*, neither of which can fix a
+     * refused write, with the number confirmed the whole time. Pinned on the
+     * source because the branch is React: what matters is that the render is
+     * **conditional on the number being confirmed**, which is the property that
+     * was missing rather than any particular markup.
+     */
+    ok(
+      "a confirmed number is never shown the code box again",
+      flowSrc.includes(") : confirmed ? (") &&
+        flowSrc.includes("session.phone_verified === true && !existing"),
+      flowSrc.includes(") : confirmed ? (")
+        ? "the branch is there but nothing computes confirmed"
+        : "the code box renders unconditionally",
+    );
+    /* And the refusal that is recoverable navigates rather than apologising:
+       the route has named the missing fields since 27 Aug and nothing read
+       them until this. */
+    ok(
+      "and a missing required answer sends them to the question, not to an apology",
+      flowSrc.includes("unansweredRequired(err)") &&
+        flowSrc.includes("goToQuestion(missing)"),
+      "the 422 names the field; the flow has to use it",
+    );
     ok(
       "an empty option list is not read as a comparison of plans",
       flowSrc.includes("shared.options.length > 0 &&"),
@@ -1591,6 +1620,52 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
         q.searchableCategory(questionById("previous_places")!)?.category ===
           "previous_places",
       String(questionById("previous_places")?.source.type),
+    );
+  }
+
+  /**
+   * `unansweredRequired` — the reader for the one refusal this flow recovers
+   * from. Loadable here because `lib/submit.ts` has no browser-only work at
+   * module level; every case below is a real body shape the route can send.
+   */
+  {
+    /* ⚠ **`ApiError` comes from `submit` itself**, not from a second import
+       of `api-client`. `submit.ts` imports that module by its plain path, so
+       importing it here with a cache-busting query loads a *second* copy with
+       its own `ApiError` class — and `instanceof` against the wrong class is
+       false, so every check below failed while the code they test was correct. */
+    const submit = (await import(
+      `../lib/submit.ts?v=${Date.now()}`
+    )) as typeof import("../lib/submit.ts");
+    const err = (status: number, body: string) => new submit.ApiError(body, status);
+    ok(
+      "a 422 naming a required answer comes back as that field",
+      submit
+        .unansweredRequired(
+          err(422, JSON.stringify({ reason: "invalid_required_answers", fields: ["child_ages"] })),
+        )
+        ?.join(",") === "child_ages",
+      "the route names the field; this is what reads it",
+    );
+    /* ⚠ Refused-but-unnamed is not the same as something-else-went-wrong: the
+       first still means an answer is missing, so it must not collapse to null
+       and send the parent down the generic apology. */
+    ok(
+      "a 422 with no fields still means an answer is missing",
+      submit.unansweredRequired(
+        err(422, JSON.stringify({ reason: "invalid_required_answers" })),
+      )?.length === 0,
+      "empty is not null",
+    );
+    ok(
+      "and every other failure is left alone",
+      submit.unansweredRequired(err(500, "upstream exploded")) === null &&
+        submit.unansweredRequired(err(422, "not json at all")) === null &&
+        submit.unansweredRequired(
+          err(422, JSON.stringify({ reason: "something_else", fields: ["x"] })),
+        ) === null &&
+        submit.unansweredRequired(new Error("not an ApiError")) === null,
+      "a wrong recovery is worse than none — it navigates on a failure it cannot fix",
     );
   }
 
