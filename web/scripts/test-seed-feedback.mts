@@ -1055,7 +1055,11 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
   const on = (screenId: string) =>
     (screenById(screenId)?.questions ?? []).map((x) => x.id);
 
-  /* ⚠ **Childcare joined these two on 15 Sep**, on the developer's *"всі
+  /* ⚠ **The two required questions are not here**: they merged onto one
+     screen that morning and were separated again the same day — see the
+     required-path count above, and the exceptions beside it.
+
+     ⚠ **Childcare joined these two on 15 Sep**, on the developer's *"всі
      сторінки, де є лише 1 питання … об'єднай"* — it was the last screen asking a
      single question in this part of the flow. The 9 Sep merge and the 24 Aug
      split are both intact underneath: three questions, three answers, three
@@ -1083,23 +1087,39 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
      asserted over the definitions so a new screen cannot quietly reintroduce
      one. A statement screen asks none and is not a question screen.
 
-     ⚠⚠ **`allowance` is the one exception, and it is theirs**: later the same
-     day they took the lived topics back off it — *"та сторінка має бути одна"*
-     — because the levels are a comparison read across three columns and a
-     second question under them reads as part of the bargain. Named here rather
-     than the rule being dropped, so the exception cannot spread. */
-  const SINGLE_OK = "allowance";
+     ⚠⚠ **The three exceptions are the required path, and all three are
+     theirs.** Across the same day they took the lived topics back off the
+     participation screen (*"та сторінка має бути одна"*) and separated the two
+     required questions again (*"ці перші сторінки мають йти окремо"*). So the
+     rule is about the **optional body** of the flow: a screen a parent is
+     walking through collecting detail must not ask them one thing at a time,
+     while each of the three required decisions gets a screen to itself. Named
+     one by one rather than the rule being dropped, so the exception cannot
+     spread to the next screen somebody adds. */
+  const SINGLE_OK = ["neighborhood", "child_ages", "allowance"];
   ok(
-    "no screen but the participation one asks a single question",
-    q.SCREENS.every((x) => x.questions.length !== 1 || x.id === SINGLE_OK),
-    q.SCREENS.filter((x) => x.questions.length === 1 && x.id !== SINGLE_OK)
+    "no screen off the required path asks a single question",
+    q.SCREENS.every((x) => x.questions.length !== 1 || SINGLE_OK.includes(x.id)),
+    q.SCREENS.filter((x) => x.questions.length === 1 && !SINGLE_OK.includes(x.id))
       .map((x) => x.id)
       .join(",") || "none",
   );
+  /* ⚠ And the exceptions are exactly the required path — not a list that grew.
+     Each of the three asks one required question and nothing else, which is
+     the property that earns the exception; `home_zip` rides along on the
+     first because it is that question's own follow-up. */
   ok(
-    "and the participation screen really is the exception",
-    (screenById(SINGLE_OK)?.questions ?? []).map((x) => x.id).join(",") === "allowance",
-    (screenById(SINGLE_OK)?.questions ?? []).map((x) => x.id).join(",") || "no such screen",
+    "and the three that do are the three required decisions",
+    SINGLE_OK.every((id) =>
+      (screenById(id)?.questions ?? []).some((x) => x.required),
+    ) &&
+      SINGLE_OK.length ===
+        q.SCREENS.filter((x) =>
+          x.questions.some((y) => y.required),
+        ).length,
+    q.SCREENS.filter((x) => x.questions.some((y) => y.required))
+      .map((x) => x.id)
+      .join(","),
   );
   ok(
     "price and priorities are one screen, under her own title",
@@ -1456,13 +1476,15 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
     child_ages: [3],
   };
   const walked = q.visibleScreens(required);
-  /* ⚠ **Three since 15 Sep, and it was four**: the two required questions
-     share a screen now (*"всі сторінки, де є лише 1 питання … об'єднай"*), so
-     the path is that screen, the fork and the participation level. Her ceiling
-     is what matters and it is checked below; this is the arithmetic behind it. */
+  /* ⚠ **Four, and it was three for part of 15 Sep**: the two required
+     questions merged that morning (*"всі сторінки, де є лише 1 питання …
+     об'єднай"*) and were separated again the same day (*"ці перші сторінки
+     мають йти окремо"*), so the path is where you live, the children, the fork
+     and the participation level. Her ceiling is what matters and it is checked
+     below; this is the arithmetic behind it. */
   ok(
-    "the required path is three screens",
-    walked.length === 3,
+    "the required path is four screens",
+    walked.length === 4,
     walked.map((s) => s.id).join(","),
   );
   ok(

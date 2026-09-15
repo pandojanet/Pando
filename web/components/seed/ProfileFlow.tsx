@@ -2139,8 +2139,15 @@ export function ProfileFlow() {
            * reading *"That's everything Pando needs."* A position is a fact
            * about the flow's current shape; the screen is the fact this panel
            * is actually about.
+           *
+           * ⚠ The two were separated again later the same day and this moved
+           * with them, from the merged screen to the **children**, which is
+           * where `index === 1` used to point: *"that's both required
+           * questions"* is only true once both have been asked. Keying it on
+           * the screen is what made that a one-word change instead of a fault
+           * nobody would have seen until the sentence was on the wrong page.
            */}
-          {screen.id === "neighborhood" && (
+          {screen.id === "child_ages" && (
             <Panel
               as="p"
               tone="positive"

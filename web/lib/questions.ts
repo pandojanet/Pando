@@ -855,38 +855,46 @@ const anyConnectionMayBeNamed = (): boolean =>
 export const ALL_SCREENS: Screen[] = [
   {
     /**
-     * ## The two required questions, on one screen — 15 Sep
+     * ## The two required questions are two screens again — 15 Sep
      *
-     * The developer: *"всі сторінки, де є лише 1 питання, видали та об'єднай
-     * всі питання з іншими сторінками"* — no screen may ask a single question.
-     * Six did, and this is the first of five merges.
+     * They merged that morning on the developer's *"всі сторінки, де є лише 1
+     * питання, видали та об'єднай"* and were separated again the same day:
+     * *"ці перші сторінки мають йти окремо, навіщо ти їх об'єднав"*. The newer
+     * instruction wins, as it does everywhere in this file.
      *
-     * ⚠ **Every sentence the two screens carried is kept**, which is the rule
-     * the 9 Sep merge round established: `Question.help` exists so two
-     * questions with different instructions can share a screen without one of
-     * them losing the line a parent acts on. The child screen's title was an
-     * instruction (*"Add each child's birth year."*) and is the first sentence
-     * of that question's help rather than a dropped heading. Only the screen
-     * title is new.
+     * ⚠⚠ **So the no-single-question rule is about the *optional body* of the
+     * flow, not about the three screens on the required path.** All three — this,
+     * the children, the participation level — ask one question and are named
+     * as the exceptions in `test:feedback`, so the rule still holds
+     * everywhere else and cannot be lost by adding a screen. That reading is
+     * not a rescue of the rule after the fact: what the developer objected to
+     * both times was a *second* question sharing a screen whose one question is
+     * a decision a parent is making on its own.
      *
-     * ⚠ **This is the whole of the required path now**, so the fork's own note
-     * about the count is one screen lighter: `/join` · this · the fork ·
-     * participation · review · the code · `/share`. Seven.
+     * ⚠ **Every sentence goes back where it came from.** Her title, her
+     * eyebrow, her help — the merge had moved the two screens' help onto their
+     * questions, which is what `Question.help` is for and is exactly what a
+     * split undoes; nothing was rewritten in either direction, so the only
+     * casualty of the round trip is the merged title, which was ours.
+     *
+     * ⚠ **The count, which her 10 Sep instruction caps at eight:** `/join` ·
+     * this · the children · the fork · participation · review · the code ·
+     * `/share`. **Eight**, and seven wherever verification cannot send —
+     * which is where it stood before the merge. `test:feedback` asserts the
+     * ceiling rather than leaving it to drift.
      */
     id: "neighborhood",
-    eyebrow: "You and your family",
+    eyebrow: "Where you are",
     /* Client's wording, 24 Aug (item 5). Her list is *cities*, not neighborhoods
        inside Pasadena — a Bungalow Heaven parent picks Pasadena, or types their
        own into "Other nearby area". The nine intra-Pasadena values were retired
        rather than deleted, so an existing answer still resolves. */
-    title: "Where do you live, and who’s at home?",
+    title: "Where do you live?",
+    help: "This helps Pando find parents whose local world overlaps with yours.",
     questions: [
       {
         id: "neighborhood",
         label: "Neighborhood",
-        /* The screen's own help, verbatim, moved onto the question it belongs
-           to when the two screens merged. */
-        help: "This helps Pando find parents whose local world overlaps with yours.",
         kind: "single",
         required: true,
         source: { type: "market", category: "neighborhoods" },
@@ -931,15 +939,22 @@ export const ALL_SCREENS: Screen[] = [
         when: (a) => zipChoiceNeeded(a.home_place),
         source: { type: "zips" },
       },
+    ],
+  },
+  {
+    /* Split back out of the screen above on 15 Sep — see the note there. Her
+       heading, 10 Sep, and it describes the control rather than contradicting
+       it: "tap a birth year for each one" was a multi-select pretending to be
+       a list, so a parent with two children born in one year tapped once and
+       Pando recorded one child. */
+    id: "child_ages",
+    eyebrow: "Your kids",
+    title: "Add each child's birth year.",
+    help: "So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
+    questions: [
       {
         id: "child_ages",
         label: "Birth years",
-        /* Her screen heading (10 Sep) and her screen help, joined and both
-           verbatim. The heading describes the control rather than
-           contradicting it: "tap a birth year for each one" was a multi-select
-           pretending to be a list, so a parent with two children born in one
-           year tapped once and Pando recorded one child. */
-        help: "Add each child's birth year. So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
         kind: "ages",
         required: true,
         source: { type: "static", options: BIRTH_YEAR_OPTIONS },
