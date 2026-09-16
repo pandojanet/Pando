@@ -41,9 +41,19 @@ docker compose up -d --remove-orphans
 
 # The image declares a HEALTHCHECK, so Docker itself decides when the app is
 # actually answering. Wait for it rather than assuming `up -d` means healthy.
+#
+# 180s, and the number is arithmetic rather than taste. The HEALTHCHECK probes
+# every 30s, so the old 90s budget only ever contained two or three probes —
+# and /api/health opens a pooler connection, which CLAUDE.md measures at ~1300ms
+# cold. One slow first probe therefore decided the rollout, which is exactly the
+# pattern seen on 16 Sep: six deploys of near-identical code, four healthy and
+# two rolled back, with nothing in the diff to tell them apart.
+#
+# ⚠ Raising this cannot hide a genuinely broken image: `unhealthy` still breaks
+# out of the loop immediately, so only the *starting* case waits longer.
 echo "==> waiting for health"
 healthy=""
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
   status="$(docker inspect -f '{{.State.Health.Status}}' pando-web 2>/dev/null || echo missing)"
   case "$status" in
     healthy) healthy=1; break ;;
