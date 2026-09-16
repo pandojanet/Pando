@@ -134,9 +134,38 @@ export const MONTH_OPTIONS: Option[] = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ].map((label, i) => ({ id: String(i + 1), label }));
 
+/**
+ * Which months make sense for this child (16 Sep).
+ *
+ * *"коли дитина Expecting, то показувати цей і наступні місяці в році … Коли
+ * дитина народилась — показувати, які місяці пройшли з теперішнім, а не
+ * наступні."* A child born this year cannot have been born in a month that has
+ * not happened, and a baby on the way is not due in one that has. Every earlier
+ * birth year offers all twelve.
+ *
+ * ⚠ **An expecting parent is offered this calendar year only**, as she wrote
+ * it — so in the autumn a baby due next spring has no month to tap. The month is
+ * optional, so they are not blocked; they simply leave it blank.
+ *
+ * `now` is a parameter so the rule is testable and so the server can apply the
+ * same filter at its own clock (`childrenFromAges`).
+ */
+export function monthOptionsFor(age: number, now: Date = new Date()): Option[] {
+  const current = now.getMonth() + 1;
+  if (age === EXPECTING) return MONTH_OPTIONS.filter((m) => Number(m.id) >= current);
+  if (age === 0) return MONTH_OPTIONS.filter((m) => Number(m.id) <= current);
+  return MONTH_OPTIONS;
+}
+
+/**
+ * **19 years, not 18** (16 Sep): a child born 2008 turns 18 this year and is
+ * still a child the family is parenting through the end of school, so the list
+ * runs to age 18. `cleanAges` has always accepted up to 25, so nothing
+ * downstream moves; the band is `teen`.
+ */
 export const BIRTH_YEAR_OPTIONS: Option[] = [
   { id: String(EXPECTING), label: "Expecting", wide: true },
-  ...Array.from({ length: 18 }, (_, age) => ({
+  ...Array.from({ length: 19 }, (_, age) => ({
     id: String(age),
     label: String(CURRENT_YEAR - age),
   })),
@@ -1332,19 +1361,6 @@ export const ALL_SCREENS: Screen[] = [
         source: { type: "static", options: GREW_UP_HERE },
         relevance: "tenure",
       },
-      {
-        id: "previous_places",
-        label: "Where have you lived before?",
-        kind: "multi",
-        /* Search-only: this category has no starter set, so the chips are absent
-           and the search box is the whole control. */
-        source: { type: "market", category: "previous_places" },
-        /* Their own answer if Pando does not have the place — her instruction:
-           "Users can add a missing location." It lands in `pending_options` for
-           an admin, exactly like a school. */
-        allowOther: true,
-        otherLabel: "Optional — anywhere that's part of your experience",
-      },
     ],
   },
   {
@@ -1980,6 +1996,20 @@ const RETIRED_QUESTIONS: Question[] = [
     kind: "multi",
     source: { type: "static", options: CHILDCARE_BACKUP },
     relevance: "childcare",
+  },
+  /**
+   * *"Remove 'Where have you lived before?'"* (16 Sep). Off the tenure screen;
+   * kept here because `deriveLifeRelevance` still reads stored answers through
+   * `movedFromPlaces`, and a parent who already named a city keeps that signal.
+   * The market search for it (`SEARCHABLE_QUESTIONS.previous_places`) stays, so
+   * a stored answer still resolves to a label on the admin side.
+   */
+  {
+    id: "previous_places",
+    label: "Where have you lived before?",
+    kind: "multi",
+    source: { type: "market", category: "previous_places" },
+    allowOther: true,
   },
 ];
 
@@ -3014,6 +3044,22 @@ export interface ProfileDepth {
   total: number;
   /** 0–100, rounded. */
   percent: number;
+}
+
+/**
+ * Where "Complete your profile" takes a parent (16 Sep): the first screen, in
+ * the flow as if the optional fork had been opened, that still has an
+ * unanswered question — the same questions `profileDepth` counts, so the
+ * button always lands on something that moves the percentage. -1 when nothing
+ * is left.
+ */
+export function firstIncompleteScreen(answers: ProfileAnswers): number {
+  const full: ProfileAnswers = { ...answers, wants_detail: true };
+  return visibleScreens(full).findIndex(
+    (s) =>
+      !isStatementScreen(s) &&
+      visibleQuestions(s, full).some((q) => !isQuestionAnswered(q, answers)),
+  );
 }
 
 export function profileDepth(answers: ProfileAnswers): ProfileDepth {

@@ -94,6 +94,7 @@ export type SeedEvent =
    * whole of what this answers.
    */
   | "seed_profile_deleted"
+  | "seed_complete_profile_opened"
   /**
    * Coming back (7 Sep). Three events, because the drop-off worth measuring is
    * between them: a parent who asked for a code and never confirmed one is a

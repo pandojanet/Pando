@@ -1,6 +1,6 @@
 "use client";
 
-import { BIRTH_YEAR_OPTIONS, MONTH_OPTIONS, MAX_CHILDREN } from "@/lib/questions";
+import { BIRTH_YEAR_OPTIONS, MAX_CHILDREN, monthOptionsFor } from "@/lib/questions";
 import { EXPECTING } from "@/lib/types";
 import type { ProfileAnswers } from "@/lib/types";
 
@@ -33,9 +33,11 @@ import type { ProfileAnswers } from "@/lib/types";
  *
  * **The month is offered per row and never required.** The ages screen is one of
  * only two required questions in the flow, and every extra required field on it
- * is measurable drop-off (3 Sep). It is refused outright on an expecting row,
- * because `children_month_needs_year` refuses a month with no year and the
- * question would be asking when a baby was born who has not been.
+ * is measurable drop-off (3 Sep). On an expecting row it is the **due** month
+ * (16 Sep, stored as `children.due_month` — never `birth_month`, which
+ * `children_month_needs_year` rightly refuses there), and only this month and
+ * later are offered; a child born this year is offered only months that have
+ * already happened.
  */
 export function ChildList({
   answers,
@@ -88,13 +90,19 @@ export function ChildList({
                   </button>
                 </div>
 
-                {!expecting && (
-                  <div
+                {/* Expecting gets a month too since 16 Sep — the due month, from
+                    this one on. A child born this year gets the months up to
+                    now, and an earlier year all twelve (`monthOptionsFor`). */}
+                <div
                     role="radiogroup"
-                    aria-label={`Birth month for the child born ${heading}`}
+                    aria-label={
+                      expecting
+                        ? "Due month for the child on the way"
+                        : `Birth month for the child born ${heading}`
+                    }
                     className="mt-2.5 flex flex-wrap gap-2"
                   >
-                    {MONTH_OPTIONS.map((month) => {
+                    {monthOptionsFor(age).map((month) => {
                       const on = chosen === Number(month.id);
                       return (
                         <button
@@ -114,7 +122,6 @@ export function ChildList({
                       );
                     })}
                   </div>
-                )}
               </li>
             );
           })}

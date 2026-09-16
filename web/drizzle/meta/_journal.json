@@ -302,6 +302,13 @@
       "when": 1789560000000,
       "tag": "0042_lookup_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789646400000,
+      "tag": "0043_due_month",
+      "breakpoints": true
     }
   ]
 }

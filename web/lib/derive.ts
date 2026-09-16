@@ -6,6 +6,7 @@ import {
   profileCompleteness,
   questionById,
   ALL_SCREENS,
+  monthOptionsFor,
 } from "./questions";
 import { EXPECTING } from "./types";
 import type {
@@ -91,25 +92,36 @@ export function childrenFromAges(
    * 1:1 and simply never received a repeat.
    */
   return ages.map((age, index) => {
+    /* Keyed by the child's **index**, not by their age: an age names a year and,
+       since duplicates are allowed, never a child — two siblings born in 2019
+       would otherwise have shared one birth month between them.
+
+       Checked against the months this child could actually have (16 Sep): a
+       month in the future for a child born this year, or one already past for
+       a baby on the way, is dropped rather than stored. The screen never offers
+       either, so this only catches an older session or a crafted body. */
+    const raw = months[String(index)];
+    const month = monthOptionsFor(age, capturedAt).some((m) => Number(m.id) === raw)
+      ? raw
+      : undefined;
     if (age === EXPECTING) {
       return {
         birth_year: null,
         expecting: true,
         due_year: year,
-        due_year_precision: "assumed_capture_year" as const,
+        /* A due month is the parent telling us when, so the year it sits in is
+           no longer an assumption. Only this calendar year is offered. */
+        due_month: month ?? null,
+        due_year_precision: month ? ("stated" as const) : ("assumed_capture_year" as const),
       };
     }
-    /* Keyed by the child's **index**, not by their age: an age names a year and,
-       since duplicates are allowed, never a child — two siblings born in 2019
-       would otherwise have shared one birth month between them. */
-    const month = months[String(index)];
     return {
       birth_year: year - age,
-      /* Bounded here as well as in the CHECK: this is derived on the server from
-         answers a client sent, and `children_birth_month_check` aborting the
-         whole profile write is a worse outcome than dropping one month. */
-      birth_month:
-        Number.isInteger(month) && month >= 1 && month <= 12 ? month : null,
+      /* Bounded here as well as in the CHECK (via `monthOptionsFor` above):
+         this is derived on the server from answers a client sent, and
+         `children_birth_month_check` aborting the whole profile write is a
+         worse outcome than dropping one month. */
+      birth_month: month ?? null,
       expecting: false,
       due_year: null,
     };

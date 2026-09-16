@@ -41,6 +41,8 @@ export interface ChildInput {
   expecting: boolean;
   due_year: number | null;
   due_year_precision?: "assumed_capture_year" | "stated";
+  /** 1–12, optional. Only ever set for an expecting child — see `drizzle/0043`. */
+  due_month?: number | null;
 }
 
 export interface AffinityInput {
@@ -301,6 +303,7 @@ export async function writeProfile(
           dueYearPrecision: c.expecting
             ? (c.due_year_precision ?? "assumed_capture_year")
             : null,
+          dueMonth: c.expecting ? (c.due_month ?? null) : null,
         })),
       );
     }

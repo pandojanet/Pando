@@ -14,7 +14,11 @@ import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
-import { DepthBanner } from "@/components/seed/ProfileDepth";
+import {
+  DepthReminder,
+  ProfilePercentBar,
+  ProfilePercentLabel,
+} from "@/components/seed/ProfileDepth";
 import { OptionPicker } from "@/components/ui/OptionPicker";
 import { PlanGroup } from "@/components/ui/PlanGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
@@ -60,6 +64,7 @@ import {
   optionsFor,
   profileCompleteness,
   profileDepth,
+  firstIncompleteScreen,
   pruneAnswers,
   sameForAllChildren,
   searchableCategory,
@@ -992,6 +997,26 @@ export function ProfileFlow() {
     return false;
   }
 
+  /**
+   * "Complete your profile" (16 Sep). Opens the optional fork — the percentage
+   * counts those questions, so a parent who tapped Continue earlier could
+   * never reach them otherwise — and lands on the first screen still missing
+   * an answer.
+   */
+  function completeProfile() {
+    if (!answers) return;
+    const target = firstIncompleteScreen(answers);
+    if (target < 0) return;
+    track("seed_complete_profile_opened", { percent: profileDepth(answers).percent });
+    setDirection(1);
+    setStage("questions");
+    update((s) => ({
+      ...s,
+      answers: { ...s.answers, wants_detail: true },
+      screen_index: target,
+    }));
+  }
+
   function jumpTo(screenId: string) {
     const target = screens.findIndex((s) => s.id === screenId);
     if (target < 0) return;
@@ -1360,22 +1385,32 @@ export function ProfileFlow() {
       <Screen>
         <ScreenHeader
           left={<BackButton onClick={goBack} />}
+          /* 16 Sep: "N% done" in the slot a question screen shows "3 left",
+             over a bar of the same height and colours — one continuous fill
+             rather than segments, because every step is done here and how much
+             of the profile is filled in is the number worth showing. */
+          right={<ProfilePercentLabel depth={profileDepth(answers)} />}
           below={
             <div className="mt-1">
-              <Progress total={totalSteps} current={screens.length} />
+              <ProfilePercentBar depth={profileDepth(answers)} />
             </div>
           }
         />
         <ScreenBody>
           <div className="animate-step-in">
-            <Eyebrow>Almost done</Eyebrow>
-            <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
+            {/* 16 Sep, "minimal text on the final profile page": the heading,
+                the answers, and three lines — name private, change later, and
+                delete under Save. The eyebrow, the "only used to match you"
+                paragraph and the depth banner's explanation are gone; the
+                percentage is in the header. */}
+            <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
-            <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
-              This is only used to match you with parents whose lives overlap
-              with yours. None of it is shown to anyone.
-            </p>
+            <DepthReminder
+              depth={profileDepth(answers)}
+              onComplete={completeProfile}
+              className="mt-2"
+            />
 
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than
@@ -1388,7 +1423,6 @@ export function ProfileFlow() {
               * question in the fold underneath has its own **Add** button. A
               * link here would point at the screen they are standing on.
               */}
-            <DepthBanner depth={profileDepth(answers)} className="mt-5" />
 
             {/**
              * *"On review, show completed answers first and collapse skipped
@@ -1425,7 +1459,13 @@ export function ProfileFlow() {
                    */
                   const values = q.kind === "ages"
                     ? answers.child_ages.map((age, index) => {
-                        if (age === EXPECTING) return "Expecting";
+                        if (age === EXPECTING) {
+                          /* The due month, when they gave one (16 Sep). */
+                          const due = MONTH_OPTIONS.find(
+                            (m) => Number(m.id) === answers.child_months[String(index)],
+                          )?.label;
+                          return due ? `Expecting (due ${due})` : "Expecting";
+                        }
                         const year = String(CURRENT_YEAR - age);
                         const month = MONTH_OPTIONS.find(
                           (m) => Number(m.id) === answers.child_months[String(index)],
@@ -1575,15 +1615,13 @@ export function ProfileFlow() {
               */}
             {(answers.attribution === "name_private" ||
               answers.attribution === null) && (
-              <Panel as="p" tone="positive" size="inset" className="mt-5 leading-relaxed text-green-deep text-help">
-                Your name stays private. What you recommend can still be used in
-                answers to other parents — never with your name on it.
-              </Panel>
+              <p className="mt-5 leading-relaxed text-help text-muted">
+                Your name stays private.
+              </p>
             )}
 
-            <p className="mt-5 text-[13.5px] leading-relaxed text-muted">
-              You can change any of this later — just text Pando once your
-              neighborhood goes live.
+            <p className="mt-2 leading-relaxed text-help text-muted">
+              You can change any of this later.
             </p>
 
             {/**
@@ -1602,7 +1640,6 @@ export function ProfileFlow() {
               * the device, so offering both would be the *"log back in, start a
               * fresh one"* confusion she reported, rebuilt.
               */}
-            {session.profile_saved_at && <DeleteProfile />}
           </div>
         </ScreenBody>
         <ScreenDock>
@@ -1613,9 +1650,14 @@ export function ProfileFlow() {
             {saving ? "Saving…" : "Save my profile"}
             {!saving && <ArrowRight />}
           </Button>
-          <p className="py-3 text-center text-[12.5px] text-muted">
-            Next: the part only you can answer — what you&apos;d recommend.
-          </p>
+          {/* Delete sits directly under Save (16 Sep), and only once there is a
+              saved profile to delete — before that "Start over" clears the
+              device. Without it the dock keeps its bottom spacing. */}
+          {session.profile_saved_at ? (
+            <DeleteProfile className="flex justify-center py-1" />
+          ) : (
+            <div className="pb-3" />
+          )}
         </ScreenDock>
       </Screen>
     );

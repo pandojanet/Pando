@@ -697,7 +697,9 @@ export interface ChildRecord {
   expecting: boolean;
   due_year: number | null;
   /** How the due year was arrived at, so nobody mistakes it for something asked. */
-  due_year_precision?: "assumed_capture_year";
+  due_year_precision?: "assumed_capture_year" | "stated";
+  /** 1–12, optional, expecting only (16 Sep, drizzle/0043). */
+  due_month?: number | null;
 }
 
 /** Everything the Seed Tool keeps for a contributor mid-flow. */

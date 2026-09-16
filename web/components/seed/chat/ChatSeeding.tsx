@@ -31,7 +31,7 @@ import type {
   Submission,
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
-import { DepthBanner } from "@/components/seed/ProfileDepth";
+import { DepthReminder } from "@/components/seed/ProfileDepth";
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
@@ -957,7 +957,7 @@ export function ChatSeeding() {
           * whose whole job is the conversation below it.
           */}
         {session && depth.percent < 100 && (
-          <DepthBanner depth={depth} href="/profile" className="mb-4" />
+          <DepthReminder depth={depth} href="/profile" className="mb-4" />
         )}
 
         <div className="space-y-2.5">

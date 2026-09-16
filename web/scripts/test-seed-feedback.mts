@@ -631,8 +631,10 @@ ok(
     questionById("time_in_area") !== undefined,
   "so somebody who grew up here, left and came back can say both",
 );
-ok("previous places are multi-select", questionById("previous_places")?.kind === "multi");
-ok("and searchable", q.searchableCategory(questionById("previous_places")!) !== null);
+/* 16 Sep: "Remove 'Where have you lived before?'" — off every screen, but a
+   stored answer still resolves (it is a retired question, not a deleted one). */
+ok("“Where have you lived before?” is asked on no screen", questionById("previous_places") === undefined);
+ok("and a stored answer still resolves to its question", q.questionById("previous_places").kind === "multi");
 /* Item 10's last bullet: the care options adapt to the child's age. */
 const babyOnly: ProfileAnswers = { ...q.EMPTY_ANSWERS, child_ages: [1] };
 const babyCare = q.optionsFor(questionById("childcare_now")!, "pasadena", babyOnly).map((o) => o.id);
@@ -825,6 +827,42 @@ ok(
   expectingOnly.child_ages.includes(-1),
   "it is a strong matching signal, and the screen before it said so",
 );
+
+console.log("\n=== 16 Sep: the years reach 18, and the months follow the child ===");
+{
+  const thisYear = new Date().getFullYear();
+  ok(
+    "a child who turns 18 this year can be added",
+    q.BIRTH_YEAR_OPTIONS.some((o) => o.label === String(thisYear - 18)),
+    q.BIRTH_YEAR_OPTIONS.at(-1)?.label ?? "",
+  );
+  const sep = new Date(2026, 8, 16);
+  const ids = (age: number) => q.monthOptionsFor(age, sep).map((m) => m.id).join(",");
+  ok("born this year: only months that have happened, this one included", ids(0) === "1,2,3,4,5,6,7,8,9", ids(0));
+  ok("expecting: this month and the rest of the year", ids(-1) === "9,10,11,12", ids(-1));
+  ok("an earlier birth year: all twelve", ids(3) === "1,2,3,4,5,6,7,8,9,10,11,12", ids(3));
+  const derive = (await import(`../lib/derive.ts?v=${Date.now()}`)) as typeof import("../lib/derive.ts");
+  const rows = derive.childrenFromAges([-1, 0, 0], sep, { "0": 11, "1": 3, "2": 12 });
+  ok("a due month is stored on the expecting child, and the due year is then stated",
+    rows[0].due_month === 11 && rows[0].due_year_precision === "stated", JSON.stringify(rows[0]));
+  ok("a past month is kept for a child born this year", rows[1].birth_month === 3, JSON.stringify(rows[1]));
+  ok("a future birth month is dropped rather than stored", rows[2].birth_month === null, JSON.stringify(rows[2]));
+  ok("a past month on a baby on the way is dropped",
+    derive.childrenFromAges([-1], sep, { "0": 2 })[0].due_month === null);
+  {
+    /* "Complete your profile" lands on something that moves the percentage. */
+    const thin = { ...q.EMPTY_ANSWERS, neighborhood: "altadena", child_ages: [4], allowance: "5" } as ProfileAnswers;
+    const target = q.firstIncompleteScreen(thin);
+    const full = q.visibleScreens({ ...thin, wants_detail: true });
+    ok("complete-your-profile opens a screen with an unanswered question",
+      target >= 0 && q.visibleQuestions(full[target], thin).some((x) => !q.isQuestionAnswered(x, thin)),
+      String(target));
+  }
+  const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
+  ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
+  const flowForReview = fs.readFileSync(new URL("../components/seed/ProfileFlow.tsx", import.meta.url), "utf8");
+  ok("the review dock no longer says “the part only you can answer”", !flowForReview.includes("the part only you can answer —"));
+}
 
 console.log("\n=== 3 Sep: month and year, not a date of birth ===");
 ok("twelve months, in order", q.MONTH_OPTIONS.length === 12);
@@ -1616,10 +1654,10 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
        box is still the whole control rather than chips nobody curated. */
     ok(
       "and previous places is still the search-only directory that exposed it",
-      questionById("previous_places")?.source.type === "market" &&
-        q.searchableCategory(questionById("previous_places")!)?.category ===
+      q.questionById("previous_places").source.type === "market" &&
+        q.searchableCategory(q.questionById("previous_places"))?.category ===
           "previous_places",
-      String(questionById("previous_places")?.source.type),
+      String(q.questionById("previous_places").source.type),
     );
     /**
      * ## 16 Sep — one description per field, and the hidden one is the name
@@ -1634,7 +1672,7 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
      * flag would pass on a build that deleted the label outright.
      */
     {
-      const dir = q.searchableCategory(questionById("previous_places")!)!;
+      const dir = q.searchableCategory(q.questionById("previous_places"))!;
       ok(
         "the search box on previous places has no visible label of its own",
         dir.searchLabelHidden === true,
@@ -2032,26 +2070,36 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   );
 
   /**
-   * ⚠⚠ **"Text me a code" belongs to the control that sends one** — settled
-   * 10 Sep, second round: *"Ні, код надсилаємо в кінці"*.
+   * ⚠⚠ **"Text me a code" belongs to the control that sends one**, and since
+   * 15 Sep that is the join CTA as well.
    *
-   * Her list twice asked for that label on the join CTA. A button saying it
-   * has to send a code, which moves the OTP to the front door — taken off
-   * deliberately on 13 Aug. She chose the end, so the join button keeps a
-   * label describing what the tap does, and her sentence sits on the send
-   * button at the end of the flow and on `/signin`.
+   * Her list twice asked for that label there. A button saying it has to send
+   * a code, which moves the OTP to the front door — so on 10 Sep she was asked
+   * directly and answered *"Ні, код надсилаємо в кінці"*, and the label stayed
+   * off it. The developer has since moved verification in front of the
+   * questions, so the tap does send one and her wording is finally true where
+   * she asked for it. ⚠ Both halves are hers to confirm together: the label is
+   * what she asked for twice, the placement is what she declined once.
    *
-   * Both halves are asserted, because either alone can be "fixed" back: a
-   * future session pasting her string onto the join CTA would rebuild the
-   * front door, and one removing it from `VerifyPhone` would lose the wording
-   * she asked for.
+   * ⚠ **The rule is what is asserted, never the placement** — a control may
+   * say it texts a code only where one can actually be sent, which is why the
+   * label is gated on `sendable` rather than written flat. The second check
+   * keeps her wording on the panel that sends, so neither half can be "fixed"
+   * away on its own.
    */
   const verify = src("../components/seed/VerifyPhone.tsx");
-  ok(
-    "the join CTA does not promise a code it never sends",
-    !/"Text me a code"/.test(join.replace(/\/\*\*[\s\S]*?\*\//g, "")),
-    "the code is sent at the end of the profile",
-  );
+  {
+    /* Measured as a distance rather than matched as a pattern: what has to
+       hold is that the label sits inside the gate's own branch, and a regex
+       spanning two lines of JSX is a worse way to say that than an index. */
+    const label = join.indexOf('"Text me a code"', join.indexOf("{checking"));
+    const gated = join.lastIndexOf("gate.sendable", label);
+    ok(
+      "the join CTA promises a code only where one can be sent",
+      label > 0 && gated > 0 && label - gated < 120,
+      "conditional on the gate, or it promises a text that can never arrive",
+    );
+  }
   ok(
     "and the button that does send one says exactly that",
     /"Text me a code"/.test(verify),
@@ -2286,10 +2334,10 @@ console.log("\n=== 16 Sep: the invite motivates and promises nothing ===");
     t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   /**
    * ⚠ The **referral card**, not the whole module. `/done/next` also carries the
-   * client’s own *"their first Network Check on us"* on the Founding card — a
+   * client's own *"their first Network Check on us"* on the Founding card — a
    * different claim, from her strategy §8 rather than from us, and not this
-   * guard’s business. A file-wide grep fails on it and would push somebody into
-   * editing her copy to make a test go green.
+   * guard's business. A file-wide grep fails on it and would push somebody
+   * into editing her copy to make a test go green.
    */
   const referralCard = nextSrc.slice(nextSrc.indexOf("function ReferralCard"));
   for (const [name, body] of [

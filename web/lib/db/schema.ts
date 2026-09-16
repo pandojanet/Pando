@@ -386,6 +386,8 @@ export const children = pgTable(
     expecting: boolean("expecting").notNull().default(false),
     dueYear: integer("due_year"),
     dueYearPrecision: text("due_year_precision"),
+    /* 16 Sep, drizzle/0043. When an expecting parent said the baby is due. */
+    dueMonth: integer("due_month"),
   },
   (t) => [
     check(

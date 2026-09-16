@@ -106,11 +106,11 @@ head("1.1  entry, invite, public site");
    and it is what these checks prove: nothing about a named parent exists before a
    confirmed code, whatever the client sends.
 
-   On screen the code sits at the **end of the profile** (13 Aug): the answers are
-   held on the phone until then, so the guarantee is the same, and everything after
-   it is stored as it happens. It moved off the entry screen because asking a
-   parent to prove a number before they have seen a single question is the friction
-   the client asked us to keep off the front door. */
+   On screen it moved **in front of the questions** on 15 Sep, so the two orders
+   now agree — where a code can be sent. Where one cannot (no Twilio and no dev
+   codes) the old shape is still what a parent walks: questions first, code at the
+   end, answers held on this phone until then. The guarantee these checks prove is
+   the same either way, which is why none of them had to change. */
 head("1.10  nothing is stored before the phone is verified");
 const parent = session();
 {

@@ -19,10 +19,12 @@ import { Consent } from "@/components/ui/Consent";
 import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { identifyArrival, track } from "@/lib/analytics";
 import {
+  fetchMe,
   isNumberRegistered,
   verifyStatus,
   type VerifyStatus,
 } from "@/lib/api-client";
+import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -58,8 +60,51 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [smsConsent, setSmsConsent] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
-  /** "form" until the details are in; "verify" while the code is being confirmed. */
+  /**
+   * ## The code is asked for **here** again — 15 Sep
+   *
+   * *"Спробуй поправити, щоб верифікація номера йшла перед заповненням
+   * профіля, а не після"*.
+   *
+   * ⚠⚠ **This reverses two decisions, and the second one is the client's own
+   * answer to a direct question.** 13 Aug moved the code off this screen (*"it
+   * spent a day on the entry screen and was wrong there"*), and on 10 Sep she
+   * was asked whether the join button should read *"Text me a code."* — which
+   * it can only say if it sends one — and answered **"Ні, код надсилаємо в
+   * кінці"**. So this is hers to confirm before it reaches a parent, and the
+   * cost 13 Aug named still stands: a parent who has not seen a single
+   * question is asked to prove a phone number.
+   *
+   * ⚠ What it buys, and why it was asked for: nothing a parent answers can be
+   * lost to an expired or refused verification, because the window opens
+   * before the questions rather than closing over them — and the *"you already
+   * have a profile"* case is caught before eighteen screens rather than after.
+   *
+   * ⚠⚠ **The old position is not deleted, it is the fallback**, and that is
+   * what keeps this safe: `holdsUntilVerified` still gates the write, so a
+   * deployment that cannot send a code (no Twilio, no dev codes — production
+   * today), a status that could not be fetched, and a window that runs out
+   * mid-flow all land in `ProfileFlow`'s verify stage exactly as before.
+   * Deleting that would make the front door a dead end the day a send fails.
+   *
+   * `"form"` until the details are in; `"verify"` while the code is being
+   * confirmed. `session` carries what was saved, so the code screen addresses
+   * the number that was actually stored rather than the field's text.
+   */
+  const [step, setStep] = useState<"form" | "verify">("form");
   const [session, setSession] = useState<SeedSession | null>(null);
+  /**
+   * A profile already exists on this number, found **after** the code rather
+   * than before it.
+   *
+   * `isNumberRegistered` runs at the door and fails open by design (an
+   * unreachable database must not turn a warning into a wall), so this is the
+   * check that cannot be walked around — and here it costs nothing, because
+   * the parent has just proved the number is theirs and has answered nothing
+   * yet. `/signin` is the way on: it restores the answers too (8 Sep), which
+   * is what "edit my profile" actually means.
+   */
+  const [returning, setReturning] = useState<string | null>(null);
   /**
    * How this deployment is configured. Asked on mount rather than at the tap, so
    * the button never pauses — and null means "not answered yet", which reads as
@@ -244,17 +289,53 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     });
 
     /**
-     * The code is **not** asked for here (13 Aug). It sat on this screen for a
-     * day, and it was the wrong door: a parent who has not yet seen a single
-     * question was being asked to prove a phone number, which is exactly the
-     * friction the client wanted kept off the entrance.
+     * The code, when this deployment can actually send one (15 Sep — see the
+     * note on `step`).
      *
-     * It now sits at the end of the profile — the answers are on this phone until
-     * then, so the rule that matters is unchanged: abandon before the code and
-     * nothing exists anywhere. `ProfileFlow` owns it, and it awaits the status
-     * rather than reading whatever a background fetch had finished, which is what
-     * used to let a slow response wave somebody straight past it.
+     * ⚠ **The condition is the whole safety of the change.** `gate` is null
+     * until the status comes back and null reads as *cannot verify*, so a slow
+     * or failed `/verify/status` sends the parent onward to the flow that has
+     * always asked at the end — never to a code box that cannot be satisfied.
+     * That is the same rule this screen already applied to its own copy, and
+     * it is why the old position stays built.
+     *
+     * The rule that matters is unchanged either way: nothing about a named
+     * parent is stored until the number is confirmed (invariant 11), and the
+     * answers live on this phone until then. What moves is only *when* Pando
+     * asks — before the questions rather than after them.
      */
+    if (gate?.required && gate.sendable) {
+      setSession(saved);
+      setStep("verify");
+      track("seed_verify_reached", { at: "entry" });
+      return;
+    }
+
+    router.push("/profile");
+  }
+
+  /**
+   * Between the confirmed code and the first question: does this number
+   * already have a profile?
+   *
+   * `isNumberRegistered` asked the same thing at the door and **fails open**
+   * on any error, so this is the one that cannot be walked around — and it is
+   * free here, because the parent has just proved the number is theirs, which
+   * is exactly what made the same question at the phone field an enumeration
+   * oracle (8 Sep).
+   *
+   * ⚠ Every other outcome goes on to the questions, including a failure: a
+   * warning that could not be fetched must not become a wall, and the write at
+   * the end is still an upsert the parent will be asked about on the fallback
+   * path.
+   */
+  async function afterEntryVerified() {
+    const me = await fetchMe();
+    if (me.ok && me.found && me.profile_saved) {
+      setReturning(me.first_name ?? "");
+      track("seed_profile_exists_shown");
+      return;
+    }
     router.push("/profile");
   }
 
@@ -289,6 +370,93 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * an open.
    */
 
+
+  /**
+   * The code screen, standing in front of the questions rather than behind
+   * them (15 Sep).
+   *
+   * Its own return rather than a branch inside the card, because nothing else
+   * on this screen belongs on it: not the reward line, not the consent box
+   * (already agreed to — that tick is what authorised this text), not the
+   * resume panel. What a parent needs here is the number, the box, and the way
+   * back if the number is wrong.
+   */
+  if (step === "verify" && session?.phone) {
+    return (
+      <Screen>
+        <ScreenHeader left={<Wordmark />} />
+        <ScreenBody className="pt-7">
+          <Container>
+            <Eyebrow>One quick check</Eyebrow>
+            <h1 className="mt-2.5 font-display text-[1.7rem] font-bold leading-tight">
+              {returning
+                ? "You already have a profile."
+                : "Confirm your number, then the questions."}
+            </h1>
+            {returning ? (
+              /**
+               * ⚠ Caught **before** the questions now, which is the whole
+               * argument for moving the code: the same parent used to answer
+               * eighteen screens and meet this at the end. There is nothing to
+               * replace and nothing to choose between, so this is a signpost
+               * rather than the two-button decision `ProfileFlow` still shows
+               * on the fallback path — where by then they *have* answered.
+               */
+              <>
+                <p className="mt-2.5 leading-relaxed text-ink-soft text-control">
+                  This number is already in Pando{returning ? `, ${returning}` : ""}.
+                  Sign in and you can change any answer that is already there —
+                  filling the questions in again would replace them.
+                </p>
+                <div className="mt-5">
+                  {/* The parent flow's Button is a real button (the admin's
+                      is the one that also renders a link), so this navigates
+                      rather than carrying an href. */}
+                  <Button full onClick={() => router.push("/signin")}>
+                    Sign in with this number
+                    <ArrowRight />
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* ⚠ One fact, said once. The panel below already says the
+                    number it is texting and that nothing is stored until this
+                    is confirmed, and the heading says what comes next — so all
+                    this adds is the length of what follows, which was on the
+                    form's dock until that button became "Text me a code". */}
+                <p className="mt-2.5 leading-relaxed text-ink-soft text-control">
+                  The questions take about two minutes.
+                </p>
+                <VerifyPhone
+                  /* Remounted when the number changes, or a code already sent
+                     to the old one leaves the box waiting for something that
+                     will never arrive. */
+                  key={session.phone}
+                  phone={session.phone}
+                  /* The dock they just tapped said "Text me a code", so one is
+                     already on its way — without this they read the same words
+                     twice and the first tap visibly did nothing. */
+                  autoStart
+                  onChangeNumber={() => {
+                    setStep("form");
+                    setSession(null);
+                    track("seed_verify_number_changed");
+                  }}
+                  onVerified={() => {
+                    const verified = saveSession({ ...session, phone_verified: true });
+                    setSession(verified);
+                    track("seed_verified", { at: "entry" });
+                    void afterEntryVerified();
+                  }}
+                />
+              </>
+            )}
+          </Container>
+        </ScreenBody>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -448,7 +616,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           onChange={(e) => setFirstName(e.target.value.slice(0, 40))}
           autoComplete="given-name"
           enterKeyHint="next"
-          placeholder="Janet"
+          placeholder="First name"
           />
 
           <div className="mt-4">
@@ -564,9 +732,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             {SMS_CONSENT_AGREEMENT}
           </Consent>
 
+          {/* ⚠ Both lines describe *when* the code comes, so both had to move
+              with it (15 Sep). The second is still the old sentence, because on
+              a deployment that cannot send one the old shape is exactly what
+              happens — the questions first, and the code at the end. */}
           <p className="mt-3 text-[13px] leading-relaxed text-muted">
             {gate?.required && gate.sendable
-              ? "Once you've answered the questions, we'll text a 6-digit code — that's what saves them."
+              ? "We'll text a 6-digit code to confirm the number, then the questions."
               : "We'll send a 6-digit code to confirm the number when you finish."}
           </p>
 
@@ -698,26 +870,32 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             onClick={() => void begin(canResume ? "resume" : "new")}
           >
             {/**
-             * ✅ **Settled, 10 Sep — the code is sent at the end of the
-             * profile.** This button asked for a decision twice and has one.
+             * ⚠⚠ **Her own label, and it is only honest now** (15 Sep).
              *
-             * Her list twice said the join CTA should read *"Text me a code."*
-             * A button saying that has to send one, which would move the OTP to
-             * the front door — where it sat for a day on 13 Aug and was
-             * deliberately taken off. Asked directly, the answer was *"Ні, код
-             * надсилаємо в кінці"*, so the placement stands and this label
-             * stays the one that describes what the tap actually does.
+             * Her list twice asked for *"Text me a code."* here. A button
+             * saying that has to send one, which meant moving the OTP to the
+             * front door — so on 10 Sep she was asked directly and answered
+             * *"Ні, код надсилаємо в кінці"*, and the label stayed the one that
+             * described what the tap really did.
              *
-             * ⚠ **Her wording is not dropped — it is on the control that really
-             * sends a code**, which is the send button in `VerifyPhone` at the
-             * end of the flow, and the dock on `/signin`. Both read "Text me a
-             * code" today, so the sentence she asked for is the one a parent
-             * reads at the moment it becomes true. That is the whole of why
-             * this was worth asking about rather than pasting.
+             * The developer has now moved the code to the front door anyway
+             * (see the note on `step`), so the tap **does** send one and her
+             * wording is what this button should say. ⚠ Both halves of that are
+             * hers to confirm together: the label is what she asked for twice,
+             * the placement is what she declined once, and they are one
+             * decision rather than two.
+             *
+             * ⚠ It reads her words only where a code can actually be sent.
+             * Where it cannot, the tap still just starts the questions, and a
+             * button promising a text that will never arrive is the worse
+             * failure — which is the same rule that decides the sentence above
+             * the dock.
              */}
             {checking
               ? "Checking…"
-              : canResume
+              : gate?.required && gate.sendable
+                ? "Text me a code"
+                : canResume
                 ? "Continue where you left off"
                 : "Start — about two minutes"}
             {!checking && <ArrowRight />}

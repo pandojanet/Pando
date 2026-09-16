@@ -43,7 +43,11 @@ import { track } from "@/lib/analytics";
  * just deleted everything back into a half-filled questionnaire, which reads
  * as the delete having failed.
  */
-export function DeleteProfile() {
+export function DeleteProfile({
+  /* Where it sits (16 Sep): directly under "Save my profile" in the review
+     dock, so the page's own spacing is the caller's. */
+  className = "mt-6 border-t border-bark/70 pt-4",
+}: { className?: string } = {}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -77,7 +81,7 @@ export function DeleteProfile() {
 
   if (!open) {
     return (
-      <div className="mt-6 border-t border-bark/70 pt-4">
+      <div className={className}>
         <TextAction tone="quiet" onClick={() => setOpen(true)}>
           Delete my profile
         </TextAction>

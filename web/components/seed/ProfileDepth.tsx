@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import type { ProfileDepth } from "@/lib/questions";
 
 /**
@@ -29,82 +28,79 @@ import type { ProfileDepth } from "@/lib/questions";
  * parent who answered what was asked of them — the optional questions are
  * optional, which is the whole of the 10 Sep round.
  */
-export function DepthBar({
-  depth,
-  className,
-}: {
-  depth: ProfileDepth;
-  className?: string;
-}) {
+
+/**
+ * The review page's header bar (16 Sep): *"Replace the '3 left' display with a
+ * percentage-based progress bar … organically with the other bars, for example
+ * the bar of a question."* So it is the question screens' bar in every
+ * dimension — the same 4px track, the same `bg-bark` ground and `bg-green`
+ * fill, the same header slot — with one continuous fill instead of segments,
+ * because on the review page every step is done and what is still open is how
+ * much of the profile is filled in.
+ */
+export function ProfilePercentBar({ depth }: { depth: ProfileDepth }) {
   return (
-    <div className={className}>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="font-semibold uppercase text-eyebrow tracking-eyebrow text-muted">
-          Profile filled in
-        </span>
-        <span className="font-semibold text-control text-green-deep tabular-nums">
-          {depth.percent}%
-        </span>
-      </div>
-      {/**
-       * `role="progressbar"` with the real numbers on it, because the bar is
-       * the whole of the information: without them a screen reader gets a
-       * decorative div and the percentage beside it has no relationship to it.
-       * The visible figure is the accessible name's own text, so the two
-       * cannot drift.
-       */}
+    <div
+      role="progressbar"
+      aria-valuenow={depth.percent}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`Profile ${depth.percent}% done, ${depth.answered} of ${depth.total} questions answered`}
+      className="h-1 w-full overflow-hidden rounded-full bg-bark"
+    >
       <div
-        role="progressbar"
-        aria-valuenow={depth.percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={`Profile filled in: ${depth.percent}%, ${depth.answered} of ${depth.total} questions answered`}
-        className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-bark/30"
-      >
-        <div
-          className="h-full rounded-full bg-green transition-[width] duration-500"
-          style={{ width: `${Math.max(depth.percent, 2)}%` }}
-        />
-      </div>
+        className="h-full rounded-full bg-green transition-[width] duration-500"
+        style={{ width: `${depth.percent}%` }}
+      />
     </div>
   );
 }
 
+/** The header's right-hand label, in the slot and type "3 left" uses. */
+export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
+  return (
+    <span className="px-1 font-medium text-muted text-dock tabular-nums">
+      {depth.percent}% done
+    </span>
+  );
+}
+
 /**
- * The bar with the reason beside it.
+ * *"20% done — the stronger your profile, the better your matches,"* with a
+ * direct path to complete it (16 Sep). One line and one action, so it fits the
+ * review page's minimal-text rule and the top of `/share` alike.
  *
- * `tone="positive"` rather than gold: this is an invitation, and the green
- * register is the one this flow uses for reassurance. A parent who has filled
- * everything in is told so and is not offered a link to a screen with nothing
- * left on it.
+ * Exactly one of `onComplete` (the review page, which can jump straight to the
+ * first unanswered question) or `href` (anywhere else). Renders nothing at 100%:
+ * a reminder that cannot be acted on is chrome.
  */
-export function DepthBanner({
+export function DepthReminder({
   depth,
+  onComplete,
   href,
   className,
 }: {
   depth: ProfileDepth;
-  /** Where "add more" goes. Omitted on the profile itself, where they are already there. */
+  onComplete?: () => void;
   href?: string;
   className?: string;
 }) {
-  const done = depth.answered >= depth.total;
+  if (depth.total === 0 || depth.answered >= depth.total) return null;
   return (
-    <Panel tone="positive" size="inset" className={className}>
-      <DepthBar depth={depth} />
-      <p className="mt-3 leading-relaxed text-help text-muted">
-        {done
-          ? "That is everything — Pando has the full picture, so the parents it asks for you are the ones whose lives really overlap with yours."
-          : "Every answer sharpens what Pando sends back — it matches you on what your family really has in common with other parents. Nothing here is required; add more whenever you like."}
+    <div className={className}>
+      <p className="leading-relaxed text-help text-muted">
+        <span className="font-semibold text-green-deep tabular-nums">{depth.percent}% done</span>
+        {" — the stronger your profile, the better your matches."}
       </p>
-      {!done && href && (
-        <Link
-          href={href}
-          className="mt-2.5 inline-flex min-h-11 items-center text-control font-semibold text-green-deep underline underline-offset-4"
-        >
-          Add more detail
-        </Link>
+      {href ? (
+        <TextAction href={href}>
+          Complete your profile
+        </TextAction>
+      ) : (
+        <TextAction onClick={onComplete}>
+          Complete your profile
+        </TextAction>
       )}
-    </Panel>
+    </div>
   );
 }
