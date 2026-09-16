@@ -14,6 +14,7 @@ import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
+import { DepthBanner } from "@/components/seed/ProfileDepth";
 import { OptionPicker } from "@/components/ui/OptionPicker";
 import { PlanGroup } from "@/components/ui/PlanGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
@@ -58,6 +59,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  profileDepth,
   pruneAnswers,
   sameForAllChildren,
   searchableCategory,
@@ -400,6 +402,19 @@ export function ProfileFlow() {
    * actually said.
    */
   const unlocked = canAdvance(screen, answers);
+  /**
+   * How full the profile is, for the line under the dock on every question
+   * screen — the cheapest place the developer's *"if it works out, on the
+   * profile pages too"* could land without a second progress indicator.
+   *
+   * ⚠ The header already carries one bar ("3 left"), and that answers a
+   * different question: how much of *this sequence* is left, which on the
+   * required path is three screens while the profile is 14% filled. Two bars
+   * saying different numbers is how a screen stops being read at all, so the
+   * bar itself is on the review and on `/share`, and what rides along here is
+   * the figure, inside the sentence that was already making the argument.
+   */
+  const depth = profileDepth(answers);
   const isLast = index === screens.length - 1;
   /**
    * `questions.every(…)` on an empty array is `true`, so the two screens that
@@ -1363,6 +1378,19 @@ export function ProfileFlow() {
             </p>
 
             {/**
+              * ⚠ **Here rather than at the top of the screen**, and rather than
+              * anywhere in the middle of the answer list: this is the last
+              * moment a parent can still act on it, which is the developer's
+              * own framing (*"коли він буде зберігати профіль"*), and the rows
+              * below are what it is talking about.
+              *
+              * No `href`: they are already on the profile, and every skipped
+              * question in the fold underneath has its own **Add** button. A
+              * link here would point at the screen they are standing on.
+              */}
+            <DepthBanner depth={profileDepth(answers)} className="mt-5" />
+
+            {/**
              * *"On review, show completed answers first and collapse skipped
              * fields under 'Optional details not added.'"* (10 Sep.)
              *
@@ -1925,9 +1953,55 @@ export function ProfileFlow() {
                               area={answers.neighborhood}
                               wholeList={directory.wholeList}
                               dropdown={directory.dropdown}
-                              searchLabel={directory.searchLabel}
+                              /**
+                               * ⚠ **The block's own heading once this is a
+                               * dropdown, never the question's label.**
+                               *
+                               * A dropdown's `searchLabel` is the control's
+                               * accessible name, and this question renders one
+                               * box **per child** — so the directory's label
+                               * would give a screen-reader user two controls
+                               * called "Search all schools, preschools and
+                               * daycares" with nothing saying which child each
+                               * belongs to. That is the distinction the
+                               * `OptionPicker` branch below has made since it
+                               * was written for `childcare_now`, arriving here
+                               * the day schools became a dropdown (16 Sep).
+                               *
+                               * The chips-plus-field shape keeps the directory
+                               * label, deliberately: there the block heading is
+                               * already an `<h2>` directly above the box, so
+                               * reusing it would be the screen saying one thing
+                               * twice — the fault fixed on this very question's
+                               * sibling the same morning.
+                               */
+                              searchLabel={
+                                directory.dropdown
+                                  ? block.heading
+                                  : directory.searchLabel
+                              }
                               searchLabelHidden={directory.searchLabelHidden}
                               footnote={last ? directory.footnote : undefined}
+                              /**
+                               * ⚠ **Missing until 16 Sep, and it silently
+                               * disabled the whole Google layer on this
+                               * question.** `widen` returns early without it —
+                               * deliberately, since there would be nowhere to
+                               * put the answer — so the per-child branch
+                               * asked Google nothing at all, while the
+                               * one-child branch three lines below asked
+                               * normally. Found by typing into the box rather
+                               * than by reading either branch, both of which
+                               * look complete on their own.
+                               *
+                               * Question-level and unattributed, exactly like
+                               * the typed fallback: a school a parent adds by
+                               * hand has never carried a child either, and
+                               * `pending_options` has no column for one.
+                               */
+                              onAddPlace={(value: string) =>
+                                addCustom(question, value)
+                              }
                             />
                           ) : question.source.type === "market" ||
                             question.dropdown ? (
@@ -2449,7 +2523,7 @@ export function ProfileFlow() {
               untouched; see the note in CLAUDE.md for which they are. */}
           {!unlocked
             ? "This one Pando needs — almost everything else is optional."
-            : "Saved as you go. The more you add, the better Pando can match you."}
+            : `Saved as you go — your profile is ${depth.percent}% filled in. The more you add, the better Pando can match you.`}
         </p>
         </>
         )}

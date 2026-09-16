@@ -1479,12 +1479,23 @@ export const geocodeCache = pgTable(
     marketId: text("market_id").notNull(),
     /** Folded by `cacheKey`, so three spellings of one town are one lookup. */
     query: text("query").notNull(),
+    /**
+     * Which Google question was asked: a town/ZIP inside the market
+     * (`place`), anywhere at all (`world`, for where-have-you-lived-before),
+     * or a named school, class, club or place of worship (`establishment`).
+     *
+     * ⚠ Part of the primary key, and it has to be: "little gym" geocoded is
+     * a street address and "little gym" searched is four gymnastics studios,
+     * so a shared key serves the first answer to the second question and
+     * nothing on screen says so. See `drizzle/0042`.
+     */
+    kind: text("kind").notNull().default("place"),
     places: jsonb("places").notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.marketId, t.query] })],
+  (t) => [primaryKey({ columns: [t.marketId, t.kind, t.query] })],
 );
 
 /* ── Row types ───────────────────────────────────────────────────────────── */

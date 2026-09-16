@@ -7,7 +7,12 @@ import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { geocodePlaces, searchMarketOptions } from "@/lib/api-client";
 import { placesForZip } from "@/lib/home-places";
-import { worthGeocoding, type GeocodedPlace } from "@/lib/geo";
+import {
+  lookupKindFor,
+  worthGeocoding,
+  worthPlaceSearch,
+  type GeocodedPlace,
+} from "@/lib/geo";
 import { neighborhoodCity, registerFoundOptions } from "@/lib/market-options";
 import { useMarketOptions } from "@/lib/use-market-options";
 import { visibleStarters } from "@/lib/starters";
@@ -148,6 +153,98 @@ interface Props {
  * an invite-gated screen. A cache would be a second copy of the taxonomy to get
  * stale.
  */
+/**
+ * What to say when Google found something the directory did not.
+ *
+ * ⚠ **Built in JS rather than written as JSX**, and that is the third time this
+ * repository has paid for the difference: SWC strips the whitespace at both
+ * boundaries of an embedded expression when the text wraps across source
+ * lines, so the JSX version of this rendered *"1 matchon the map"* — measured
+ * in a browser, and invisible in review because the source reads correctly.
+ * The same fault produced "7.57 connections" on the matching page and
+ * "20wanted" on the harness.
+ *
+ * ⚠ And **one** sentence for both shapes of this control. It was two — the
+ * chips branch said "places found on the map … Pando doesn't cover them" and
+ * the dropdown said "matches … Pando doesn't have them" — which is one fact
+ * in two wordings, on a control where a parent meets one branch or the other
+ * and never both. New user-facing copy either way, so it is on the list for
+ * the client.
+ */
+function foundLine(count: number): string {
+  const one = count === 1;
+  return `${count} ${one ? "match" : "matches"} on the map. Pando doesn’t have ${
+    one ? "it" : "them"
+  } yet — you can still add ${one ? "it" : "one"}.`;
+}
+/**
+ * The rows Google knows and Pando does not.
+ *
+ * ⚠ **One renderer, used by both shapes of this control**, and that is the
+ * point rather than tidiness: since 16 Sep the establishment directories
+ * (schools, classes, clubs, faith communities) are dropdowns and the place
+ * directories are chips plus a field, so a second copy of this list would have
+ * been written for the branch that got it later — and the two would have drifted
+ * on the one thing a parent is actually agreeing to. In the dropdown it goes
+ * into `OptionPicker`'s own `status` slot, directly above its "Can't find it?
+ * Add it", which is where a parent is already looking when the directory has
+ * answered nothing.
+ *
+ * ⚠ **Visibly not the directory above it.** A directory row is a
+ * `market_options` record: tapping it stores a slug the matcher understands,
+ * and the schools, classes and neighbours of that place are already in Pando.
+ * One of these is a name Google recognised and nobody at Pando has looked at,
+ * so it goes in as a **typed answer** (invariant 9) and waits for a person —
+ * and the row says so in words rather than leaving a parent to find out that
+ * picking their own school changed nothing.
+ */
+function FoundPlaces({
+  places,
+  disabled,
+  onPick,
+}: {
+  places: GeocodedPlace[];
+  disabled: boolean;
+  onPick: (place: GeocodedPlace) => void;
+}) {
+  if (places.length === 0) return null;
+  return (
+    <ul className="mt-2 space-y-1.5">
+      {places.map((place) => (
+        <li key={place.key}>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={`Add ${place.name}`}
+            onClick={() => onPick(place)}
+            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-bark bg-paper px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
+          >
+            <span className="min-w-0">
+              <span className="block truncate text-control font-medium">
+                {place.name}
+              </span>
+              {/* The disambiguator, not decoration: two Pasadenas exist and one
+                  of them is in Texas, and three "The Little Gym"s inside this
+                  market is the ordinary case rather than the awkward one. */}
+              {place.where !== "" && (
+                <span className="mt-0.5 block truncate text-dock text-muted">
+                  {place.where}
+                </span>
+              )}
+            </span>
+            <span
+              aria-hidden="true"
+              className="shrink-0 text-help font-semibold text-green-deep"
+            >
+              Add
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function SearchableChipGroup({
   category,
   market,
@@ -332,6 +429,26 @@ export function SearchableChipGroup({
 
   const timer = useRef<number | null>(null);
   /** Its own timer, because a billed call waits longer than a free one. */
+  /**
+   * Taking a Google row: the canonical name, never the key.
+   *
+   * A slug written from here would be promotion by the back door (invariant
+   * 9), and the name is also what collapses "la canada" and "La Cañada" into
+   * one pending row an admin can act on once. Clearing the query and both
+   * result lists afterwards is what stops the row a parent has just taken
+   * sitting under the chip it became.
+   */
+  const takePlace = useCallback(
+    (place: GeocodedPlace) => {
+      onAddPlace?.(place.storedValue);
+      setQuery("");
+      setResults([]);
+      setResultsFor("");
+      setGeo([]);
+    },
+    [onAddPlace],
+  );
+
   const geoTimer = useRef<number | null>(null);
   /**
    * Which lookup is current.
@@ -382,8 +499,20 @@ export function SearchableChipGroup({
      * result is a real possibility rather than a theoretical one.
      */
     const widen = (local: number) => {
-      if (category !== "neighborhoods" || local > 0) return;
-      if (!worthGeocoding(q)) return;
+      /**
+       * ⚠ **Which directories ask Google is named in `lib/geo.ts`, not here.**
+       *
+       * This read `category !== "neighborhoods"` until 16 Sep, when the
+       * developer asked for the whole set — schools, classes, clubs, faith
+       * communities and where a parent lived before. Keeping the list in a
+       * `useEffect` is how the `lib/starters.ts` rule failed silently twice,
+       * and here a silent failure is either a parent who cannot name their
+       * school or an invoice for a directory nobody meant to widen.
+       */
+      const kind = lookupKindFor(category);
+      if (!kind || local > 0) return;
+      /* A name needs three letters; a school is never looked up by postcode. */
+      if (!(kind === "establishment" ? worthPlaceSearch(q) : worthGeocoding(q))) return;
       /* ⚠ Nowhere to put the answer means nothing to pay for. Without a way to
          record a place Pando has no record of, asking Google would buy a row
          whose only button does not exist. */
@@ -391,7 +520,7 @@ export function SearchableChipGroup({
       if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
       geoTimer.current = window.setTimeout(() => {
         setGeoState("looking");
-        void geocodePlaces({ q, market })
+        void geocodePlaces({ q, market, category })
           .then((r) => {
             if (run !== geoRun.current) return;
             /* Three states stay three. An unconfigured deployment is not an
@@ -557,7 +686,7 @@ export function SearchableChipGroup({
         onQueryChange={(q) => setQuery(q.slice(0, 60))}
         footnote={[otherLabel, footnote].filter(Boolean).join(". ") || undefined}
         /**
-         * Only the failure, and deliberately only the failure.
+         * The directory's own failure, and then the rows Google found.
          *
          * `OptionPicker` already carries a `role="status"` region for how many
          * options there are, so repeating the count here would announce one
@@ -565,15 +694,35 @@ export function SearchableChipGroup({
          * directory did not answer — which is the honesty rule this app applies
          * everywhere: say the search broke, rather than showing an empty list,
          * which reads as "your school is not in Pando".
+         *
+         * ⚠⚠ **And since 16 Sep it carries the Google rows too**, because this
+         * branch is where the establishment directories now live: schools,
+         * classes, clubs and faith communities are all dropdowns, so a
+         * found-places list rendered only in the chips branch below would have
+         * been a feature that could not fire on any of the four questions it
+         * was built for. It goes in the panel's own footer, directly above
+         * "Can't find it? Add it", which is where a parent is already looking
+         * when the directory has answered nothing.
          */
         status={
-          failed ? (
-            <p role="status" aria-live="polite" className="text-help text-gold-ink">
-              Search isn&apos;t answering just now. You can still add it below.
-            </p>
-          ) : searching ? (
-            <p className="text-help text-muted">Looking…</p>
-          ) : null
+          <>
+            {failed ? (
+              <p role="status" aria-live="polite" className="text-help text-gold-ink">
+                Search isn&apos;t answering just now. You can still add it below.
+              </p>
+            ) : searching ? (
+              <p className="text-help text-muted">Looking…</p>
+            ) : geoState === "looking" ? (
+              <p className="text-help text-muted">Looking further afield…</p>
+            ) : geo.length > 0 ? (
+              <p role="status" aria-live="polite" className="text-help text-muted">
+                {foundLine(geo.length)}
+              </p>
+            ) : null}
+            {!searching && onAddPlace && (
+              <FoundPlaces places={geo} disabled={atCap} onPick={takePlace} />
+            )}
+          </>
         }
       />
     );
@@ -703,70 +852,14 @@ export function SearchableChipGroup({
                           geoState === "looking"
                           ? "Looking further afield…"
                           : geo.length > 0
-                            ? `${geo.length} ${geo.length === 1 ? "place" : "places"} found on the map. Pando doesn’t cover ${geo.length === 1 ? "it" : "them"} yet — you can still add ${geo.length === 1 ? "it" : "one"}.`
+                            ? foundLine(geo.length)
                             : geoState === "failed"
                               ? `Nothing matching “${query.trim()}”, and the wider map isn’t answering just now. You can still add it below.`
                               : `Nothing matching “${query.trim()}”.`}
             </p>
 
-            {/**
-              * Places Google knows and Pando does not.
-              *
-              * ⚠ **Its own list, visibly not the directory above it**, because
-              * the two are different kinds of thing and the difference is what
-              * a parent is agreeing to. A directory row is a `market_options`
-              * record: tapping it stores a slug the matcher understands and
-              * the schools, classes and neighbours of that place are already
-              * in Pando. One of these is a name Google recognised and nobody
-              * at Pando has looked at, so it goes in as a **typed answer**
-              * (invariant 9) and waits for a person — and the row says so in
-              * words rather than leaving a parent to find out that picking
-              * their own town changed nothing.
-              */}
-            {!searching && geo.length > 0 && onAddPlace && (
-              <ul className="mt-2 space-y-1.5">
-                {geo.map((place) => (
-                  <li key={place.key}>
-                    <button
-                      type="button"
-                      disabled={atCap}
-                      aria-label={`Add ${place.name}`}
-                      onClick={() => {
-                        /* The canonical name, never the key — see `lib/geo.ts`.
-                           A slug written from here would be promotion by the
-                           back door, and the name is also what collapses
-                           "la canada" and "La Cañada" into one pending row an
-                           admin can act on once. */
-                        onAddPlace(place.storedValue);
-                        setQuery("");
-                        setResults([]);
-                        setResultsFor("");
-                        setGeo([]);
-                      }}
-                      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-bark bg-paper px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-control font-medium">
-                          {place.name}
-                        </span>
-                        {/* The disambiguator, not decoration: two Pasadenas
-                            exist and one of them is in Texas. */}
-                        {place.where !== "" && (
-                          <span className="mt-0.5 block truncate text-dock text-muted">
-                            {place.where}
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className="shrink-0 text-help font-semibold text-green-deep"
-                      >
-                        Add
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {!searching && onAddPlace && (
+              <FoundPlaces places={geo} disabled={atCap} onPick={takePlace} />
             )}
 
             {!searching && !failed && unshown.length > 0 && (

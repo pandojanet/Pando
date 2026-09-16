@@ -2519,18 +2519,34 @@ const SEARCHABLE_QUESTIONS: Partial<
   schools: {
     category: "schools",
     /**
-     * ⚠ **No dropdown here**, and it is the client's own correction (8 Sep) —
-     * *"на цій сторінці не потрібні були dropdown"*, pointing at this screen.
+     * ⚠⚠ **A dropdown, and this reverses the client's own 8 Sep correction** —
+     * *"на цій сторінці не потрібні були dropdown"*, which she said pointing at
+     * this very screen. The developer asked for it back on 16 Sep
+     * (*"заміни вибір шкіл на дропдаун"*), and the newer instruction wins by
+     * this file's own rule; what follows is the cost, so nobody has to
+     * rediscover it.
      *
-     * Her original instruction named "local groups, schools, faith communities",
-     * which read as three questions; they are two **screens**, and only one of
-     * them is the circles page. Schools has its own, and it keeps the chips: the
-     * starters are already trimmed to the parent's own area (eight per area, her
-     * curation), so what is on offer is a short familiar list rather than the
-     * wall of hundreds the dropdown was for — and on a per-child screen each
-     * block would otherwise be a closed box a parent has to open before they can
-     * see whether Pando knows their school at all.
+     * **What the chips were buying.** The starters are trimmed to the parent's
+     * own area (eight per area, her curation), so what was on offer was a short
+     * familiar list rather than the wall of hundreds a dropdown is for — and
+     * this question repeats **per child**, so each block is now a closed box a
+     * parent must open before they can tell whether Pando knows their school at
+     * all. On a two-child family that is two taps before the first school is
+     * visible.
+     *
+     * **What it buys instead** is the thing the screen changed under it: since
+     * the 15 Sep merge this question shares the circles screen with clubs and
+     * faith communities, both of which are already dropdowns, so schools was
+     * the one wall of buttons among boxes — the "some do, some don't" the
+     * client has reported on the admin twice.
+     *
+     * ⚠ It also makes `searchLabel` an `OptionPicker` label rather than a
+     * `Field` one, and on a per-child question that name repeats once per
+     * child. `ProfileFlow` passes the **block heading** there instead — see the
+     * per-child branch, which has made that distinction since the day it was
+     * written for `childcare_now`.
      */
+    dropdown: true,
     searchLabel: "Search all schools, preschools and daycares",
     footnote: "It doesn’t have to be in your own city — plenty of families cross town for the right one.",
   },
@@ -2581,6 +2597,28 @@ const SEARCHABLE_QUESTIONS: Partial<
      * five cities and then shrank the list on selection. See `wholeList`.
      */
     wholeList: true,
+  },
+  /**
+   * ## 16 Sep — camps join the directories, and the offer set is unchanged
+   *
+   * Camps had no entry here at all: the question is market-sourced, so it fell
+   * to `ProfileFlow`'s plain `OptionPicker` branch with local filtering only
+   * — deliberately, because routing it through `SearchableChipGroup` would
+   * also have applied the area trim and the twelve-item cap, which camps has
+   * never had.
+   *
+   * `wholeList` is what makes the entry safe: it turns both of those off, so
+   * every curated camp is still offered exactly as it is today. What the entry
+   * buys is the two things the developer asked for — the market search behind
+   * the box, and the Google lookup when that finds nothing, which is the whole
+   * point for a category whose curated list is **twelve rows** against 133
+   * schools.
+   */
+  camps: {
+    category: "camps",
+    dropdown: true,
+    wholeList: true,
+    searchLabel: "Search all camps and school-break programs",
   },
   previous_places: {
     category: "previous_places",
@@ -2935,6 +2973,61 @@ export function profileCompleteness(answers: ProfileAnswers): number {
   const screens = visibleScreens(answers).filter((s) => !isStatementScreen(s));
   const answered = screens.filter((s) => isScreenAnswered(s, answers)).length;
   return Math.round((answered / screens.length) * 100);
+}
+
+/**
+ * How much of the profile is filled in, for the parent to see.
+ *
+ * ## Why this is not `profileCompleteness`
+ *
+ * Two reasons, and the second is the one that matters.
+ *
+ * `profileCompleteness` is **stored** (`social_profiles.profile_completeness`)
+ * and read by the admin, so changing its formula rewrites the history of every
+ * contributor already in the database.
+ *
+ * ⚠⚠ And it measures the screens a parent can *see*, which for this purpose is
+ * exactly backwards: `visibleScreens` returns **four** screens for somebody who
+ * tapped Continue at the fork, so answering the two required questions would
+ * report **100%** — telling a parent their profile is complete at the moment it
+ * is thinnest, on a banner whose whole job is to say the opposite. Measured
+ * through the real derivation on 10 Sep, that parent produces two affinity
+ * edges and two relevance rows that deliberately score zero.
+ *
+ * So the denominator here is the questionnaire as if the optional fork had been
+ * opened. It still respects every other gate — an expecting parent is not asked
+ * about a school and is not marked down for it, a one-child family is not
+ * measured against a second child — because those questions are ones this
+ * parent will never be shown, and counting them would make the bar unreachable
+ * for reasons the parent cannot act on.
+ *
+ * ## Questions, not screens
+ *
+ * `isScreenAnswered` is `.some`, so a merged screen carrying four questions
+ * counts as answered when one of them is. That is right for a stored
+ * completeness figure and wrong for a bar meant to encourage detail: since the
+ * 9 Sep merges, one tap on "Your parenting and work setup" would have moved
+ * this by a fifth.
+ */
+export interface ProfileDepth {
+  answered: number;
+  total: number;
+  /** 0–100, rounded. */
+  percent: number;
+}
+
+export function profileDepth(answers: ProfileAnswers): ProfileDepth {
+  /* The whole questionnaire, not the part this parent happens to be walking. */
+  const full: ProfileAnswers = { ...answers, wants_detail: true };
+  const questions = visibleScreens(full)
+    .filter((s) => !isStatementScreen(s))
+    .flatMap((s) => visibleQuestions(s, full));
+
+  const total = questions.length;
+  if (total === 0) return { answered: 0, total: 0, percent: 0 };
+
+  const answered = questions.filter((q) => isQuestionAnswered(q, answers)).length;
+  return { answered, total, percent: Math.round((answered / total) * 100) };
 }
 
 export function labelForOption(

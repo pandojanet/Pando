@@ -326,8 +326,21 @@ export async function searchMarketOptions(input: {
 export async function geocodePlaces(input: {
   q: string;
   market: string;
+  /**
+   * Which directory is asking, so the server can decide **which** Google
+   * question this is — a town, anywhere in the world, or a named school.
+   *
+   * ⚠ The category rather than the kind, deliberately: the kind is what
+   * decides how much the call costs, and a caller that could name it could
+   * spend the dear one at will. See the route.
+   */
+  category: string;
 }): Promise<{ configured: boolean; places: GeocodedPlace[] }> {
-  const params = new URLSearchParams({ q: input.q, market_id: input.market });
+  const params = new URLSearchParams({
+    q: input.q,
+    market_id: input.market,
+    category: input.category,
+  });
   const res = await fetch(`/api/market/geocode?${params.toString()}`, {
     headers: { accept: "application/json" },
   });

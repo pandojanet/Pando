@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { geocodeConfigured, lookupPlaces } from "@/lib/server/geocode";
+import { lookupKindFor } from "@/lib/geo";
 
 /**
  * GET /api/market/geocode?q=91011&market_id=pasadena
@@ -67,6 +68,30 @@ export async function GET(request: Request) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, MAX_QUERY);
 
   /**
+   * ⚠⚠ **The kind is derived from the category here, never sent by the caller.**
+   *
+   * The establishment search costs roughly six times a geocode, so a `kind`
+   * parameter would let anybody spend the dear lookup on a question that
+   * should have gone to the cheap one — and on a public, unauthenticated
+   * endpoint the limiter is the only thing between a script and the invoice.
+   * `lookupKindFor` names its categories one by one for the same reason.
+   *
+   * An unknown category, or one with no Google question behind it
+   * (`parent_groups`), answers an empty list rather than an error: nothing
+   * went wrong, there is simply nothing to ask Google about. It still reports
+   * the real `configured`, because a caller told the lookup ran and found
+   * nothing when there was no key at all is this feature's own cardinal sin —
+   * committed once already, in the guard against it.
+   */
+  const category = (url.searchParams.get("category") ?? "neighborhoods")
+    .toLowerCase()
+    .slice(0, 40);
+  const kind = lookupKindFor(category);
+  if (!kind) {
+    return NextResponse.json({ configured: geocodeConfigured(), places: [] });
+  }
+
+  /**
    * ⚠ **The short-circuit reports the real configuration, and the first cut did
    * not** — it answered `{ configured: true, places: [] }` for a one-character
    * query on a deployment with no key at all, which is this feature's own
@@ -80,7 +105,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ configured: geocodeConfigured(), places: [] });
   }
 
-  const outcome = await lookupPlaces({ query: q, marketId });
+  const outcome = await lookupPlaces({ query: q, marketId, kind });
 
   if (!outcome.ok) {
     if (outcome.reason === "not_configured") {

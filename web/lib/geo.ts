@@ -444,3 +444,270 @@ export function cacheKey(query: string): string {
     .trim()
     .slice(0, 60);
 }
+
+/* ── an establishment: a school, a class, a club, a place of worship ───────── */
+
+/**
+ * ## 16 Sep — Google for the rest of the directories, and why it is a second API
+ *
+ * The developer's instruction was to integrate Google *"for places, schools and
+ * so on — for everything"*. The first thing to know is that the layer above
+ * cannot do it: the **Geocoding** API resolves an address, so asking it about
+ * "Field Elementary" returns a street, a route, or nothing at all. A named
+ * establishment is the **Places** API's question (`places:searchText`) — a
+ * different endpoint, a different response shape, and a different bill, roughly
+ * six times a geocode per call. That is why `worthPlaceSearch` exists beside
+ * `worthGeocoding` rather than being folded into it.
+ *
+ * What is deliberately shared is everything below the request: one `placeKey`
+ * fold, one failure vocabulary, one freshness clock, one cache. Two modules
+ * would have been two of each, and the pair that drifts is always the one
+ * nobody is looking at.
+ *
+ * ## The refusal this rests on, and it is the same one as `place_type`
+ *
+ * **A Google result never says which of Pando's categories it belongs to.**
+ * Google answers `types: ["primary_school", "school", …]`, while the client's
+ * own taxonomy distinguishes a preschool from a daycare from an elementary
+ * school, carries an entity type, an operational status and a curated starter
+ * flag, and was imported from her sheets (`taxonomy:import`, 588 records).
+ * Mapping `school` onto `schools` looks harmless and then writes a fact nobody
+ * stated onto every record a parent adds — which is exactly what §5 spent
+ * 14 Sep refusing to do for `place_type`, and what this file's own header
+ * refuses for a town.
+ *
+ * So the category comes from **the question the parent was answering**, which
+ * is the only honest source of it: they were on the schools question, so it is
+ * filed as a school. `GeocodedPlace.type` stays `null` here for the same reason
+ * it is null for an unincorporated community — there is no field for it and
+ * there must not be one.
+ *
+ * ⚠ **And no `includedType` on the request either.** Constraining the search to
+ * Google's `school` would hide a preschool Google files under
+ * `child_care_agency` and a class it files under `gymnastics_club` — a filter
+ * that removes correct answers, which is the rule this app states everywhere
+ * else as *rank, never filter*. The parent's own words carry the subject; the
+ * market carries the location bias, and that is the whole of the narrowing.
+ */
+
+/** A name that is worth paying Places for. */
+export function worthPlaceSearch(query: string): boolean {
+  const q = query.trim();
+  /**
+   * ⚠ Three letters, and **never a bare number**, which is where this differs
+   * from `worthGeocoding`: there a whole ZIP is the most precise question a
+   * parent can ask, and here it is the least — "91001" in the schools box asks
+   * Google for whatever sits near a postcode, which is a paid answer to a
+   * question nobody asked. A parent looking for a school types its name.
+   */
+  if (/^\d+$/.test(q)) return false;
+  return q.length >= 3;
+}
+
+/** How many establishment rows a parent is offered. */
+export const PLACE_SEARCH_LIMIT = 4;
+
+interface RawNewComponent {
+  longText?: unknown;
+  shortText?: unknown;
+  types?: unknown;
+}
+
+interface RawPlace {
+  displayName?: unknown;
+  formattedAddress?: unknown;
+  addressComponents?: unknown;
+}
+
+export interface PlaceSearchOptions {
+  /** Two-letter code. Decides `inMarket`, which ranks and never filters. */
+  marketState?: string;
+  limit?: number;
+  /**
+   * Does this name read as an individual person?
+   *
+   * ⚠ **A required argument, never an import**, for the two reasons
+   * `public-info.ts` states for the same check: it keeps this module free of
+   * runtime imports so `npm run test:geo` can load it in plain node, and it
+   * makes the decision impossible for a call site to forget.
+   *
+   * The caller passes the **strong** half of `looksLikePerson` — an honorific
+   * or a bare possessive — because that is the threshold measured as safe to
+   * refuse on (11.4: the weak signal flags 16 of 588 real records, "Marshall
+   * Fundamental" and "Altadena Stables" among them). A Google search for a
+   * child's after-school teacher would otherwise offer "Ms. Diane" as a school
+   * to add, which is a named individual entering the graph through a door with
+   * none of invariants 1, 2, 12 or 13 on it.
+   */
+  isPerson: (name: string) => boolean;
+}
+
+/**
+ * Turn one `places:searchText` response into places, or into a named failure.
+ *
+ * Unlike Geocoding — which answers 200 with a `status` string — Places (New)
+ * reports faults as HTTP codes with an `error` object, so most failures are
+ * already decided by the time a body reaches here. What this still has to catch
+ * is an error body arriving with a 200, which is why `error.status` is read at
+ * all rather than assumed away.
+ */
+export function readPlaceSearch(
+  body: unknown,
+  opts: PlaceSearchOptions,
+): GeocodeOutcome {
+  const marketState = (opts.marketState ?? "CA").toUpperCase();
+  const limit = opts.limit ?? PLACE_SEARCH_LIMIT;
+
+  if (typeof body !== "object" || body === null) return { ok: false, reason: "unavailable" };
+
+  const err = (body as { error?: unknown }).error;
+  if (typeof err === "object" && err !== null) {
+    const status = str((err as { status?: unknown }).status);
+    if (status === "PERMISSION_DENIED" || status === "UNAUTHENTICATED") {
+      return { ok: false, reason: "denied" };
+    }
+    if (status === "RESOURCE_EXHAUSTED") return { ok: false, reason: "over_limit" };
+    if (status === "INVALID_ARGUMENT") return { ok: false, reason: "bad_request" };
+    return { ok: false, reason: "unavailable" };
+  }
+
+  const raw = (body as { places?: unknown }).places;
+  /**
+   * ⚠ **A missing `places` key is an empty answer, not a fault**, and it is the
+   * one place the two APIs disagree in a way worth writing down: Geocoding says
+   * `ZERO_RESULTS` out loud, while Places (New) simply omits the array. A body
+   * with neither `error` nor `places` is Google saying it knows nothing — a
+   * real answer, and worth caching. That is the `{ ok: true, places: [] }` this
+   * file's header insists on keeping apart from a failure.
+   */
+  if (raw === undefined || raw === null) return { ok: true, places: [] };
+  if (!Array.isArray(raw)) return { ok: false, reason: "unavailable" };
+
+  const out: GeocodedPlace[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const place = entry as RawPlace;
+
+    const display = place.displayName;
+    const name =
+      typeof display === "object" && display !== null
+        ? str((display as { text?: unknown }).text)
+        : str(display);
+    /* Dropped rather than repaired: a row with no name is a row with nothing to
+       show a parent and nothing to store. */
+    if (!name) continue;
+
+    /* The refusal above, applied before anything else is read about the row. */
+    if (opts.isPerson(name)) continue;
+
+    const components: RawNewComponent[] = Array.isArray(place.addressComponents)
+      ? (place.addressComponents as RawNewComponent[])
+      : [];
+    const pick = (type: string, form: "long" | "short" = "long"): string | null => {
+      for (const c of components) {
+        if (typesOf(c.types).includes(type)) {
+          return str(form === "short" ? c.shortText : c.longText);
+        }
+      }
+      return null;
+    };
+
+    const city = pick("locality") ?? pick("postal_town");
+    const state = pick("administrative_area_level_1", "short");
+    const zip = readZip(pick("postal_code"));
+
+    const key = placeKey(name);
+    if (key === "" || seen.has(key)) continue;
+    seen.add(key);
+
+    /**
+     * Google's own one-line address, and it is the disambiguator rather than
+     * decoration: three "The Little Gym"s inside one market is the ordinary
+     * case, and a list of three identical names is worse than no list. It falls
+     * back to the composed line when `formattedAddress` is absent, so a row
+     * never loses its only means of being told apart.
+     */
+    const address = str(place.formattedAddress);
+    const where = address ?? whereLine({ name, city, state, zip });
+
+    out.push({
+      key,
+      name,
+      where,
+      /* Null, always. See the section header: Google cannot say which of
+         Pando's categories this is, and the question already knows. */
+      type: null,
+      city,
+      neighborhood: null,
+      zip,
+      state,
+      county: null,
+      inMarket: (state ?? "").toUpperCase() === marketState,
+      /**
+       * The name, with the town when the place is outside the market — the same
+       * rule the geocoder follows, and for the same reason: "The Little Gym"
+       * alone in the pending queue is a row an admin cannot safely promote,
+       * while "The Little Gym, Monrovia" is one they can.
+       */
+      storedValue:
+        city && (state ?? "").toUpperCase() !== marketState
+          ? `${name}, ${city}`
+          : name,
+    });
+
+    if (out.length >= limit) break;
+  }
+
+  return { ok: true, places: out };
+}
+
+/* ── which Google question a directory asks ────────────────────────────────── */
+
+/**
+ * Which question is asked of Google, per directory.
+ *
+ * Three kinds, because the three are genuinely different requests rather than
+ * one request with a flag: `place` geocodes inside the market, `world` geocodes
+ * with no country and no bounds at all, and `establishment` is a Places text
+ * search. See `lib/server/geocode.ts` for the shapes.
+ */
+export type LookupKind = "place" | "world" | "establishment";
+
+/**
+ * ⚠ **Named per category, never derived** — the rule `dropdown` already states
+ * one file along, after the first cut of *that* one said "everywhere except
+ * `wholeList`" and swept in a question nobody had asked about.
+ *
+ * Deciding by absence would be worse here than there, because the thing on the
+ * other side is billed: a directory added tomorrow would start paying Google on
+ * the day it was added, with nothing on any screen looking different.
+ *
+ * `parent_groups` is the one directory with **no** entry and that is the whole
+ * point of returning null: a WhatsApp group for the mums at a preschool is not
+ * a place on a map, and asking Google about one buys a coffee shop with a
+ * similar name. The taxonomy's own answer — a curated list plus a typed
+ * "+ Something else" — is the right one there.
+ */
+export function lookupKindFor(category: string): LookupKind | null {
+  switch (category) {
+    /* Where a parent lives: her seventeen towns, then the 52 places and 62 ZIPs
+       in the bundle, then this. */
+    case "neighborhoods":
+      return "place";
+    /* Where they lived before, which is frequently neither in this market nor
+       in this country. */
+    case "previous_places":
+      return "world";
+    /* Named things: the five directories a parent picks a record from. */
+    case "schools":
+    case "baby_activities":
+    case "clubs":
+    case "worship":
+    case "camps":
+      return "establishment";
+    default:
+      return null;
+  }
+}

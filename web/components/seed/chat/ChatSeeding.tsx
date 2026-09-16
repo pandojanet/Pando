@@ -31,6 +31,8 @@ import type {
   Submission,
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
+import { DepthBanner } from "@/components/seed/ProfileDepth";
+import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
   ReferralDialog,
@@ -61,6 +63,10 @@ export function ChatSeeding() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
   const [typing, setTyping] = useState(false);
+  /* Read from the session the same way every other fact on this screen is:
+     there is no server round trip here, and `answers` is what the profile
+     write derived from in the first place. */
+  const depth = profileDepth(session?.answers ?? EMPTY_ANSWERS);
   const initialized = useRef(false);
   const timers = useRef<number[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -933,6 +939,27 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
+
+        {/**
+          * ⚠ **Above the thread, and only while there is something to add.**
+          *
+          * The developer, 16 Sep: *"і на сторінці share також відображати
+          * зверху, що потрібно заповнити профіль для максимальної якості
+          * відповідей"*. This is the screen a contributor sits on, so it is
+          * where a thin profile is worth mentioning — and `href` points at
+          * `/profile`, which opens on the **review** for a saved profile
+          * (7 Sep), so "add more detail" lands on the list of what is missing
+          * rather than at question one.
+          *
+          * It disappears at 100%: a banner that cannot be acted on is the
+          * *"Nothing waiting" over twenty-two open flags* fault in the other
+          * direction — chrome that has stopped meaning anything, on the screen
+          * whose whole job is the conversation below it.
+          */}
+        {session && depth.percent < 100 && (
+          <DepthBanner depth={depth} href="/profile" className="mb-4" />
+        )}
+
         <div className="space-y-2.5">
           {chat.messages.map((message) =>
             message.invite ? (

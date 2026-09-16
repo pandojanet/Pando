@@ -320,6 +320,164 @@ console.log("\n=== the small parsers ===");
   ok("and an apostrophe vanishes rather than becoming a dash", g.placeKey("O'Brien") === "obrien");
 }
 
+
+/**
+ * ## 16 Sep — the Places half
+ *
+ * The developer asked for Google across every directory, and a geocoder cannot
+ * answer that: "Field Elementary" handed to the Geocoding API is a street or
+ * nothing. `readPlaceSearch` reads the other API, and what is pinned here is
+ * mostly what it **refuses** — the category it will not infer, the person it
+ * will not offer, the failure it will not report as an empty answer.
+ */
+console.log("\n=== the places search: what it reads, and what it refuses ===");
+{
+  const comp = (long: string, short: string, ...types: string[]) => ({
+    longText: long,
+    shortText: short,
+    types,
+  });
+  const CA_NEW = comp("California", "CA", "administrative_area_level_1", "political");
+  const place = (name: string, address: string, components: unknown[] = []) => ({
+    displayName: { text: name, languageCode: "en" },
+    formattedAddress: address,
+    addressComponents: components,
+  });
+  /* The market's own detector is not importable here (this suite loads one pure
+     module in plain node), so the refusal is exercised through the argument the
+     reader takes — which is the point of it being an argument. */
+  const isPerson = (name: string) => /^(ms|mr|mrs|dr|coach)\.?\s/i.test(name);
+  const read = (body: unknown, opts: Record<string, unknown> = {}) =>
+    g.readPlaceSearch(body, { isPerson, marketState: "CA", ...opts });
+
+  const one = read({
+    places: [
+      place("Field Elementary School", "3600 Sierra Madre Blvd, Pasadena, CA 91107, USA", [
+        comp("Pasadena", "Pasadena", "locality", "political"),
+        CA_NEW,
+        comp("91107", "91107", "postal_code"),
+      ]),
+    ],
+  });
+  ok("a school comes back", one.ok && one.places.length === 1);
+  if (one.ok && one.places[0]) {
+    const p = one.places[0];
+    /* The refusal this whole feature rests on. Google says `primary_school`;
+       Pando's taxonomy distinguishes a preschool from a daycare from an
+       elementary, so the category comes from the question the parent was
+       answering and never from the response. */
+    ok("and it is never typed from Google's vocabulary", p.type === null);
+    ok("the town is read from the components", p.city === "Pasadena");
+    ok("and the ZIP with it", p.zip === "91107");
+    ok(
+      "Google's own address line is what tells two of a name apart",
+      p.where === "3600 Sierra Madre Blvd, Pasadena, CA 91107, USA",
+    );
+    ok("in-market is decided by the state, not by the bounds", p.inMarket === true);
+    ok("what gets stored is the name, never the key", p.storedValue === "Field Elementary School");
+  }
+
+  /* 11.4, at the one door that had none of it: a Places search for a child's
+     teacher would otherwise offer a named individual as a school to add. */
+  const person = read({
+    places: [
+      place("Ms. Diane", "123 Foothill Blvd, Altadena, CA, USA"),
+      place("Altadena Stables", "3064 Ridgeview Dr, Altadena, CA, USA"),
+    ],
+  });
+  ok("a name that reads as a person is dropped", person.ok && person.places.length === 1);
+  ok(
+    "and the business beside it is kept",
+    person.ok && person.places[0]?.name === "Altadena Stables",
+  );
+
+  const out = read({
+    places: [
+      place("The Little Gym", "1 Main St, Portland, OR 97201, USA", [
+        comp("Portland", "Portland", "locality", "political"),
+        comp("Oregon", "OR", "administrative_area_level_1", "political"),
+      ]),
+    ],
+  });
+  ok("an out-of-market row is kept, not filtered", out.ok && out.places.length === 1);
+  ok(
+    "and it stores the town with it, so an admin can promote it",
+    out.ok && out.places[0]?.storedValue === "The Little Gym, Portland",
+  );
+
+  const dupes = read({
+    places: [place("Kidspace", "480 N Arroyo Blvd, Pasadena, CA"), place("KIDSPACE", "elsewhere")],
+  });
+  ok("one name is one row", dupes.ok && dupes.places.length === 1);
+
+  ok("a row with no name is dropped rather than repaired", (() => {
+    const r = read({ places: [{ formattedAddress: "somewhere" }, place("Real", "here")] });
+    return r.ok && r.places.length === 1 && r.places[0]?.name === "Real";
+  })());
+
+  ok("the list is capped", (() => {
+    const many = Array.from({ length: 12 }, (_, i) => place(`Place ${i}`, `${i} Street`));
+    const r = read({ places: many });
+    return r.ok && r.places.length === g.PLACE_SEARCH_LIMIT;
+  })());
+
+  /**
+   * ⚠ The two APIs disagree here and it is worth pinning: Geocoding says
+   * `ZERO_RESULTS` out loud, Places (New) simply omits the array. A missing key
+   * is an empty **answer** — worth caching — and a failure is not.
+   */
+  ok("no places key is an empty answer, not a fault", (() => {
+    const r = read({});
+    return r.ok && r.places.length === 0;
+  })());
+
+  for (const [status, reason] of [
+    ["PERMISSION_DENIED", "denied"],
+    ["UNAUTHENTICATED", "denied"],
+    ["RESOURCE_EXHAUSTED", "over_limit"],
+    ["INVALID_ARGUMENT", "bad_request"],
+    ["SOMETHING_NEW", "unavailable"],
+  ] as const) {
+    const r = read({ error: { status, code: 400, message: "(trimmed)" } });
+    ok(`${status} reads as ${reason}`, !r.ok && r.reason === reason);
+  }
+
+  ok("a body that is not an object is a failure, never an empty list", (() => {
+    const r = read("nope");
+    return !r.ok && r.reason === "unavailable";
+  })());
+}
+
+console.log("\n=== what is worth paying for ===");
+{
+  ok("three letters is a name worth searching", g.worthPlaceSearch("gym"));
+  ok("two is not", !g.worthPlaceSearch("gy"));
+  /* Where this differs from `worthGeocoding`, and the difference is the whole
+     reason there are two: a whole ZIP is the most precise question a parent can
+     ask the geocoder and the least useful one to ask Places. */
+  ok("a whole postcode is worth geocoding", g.worthGeocoding("91001"));
+  ok("and is never worth a places search", !g.worthPlaceSearch("91001"));
+  ok("nor is a partial one, either way", !g.worthGeocoding("910") && !g.worthPlaceSearch("910"));
+}
+
+console.log("\n=== which directory asks Google what ===");
+{
+  ok("where a parent lives is geocoded in this market", g.lookupKindFor("neighborhoods") === "place");
+  /* ⚠ The one lookup that must not prefer the market: with a country filter a
+     parent who moved from London is offered London, Ontario. */
+  ok("where they lived before is geocoded worldwide", g.lookupKindFor("previous_places") === "world");
+  for (const c of ["schools", "baby_activities", "clubs", "worship", "camps"]) {
+    ok(`${c} is a named-establishment search`, g.lookupKindFor(c) === "establishment");
+  }
+  /**
+   * ⚠ Null is a decision rather than a gap: a WhatsApp group for the mums at a
+   * preschool is not a place on a map, and asking Google about one buys a
+   * coffee shop with a similar name.
+   */
+  ok("a parent group asks Google nothing", g.lookupKindFor("parent_groups") === null);
+  ok("and neither does a category nobody has heard of", g.lookupKindFor("nonsense") === null);
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 if (fail > 0) {
   for (const f of failures) console.log(`  · ${f}`);

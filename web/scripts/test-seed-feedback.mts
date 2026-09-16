@@ -1673,6 +1673,42 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
         "a label under a chip grid is doing work a heading is not",
       );
     }
+    /**
+     * ## 16 Sep — schools is a dropdown, and that reverses the client
+     *
+     * She said *"на цій сторінці не потрібні були dropdown"* on 8 Sep, pointing
+     * at this very screen; the developer asked for it back on 16 Sep and the
+     * newer instruction wins. Pinned in both directions so neither side is lost
+     * by accident: the dropdown is on, and the starters that made the chips
+     * defensible are still curated per area, so restoring the chips is a
+     * one-line change rather than a rebuild.
+     */
+    {
+      const dir = q.searchableCategory(questionById("schools")!)!;
+      ok("the schools question is a dropdown", dir.dropdown === true);
+      ok(
+        "and it is still the area-trimmed directory, not a wholeList",
+        dir.wholeList !== true,
+        "trimming to the parent's own area is what made eight starters the right number",
+      );
+      /**
+       * ⚠ The fault the dropdown introduces if nobody threads it: this question
+       * repeats **per child**, and a dropdown's `searchLabel` is its accessible
+       * name — so two children would give a screen-reader user two controls
+       * called "Search all schools, preschools and daycares".
+       */
+      ok(
+        "each child's box is named for that child, not for the question",
+        flowSrc.includes("directory.dropdown") &&
+          flowSrc.includes("? block.heading"),
+        "the per-child branch has to pass the block heading once this is a dropdown",
+      );
+      ok(
+        "schools is still asked per child",
+        questionById("schools")?.perChildRepeat === true,
+        "the naming rule above only matters while it is",
+      );
+    }
   }
 
   /**
@@ -2106,6 +2142,90 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     "the cross-town line is written twice, not four times",
     crossTown === 2,
     `${crossTown} occurrence(s) — schools has its own screen; classes is the first field on the circles page`,
+  );
+}
+
+/**
+ * ## 16 Sep — how full the profile is, as the parent is told it
+ *
+ * The developer asked for a banner on the save screen and on `/share` saying a
+ * parent should fill the profile in as fully as possible for the quality of
+ * their answers, with a bar for how far along they are.
+ *
+ * ⚠⚠ **The measure could not be `profileCompleteness`**, and that is what these
+ * checks are really pinning. That function counts the screens a parent can
+ * *see*, and `visibleScreens` returns four of them for somebody who tapped
+ * Continue at the fork — so it reports **67%** for a profile carrying nothing
+ * but the two required answers, and does not move at all when real detail is
+ * added. A banner built on it would tell a parent they were two-thirds done at
+ * the moment they were thinnest.
+ */
+console.log("\n=== 16 Sep: the completeness a parent is shown ===");
+{
+  /* `q` is a dynamic import rather than a namespace, so its types are reached
+     through the function that takes them rather than through `q.Type`. */
+  type Answers = Parameters<typeof q.profileDepth>[0];
+  const mk = (over: Partial<Answers>): Answers =>
+    ({ ...q.EMPTY_ANSWERS, ...over }) as Answers;
+
+  const bare = mk({ neighborhood: "altadena", child_ages: [5] });
+  const deeper = mk({
+    neighborhood: "altadena",
+    child_ages: [5],
+    wants_detail: true,
+    time_in_area: "4_9_years",
+    family_structure: ["two_parents"],
+    schools: ["field-elementary"],
+  });
+
+  const a = q.profileDepth(bare);
+  const b = q.profileDepth(deeper);
+
+  ok(
+    "the denominator is the whole questionnaire, not the part they are walking",
+    a.total === b.total && a.total > 15,
+    `${a.total} vs ${b.total}`,
+  );
+  ok(
+    "so the two required answers are not reported as a finished profile",
+    a.percent < 25,
+    `${a.percent}%`,
+  );
+  ok(
+    "and the stored figure, which is not this, would have said otherwise",
+    q.profileCompleteness(bare) > 50,
+    "if this ever drops below the bar above, the two have converged and the banner can use one measure",
+  );
+  ok("adding detail moves it", b.percent > a.percent, `${a.percent}% → ${b.percent}%`);
+  ok(
+    "while the stored figure does not",
+    q.profileCompleteness(bare) === q.profileCompleteness(deeper),
+    "the reason there are two numbers",
+  );
+
+  /* Counted per question rather than per screen: since the 9 Sep merges one tap
+     on a four-question screen would otherwise have moved this by a fifth. */
+  ok(
+    "it counts questions, not screens",
+    b.total > q.visibleScreens(mk({ wants_detail: true })).length,
+    `${b.total} questions against ${q.visibleScreens(mk({ wants_detail: true })).length} screens`,
+  );
+
+  /* An expecting parent is not measured against questions about a born child:
+     they are never asked them, so counting them would make the bar unreachable
+     for a reason the parent cannot act on. */
+  const expecting = q.profileDepth(mk({ neighborhood: "altadena", child_ages: [-1] }));
+  ok(
+    "an expecting parent has a smaller questionnaire, not a worse score",
+    expecting.total < a.total,
+    `${expecting.total} vs ${a.total}`,
+  );
+
+  ok("it never exceeds 100", b.percent <= 100 && a.percent <= 100);
+  ok(
+    "and an empty profile is near zero rather than at it",
+    q.profileDepth(mk({})).percent < 10,
+    "the name-privacy default is a real answer already in force, so it is counted",
   );
 }
 
