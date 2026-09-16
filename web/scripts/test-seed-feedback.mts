@@ -841,6 +841,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
   ok("born this year: only months that have happened, this one included", ids(0) === "1,2,3,4,5,6,7,8,9", ids(0));
   ok("expecting: this month and the rest of the year", ids(-1) === "9,10,11,12", ids(-1));
   ok("an earlier birth year: all twelve", ids(3) === "1,2,3,4,5,6,7,8,9,10,11,12", ids(3));
+  ok("the oldest year (turns 18 this year): only months up to now", ids(18) === "1,2,3,4,5,6,7,8,9", ids(18));
   const derive = (await import(`../lib/derive.ts?v=${Date.now()}`)) as typeof import("../lib/derive.ts");
   const rows = derive.childrenFromAges([-1, 0, 0], sep, { "0": 11, "1": 3, "2": 12 });
   ok("a due month is stored on the expecting child, and the due year is then stated",

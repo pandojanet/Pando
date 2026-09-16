@@ -147,15 +147,25 @@ export const MONTH_OPTIONS: Option[] = [
  * it — so in the autumn a baby due next spring has no month to tap. The month is
  * optional, so they are not blocked; they simply leave it blank.
  *
+ * ⚠ **The oldest year on the list follows the same rule as this year** (16 Sep):
+ * *"show months only up to and including the current one"* for 2008. That year
+ * is on the list because a child born in it turns 18 this year, so only the
+ * months up to now are offered.
+ *
  * `now` is a parameter so the rule is testable and so the server can apply the
  * same filter at its own clock (`childrenFromAges`).
  */
 export function monthOptionsFor(age: number, now: Date = new Date()): Option[] {
   const current = now.getMonth() + 1;
   if (age === EXPECTING) return MONTH_OPTIONS.filter((m) => Number(m.id) >= current);
-  if (age === 0) return MONTH_OPTIONS.filter((m) => Number(m.id) <= current);
+  if (age === 0 || age === OLDEST_CHILD_AGE) {
+    return MONTH_OPTIONS.filter((m) => Number(m.id) <= current);
+  }
   return MONTH_OPTIONS;
 }
+
+/** The oldest birth year offered is this many years back (16 Sep: 18). */
+export const OLDEST_CHILD_AGE = 18;
 
 /**
  * **19 years, not 18** (16 Sep): a child born 2008 turns 18 this year and is
@@ -165,7 +175,7 @@ export function monthOptionsFor(age: number, now: Date = new Date()): Option[] {
  */
 export const BIRTH_YEAR_OPTIONS: Option[] = [
   { id: String(EXPECTING), label: "Expecting", wide: true },
-  ...Array.from({ length: 19 }, (_, age) => ({
+  ...Array.from({ length: OLDEST_CHILD_AGE + 1 }, (_, age) => ({
     id: String(age),
     label: String(CURRENT_YEAR - age),
   })),
