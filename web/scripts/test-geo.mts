@@ -534,6 +534,10 @@ console.log("\n=== where a parent lived before: anywhere, not just the US ===");
       p.storedValue,
     );
     ok("a place abroad is never in market", p.inMarket === false);
+    /* The line a parent reads to tell two results apart. Abroad that is the
+       country: live, Lagos came back under "LA" and Kyiv under
+       "Kyiv city 02000", neither of which says which country it is. */
+    ok("and the line under it names the country", p.where === "United Kingdom", p.where);
     /* The 15 Sep refusal still holds: Google cannot say what kind of place this
        is in Pando's vocabulary, and a foreign locality is no exception. */
     ok("and it is still not typed", p.type === null);

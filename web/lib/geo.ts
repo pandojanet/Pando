@@ -400,7 +400,17 @@ export function readGeocode(body: unknown, opts: ReadOptions = {}): GeocodeOutco
     places.push({
       key,
       name: parts.name,
-      where: whereLine({ name: parts.name, city: parts.city, state, zip }),
+      /**
+       * ⚠ Abroad the **country** disambiguates, not the region or the postcode.
+       * Measured on the live endpoint: Lagos came back under "LA" — which an
+       * English reader takes for Los Angeles or Louisiana — and Kyiv under
+       * "Kyiv city 02000". Both are the honest content of
+       * `administrative_area_level_1` and neither tells a parent which of two
+       * Londons they are tapping, which is the only job this line has.
+       */
+      where: outsideUs && countryName
+        ? whereLine({ name: parts.name, city: parts.city, state: countryName, zip: null })
+        : whereLine({ name: parts.name, city: parts.city, state, zip }),
       type: placeTypeFor(result, parts),
       city: parts.city,
       neighborhood: parts.neighborhood,
