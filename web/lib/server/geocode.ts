@@ -283,7 +283,10 @@ async function askGeocoder(
    * is what makes "Portland, OR" and "Portland, ME" two promotable rows rather
    * than one ambiguous one.
    */
-  return readGeocode(body, kind === "world" ? {} : { marketState: market.state });
+  return readGeocode(
+    body,
+    kind === "world" ? { worldwide: true } : { marketState: market.state },
+  );
 }
 
 async function askPlaces(key: string, folded: string, market: Market): Promise<Answer> {

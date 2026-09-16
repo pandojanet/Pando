@@ -320,6 +320,25 @@ export interface ReadOptions {
   marketState?: string;
   /** Results to keep. A parent choosing where they live is not browsing. */
   limit?: number;
+  /**
+   * Keep results outside the United States.
+   *
+   * ⚠⚠ **Off by default, and the default is the safe half.** The question this
+   * reader was written for is *where do you live*, whose footprint is one
+   * American county with a five-digit postcode under it — a Canadian match
+   * there is a row a parent cannot act on and a pending option nobody can
+   * promote.
+   *
+   * `previous_places` is the exact opposite and is why this exists: *"where
+   * have you lived before?"* is answered by London, Lagos and Toronto far more
+   * often than by anywhere in this county. Shipped on 16 Sep with the country
+   * filter removed from the **request** and still in force in the **reader**,
+   * so Google was asked worldwide, answered, and every row was dropped — an
+   * empty list indistinguishable from *no such place*. Two halves of one rule,
+   * one updated and one not, failing silently: the shape this repository keeps
+   * paying for.
+   */
+  worldwide?: boolean;
 }
 
 /**
@@ -357,10 +376,13 @@ export function readGeocode(body: unknown, opts: ReadOptions = {}): GeocodeOutco
     if (components.length === 0) continue;
 
     const country = componentValue(components, "country", "short");
-    /* Only the US. The footprint is one American county and the ZIP question
-       under it is a five-digit American postcode; a Canadian match would be a
+    /* Only the US, unless the caller asked for anywhere — see `worldwide`. The
+       footprint is one American county and the ZIP question under it is a
+       five-digit American postcode, so a Canadian match on *that* question is a
        row a parent cannot act on and a pending option nobody can promote. */
-    if (country !== null && country !== "US") continue;
+    if (!opts.worldwide && country !== null && country !== "US") continue;
+    const outsideUs = country !== null && country !== "US";
+    const countryName = componentValue(components, "country");
 
     const parts = primaryName(components);
     /* No name, no row. A result that is only a county or only a country is
@@ -387,8 +409,16 @@ export function readGeocode(body: unknown, opts: ReadOptions = {}): GeocodeOutco
       county: componentValue(components, "administrative_area_level_2"),
       inMarket,
       /* The state rides along out of market, because "Pasadena" on its own in
-         the pending queue is a row an admin cannot safely promote. */
-      storedValue: inMarket || !state ? parts.name : `${parts.name}, ${state}`,
+         the pending queue is a row an admin cannot safely promote — and outside
+         the US it is the **country** that disambiguates, not the region: an
+         admin reading "London, England" has to know that England is an
+         `administrative_area_level_1`, while "London, United Kingdom" is a row
+         they can promote without looking anything up. */
+      storedValue: outsideUs && countryName
+        ? `${parts.name}, ${countryName}`
+        : inMarket || !state
+          ? parts.name
+          : `${parts.name}, ${state}`,
     });
   }
 

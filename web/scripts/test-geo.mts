@@ -478,6 +478,85 @@ console.log("\n=== which directory asks Google what ===");
   ok("and neither does a category nobody has heard of", g.lookupKindFor("nonsense") === null);
 }
 
+/**
+ * ## 16 Sep — the worldwide lookup, which shipped dropping every answer
+ *
+ * `previous_places` asks Google with no country filter, and `readGeocode` still
+ * dropped every non-US row — so "london" reached Google, came back, and left as
+ * an empty list, which downstream is indistinguishable from *no such place*.
+ * Found by curling the live endpoint after the deploy rather than by reading
+ * either half, because each half is correct on its own.
+ *
+ * Pinned in both directions: the default still refuses (the neighborhood
+ * question's footprint is one American county with a five-digit postcode under
+ * it), and `worldwide` keeps.
+ */
+console.log("\n=== where a parent lived before: anywhere, not just the US ===");
+{
+  const gb = (long: string, short: string, ...types: string[]) => ({
+    long_name: long,
+    short_name: short,
+    types,
+  });
+  const london = {
+    address_components: [
+      gb("London", "London", "locality", "political"),
+      gb("Greater London", "Greater London", "administrative_area_level_2", "political"),
+      gb("England", "England", "administrative_area_level_1", "political"),
+      gb("United Kingdom", "GB", "country", "political"),
+    ],
+    formatted_address: "London, UK",
+    types: ["locality", "political"],
+  };
+  const body = { status: "OK", results: [london] };
+
+  const refused = g.readGeocode(body, { marketState: "CA" });
+  ok(
+    "the default still keeps this reader inside the US",
+    refused.ok && refused.places.length === 0,
+    "the question it was written for is where you live, and the ZIP under it is American",
+  );
+
+  const kept = g.readGeocode(body, { worldwide: true });
+  ok("worldwide keeps it", kept.ok && kept.places.length === 1);
+  if (kept.ok && kept.places[0]) {
+    const p = kept.places[0];
+    ok("and it is the place, not the country", p.name === "London");
+    /**
+     * ⚠ The **country**, never the region. An admin reading "London, England"
+     * in the pending queue has to know that England is an
+     * `administrative_area_level_1`; "London, United Kingdom" is a row they can
+     * promote without looking anything up.
+     */
+    ok(
+      "what gets stored names the country",
+      p.storedValue === "London, United Kingdom",
+      p.storedValue,
+    );
+    ok("a place abroad is never in market", p.inMarket === false);
+    /* The 15 Sep refusal still holds: Google cannot say what kind of place this
+       is in Pando's vocabulary, and a foreign locality is no exception. */
+    ok("and it is still not typed", p.type === null);
+  }
+
+  /* A US row keeps its state, on either setting — this is a widening. */
+  const portland = {
+    address_components: [
+      gb("Portland", "Portland", "locality", "political"),
+      gb("Oregon", "OR", "administrative_area_level_1", "political"),
+      gb("United States", "US", "country", "political"),
+    ],
+    formatted_address: "Portland, OR, USA",
+    types: ["locality", "political"],
+  };
+  const us = g.readGeocode({ status: "OK", results: [portland] }, { worldwide: true });
+  ok(
+    "an American place out of market still carries its state",
+    us.ok && us.places[0]?.storedValue === "Portland, OR",
+    us.ok ? us.places[0]?.storedValue : "not ok",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 if (fail > 0) {
   for (const f of failures) console.log(`  · ${f}`);
