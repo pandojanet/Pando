@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/Screen";
 import { track } from "@/lib/analytics";
 import { REWARD_OFFER } from "@/lib/rewards";
+import { WHY_INVITE } from "@/components/seed/ReferralInvite";
 import { NoSession, Next, useDoneSession } from "./shared";
 
 /**
@@ -124,9 +125,11 @@ export function WhatsNext() {
 }
 
 /**
- * D2 — referral. The reward is real ("a free Targeted Network Ask") but it is
- * earned, not given: the invited parent has to complete a profile *and* have a
- * contribution approved.
+ * D2 — referral. ⚠ This comment used to open with *the reward is real … earned,
+ * not given*, and the first half was never true — see the note on the paragraph
+ * below. What the **sender** gets is the benefit; what the **invited** parent is
+ * offered, in the message, is the client's own guaranteed $10, which is real and
+ * is hers.
  *
  * ## The limitation this card used to carry is gone (7 Sep)
  *
@@ -208,9 +211,28 @@ ${REWARD_OFFER} Terms: pando.is/terms`;
       className="mt-8"
       title="Know another parent whose recommendations people trust?"
     >
+      {/**
+        * ⚠⚠ **This said "you earn a free Targeted Network Check" until 16 Sep,
+        * and nothing in the product granted one.** Not automatically — the only
+        * `insert into credits` is the blast-expiry guarantee — and not by hand
+        * either, because there is no admin action for it; `referral.link` writes
+        * `profile_complete` under a comment explaining why it must not write
+        * `credited`. So this was a promise made to every contributor on the last
+        * screen of the flow and kept by nobody: the *find the write that
+        * maintains it, or change the sentence* rule (20 Aug) with the write
+        * missing.
+        *
+        * ⚠ It also contradicted the other three surfaces, which have carried the
+        * honest motivation since 9 Sep precisely because a credit cannot be
+        * promised — so one constant serves all four now, rather than one screen
+        * quietly offering what the others knew better than to.
+        *
+        * ⚠ Granting the credit for real is the other way to fix this, and it is
+        * the client's call rather than ours: her §6 of 10 Sep says the
+        * guaranteed $10 is the only launch incentive.
+        */}
       <p className="mt-1 leading-relaxed text-muted text-help">
-        When someone you invite completes their profile and has a contribution
-        approved, you earn a free Targeted Network Check.
+        {WHY_INVITE}
         {code
           ? " The link below is yours — anyone who joins through it is recorded as having come from you."
           : ""}

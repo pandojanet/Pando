@@ -2229,5 +2229,92 @@ console.log("\n=== 16 Sep: the completeness a parent is shown ===");
   );
 }
 
+/**
+ * ## 16 Sep — the referral link motivates, and promises nothing
+ *
+ * The developer asked for encouraging copy beside the link. The encouragement is
+ * allowed; a **reward** is not, and the reason is not squeamishness:
+ *
+ *  - a referral credit is denominated in Network Checks and **nothing grants
+ *    one** — the only `insert into credits` is the blast-expiry guarantee,
+ *    `referral.link` writes `profile_complete`, and no admin action exists;
+ *  - the client's §6 of 10 Sep says the guaranteed $10 is *"the only launch
+ *    incentive"*, so a second one is hers to decide.
+ *
+ * `/done/next` promised *"you earn a free Targeted Network Check"* until today,
+ * on the last screen of the flow, kept by nobody — so this is pinned rather than
+ * left to a comment for the third time.
+ */
+console.log("\n=== 16 Sep: the invite motivates and promises nothing ===");
+{
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const referralSrc = src("../components/seed/ReferralInvite.tsx");
+  const nextSrc = src("../components/seed/done/WhatsNext.tsx");
+
+  /* The sentence itself, read out of the constant rather than restated here —
+     a copy in the suite is a copy that drifts. */
+  const why = /export const WHY_INVITE =\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "";
+  ok("there is a motivating line at all", why.length > 40, `${why.length} chars`);
+  ok(
+    "and it names the benefit rather than the mechanic",
+    /answer/i.test(why),
+    "the mechanic — who gets recorded as the referrer — answers a question nobody asked",
+  );
+  ok(
+    "it promises nothing in return",
+    !/\bearn\b|\bfree\b|\bcredit\b|\breward\b|\bbonus\b|\bgift\b/i.test(why),
+    why,
+  );
+
+  /* Every surface reads the one constant, which is what stopped three of them
+     drifting and is what let the fourth be fixed in one place. */
+  for (const [name, count] of [["ReferralInvite", 3], ["WhatsNext", 1]] as const) {
+    const body = name === "ReferralInvite" ? referralSrc : nextSrc;
+    ok(
+      `${name} renders the shared line`,
+      (body.match(/\{WHY_INVITE\}/g) ?? []).length >= count,
+      `${(body.match(/\{WHY_INVITE\}/g) ?? []).length} of ${count}`,
+    );
+  }
+
+  /**
+   * ⚠ Source checks rather than string checks, because what must not come back
+   * is the *claim*, in whatever wording. Comments are stripped first: the fix
+   * itself quotes the old sentence to explain why it went.
+   */
+  const strip = (t: string) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  /**
+   * ⚠ The **referral card**, not the whole module. `/done/next` also carries the
+   * client’s own *"their first Network Check on us"* on the Founding card — a
+   * different claim, from her strategy §8 rather than from us, and not this
+   * guard’s business. A file-wide grep fails on it and would push somebody into
+   * editing her copy to make a test go green.
+   */
+  const referralCard = nextSrc.slice(nextSrc.indexOf("function ReferralCard"));
+  for (const [name, body] of [
+    ["the invite surfaces", referralSrc],
+    ["the thank-you card", referralCard],
+  ] as const) {
+    ok(
+      `${name} offer the sender nothing to earn`,
+      !/you earn|Network Check|Network Ask/i.test(strip(body)),
+      "a credit nothing in this codebase grants",
+    );
+  }
+
+  /**
+   * ⚠⚠ And the guard above must not take the **real** offer with it. The $10 is
+   * the client's own, it is for whoever *joins* rather than for the sender, and
+   * it belongs in the invite message — deleting it while removing a reward the
+   * sender was falsely promised would be this fix overshooting.
+   */
+  ok(
+    "the invited parent is still told about the guaranteed $10",
+    nextSrc.includes("REWARD_OFFER"),
+    "her §6 offer, in the message a parent sends",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

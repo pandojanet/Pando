@@ -143,9 +143,30 @@ function CopyLink({ code }: { code: string }) {
  * ⚠ Provisional copy. Her note on this item is *"погоджено; final wording
  * немає"* — the text is agreed in principle and not in words, so this is on the
  * list for her like everything else in this file.
+ *
+ * ## 16 Sep — stronger, and still not a reward
+ *
+ * The developer: the link has no motivating copy beside it, and a parent should
+ * be encouraged to send it — *"ти наповнюєш мережу, твої відповіді будуть краще
+ * оброблятись"*. The second half of that sentence is the honest benefit and is
+ * what this now says in full: the matcher scores shared connections and life
+ * relevance, so a parent nearby with children the same age is literally what
+ * makes an answer good. Measured on 9 Sep, the network is thin enough for that
+ * to be the plain truth rather than a flourish — six of thirteen curated topics
+ * held **zero** records, and fifteen of thirty-nine contributors could be
+ * matched at all.
+ *
+ * ⚠⚠ **What it still must not say is "and you get X for it"**, for two separate
+ * reasons and either one is enough on its own. A referral credit is denominated
+ * in Network Checks, and **nothing in this codebase grants one**: the only
+ * `insert into credits` is the blast-expiry guarantee, `referral.link` writes
+ * `profile_complete` under a comment saying in so many words why it must not
+ * write `credited`, and there is no admin action for it either. And the client's
+ * own §6 of 10 Sep is that the guaranteed $10 is *"the only launch incentive"* —
+ * a second one is her decision to take, not ours.
  */
-const WHY_INVITE =
-  "Pando answers with what local parents know, so it is only as good as who is in it. Every parent you bring makes the answers you get better.";
+export const WHY_INVITE =
+  "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you, with children the age of yours, whose experience can come back in an answer.";
 
 /**
  * The same link as a small box in a screen header — her instruction of 8 Sep:
