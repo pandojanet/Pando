@@ -2493,6 +2493,26 @@ const SEARCHABLE_QUESTIONS: Partial<
        * has.
        */
       dropdown?: boolean;
+      /**
+       * Hide the search field's own label, keeping it as the accessible name.
+       *
+       * For the four local directories the box sits *under a grid of chips*, so
+       * "Search all schools, preschools and daycares" is what separates the two
+       * controls and tells a parent the rest of the market is reachable.
+       *
+       * `previous_places` has no starters at all, so there is nothing between
+       * the question's own heading and the box — and the field label then sat
+       * directly beneath *"Where have you lived before?"* saying the same thing
+       * in different words, with the placeholder saying it a third time. The
+       * developer's instruction (16 Sep) is to take that line off; the label
+       * stays in the markup as `sr-only`, because it is the input's accessible
+       * name and a placeholder is not one.
+       *
+       * ⚠ Read by the search **field** only. No dropdown question sets it, and
+       * `OptionPicker` has no equivalent — the day one does, this has to be
+       * threaded there too rather than silently doing nothing.
+       */
+      searchLabelHidden?: boolean;
     }
   >
 > = {
@@ -2564,10 +2584,13 @@ const SEARCHABLE_QUESTIONS: Partial<
   },
   previous_places: {
     category: "previous_places",
-    /* Her label, and it is doing real work: it says what a valid answer looks
-       like (a city, a state, a country) for a field with no chips above it to
-       demonstrate the shape. */
+    /* The input's accessible name and nothing on screen — see
+       `searchLabelHidden`. It says what a valid answer looks like (a city, a
+       state, a country), which is what a screen reader needs from a box whose
+       only other description is a placeholder; a sighted parent reads the same
+       shape in the placeholder itself, under the question's own heading. */
     searchLabel: "Add a city, state or country",
+    searchLabelHidden: true,
   },
 };
 
@@ -2669,6 +2692,7 @@ export function searchableCategory(
   footnote?: string;
   wholeList?: boolean;
   dropdown?: boolean;
+  searchLabelHidden?: boolean;
 } | null {
   /* Only a market-sourced question can be searched — a static list has nothing
      behind it to find. */

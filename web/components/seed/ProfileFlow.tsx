@@ -1924,8 +1924,9 @@ export function ProfileFlow() {
                               market={market}
                               area={answers.neighborhood}
                               wholeList={directory.wholeList}
-                  dropdown={directory.dropdown}
+                              dropdown={directory.dropdown}
                               searchLabel={directory.searchLabel}
+                              searchLabelHidden={directory.searchLabelHidden}
                               footnote={last ? directory.footnote : undefined}
                             />
                           ) : question.source.type === "market" ||
@@ -2086,6 +2087,7 @@ export function ProfileFlow() {
                   wholeList={directory.wholeList}
                   dropdown={directory.dropdown}
                   searchLabel={directory.searchLabel}
+                  searchLabelHidden={directory.searchLabelHidden}
                   footnote={directory.footnote}
                   /**
                    * A place the map verified, which is a different permission

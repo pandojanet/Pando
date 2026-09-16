@@ -71,6 +71,17 @@ interface Props {
   /** "Search all schools, preschools and daycares" — her wording per category. */
   searchLabel: string;
   /**
+   * Render `searchLabel` as the accessible name only, with nothing on screen.
+   *
+   * For `previous_places` there are no chips between the question heading and
+   * this box, so the visible label repeated the heading and the placeholder
+   * repeated the label — one field wearing three descriptions. Set per question
+   * in `SEARCHABLE_QUESTIONS`, never inferred from the options being empty: an
+   * emptiness test would put the label back the moment a parent picked a place,
+   * which is a heading appearing under their own answer.
+   */
+  searchLabelHidden?: boolean;
+  /**
    * One line under the box, per question.
    *
    * It was hardcoded to "it doesn't have to be in your own city", which is her
@@ -144,6 +155,7 @@ export function SearchableChipGroup({
   wholeList,
   dropdown,
   searchLabel,
+  searchLabelHidden,
   footnote,
   onAddPlace,
   options,
@@ -585,6 +597,7 @@ export function SearchableChipGroup({
         <Field
           id={`search-${category}`}
           label={searchLabel}
+          labelHidden={searchLabelHidden}
           value={query}
           /* Points at the one status line below, so the count is available on
              demand and not only when it happens to be announced. `Field` merges

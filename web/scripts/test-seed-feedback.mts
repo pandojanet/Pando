@@ -1621,6 +1621,58 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
           "previous_places",
       String(questionById("previous_places")?.source.type),
     );
+    /**
+     * ## 16 Sep — one description per field, and the hidden one is the name
+     *
+     * The developer, pointing at the Life Context screen: *"Where have you
+     * lived before — прибрати опцію city, state or country"*. That box wore
+     * three descriptions stacked: the question heading, a bold field label
+     * saying the same thing in different words, and a placeholder saying it a
+     * third time. The label is off the screen and **stays in the markup**,
+     * because it is the input's accessible name and a placeholder is not one —
+     * so the two halves are asserted separately. A check that only read the
+     * flag would pass on a build that deleted the label outright.
+     */
+    {
+      const dir = q.searchableCategory(questionById("previous_places")!)!;
+      ok(
+        "the search box on previous places has no visible label of its own",
+        dir.searchLabelHidden === true,
+        "the question's own heading is directly above it — a second one repeats it",
+      );
+      ok(
+        "and it still has one for a screen reader",
+        typeof dir.searchLabel === "string" && dir.searchLabel.trim().length > 0,
+        "hidden is sr-only, never absent: a placeholder is not an accessible name",
+      );
+      /* Read by the component, or the flag is a decision nothing carries out —
+         the written-and-never-called fault this repository keeps paying for. */
+      const searchSrc = fs.readFileSync(
+        new URL("../components/ui/SearchableChipGroup.tsx", import.meta.url),
+        "utf8",
+      );
+      ok(
+        "the search field honours it",
+        searchSrc.includes("labelHidden={searchLabelHidden}"),
+        "the flag is declared and the Field never reads it",
+      );
+      ok(
+        "and the flow passes it through",
+        flowSrc.includes("searchLabelHidden={directory.searchLabelHidden}"),
+        "set in questions.ts and dropped between there and the component",
+      );
+      /* And it does not spread: on the four local directories the box sits
+         under a grid of chips, where the label is what separates the two
+         controls and says that the rest of the market is reachable. */
+      ok(
+        "the directories that have chips above the box keep their label",
+        (["schools", "classes", "clubs", "faith"] as const).every(
+          (id) =>
+            q.searchableCategory(questionById(id)!)?.searchLabelHidden !== true,
+        ),
+        "a label under a chip grid is doing work a heading is not",
+      );
+    }
   }
 
   /**
