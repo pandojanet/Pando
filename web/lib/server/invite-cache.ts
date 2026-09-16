@@ -48,6 +48,13 @@ export interface InviteRecord {
    * is served the name, and this is read on the write path only.
    */
   referrer_person_id: string | null;
+  /**
+   * Whether the referrer lets their first name show (16 Sep): their standing
+   * `people.attribution` is `first_name_safe`. Anything else — including a
+   * skipped answer — keeps them unnamed, the same fail-closed default as
+   * everywhere else.
+   */
+  inviter_named: boolean;
 }
 
 const TTL_MS = 60_000;

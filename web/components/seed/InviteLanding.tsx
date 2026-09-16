@@ -25,6 +25,11 @@ import {
   type VerifyStatus,
 } from "@/lib/api-client";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
+import { ChipGroup } from "@/components/ui/ChipGroup";
+import {
+  RELATIONSHIP_OPTIONS,
+  relationshipQuestion,
+} from "@/lib/inviter-relationship";
 import {
   buildConsentRecord,
   SMS_CONSENT_AGREEMENT,
@@ -91,7 +96,9 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * confirmed. `session` carries what was saved, so the code screen addresses
    * the number that was actually stored rather than the field's text.
    */
-  const [step, setStep] = useState<"form" | "verify">("form");
+  const [step, setStep] = useState<"form" | "verify" | "relationship">("form");
+  /** The tap on the relationship question, before Continue saves it. */
+  const [relationship, setRelationship] = useState<string | null>(null);
   const [session, setSession] = useState<SeedSession | null>(null);
   /**
    * A profile already exists on this number, found **after** the code rather
@@ -311,6 +318,46 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       return;
     }
 
+    proceed(saved);
+  }
+
+  /**
+   * On to the questions — unless this parent arrived on somebody's **personal**
+   * link and has not yet said how they know them (16 Sep). That question sits
+   * here, after the name and number (and the code, where one is sent) and
+   * before the first profile question.
+   *
+   * ⚠ Only for the invite this session actually carries: a resumed session that
+   * came in on a different link is not asked about this one's owner.
+   */
+  function proceed(current: SeedSession) {
+    const ask =
+      resolved.valid &&
+      resolved.has_inviter === true &&
+      current.invite_code === inviteCode &&
+      !current.inviter_relationship_asked &&
+      !current.profile_saved_at;
+    if (ask) {
+      setSession(current);
+      setRelationship(current.inviter_relationship ?? null);
+      setStep("relationship");
+      track("seed_inviter_relationship_shown", { named: Boolean(resolved.inviter_first_name) });
+      return;
+    }
+    router.push("/profile");
+  }
+
+  function answerRelationship(value: string | null) {
+    if (!session) return;
+    const next = saveSession({
+      ...session,
+      inviter_relationship: value,
+      inviter_relationship_asked: true,
+    });
+    track(value ? "seed_inviter_relationship_answered" : "seed_inviter_relationship_skipped", {
+      relationship: value ?? undefined,
+    });
+    setSession(next);
     router.push("/profile");
   }
 
@@ -329,14 +376,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * the end is still an upsert the parent will be asked about on the fallback
    * path.
    */
-  async function afterEntryVerified() {
+  async function afterEntryVerified(verified: SeedSession) {
     const me = await fetchMe();
     if (me.ok && me.found && me.profile_saved) {
       setReturning(me.first_name ?? "");
       track("seed_profile_exists_shown");
       return;
     }
-    router.push("/profile");
+    proceed(verified);
   }
 
   function startOver() {
@@ -381,6 +428,56 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * resume panel. What a parent needs here is the number, the box, and the way
    * back if the number is wrong.
    */
+  /**
+   * "How do you know the person who invited you?" (16 Sep). One single-select
+   * question on its own screen, skippable, and worded by the inviter's own
+   * privacy: `inviter_first_name` only reaches this page when they let their
+   * first name show, so a private inviter is asked about generically.
+   */
+  if (step === "relationship" && session) {
+    const question = relationshipQuestion(resolved.inviter_first_name);
+    return (
+      <Screen>
+        <ScreenHeader left={<Wordmark />} />
+        <ScreenBody className="pt-7">
+          <Container>
+            <Eyebrow>Before the questions</Eyebrow>
+            <h1 className="mt-2.5 font-display text-[1.7rem] font-bold leading-tight">
+              {question}
+            </h1>
+            <p className="mt-2.5 leading-relaxed text-ink-soft text-control">
+              This stays inside Pando — it is never shown to anyone.
+            </p>
+            <div className="mt-6">
+              <ChipGroup
+                groupLabel={question}
+                options={RELATIONSHIP_OPTIONS.map((o) => ({ id: o.id, label: o.label }))}
+                mode="single"
+                selected={relationship ? [relationship] : []}
+                onChange={(next) => setRelationship(next[0] ?? null)}
+              />
+            </div>
+          </Container>
+        </ScreenBody>
+        <ScreenDock>
+          <Button
+            full
+            disabled={!relationship}
+            onClick={() => answerRelationship(relationship)}
+          >
+            Continue
+            <ArrowRight />
+          </Button>
+          <div className="flex justify-center py-1">
+            <TextAction tone="quiet" onClick={() => answerRelationship(null)}>
+              Skip
+            </TextAction>
+          </div>
+        </ScreenDock>
+      </Screen>
+    );
+  }
+
   if (step === "verify" && session?.phone) {
     return (
       <Screen>
@@ -447,7 +544,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                     const verified = saveSession({ ...session, phone_verified: true });
                     setSession(verified);
                     track("seed_verified", { at: "entry" });
-                    void afterEntryVerified();
+                    void afterEntryVerified(verified);
                   }}
                 />
               </>

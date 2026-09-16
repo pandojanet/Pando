@@ -375,6 +375,7 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     /** False until SMS verification exists — never implied (see lib/consent.ts). */
     phone_verified: session.phone_verified === true,
     sms_consent: session.sms_consent,
+    inviter_relationship: session.inviter_relationship ?? null,
     /**
      * Unlike `sms_consent` (taken early, at the phone field, and carried on the
      * session from that moment) this is an ordinary mid-profile tap — built here

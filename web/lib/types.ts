@@ -748,6 +748,15 @@ export interface SeedSession {
   referral_code: string | null;
   referral_shown_at: string | null;
   /**
+   * How they know the parent whose personal link brought them (16 Sep). Asked
+   * once, on `/join`, between the number and the questions — and only on a
+   * personal link. `inviter_relationship_asked` is true once they answered
+   * **or** skipped, so a skip is not asked again. Stored server-side with the
+   * profile, never before the number is confirmed.
+   */
+  inviter_relationship?: string | null;
+  inviter_relationship_asked?: boolean;
+  /**
    * Completion screen state (estimate 1.7). `follow_up_opt_in` is the one Phase 1
    * field that unlocks Phase 2 — it maps to blast_opt_in at migration — so it is
    * stored with the consent record that produced it, never as a bare boolean.
@@ -804,6 +813,8 @@ export interface ProfilePayload {
   phone: string | null;
   /** Only true once a one-time code has been confirmed. */
   phone_verified: boolean;
+  /** 16 Sep: how they know their inviter; the server keeps it only on a personal link. */
+  inviter_relationship?: string | null;
   sms_consent: import("./consent").ConsentRecord | null;
   /**
    * The listening-ear opt-in, recorded the same way every other consent is —
@@ -889,6 +900,13 @@ export interface InviteResult {
    * name. Only `invites.kind = 'personal'` carries a referrer.
    */
   inviter_first_name?: string | null;
+  /**
+   * A personal link with a person behind it (16 Sep) — whether or not that
+   * person may be named. It decides whether the relationship question is
+   * asked; `inviter_first_name` is sent only when the inviter's own
+   * attribution lets their first name show.
+   */
+  has_inviter?: boolean;
   /**
    * ⚠ **The inviter's *id* is deliberately not here**, and that was the first
    * attempt (14 Sep). `InviteResult` is handed to the join page and therefore

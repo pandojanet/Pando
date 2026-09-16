@@ -379,6 +379,9 @@ export function loadSession(): SeedSession | null {
       consent: parsed.consent ?? null,
       demand: parsed.demand ?? null,
       completed_at: parsed.completed_at ?? null,
+      inviter_relationship:
+        typeof parsed.inviter_relationship === "string" ? parsed.inviter_relationship : null,
+      inviter_relationship_asked: parsed.inviter_relationship_asked === true,
     };
   } catch {
     return null;

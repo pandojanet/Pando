@@ -117,6 +117,8 @@ export interface ProfileInput {
    * code the server validated, never from the body.
    */
   invited_by: string | null;
+  /** How they know `invited_by` (16 Sep, drizzle/0044). Null unless both exist. */
+  inviter_relationship?: string | null;
   children: ChildInput[];
   child_ages_at_capture: number[];
   profile_captured_at: string;
@@ -276,6 +278,19 @@ export async function writeProfile(
         .values(personValues)
         .returning({ id: people.id });
       personId = row.id;
+    }
+
+    /* The relationship edge to their inviter (16 Sep). The latest answer wins
+       — it is the parent's own description and they may correct it — and it is
+       an edge rather than a column so deleting either person removes it. */
+    /* Never an edge to themselves: a parent opening their own link would
+       otherwise abort the whole profile write on the not-self CHECK. */
+    if (input.invited_by && input.inviter_relationship && input.invited_by !== personId) {
+      await tx.execute(sql`
+        insert into person_relationships (person_id, related_person_id, relationship, source)
+        values (${personId}::uuid, ${input.invited_by}::uuid, ${input.inviter_relationship}, 'invite')
+        on conflict (person_id, related_person_id)
+        do update set relationship = excluded.relationship, updated_at = now()`);
     }
 
     /**

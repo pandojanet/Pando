@@ -95,6 +95,11 @@ export type SeedEvent =
    */
   | "seed_profile_deleted"
   | "seed_complete_profile_opened"
+  /* The invite relationship question (16 Sep). `named` says which wording was
+     shown; the answer is an enum id, never free text. */
+  | "seed_inviter_relationship_shown"
+  | "seed_inviter_relationship_answered"
+  | "seed_inviter_relationship_skipped"
   /**
    * Coming back (7 Sep). Three events, because the drop-off worth measuring is
    * between them: a parent who asked for a code and never confirmed one is a

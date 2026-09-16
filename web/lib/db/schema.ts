@@ -1505,6 +1505,38 @@ export const geocodeCache = pgTable(
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;
 export type Share = typeof shares.$inferSelect;
+/**
+ * How two people know each other (16 Sep, drizzle/0044) — the first edges of an
+ * internal relationship graph, written from the invite question. Cascades from
+ * both ends; never shown to another parent and not read by the matcher.
+ */
+export const personRelationships = pgTable(
+  "person_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    relatedPersonId: uuid("related_person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull(),
+    source: text("source").notNull().default("invite"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("person_relationships_pair_key").on(t.personId, t.relatedPersonId),
+    check("person_relationships_not_self", sql`${t.personId} <> ${t.relatedPersonId}`),
+    check(
+      "person_relationships_relationship_check",
+      sql`${t.relationship} in ('family','close_friend','friend','neighbor','colleague','parent_group','school_parent','other')`,
+    ),
+    check("person_relationships_source_check", sql`${t.source} in ('invite')`),
+    index("person_relationships_related_idx").on(t.relatedPersonId),
+  ],
+);
+
 export type ShareContribution = typeof shareContributions.$inferSelect;
 export type Caregiver = typeof caregivers.$inferSelect;
 export type CaregiverNomination = typeof caregiverNominations.$inferSelect;

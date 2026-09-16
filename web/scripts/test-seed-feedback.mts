@@ -858,6 +858,23 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       target >= 0 && q.visibleQuestions(full[target], thin).some((x) => !q.isQuestionAnswered(x, thin)),
       String(target));
   }
+  {
+    /* 16 Sep: how they know the person whose personal link brought them. */
+    const rel = (await import(`../lib/inviter-relationship.ts?v=${Date.now()}`)) as typeof import("../lib/inviter-relationship.ts");
+    ok("a named inviter is asked about by name", rel.relationshipQuestion("Jenny") === "How do you know Jenny?");
+    ok("a private inviter is asked about generically",
+      rel.relationshipQuestion(null) === "What's your relationship with the person who invited you?");
+    ok("family, close friend, colleague and a parent group are all offered",
+      ["family", "close_friend", "colleague", "parent_group"].every((id) => rel.isRelationship(id)));
+    ok("an invented relationship is refused", !rel.isRelationship("best_friend_forever"));
+    const inviteSrc = fs.readFileSync(new URL("../lib/server/invite.ts", import.meta.url), "utf8");
+    ok("the inviter's first name reaches the browser only when they allow it",
+      inviteSrc.includes("invite.inviter_named ? invite.inviter_first_name : null") &&
+        inviteSrc.includes("p.attribution = 'first_name_safe'"));
+    const migration = fs.readFileSync(new URL("../drizzle/0044_person_relationships.sql", import.meta.url), "utf8");
+    const allIds = rel.RELATIONSHIP_OPTIONS.map((o) => o.id);
+    ok("every offered relationship is allowed by the database", allIds.every((id) => migration.includes(`'${id}'`)));
+  }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
   const flowForReview = fs.readFileSync(new URL("../components/seed/ProfileFlow.tsx", import.meta.url), "utf8");

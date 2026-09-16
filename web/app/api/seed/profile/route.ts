@@ -1,3 +1,4 @@
+import { isRelationship } from "@/lib/inviter-relationship";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -211,6 +212,12 @@ export async function POST(request: Request) {
    * parent's record.
    */
   const invitedBy = await inviterIdFor(raw.invite_code ?? null);
+  /* How they know that inviter (16 Sep). Kept only when there is an inviter to
+     know and the value is one the question offers. */
+  const inviterRelationship =
+    invitedBy && isRelationship(raw.inviter_relationship)
+      ? raw.inviter_relationship
+      : null;
 
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
@@ -647,6 +654,7 @@ export async function POST(request: Request) {
       place_id: placeId,
       selected_zip: selectedZip,
       invited_by: invitedBy,
+      inviter_relationship: inviterRelationship,
       children: payload.children as never,
       child_ages_at_capture: payload.child_ages_at_capture,
       profile_captured_at: payload.profile_captured_at,

@@ -86,7 +86,9 @@ async function liveInvites(): Promise<{
       sql`select i.id, i.code, i.market_id, i.label, i.group_option_value,
                  i.referrer_person_id,
                  case when i.kind = 'personal' then p.first_name end
-                   as inviter_first_name
+                   as inviter_first_name,
+                 coalesce(i.kind = 'personal' and p.attribution = 'first_name_safe', false)
+                   as inviter_named
             from invites i
             left join people p on p.id = i.referrer_person_id
            where i.active`,
@@ -118,6 +120,7 @@ async function liveInvites(): Promise<{
           : null,
       referrer_person_id:
         typeof row.referrer_person_id === "string" ? row.referrer_person_id : null,
+      inviter_named: row.inviter_named === true,
     });
   }
   cacheInvites(table);
@@ -149,7 +152,11 @@ export async function validateInviteCode(
       invite_id: invite.id,
       group_label: invite.label,
       group_option_value: invite.group_option_value,
-      inviter_first_name: invite.inviter_first_name,
+      /* Named only when the inviter allows it (16 Sep). A private inviter is
+         neither named in "{first name} invited you" nor in the relationship
+         question — the name does not reach the browser at all. */
+      inviter_first_name: invite.inviter_named ? invite.inviter_first_name : null,
+      has_inviter: invite.referrer_person_id !== null,
     };
   }
 
