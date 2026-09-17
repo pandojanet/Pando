@@ -851,13 +851,26 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
   ok("a past month on a baby on the way is dropped",
     derive.childrenFromAges([-1], sep, { "0": 2 })[0].due_month === null);
   {
-    /* "Complete your profile" lands on something that moves the percentage. */
+    /* Was: "complete-your-profile opens a screen with an unanswered question".
+       That control and the function behind it went on 17 Sep, so what is left
+       to hold is the route that replaced it — every question the percentage
+       counts is a row in the review's fold, which is what makes the removal
+       safe. Asserted on the thinnest real profile: the two required answers
+       and the participation level. */
     const thin = { ...q.EMPTY_ANSWERS, neighborhood: "altadena", child_ages: [4], allowance: "5" } as ProfileAnswers;
-    const target = q.firstIncompleteScreen(thin);
-    const full = q.visibleScreens({ ...thin, wants_detail: true });
-    ok("complete-your-profile opens a screen with an unanswered question",
-      target >= 0 && q.visibleQuestions(full[target], thin).some((x) => !q.isQuestionAnswered(x, thin)),
-      String(target));
+    const opened = { ...thin, wants_detail: true };
+    const listed = q
+      .visibleScreens(opened)
+      .filter((s) => !q.isStatementScreen(s))
+      .flatMap((s) => q.visibleQuestions(s, opened));
+    const unanswered = listed.filter((x) => !q.isQuestionAnswered(x, thin));
+    const depth = q.profileDepth(thin);
+    ok(
+      "every question the percentage counts is one the review can list",
+      listed.length === depth.total && unanswered.length === depth.total - depth.answered,
+      `${listed.length} listed, ${depth.total} counted`,
+    );
+    ok("and a thin profile still has some to list", unanswered.length > 0);
   }
   {
     /* 16 Sep: how they know the person whose personal link brought them. */
@@ -2654,6 +2667,56 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ]) {
     ok(`${id} is inside the footprint`, places.placeById(id) !== null);
   }
+}
+
+/**
+ * ## 17 Sep — the reminder stopped rhyming with Save
+ *
+ * The developer: *"під час редагування профілю не має бути опції Complete
+ * Profile і спробуй її переназвати, бо вона співзвучна з Save Profile. Також
+ * спробуй збільшити шрифт, додати більше акценту…"*
+ *
+ * Read on the **source**, because all three are branches inside React
+ * components this pure suite cannot render — which is the same reason the
+ * 16 Sep `reviewScreens` checks live there.
+ */
+{
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const flow = src("../components/seed/ProfileFlow.tsx");
+  const depth = src("../components/seed/ProfileDepth.tsx");
+  const dock = flow.slice(flow.indexOf("Save my profile"), flow.indexOf("Delete sits directly under Save"));
+
+  ok(
+    "the review dock offers nothing that opens the questions",
+    !/<DepthReminder/.test(dock),
+    dock.slice(0, 120),
+  );
+  ok(
+    "and the review's own reminder is the emphasised one, with no control",
+    /part="lead"/.test(flow) && !/part="note"/.test(flow),
+  );
+  ok(
+    "the control no longer rhymes with Save my profile",
+    !depth.includes(">Complete your profile<"),
+  );
+  /* Not new copy: it is the optional fork's own label, and this control does
+     literally what that button does. */
+  ok(
+    "it borrows the fork's own words instead",
+    depth.includes(">Add optional details<") &&
+      Object.values(q.SCREENS).some(() => true) &&
+      src("../lib/questions.ts").includes('detailLabel: "Add optional details"'),
+  );
+  ok(
+    "the argument is set at body size rather than as a footnote",
+    /part === "lead" \? \(/.test(depth) && /text-body/.test(depth),
+  );
+  /* It names the work rather than the score: the percentage is already on that
+     screen twice, in the header label and the bar under it. */
+  ok(
+    "and it counts what is left rather than repeating the percentage",
+    depth.includes("still to answer"),
+  );
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

@@ -3076,21 +3076,13 @@ export interface ProfileDepth {
   percent: number;
 }
 
-/**
- * Where "Complete your profile" takes a parent (16 Sep): the first screen, in
- * the flow as if the optional fork had been opened, that still has an
- * unanswered question — the same questions `profileDepth` counts, so the
- * button always lands on something that moves the percentage. -1 when nothing
- * is left.
- */
-export function firstIncompleteScreen(answers: ProfileAnswers): number {
-  const full: ProfileAnswers = { ...answers, wants_detail: true };
-  return visibleScreens(full).findIndex(
-    (s) =>
-      !isStatementScreen(s) &&
-      visibleQuestions(s, full).some((q) => !isQuestionAnswered(q, answers)),
-  );
-}
+/* `firstIncompleteScreen` stood here until 17 Sep — the first screen, with the
+   optional fork opened, still holding an unanswered question. Its one caller was
+   the review dock's "Complete your profile", which the developer had removed
+   that day for reading as "Save my profile"; deleted with it rather than left
+   exported and uncalled, which is the fault this file records four times. Every
+   question it could have reached is a row in the review's own fold, each with
+   its own Add. */
 
 export function profileDepth(answers: ProfileAnswers): ProfileDepth {
   /* The whole questionnaire, not the part this parent happens to be walking. */

@@ -74,17 +74,27 @@ export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
  * first unanswered question) or `href` (anywhere else). Renders nothing at 100%:
  * a reminder that cannot be acted on is chrome.
  *
- * ⚠ **`part` splits the sentence from the control, and only the review page
- * uses it** (16 Sep, the developer: *"Complete your profile перенесемо теж під
- * Save your profile"*). There the two halves end up on different parts of one
- * screen — the argument above the answers it is about, the action in the dock
- * beside Save — so they cannot be one block. Measured whole in the dock it cost
- * **235px of an 812px phone**, and its first clause repeated the *"N% done"*
- * already in the header bar two inches above.
+ * ## `part`, and what each value is for
  *
- * ⚠ The 100% rule is checked once, here, for both halves — a build that
- * rendered the sentence and hid the control, or the reverse, is the fault this
- * split most easily introduces.
+ * `both` is `/share`: the percentage, the argument and the way back to the
+ * questions, in one block above the thread.
+ *
+ * `lead` is the review screen, and it carries **no percentage and no control**.
+ * ⚠⚠ **Both absences are deliberate and each reverses something.** The number
+ * is on that screen twice already — `ProfilePercentLabel` in the header slot
+ * and `ProfilePercentBar` under it — so a third saying of it was the one thing
+ * the 16 Sep dock note had already complained about, and spending the line on
+ * the argument instead is what the developer asked for on 17 Sep: *"більше
+ * акценту на тому, що потрібно заповнити профіль, можливо доповни текст"*. And
+ * the control is gone from that screen entirely — see `action` below.
+ *
+ * `action` is the control alone. It has no caller since 17 Sep and is kept:
+ * the day a surface wants the reminder split across a screen again, this is the
+ * half that goes in the dock, and `/share` proves the other half still works.
+ *
+ * ⚠ The 100% rule is checked once, here, for every part — a build that rendered
+ * the sentence and hid the control, or the reverse, is the fault this split
+ * most easily introduces.
  */
 export function DepthReminder({
   depth,
@@ -96,25 +106,67 @@ export function DepthReminder({
   depth: ProfileDepth;
   onComplete?: () => void;
   href?: string;
-  part?: "both" | "note" | "action";
+  part?: "both" | "lead" | "action";
   className?: string;
 }) {
   if (depth.total === 0 || depth.answered >= depth.total) return null;
   return (
     <div className={className}>
-      {part !== "action" && (
-        <p className="leading-relaxed text-help text-muted">
+      {part === "lead" ? (
+        /**
+         * Body size rather than help size, because this is the argument the
+         * screen is making and not a footnote to it — 16.5px against 14px, the
+         * step the design system calls body.
+         *
+         * ⚠ **It counts what is left rather than what is done**, which is the
+         * same fact said as something to act on: "14 questions still to
+         * answer" names the work, where "30% done" names a score, and the
+         * score is already in the header twice.
+         *
+         * ⚠⚠ **It promises relevance and never access.** The client's own
+         * appendix is that P14 is the only thing gating Community Access, and
+         * `profileCompleteness` has carried *"informational only — it never
+         * gates anything"* since it was written. Everything claimed here is
+         * what `matchesFor` literally scores: the area, the children's ages,
+         * the shared connections, then life relevance.
+         */
+        <p className="leading-relaxed text-body">
           <span className="font-semibold text-green-deep tabular-nums">
-            {depth.percent}% done
-          </span>
-          {" — the stronger your profile, the better your matches."}
+            {depth.total - depth.answered} question
+            {depth.total - depth.answered === 1 ? "" : "s"} still to answer.
+          </span>{" "}
+          Pando matches you on what it knows about your family — your area, your
+          children&apos;s ages, what you have already navigated. Each answer you add
+          brings back parents whose experience is closer to yours.
         </p>
+      ) : (
+        part !== "action" && (
+          <p className="leading-relaxed text-help text-muted">
+            <span className="font-semibold text-green-deep tabular-nums">
+              {depth.percent}% done
+            </span>
+            {" — the stronger your profile, the better your matches."}
+          </p>
+        )
       )}
-      {part !== "note" &&
+      {/**
+        * ⚠ **"Add optional details", and the rename is the whole point of it**
+        * (17 Sep, the developer: *"спробуй її переназвати, бо вона співзвучна з
+        * Save Profile"*). It read *"Complete your profile"* and sat directly
+        * under **Save my profile** — two controls a syllable apart, one of them
+        * ending the flow and the other opening fourteen more questions.
+        *
+        * The new words are **not new copy**: they are the label the optional
+        * fork itself carries (`detailLabel` in `questions.ts`, the client's own
+        * 10 Sep round), and this control does literally that — it sets
+        * `wants_detail` and walks the optional screens. So the two places a
+        * parent is offered the same act now offer it in the same words.
+        */}
+      {part !== "lead" &&
         (href ? (
-          <TextAction href={href}>Complete your profile</TextAction>
+          <TextAction href={href}>Add optional details</TextAction>
         ) : (
-          <TextAction onClick={onComplete}>Complete your profile</TextAction>
+          <TextAction onClick={onComplete}>Add optional details</TextAction>
         ))}
     </div>
   );

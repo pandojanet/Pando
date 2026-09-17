@@ -64,7 +64,6 @@ import {
   optionsFor,
   profileCompleteness,
   profileDepth,
-  firstIncompleteScreen,
   pruneAnswers,
   sameForAllChildren,
   searchableCategory,
@@ -1028,26 +1027,6 @@ export function ProfileFlow() {
   }
 
   /**
-   * "Complete your profile" (16 Sep). Opens the optional fork — the percentage
-   * counts those questions, so a parent who tapped Continue earlier could
-   * never reach them otherwise — and lands on the first screen still missing
-   * an answer.
-   */
-  function completeProfile() {
-    if (!answers) return;
-    const target = firstIncompleteScreen(answers);
-    if (target < 0) return;
-    track("seed_complete_profile_opened", { percent: profileDepth(answers).percent });
-    setDirection(1);
-    setStage("questions");
-    update((s) => ({
-      ...s,
-      answers: { ...s.answers, wants_detail: true },
-      screen_index: target,
-    }));
-  }
-
-  /**
    * Open one question from the review list.
    *
    * ⚠⚠ **It opens the optional fork first, and without that the control is
@@ -1067,8 +1046,13 @@ export function ProfileFlow() {
    *
    * ⚠ Opening the fork is not a decision taken on the parent's behalf: it is
    * what `wants_detail` means — whether the flow *walks* the optional screens
-   * — and they have just asked for one of them by name. The same thing
-   * `completeProfile` does, one row at a time.
+   * — and they have just asked for one of them by name.
+   *
+   * ⚠ Since 17 Sep this is the **only** way into an unanswered question from
+   * the review screen: `completeProfile`, which jumped to the first of them
+   * from the dock, went with the control that called it — see the dock's own
+   * note. Nothing is unreachable, because every row the percentage counts is
+   * in the fold below with its own **Add**.
    */
   function jumpTo(screenId: string) {
     if (!answers) return;
@@ -1465,9 +1449,9 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
-            {/* The argument stays here, above the answers it is about; the
-                control it used to carry is in the dock beside Save. */}
-            <DepthReminder depth={profileDepth(answers)} part="note" className="mt-2" />
+            {/* The argument, above the answers it is about. Since 17 Sep it is
+                the whole of the reminder on this screen — see `part="lead"`. */}
+            <DepthReminder depth={profileDepth(answers)} part="lead" className="mt-3" />
 
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than
@@ -1734,29 +1718,24 @@ export function ProfileFlow() {
             {!saving && <ArrowRight />}
           </Button>
           {/**
-            * ⚠ **In the dock rather than under the heading** — the developer,
-            * 16 Sep: *"Можливо ми Complete your profile перенесемо теж під
-            * Save your profile"*. It is the same argument Delete already
-            * settled a few hours earlier: the three things a parent can do
-            * with a finished profile belong together, under the button they
-            * are alternatives to, rather than one of them being announced at
-            * the top of a list of answers it is not about.
+            * ⚠⚠ **Nothing here opens the questions any more, and that reverses
+            * the 16 Sep note this replaces.** That one moved *"Complete your
+            * profile"* into the dock, directly under **Save my profile** — and
+            * the developer's report on 17 Sep is what that produced: *"під час
+            * редагування профілю не має бути опції Complete Profile … вона
+            * співзвучна з Save Profile"*. Two controls a syllable apart, one
+            * ending the flow and the other opening fourteen more questions,
+            * with the loud one being the wrong answer for a parent who came
+            * back to change one thing.
             *
-            * It also gives the body back the 16 Sep *"minimal text on the
-            * final profile page"* shape — the heading, the answers and the
-            * two short lines, with the percentage still in the header bar.
-            *
-            * Order is the documented one: the primary, then the constructive
-            * secondary, then the destructive last. Still no `href` — they are
-            * standing on the profile, so it jumps to the first unanswered
-            * question instead.
+            * ⚠ **The questions are not unreachable — that is why this could
+            * go.** Since the 16 Sep `reviewScreens` fix the fold below lists
+            * every question the percentage counts, each with its own **Add**,
+            * and `jumpTo` opens the optional fork exactly as the removed
+            * control did. What is gone is the one-tap route to the *first*
+            * unanswered question, which a parent editing one answer was never
+            * looking for.
             */}
-          <DepthReminder
-            depth={profileDepth(answers)}
-            onComplete={completeProfile}
-            part="action"
-            className="flex justify-center pt-1"
-          />
           {/* Delete sits directly under Save (16 Sep), and only once there is a
               saved profile to delete — before that "Start over" clears the
               device. Without it the dock keeps its bottom spacing. */}
