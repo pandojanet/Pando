@@ -275,7 +275,14 @@ export interface Overview {
    * approved contributions; this needs one. `none` is the number that call asked
    * for by name — parents who arrived and left nothing.
    */
-  reward: { eligible: number; started: number; none: number };
+  /**
+   * The three readings of the Founding decision (16 Sep).
+   *
+   * ⚠ Renamed from `eligible`/`started`/`none`, because the meaning moved:
+   * those described a rule the app computed, these describe where somebody
+   * is relative to a decision a person takes in the Founding queue.
+   */
+  reward: { approved: number; in_review: number; not_met: number };
   /** Open D1 questions, split by what Pando said back. */
   demand: {
     ordinary: number;
@@ -335,7 +342,7 @@ export interface ContributorRow {
    * not finish, and collapsing them into `started` would hide the only case
    * where the answer is "yes, but the offer had closed".
    */
-  reward_status: "none" | "started" | "eligible" | "missed_deadline";
+  reward_status: "not_met" | "in_review" | "approved" | "missed_deadline";
   founding_status: FoundingStatus;
   follow_up_opt_in: boolean | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
@@ -348,6 +355,18 @@ export interface ContributorDetail extends ContributorRow {
   invite_code: string | null;
   source: string | null;
   profile_completeness: number;
+  /**
+   * ⚠⚠ **Not the line above, and the two must never be shown unlabelled
+   * side by side.** `profile_completeness` counts the screens this parent
+   * could *see*, so a Continue-at-the-fork profile reports a high number on
+   * two answers; `profile_depth` counts the whole questionnaire and is what
+   * the Founding requirements are measured against. A parent can read 82%
+   * on one and 79% on the other, which is exactly the pair that made this
+   * page unable to explain its own reward badge before 16 Sep.
+   */
+  profile_depth: number;
+  /** Contributions an admin approved — shares and nominations alike. */
+  approved_contributions: number;
   time_in_area: string | null;
   moved_from: string | null;
   /** P13. How this parent may be named in an answer — the only control over it. */
@@ -716,6 +735,16 @@ export interface FoundingRow {
     allowance_ok: boolean;
     qualifying_approved: number;
     caregiver_approved: number;
+    /**
+     * The two the queue is filtered on since 16 Sep — `profileDepth` as a
+     * percentage, and everything an admin has approved.
+     *
+     * ⚠ Every row here already satisfies both, because the queue will not
+     * return one that does not. They are carried so the card can show *what*
+     * it is about to pay for rather than only that it qualified.
+     */
+    profile_depth: number;
+    approved_contributions: number;
   };
   status: FoundingStatus;
   created_at: string;

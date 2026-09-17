@@ -96,6 +96,19 @@ async function clear() {
   await sql`delete from caregivers c
             where not exists (select 1 from caregiver_nominations n where n.caregiver_id = c.id)
               and not exists (select 1 from caregiver_claims k where k.linked_caregiver_id = c.id)`;
+  /* ⚠ **Before the shares, and this is a correctness fix rather than tidying.**
+     `impact_events.share_id` is `on delete set null`, and `impact_events_once`
+     is unique on (person_id, kind, coalesce(share_id, blast_id, person_id)) —
+     so deleting a parent's shares collapses two of their `answer_used` rows
+     onto one key and the delete itself raises a duplicate-key error. Found by
+     running --clear on a cohort the 1 Sep ledger backfill had touched: it
+     failed halfway and left the 22 rows it was asked to remove, which then
+     refused a re-seed. The ledger is derived from the records, so a demo
+     parent`s events go with the demo parent.
+     ⚠ Only `person_id`: an event about somebody else that merely *references*
+     a demo share is not this cohort's to delete, and the set-null is the right
+     answer there. */
+  await sql`delete from impact_events where person_id = any(${ids}::uuid[])`;
   await sql`delete from share_contributions where person_id = any(${ids}::uuid[])`;
   await sql`delete from shares s
             where not exists (select 1 from share_contributions c where c.share_id = s.id)`;
@@ -121,30 +134,43 @@ async function clear() {
 /* ── The cohort ──────────────────────────────────────────────────────────── */
 
 /**
- * `founding` and the contribution mix below are chosen so the overview shows
- * every reward state at once: `earned` (an approved qualifying card), `started`
- * (submitted, nothing approved yet) and `none` (arrived, gave nothing).
+ * `founding`, `depth` and the contribution mix below are chosen so the overview
+ * shows every reward state at once: `approved` (an admin said yes), `in_review`
+ * (every requirement met, waiting on a person), and `not_met`.
+ *
+ * ⚠⚠ **`depth` is stated per parent rather than computed, and that is forced**:
+ * these rows are inserted directly rather than walked, so they have no
+ * `raw_answers` for `profileDepth` to measure and `npm run depth:backfill`
+ * skips every one of them. Without a value they would all sit at the column
+ * default of 0 and the **Founding queue would be empty in front of the
+ * client** — which is the one thing `seed:demo` exists to prevent.
+ *
+ * The spread is deliberate and sits either side of `FOUNDING_MIN_PROFILE_DEPTH`
+ * (80): six of the pending parents clear it and reach the queue, seven do not
+ * and read as *Requirements not met* on the contributors page. ⚠ Leah is at
+ * **79** on purpose — one point short, so the boundary is visible on a real
+ * screen rather than only in `test:rewards`.
  */
 const PARENTS = [
-  { first: "Sarah", last: "Chen", n: "south-pasadena", kids: [2019, 2022], area: "3_10_years", group: "school-pta", founding: "founding", allowance: 5, ear: "opted_in", joined: 68 },
-  { first: "Maya", last: "Okonkwo", n: "altadena", kids: [2021], area: "1_3_years", group: "pasadena-moms-fb", founding: "founding", allowance: 10, ear: "opted_in", joined: 64 },
-  { first: "Rachel", last: "Alvarez", n: "sierra-madre", kids: [2017, 2020], area: "10_plus_years", group: "school-pta", founding: "founding", allowance: 5, ear: "declined", joined: 61 },
-  { first: "Priya", last: "Raman", n: "san-marino", kids: [2016, 2019, 2023], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "founding", allowance: 10, ear: "opted_in", joined: 57 },
-  { first: "Jessica", last: "Moreau", n: "bungalow-heaven", kids: [2020], area: "under_year", group: "pasadena-moms-fb", founding: "pending_founding", allowance: 5, ear: null, joined: 52, movedFrom: "another_us_state" },
-  { first: "Dana", last: "Whitfield", n: "madison-heights", kids: [2015, 2018], area: "grew_up_here", group: "neighborhood-parents-chat", founding: "pending_founding", allowance: 5, ear: "opted_in", joined: 48 },
-  { first: "Leah", last: "Fischer", n: "old-pasadena", kids: [2022], area: "1_3_years", group: "mops", founding: "pending_founding", allowance: 10, ear: "opted_in", joined: 44 },
-  { first: "Noor", last: "Haddad", n: "east-pasadena", kids: [2018, 2021], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "pending_founding", allowance: 5, ear: null, joined: 41 },
-  { first: "Carmen", last: "Delgado", n: "northwest-pasadena", kids: [2014, 2017], area: "grew_up_here", group: "school-pta", founding: "pending_founding", allowance: 5, ear: "declined", joined: 37 },
-  { first: "Amanda", last: "Boyle", n: "la-canada", kids: [2019], area: "3_10_years", group: "coop-preschool-parents", founding: "pending_founding", allowance: 10, ear: "opted_in", joined: 33 },
-  { first: "Grace", last: "Kim", n: "arcadia", kids: [2023], area: "under_year", group: "mops", founding: "pending_founding", allowance: 5, ear: null, joined: 29, movedFrom: "another_country" },
-  { first: "Tessa", last: "Nakamura", n: "linda-vista", kids: [2016, 2020], area: "3_10_years", group: "neighborhood-parents-chat", founding: "pending_founding", allowance: 5, ear: "opted_in", joined: 26 },
-  { first: "Bianca", last: "Rossi", n: "hastings-ranch", kids: [2021], area: "1_3_years", group: "twin-multiples-group", founding: "pending_founding", allowance: 5, ear: null, joined: 22 },
-  { first: "Helen", last: "Osei", n: "monrovia", kids: [2013, 2016], area: "10_plus_years", group: "nextdoor-parents", founding: "pending_founding", allowance: 5, ear: null, joined: 19 },
-  { first: "Robin", last: "Feld", n: "eagle-rock", kids: [2019], area: "1_3_years", group: "pasadena-moms-fb", founding: "pending_founding", allowance: 10, ear: null, joined: 15, movedFrom: "elsewhere_in_california" },
-  { first: "Nadia", last: "Farouk", n: "temple-city", kids: [2018], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "pending_founding", allowance: 5, ear: null, joined: 11 },
-  { first: "Corinne", last: "Baptiste", n: "playhouse-district", kids: [2022], area: "under_year", group: "mops", founding: "pending_founding", allowance: 5, ear: null, joined: 8 },
+  { first: "Sarah", last: "Chen", n: "south-pasadena", kids: [2019, 2022], area: "3_10_years", group: "school-pta", founding: "founding", allowance: 5, ear: "opted_in", joined: 68, depth: 100 },
+  { first: "Maya", last: "Okonkwo", n: "altadena", kids: [2021], area: "1_3_years", group: "pasadena-moms-fb", founding: "founding", allowance: 10, ear: "opted_in", joined: 64, depth: 95 },
+  { first: "Rachel", last: "Alvarez", n: "sierra-madre", kids: [2017, 2020], area: "10_plus_years", group: "school-pta", founding: "founding", allowance: 5, ear: "declined", joined: 61, depth: 90 },
+  { first: "Priya", last: "Raman", n: "san-marino", kids: [2016, 2019, 2023], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "founding", allowance: 10, ear: "opted_in", joined: 57, depth: 85 },
+  { first: "Jessica", last: "Moreau", n: "bungalow-heaven", kids: [2020], area: "under_year", group: "pasadena-moms-fb", founding: "pending_founding", allowance: 5, ear: null, joined: 52, movedFrom: "another_us_state", depth: 80 },
+  { first: "Dana", last: "Whitfield", n: "madison-heights", kids: [2015, 2018], area: "grew_up_here", group: "neighborhood-parents-chat", founding: "pending_founding", allowance: 5, ear: "opted_in", joined: 48, depth: 85 },
+  { first: "Leah", last: "Fischer", n: "old-pasadena", kids: [2022], area: "1_3_years", group: "mops", founding: "pending_founding", allowance: 10, ear: "opted_in", joined: 44, depth: 79 },
+  { first: "Noor", last: "Haddad", n: "east-pasadena", kids: [2018, 2021], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "pending_founding", allowance: 5, ear: null, joined: 41, depth: 90 },
+  { first: "Carmen", last: "Delgado", n: "northwest-pasadena", kids: [2014, 2017], area: "grew_up_here", group: "school-pta", founding: "pending_founding", allowance: 5, ear: "declined", joined: 37, depth: 45 },
+  { first: "Amanda", last: "Boyle", n: "la-canada", kids: [2019], area: "3_10_years", group: "coop-preschool-parents", founding: "pending_founding", allowance: 10, ear: "opted_in", joined: 33, depth: 80 },
+  { first: "Grace", last: "Kim", n: "arcadia", kids: [2023], area: "under_year", group: "mops", founding: "pending_founding", allowance: 5, ear: null, joined: 29, movedFrom: "another_country", depth: 30 },
+  { first: "Tessa", last: "Nakamura", n: "linda-vista", kids: [2016, 2020], area: "3_10_years", group: "neighborhood-parents-chat", founding: "pending_founding", allowance: 5, ear: "opted_in", joined: 26, depth: 85 },
+  { first: "Bianca", last: "Rossi", n: "hastings-ranch", kids: [2021], area: "1_3_years", group: "twin-multiples-group", founding: "pending_founding", allowance: 5, ear: null, joined: 22, depth: 55 },
+  { first: "Helen", last: "Osei", n: "monrovia", kids: [2013, 2016], area: "10_plus_years", group: "nextdoor-parents", founding: "pending_founding", allowance: 5, ear: null, joined: 19, depth: 90 },
+  { first: "Robin", last: "Feld", n: "eagle-rock", kids: [2019], area: "1_3_years", group: "pasadena-moms-fb", founding: "pending_founding", allowance: 10, ear: null, joined: 15, movedFrom: "elsewhere_in_california", depth: 25 },
+  { first: "Nadia", last: "Farouk", n: "temple-city", kids: [2018], area: "3_10_years", group: "sgv-parents-whatsapp", founding: "pending_founding", allowance: 5, ear: null, joined: 11, depth: 70 },
+  { first: "Corinne", last: "Baptiste", n: "playhouse-district", kids: [2022], area: "under_year", group: "mops", founding: "pending_founding", allowance: 5, ear: null, joined: 8, depth: 20 },
   /* Expecting — proves the age-band gating and the `year_shape` CHECK. */
-  { first: "Alice", last: "Ferrand", n: "san-rafael", kids: [], expecting: true, area: "1_3_years", group: "coop-preschool-parents", founding: "none", allowance: 5, ear: "opted_in", joined: 6 },
+  { first: "Alice", last: "Ferrand", n: "san-rafael", kids: [], expecting: true, area: "1_3_years", group: "coop-preschool-parents", founding: "none", allowance: 5, ear: "opted_in", joined: 6, depth: 40 },
 ];
 
 /** The anonymous path: contributions welcome, no name, no phone, no Founding. */
@@ -204,7 +230,7 @@ async function seedPeople() {
         monthly_contact_allowance, allowance_mode,
         topic_preferences, topics_lived_experience,
         child_ages_at_capture, phone_verified_at, founding,
-        profile_completeness, profile_captured_at, is_test, created_at
+        profile_completeness, profile_depth, profile_captured_at, is_test, created_at
       ) values (
         ${phoneFor(i)}, ${p.first}, ${p.last}, ${MARKET}, ${p.n},
         ${code}, ${invite?.id ?? null}, ${invite ? p.group : null}, 'demo',
@@ -215,7 +241,7 @@ async function seedPeople() {
         ${p.ear === "opted_in" ? ["sleep_routines", "returning_to_work"] : []}::text[],
         ${p.kids.map((y) => YEAR - y)}::integer[],
         ${daysAgo(p.joined)}, ${p.founding},
-        ${p.kids.length ? 70 + ((i * 7) % 30) : 45}, ${daysAgo(p.joined)},
+        ${p.kids.length ? 70 + ((i * 7) % 30) : 45}, ${p.depth}, ${daysAgo(p.joined)},
         false, ${daysAgo(p.joined)}
       ) returning id`;
 
@@ -361,6 +387,7 @@ const SHARES = [
     hoods: ["playhouse-district"], bands: ["preschool", "grade"],
     status: "approved", fresh: "ageing", confirmed: 2,
     contributions: [
+      { by: 7, ages: [6], last: "recent", much: "a_term", rec: "yes", great: "Half days were the right call for a five-year-old — the full week broke us the first summer.", caveatAnswered: true, who: "A child who still naps", band: "over_200", unit: "per_camp_week", worth: "fair", conf: 0.83, note: "Names the specific booking choice that made it work, which is what another parent has to decide.", approved: true },
       { by: 1, ages: [4], last: "recent", much: "tried_once", rec: "yes_with_caveats", great: "Great for a first-ever camp — half days, and they are gentle with the ones who cry at drop-off.", caveat: "It is mostly outdoors and August was brutal.", who: "A first camp", whoNot: "August weeks", band: "100_200", unit: "per_camp_week", worth: "fair", conf: 0.88, note: "Specific about who it suits and names a seasonal caveat that would change when a parent books.", approved: true },
     ],
   },
@@ -369,6 +396,7 @@ const SHARES = [
     hoods: ["sierra-madre", "east-pasadena"], bands: ["preschool", "grade", "tween"],
     status: "approved", fresh: "fresh", confirmed: 3,
     contributions: [
+      { by: 7, ages: [8], last: "current", much: "a_year_plus", rec: "yes", great: "The coaches rotate every season and we have never had a bad one.", caveatAnswered: true, who: "A child who wants to play rather than compete", band: "under_50", unit: "per_term", worth: "great_value", conf: 0.74, note: "Reassuring about consistency, though it says little about what a session looks like.", approved: true },
       { by: 2, ages: [7], last: "current", much: "a_term", rec: "yes", great: "Every child plays every game regardless of ability — that is written into how the league works, not just something the coach says.", caveat: "Volunteering is not really optional.", who: "A child who is not sporty yet", band: "under_25", unit: "per_month", worth: "great_value", conf: 0.9, note: "Distinguishes a structural rule of the league from a coach's goodwill, which is exactly the difference a parent choosing between leagues needs.", approved: true },
       { by: 11, ages: [5, 9], last: "current", much: "a_year_plus", rec: "yes", great: "Both kids, four seasons, never a bad coach.", caveatAnswered: true, who: "A family with kids at different ages in the same league", band: "under_25", unit: "per_month", worth: "great_value", conf: 0.55, note: "Positive and consistent, but it does not say what the sessions are like or who the league suits.", approved: true },
     ],
@@ -378,6 +406,7 @@ const SHARES = [
     hoods: ["madison-heights"], bands: ["grade", "tween", "teen"],
     status: "approved", fresh: "fresh", confirmed: 2,
     contributions: [
+      { by: 13, ages: [10], last: "current", much: "a_year_plus", rec: "yes", great: "Group lessons before private ones was their advice and it was right — she stuck with it.", caveatAnswered: true, who: "A child who is not sure they want to learn an instrument", band: "100_200", unit: "per_month", worth: "pricey_worth_it", conf: 0.88, note: "A concrete piece of advice from the school itself, with the outcome attached.", approved: true },
       { by: 5, ages: [10], last: "current", much: "a_year_plus", rec: "yes", great: "They matched my son with a teacher on his third try and did not make us feel difficult about asking.", caveat: "The recital schedule assumes a parent is free on weekday afternoons.", who: "A child who has already quit one instrument", band: "over_200", unit: "per_term", worth: "pricey_worth_it", conf: 0.91, note: "Describes how the institution handled a problem, which is more predictive than a description of the lessons.", approved: true },
     ],
   },
@@ -450,6 +479,7 @@ const SHARES = [
     hoods: ["altadena"], bands: ["preschool", "grade", "tween"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 4,
     contributions: [
+      { by: 13, ages: [12], last: "recent", much: "few_sessions", rec: "yes", great: "Shade on the lower trail makes it survivable in August, unlike everywhere else nearby.", caveatAnswered: true, who: "Older kids who will walk a bit", conf: 0.79, note: "One seasonal detail that decides whether the trip works, which is the useful part.", approved: true },
       { by: 1, ages: [4], last: "current", much: "weekly_ongoing", rec: "yes", great: "Wide flat paths a scooter can handle, shade for the first mile, and it is never crowded before ten.", caveat: "No toilets past the car park.", who: "A family that wants a walk without a hike", band: "free", worth: "free", conf: 0.93, note: "Three concrete, checkable facts and a practical warning — the kind of card that can answer a question on its own.", approved: true },
       { by: 4, ages: [6], last: "recent", much: "few_sessions", rec: "yes", great: "The dry riverbed is the whole attraction for my six-year-old.", caveatAnswered: true, who: "A child who invents their own game out of a landscape", band: "free", worth: "free", conf: 0.7, note: "One specific feature and the age it lands with, though little else.", approved: true },
     ],
@@ -459,6 +489,7 @@ const SHARES = [
     hoods: ["northwest-pasadena"], bands: ["baby", "toddler", "preschool"],
     status: "approved", fresh: "fresh", confirmed: 2,
     contributions: [
+      { by: 6, ages: [3], last: "current", much: "weekly_ongoing", rec: "yes", great: "Storytime is at 10.30 and they genuinely do not mind a toddler wandering off mid-story.", caveatAnswered: true, who: "A toddler who cannot sit still yet", conf: 0.86, note: "Says the time and sets expectations about the room, both of which a newcomer needs.", approved: true },
       { by: 16, ages: [3], last: "current", much: "weekly_ongoing", rec: "yes", great: "The Tuesday storytime is bilingual and the librarian actually sings.", caveatAnswered: true, who: "A Spanish-speaking household", band: "free", worth: "free", conf: 0.9, note: "Names the day, the language and what makes the session different — immediately usable.", approved: true },
     ],
   },
@@ -503,6 +534,7 @@ const SHARES = [
     hoods: [], bands: ["preschool", "grade"],
     status: "approved", fresh: "fresh", confirmed: 1,
     contributions: [
+      { by: 11, ages: [7], last: "recent", rec: "yes", tip: "The city pools run the same curriculum for about a third of the price, and the sessions are listed a month before they open.", conf: 0.81, note: "A specific, checkable alternative with a timing hint attached.", approved: true },
       { by: 18, ages: [5], last: "current", rec: "yes", tip: "The city pools run the same lesson syllabus as the private clubs for about a third of the price — the catch is you have to register the morning enrolment opens.", caveatAnswered: true, who: "Anyone put off by club prices", band: "under_25", unit: "per_session", worth: "great_value", conf: 0.89, note: "A concrete cost comparison with the trade-off named — actionable, and not something a newcomer would find on a website.", approved: true },
     ],
   },

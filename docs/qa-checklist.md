@@ -241,8 +241,8 @@ samples are invented.
 | Page | What to check |
 | --- | --- |
 | **Overview** | Counters, the caregiver **ladder** (mentioned → invited → consented → declined) rather than a contact funnel, "Caregiver cards held for a person", and the D1 split |
-| **Founding queue** | Each person shows the *checklist* — verified, neighborhood, children, allowance, and **qualifying approved**. One sample sits at 1 of the 2 required |
-| **Contributors** | Birth years, a "Qualifying" column, the anonymous one marked, the test row visible |
+| **Founding queue** | Since 16 Sep it is **filtered**, so it is shorter than the contributor list: only parents whose profile is 80%+ filled in and who have **two** admin-approved contributions. Each row reads `Profile N% · N approved · N shared`. The badge in the sidebar must equal the number of rows |
+| **Contributors** | Birth years, a "Qualifying" column, the anonymous one marked, the test row visible. The **Reward** filter (`Reward approved` / `Ready for review` / `Requirements not met`) — *Ready for review* must list exactly the people in the Founding queue |
 | Open one contributor | Attribution, allowance and mode, both topic clusters, school statuses, every consent with its wording version, their cards labelled firsthand or not |
 | **Contributions** | Filters: To review · Low confidence · One detail short · Secondhand · All |
 | | A secondhand row is tinted and says "never qualifies" |

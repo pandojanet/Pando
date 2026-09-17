@@ -254,6 +254,7 @@ has the setup walkthrough.
 | `npm run seed:places` | The 182 canonical previous places item 11 searches. Refuses the batch if any id could be misclassified. |
 | `npm run taxonomy:import -- "Seed Master Data List - .xlsx"` | Janet 24 Aug master workbook: 357 schools, 96 activities, 84 faith communities, 39 clubs, with aliases and her curated starter sets. Reads the xlsx directly; prints a diff and needs `--commit`. |
 | `npm run options:import -- sheet.csv` | Janet's Pasadena lists. Prints a diff; needs `--commit` to write, `--retire-missing` to deactivate what the sheet dropped. |
+| `npm run depth:backfill` | Gives every stored profile a `people.profile_depth`, computed from its own `raw_answers`. Prints a diff; needs `--commit`. **Run it once after `drizzle/0045`** — that column lands at 0, and since 16 Sep it decides whether a parent reaches the Founding queue, so until it runs every existing contributor qualifies for nothing. Skips rows with no stored answers (the demo cohort sets its own). |
 | `npm run admin:user -- <cmd>` | Who may sign in: `list`, `add <name>`, `password <name>`, `disable`, `enable`. Writes an audit row each time. |
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
 | `npm run test:e2e` | 280 checks against a running dev server and a real database. Cleans up after itself. |

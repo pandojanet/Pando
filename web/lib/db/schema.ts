@@ -274,6 +274,16 @@ export const people = pgTable(
     phoneVerifiedAt: timestamp("phone_verified_at", { withTimezone: true }),
     founding: foundingStatus("founding").notNull().default("none"),
     profileCompleteness: integer("profile_completeness").notNull().default(0),
+    /**
+     * `profileDepth` — the whole questionnaire, as if the optional fork had
+     * been opened. **Not interchangeable with the line above**, which counts
+     * only the screens this parent was shown and therefore reports 100% for
+     * somebody who tapped Continue and answered two questions. This one gates
+     * Founding and the reward (`drizzle/0045`); that one is history and is read
+     * by the admin on rows written months ago, so neither may take the other's
+     * formula.
+     */
+    profileDepth: integer("profile_depth").notNull().default(0),
     profileCapturedAt: timestamp("profile_captured_at", { withTimezone: true }),
     isTest: boolean("is_test").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })

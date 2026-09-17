@@ -148,9 +148,9 @@ export default function ContributorsPage() {
               onChange={setReward}
               options={[
                 { id: "all", label: "Every contributor" },
-                { id: "eligible", label: "Reward earned" },
-                { id: "started", label: "Waiting on review" },
-                { id: "none", label: "Gave nothing" },
+                { id: "approved", label: "Reward approved" },
+                { id: "in_review", label: "Ready for review" },
+                { id: "not_met", label: "Requirements not met" },
               ]}
             />
             <Select
@@ -280,17 +280,20 @@ export default function ContributorsPage() {
                     )}
                   </Td>
                   <Td>
-                    {row.reward_status === "eligible" ? (
-                      <Badge tone="green">Earned</Badge>
+                    {row.reward_status === "approved" ? (
+                      <Badge tone="green">Approved</Badge>
                     ) : row.reward_status === "missed_deadline" ? (
                       /* Everything done, and done after Oct 31. Its own badge
                          rather than "In review", which would put them in a
                          queue nobody can clear. */
                       <Badge tone="muted">After the deadline</Badge>
-                    ) : row.reward_status === "started" ? (
+                    ) : row.reward_status === "in_review" ? (
+                      /* Every requirement met, and the Founding queue is
+                         where somebody says yes. The badge names whose move
+                         it is, like the Founding column beside it. */
                       <Badge tone="gold">In review</Badge>
                     ) : (
-                      <Badge tone="muted">Nothing yet</Badge>
+                      <Badge tone="muted">Requirements not met</Badge>
                     )}
                   </Td>
                   <Td>
@@ -300,9 +303,10 @@ export default function ContributorsPage() {
                     {row.founding_status === "founding" ? (
                       <Badge tone="green">Confirmed</Badge>
                     ) : row.founding_status === "request_invite" ? (
-                      <Badge tone="muted">
-                        Not from the group
-                      </Badge>
+                      /* The words, not the stored value — see the note on the
+                         queue's own button. Muted rather than alert: nothing was
+                         taken away, only the badge was not granted. */
+                      <Badge tone="muted">Not Founding</Badge>
                     ) : (
                       /**
                        * Neutral, not gold, and only on this page. Gold means

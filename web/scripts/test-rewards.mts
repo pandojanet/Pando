@@ -2,9 +2,14 @@
  * The launch incentive (client, 10 Sep §6) — one guaranteed $10 payment.
  *
  * Its own suite for the reason `test:payments` has one: this decides whether a
- * real person is owed real money, and the rule has **four** conditions where
- * the one it replaces had one. Every condition is exercised on its own, because
- * a rule that ANDs four things passes every test that only ever fails one.
+ * real person is owed real money, and the rule has **six** conditions where the
+ * one it replaced had one. Every condition is exercised on its own, because a
+ * rule that ANDs six things passes every test that only ever fails one.
+ *
+ * The reward is a decision now, not an arithmetic (16 Sep). The developer
+ * folded it into the Founding queue - a full profile plus two contributions an
+ * admin approved - so the states are approved / in_review / not_met, and
+ * approved is read off people.founding rather than computed.
  */
 const r = (await import(`../lib/rewards.ts?v=${Date.now()}`)) as typeof import("../lib/rewards.ts");
 
@@ -20,14 +25,15 @@ const ok = (label: string, cond: boolean, detail = "") => {
   }
 };
 
-/** Everything true, well before the deadline. */
+/** Every requirement met, nobody has decided yet, well before the deadline. */
 const qualified = {
   phone_verified: true,
   neighborhood_answered: true,
   children_answered: true,
-  recommendations: 1,
+  profile_depth: 100,
+  approved_contributions: 2,
   reason: "Small groups and a very patient teacher.",
-  has_invite: true,
+  founding_approved: false,
   at: new Date("2026-10-01T12:00:00-07:00"),
 };
 
@@ -64,32 +70,98 @@ ok(
   deadlineInPacific === r.REWARD_DEADLINE_LABEL,
   `${deadlineInPacific} vs ${r.REWARD_DEADLINE_LABEL}`,
 );
+/**
+ * Her sentence promised payment *that week*, and under the Founding
+ * requirements a saved card is no longer the last step: two admin approvals
+ * are. So the check is that the copy no longer commits somebody else's
+ * decision - not that it matches a string, which would only pin our own
+ * provisional wording in place.
+ */
 ok(
-  "her confirmation copy, verbatim",
-  r.REWARD_CONFIRMATION === "Done — watch out for your payment this week",
+  "the confirmation no longer promises a payment date",
+  !/this week|payment/i.test(r.REWARD_CONFIRMATION),
   r.REWARD_CONFIRMATION,
 );
 
-console.log("\n=== all four conditions, and each one alone ===");
-ok("everything true is eligible", r.rewardStatus(qualified) === "eligible");
+console.log("\n=== all six conditions, and each one alone ===");
+ok(
+  "everything met, nobody decided yet, is in_review",
+  r.rewardStatus(qualified) === "in_review",
+  r.rewardStatus(qualified),
+);
+ok("and meetsFoundingRequirements agrees", r.meetsFoundingRequirements(qualified));
 
-/* One at a time, because ANDing four things hides three of them. */
+/* One at a time, because ANDing six things hides five of them. */
 const without = (
   patch: Partial<import("../lib/rewards.ts").RewardInput>,
   label: string,
 ) =>
   ok(
     label,
-    r.rewardStatus({ ...qualified, ...patch }) !== "eligible",
+    r.rewardStatus({ ...qualified, ...patch }) === "not_met" &&
+      !r.meetsFoundingRequirements({ ...qualified, ...patch }),
     r.rewardStatus({ ...qualified, ...patch }),
   );
 
-without({ phone_verified: false }, "an unverified number is not eligible");
-without({ neighborhood_answered: false }, "no neighborhood is not eligible");
-without({ children_answered: false }, "no children answered is not eligible");
-without({ recommendations: 0 }, "no recommendation is not eligible");
-without({ reason: null }, "a recommendation with no reason is not eligible");
-without({ has_invite: false }, "somebody who arrived on no invite is not eligible");
+without({ phone_verified: false }, "an unverified number does not qualify");
+without({ neighborhood_answered: false }, "no neighborhood does not qualify");
+without({ children_answered: false }, "no children answered does not qualify");
+without({ reason: null }, "no reason on any contribution does not qualify");
+
+/**
+ * The two the developer added on 16 Sep, each checked one under the line as
+ * well as at it - an off-by-one here is a parent told they earned nothing.
+ */
+without(
+  { profile_depth: r.FOUNDING_MIN_PROFILE_DEPTH - 1 },
+  "one point short of the profile bar does not qualify",
+);
+without(
+  { approved_contributions: r.FOUNDING_MIN_APPROVED - 1 },
+  "one approved contribution short does not qualify",
+);
+ok(
+  "exactly the profile bar does qualify",
+  r.meetsFoundingRequirements({
+    ...qualified,
+    profile_depth: r.FOUNDING_MIN_PROFILE_DEPTH,
+  }),
+);
+ok(
+  "exactly two approved contributions do qualify",
+  r.meetsFoundingRequirements({
+    ...qualified,
+    approved_contributions: r.FOUNDING_MIN_APPROVED,
+  }),
+);
+
+/**
+ * An invite is no longer a condition, and that is deliberate. Her section 6
+ * said invite-code holders only, while entry has been open since 7 Sep -
+ * measured on the live cohort, ten of twelve real parents arrived without
+ * one, so the clause silently put the reward out of reach for most of the
+ * people it was written for. Pinned as an absence so it cannot creep back in
+ * without somebody also re-closing the door it depends on.
+ */
+ok(
+  "arriving on no invite is not by itself disqualifying",
+  r.meetsFoundingRequirements(qualified),
+);
+
+/**
+ * The admin's yes outranks every condition above, permanently. A record
+ * retired by the freshness queue must not un-approve somebody who has already
+ * been told they earned it - the monotonic-ladder rule of 1 Sep.
+ */
+ok(
+  "an approved parent stays approved even if a requirement lapses",
+  r.rewardStatus({
+    ...qualified,
+    founding_approved: true,
+    approved_contributions: 0,
+    profile_depth: 0,
+  }) === "approved",
+);
 
 console.log("\n=== a reason is a sentence, not a word ===");
 /**
@@ -117,28 +189,28 @@ ok(
 );
 ok(
   "the last minute of Oct 31 Pacific still qualifies",
-  r.rewardStatus({ ...qualified, at: new Date("2026-10-31T23:59:00-07:00") }) === "eligible",
+  r.rewardStatus({ ...qualified, at: new Date("2026-10-31T23:59:00-07:00") }) ===
+    "in_review",
 );
 /* Unfinished and late is unfinished — the offer closing is not the reason they
    are not being paid, and saying so would be the wrong conversation. */
 ok(
-  "but somebody who never finished is `started`, deadline or no deadline",
+  "but somebody who never finished is `not_met`, deadline or no deadline",
   r.rewardStatus({
     ...qualified,
     reason: null,
     at: new Date("2026-12-01T09:00:00-07:00"),
-  }) === "started",
+  }) === "not_met",
 );
+/* And an admin who approves somebody late has still approved them: the
+   deadline is about the offer, never about a decision already taken. */
 ok(
-  "and somebody who did nothing at all is `none`",
+  "an approval after the deadline is still an approval",
   r.rewardStatus({
-    phone_verified: false,
-    neighborhood_answered: false,
-    children_answered: false,
-    recommendations: 0,
-    reason: null,
-    has_invite: true,
-  }) === "none",
+    ...qualified,
+    founding_approved: true,
+    at: new Date("2026-12-01T09:00:00-07:00"),
+  }) === "approved",
 );
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

@@ -134,10 +134,32 @@ export default function ContributorDetailPage({
               {c.founding_status === "founding" ? (
                 <Badge tone="green">Founding</Badge>
               ) : c.founding_status === "request_invite" ? (
-                <Badge tone="muted">Not from group</Badge>
+                <Badge tone="muted">Not Founding</Badge>
               ) : (
                 <Badge tone="gold">Founding pending</Badge>
               )}
+              {/**
+                * ⚠⚠ **Whether the $10 is in play, on the page where somebody
+                * decides about one parent.** It was computed and sent from
+                * 10 Sep and rendered nowhere, while the list one click away
+                * showed it — so the more detailed screen said less about the
+                * one question that involves money.
+                *
+                * ⚠ Only where it adds something the Founding badge does not.
+                * `approved` is the same fact as the green Founding badge said
+                * two lines up, so it is suppressed rather than printed twice;
+                * what is worth a second badge is *in review* (every
+                * requirement met, waiting on a person) and *not met* — and,
+                * rarely, a parent who did everything after the deadline.
+                */}
+              {c.founding_status !== "founding" &&
+                (c.reward_status === "in_review" ? (
+                  <Badge tone="gold">Reward in review</Badge>
+                ) : c.reward_status === "missed_deadline" ? (
+                  <Badge tone="muted">After the deadline</Badge>
+                ) : (
+                  <Badge tone="muted">Reward requirements not met</Badge>
+                ))}
             </>
           ) : null
         }
@@ -169,7 +191,26 @@ export default function ContributorDetailPage({
                   value={c.neighborhood ? slugLabel(c.neighborhood) : "—"}
                 />
                 <Pair label="Children born" value={yearList(c.child_birth_years)} />
+                {/**
+                  * ⚠⚠ **Two different numbers, and before 16 Sep only the
+                  * one that decides nothing was on screen.** This page showed
+                  * *Profile complete 82%* beside a reward the parent had
+                  * missed on a profile measured at **79%** — so the badge
+                  * could not be explained from the page it sits on.
+                  *
+                  * Both are kept and both are labelled, because they answer
+                  * different questions: completeness is *how much of the flow
+                  * they were shown did they finish* (historical, stored since
+                  * the first contributor), depth is *how much of the whole
+                  * questionnaire is answered*, which is what the Founding
+                  * requirements read. Deleting either would make one of the
+                  * two unanswerable.
+                  */}
                 <Pair label="Profile complete" value={`${c.profile_completeness}%`} />
+                <Pair
+                  label="Profile filled in"
+                  value={`${c.profile_depth}% · ${c.approved_contributions} approved`}
+                />
                 <Pair label="Invite code" value={c.invite_code ?? "—"} />
                 <Pair label="Arrived via" value={c.source ?? "—"} />
                 <Pair

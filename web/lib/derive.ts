@@ -4,6 +4,7 @@ import {
   ageBandsOf,
   childrenFor,
   profileCompleteness,
+  profileDepth,
   questionById,
   ALL_SCREENS,
   monthOptionsFor,
@@ -467,6 +468,10 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     life_relevance: deriveLifeRelevance(session),
     pending_options: derivePendingOptions(session),
     profile_completeness: profileCompleteness(answers),
+    /* The second measure, and the one that gates Founding. See the note on
+       `people.profile_depth`: this counts the whole questionnaire, while the
+       line above counts the screens this parent happened to be shown. */
+    profile_depth: profileDepth(answers).percent,
     client_started_at: session.started_at,
     client_submitted_at: capturedAt.toISOString(),
   };

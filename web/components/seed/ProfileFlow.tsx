@@ -1017,12 +1017,41 @@ export function ProfileFlow() {
     }));
   }
 
+  /**
+   * Open one question from the review list.
+   *
+   * ⚠⚠ **It opens the optional fork first, and without that the control is
+   * dead.** `screens` is `visibleScreens(answers)`, so for a parent who tapped
+   * Continue an optional screen is not in it — `findIndex` returned -1 and the
+   * function returned silently. Since the review now lists every question the
+   * percentage counts (see the note on `reviewScreens`), every **Add** on an
+   * optional row would have been a button that visibly does nothing: the
+   * written-and-never-called fault inverted, on a screen a parent uses to fix
+   * something.
+   *
+   * ⚠ The index is taken from the **opened** list, never from `screens`: the
+   * two differ by fourteen screens for that parent, so indexing into the
+   * closed one after opening the fork would land them on an unrelated
+   * question — a wrong screen being worse than no screen, because nothing on
+   * it would look wrong.
+   *
+   * ⚠ Opening the fork is not a decision taken on the parent's behalf: it is
+   * what `wants_detail` means — whether the flow *walks* the optional screens
+   * — and they have just asked for one of them by name. The same thing
+   * `completeProfile` does, one row at a time.
+   */
   function jumpTo(screenId: string) {
-    const target = screens.findIndex((s) => s.id === screenId);
+    if (!answers) return;
+    const opened = { ...answers, wants_detail: true };
+    const target = visibleScreens(opened).findIndex((s) => s.id === screenId);
     if (target < 0) return;
     setDirection(-1);
     setStage("questions");
-    update((s) => ({ ...s, screen_index: target }));
+    update((s) => ({
+      ...s,
+      answers: { ...s.answers, wants_detail: true },
+      screen_index: target,
+    }));
   }
 
   /**
@@ -1406,11 +1435,9 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
-            <DepthReminder
-              depth={profileDepth(answers)}
-              onComplete={completeProfile}
-              className="mt-2"
-            />
+            {/* The argument stays here, above the answers it is about; the
+                control it used to carry is in the dock beside Save. */}
+            <DepthReminder depth={profileDepth(answers)} part="note" className="mt-2" />
 
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than
@@ -1447,8 +1474,34 @@ export function ProfileFlow() {
              * decides whether to open on.
              */}
             {(() => {
-            const rows = screens.flatMap((s) =>
-                visibleQuestions(s, answers).map((q) => {
+            /**
+             * ⚠⚠ **The whole questionnaire, not the screens this parent
+             * happens to be walking** — and before 16 Sep this read `screens`,
+             * which is `visibleScreens(answers)` and therefore respects
+             * `wants_detail`.
+             *
+             * The consequence was the worst kind: a parent who tapped
+             * **Continue** at the optional fork — nine of twelve on the live
+             * cohort — reached a review screen showing **three rows and no
+             * fold at all**, under a header reading *30% done*. The number and
+             * the list it describes came from two different sets: the
+             * percentage is measured against the questionnaire as if the fork
+             * were open (that is the whole point of `profileDepth`), while the
+             * list showed only what they had been shown. So the screen stated
+             * that seventy per cent was missing and offered no way to find out
+             * what. The developer's report was exactly this: *"є можливість
+             * редагувати лише ті питання, які ми вказали під час першого
+             * заповнення"*.
+             *
+             * One expression now feeds both — the 2 Sep rule, which was
+             * learned on a demand tab that said 14 and listed 19.
+             *
+             * ⚠ It changes nothing for a parent who opened the fork: for them
+             * `wants_detail` is already true and this is the same list.
+             */
+            const reviewScreens = visibleScreens({ ...answers, wants_detail: true });
+            const rows = reviewScreens.flatMap((s) =>
+                visibleQuestions(s, { ...answers, wants_detail: true }).map((q) => {
                   /**
                    * ⚠ The children are read off the list rather than through
                    * `selectionsFor` (10 Sep). Two siblings born in one year are
@@ -1650,6 +1703,30 @@ export function ProfileFlow() {
             {saving ? "Saving…" : "Save my profile"}
             {!saving && <ArrowRight />}
           </Button>
+          {/**
+            * ⚠ **In the dock rather than under the heading** — the developer,
+            * 16 Sep: *"Можливо ми Complete your profile перенесемо теж під
+            * Save your profile"*. It is the same argument Delete already
+            * settled a few hours earlier: the three things a parent can do
+            * with a finished profile belong together, under the button they
+            * are alternatives to, rather than one of them being announced at
+            * the top of a list of answers it is not about.
+            *
+            * It also gives the body back the 16 Sep *"minimal text on the
+            * final profile page"* shape — the heading, the answers and the
+            * two short lines, with the percentage still in the header bar.
+            *
+            * Order is the documented one: the primary, then the constructive
+            * secondary, then the destructive last. Still no `href` — they are
+            * standing on the profile, so it jumps to the first unanswered
+            * question instead.
+            */}
+          <DepthReminder
+            depth={profileDepth(answers)}
+            onComplete={completeProfile}
+            part="action"
+            className="flex justify-center pt-1"
+          />
           {/* Delete sits directly under Save (16 Sep), and only once there is a
               saved profile to delete — before that "Start over" clears the
               device. Without it the dock keeps its bottom spacing. */}

@@ -47,7 +47,7 @@ export const sampleOverview: Overview = {
   },
   founding: { pending: 12, approved: 19 },
   /** The three add up to `contributors.total`, as they do against a real database. */
-  reward: { eligible: 19, started: 9, none: 14 },
+  reward: { approved: 19, in_review: 4, not_met: 19 },
   demand: { ordinary: 14, peer_support: 3, high_stakes: 1, named_allegation: 0 },
   /* 14.3 / 14.5 — zeroed rather than invented. Sample money is the one kind
      of fabrication that answers "has anybody actually paid?" with a yes. */
@@ -79,7 +79,7 @@ export const sampleContributors: ContributorRow[] = [
     submissions: 4,
     qualifying_approved: 3,
     caregiver_approved: 1,
-    reward_status: "eligible",
+    reward_status: "approved",
     founding_status: "founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -92,10 +92,13 @@ export const sampleContributors: ContributorRow[] = [
     phone_masked: "••• ••• 0093",
     neighborhood: "altadena",
     child_birth_years: [2019],
-    submissions: 2,
-    qualifying_approved: 1,
+    submissions: 3,
+    qualifying_approved: 2,
     caregiver_approved: 0,
-    reward_status: "eligible",
+    /* ⚠ `approved` is read off `founding_status` since 16 Sep, so a
+       pending row can never carry it — this one is the queue's own state:
+       every requirement met, waiting on a person. */
+    reward_status: "in_review",
     founding_status: "pending_founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -111,7 +114,10 @@ export const sampleContributors: ContributorRow[] = [
     submissions: 1,
     qualifying_approved: 0,
     caregiver_approved: 0,
-    reward_status: "started",
+    /* The anonymous path gave up the number at `/join`, and invariant 11 is
+       the first of the six requirements — so this row can only ever read
+       `not_met`, whatever they contribute. */
+    reward_status: "not_met",
     founding_status: "none",
     follow_up_opt_in: null,
     /** The anonymous path: welcome, labelled, not eligible for founding. */
@@ -128,7 +134,7 @@ export const sampleContributors: ContributorRow[] = [
     submissions: 3,
     qualifying_approved: 0,
     caregiver_approved: 0,
-    reward_status: "started",
+    reward_status: "not_met",
     founding_status: "pending_founding",
     follow_up_opt_in: false,
     wants_founding: true,
@@ -145,7 +151,7 @@ export const sampleContributors: ContributorRow[] = [
     submissions: 0,
     qualifying_approved: 0,
     caregiver_approved: 0,
-    reward_status: "none",
+    reward_status: "not_met",
     founding_status: "pending_founding",
     follow_up_opt_in: null,
     wants_founding: true,
@@ -159,6 +165,10 @@ export const sampleContributorDetail: ContributorDetail = {
   invite_code: "sgv-founding",
   source: "link",
   profile_completeness: 92,
+  /* Deliberately not 92: the two measure different things, and a sample
+     showing them equal would teach the reader they are one number. */
+  profile_depth: 88,
+  approved_contributions: 2,
   time_in_area: "3_10_years",
   moved_from: null,
   attribution: "first_name_safe",
@@ -929,6 +939,8 @@ export const sampleFounding: FoundingRow[] = [
       has_neighborhood: true,
       has_children: true,
       allowance_ok: true,
+      profile_depth: 92,
+      approved_contributions: 2,
       /** One short of the two the client requires. */
       qualifying_approved: 1,
       caregiver_approved: 0,
@@ -951,6 +963,8 @@ export const sampleFounding: FoundingRow[] = [
       has_neighborhood: true,
       has_children: true,
       allowance_ok: true,
+      profile_depth: 92,
+      approved_contributions: 2,
       qualifying_approved: 2,
       caregiver_approved: 1,
     },

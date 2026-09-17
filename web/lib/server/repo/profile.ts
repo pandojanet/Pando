@@ -143,6 +143,8 @@ export interface ProfileInput {
   life_relevance: RelevanceInput[];
   pending_options: PendingOptionInput[];
   profile_completeness: number;
+  /** `profileDepth` as a percentage — what Founding and the reward read. */
+  profile_depth: number;
 }
 
 /**
@@ -225,6 +227,7 @@ export async function writeProfile(
         ? new Date(input.phone_verified_at)
         : null,
       profileCompleteness: input.profile_completeness,
+      profileDepth: input.profile_depth,
       profileCapturedAt: new Date(input.profile_captured_at),
       isTest: input.is_test,
     };

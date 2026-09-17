@@ -25,7 +25,7 @@ import {
   childrenFromAges,
   derivePendingOptions,
 } from "@/lib/derive";
-import { EMPTY_ANSWERS } from "@/lib/questions";
+import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import type { ProfileAnswers, ProfilePayload, QuestionId } from "@/lib/types";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { areaCity } from "@/lib/server/repo/areas";
@@ -603,6 +603,21 @@ export async function POST(request: Request) {
     pending_options: derivePendingOptions(derivationInput),
     profile_completeness:
       typeof raw.profile_completeness === "number" ? raw.profile_completeness : 0,
+    /**
+     * DERIVED HERE, never read from the body — unlike the line above it.
+     *
+     * Since 16 Sep this number decides whether a parent reaches the Founding
+     * queue and is paid, so a browser that could set it could pay itself. It
+     * is computed from `answers` the route has already sanitised, which is the
+     * 11 Aug rule (the graph is derived here and never taken from the request
+     * body) applied to the first field that was ever about money.
+     *
+     * NOTE: `profile_completeness` above is still client-supplied. It gates
+     * nothing and is history for rows written months ago, so it is left alone
+     * rather than quietly given a second meaning — but it is worth knowing
+     * that the two numbers beside each other have different provenance.
+     */
+    profile_depth: profileDepth(answers).percent,
     client_started_at: raw.client_started_at ?? null,
     client_submitted_at: new Date().toISOString(),
     received_at: new Date().toISOString(),
@@ -684,6 +699,7 @@ export async function POST(request: Request) {
       life_relevance: payload.life_relevance as never,
       pending_options: payload.pending_options as never,
       profile_completeness: payload.profile_completeness,
+      profile_depth: payload.profile_depth,
     }),
   );
 

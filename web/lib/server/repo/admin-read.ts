@@ -26,7 +26,12 @@ import type {
   MatchingResult,
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
-import { rewardStatus } from "@/lib/rewards";
+import {
+  FOUNDING_MIN_APPROVED,
+  FOUNDING_MIN_PROFILE_DEPTH,
+  REASON_MIN_LENGTH,
+  rewardStatus,
+} from "@/lib/rewards";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -117,6 +122,32 @@ export async function readResource(
   }
 }
 
+/**
+ * The Founding requirements, as one SQL predicate over `founding_checklist fc`.
+ *
+ * ⚠⚠ **It exists so the queue and the badge above it cannot disagree.** The
+ * 2 Sep rule — *a count and the list it describes come from one expression,
+ * never from two that happen to agree* — was learned on the demand queue, where
+ * a tab said 14 and listed 19. Here the cost of that would be worse than a
+ * wrong number: a parent visible in the Founding queue while the contributors
+ * page called them unqualified, on the one screen that decides who is paid.
+ *
+ * ⚠ It restates the **shape** of `meetsFoundingRequirements`, which is the one
+ * duplication this design could not remove: the rule has to run in Postgres to
+ * filter a query and in TypeScript to label a row. What it does not duplicate
+ * is a single **number** — every threshold is interpolated from `lib/rewards.ts`,
+ * so the two can drift in wording and never in arithmetic. `test:rewards` walks
+ * both against the same fixtures.
+ */
+const MEETS_FOUNDING_REQUIREMENTS = sql`(
+  fc.verified
+  and fc.has_neighborhood
+  and fc.has_children
+  and fc.profile_depth >= ${FOUNDING_MIN_PROFILE_DEPTH}
+  and fc.approved_contributions >= ${FOUNDING_MIN_APPROVED}
+  and fc.longest_reason >= ${REASON_MIN_LENGTH}
+)`;
+
 /* ── 2.1 Overview ────────────────────────────────────────────────────────── */
 
 async function overview(db: Db) {
@@ -133,22 +164,32 @@ async function overview(db: Db) {
        * separate with FILTER.
        */
       with checklist as (
-        select fc.qualifying_approved,
-               fc.caregiver_approved,
-               s.person_id is not null as gave_something
+        select fc.founding,
+               fc.approved_contributions,
+               ${MEETS_FOUNDING_REQUIREMENTS} as meets_requirements
         from founding_checklist fc
-        left join (select distinct person_id from submissions where not is_test) s
-          on s.person_id = fc.person_id
       ),
       reward as (
         select
-          count(*) filter (where qualifying_approved >= 2)                 as with_two_plus,
-          count(*) filter (where qualifying_approved >= 1
-                              or caregiver_approved >= 1)                  as reward_eligible,
-          count(*) filter (where qualifying_approved = 0
-                             and caregiver_approved = 0
-                             and gave_something)                           as reward_started,
-          count(*) filter (where not gave_something)                       as reward_none
+          count(*) filter (where approved_contributions >= 2)              as with_two_plus,
+          /**
+           * The three states the contributors page shows, counted from the one
+           * predicate the queue filters on — so this tile, that badge and that
+           * column are three readings of a single rule.
+           *
+           * NOTE: founding = 'founding' is checked first here, exactly as
+           * rewardStatus checks it first: an admin's yes is final, and a
+           * requirement that later stops holding must not un-approve somebody
+           * already told they earned it.
+           */
+          count(*) filter (where founding = 'founding')                    as reward_approved,
+          count(*) filter (where founding <> 'founding'
+                             and meets_requirements)                       as reward_in_review,
+          count(*) filter (where founding <> 'founding'
+                             and not meets_requirements)                   as reward_not_met,
+          /* The nav badge, and it must equal what foundingQueue returns. */
+          count(*) filter (where founding = 'pending_founding'
+                             and meets_requirements)                       as founding_pending
         from checklist
       )
       select
@@ -196,14 +237,15 @@ async function overview(db: Db) {
            where status = 'pending' and not is_test)                            as pending_claims,
         (select count(*) from share_contributions
            where status = 'pending_review' and not is_test)                        as pending_contributions,
-        (select count(*) from people where founding = 'pending_founding' and not is_test) as founding_pending,
+        -- NOTE: both of these used to be their own count over people, and the
+        -- first of them is now the queue's own rule rather than "everybody who
+        -- finished the flow" — so it comes from the same CTE the queue filters
+        -- with, never from a second count that happens to agree.
+        r.founding_pending,
         (select count(*) from people where founding = 'founding' and not is_test)  as founding_approved,
-        -- The reward gate. founding_checklist already excludes test rows, and it
-        -- is the only place the qualifying rule is written down: counting it
-        -- again by hand here would be a second definition waiting to drift.
-        r.reward_eligible,
-        r.reward_started,
-        r.reward_none,
+        r.reward_approved,
+        r.reward_in_review,
+        r.reward_not_met,
         (select count(*) from demand_signals
            where status = 'open' and sensitivity = 'ordinary' and not is_test)     as demand_ordinary,
         (select count(*) from demand_signals
@@ -272,9 +314,9 @@ async function overview(db: Db) {
     },
     founding: { pending: n("founding_pending"), approved: n("founding_approved") },
     reward: {
-      eligible: n("reward_eligible"),
-      started: n("reward_started"),
-      none: n("reward_none"),
+      approved: n("reward_approved"),
+      in_review: n("reward_in_review"),
+      not_met: n("reward_not_met"),
     },
     demand: {
       ordinary: n("demand_ordinary"),
@@ -334,10 +376,7 @@ async function contributors(db: Db) {
              -- a join, on the 10 Aug rule: against the pooler the cost is round
              -- trips, and these ride on the statement that is already running.
              p.phone_verified_at is not null                                     as phone_verified,
-             p.invite_id is not null                                             as has_invite,
-             (select max(length(btrim(sc.what_makes_it_great)))
-                from share_contributions sc
-               where sc.person_id = p.id and not sc.is_test)                     as longest_reason,
+             p.profile_depth                                                      as profile_depth,
              coalesce(array_agg(c.birth_year) filter (where c.birth_year is not null), '{}') as birth_years,
              (select count(*) from submissions s where s.person_id = p.id)        as submissions,
              -- Joined, not sub-selected twice: founding_checklist runs two
@@ -345,13 +384,20 @@ async function contributors(db: Db) {
              -- then the other ran the whole view twice for every row.
              coalesce(fc.qualifying_approved, 0)                                  as qualifying_approved,
              coalesce(fc.caregiver_approved, 0)                                   as caregiver_approved,
+             -- What the reward now turns on, and longest_reason is read from
+             -- the view rather than sub-selected again here: it was written in
+             -- both places, which is two definitions of "a reason" waiting to
+             -- disagree about whitespace.
+             coalesce(fc.approved_contributions, 0)                               as approved_contributions,
+             coalesce(fc.longest_reason, 0)                                       as longest_reason,
              (select cs.status from consents cs
                 where cs.person_id = p.id and cs.scope = 'follow_up'
                 order by cs.captured_at desc limit 1)                             as follow_up
       from people p
       left join children c on c.person_id = p.id
       left join founding_checklist fc on fc.person_id = p.id
-      group by p.id, fc.qualifying_approved, fc.caregiver_approved
+      group by p.id, fc.qualifying_approved, fc.caregiver_approved,
+               fc.approved_contributions, fc.longest_reason
       order by p.created_at desc
       limit 500
     `,
@@ -372,20 +418,17 @@ async function contributors(db: Db) {
       qualifying_approved: qualifying,
       caregiver_approved: caregivers,
       /**
-       * ⚠⚠ **Four conditions since 10 Sep, and it used to be one.**
+       * ⚠⚠ **A decision now, where it used to be an arithmetic.**
        *
-       * Her completion trigger: *"Mark a founding contributor eligible only
-       * when all four are true: phone verified; both required questions
-       * answered; one real recommendation saved; and a reason included."* This
-       * said `eligible` on one approved contribution and nothing else — no
-       * phone check, no required questions, and nothing at all about a reason.
-       * On a guaranteed $10 payout that difference is money.
+       * Until 16 Sep this computed eligibility on its own — one approved
+       * contribution until 10 Sep, then her four conditions. The developer's
+       * instruction folds it into the Founding queue: a parent meets the
+       * requirements, an admin looks, and the admin's yes is what the reward
+       * column reports. So `approved` is read off `people.founding` and the
+       * three remaining states describe where somebody is on the way to it.
        *
        * The rule itself is `lib/rewards.ts`, imported rather than written here
-       * so the same arithmetic answers the admin and the suite. What this
-       * function supplies is the four facts, and `started` stays the honest
-       * middle: they have given something and the answer to *"do I pay this
-       * person"* is **not yet** rather than no.
+       * so one arithmetic answers the admin, the queue and the suite.
        *
        * ⚠ `longest_reason` is the longest `what_makes_it_great` they have
        * written on any non-test contribution, not the newest — a parent whose
@@ -395,12 +438,13 @@ async function contributors(db: Db) {
         phone_verified: r.phone_verified === true,
         neighborhood_answered: Boolean(r.neighborhood),
         children_answered: ((r.birth_years as number[]) ?? []).length > 0,
-        recommendations: qualifying + caregivers,
+        profile_depth: Number(r.profile_depth ?? 0),
+        approved_contributions: Number(r.approved_contributions ?? 0),
         /* A length rather than the text: the sentence itself is a parent's own
            words and has no business travelling to a list view (invariant 7 is
            about logs, and this is the same instinct one layer over). */
         reason: "x".repeat(Number(r.longest_reason ?? 0)),
-        has_invite: r.has_invite === true,
+        founding_approved: r.founding === "founding",
       }),
       founding_status: r.founding,
       follow_up_opt_in: r.follow_up === null ? null : r.follow_up === "opted_in",
@@ -534,13 +578,31 @@ async function contributorDetail(db: Db, id: string) {
     submissions: cards.length,
     qualifying_approved: Number(checklist[0]?.qualifying_approved ?? 0),
     caregiver_approved: Number(checklist[0]?.caregiver_approved ?? 0),
-    reward_status:
-      Number(checklist[0]?.qualifying_approved ?? 0) >= 1 ||
-      Number(checklist[0]?.caregiver_approved ?? 0) >= 1
-        ? "eligible"
-        : cards.length > 0
-          ? "started"
-          : "none",
+    /**
+     * ⚠⚠ **The same `rewardStatus` the list calls, and until 16 Sep this
+     * was a second, older rule written out by hand** — *one approved
+     * contribution is `eligible`*, in the `eligible`/`started`/`none`
+     * vocabulary the 10 Sep round replaced. It survived because
+     * `contributorDetail` declares no return type, so nothing ever checked
+     * this object against `ContributorRow`: a page could have shown one
+     * parent as earning the $10 while the row above it said their
+     * requirements were not met.
+     *
+     * ⚠ It was also read by nobody — the detail page never rendered it —
+     * which is the dead-payload fault this repository has already paid for
+     * on estimate 2.2. It is rendered now, beside the Founding badge, because
+     * this is the page somebody stands on to decide about one parent.
+     */
+    reward_status: rewardStatus({
+      phone_verified: checklist[0]?.verified === true,
+      neighborhood_answered: Boolean(p.neighborhood),
+      children_answered: kids.some((y) => typeof y === "number"),
+      profile_depth: Number(checklist[0]?.profile_depth ?? 0),
+      approved_contributions: Number(checklist[0]?.approved_contributions ?? 0),
+      /* A length, never the sentence — see the note on the list query. */
+      reason: "x".repeat(Number(checklist[0]?.longest_reason ?? 0)),
+      founding_approved: p.founding === "founding",
+    }),
     founding_status: p.founding,
     follow_up_opt_in:
       consentRows.find((c) => c.scope === "follow_up")?.status === "opted_in",
@@ -550,6 +612,8 @@ async function contributorDetail(db: Db, id: string) {
     invite_code: p.invite_code,
     source: p.source,
     profile_completeness: Number(p.profile_completeness ?? 0),
+    profile_depth: Number(checklist[0]?.profile_depth ?? 0),
+    approved_contributions: Number(checklist[0]?.approved_contributions ?? 0),
     time_in_area: p.time_in_area,
     moved_from: p.moved_from,
     attribution: p.attribution,
@@ -1045,9 +1109,29 @@ async function foundingQueue(db: Db) {
       join people p on p.id = fc.person_id
       left join children c on c.person_id = p.id
       where fc.founding = 'pending_founding'
+        /**
+         * THE QUEUE IS THE REQUIREMENTS, not everybody who finished.
+         * writeCompletion writes pending_founding for every parent who
+         * reaches the end of the flow, so before 16 Sep this listed all of
+         * them — fifteen people, none of whom had two approved contributions,
+         * under a heading asking whether each was really from the group.
+         *
+         * Filtered here rather than sorted, because the developer's sentence is
+         * *"після цього рекорд додається в чергу"*: a record arrives once it is
+         * ready, and a queue that also lists the not-yet-ready is a queue
+         * somebody has to re-triage by eye every morning.
+         *
+         * NOTE: the thresholds are interpolated from lib/rewards.ts rather than
+         * written here. They are the same two numbers the contributors page
+         * shows a status from, and two copies would be two rules — so a parent
+         * can never be in this queue and read as unqualified one page over.
+         */
+        and fc.profile_depth >= ${FOUNDING_MIN_PROFILE_DEPTH}
+        and fc.approved_contributions >= ${FOUNDING_MIN_APPROVED}
       group by fc.person_id, fc.founding, fc.verified, fc.has_neighborhood,
                fc.has_children, fc.allowance_ok, fc.qualifying_approved,
-               fc.caregiver_approved, p.id
+               fc.caregiver_approved, fc.profile_depth,
+               fc.approved_contributions, fc.longest_reason, p.id
       order by p.created_at desc
       limit 300
     `,
@@ -1075,6 +1159,10 @@ async function foundingQueue(db: Db) {
       allowance_ok: r.allowance_ok,
       qualifying_approved: Number(r.qualifying_approved ?? 0),
       caregiver_approved: Number(r.caregiver_approved ?? 0),
+      /* The two the queue is now filtered on, carried so the card can show what
+         it is about to pay for rather than only that it qualified. */
+      profile_depth: Number(r.profile_depth ?? 0),
+      approved_contributions: Number(r.approved_contributions ?? 0),
     },
     status: r.founding,
     created_at: r.created_at,

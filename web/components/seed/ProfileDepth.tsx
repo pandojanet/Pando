@@ -73,34 +73,49 @@ export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
  * Exactly one of `onComplete` (the review page, which can jump straight to the
  * first unanswered question) or `href` (anywhere else). Renders nothing at 100%:
  * a reminder that cannot be acted on is chrome.
+ *
+ * ⚠ **`part` splits the sentence from the control, and only the review page
+ * uses it** (16 Sep, the developer: *"Complete your profile перенесемо теж під
+ * Save your profile"*). There the two halves end up on different parts of one
+ * screen — the argument above the answers it is about, the action in the dock
+ * beside Save — so they cannot be one block. Measured whole in the dock it cost
+ * **235px of an 812px phone**, and its first clause repeated the *"N% done"*
+ * already in the header bar two inches above.
+ *
+ * ⚠ The 100% rule is checked once, here, for both halves — a build that
+ * rendered the sentence and hid the control, or the reverse, is the fault this
+ * split most easily introduces.
  */
 export function DepthReminder({
   depth,
   onComplete,
   href,
+  part = "both",
   className,
 }: {
   depth: ProfileDepth;
   onComplete?: () => void;
   href?: string;
+  part?: "both" | "note" | "action";
   className?: string;
 }) {
   if (depth.total === 0 || depth.answered >= depth.total) return null;
   return (
     <div className={className}>
-      <p className="leading-relaxed text-help text-muted">
-        <span className="font-semibold text-green-deep tabular-nums">{depth.percent}% done</span>
-        {" — the stronger your profile, the better your matches."}
-      </p>
-      {href ? (
-        <TextAction href={href}>
-          Complete your profile
-        </TextAction>
-      ) : (
-        <TextAction onClick={onComplete}>
-          Complete your profile
-        </TextAction>
+      {part !== "action" && (
+        <p className="leading-relaxed text-help text-muted">
+          <span className="font-semibold text-green-deep tabular-nums">
+            {depth.percent}% done
+          </span>
+          {" — the stronger your profile, the better your matches."}
+        </p>
       )}
+      {part !== "note" &&
+        (href ? (
+          <TextAction href={href}>Complete your profile</TextAction>
+        ) : (
+          <TextAction onClick={onComplete}>Complete your profile</TextAction>
+        ))}
     </div>
   );
 }

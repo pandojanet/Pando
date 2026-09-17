@@ -866,6 +866,15 @@ export interface ProfilePayload {
   life_relevance: RelevanceRow[];
   pending_options: PendingOptionRow[];
   profile_completeness: number;
+  /**
+   * How full the profile is against the whole questionnaire (`profileDepth`),
+   * which is **not** `profile_completeness` above: that one counts the screens
+   * this parent could see, so tapping Continue at the optional fork reports
+   * 100% on two answers. Since 16 Sep this is what the Founding queue and the
+   * reward are measured against, so the route derives it server-side and
+   * ignores whatever the browser sends.
+   */
+  profile_depth: number;
   client_started_at: string;
   client_submitted_at: string;
 }

@@ -358,7 +358,9 @@ export const AUDIT_ACTION: Record<string, string> = {
   "claim.decline": "Declined a caregiver's own sign-up",
   "claim.delete": "Deleted a caregiver's profile at their request",
   "founding.approve": "Confirmed a founding parent",
-  "founding.request_invite": "Marked a parent as not from the group",
+  /* The stored action keeps its name (an enum with a CHECK behind it); what
+     an admin reads is what the decision now means. */
+  "founding.request_invite": "Decided a parent is not Founding",
   "contributor.note": "Left a note on a contributor",
   "referral.link": "Credited a referral",
   "referral.void": "Removed a referral",

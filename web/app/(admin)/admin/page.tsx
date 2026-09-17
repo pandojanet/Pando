@@ -301,10 +301,10 @@ export default function AdminOverviewPage() {
               tone={twoPlus !== null && twoPlus >= 50 ? "good" : "plain"}
             />
             <Stat
-              label="Earned the thank-you"
-              value={o.reward.eligible}
-              hint={`${o.reward.none} left nothing`}
-              tone={o.reward.eligible > 0 ? "good" : "plain"}
+              label="Reward approved"
+              value={o.reward.approved}
+              hint={`${o.reward.in_review} waiting on you`}
+              tone={o.reward.in_review > 0 ? "warn" : "plain"}
             />
           </div>
 

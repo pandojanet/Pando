@@ -880,6 +880,39 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
   const flowForReview = fs.readFileSync(new URL("../components/seed/ProfileFlow.tsx", import.meta.url), "utf8");
   ok("the review dock no longer says “the part only you can answer”", !flowForReview.includes("the part only you can answer —"));
+
+  /**
+   * 16 Sep — the review lists every question the percentage counts.
+   *
+   * ⚠⚠ **Pinned on the source, and it has to be**: the fault was a *branch*
+   * (which screen list the review reads), it lives in a React component, and
+   * `ProfileFlow` cannot be loaded here. What it produced was a parent who
+   * tapped Continue at the fork seeing three rows under a header reading
+   * *30% done* — the number measured against the whole questionnaire, the list
+   * against their own fork.
+   *
+   * ⚠ Three checks rather than one, because the halves fail independently:
+   * the list has to be built from the opened fork, `profileDepth` has to keep
+   * measuring the same way, and **Add** has to open the fork before jumping —
+   * without that last one every optional row is a button that does nothing,
+   * since `visibleScreens(answers)` does not contain the screen it names.
+   */
+  ok(
+    "the review list is built from the questionnaire, not this parent’s fork",
+    flowForReview.includes("const reviewScreens = visibleScreens({ ...answers, wants_detail: true })"),
+    "a review reading `screens` shows a Continue-at-the-fork parent almost nothing",
+  );
+  ok(
+    "and the percentage beside it is measured the same way",
+    /const full: ProfileAnswers = \{ \.\.\.answers, wants_detail: true \};/.test(
+      fs.readFileSync(new URL("../lib/questions.ts", import.meta.url), "utf8"),
+    ),
+    "the count and the list it describes come from one rule (2 Sep)",
+  );
+  ok(
+    "Add opens the fork before jumping, so no optional row is a dead control",
+    /function jumpTo[\s\S]{0,600}wants_detail: true/.test(flowForReview),
+  );
 }
 
 console.log("\n=== 3 Sep: month and year, not a date of birth ===");

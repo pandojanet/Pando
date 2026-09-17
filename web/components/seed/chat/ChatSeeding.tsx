@@ -12,7 +12,12 @@ import {
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
 import { saveSubmission } from "@/lib/api-client";
-import { hasReason, rewardStatus, REWARD_CONFIRMATION } from "@/lib/rewards";
+import {
+  FOUNDING_MIN_APPROVED,
+  FOUNDING_MIN_PROFILE_DEPTH,
+  hasReason,
+  REWARD_CONFIRMATION,
+} from "@/lib/rewards";
 import {
   buildSubmission,
   formatAnswer,
@@ -497,21 +502,32 @@ export function ChatSeeding() {
      * offered on it.
      */
     /**
-     * Does this card meet her four conditions, and is it the first that does?
-     * (10 Sep §6.) Computed before the card joins the list, so "first" means
-     * first — a second qualifying card must not repeat the promise.
+     * Has this parent now done everything **they** can do toward the reward?
+     *
+     * ⚠⚠ **Rewritten 16 Sep, because the old version promised money this app
+     * could no longer deliver.** It fired on the *first* card carrying a
+     * reason and said "watch out for your payment this week" — true while one
+     * approved contribution earned the $10, and false the moment the Founding
+     * requirements became a full profile plus **two** contributions an admin
+     * has approved. A phone cannot know what an admin will approve, so the
+     * trigger now reports only what is knowable here: their own side is done.
+     *
+     * ⚠ Counted **inclusive of the card being saved**, which is why the
+     * comparison is `=== FOUNDING_MIN_APPROVED` rather than `>=`: this is the
+     * moment they reach two, and a third card must not repeat it.
      */
-    const firstQualifying =
+    const withReason =
+      (chat?.submissions ?? []).filter((s) =>
+        hasReason(String(s.fields.what_makes_it_great ?? "")),
+      ).length + (hasReason(String(fields.what_makes_it_great ?? "")) ? 1 : 0);
+
+    const justFinishedTheirPart =
       kind !== "caregiver" &&
-      !(chat?.submissions ?? []).some((s) => hasReason(String(s.fields.what_makes_it_great ?? ""))) &&
-      rewardStatus({
-        phone_verified: session?.phone_verified === true,
-        neighborhood_answered: Boolean(session?.answers.neighborhood),
-        children_answered: (session?.answers.child_ages ?? []).length > 0,
-        recommendations: 1,
-        reason: String(fields.what_makes_it_great ?? ""),
-        has_invite: Boolean(session?.invite_code),
-      }) === "eligible";
+      withReason === FOUNDING_MIN_APPROVED &&
+      session?.phone_verified === true &&
+      Boolean(session?.answers.neighborhood) &&
+      (session?.answers.child_ages ?? []).length > 0 &&
+      profileDepth(session.answers).percent >= FOUNDING_MIN_PROFILE_DEPTH;
 
     const submission: Submission = {
       ...buildSubmission({ id: draftId, kind, fields, step_index: 0 }),
@@ -532,27 +548,30 @@ export function ChatSeeding() {
           id: uid(),
           role: "pando",
           /**
-           * Her confirmation copy, on the first qualifying recommendation only
-           * (10 Sep §6): *"Done — watch out for your payment this week"*.
+           * The confirmation, on the card that completes the parent's own half
+           * of the Founding requirements — see `justFinishedTheirPart` above
+           * for the six conditions and why the comparison is exact.
            *
-           * ⚠ **On the first, and only when it actually qualifies.** The four
-           * conditions are `rewardStatus`'s, evaluated here from what this
-           * device can see — a verified number, both required answers, and a
-           * reason in the card that was just finished. Saying it on a card
-           * without a reason would promise money her own trigger does not owe.
+           * ⚠⚠ **This comment used to describe her 10 Sep sentence and the
+           * rule under it, and both are gone.** It said the copy promises a
+           * payment *"this week"* rather than stating one has been made, which
+           * was the right distinction for a rule where one approved
+           * contribution earned the $10. Under the Founding requirements the
+           * last step is not the parent's at all: an admin has to approve two
+           * cards. So the copy names no date, and the comment saying it does
+           * would have outlived the sentence it described.
            *
-           * ⚠ **What this screen cannot know, it does not claim.** *"One
-           * reward per verified phone"* and *"no duplicate payouts"* are
-           * server-side facts, so this is the offer being *met*, not a payment
-           * being confirmed — and the admin still computes eligibility from
-           * the same rule (`reward_status`). If the two ever disagree the
-           * server wins, which is why the sentence promises a payment "this
-           * week" rather than stating one has been made.
+           * ⚠ **What this screen cannot know, it still does not claim.** One
+           * reward per verified phone, no duplicate payouts, and whether an
+           * admin approves anything are all server-side; this says only that
+           * their side is finished. The admin computes the status from the
+           * same `lib/rewards.ts` rule, and if the two ever disagree the
+           * server wins.
            */
           text:
             kind === "caregiver"
               ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
-              : firstQualifying
+              : justFinishedTheirPart
                 ? `${REWARD_CONFIRMATION}. Anything else you'd pass on?`
                 : "Got it, thank you. Anything else you'd pass on?",
         },

@@ -1199,7 +1199,25 @@ ok("contributor (detail)", (await q("contributor", { id: people[0].id })).json.r
 
 head("2.1  the overview numbers hold together");
 const o = (await q("overview")).json.rows;
-ok("reward states add up to every contributor", o.reward.eligible + o.reward.started + o.reward.none === o.contributors.total, `${o.reward.eligible}+${o.reward.started}+${o.reward.none} = ${o.contributors.total}`);
+/* The three states are `approved` / `in_review` / `not_met` since 16 Sep,
+   when the reward became the Founding queue's decision rather than an
+   arithmetic. `missed_deadline` is deliberately absent from the overview:
+   the tile counts what is owed a decision, and an expired offer is not. */
+ok(
+  "reward states add up to every contributor",
+  o.reward.approved + o.reward.in_review + o.reward.not_met === o.contributors.total,
+  `${o.reward.approved}+${o.reward.in_review}+${o.reward.not_met} = ${o.contributors.total}`,
+);
+/* The count the nav badge paints and the list the queue returns come from one
+   SQL predicate (`MEETS_FOUNDING_REQUIREMENTS`), and this is the check that
+   they have not become two — the 2 Sep rule, on the screen that decides who
+   is paid. Asserted against the live database rather than by reading the
+   query, because a second copy would look right in both places. */
+ok(
+  "the Founding badge equals the queue it points at",
+  o.founding.pending === (await q("founding")).json.rows.length,
+  `${o.founding.pending} vs the queue`,
+);
 ok("escalations are a subset of open flags", o.quality.escalations <= o.quality.open_flags);
 ok("the sidebar counts exist", typeof o.quality.pending_contributions === "number" && typeof o.quality.pending_claims === "number");
 
@@ -1599,7 +1617,25 @@ head("2.2 / 2.3  queues");
 const founding = (await q("founding")).json.rows;
 ok("the founding queue shows the checklist", founding.length > 0 && typeof founding[0].checklist.qualifying_approved === "number");
 ok("phones are masked before they leave the server", founding.every((f) => !f.phone_masked || f.phone_masked.startsWith("•")));
-ok("every contributor carries a reward state", people.every((r) => ["none", "started", "eligible"].includes(r.reward_status)));
+/* `missed_deadline` is in the union here and not in the overview's three:
+   a parent who did everything late is a real row and a state nobody is
+   waiting on. */
+ok(
+  "every contributor carries a reward state",
+  people.every((r) =>
+    ["not_met", "in_review", "approved", "missed_deadline"].includes(r.reward_status),
+  ),
+);
+/* ⚠ The rule reaches the queue from SQL and the row from TypeScript, so the
+   one thing that must never happen is a parent visible in the queue while the
+   contributors page calls their requirements unmet. */
+ok(
+  "nobody in the founding queue reads as unqualified one page over",
+  founding.every((f) => {
+    const row = people.find((r) => r.id === f.id);
+    return !row || row.reward_status === "in_review" || row.reward_status === "approved";
+  }),
+);
 /* A2P §3.3 — the consent file is the defence against a TCPA complaint, and a
    complaint arrives as a phone number. So this one resource answers with the
    number unmasked and with the wording version that number agreed to. */

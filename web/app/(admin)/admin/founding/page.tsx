@@ -183,9 +183,31 @@ export default function FoundingQueuePage() {
                            * the heading cannot say is when no group was recorded
                            * at all, and that is the badge beside the name.
                            */}
+                          {/**
+                            * ⚠⚠ **The two numbers this row is here for**, and
+                            * until 16 Sep the page rendered neither — it showed a
+                            * submission count while the type's own doc said
+                            * *"the founding queue reads the checklist … so the
+                            * admin sees why somebody is or is not eligible"*. The
+                            * checklist was sent and unused: a comment describing
+                            * behaviour nothing implemented, on the one screen
+                            * where somebody decides whether a parent is paid.
+                            *
+                            * Now that the queue is *filtered* on a full profile
+                            * and two admin approvals, a row reaching it is a claim
+                            * about those two numbers, and the person confirming it
+                            * has to be able to see them. Shared stays beside them
+                            * because approved-of-shared is the ratio that says
+                            * whether this is somebody prolific or somebody who
+                            * wrote two good cards.
+                            */}
                           <p className="mt-1 text-[13px] text-muted">
-                            Shared {total} {total === 1 ? "card" : "cards"} ·{" "}
-                            {row.phone_masked ?? "no number"}
+                            {[
+                              `Profile ${row.checklist.profile_depth}%`,
+                              `${row.checklist.approved_contributions} approved`,
+                              `${total} shared`,
+                              row.phone_masked ?? "no number",
+                            ].join(" · ")}
                           </p>
                         </div>
 
@@ -208,11 +230,30 @@ export default function FoundingQueuePage() {
                               void act(
                                 "founding.request_invite",
                                 [row.id],
-                                "Marked as not from the group.",
+                                "Marked as not a Founding parent.",
                               )
                             }
                           >
-                            Not from the group
+                            {/**
+                              * ⚠⚠ **"Not from the group" was the dead question,
+                              * printed on the control that takes the decision.**
+                              * The group concept went on 7 Sep when entry opened
+                              * and everybody began arriving directly, so the
+                              * button was asking an admin to rule on something
+                              * the product no longer has — and the answer it
+                              * writes now withholds a $10 reward.
+                              *
+                              * ⚠ The stored value stays `request_invite`, and
+                              * so does the action: it is an enum with a CHECK
+                              * behind it, and the 10 Sep rule is that a rename
+                              * there is a migration rather than a copy change.
+                              * What changed is only what the person reads.
+                              *
+                              * ⚠ Still not a rejection, which is why it is not
+                              * `danger`: every card they shared stays, and they
+                              * become an ordinary user at launch.
+                              */}
+                            Not Founding
                           </Button>
                         </div>
                       </div>

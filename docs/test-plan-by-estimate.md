@@ -587,21 +587,43 @@ reopened.
 
 ## 2.2 · Founding queue
 
-The queue shows the **checklist**, not a submission count, so an admin sees *why*
-somebody is or is not eligible: verified, has neighborhood, has children, allowance
-ok, qualifying approved, caregiver approved.
+**Reshaped 16 Sep.** It used to ask *"is this really Sarah from our parent group?"*,
+which stopped meaning anything when entry opened on 7 Sep — ten of twelve real
+parents arrived with no invite. It now asks whether a parent has earned Founding
+**and the $10**, and a record only reaches it once two requirements hold: a profile
+filled in to at least `FOUNDING_MIN_PROFILE_DEPTH` (80%) and
+`FOUNDING_MIN_APPROVED` (2) contributions an admin has approved. Both numbers live
+in `lib/rewards.ts`.
 
-**Pass:** approving sets `founding = 'founding'`. "Not from the group" sets
-`request_invite` and **keeps every submission** — it is not a rejection. Founding is
-never self-granted, and it activates on the **second** approved contribution.
+Each row carries the two numbers it is there for — `Profile 90% · 2 approved · 4
+shared` — plus the older checklist fields behind them.
+
+**Pass:** the queue is **shorter than the contributor list**, because it is
+filtered rather than sorted. Approving sets `founding = 'founding'`. **Not
+Founding** sets `request_invite` and **keeps every submission** — it is not a
+rejection, and the stored value keeps its old name deliberately. Founding is never
+self-granted.
+
+**The check worth making by hand:** the sidebar badge, this queue's length and the
+contributors page's *Ready for review* filter are three readings of one SQL
+predicate and must agree exactly. `test:e2e` asserts the first two; the third is
+a click.
 
 ## 2.3 · Contributors, detail, and the seed reward
 
-- List: search, hide-test toggle, and the reward filter (`Reward earned` /
-  `Waiting on review` / `Gave nothing`).
-- **The reward bar is one contribution, not two.** "One activity or one caregiver"
-  is the client's payment minimum; Founding needs two. `Gave nothing` is the state
-  the client asked for by name — the parents who arrived and left nothing.
+- List: search, hide-test toggle, and the reward filter (`Reward approved` /
+  `Ready for review` / `Requirements not met`).
+- **The reward and Founding are now one decision, not two bars.** Since 16 Sep the
+  reward is what the Founding queue grants: `approved` is read off
+  `people.founding`, `in_review` means every requirement holds and a person has
+  not decided, `not_met` is everything else. `missed_deadline` exists for a parent
+  who did everything after 31 Oct and is deliberately absent from the overview
+  tile, which counts what is owed a decision.
+- **Two profile numbers on the detail page, and they differ on purpose.**
+  *Profile complete* is `profile_completeness` (the screens this parent was
+  shown); *Profile filled in* is `profile_depth` (the whole questionnaire), and
+  only the second is what the requirements read. A parent at 82% and 79% is the
+  case to look for.
 - Sort by "Most contributions" — this is the contest ranking. There is **no
   threshold**, deliberately: the client never named one.
 - Detail: derived profile, everything submitted, consents with wording versions,
