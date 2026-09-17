@@ -6,7 +6,7 @@ import { OptionPicker } from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { geocodePlaces, searchMarketOptions } from "@/lib/api-client";
-import { placesForZip } from "@/lib/home-places";
+import { placesForZip, searchPlaces } from "@/lib/home-places";
 import {
   lookupKindFor,
   worthGeocoding,
@@ -694,12 +694,52 @@ export function SearchableChipGroup({
       };
     }
 
+    /**
+     * A name in her footprint is answered from the bundle, before the database
+     * is asked anything — which is what the cost-control note above already
+     * claimed ("`home-places.ts` answers from the bundle for nothing") and
+     * which, until 17 Sep, was true of a **ZIP** and of nothing else.
+     * `searchPlaces` was written on 14 Sep with her placeholder quoted in its
+     * own header and was called by nobody: the written-and-never-called fault,
+     * on the one question §8.5 makes required.
+     *
+     * ⚠ It seeds rather than replaces. The round trip still runs and can only
+     * **add** — `market_options.neighborhoods` carries the fourteen Pasadena
+     * districts as well as her fifty-two places, and a parent who says
+     * Bungalow Heaven has said something finer than Pasadena, which the 14 Sep
+     * decision keeps on purpose.
+     *
+     * ⚠⚠ **And it is what makes the required question answerable during an
+     * outage.** Before this, a failed directory search left a parent outside
+     * the seventeen taps with no way at all to answer where they live — the
+     * box said "Search isn't answering" and that was the end of it. Her own
+     * scope now answers with no network at all.
+     */
+    const localPlaces =
+      category === "neighborhoods"
+        ? searchPlaces(q).map((p) => ({ id: p.id, label: p.name }))
+        : [];
+    /* `resultsFor` is deliberately **not** set here: these are some of the
+       answer rather than the answer, so the status keeps saying it is still
+       looking (the 26 Aug rule — a derived flag must not lag its input). */
+    if (localPlaces.length > 0) {
+      setResults(localPlaces);
+      setFailed(false);
+    }
+
     timer.current = window.setTimeout(() => {
       void searchMarketOptions({ category, market, q, area: area ?? undefined })
         .then((r) => {
-          setResults(r);
+          /* Hers first and deduplicated by id, because `places:sync` wrote the
+             same slugs into `market_options` — a plain concat would show
+             Altadena twice. */
+          const merged = [
+            ...localPlaces,
+            ...r.filter((o) => !localPlaces.some((l) => l.id === o.id)),
+          ];
+          setResults(merged);
           setFailed(false);
-          widen(r.length);
+          widen(merged.length);
         })
         .catch(() => {
           /* Same honesty rule as the rest of the app: say the search did not
@@ -710,8 +750,11 @@ export function SearchableChipGroup({
              place is missing, it said nothing at all, so paying Google to
              second-guess a network error would spend money to answer a
              question nobody managed to ask. */
-          setResults([]);
-          setFailed(true);
+          setResults(localPlaces);
+          /* ⚠ Not a failure while her own places are on screen: "search isn't
+             answering" printed above three real towns is the page arguing with
+             itself, and the parent can act on what is there. */
+          setFailed(localPlaces.length === 0);
         })
         /* Last, and in both branches: this is what marks the query settled, so
            a result that is about to be replaced never reads as the answer. */
@@ -798,10 +841,31 @@ export function SearchableChipGroup({
    * she requires them read whole, and hiding them behind a tap is the 1 Sep bug
    * (five cities nobody could see) arriving by another route.
    */
+  /**
+   * ⚠ **Hoisted out of the chips branch on 17 Sep, because the neighborhood
+   * question moved into the dropdown one.** It was written inline in the JSX
+   * below, so a question that renders as a box got `OptionPicker`'s own
+   * default — "Start typing a name" — on the one question whose placeholder
+   * the client specified by hand. One expression, both branches.
+   *
+   * ⚠ **And a place is not a name** (15 Sep). `previous_places` is the one
+   * directory with no starters at all, so its box is the whole control — and
+   * it invited a parent to type "a name" for a question asking which cities
+   * they have lived in. The words are her own `searchLabel` for that
+   * question ("Add a city, state or country"), so nothing is invented.
+   */
+  const searchPlaceholder =
+    category === "neighborhoods"
+      ? /* Her §5, verbatim. */ "Type your town, neighborhood or ZIP code"
+      : category === "previous_places"
+        ? "Type a city, state or country"
+        : "Start typing a name";
+
   if (dropdown) {
     return (
       <OptionPicker
         {...rest}
+        placeholder={searchPlaceholder}
         options={merged}
         extra={unshown}
         selected={selected}
@@ -906,13 +970,7 @@ export function SearchableChipGroup({
              asking which cities they have lived in. The words are her own
              `searchLabel` for that question ("Add a city, state or country"),
              so nothing new is invented. */
-          placeholder={
-            category === "neighborhoods"
-              ? "Type your town, neighborhood or ZIP code"
-              : category === "previous_places"
-                ? "Type a city, state or country"
-                : "Start typing a name"
-          }
+          placeholder={searchPlaceholder}
         />
 
         {/**

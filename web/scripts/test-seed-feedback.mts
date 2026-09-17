@@ -2566,5 +2566,95 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   );
 }
 
+/**
+ * ## 17 Sep — where you live is one searchable box
+ *
+ * Her §5: *"Searchable combobox instead of a dropdown, placeholder 'Type your
+ * town, neighborhood or ZIP code'; if a place has multiple ZIPs, ask one
+ * follow-up question. Scope: SGVCOG footprint + West Covina + major
+ * unincorporated communities."*
+ *
+ * Most of these read the **source**, because `SEARCHABLE_QUESTIONS` is private
+ * to `lib/questions.ts` and the placeholder is a branch inside a React
+ * component this pure suite cannot render.
+ *
+ * ⚠ The one worth having is `searchPlaces`: it was written on 14 Sep with her
+ * placeholder quoted in its own header and **was called by nobody** until
+ * today, so what is asserted is that the picker actually reaches it. That is
+ * the written-and-never-called fault this repository keeps paying for, pinned
+ * rather than remembered.
+ */
+{
+  const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
+  const places = (await import(`../lib/home-places.ts?v=${Date.now()}`)) as typeof import("../lib/home-places.ts");
+  const questionsSrc = src("../lib/questions.ts");
+  const picker = src("../components/ui/SearchableChipGroup.tsx");
+
+  /* Read as the block between this entry and the next top-level key, so a
+     `dropdown` belonging to some other directory cannot satisfy it. */
+  const entry = questionsSrc.slice(
+    questionsSrc.indexOf("  neighborhood: {"),
+    questionsSrc.indexOf("  camps: {"),
+  );
+  ok("where you live is a searchable box, not a wall of chips", /dropdown: true/.test(entry));
+  ok(
+    "and it still offers every approved town, uncapped and untrimmed",
+    /wholeList: true/.test(entry),
+  );
+
+  ok(
+    "the placeholder is hers, verbatim",
+    picker.includes('"Type your town, neighborhood or ZIP code"'),
+  );
+  /* One expression, both branches: two copies is how the dropdown branch came
+     to render `OptionPicker`'s own default on the one question whose
+     placeholder she specified by hand. */
+  /* The string literal, not the sentence — the cost-control note above the
+     ZIP branch quotes her wording too, and a comment saying what the code does
+     is not a second copy of it. */
+  const written = (picker.match(/\"Type your town, neighborhood or ZIP code\"/g) ?? []).length;
+  ok(
+    "and it is written once, so both branches read the same string",
+    written === 1,
+    `${written} occurrence(s)`,
+  );
+
+  ok(
+    "a name inside the footprint is answered from the bundle, not only a ZIP",
+    /searchPlaces\(/.test(picker),
+  );
+
+  /* Her follow-up, from both sides: asked where there is a choice to make, and
+     never where there is exactly one possible answer. */
+  ok(
+    "a place with several ZIPs is asked which one",
+    places.zipChoiceNeeded("covina") && places.zipOptionsFor("covina").length === 3,
+  );
+  ok(
+    "a place with one ZIP is not asked a question with one answer",
+    !places.zipChoiceNeeded("azusa") && places.zipOptionsFor("azusa").length === 1,
+  );
+  /* A ZIP several places share returns all of them — her "don't make users pick
+     from duplicate city rows upfront", satisfied from the other side. */
+  ok(
+    "a shared ZIP returns every place it serves",
+    places.placesForZip("91702").length === 3,
+  );
+
+  /* Her scope, asserted as membership rather than as a count, which would
+     break the day she adds one. */
+  for (const id of [
+    "west-covina",
+    "azusa",
+    "pomona",
+    "claremont",
+    "altadena",
+    "hacienda-heights",
+    "rowland-heights",
+  ]) {
+    ok(`${id} is inside the footprint`, places.placeById(id) !== null);
+  }
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

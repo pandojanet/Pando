@@ -2623,19 +2623,39 @@ const SEARCHABLE_QUESTIONS: Partial<
      * schools, so the free-text sheet is no longer the only way out of a fixed
      * list.
      */
-    /* ZIP named in the label as well as the placeholder (§5), because the
-       label is the control's accessible name — a placeholder alone tells a
-       screen-reader user nothing about the third way in. */
-    searchLabel: "Can’t find yours? Search by town, neighborhood or ZIP code.",
     /**
-     * **All seventeen of her cities are taps, always.**
+     * ⚠⚠ **A searchable combobox since 17 Sep, and that reverses the note this
+     * replaces.** It read: *"All seventeen of her cities are taps, always —
+     * they are her approved list and they are meant to be read whole;
+     * seventeen chips is a screen, not a wall."* Her newer instruction is
+     * explicit — *"searchable combobox instead of a dropdown, placeholder
+     * 'Type your town, neighborhood or ZIP code'"* — so it wins by this repo's
+     * own rule, and the cost is written down rather than rediscovered.
      *
-     * They are her approved list (item 5 of 24 Aug, reaffirmed on 1 Sep) and
-     * they are meant to be read whole — seventeen chips is a screen, not a
-     * wall. The area logic that trims the other four directories cannot apply
-     * to the question that *sets* the area, and applying it anyway is what hid
-     * five cities and then shrank the list on selection. See `wholeList`.
+     * **What the chips were buying** is exactly what the old note says: the
+     * seventeen are readable at a glance, and a parent who does not know the
+     * product recognises their own town without being asked to type. Behind a
+     * box they are one tap further away, and this is the **first** screen of
+     * the flow and one of only two required questions.
+     *
+     * **What it buys instead** is her whole scope on equal footing. There are
+     * fifty-two places in the footprint and seventeen taps, so thirty-five of
+     * them were reachable only by noticing a search box *underneath* a wall of
+     * buttons — which reads as a fallback for when the list is wrong, not as
+     * the way in. One control, and a ZIP is a first-class way to answer it.
+     *
+     * ⚠ `wholeList` stays, and it is doing a different job now: it turns off
+     * the area trim and the twelve-item cap, so the box opens on all seventeen
+     * rather than on a slice. The question that *sets* the area still cannot be
+     * filtered by it — the 1 Sep bug that hid five cities.
      */
+    dropdown: true,
+    /* ⚠ As a dropdown this is the control's **accessible name**, not a line of
+       help under a grid of chips — so it stopped being able to open with
+       "Can't find yours?", which described a fallback that no longer exists.
+       The ZIP stays named in it (§5), because a placeholder alone tells a
+       screen-reader user nothing about the third way in. */
+    searchLabel: "Your town, neighborhood or ZIP code",
     wholeList: true,
   },
   /**
