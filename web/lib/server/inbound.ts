@@ -64,6 +64,7 @@ import {
 import { attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
 import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
+import { mentionsName } from "@/lib/public-info";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 import { yesOrNo } from "@/lib/thanks";
 import { readPingReply } from "@/lib/vouch";
@@ -1152,7 +1153,18 @@ async function answerQuestion(input: {
          * order among parent records — a caregiver can outrank it only on a care
          * question, where the search does not run at all.
          */
-        exclude: retrieved.shares.slice(1).map((share) => share.name),
+        /**
+         * ⚠⚠ **And every record the question names**, since 17 Sep. The
+         * paragraph above assumes the lead *is* the record asked about; the
+         * probe showed what happens when retrieval leads with something else —
+         * the named record drops into this list and the public half of that
+         * answer disappears whole. `mentionsName` needs two words, so a record
+         * called "Test" cannot exempt itself out of a sentence.
+         */
+        exclude: retrieved.shares
+          .slice(1)
+          .filter((share) => !mentionsName(body, share.name))
+          .map((share) => share.name),
       });
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"

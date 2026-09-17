@@ -740,5 +740,76 @@ console.log("\n=== 10 Sep: one name per record, and only where it was granted ==
   );
 }
 
+/**
+ * ## 17 Sep — three faults the live probe found and reading could not
+ *
+ * Each is pinned on the pure half, which is where all three actually live.
+ */
+{
+  /* The record the question names is exempt from the exclusion. Without it the
+     9 Sep fix — exempt the *lead* — was defeated whenever retrieval led with
+     something off-topic, and the public half of that answer vanished whole. */
+  ok(
+    "a question that names a record exempts it from the exclusion",
+    pi.mentionsName("What locals tell about Tom Sawyer Camps?", "Tom Sawyer Camps"),
+  );
+  ok(
+    "and a record it does not name stays excluded",
+    !pi.mentionsName("any good toddler classes near South Pasadena?", "Tom Sawyer Camps"),
+  );
+  /* ⚠ The floor that keeps this from reinstating the fault it fixes: a
+     one-word record would exempt itself out of any sentence containing that
+     word, and the answer would then offer one place under two trust labels. */
+  ok(
+    "a one-word record cannot exempt itself",
+    !pi.mentionsName("any good camps near Altadena?", "Camps"),
+  );
+  ok(
+    "the words have to be together, and in order",
+    !pi.mentionsName("Sawyer went to camps with Tom", "Tom Sawyer Camps"),
+  );
+
+  /* A detail that does not fit is dropped, never shortened — the prompt asks
+     for ten words and this used to cut at sixty characters, so a compliant
+     answer came back as "…art, music, and parent." */
+  /* Past the budget, and the shape the model returns when it overruns the
+     prompt's "under ten words". */
+  const long =
+    "Ages 0-3, includes open-ended play, art, music, and parent participation throughout the term";
+  const withDetail = (detail: string) =>
+    found(JSON.stringify({ findings: [{ name: "Big Little Mornings", what: "open play", area: null, detail }] }))[0];
+  ok(
+    "a detail past the budget is dropped rather than cut mid-phrase",
+    withDetail(long)?.detail === null,
+    String(withDetail(long)?.detail),
+  );
+  ok(
+    "and a detail the prompt's own ten words fit is kept whole",
+    withDetail("Ages 3 and up; sessions every Sunday; $60 each")?.detail ===
+      "Ages 3 and up; sessions every Sunday; $60 each",
+  );
+  /* The finding survives either way: `detail` is optional by construction, so
+     dropping it costs a clause and never the row. */
+  ok("the finding itself survives a dropped detail", withDetail(long)?.name === "Big Little Mornings");
+
+  /* "care" is a mass noun. `article` was written for the countable kinds and
+     the care branch arrived later. */
+  const care = compose([
+    {
+      ...parent({ firsthand_count: 1 }),
+      name: "Elena V.",
+      kind: "caregiver",
+      care: "Full-time",
+      area: "san-marino",
+    },
+  ]).text;
+  ok("a caregiver line takes no article", care.includes("Elena V., full-time care in San Marino"), care.split("\n")[0]);
+  ok(
+    "and a countable kind still takes one",
+    compose([parent({ area: "altadena" })]).text.includes(", a class in Altadena"),
+    compose([parent({ area: "altadena" })]).text.split("\n")[0],
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

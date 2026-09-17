@@ -353,9 +353,32 @@ function schoolFor(years) {
  * every score carries one, because since 14 Aug a score without a reason is
  * treated as unscored and swept again.
  */
+/**
+ * ⚠⚠ **`focus` is written here, not left to `focus:backfill`** (17 Sep).
+ *
+ * Every record this script created carried `focus = null`, and measured on the
+ * live cohort that was **all twelve answerable records** — which silently
+ * disabled the first key of retrieval's own ORDER BY, the topic the question is
+ * about. So a question about swim lessons in Altadena led with a **watershed
+ * trail**: the ranking was correct and had nothing to rank on, and every later
+ * key (area, golden, parent count) then chose a record about something else.
+ *
+ * The 4 Sep backfill had tagged the records that existed then; `seed:demo`
+ * --clear and a re-seed wiped that, and nothing looked wrong — the answers kept
+ * coming back, they were simply about the wrong thing. Tagging at insert makes a
+ * re-seed safe.
+ *
+ * ⚠ Literal rather than a model call, unlike the backfill, and that is the point
+ * of a fixture: two runs of `focus:backfill` over these same rows disagreed
+ * about **Rose Bowl Aquatics parent & me** (`sports` then `activities`) and
+ * **The Little Gym** (`activities` then `sports`), which is the forced-pick
+ * failure that decision already names. A demo cohort that ranks differently on
+ * Tuesday is not a fixture.
+ */
 const SHARES = [
   {
     name: "Little Maestros", venue: "on Mission St", kind: "activity",
+    focus: "arts_music",
     hoods: ["south-pasadena"], bands: ["toddler", "preschool"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 6,
     contributions: [
@@ -366,6 +389,7 @@ const SHARES = [
   },
   {
     name: "Rose Bowl Aquatics parent & me", kind: "activity",
+    focus: "sports",
     hoods: ["old-pasadena"], bands: ["baby", "toddler"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 4,
     contributions: [
@@ -375,6 +399,7 @@ const SHARES = [
   },
   {
     name: "Tom Sawyer Camps", kind: "activity",
+    focus: "camps",
     hoods: ["altadena", "la-canada"], bands: ["grade", "tween"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 5,
     contributions: [
@@ -384,6 +409,7 @@ const SHARES = [
   },
   {
     name: "Kidspace summer camp", kind: "activity",
+    focus: "camps",
     hoods: ["playhouse-district"], bands: ["preschool", "grade"],
     status: "approved", fresh: "ageing", confirmed: 2,
     contributions: [
@@ -393,6 +419,7 @@ const SHARES = [
   },
   {
     name: "AYSO soccer", kind: "activity",
+    focus: "sports",
     hoods: ["sierra-madre", "east-pasadena"], bands: ["preschool", "grade", "tween"],
     status: "approved", fresh: "fresh", confirmed: 3,
     contributions: [
@@ -403,6 +430,7 @@ const SHARES = [
   },
   {
     name: "Pasadena Conservatory of Music", kind: "activity",
+    focus: "arts_music",
     hoods: ["madison-heights"], bands: ["grade", "tween", "teen"],
     status: "approved", fresh: "fresh", confirmed: 2,
     contributions: [
@@ -413,6 +441,7 @@ const SHARES = [
   /* Pending — the "To review" queue. */
   {
     name: "The Little Gym", venue: "Hastings Ranch", kind: "activity",
+    focus: "sports",
     hoods: ["hastings-ranch"], bands: ["toddler", "preschool", "grade"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -421,6 +450,7 @@ const SHARES = [
   },
   {
     name: "Pasadena Dance Theatre", kind: "activity",
+    focus: "arts_music",
     hoods: ["san-marino"], bands: ["preschool", "grade", "tween"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -430,6 +460,7 @@ const SHARES = [
   /* Low confidence — the queue that improves the prompt. */
   {
     name: "Gymboree Play & Music", kind: "activity",
+    focus: "activities",
     hoods: ["arcadia"], bands: ["baby", "toddler"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -438,6 +469,7 @@ const SHARES = [
   },
   {
     name: "Martial arts / taekwondo", venue: "on Colorado", kind: "activity",
+    focus: "sports",
     hoods: ["northwest-pasadena"], bands: ["preschool", "grade", "tween"],
     status: "pending_review", fresh: "ageing", confirmed: 0,
     contributions: [
@@ -448,6 +480,7 @@ const SHARES = [
      This is the pair of signals the 12 Aug fix separated. */
   {
     name: "Kids yoga", venue: "at the Armory", kind: "activity",
+    focus: "activities",
     hoods: ["old-pasadena"], bands: ["toddler", "preschool", "grade"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -457,6 +490,7 @@ const SHARES = [
   /* One detail short — no child age, so it cannot qualify for Founding. */
   {
     name: "Kidspace Museum classes", kind: "activity",
+    focus: "activities",
     hoods: ["playhouse-district"], bands: ["toddler", "preschool", "grade"],
     status: "needs_detail", fresh: "fresh", confirmed: 0,
     needsDetail: "Quick one — roughly how old was your child when you went?",
@@ -467,6 +501,7 @@ const SHARES = [
   /* Secondhand — welcome, labelled, never qualifying. */
   {
     name: "Pasadena Ice Skating Center", kind: "activity",
+    focus: "sports",
     hoods: ["east-pasadena"], bands: ["grade", "tween", "teen"],
     status: "pending_review", fresh: "ageing", confirmed: 0,
     contributions: [
@@ -476,6 +511,7 @@ const SHARES = [
   /* Places. */
   {
     name: "Hahamongna Watershed Park", kind: "place", placeType: "trail",
+    focus: "outings",
     hoods: ["altadena"], bands: ["preschool", "grade", "tween"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 4,
     contributions: [
@@ -486,6 +522,12 @@ const SHARES = [
   },
   {
     name: "La Pintoresca Branch Library", kind: "place", placeType: "library",
+    /* ⚠ `outings`, not the catch-all: the 4 Sep backfill decision records a
+       library tagged `activities` as the one miss in twenty-two, and it is the
+       tag that decides whether a storytime outranks a music class on a question
+       about *classes*. Measured: with `activities` it led "any good toddler
+       classes near South Pasadena?" over Little Maestros. */
+    focus: "outings",
     hoods: ["northwest-pasadena"], bands: ["baby", "toddler", "preschool"],
     status: "approved", fresh: "fresh", confirmed: 2,
     contributions: [
@@ -495,6 +537,7 @@ const SHARES = [
   },
   {
     name: "Victory Park playground", kind: "place", placeType: "playground",
+    focus: "outings",
     hoods: ["hastings-ranch"], bands: ["toddler", "preschool", "grade"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -504,6 +547,7 @@ const SHARES = [
   /* Tips. */
   {
     name: "Camp registration timing", kind: "tip", topic: "schedules",
+    focus: "camps",
     hoods: [], bands: ["grade", "tween"],
     status: "approved", answerReady: true, fresh: "fresh", confirmed: 3,
     contributions: [
@@ -512,6 +556,7 @@ const SHARES = [
   },
   {
     name: "Preschool waitlists", kind: "tip", topic: "new_to_area",
+    focus: "preschools_schools",
     hoods: [], bands: ["toddler", "preschool"],
     status: "approved", fresh: "fresh", confirmed: 2,
     contributions: [
@@ -520,6 +565,7 @@ const SHARES = [
   },
   {
     name: "Birthday party venues", kind: "tip", topic: "birthdays",
+    focus: "outings",
     hoods: [], bands: ["preschool", "grade"],
     status: "pending_review", fresh: "fresh", confirmed: 0,
     contributions: [
@@ -531,6 +577,7 @@ const SHARES = [
      card must never carry a name it does not have. */
   {
     name: "Cheaper swim lessons", kind: "tip", topic: "costs",
+    focus: "sports",
     hoods: [], bands: ["preschool", "grade"],
     status: "approved", fresh: "fresh", confirmed: 1,
     contributions: [
@@ -541,6 +588,7 @@ const SHARES = [
   /* Rejected — so the "All" filter shows the full lifecycle. */
   {
     name: "A tutoring place downtown", kind: "activity",
+    focus: "preschools_schools",
     hoods: ["old-pasadena"], bands: ["grade", "tween"],
     status: "rejected", fresh: "stale", confirmed: 0,
     contributions: [
@@ -556,12 +604,12 @@ async function seedShares(people) {
   for (const [si, s] of SHARES.entries()) {
     const [share] = await sql`
       insert into shares (market_id, kind, name, venue, neighborhoods, age_bands,
-                          place_type, topic, status, provenance, answer_ready,
+                          place_type, topic, focus, status, provenance, answer_ready,
                           last_confirmed_at, freshness_state, validated_count,
                           is_test, created_at)
       values (${MARKET}, ${s.kind}, ${s.name}, ${s.venue ?? null},
               ${s.hoods}::text[], ${s.bands}::text[],
-              ${s.placeType ?? null}, ${s.topic ?? null},
+              ${s.placeType ?? null}, ${s.topic ?? null}, ${s.focus ?? null},
               ${s.status}, 'parent_submitted', ${s.answerReady === true},
               ${s.status === "approved" ? daysAgo(4 + si) : null},
               ${s.fresh}, ${s.confirmed}, false, ${daysAgo(50 - si * 2)})

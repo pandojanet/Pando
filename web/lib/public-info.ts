@@ -116,7 +116,33 @@ export function readFindings(
         name,
         what,
         clean((row as Record<string, unknown>).area, 40),
-        clean((row as Record<string, unknown>).detail, 60),
+        /**
+         * ⚠⚠ **Dropped rather than trimmed, and the budget now fits what the
+         * prompt asks for** (17 Sep).
+         *
+         * The prompt asks for *"under ten words"* and this cut at **60
+         * characters** — two halves of one rule in different units, and ten
+         * words is routinely seventy. So a compliant answer was cut mid-phrase
+         * and the composer put a full stop on it. Measured live: *"includes
+         * open-ended play, art, music, and parent."* · *"$60 per."* · *"Serves
+         * infants and toddlers; offers summer."*
+         *
+         * `clean` does cut on a word and does drop a dangling connector, which
+         * is why those end on a whole word — but "parent", "per" and "summer"
+         * are not connectors, and no list of them would be: the fault is the
+         * budget, not the trimmer. A longer list is whack-a-mole.
+         *
+         * So the budget fits ten words, and anything past it is **dropped**.
+         * That is this module's own rule (*"if there is no whole word inside
+         * the budget there is nothing honest to show, so it drops"*) applied to
+         * the one field that can afford it: `detail` is optional by
+         * construction — the prompt says null is a correct answer — while a
+         * name has to render or the finding is unusable. A rambling detail is
+         * one the model was told not to write, and losing it costs a clause;
+         * printing half of one costs the block its credibility, on the half
+         * whose whole job is to look like a page somebody could go and check.
+         */
+        keepWhole((row as Record<string, unknown>).detail, DETAIL_MAX),
       ),
     );
     if (out.length === MAX_PUBLIC_FINDINGS) break;
@@ -198,6 +224,34 @@ export function normaliseName(value: string): string {
  * is where a name starts being specific enough that a longer version of it is
  * the same thing with a town or a branch on the end.
  */
+/**
+ * Does this text name this record?
+ *
+ * ⚠⚠ **The exclusion list needs it, and without it the 9 Sep fix was defeated
+ * by a second bug.** That fix exempts the record the answer *leads* on, on the
+ * reasoning that the lead is the record the question is about — which stopped
+ * being true the moment retrieval led with something off-topic. Measured on the
+ * client's own message: *"What locals tell about Tom Sawyer Camps?"* led with a
+ * watershed trail, so **Tom Sawyer Camps landed in the exclusion list**, and
+ * every web finding about the one place the question named was dropped. Two
+ * bugs, and only together do they delete the answer.
+ *
+ * ⚠ **Two tokens minimum**, the same floor `sameName` keeps and for the same
+ * reason inverted: a one-word record called "Test" or "Camps" would match any
+ * sentence containing that word, and a false positive here **reinstates** the
+ * fault the exclusion exists to prevent — one place offered under two trust
+ * labels. A record named in fewer than two words stays excluded.
+ *
+ * ⚠ Contiguous, in order. "Tom Sawyer Camps" is named by a question that says
+ * those three words together, and not by one that happens to contain "camps".
+ */
+export function mentionsName(text: string, name: string): boolean {
+  const words = normaliseName(name).split(" ").filter(Boolean);
+  if (words.length < 2) return false;
+  const hay = normaliseName(text).split(" ").filter(Boolean);
+  return hay.some((_, i) => words.every((w, j) => hay[i + j] === w));
+}
+
 export function sameName(a: string, b: string): boolean {
   const x = normaliseName(a).split(" ").filter(Boolean);
   const y = normaliseName(b).split(" ").filter(Boolean);
@@ -259,6 +313,20 @@ function placed(
   const carries = areaKey.split(" ").filter(Boolean).every((w) => words.has(w));
 
   return { name: shown, what, area: carries ? null : area, detail };
+}
+
+/**
+ * Ten words, with room for them. The prompt's own budget, in the unit this file
+ * enforces — see the note at the call site for what disagreeing cost.
+ */
+const DETAIL_MAX = 84;
+
+/** `clean`, but a value that does not fit is dropped rather than shortened. */
+function keepWhole(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const flat = value.replace(/\s+/g, " ").trim();
+  if (flat.length === 0) return null;
+  return flat.length <= max ? flat : null;
 }
 
 function clean(value: unknown, max: number): string | null {

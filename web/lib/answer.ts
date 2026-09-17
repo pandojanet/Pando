@@ -584,7 +584,20 @@ function placeOf(candidate: AnswerCandidate): string {
     ? `${candidate.care.toLowerCase()} care`
     : (KIND_WORD[candidate.kind] ?? candidate.kind);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
-  return what ? `, ${article(what)}${what}${where}` : where;
+  if (!what) return where;
+  /**
+   * ⚠ **No article on the care branch, and it read as one until 17 Sep.**
+   *
+   * `article` was written for the countable kinds — a class, a place, a tip —
+   * and the care branch arrived on 4 Sep, when `KIND_WORD`'s bare "caregiver"
+   * was replaced by the kind of care somebody offers. Nobody re-read it against
+   * the article above, so a live answer said **"Elena V., a full-time care in
+   * San Marino"**: "care" is a mass noun and takes none. Measured in the probe,
+   * on both care questions.
+   */
+  return candidate.care
+    ? `, ${what}${where}`
+    : `, ${article(what)}${what}${where}`;
 }
 
 function article(what: string): string {
