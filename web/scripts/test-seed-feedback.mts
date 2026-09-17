@@ -2344,7 +2344,7 @@ console.log("\n=== 16 Sep: the completeness a parent is shown ===");
  * on the last screen of the flow, kept by nobody — so this is pinned rather than
  * left to a comment for the third time.
  */
-console.log("\n=== 16 Sep: the invite motivates and promises nothing ===");
+console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot grant ===");
 {
   const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
   const referralSrc = src("../components/seed/ReferralInvite.tsx");
@@ -2359,21 +2359,78 @@ console.log("\n=== 16 Sep: the invite motivates and promises nothing ===");
     /answer/i.test(why),
     "the mechanic — who gets recorded as the referrer — answers a question nobody asked",
   );
+  /**
+   * ⚠ Still true of **this** constant and still worth holding: the honest
+   * argument is the one that is checkable today, so it stays free of any
+   * promise. What changed on 17 Sep is that a *second* line beside it does
+   * make one — see `INVITE_REWARD` below, and note that this check would have
+   * gone on passing while the surface next to it promised a reward, which is
+   * how a guard quietly stops describing the screen.
+   */
   ok(
-    "it promises nothing in return",
+    "the honest line still promises nothing in return",
     !/\bearn\b|\bfree\b|\bcredit\b|\breward\b|\bbonus\b|\bgift\b/i.test(why),
     why,
+  );
+
+  /**
+   * 17 Sep — the developer asked for a reward beside the link and, told that
+   * no concrete one can be granted, asked for an abstract one:
+   * *"просто потрібна абстрактна нагорода, конкретного наразі нічого немає"*.
+   *
+   * So this is pinned as **three separate claims**, because they fail
+   * independently and only the first is about the words existing at all.
+   */
+  const rewardLine =
+    /export const INVITE_REWARD =\s*$/m.test(referralSrc)
+      ? (/export const INVITE_REWARD =\s*\n\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "")
+      : (/export const INVITE_REWARD =\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "");
+  ok("there is a reward line at all", rewardLine.length > 30, `${rewardLine.length} chars`);
+  /**
+   * ⚠⚠ The one that matters. A unit is what nothing in this codebase mints —
+   * the only `insert into credits` is the blast-expiry guarantee — so naming
+   * one is the 16 Sep fault restored in different words. A **digit** counts
+   * too: *$10*, *one free*, *three parents* are all units.
+   */
+  ok(
+    "and it names no unit, no amount and no count",
+    !/Network (Check|Ask)|\bcredit|\bfree\b|\$|\d/i.test(rewardLine),
+    rewardLine,
+  );
+  /**
+   * ⚠ A **mechanic** implies a check somebody runs, and nobody does — *"when
+   * someone you invite completes their profile…"* is the exact sentence
+   * removed on 16 Sep, and a conditional is what made it a lie rather than a
+   * vague intention.
+   */
+  ok(
+    "and states no condition anybody would have to enforce",
+    !/\bwhen\b|\bonce\b|\bif\b|\bper\b/i.test(rewardLine),
+    rewardLine,
+  );
+  /**
+   * ⚠ Her own convention for a benefit that is not live yet, from the
+   * participation table: *"Label benefits that are not yet live 'during the
+   * pilot' or 'at launch'"*. Without the hedge this is a flat promise.
+   */
+  ok(
+    "and it admits nothing is settled yet",
+    /at launch|during the pilot/i.test(rewardLine) &&
+      /working out|deciding|figuring/i.test(rewardLine),
+    rewardLine,
   );
 
   /* Every surface reads the one constant, which is what stopped three of them
      drifting and is what let the fourth be fixed in one place. */
   for (const [name, count] of [["ReferralInvite", 3], ["WhatsNext", 1]] as const) {
     const body = name === "ReferralInvite" ? referralSrc : nextSrc;
-    ok(
-      `${name} renders the shared line`,
-      (body.match(/\{WHY_INVITE\}/g) ?? []).length >= count,
-      `${(body.match(/\{WHY_INVITE\}/g) ?? []).length} of ${count}`,
-    );
+    for (const token of ["WHY_INVITE", "INVITE_REWARD"] as const) {
+      ok(
+        `${name} renders ${token} on every surface`,
+        (body.match(new RegExp(`\\{${token}\\}`, "g")) ?? []).length >= count,
+        `${(body.match(new RegExp(`\\{${token}\\}`, "g")) ?? []).length} of ${count}`,
+      );
+    }
   }
 
   /**
@@ -2395,8 +2452,12 @@ console.log("\n=== 16 Sep: the invite motivates and promises nothing ===");
     ["the invite surfaces", referralSrc],
     ["the thank-you card", referralCard],
   ] as const) {
+    /* ⚠ Renamed on 17 Sep and **not** relaxed: the surfaces now do offer the
+       sender something, so the old name (`offer the sender nothing to earn`)
+       described a screen that had changed. What the grep forbids is unchanged
+       and is the part that matters — a named unit nothing grants. */
     ok(
-      `${name} offer the sender nothing to earn`,
+      `${name} name no reward this codebase cannot grant`,
       !/you earn|Network Check|Network Ask/i.test(strip(body)),
       "a credit nothing in this codebase grants",
     );

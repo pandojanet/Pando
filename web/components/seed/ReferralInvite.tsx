@@ -169,6 +169,49 @@ export const WHY_INVITE =
   "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you, with children the age of yours, whose experience can come back in an answer.";
 
 /**
+ * The second line: there is something in it for the sender, and deliberately
+ * not what.
+ *
+ * ⚠⚠ **This is a promise with no write behind it, and that is the developer's
+ * call made with the cost in front of them.** Told that the reward half could
+ * not be built honestly, their answer was *"просто потрібна абстрактна
+ * нагорода, конкретного наразі нічого немає"* — so what ships is the vaguest
+ * form that still reads as a reward, and the thing that makes it honest is
+ * that it **says nothing is decided yet**.
+ *
+ * **It follows her own convention rather than inventing one.** Three of the
+ * benefits she wrote for the participation table name things that do not
+ * exist, and her instruction there was to hedge rather than to drop them:
+ * *"Label benefits that are not yet live 'during the pilot' or 'at launch'"*.
+ * This is the same shape — a commitment that something exists, an admission
+ * that its form is unsettled, and a date by which they will know.
+ *
+ * ⚠⚠ **Three things it must never grow into**, and each is a fault this file
+ * has already recorded. **A unit** — *Network Check*, *Ask*, a dollar figure,
+ * a count: nothing in this codebase mints one, the only `insert into credits`
+ * is the blast-expiry guarantee, and `test:feedback` still fails on the named
+ * ones. **A mechanic** — *"when they finish their profile you get…"* is
+ * precisely the sentence removed on 16 Sep, because a condition implies a
+ * check somebody runs and nobody does. And **a number of people**, which
+ * would turn an open-ended thank-you into a target a parent can miss.
+ *
+ * ⚠ **It is not `REWARD_OFFER` and must not read as it.** That is her $10,
+ * it is for whoever *joins*, and it lives in the message a parent sends. This
+ * is for the person doing the sending and never leaves their own screen —
+ * `CopyLink`'s message is built from its own pieces, so nothing here can
+ * reach somebody's clipboard.
+ *
+ * ⚠ **Its own constant rather than a third sentence on `WHY_INVITE`**: that
+ * one is true today and testable, this one is a forward promise, and the day
+ * she decides what backs it — or decides nothing does — exactly one of them
+ * changes.
+ *
+ * ⚠ Provisional, ours, and on the list for her with everything else here.
+ */
+export const INVITE_REWARD =
+  "We're working out how founding parents who bring others in get rewarded for it — you'll hear at launch.";
+
+/**
  * The same link as a small box in a screen header — her instruction of 8 Sep:
  * on the sharing screen, beside the Pando wordmark, a little highlighted
  * window with a way to copy.
@@ -245,6 +288,9 @@ export function ReferralHeaderInvite({ code }: { code: string }) {
           className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-green/25 bg-card p-3.5 text-left shadow-card"
         >
           <p className="text-[13.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+            {INVITE_REWARD}
+          </p>
           <CopyLink code={code} />
         </div>
       )}
@@ -261,6 +307,7 @@ export function ReferralPanel({ code }: { code: string }) {
         Know a parent everyone asks for recommendations?
       </h2>
       <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
+      <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_REWARD}</p>
       <CopyLink code={code} />
     </Panel>
   );
@@ -328,6 +375,7 @@ export function ReferralDialog({
           Your invite link is ready.
         </h2>
         <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
+        <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_REWARD}</p>
         <CopyLink code={code} />
       </div>
       <div className="flex justify-end border-t border-bark/70 px-5 py-3">
