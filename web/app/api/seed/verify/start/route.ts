@@ -3,6 +3,7 @@ import { isPhoneComplete, toE164 } from "@/lib/phone";
 import {
   SMS_TEMPLATE_VERSION,
   VERIFICATION_MAX_SENDS,
+  VERIFICATION_SESSION_HOURS,
   verificationSms,
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
@@ -136,12 +137,35 @@ export async function POST(request: Request) {
     dev_code: devCodesEnabled() ? started.code : undefined,
   });
 
+  /**
+   * ⚠⚠ **Read from `VERIFICATION_SESSION_HOURS`, and it said 60 * 60 until
+   * 17 Sep — one hour, against a server session of twelve.**
+   *
+   * The two halves of one rule, one of them updated and one not. The hour was
+   * right on 5 Aug, when the code was the last thing a parent did; 12 Aug moved
+   * it to the front of the flow and raised the session to twelve hours, with
+   * that constant's own doc explaining why — *"it has to outlive the whole Seed
+   * Tool visit … where an hour was plenty when the code was the last thing they
+   * did"*. The cookie carrying the id was left where it was.
+   *
+   * So the promise was twelve hours and a parent got one: `verifiedPhone` would
+   * have honoured them all afternoon, and the browser had stopped sending the
+   * id, so the gate saw nobody and asked for a fresh code — on a **saved**
+   * profile they had come back to edit. Nothing was lost (the write is refused,
+   * the session falls back to holding everything on the phone) and there was no
+   * way to tell from the screen why it was asking again.
+   *
+   * ⚠ It is anchored on the send, like the server's own window, so the cookie
+   * dies ~5 minutes *before* the entry it points at rather than after — which
+   * fails in the safe direction: a cookie outliving its entry is a code prompt
+   * either way.
+   */
   response.cookies.set(VERIFY_COOKIE, started.id, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60,
+    maxAge: VERIFICATION_SESSION_HOURS * 60 * 60,
   });
 
   return response;
