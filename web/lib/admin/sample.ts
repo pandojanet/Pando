@@ -367,6 +367,8 @@ export const sampleContributions: ContributionRow[] = [
     worth_it: "great_value",
     follow_up_ok: true,
     tip_text: null,
+
+    extra_note: "The teacher remembers every parent by name, which sounds small and is not.",
     status: "pending_review",
     confidence: 0.91,
     confidence_note:
@@ -407,6 +409,8 @@ export const sampleContributions: ContributionRow[] = [
     worth_it: null,
     follow_up_ok: false,
     tip_text: null,
+
+    extra_note: null,
     status: "pending_review",
     confidence: 0.44,
     confidence_note:
@@ -446,6 +450,8 @@ export const sampleContributions: ContributionRow[] = [
     worth_it: null,
     follow_up_ok: true,
     tip_text: null,
+
+    extra_note: null,
     /** Held, not rejected — the missing child age is worth asking about. */
     status: "needs_detail",
     confidence: 0.68,
@@ -487,6 +493,8 @@ export const sampleContributions: ContributionRow[] = [
     worth_it: null,
     follow_up_ok: true,
     tip_text: "Sign up the week registration opens or you'll be waitlisted.",
+
+    extra_note: null,
     status: "approved",
     confidence: null,
     confidence_note: null,

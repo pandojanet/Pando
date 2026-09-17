@@ -827,6 +827,16 @@ export const shareContributions = pgTable(
     followUpOk: boolean("follow_up_ok").notNull().default(false),
     /** tip cards keep their one sentence here */
     tipText: text("tip_text"),
+    /**
+     * The last question on a card (17 Sep): anything else, in their words.
+     *
+     * ⚠ The one free-text column with **no meaning attached** — every other
+     * one on this table is read for what it means (`what_makes_it_great` is
+     * the reason `hasReason` gates the reward on, `caveat` is rendered as a
+     * reason to hesitate, `tip_text` as advice), so nothing may start
+     * inferring from this one without saying so here first.
+     */
+    extraNote: text("extra_note"),
 
     /**
      * May this one recommendation carry the contributor's first name?

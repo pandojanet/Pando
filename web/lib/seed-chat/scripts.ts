@@ -234,12 +234,22 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
            * otherwise.
            */
           id: "more_detail",
-          prompt: "That's everything Pando needs. Anything else worth adding?",
+          /**
+           * ⚠⚠ **Reworded 17 Sep, and the old wording is the reported bug.**
+           * It read *"Anything else worth adding?"* and then offered two
+           * buttons — an open question answered by a choice, which is what
+           * the developer called confusing and misleading. Those words are
+           * now the card's real last step, which is an actual text field.
+           * This one asks what it has always decided: whether to keep going.
+           */
+          prompt: "That's everything Pando needs. Add a few more details, or save it as it is?",
           aside:
             "The more detail you give, the more targeted the answers Pando can give another parent.",
           widget: "quick",
           options: [
-            { id: "no", label: "That's it — save it", wide: true },
+            /* ⚠ The label no longer promises saving *now*: one question
+               follows for every parent, whichever they pick. */
+            { id: "no", label: "That's it", wide: true },
             { id: "yes", label: "Add more detail", wide: true },
           ],
         },
@@ -325,6 +335,31 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           ],
           when: wantsMore,
         },
+        {
+          /**
+           * The last question on every card (developer, 17 Sep): *"додати можливість
+           * в кінці вказати свій коментар або скіпнути його, це має бути останнє
+           * питання"*.
+           *
+           * ⚠⚠ **Not behind `wantsMore`, and that is what makes it *the last
+           * question* rather than the last question of the detailed branch.** Most
+           * parents tap through the short path, so gating it would hide it from
+           * exactly the people it is for. The cost is that the fork above can no
+           * longer say *save it* — its label changed in the same pass.
+           *
+           * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
+           * The label says what is being declined so it does not read as the only
+           * way past a required field.
+           */
+          id: "extra_note",
+          prompt: "Anything else you'd like to share?",
+          aside: "Whatever did not fit the questions above. Optional.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          skipLabel: "Nothing else",
+          placeholder: "Anything you would tell a friend about it…",
+        },
       ],
       recap: [
         { field: "name", label: "Activity" },
@@ -342,6 +377,7 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
         { field: "price_unit", label: "Per" },
         { field: "worth_it", label: "Worth it" },
         { field: "follow_up_ok", label: "Follow-ups" },
+        { field: "extra_note", label: "Anything else" },
       ],
     },
     caregiver: {
@@ -735,6 +771,31 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           optional: true,
           placeholder: "Parking is brutal after 10am…",
         },
+        {
+          /**
+           * The last question on every card (developer, 17 Sep): *"додати можливість
+           * в кінці вказати свій коментар або скіпнути його, це має бути останнє
+           * питання"*.
+           *
+           * ⚠⚠ **Not behind `wantsMore`, and that is what makes it *the last
+           * question* rather than the last question of the detailed branch.** Most
+           * parents tap through the short path, so gating it would hide it from
+           * exactly the people it is for. The cost is that the fork above can no
+           * longer say *save it* — its label changed in the same pass.
+           *
+           * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
+           * The label says what is being declined so it does not read as the only
+           * way past a required field.
+           */
+          id: "extra_note",
+          prompt: "Anything else you'd like to share?",
+          aside: "Whatever did not fit the questions above. Optional.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          skipLabel: "Nothing else",
+          placeholder: "Anything you would tell a friend about it…",
+        },
       ],
       recap: [
         { field: "name", label: "Place" },
@@ -743,6 +804,7 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
         { field: "best_for", label: "Best for" },
         { field: "what_makes_it_great", label: "Why go" },
         { field: "caveat", label: "Caveat" },
+        { field: "extra_note", label: "Anything else" },
       ],
     },
 
@@ -773,11 +835,37 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
           options: AGE_BANDS,
           optional: true,
         },
+        {
+          /**
+           * The last question on every card (developer, 17 Sep): *"додати можливість
+           * в кінці вказати свій коментар або скіпнути його, це має бути останнє
+           * питання"*.
+           *
+           * ⚠⚠ **Not behind `wantsMore`, and that is what makes it *the last
+           * question* rather than the last question of the detailed branch.** Most
+           * parents tap through the short path, so gating it would hide it from
+           * exactly the people it is for. The cost is that the fork above can no
+           * longer say *save it* — its label changed in the same pass.
+           *
+           * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
+           * The label says what is being declined so it does not read as the only
+           * way past a required field.
+           */
+          id: "extra_note",
+          prompt: "Anything else you'd like to share?",
+          aside: "Whatever did not fit the questions above. Optional.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          skipLabel: "Nothing else",
+          placeholder: "Anything you would tell a friend about it…",
+        },
       ],
       recap: [
         { field: "topic", label: "Topic" },
         { field: "tip", label: "Tip" },
         { field: "best_for", label: "Helps most" },
+        { field: "extra_note", label: "Anything else" },
       ],
     },
   };

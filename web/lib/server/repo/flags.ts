@@ -91,6 +91,7 @@ export async function extractAndFlag(
   const [row] = (await db.execute(
     sql`
       select pc.id, pc.person_id, pc.what_makes_it_great, pc.caveat, pc.tip_text,
+             pc.extra_note,
              pc.who_for, pc.who_not_for, pc.last_there, pc.is_test,
              pc.price_band, pc.price_unit, pc.worth_it, pc.how_much,
              pc.recommendation, pc.child_age_at_time,
@@ -156,6 +157,7 @@ export async function extractAndFlag(
     what_makes_it_great: (row.what_makes_it_great as string | null) ?? null,
     caveat: (row.caveat as string | null) ?? null,
     tip_text: (row.tip_text as string | null) ?? null,
+    extra_note: (row.extra_note as string | null) ?? null,
     who_for: (row.who_for as string | null) ?? null,
     who_not_for: (row.who_not_for as string | null) ?? null,
     /* The taps, so a complete card is not marked down for a price that lives in

@@ -51,6 +51,8 @@ export interface ExtractionInput {
   what_makes_it_great: string | null;
   caveat: string | null;
   tip_text: string | null;
+  /** The card's last question (17 Sep). See the note in `extractCard`. */
+  extra_note: string | null;
   who_for: string | null;
   who_not_for: string | null;
   /**
@@ -189,6 +191,16 @@ export async function extractCard(
     input.tip_text && `Tip: ${input.tip_text}`,
     input.who_for && `Good for: ${input.who_for}`,
     input.who_not_for && `Not for: ${input.who_not_for}`,
+    /**
+     * ⚠⚠ **Included because of the flag rather than the score.** This is the
+     * one open field on a card — *anything else you'd like to share* — so it
+     * is exactly where a parent names their child's teacher. Left out, a
+     * named individual would enter the graph through the only free text
+     * `possible_named_person` never reads: the 11.4 hole, reopened by a new
+     * column. It raises the usefulness score too, which is correct — it is
+     * text another parent could act on.
+     */
+    input.extra_note && `Anything else: ${input.extra_note}`,
   ]
     .filter(Boolean)
     .join("\n");

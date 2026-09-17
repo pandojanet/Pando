@@ -233,6 +233,14 @@ async function writeShareCard(
     followUpOk: bool(f.follow_up_ok),
     tipText: str(f.tip ?? f.tip_text),
     /**
+     * The card's last question (17 Sep), `drizzle/0046`.
+     *
+     * ⚠ In `values`, so it is in the `onConflictDoUpdate` set — a parent
+     * who re-saves the card after clearing this field must end up with it
+     * cleared, which is the same reason `showFirstName` is here.
+     */
+    extraNote: str(f.extra_note),
+    /**
      * The client's per-recommendation name toggle (10 Sep), `drizzle/0038`.
      *
      * ⚠ **In `values`, so it is in the `onConflictDoUpdate` set too** — which is

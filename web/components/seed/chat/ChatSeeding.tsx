@@ -568,12 +568,21 @@ export function ChatSeeding() {
            * same `lib/rewards.ts` rule, and if the two ever disagree the
            * server wins.
            */
+          /**
+           * ⚠⚠ **"Anything else you'd pass on?" was the reported confusion
+           * and it is fixed here rather than reworded.** It arrives *after*
+           * the card is saved, so it can only mean *another card* — but on
+           * a screen that had just spent six questions on this one it read
+           * as *more about this one*, and there was no field to answer it
+           * with. The card now ends with that question for real, as a text
+           * step; this line says what it has always meant.
+           */
           text:
             kind === "caregiver"
               ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
               : justFinishedTheirPart
-                ? `${REWARD_CONFIRMATION}. Anything else you'd pass on?`
-                : "Got it, thank you. Anything else you'd pass on?",
+                ? `${REWARD_CONFIRMATION}. Want to add another?`
+                : "Got it, thank you. Want to add another?",
         },
         // C11: the invite is the parent's to send, so it appears here as text to
         // copy rather than as something Pando promises to do.

@@ -460,6 +460,7 @@ export default function ContributionsPage() {
                     row.tip_text ||
                     row.caveat ||
                     row.caveat_answered ||
+                    row.extra_note ||
                     row.who_for ||
                     row.who_not_for ||
                     (row.status === "needs_detail" && row.needs_detail_note)) && (
@@ -470,6 +471,12 @@ export default function ContributionsPage() {
                         </Quote>
                       )}
                       {row.tip_text && <Quote label="Their tip">{row.tip_text}</Quote>}
+                      {/* ⚠ `Quote` rather than a `Field`: this is the parent's
+                          own sentence, and invariant 8 turns on a reviewer
+                          being able to see that without checking. */}
+                      {row.extra_note && (
+                        <Quote label="Anything else">{row.extra_note}</Quote>
+                      )}
                       {row.caveat ? (
                         <Quote label="Know first">{row.caveat}</Quote>
                       ) : row.caveat_answered ? (

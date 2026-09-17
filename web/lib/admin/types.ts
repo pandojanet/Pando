@@ -486,6 +486,15 @@ export interface ContributionRow {
   /** Per-recommendation permission (R11), and it costs one monthly question. */
   follow_up_ok: boolean;
   tip_text: string | null;
+  /**
+   * The card's last question (17 Sep, `drizzle/0046`) — anything else, in
+   * their own words.
+   *
+   * ⚠ It reaches this queue and stops here: nothing composes it into an
+   * answer, so a reviewer is the only reader. That is deliberate and is the
+   * decision to revisit rather than a gap — see CLAUDE.md.
+   */
+  extra_note: string | null;
   status: ReviewStatus;
   /** 0–1, from the review pass. Null until it has run, and after an edit. */
   confidence: number | null;

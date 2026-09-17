@@ -725,6 +725,7 @@ async function contributions(db: Db) {
     worth_it: r.worth_it,
     follow_up_ok: r.follow_up_ok,
     tip_text: r.tip_text,
+    extra_note: r.extra_note,
     status: r.status,
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,

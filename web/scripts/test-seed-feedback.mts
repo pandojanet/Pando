@@ -2471,5 +2471,68 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
   );
 }
 
+console.log("\n=== 17 Sep: every card ends with an open question ===");
+{
+  /**
+   * The developer: *"в кінці додавання певної активності, tip, place додати
+   * можливість в кінці вказати свій коментар або скіпнути його, **це має бути
+   * останнє питання**"*.
+   *
+   * ⚠⚠ Checked on the **built script** rather than on the source, because
+   * *last* is a property of the array and a reorder is exactly what would
+   * break it silently — appending a step below this one costs nothing at
+   * typecheck and quietly demotes the question the developer asked to be
+   * last.
+   */
+  const { buildScripts } = (await import(
+    `../lib/seed-chat/scripts.ts?v=${Date.now()}`
+  )) as typeof import("../lib/seed-chat/scripts.ts");
+  const scripts = buildScripts("pasadena");
+
+  for (const kind of ["activity", "place", "tip"] as const) {
+    const steps = scripts[kind].steps;
+    const last = steps[steps.length - 1];
+    ok(`${kind} ends on the open question`, last?.id === "extra_note", String(last?.id));
+    /**
+     * ⚠ Ungated on purpose. Behind `wantsMore` it would be the last question
+     * of the *detailed* branch, and most parents take the short path — so it
+     * would be hidden from exactly the people it is for.
+     */
+    ok(`and asks it of everybody, not just the detailed branch`, last?.when === undefined);
+    /* A skip is an answer (1 Sep), and the label says what is declined. */
+    ok(
+      `and can be skipped in words`,
+      last?.optional === true && typeof last?.skipLabel === "string",
+      `${last?.optional} / ${last?.skipLabel}`,
+    );
+    ok(`and it is a field rather than a choice`, last?.widget === "text");
+    /* It appears once. Two open questions on one card is the pitch fault the
+       invite surfaces were just fixed for. */
+    ok(
+      `and appears exactly once on the card`,
+      steps.filter((x) => x.id === "extra_note").length === 1,
+    );
+  }
+
+  /**
+   * ⚠⚠ The reported bug itself: *"Anything else worth adding?"* over two
+   * buttons — an open question answered by a choice. Those words belong to
+   * the text step now, so the fork must not still be asking them.
+   */
+  const fork = scripts.activity.steps.find((x) => x.id === "more_detail");
+  ok(
+    "the detail fork no longer asks an open question",
+    !/anything else/i.test(String(fork?.prompt)),
+    String(fork?.prompt),
+  );
+  /* And it no longer claims the card is saved at that tap, because it is not:
+     one more question follows whichever button they press. */
+  ok(
+    "nor claims the card is saved at that tap",
+    !fork?.options?.some((o) => /save it/i.test(o.label)),
+    JSON.stringify(fork?.options?.map((o) => o.label)),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

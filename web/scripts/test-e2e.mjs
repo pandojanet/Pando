@@ -245,7 +245,7 @@ head("1.4 / 1.5  cards, R1-R11, fix-a-field");
   const fixed = await card({ ...full, what_makes_it_great: "small groups and a very patient teacher", caveat: "Saturdays get packed" }, `audit-activity-${RUN}`);
   ok("fix-a-field re-saves the same card, not a second one", fixed.json.record_id === first.json.record_id);
 
-  const place = await card({ __kind: "place", name: "Audit Park", place_type: "park", firsthand: "firsthand", child_age_at_time: [3], freshness: "over_year", what_makes_it_great: "shaded and fenced", caveat: "no toilets" }, `audit-place-${RUN}`);
+  const place = await card({ __kind: "place", name: "Audit Park", place_type: "park", firsthand: "firsthand", child_age_at_time: [3], freshness: "over_year", what_makes_it_great: "shaded and fenced", caveat: "no toilets", extra_note: "the gate latch is stiff" }, `audit-place-${RUN}`);
   ok("a second card (stale place) saved", place.status === 200);
 
   /**
@@ -920,6 +920,31 @@ ok("and the same child the affinity says", sch.length === 1 && JSON.stringify(sc
 
 head("1.5  the activity card");
 const [a] = await sql`select pc.* from share_contributions pc join shares pl on pl.id = pc.share_id where pl.name = 'Audit Swim School'`;
+/**
+ * The card's last question (17 Sep, `drizzle/0046`), asserted on the **landed
+ * row** rather than on the 200 the save returned. The field is new on three
+ * layers at once — the script, `cleanFields` and the insert — and a route that
+ * accepted it while the column was missing would answer 200 and drop it, which
+ * is exactly how the 18 Aug allowance change was caught.
+ */
+const [extra] = await sql`
+  select sc.extra_note from share_contributions sc
+    join shares pl on pl.id = sc.share_id
+   where pl.name = 'Audit Park'`;
+ok(
+  "the card's last question lands in its own column",
+  extra?.extra_note === "the gate latch is stiff",
+  String(extra?.extra_note),
+);
+/**
+ * ⚠ And it must not have been written into one of the columns that already
+ * mean something: `hasReason` gates the $10 on `what_makes_it_great`, so a
+ * comment landing there would move who gets paid.
+ */
+ok(
+  "and not into a column that already means something else",
+  extra !== undefined && a?.what_makes_it_great !== "the gate latch is stiff",
+);
 ok("firsthand recorded", a && a.firsthand === true);
 ok("caveat_answered true", a && a.caveat_answered === true);
 ok("price band kept with its unit", a && a.price_band === "50_100" && a.price_unit === "per_month");
