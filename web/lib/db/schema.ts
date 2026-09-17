@@ -1512,12 +1512,24 @@ export const geocodeCache = pgTable(
      * nothing on screen says so. See `drizzle/0042`.
      */
     kind: text("kind").notNull().default("place"),
+    /**
+     * The neighborhood the lookup was asked *about*, folded like the query
+     * (17 Sep, `drizzle/0047`). Empty when there is none.
+     *
+     * ⚠ Part of the primary key for the same reason `kind` is, and the
+     * failure it prevents is worse: without it, "schools, preschools and
+     * daycares" asked for Detroit and the same words asked for Altadena are
+     * one row, so the second parent is served the first parent's town — the
+     * right number of plausible results, every one in the wrong state, and
+     * nothing on screen saying so.
+     */
+    near: text("near").notNull().default(""),
     places: jsonb("places").notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.marketId, t.kind, t.query] })],
+  (t) => [primaryKey({ columns: [t.marketId, t.kind, t.near, t.query] })],
 );
 
 /* ── Row types ───────────────────────────────────────────────────────────── */

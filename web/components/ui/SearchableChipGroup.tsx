@@ -15,6 +15,7 @@ import {
 } from "@/lib/geo";
 import { neighborhoodCity, registerFoundOptions } from "@/lib/market-options";
 import { useMarketOptions } from "@/lib/use-market-options";
+import { suggestQueryFor } from "@/lib/geo";
 import { visibleStarters } from "@/lib/starters";
 import type { MarketCategory, MarketId, Option } from "@/lib/types";
 
@@ -39,6 +40,21 @@ interface Props {
   market: string;
   /** The parent's own area, for ranking. Never a filter. */
   area?: string | null;
+  /**
+   * Where the parent said they live, as a name — "Detroit, MI", "Altadena"
+   * (17 Sep).
+   *
+   * ⚠ Not the same thing as `area`, and the difference is the whole of the
+   * Detroit report: `area` is the *chip* they tapped, so it is null for
+   * anybody who named their town through Google, while this is set either
+   * way. It is what a Google lookup is centred on.
+   */
+  nearPlace?: string | null;
+  /**
+   * Their place is not one this market curates, so the starter chips are not
+   * theirs and the options come from Google instead. See `visibleStarters`.
+   */
+  offList?: boolean;
   /**
    * Show every starter, unfiltered, uncapped and in its own order.
    *
@@ -171,6 +187,25 @@ interface Props {
  * and never both. New user-facing copy either way, so it is on the list for
  * the client.
  */
+/**
+ * What to say above a handful of options nobody asked for by name.
+ *
+ * ⚠ It names the **place**, which is the whole job of the sentence: these
+ * rows are not "matches" for anything the parent typed, they are what is near
+ * where they said they live, and a reader who cannot tell those apart cannot
+ * tell whether the list is wrong or simply not what they meant.
+ *
+ * ⚠ And it says Pando does not have them yet, for the same reason
+ * `foundLine` does: tapping one takes the typed-answer path and waits for an
+ * admin (invariant 9), so a row that looked like a curated chip would be a
+ * promise the next screen does not keep.
+ */
+function nearLine(count: number, place: string): string {
+  return `${count} near ${place}. Pando doesn’t have ${
+    count === 1 ? "it" : "them"
+  } yet — tap to add ${count === 1 ? "it" : "one"}.`;
+}
+
 function foundLine(count: number): string {
   const one = count === 1;
   return `${count} ${one ? "match" : "matches"} on the map. Pando doesn’t have ${
@@ -249,6 +284,8 @@ export function SearchableChipGroup({
   category,
   market,
   area,
+  nearPlace,
+  offList,
   wholeList,
   dropdown,
   searchLabel,
@@ -291,6 +328,17 @@ export function SearchableChipGroup({
    * screen has to be able to say which kind of row somebody is tapping.
    */
   const [geo, setGeo] = useState<GeocodedPlace[]>([]);
+  /**
+   * A handful of options for the parent's own place, fetched before anybody
+   * types (17 Sep).
+   *
+   * ⚠ **Its own state rather than seeding `geo`**, because the search effect
+   * clears `geo` on every keystroke *including the one that empties the box* —
+   * so suggestions parked there would vanish the first time somebody typed and
+   * deleted a letter, and the screen would go from offering eight schools to
+   * offering nothing with no way back but a reload.
+   */
+  const [suggested, setSuggested] = useState<GeocodedPlace[]>([]);
   /**
    * Four states, because three of them are not "nothing found".
    *
@@ -415,8 +463,8 @@ export function SearchableChipGroup({
   );
 
   const visible = useMemo(
-    () => visibleStarters({ options, area, areaCity, selected, wholeList }),
-    [options, area, areaCity, selected, wholeList],
+    () => visibleStarters({ options, area, areaCity, selected, wholeList, offList }),
+    [options, area, areaCity, selected, wholeList, offList],
   );
 
   /* The visible starters plus anything searched up, de-duplicated by id with the
@@ -449,6 +497,17 @@ export function SearchableChipGroup({
     [onAddPlace],
   );
 
+  /**
+   * Suggestions stand in for search results only while the box is empty.
+   *
+   * ⚠ The moment somebody types two characters they have asked a question,
+   * and answering it with a list of nearby schools they did not ask for would
+   * be the screen ignoring them. `geo` takes over, and the suggestions come
+   * back when the box is cleared.
+   */
+  const showingNearby = query.trim().length < 2 && suggested.length > 0;
+  const placeRows = showingNearby ? suggested : geo;
+
   const geoTimer = useRef<number | null>(null);
   /**
    * Which lookup is current.
@@ -459,6 +518,58 @@ export function SearchableChipGroup({
    * costs nothing and paying for it twice would be the alternative.
    */
   const geoRun = useRef(0);
+
+  /**
+   * ## Offering options for a place this market does not curate
+   *
+   * The developer, having picked Detroit on the neighborhood question and met
+   * an empty schools box: *"пропонувати декілька опцій з цього нейборхуду"*.
+   * Inside the footprint that is what the curated chips already are; outside
+   * it there were none, and the only way forward was knowing the name of your
+   * own school well enough to type it.
+   *
+   * ⚠⚠ **Gated on `offList`, which is what keeps it from costing anything in
+   * the market it was not built for.** A Pasadena parent has eight curated
+   * starters on screen, so this never runs for them — and if it did, it would
+   * be a paid call per directory per parent to re-answer a question the
+   * client's own sheets have already answered better.
+   *
+   * ⚠ It runs **once** per (place × directory) per mount and is cached
+   * server-side for thirty days, so the second parent in that town pays
+   * nothing. No debounce: there is no query to settle, and the effect's own
+   * dependencies are the only thing that can fire it again.
+   */
+  useEffect(() => {
+    /**
+     * ⚠ `suggestQueryFor` is consulted **here as well as on the server**, and
+     * that is not belt and braces — it is the difference between a request and
+     * no request. The route returns an empty list for a directory with no
+     * suggestion vocabulary, so without this the neighborhood question fires a
+     * round trip on the required first screen, for every off-list parent, on
+     * every mount — to be told what this module already knows. Measured in a
+     * browser on 17 Sep: six calls where five were wanted.
+     */
+    if (!offList || !nearPlace || !onAddPlace || suggestQueryFor(category) === null) {
+      setSuggested([]);
+      return;
+    }
+    let live = true;
+    void geocodePlaces({ q: "", market, category, near: nearPlace, suggest: true })
+      .then((r) => {
+        if (!live) return;
+        /* Three states stay three here too: an unconfigured deployment offers
+           nothing and says nothing, rather than claiming the map is empty. */
+        setSuggested(r.configured ? r.places : []);
+      })
+      .catch(() => {
+        /* A failure leaves the box exactly as it was. The parent can still
+           type, and still add a place by hand. */
+        if (live) setSuggested([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [offList, nearPlace, market, category, onAddPlace]);
 
   useEffect(() => {
     const q = query.trim();
@@ -510,7 +621,23 @@ export function SearchableChipGroup({
        * school or an invoice for a directory nobody meant to widen.
        */
       const kind = lookupKindFor(category);
-      if (!kind || local > 0) return;
+      /**
+       * ⚠⚠ **`local > 0` counts what the parent can *act on*, and for a parent
+       * outside this market's footprint a local hit is not one.**
+       *
+       * Measured in a browser on 17 Sep: a Detroit parent typing "waldorf" was
+       * offered **Pasadena Waldorf School, Altadena** — the curated directory
+       * answering, the gate reading that as a hit, and Detroit Waldorf School
+       * never asked for. That is the same fault `offList` fixes for the chips
+       * one screen up, arriving through the search box: the records are real,
+       * they are simply somebody else's.
+       *
+       * So off the list the gate is the query alone. It costs one call per
+       * settled search for a parent who has no curated list at all, which is
+       * the trade the whole feature is — and `worthPlaceSearch` plus the 450ms
+       * pause below still bound it.
+       */
+      if (!kind || (local > 0 && !offList)) return;
       /* A name needs three letters; a school is never looked up by postcode. */
       if (!(kind === "establishment" ? worthPlaceSearch(q) : worthGeocoding(q))) return;
       /* ⚠ Nowhere to put the answer means nothing to pay for. Without a way to
@@ -520,7 +647,7 @@ export function SearchableChipGroup({
       if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
       geoTimer.current = window.setTimeout(() => {
         setGeoState("looking");
-        void geocodePlaces({ q, market, category })
+        void geocodePlaces({ q, market, category, near: nearPlace ?? undefined })
           .then((r) => {
             if (run !== geoRun.current) return;
             /* Three states stay three. An unconfigured deployment is not an
@@ -595,7 +722,7 @@ export function SearchableChipGroup({
       if (timer.current !== null) window.clearTimeout(timer.current);
       if (geoTimer.current !== null) window.clearTimeout(geoTimer.current);
     };
-  }, [query, category, market, area, onAddPlace]);
+  }, [query, category, market, area, nearPlace, offList, onAddPlace]);
 
   /** Merge a result in, then let `ChipGroup`'s own logic apply the selection. */
   const take = useCallback(
@@ -704,6 +831,14 @@ export function SearchableChipGroup({
          * "Can't find it? Add it", which is where a parent is already looking
          * when the directory has answered nothing.
          */
+        /**
+         * ⚠ The panel's own empty line is suppressed while nearby places are
+         * on offer, because otherwise the box says *"Start typing to search."*
+         * directly above eight things to tap — the screen contradicting itself
+         * in two inches, and the half a parent believes is the one in the list.
+         * Found by opening the box at 375px; it reads fine in the source.
+         */
+        noEmptyLine={showingNearby}
         status={
           <>
             {failed ? (
@@ -718,9 +853,13 @@ export function SearchableChipGroup({
               <p role="status" aria-live="polite" className="text-help text-muted">
                 {foundLine(geo.length)}
               </p>
+            ) : showingNearby ? (
+              <p role="status" aria-live="polite" className="text-help text-muted">
+                {nearLine(suggested.length, nearPlace ?? "")}
+              </p>
             ) : null}
             {!searching && onAddPlace && (
-              <FoundPlaces places={geo} disabled={atCap} onPick={takePlace} />
+              <FoundPlaces places={placeRows} disabled={atCap} onPick={takePlace} />
             )}
           </>
         }
@@ -775,6 +914,25 @@ export function SearchableChipGroup({
                 : "Start typing a name"
           }
         />
+
+        {/**
+          * The same handful the dropdown branch offers, for a question that
+          * renders as chips.
+          *
+          * ⚠ Its own block rather than a condition on the one below, because
+          * that one is gated on `query.trim().length >= 2` — the whole point
+          * here is that nobody has typed. Which control a question happens to
+          * use must not decide whether a parent outside the footprint is
+          * offered anything at all.
+          */}
+        {showingNearby && onAddPlace && (
+          <div className="mt-2.5 space-y-1.5">
+            <p role="status" aria-live="polite" className="text-help text-muted">
+              {nearLine(suggested.length, nearPlace ?? "")}
+            </p>
+            <FoundPlaces places={suggested} disabled={atCap} onPick={takePlace} />
+          </div>
+        )}
 
         {query.trim().length >= 2 && (
           <div className="mt-2.5">
@@ -859,7 +1017,7 @@ export function SearchableChipGroup({
             </p>
 
             {!searching && onAddPlace && (
-              <FoundPlaces places={geo} disabled={atCap} onPick={takePlace} />
+              <FoundPlaces places={placeRows} disabled={atCap} onPick={takePlace} />
             )}
 
             {!searching && !failed && unshown.length > 0 && (

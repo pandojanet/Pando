@@ -335,12 +335,29 @@ export async function geocodePlaces(input: {
    * spend the dear one at will. See the route.
    */
   category: string;
+  /**
+   * Where the parent said they live — "Detroit, MI", "Altadena" — which is
+   * what a school or class search is centred on (17 Sep).
+   *
+   * ⚠ A name and never a centre: the server resolves it through the geocoder
+   * it has already cached, so nothing a browser sends decides where Pando
+   * spends Google's money.
+   */
+  near?: string;
+  /**
+   * Ask for a handful of options for that place instead of searching for
+   * words. Only ever honoured together with `near`, and only for a directory
+   * with a suggestion vocabulary — see the route.
+   */
+  suggest?: boolean;
 }): Promise<{ configured: boolean; places: GeocodedPlace[] }> {
   const params = new URLSearchParams({
     q: input.q,
     market_id: input.market,
     category: input.category,
   });
+  if (input.near) params.set("near", input.near);
+  if (input.suggest) params.set("suggest", "1");
   const res = await fetch(`/api/market/geocode?${params.toString()}`, {
     headers: { accept: "application/json" },
   });

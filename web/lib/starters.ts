@@ -67,6 +67,24 @@ export interface StarterInput {
   /** Ids already chosen. Never dropped, whichever branch runs. */
   selected: string[];
   /**
+   * The parent lives somewhere this market's curated list does not cover, so
+   * the curated records are **not theirs** (17 Sep).
+   *
+   * ⚠⚠ **This is a correctness fix, not a tidy-up, and it is the second half
+   * of the Detroit report.** `area` is `answers.neighborhood`, the *chip*
+   * answer — and a parent who named their town through Google has no chip, so
+   * `area` is null, `isHome` matches nothing, and the slice below handed them
+   * the alphabetically-first twelve records in the San Gabriel Valley. A
+   * parent in Detroit was being offered Alhambra and Altadena schools as
+   * though they were local, which is worse than an empty screen: it reads as
+   * Pando knowing their area and getting it wrong.
+   *
+   * What survives is what is still true for them — anything they have already
+   * chosen, and the question's own furniture ("Homeschool", "None yet"). The
+   * records for their real town arrive from Google instead.
+   */
+  offList?: boolean;
+  /**
    * Offer every starter, unfiltered, uncapped and in its given order.
    *
    * **True for the question that establishes the area**, and only for it. The
@@ -106,6 +124,14 @@ export function visibleStarters(input: StarterInput): Option[] {
    * here, so nothing needs pinning.
    */
   if (input.wholeList) return [...records, ...special];
+
+  /* Their own answers and the refusals, never another market's records. The
+     selected ones are kept for the same reason every other branch keeps them:
+     a chip that vanishes leaves a stored answer with nothing on screen
+     representing it. */
+  if (input.offList) {
+    return [...records.filter((o) => chosen.has(o.id)), ...special];
+  }
 
   /* On the slug, never on `area` — that is the display name, and comparing it
      to a neighborhood id matched single-word names only (27 Aug).

@@ -561,6 +561,99 @@ console.log("\n=== where a parent lived before: anywhere, not just the US ===");
   );
 }
 
+/**
+ * ## 17 Sep — searching inside the parent's own neighborhood
+ *
+ * The developer picked Detroit and the schools box stayed empty: *"всі школи,
+ * активності мають шукатись по цьому нейборхуду … пропонувати декілька опцій
+ * з цього нейборхуду"*.
+ *
+ * Two halves, and both are pinned here because both failed silently: the bias
+ * was a hard-coded rectangle over the San Gabriel Valley, and there was
+ * nothing to bias *on*, because the geocoder's own coordinates were parsed by
+ * nobody.
+ */
+console.log("\n=== 17 Sep: searching inside the parent's own neighborhood ===");
+{
+  const detroit = (geometry: unknown) => ({
+    address_components: [
+      c("Detroit", "Detroit", "locality", "political"),
+      c("Michigan", "MI", "administrative_area_level_1", "political"),
+      c("United States", "US", "country", "political"),
+    ],
+    formatted_address: "Detroit, MI, USA",
+    types: ["locality", "political"],
+    geometry,
+  });
+
+  const good = g.readGeocode(
+    { status: "OK", results: [detroit({ location: { lat: 42.3314, lng: -83.0458 } })] },
+    { worldwide: true },
+  );
+  ok(
+    "a geocoded place carries its centre",
+    good.ok && good.places[0]?.lat === 42.3314 && good.places[0]?.lng === -83.0458,
+  );
+
+  /**
+   * ⚠ Null Island is a valid pair of floats and a real point in the Atlantic.
+   * A bias centred there ranks every school on earth equally — a wrong answer
+   * wearing the shape of a working feature, which is the class of fault this
+   * module spends most of its checks refusing.
+   */
+  const zero = g.readGeocode(
+    { status: "OK", results: [detroit({ location: { lat: 0, lng: 0 } })] },
+    { worldwide: true },
+  );
+  ok(
+    "0, 0 is refused rather than believed",
+    zero.ok && zero.places[0]?.lat === null && zero.places[0]?.lng === null,
+  );
+
+  const silly = g.readGeocode(
+    { status: "OK", results: [detroit({ location: { lat: 999, lng: -83 } })] },
+    { worldwide: true },
+  );
+  ok("and so is a latitude that cannot exist", silly.ok && silly.places[0]?.lat === null);
+
+  const none = g.readGeocode({ status: "OK", results: [detroit(undefined)] }, { worldwide: true });
+  ok(
+    "a result with no geometry gets no centre, and is still a place",
+    none.ok && none.places.length === 1 && none.places[0]?.lat === null,
+  );
+
+  /**
+   * The suggestion vocabulary — what Pando asks when the parent has typed
+   * nothing. Named one directory at a time for the reason `lookupKindFor` is:
+   * reaching Google is a line in a diff, never a pattern a new category
+   * quietly matches.
+   */
+  const named = ["schools", "baby_activities", "clubs", "worship", "camps"];
+  ok(
+    "every directory that asks Google by name can also be asked for a handful",
+    named.every((cat) => (g.suggestQueryFor(cat) ?? "").length > 3),
+  );
+  ok(
+    "the neighborhood question has no suggestion vocabulary",
+    g.suggestQueryFor("neighborhoods") === null,
+  );
+  ok(
+    "nor does a category with no Google question at all",
+    g.suggestQueryFor("parent_groups") === null,
+  );
+  /* ⚠ It has to survive `worthPlaceSearch`, or suggestion mode is refused by
+     the cost guard one layer down and the screen stays empty with nothing
+     saying why. */
+  ok(
+    "and the words it sends are worth asking about",
+    named.every((cat) => g.worthPlaceSearch(g.suggestQueryFor(cat) ?? "")),
+  );
+  ok(
+    "a cold directory offers more than a typed search returns",
+    g.SUGGEST_LIMIT > g.PLACE_SEARCH_LIMIT,
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 if (fail > 0) {
   for (const f of failures) console.log(`  · ${f}`);

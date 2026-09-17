@@ -129,6 +129,31 @@ export interface GeocodedPlace {
    * pending queue is a row an admin cannot safely promote.
    */
   storedValue: string;
+  /**
+   * Where this place is, as Google gave it.
+   *
+   * ⚠⚠ **This is what makes "search inside the neighborhood" possible at all,
+   * and until 17 Sep it was not parsed.** The developer's instruction is that a
+   * parent who picks Detroit then gets Detroit's schools — and every
+   * establishment lookup was biased to a rectangle around the San Gabriel
+   * Valley, hard-coded, because `MARKETS` has one entry and an unknown market
+   * falls back to it. A Detroit parent typing a school name was asking Google
+   * to rank answers around Pasadena.
+   *
+   * So the centre rides on the place the parent chose, and `lookupPlaces`
+   * biases the *next* question's search to a circle around it.
+   *
+   * ⚠ Null on a row parsed before this shipped — the cache holds whole places
+   * as jsonb, so a 30-day-old row comes back without them. A missing centre
+   * falls back to the market box, which is exactly today's behaviour, so the
+   * cache heals itself rather than needing a purge.
+   *
+   * ⚠ And it is deliberately **not** read for an establishment: the bias needs
+   * the centre of the *neighborhood*, never of each school, and asking Places
+   * for `places.location` would widen a field mask that is a billing decision.
+   */
+  lat: number | null;
+  lng: number | null;
 }
 
 export type GeocodeOutcome =
@@ -161,6 +186,30 @@ interface RawResult {
   address_components?: unknown;
   formatted_address?: unknown;
   types?: unknown;
+  geometry?: unknown;
+}
+
+/**
+ * The centre of a geocoded result, or nulls.
+ *
+ * ⚠ Bounds-checked rather than merely typed. `0, 0` is a valid float and a
+ * point in the Atlantic, and a bias centred there would quietly rank every
+ * school on earth equally — a wrong answer that looks like a working feature,
+ * which is the failure this file keeps refusing elsewhere (`place_type`,
+ * `includedType`). A result whose geometry is missing or malformed gets no
+ * centre and falls back to the market box.
+ */
+function readCentre(v: unknown): { lat: number | null; lng: number | null } {
+  const none = { lat: null, lng: null };
+  if (typeof v !== "object" || v === null) return none;
+  const loc = (v as { location?: unknown }).location;
+  if (typeof loc !== "object" || loc === null) return none;
+  const lat = (loc as { lat?: unknown }).lat;
+  const lng = (loc as { lng?: unknown }).lng;
+  if (typeof lat !== "number" || !Number.isFinite(lat) || Math.abs(lat) > 90) return none;
+  if (typeof lng !== "number" || !Number.isFinite(lng) || Math.abs(lng) > 180) return none;
+  if (lat === 0 && lng === 0) return none;
+  return { lat, lng };
 }
 
 const str = (v: unknown): string | null =>
@@ -429,6 +478,7 @@ export function readGeocode(body: unknown, opts: ReadOptions = {}): GeocodeOutco
         : inMarket || !state
           ? parts.name
           : `${parts.name}, ${state}`,
+      ...readCentre(result.geometry),
     });
   }
 
@@ -695,6 +745,11 @@ export function readPlaceSearch(
         city && (state ?? "").toUpperCase() !== marketState
           ? `${name}, ${city}`
           : name,
+      /* ⚠ Never read for an establishment — see `GeocodedPlace.lat`. The bias
+         is centred on the *neighborhood*, and asking Places for
+         `places.location` would widen the field mask for nothing. */
+      lat: null,
+      lng: null,
     });
 
     if (out.length >= limit) break;
@@ -730,6 +785,70 @@ export type LookupKind = "place" | "world" | "establishment";
  * similar name. The taxonomy's own answer — a curated list plus a typed
  * "+ Something else" — is the right one there.
  */
+/**
+ * ## 17 Sep — offering options rather than waiting to be typed at
+ *
+ * The developer, after picking Detroit on the neighborhood question and
+ * finding the schools box empty: *"всі школи, активності мають шукатись по
+ * цьому нейборхуду, так як в нас локально підтягується … пропонувати декілька
+ * опцій з цього нейборхуду"*.
+ *
+ * Until now Google was asked **only** on a typed query of three letters or
+ * more, and only once the local directory had answered nothing. That is right
+ * for a parent in Pasadena, where eight curated starters are already on screen
+ * — and it is an empty screen for a parent anywhere else, because the curated
+ * list is one market and there is nothing to fall back to.
+ *
+ * So a directory with no curated starters for this parent's place asks Google
+ * for a handful up front, in **our** words rather than theirs.
+ *
+ * ⚠⚠ **Rewriting the query is forbidden elsewhere and is the whole mechanism
+ * here, and the difference is whose words they are.** `web-search.ts` records
+ * why: *"the parent's own words are what a search engine reads best, and
+ * rewriting them is how a question about swim classes quietly becomes one
+ * about swimming pools."* That rule protects a sentence somebody typed. In
+ * suggestion mode nobody has typed anything — the question on screen is the
+ * only subject there is, so naming it is the honest query rather than a
+ * rewrite of one. The moment a parent types, their words are used untouched
+ * and this vocabulary is not consulted.
+ *
+ * ⚠ **Still no `includedType`.** Constraining to Google's `school` hides a
+ * preschool it files under `child_care_agency`; the phrasing below leans the
+ * ranking the same way without removing a correct answer, which is this app's
+ * rule everywhere: *rank, never filter*.
+ */
+const SUGGEST_QUERY: Record<string, string> = {
+  schools: "schools, preschools and daycares",
+  baby_activities: "kids classes and activities",
+  clubs: "kids clubs, sports and leagues",
+  worship: "churches, synagogues and mosques",
+  camps: "kids camps",
+};
+
+/**
+ * What to ask Google when a parent has typed nothing, or null for a directory
+ * that has no such question.
+ *
+ * ⚠ Keyed by the same category strings `lookupKindFor` names one by one, and
+ * for the same reason: a directory reaches Google only by being written down
+ * here, so widening the bill is a deliberate line in a diff rather than a
+ * pattern somebody's new category quietly matches.
+ */
+export function suggestQueryFor(category: string): string | null {
+  return SUGGEST_QUERY[category] ?? null;
+}
+
+/**
+ * How many options a cold directory offers.
+ *
+ * Eight rather than `PLACE_SEARCH_LIMIT`'s four: this is standing in for the
+ * curated chip list, which the client curates at **eight per area** for
+ * schools, so the same handful is what a parent outside the market should
+ * meet. A typed search stays at four — there the parent has named the thing
+ * and a long list is noise.
+ */
+export const SUGGEST_LIMIT = 8;
+
 export function lookupKindFor(category: string): LookupKind | null {
   switch (category) {
     /* Where a parent lives: her seventeen towns, then the 52 places and 62 ZIPs

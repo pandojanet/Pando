@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { geocodeConfigured, lookupPlaces } from "@/lib/server/geocode";
-import { lookupKindFor } from "@/lib/geo";
+import { SUGGEST_LIMIT, lookupKindFor, suggestQueryFor } from "@/lib/geo";
 
 /**
  * GET /api/market/geocode?q=91011&market_id=pasadena
@@ -92,6 +92,40 @@ export async function GET(request: Request) {
   }
 
   /**
+   * Where the parent said they live, and what an establishment search is
+   * centred on (17 Sep).
+   *
+   * ⚠ A **place name**, never coordinates — see `lookupPlaces`. A browser
+   * that could hand over a centre could choose where Pando spends Google's
+   * money and on what; a name goes through the same cached geocoder the
+   * neighborhood question already paid for.
+   */
+  const near = (url.searchParams.get("near") ?? "").trim().slice(0, MAX_QUERY);
+
+  /**
+   * ## Suggestion mode: a handful of options before anybody has typed
+   *
+   * The developer, having picked Detroit and met an empty schools box:
+   * *"пропонувати декілька опцій з цього нейборхуду"*. A parent inside the
+   * curated footprint already gets that — eight starters as chips — and a
+   * parent outside it got a blank screen and a search box, because the chip
+   * list is one market.
+   *
+   * ⚠⚠ **It is gated on `near`, and that is the whole cost control.** Without
+   * a place there is nothing to be near, so the query would be "schools" ranked
+   * around Pasadena for everybody — a paid call per directory per parent,
+   * answering a question nobody asked. With it, the answer is cached per
+   * (place × directory) and the second parent in that town pays nothing.
+   *
+   * ⚠ The words are **ours** (`suggestQueryFor`), which is allowed only
+   * because nobody has typed any of their own yet; the moment they do, this
+   * branch is not taken and their sentence goes to Google untouched. See the
+   * note on `SUGGEST_QUERY`.
+   */
+  const suggest = url.searchParams.get("suggest") === "1";
+  const suggestion = suggest && near ? suggestQueryFor(category) : null;
+
+  /**
    * ⚠ **The short-circuit reports the real configuration, and the first cut did
    * not** — it answered `{ configured: true, places: [] }` for a one-character
    * query on a deployment with no key at all, which is this feature's own
@@ -101,11 +135,19 @@ export async function GET(request: Request) {
    * Caught by hitting the endpoint rather than by reading it, which is the only
    * way a wrong *combination* of two correct branches ever surfaces.
    */
-  if (q.length < 2) {
+  /* A suggestion carries its own words, so an empty `q` is not a short query
+     here — it is the whole point of the mode. */
+  if (!suggestion && q.length < 2) {
     return NextResponse.json({ configured: geocodeConfigured(), places: [] });
   }
 
-  const outcome = await lookupPlaces({ query: q, marketId, kind });
+  const outcome = await lookupPlaces({
+    query: suggestion ?? q,
+    marketId,
+    kind,
+    near,
+    limit: suggestion ? SUGGEST_LIMIT : undefined,
+  });
 
   if (!outcome.ok) {
     if (outcome.reason === "not_configured") {

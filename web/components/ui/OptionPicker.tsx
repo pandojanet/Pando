@@ -67,6 +67,19 @@ interface Props {
   onQueryChange?: (query: string) => void;
   /** What the caller's own search is doing. Rendered under the list. */
   status?: ReactNode;
+  /**
+   * The list's own "nothing here yet" sentence is the caller's to suppress,
+   * because `status` sits **below** the list and this component cannot see
+   * what is in it (17 Sep).
+   *
+   * ⚠ It exists for exactly one state: `SearchableChipGroup` offering places
+   * Google found near a parent whose town this market does not curate. With
+   * eight of them in the footer, *"Start typing to search."* above them is the
+   * screen stating the opposite of what is on it — and the empty-looking half
+   * is the one inside the listbox, which is the half a parent reads. Set it
+   * only when the footer is genuinely answering the question the line asks.
+   */
+  noEmptyLine?: boolean;
   footnote?: ReactNode;
 }
 
@@ -132,6 +145,7 @@ export function OptionPicker({
   query: controlledQuery,
   onQueryChange,
   status,
+  noEmptyLine,
   footnote,
 }: Props) {
   const listId = useId();
@@ -510,7 +524,7 @@ export function OptionPicker({
                   as an answer. Inside the list rather than under it, because
                   this *is* what the list has to say — and it is the one place
                   the parent is already looking. */}
-              {listed.length === 0 && (
+              {listed.length === 0 && !noEmptyLine && (
                 <li
                   /* Not an option: a listbox's children are options, and a
                      sentence announced as a choosable one is a choice that does

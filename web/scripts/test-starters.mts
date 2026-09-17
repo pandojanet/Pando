@@ -317,5 +317,57 @@ ok(
 );
 ok("and includes more than one city", new Set(labelsOf(noArea).map((l) => l.split(" ")[0])).size > 1);
 
+/**
+ * ## 17 Sep — a parent this market's curated list does not cover
+ *
+ * The second half of the Detroit report, and it is a correctness fix rather
+ * than a refinement. `area` is the *chip* answer, so a parent who named their
+ * town through Google has none — and the ordinary branch below then handed
+ * them the alphabetically-first twelve records in the San Gabriel Valley.
+ * Being shown Alhambra schools is worse than being shown nothing: it reads as
+ * Pando knowing where they live and getting it wrong.
+ */
+console.log("\n=== a neighborhood off the curated list ===");
+{
+  const homeschool: Option = {
+    id: "homeschool",
+    label: "Homeschool",
+    exclusive: true,
+  };
+  const offMarket = [...schools, homeschool];
+
+  const cold = s.visibleStarters({ options: offMarket, area: null, selected: [], offList: true });
+  ok(
+    "no curated record is offered as though it were local",
+    labelsOf(cold).join("|") === "Homeschool",
+    labelsOf(cold).join(", "),
+  );
+  /* ⚠ The refusal survives, because it is the question's own furniture rather
+     than a record about this market — true wherever the parent lives. */
+  ok("and the question's own furniture still is", labelsOf(cold).includes("Homeschool"));
+
+  /* A chip that vanishes leaves a stored answer with nothing on screen
+     representing it — the rule every other branch here already keeps. */
+  const kept = s.visibleStarters({
+    options: offMarket,
+    area: null,
+    selected: [schools[0]!.id],
+    offList: true,
+  });
+  ok(
+    "an answer they already gave is never taken off the screen",
+    labelsOf(kept)[0] === schools[0]!.label && labelsOf(kept).length === 2,
+    labelsOf(kept).join(", "),
+  );
+
+  /* The flag is the only thing that changes this: a parent inside the market
+     must keep meeting their own eight. */
+  const local = s.visibleStarters({ options: offMarket, area: "pasadena", selected: [] });
+  ok(
+    "and a parent inside the market is untouched by any of it",
+    labelsOf(local).length > 1 && labelsOf(local).some((l) => l.startsWith("Pasadena")),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

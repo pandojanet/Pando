@@ -149,6 +149,28 @@ const MARKETS: Record<
 
 type Market = (typeof MARKETS)[string];
 
+/** Where a place's own lookups look first, once there is a place to centre on. */
+interface Centre {
+  lat: number;
+  lng: number;
+}
+
+/**
+ * How wide "this neighborhood" is, when the search is centred on one.
+ *
+ * ⚠ **A bias, not a radius to be tuned for precision.** Google ranks inside
+ * the circle and still answers outside it, which is the same rule the market
+ * rectangle followed and the same one `/api/market/search` applies to the home
+ * area: a school two towns over is an ordinary answer for a family that drives,
+ * and cutting it would be the *filter* this module refuses everywhere else.
+ *
+ * Twelve kilometres is about the width of the curated footprint's own towns —
+ * Altadena to South Pasadena is nine — so a parent in one of them gets roughly
+ * what the chip list already gives them, and a parent in Detroit gets Detroit
+ * rather than the San Gabriel Valley.
+ */
+const NEAR_RADIUS_M = 12000;
+
 export function geocodeConfigured(): boolean {
   return typeof process.env.GOOGLE_MAPS_API_KEY === "string"
     && process.env.GOOGLE_MAPS_API_KEY.trim() !== "";
@@ -177,6 +199,21 @@ export async function lookupPlaces(input: {
   query: string;
   marketId?: string;
   kind?: LookupKind;
+  /**
+   * The parent's own place, as `GeocodedPlace.storedValue` writes it —
+   * "Detroit, MI", "Altadena". What an establishment search is centred on.
+   *
+   * ⚠⚠ **A name, never coordinates.** The browser holds the place it just
+   * geocoded and could send its centre, which would save a lookup — and would
+   * also let anything that can call this endpoint choose where Pando spends
+   * Google's money, and on what. The centre is resolved here, from the same
+   * cached geocoder the neighborhood question already used, which is the
+   * 11 Aug rule (*derived on the server, never taken from the request body*)
+   * applied to the one input on this path that costs something.
+   */
+  near?: string;
+  /** How many rows to keep. Defaults to the typed-search limit. */
+  limit?: number;
 }): Promise<GeocodeLookup> {
   const key = process.env.GOOGLE_MAPS_API_KEY?.trim();
   if (!key) return { ok: false, reason: "not_configured" };
@@ -185,6 +222,13 @@ export async function lookupPlaces(input: {
   const marketId = (input.marketId ?? "pasadena").toLowerCase();
   const market = MARKETS[marketId] ?? MARKETS.pasadena;
   const folded = cacheKey(input.query);
+  /**
+   * ⚠ Only an establishment search is centred. A `place` lookup is how the
+   * parent names where they live — centring that on where they live is
+   * circular, and it is the same circularity `wholeList` exists for on the
+   * chip list (1 Sep). `world` must prefer nowhere at all.
+   */
+  const nearFolded = input.kind === "establishment" ? cacheKey(input.near ?? "") : "";
 
   /**
    * ⚠ **The cost guard lives here, not only in the search box.**
@@ -203,12 +247,23 @@ export async function lookupPlaces(input: {
   const worth = kind === "establishment" ? worthPlaceSearch(folded) : worthGeocoding(folded);
   if (!worth) return { ok: true, places: [], cached: true };
 
-  const hit = await readCache(marketId, kind, folded);
+  const hit = await readCache(marketId, kind, nearFolded, folded);
   if (hit) return { ok: true, places: hit, cached: true };
+
+  /**
+   * The centre, resolved before the search that uses it.
+   *
+   * ⚠ Null is not a failure: an unknown place, an unreachable database or a
+   * row cached before `lat`/`lng` were parsed all land here, and all three
+   * fall back to the market rectangle — which is exactly the behaviour every
+   * lookup had until today. A feature that degrades to the old one is the
+   * honest shape for a bias.
+   */
+  const centre = nearFolded ? await centreFor(key, marketId, market, nearFolded) : null;
 
   const outcome =
     kind === "establishment"
-      ? await askPlaces(key, folded, market)
+      ? await askPlaces(key, folded, market, centre, input.limit ?? PLACE_SEARCH_LIMIT)
       : await askGeocoder(key, folded, market, kind);
 
   if (!outcome.ok) {
@@ -222,9 +277,63 @@ export async function lookupPlaces(input: {
     return { ok: false, reason: outcome.reason };
   }
 
-  await writeCache(marketId, kind, folded, outcome.places);
-  console.info("[geocode] resolved", { kind, found: outcome.places.length });
+  await writeCache(marketId, kind, nearFolded, folded, outcome.places);
+  /* Counts and enums only (invariant 7). `near` is a place name rather than
+     anything about a person, and it is the one thing that makes a wrong answer
+     here diagnosable at all. */
+  console.info("[geocode] resolved", {
+    kind,
+    found: outcome.places.length,
+    centred: centre !== null,
+  });
   return { ok: true, places: outcome.places, cached: false };
+}
+
+/**
+ * Where a named place is, for the search that will be centred on it.
+ *
+ * Goes through the **same cached geocoder** the neighborhood question itself
+ * used, so the common case costs nothing: the row is usually already there
+ * from the parent who typed that place, and if it is not, one geocode serves
+ * every parent in that town for thirty days.
+ *
+ * ⚠ It is deliberately a `place` lookup with **no** `near` of its own, which
+ * is what keeps this one level deep rather than recursive: a centre never
+ * needs a centre.
+ *
+ * ⚠ And a failure is swallowed into `null`. The caller is about to ask Google
+ * a question it can still answer without this — a bias is a preference, not a
+ * precondition — so turning "we could not place Detroit" into "no schools"
+ * would report an empty answer for a question that did run, which is the one
+ * thing this module's own header forbids.
+ */
+async function centreFor(
+  key: string,
+  marketId: string,
+  market: Market,
+  nearFolded: string,
+): Promise<Centre | null> {
+  const centreOf = (places: GeocodedPlace[]): Centre | null => {
+    for (const place of places) {
+      if (typeof place.lat === "number" && typeof place.lng === "number") {
+        return { lat: place.lat, lng: place.lng };
+      }
+    }
+    return null;
+  };
+
+  const hit = await readCache(marketId, "place", "", nearFolded);
+  if (hit) return centreOf(hit);
+
+  if (!worthGeocoding(nearFolded)) return null;
+
+  const outcome = await askGeocoder(key, nearFolded, market, "place");
+  if (!outcome.ok) {
+    console.warn("[geocode] centre refused", { reason: outcome.reason });
+    return null;
+  }
+  await writeCache(marketId, "place", "", nearFolded, outcome.places);
+  return centreOf(outcome.places);
 }
 
 /* ── the two requests ──────────────────────────────────────────────────────── */
@@ -289,7 +398,13 @@ async function askGeocoder(
   );
 }
 
-async function askPlaces(key: string, folded: string, market: Market): Promise<Answer> {
+async function askPlaces(
+  key: string,
+  folded: string,
+  market: Market,
+  centre: Centre | null,
+  limit: number,
+): Promise<Answer> {
   let body: unknown;
   try {
     const res = await fetch(PLACES_ENDPOINT, {
@@ -312,14 +427,30 @@ async function askPlaces(key: string, folded: string, market: Market): Promise<A
          * quietly becomes one about swimming pools."*
          */
         textQuery: folded,
-        maxResultCount: PLACE_SEARCH_LIMIT,
+        maxResultCount: limit,
         languageCode: "en",
-        locationBias: {
-          rectangle: {
-            low: { latitude: market.sw.lat, longitude: market.sw.lng },
-            high: { latitude: market.ne.lat, longitude: market.ne.lng },
-          },
-        },
+        /**
+         * ⚠⚠ **The parent's own place when there is one, the market box when
+         * there is not** — and until 17 Sep it was always the box, which has
+         * exactly one entry (`pasadena`) and catches every unknown market in
+         * its `?? MARKETS.pasadena` fallback. So a parent who had just told
+         * Pando they live in Detroit typed a school name and got answers
+         * ranked around the San Gabriel Valley: the feature running, the
+         * request succeeding, and the wrong city.
+         */
+        locationBias: centre
+          ? {
+              circle: {
+                center: { latitude: centre.lat, longitude: centre.lng },
+                radius: NEAR_RADIUS_M,
+              },
+            }
+          : {
+              rectangle: {
+                low: { latitude: market.sw.lat, longitude: market.sw.lng },
+                high: { latitude: market.ne.lat, longitude: market.ne.lng },
+              },
+            },
       }),
     });
     if (!res.ok) {
@@ -337,6 +468,10 @@ async function askPlaces(key: string, folded: string, market: Market): Promise<A
 
   return readPlaceSearch(body, {
     marketState: market.state,
+    /* The same number the request asked for: a suggestion list is eight and a
+       typed search is four, and a reader capped at its own default would have
+       silently thrown half of a cold directory away. */
+    limit,
     /**
      * The **strong** half of 11.4 and nothing weaker.
      *
@@ -359,12 +494,14 @@ async function askPlaces(key: string, folded: string, market: Market): Promise<A
 async function readCache(
   marketId: string,
   kind: LookupKind,
+  near: string,
   query: string,
 ): Promise<GeocodedPlace[] | null> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select places, fetched_at from geocode_cache
-       where market_id = ${marketId} and kind = ${kind} and query = ${query}
+       where market_id = ${marketId} and kind = ${kind}
+         and near = ${near} and query = ${query}
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;
     return rows[0] ?? null;
@@ -383,6 +520,7 @@ async function readCache(
 async function writeCache(
   marketId: string,
   kind: LookupKind,
+  near: string,
   query: string,
   places: GeocodedPlace[],
 ): Promise<void> {
@@ -392,9 +530,10 @@ async function writeCache(
      the next parent pays for the same place again. */
   await withDb(async (db: Db) =>
     db.execute(sql`
-      insert into geocode_cache (market_id, kind, query, places, fetched_at)
-      values (${marketId}, ${kind}, ${query}, ${JSON.stringify(places)}::jsonb, now())
-      on conflict (market_id, kind, query)
+      insert into geocode_cache (market_id, kind, near, query, places, fetched_at)
+      values (${marketId}, ${kind}, ${near}, ${query},
+              ${JSON.stringify(places)}::jsonb, now())
+      on conflict (market_id, kind, near, query)
         do update set places = excluded.places, fetched_at = now()
     `),
   );

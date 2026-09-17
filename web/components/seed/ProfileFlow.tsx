@@ -390,6 +390,36 @@ export function ProfileFlow() {
   const questions = visibleQuestions(screen, answers);
 
   /**
+   * ## Where this parent actually lives, whichever way they said it (17 Sep)
+   *
+   * The neighborhood question has two answers in two places, and until now
+   * every directory below it read only the first:
+   *
+   * - `answers.neighborhood` — a **chip**, one of the client's seventeen
+   *   curated towns. This is what `area` has always been.
+   * - `answers.other.neighborhood` — a place they named that her list does
+   *   not hold, found through Google and stored as "Detroit, MI" awaiting an
+   *   admin (invariant 9). The chip is deliberately cleared when this is set
+   *   (15 Sep), so for these parents `area` is **null**.
+   *
+   * ⚠⚠ So a parent in Detroit reached the schools question with no area at
+   * all, and `visibleStarters` handed them the alphabetically-first twelve
+   * records in the San Gabriel Valley — Pando naming their area and getting
+   * it wrong, which reads worse than an empty screen. `offList` is what tells
+   * the control those chips are not theirs, and `nearPlace` is what the
+   * Google lookup is then centred on.
+   *
+   * ⚠ **In-market parents pass neither, deliberately.** Their curated
+   * starters are already trimmed to their own town by her own curation, which
+   * is the better answer and a free one; centring their searches on a circle
+   * instead would change what a working market returns to solve a problem it
+   * does not have.
+   */
+  const offListPlace = !answers.neighborhood
+    ? ((answers.other.neighborhood ?? [])[0] ?? null)
+    : null;
+
+  /**
    * ⚠⚠ **The second consent checkbox is gone, and its gate with it** — the
    * client, 10 Sep: *"On the participation screen, show frequency only. Do not
    * show a second checkbox."*
@@ -2070,6 +2100,8 @@ export function ProfileFlow() {
                               category={directory.category}
                               market={market}
                               area={answers.neighborhood}
+                              nearPlace={offListPlace}
+                              offList={offListPlace !== null}
                               wholeList={directory.wholeList}
                               dropdown={directory.dropdown}
                               /**
@@ -2275,6 +2307,8 @@ export function ProfileFlow() {
                   /* Ranking hint only. Null before P3 is answered, which simply
                      ranks nothing higher. */
                   area={answers.neighborhood}
+                  nearPlace={offListPlace}
+                  offList={offListPlace !== null}
                   /* The neighborhood question sets the area, so it cannot be
                      filtered by it — see `wholeList`. */
                   wholeList={directory.wholeList}
