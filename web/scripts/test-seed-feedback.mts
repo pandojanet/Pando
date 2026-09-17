@@ -2512,6 +2512,17 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       `and appears exactly once on the card`,
       steps.filter((x) => x.id === "extra_note").length === 1,
     );
+    /**
+     * ⚠⚠ The swap, and it is the half that was got backwards first. *Anything
+     * else* reads as *another recommendation*, which is what the line **after**
+     * the saved card asks; this step is about **this** card, so it must ask for
+     * their own comment and must not borrow the other sentence's words.
+     */
+    ok(
+      `and asks for their own comment rather than "anything else"`,
+      !/anything else/i.test(String(last?.prompt)),
+      String(last?.prompt),
+    );
   }
 
   /**
@@ -2531,6 +2542,27 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     "nor claims the card is saved at that tap",
     !fork?.options?.some((o) => /save it/i.test(o.label)),
     JSON.stringify(fork?.options?.map((o) => o.label)),
+  );
+
+  /**
+   * The other half of the swap, on the **source** rather than on the script,
+   * because this sentence is a branch inside a React component the pure suite
+   * cannot render. It is the line that follows a saved card, so *anything
+   * else* is exactly what it means — and it must not go back to *Want to add
+   * another?*, which is what the first pass left it saying.
+   */
+  const chat = fs.readFileSync(
+    new URL("../components/seed/chat/ChatSeeding.tsx", import.meta.url),
+    "utf8",
+  );
+  ok(
+    "the line after a saved card asks for anything else",
+    /Got it, thank you\. Anything else you'd like to share\?/.test(chat),
+  );
+  ok(
+    "and the two sentences are not the same words",
+    !chat.includes(String(scripts.activity.steps.at(-1)?.prompt)),
+    String(scripts.activity.steps.at(-1)?.prompt),
   );
 }
 

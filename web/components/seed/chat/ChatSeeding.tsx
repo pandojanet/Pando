@@ -574,15 +574,22 @@ export function ChatSeeding() {
            * the card is saved, so it can only mean *another card* — but on
            * a screen that had just spent six questions on this one it read
            * as *more about this one*, and there was no field to answer it
-           * with. The card now ends with that question for real, as a text
-           * step; this line says what it has always meant.
+           * with. ⚠⚠ **The first fix put those words on the card and made this
+           * line read *Want to add another?*, and the developer swapped them
+           * back the same day**: *anything else* reads as *another
+           * recommendation*, which is exactly what this line asks, while the
+           * card's own last step is about **this** one and now says so.
+           *
+           * ⚠ The two must stay different sentences, and `test:feedback` holds
+           * that rather than trusting it — they were the same words in two
+           * places for a day, which is how this was reported.
            */
           text:
             kind === "caregiver"
               ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
               : justFinishedTheirPart
-                ? `${REWARD_CONFIRMATION}. Want to add another?`
-                : "Got it, thank you. Want to add another?",
+                ? `${REWARD_CONFIRMATION}. Anything else you'd like to share?`
+                : "Got it, thank you. Anything else you'd like to share?",
         },
         // C11: the invite is the parent's to send, so it appears here as text to
         // copy rather than as something Pando promises to do.

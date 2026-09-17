@@ -350,10 +350,24 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
            * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
            * The label says what is being declined so it does not read as the only
            * way past a required field.
+           *
+           * ⚠⚠ **Swapped with the post-save line the same day.** This step first
+           * shipped asking *"Anything else you'd like to share?"* and the
+           * developer moved those words down to the line that follows the saved
+           * card: *"в нижній текст переміщуєш Anything else you'd like to share.
+           * У верхній замінюєш власним про коментар"*. They are right about which
+           * sentence is which — *anything else* reads as *another recommendation*,
+           * which is what the line below the card asks, while this one is about
+           * **this** card and wants their own words.
+           *
+           * ⚠ Not *"Would you like to add a comment?"*: a yes/no sentence over a
+           * text field is the fault this whole change exists to fix, one screen
+           * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything else you'd like to share?",
-          aside: "Whatever did not fit the questions above. Optional.",
+          prompt: "Anything you'd add in your own words?",
+          aside:
+            "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",
           maxLength: 400,
           optional: true,
@@ -786,10 +800,24 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
            * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
            * The label says what is being declined so it does not read as the only
            * way past a required field.
+           *
+           * ⚠⚠ **Swapped with the post-save line the same day.** This step first
+           * shipped asking *"Anything else you'd like to share?"* and the
+           * developer moved those words down to the line that follows the saved
+           * card: *"в нижній текст переміщуєш Anything else you'd like to share.
+           * У верхній замінюєш власним про коментар"*. They are right about which
+           * sentence is which — *anything else* reads as *another recommendation*,
+           * which is what the line below the card asks, while this one is about
+           * **this** card and wants their own words.
+           *
+           * ⚠ Not *"Would you like to add a comment?"*: a yes/no sentence over a
+           * text field is the fault this whole change exists to fix, one screen
+           * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything else you'd like to share?",
-          aside: "Whatever did not fit the questions above. Optional.",
+          prompt: "Anything you'd add in your own words?",
+          aside:
+            "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",
           maxLength: 400,
           optional: true,
@@ -850,10 +878,24 @@ export function buildScripts(market: MarketId): Record<ShareKind, Script> {
            * ⚠ Skippable, and a skip is an answer rather than an omission (1 Sep).
            * The label says what is being declined so it does not read as the only
            * way past a required field.
+           *
+           * ⚠⚠ **Swapped with the post-save line the same day.** This step first
+           * shipped asking *"Anything else you'd like to share?"* and the
+           * developer moved those words down to the line that follows the saved
+           * card: *"в нижній текст переміщуєш Anything else you'd like to share.
+           * У верхній замінюєш власним про коментар"*. They are right about which
+           * sentence is which — *anything else* reads as *another recommendation*,
+           * which is what the line below the card asks, while this one is about
+           * **this** card and wants their own words.
+           *
+           * ⚠ Not *"Would you like to add a comment?"*: a yes/no sentence over a
+           * text field is the fault this whole change exists to fix, one screen
+           * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything else you'd like to share?",
-          aside: "Whatever did not fit the questions above. Optional.",
+          prompt: "Anything you'd add in your own words?",
+          aside:
+            "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",
           maxLength: 400,
           optional: true,
