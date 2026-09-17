@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChipGroup } from "@/components/ui/ChipGroup";
-import { OptionPicker } from "@/components/ui/OptionPicker";
+import {
+  OptionMark,
+  OptionPicker,
+  pickerRowClass,
+} from "@/components/ui/OptionPicker";
 import { Field } from "@/components/ui/Field";
 import { TextAction } from "@/components/ui/TextAction";
 import { geocodePlaces, searchMarketOptions } from "@/lib/api-client";
@@ -233,18 +237,45 @@ function foundLine(count: number): string {
  * and the row says so in words rather than leaving a parent to find out that
  * picking their own school changed nothing.
  */
+/**
+ * The places Google found, offered to be added.
+ *
+ * ⚠⚠ **`inPanel` is the whole of the 17 Sep unification.** These rows render in
+ * two quite different frames: inside an open `OptionPicker` panel, directly
+ * under a list of curated options, and — on `previous_places`, the one
+ * directory with no starters — in page flow under a bare search box.
+ *
+ * In the panel they were a **dashed pill with no mark and the word "Add" on the
+ * right**, two inches under flat 44px rows carrying a circle: *"поєднання
+ * компонент які ніби клікаються з кружечком та без нього"*. So in the panel
+ * they take `pickerRowClass` and `OptionMark`, and the only thing that differs
+ * from an option beside them is the mark — a plus rather than a tick, which is
+ * the one distinction worth drawing: choose something Pando has, or add
+ * something it does not.
+ *
+ * ⚠ **In page flow the pill stays**, and that is not an inconsistency left
+ * behind: a borderless row on bare paper has nothing to say it is tappable,
+ * which is exactly what the border was doing there. The frame decides the
+ * shape; the mark is the same in both.
+ *
+ * ⚠ `-mx-4` in the panel, because the rows above it are full-bleed inside a box
+ * that pads them itself — without it the found rows are inset by 16px and the
+ * two marks do not line up, which is the fault this change exists to fix.
+ */
 function FoundPlaces({
   places,
   disabled,
   onPick,
+  inPanel = false,
 }: {
   places: GeocodedPlace[];
   disabled: boolean;
   onPick: (place: GeocodedPlace) => void;
+  inPanel?: boolean;
 }) {
   if (places.length === 0) return null;
   return (
-    <ul className="mt-2 space-y-1.5">
+    <ul className={inPanel ? "mt-1" : "mt-2 space-y-1.5"}>
       {places.map((place) => (
         <li key={place.key}>
           <button
@@ -252,10 +283,15 @@ function FoundPlaces({
             disabled={disabled}
             aria-label={`Add ${place.name}`}
             onClick={() => onPick(place)}
-            className="flex min-h-11 w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-bark bg-paper px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
+            className={
+              inPanel
+                ? `${pickerRowClass} -mx-4 w-[calc(100%+2rem)] transition-colors enabled:hover:bg-green-wash disabled:opacity-50`
+                : "flex min-h-11 w-full items-center gap-3 rounded-2xl border border-dashed border-bark bg-paper px-4 py-2.5 text-left transition-colors enabled:hover:border-green disabled:opacity-50"
+            }
           >
-            <span className="min-w-0">
-              <span className="block truncate text-control font-medium">
+            <OptionMark kind="add" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-control font-medium text-ink">
                 {place.name}
               </span>
               {/* The disambiguator, not decoration: two Pasadenas exist and one
@@ -266,12 +302,6 @@ function FoundPlaces({
                   {place.where}
                 </span>
               )}
-            </span>
-            <span
-              aria-hidden="true"
-              className="shrink-0 text-help font-semibold text-green-deep"
-            >
-              Add
             </span>
           </button>
         </li>
@@ -923,7 +953,12 @@ export function SearchableChipGroup({
               </p>
             ) : null}
             {!searching && onAddPlace && (
-              <FoundPlaces places={placeRows} disabled={atCap} onPick={takePlace} />
+              <FoundPlaces
+                places={placeRows}
+                disabled={atCap}
+                onPick={takePlace}
+                inPanel
+              />
             )}
           </>
         }

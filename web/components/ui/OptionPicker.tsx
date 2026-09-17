@@ -256,10 +256,32 @@ export function OptionPicker({
       const floor = Math.min(ceiling, window.innerHeight);
       const below = floor - box.bottom - GAP;
       const above = box.top - GAP;
-      const flip = below < MIN_LIST && above > below;
-      setPlacement({
-        above: flip,
-        maxHeight: Math.max(MIN_LIST, Math.min(MAX_LIST, flip ? above : below)),
+      /**
+       * ⚠⚠ **Hysteresis, not a fresh decision every measure** — *"сам дропдаун
+       * скаче то вверх то вниз"*, 17 Sep.
+       *
+       * This recomputed `below < MIN_LIST && above > below` from scratch on
+       * every scroll event, so a box sitting anywhere near the threshold
+       * changed sides whenever the page moved a few pixels — and a chip landing
+       * above the box pushes it down a row, which is precisely how a parent got
+       * there. A panel that reopens on the other side of the field is a panel
+       * that looks broken even when both sides are legitimate.
+       *
+       * So a side is chosen once and kept while it still works: a placement
+       * only changes when the side it is on no longer fits **and** the other
+       * one is roomier. The first measure has `above: false` behind it, so a
+       * freshly opened list still starts below unless below genuinely misses —
+       * which is the original rule, unchanged.
+       */
+      setPlacement((prev) => {
+        const stay = prev.above ? above : below;
+        const other = prev.above ? below : above;
+        const keep = stay >= MIN_LIST || stay >= other;
+        const flip = keep ? prev.above : !prev.above;
+        return {
+          above: flip,
+          maxHeight: Math.max(MIN_LIST, Math.min(MAX_LIST, flip ? above : below)),
+        };
       });
     };
     measure();
@@ -303,10 +325,27 @@ export function OptionPicker({
           : selected.filter((id) => id !== option.id);
       }
       onChange(next, { id: option.id, on });
-      /* Cleared so the next choice starts from the whole list — and because a
-         query still standing over a list of one reads as "there is nothing
-         else". The list stays open: picking two classes is one errand. */
       setQuery("");
+      /**
+       * ⚠⚠ **It closes on a multi-select pick too since 17 Sep, and that
+       * reverses the note this replaces** (*"the list stays open: picking two
+       * classes is one errand"*).
+       *
+       * The developer's report: *"після вибору опцій він не закривається, хоча
+       * там в більшості всього 1 опція"*. The errand argument assumed a parent
+       * picking several from a long list; what these questions actually hold is
+       * a cap of one or two, and every one of them is answered with a single
+       * tap in practice. So the panel stayed open over a list the parent had
+       * finished with — and, because adding a chip above the box pushes the box
+       * down a row, it was also the thing that made the panel visibly change
+       * sides. One rule for both modes: a pick is an answer, and an answer
+       * closes the box.
+       *
+       * ⚠ The cost is named rather than discovered: adding a second school is
+       * one extra tap to reopen. The chips above the box are what say the first
+       * one landed, so nothing is lost but the tap.
+       */
+      setOpen(false);
     },
     [selected, blocked, mode, onChange, setQuery, exclusiveIds],
   );
@@ -503,12 +542,13 @@ export function OptionPicker({
                     }}
                     onPointerEnter={() => setActive(i)}
                     className={cn(
-                      "flex min-h-11 cursor-pointer items-center gap-3 px-4 py-2.5",
+                      pickerRowClass,
+                      "cursor-pointer",
                       i === active && "bg-green-wash",
                       off && "cursor-not-allowed opacity-55",
                     )}
                   >
-                    <Tick on={on} />
+                    <OptionMark on={on} />
                     <span className="min-w-0 flex-1">
                       <span
                         className={cn(
@@ -641,7 +681,48 @@ export function OptionPicker({
 }
 
 /** Empty circle → check, the same signal `ChipGroup` gives before any tap. */
-function Tick({ on }: { on: boolean }) {
+/**
+ * The one row shape everything tappable inside a picker panel uses.
+ *
+ * ⚠⚠ **Exported because it had already drifted, and the drift was the report**
+ * (17 Sep): *"йде поєднання компонент які ніби клікаються з кружечком та без
+ * нього через пошук гугл мапс"*. A curated option was a flat 44px row with a
+ * circle on the left; a place Google found, **in the same open panel**, was a
+ * dashed pill with no circle and the word "Add" on the right. Two different
+ * things to tap, stacked, in one box, differing on four axes at once — and
+ * neither of them wrong on its own, which is why it survived review.
+ *
+ * Whatever uses this class carries `OptionMark` in the same slot, so the rows
+ * line up and the **mark** is the only thing that differs. That is the one
+ * distinction worth drawing: a tick chooses something Pando already has, a plus
+ * adds something it does not.
+ */
+/* ⚠ **No width in it.** `cn()` is a plain join, so a caller appending its own
+   `w-[…]` would lose to the `w-full` that used to be here — Tailwind resolves
+   two utilities for one property by output order, not by the string (the trap
+   `Chip.tsx` documents). Measured: the in-panel found row came out 32px short
+   on the right while reading exactly as intended. An `<li>` fills its list
+   anyway; anything that needs a width says so. */
+export const pickerRowClass =
+  "flex min-h-11 items-center gap-3 px-4 py-2.5 text-left";
+
+/**
+ * ⚠ Same 18px footprint for both kinds, or the labels beside them do not line
+ * up and the unification buys nothing. `add` is green-deep on the wash rather
+ * than filled, because it is an invitation and not a state: nothing is chosen
+ * yet, so a filled mark would read as one.
+ */
+export function OptionMark({ kind = "select", on = false }: { kind?: "select" | "add"; on?: boolean }) {
+  if (kind === "add") {
+    return (
+      <span
+        aria-hidden="true"
+        className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border border-green bg-green-wash text-[13px] font-semibold leading-none text-green-deep"
+      >
+        +
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"
