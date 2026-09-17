@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Badge,
   Button,
@@ -369,70 +369,163 @@ export default function DemandPage() {
       </Card>
 
       {(places.rows.length > 0 || places.questions_no_place > 0) && (
-        <Card className="mt-4">
-          <div className="px-4 py-3">
-            <h2 className="text-[14px] font-semibold">
-              Where demand is strongest
-            </h2>
-            {/* The denominator, said once. Every number in this block is a
-                parent who finished — see `PlaceDemand` for why "or tried to"
-                is not answerable here. */}
-            <p className="mt-1 text-[12.5px] text-muted">
-              Grouped by city, so a Pasadena district counts towards Pasadena.
-              Sign-ups are parents who finished a profile.
-            </p>
-            <ul className="mt-3 space-y-2.5">
-              {places.rows.map((r) => (
-                <li key={r.city} className="text-[13.5px]">
-                  <div className="flex items-baseline gap-2">
-                    <span className="w-40 shrink-0 font-medium">
-                      {slugLabel(r.city)}
-                    </span>
-                    <span className="tabular-nums font-semibold">
-                      {r.signups}
-                    </span>
-                    <span className="text-[12.5px] text-muted">
-                      {r.signups === 1 ? "sign-up" : "sign-ups"}
-                      {r.questions > 0 &&
-                        ` · ${r.questions} ${r.questions === 1 ? "question" : "questions"}`}
-                    </span>
-                  </div>
-                  {(r.zips.length > 0 || r.signups_no_zip > 0) && (
-                    <div className="mt-0.5 text-[12.5px] text-muted sm:pl-40">
-                      {[
-                        ...r.zips.map((z) => `${z.signups} in ${z.zip}`),
-                        /* Never folded into a ZIP bucket: the question is
-                           newer than most of these profiles, and a silent zero
-                           would make the split look complete when it is not. */
-                        ...(r.signups_no_zip > 0
-                          ? [`${r.signups_no_zip} with no ZIP on record`]
-                          : []),
-                      ].join(" · ")}
-                    </div>
-                  )}
-                  {r.categories.length > 0 && (
-                    <div className="mt-0.5 text-[12.5px] text-muted sm:pl-40">
-                      {r.categories
-                        .map((c) => DEMAND_CATEGORY[c] ?? sentence(c))
-                        .join(" · ")}
-                    </div>
-                  )}
-                </li>
-              ))}
-              {places.questions_no_place > 0 && (
-                <li className="text-[12.5px] text-muted">
-                  {places.questions_no_place} question
-                  {places.questions_no_place === 1 ? "" : "s"} from anonymous
-                  sessions, with no neighborhood on record.
-                </li>
-              )}
-            </ul>
-          </div>
-        </Card>
+        <PlacesCard places={places} />
       )}
 
       {/* A guarantee the page has no way to break, stated under it on every
           visit. Enforced in the routing code, which is where it belongs. */}
     </>
+  );
+}
+
+/**
+ * 17 Sep — where people join from, ranked.
+ *
+ * ## Why there is a bar
+ *
+ * The card's own title is *where demand is strongest*, i.e. it is a ranking —
+ * and as eight rows of "13 sign-ups", "6 sign-ups", "1 sign-up" set in one
+ * muted size, the ranking was invisible: Pasadena being twice Altadena had to
+ * be worked out by reading two numbers. That is the finding the matching
+ * weights card already records (7 Sep) — *numbers whose only purpose is to be
+ * weighed against each other, and not one of them aligned with another* — so
+ * the answer is the same one: a bar, with the top row as the denominator, so
+ * the longest is always full and the list reads at a glance.
+ *
+ * ⚠ **It draws sign-ups and never questions**, because sign-ups is what the SQL
+ * orders by; a bar drawing one number beside a list sorted on another would be
+ * two rankings on one row. Questions keeps its own figure, at a fixed x.
+ *
+ * ## Why the two sub-lines are labelled
+ *
+ * They were both `text-[12.5px] text-muted` at the same indent, so "13 with no
+ * ZIP on record" and "Classes & activities · Childcare" read as one grey
+ * paragraph and the ZIP line looked like one more topic. A ZIP is a token with
+ * its count now, and the topics are a labelled run — the `Fact` idiom this
+ * admin already uses everywhere else.
+ *
+ * ⚠ **An absent ZIP is drawn in a different register from a real one** (dashed
+ * and muted, against bordered on paper), because it is not a place: the ZIP
+ * question only exists since 14 Sep, so most profiles have none, and a chip
+ * saying "13 with no ZIP" set like a postcode would read as a postcode. It is
+ * sent by the server rather than counted here, per the 2 Sep rule that a count
+ * and the list it describes come from one expression.
+ */
+function PlacesCard({ places }: { places: PlaceDemand }) {
+  /* The top row's own count. `Math.max(1, …)` so a cohort that is questions
+     only — every city at zero sign-ups — cannot divide by zero. */
+  const most = Math.max(1, ...places.rows.map((r) => r.signups));
+
+  return (
+    <Card className="mt-4">
+      <div className="px-4 py-3">
+        <h2 className="text-[14px] font-semibold">Where demand is strongest</h2>
+        {/* The denominator, said once. Every number in this block is a parent
+            who finished — see `PlaceDemand` for why "or tried to" is not
+            answerable here. */}
+        <p className="mt-1 text-[12.5px] text-muted">
+          Grouped by city, so a Pasadena district counts towards Pasadena.
+          Sign-ups are parents who finished a profile.
+        </p>
+
+        <ul className="mt-3">
+          {places.rows.map((r) => (
+            <li
+              key={r.city}
+              className="grid gap-x-4 gap-y-1.5 border-t border-bark/40 py-2.5 sm:grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)]"
+            >
+              <h3 className="truncate text-[13.5px] font-semibold">
+                {slugLabel(r.city)}
+              </h3>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  {/* Fixed width, with the figure right-aligned inside it, so
+                      every bar starts at one x — without that they step
+                      sideways with the width of "1" against "13" and stop
+                      being comparable, which is the whole point of them. */}
+                  <span className="flex w-[5.75rem] shrink-0 items-baseline gap-1 text-[12.5px] text-muted">
+                    <span className="w-5 text-right text-[14px] font-semibold tabular-nums text-ink">
+                      {r.signups}
+                    </span>
+                    {r.signups === 1 ? "sign-up" : "sign-ups"}
+                  </span>
+
+                  {/* Capped rather than free, so the questions figure beside it
+                      also lands at one x on every row. `aria-hidden`: the
+                      number it draws is already read out to its left. */}
+                  <span
+                    aria-hidden="true"
+                    className="hidden h-1.5 max-w-[13rem] flex-1 rounded-full bg-bark/40 sm:block"
+                  >
+                    <span
+                      className="block h-full rounded-full bg-green"
+                      style={{ width: `${Math.max(4, (r.signups / most) * 100)}%` }}
+                    />
+                  </span>
+
+                  {r.questions > 0 && (
+                    <span className="flex shrink-0 items-baseline gap-1 text-[12.5px] text-muted">
+                      <span className="text-[13px] font-semibold tabular-nums text-ink">
+                        {r.questions}
+                      </span>
+                      {r.questions === 1 ? "question" : "questions"}
+                    </span>
+                  )}
+                </div>
+
+                {(r.zips.length > 0 || r.signups_no_zip > 0) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <SubLabel>ZIPs</SubLabel>
+                    {r.zips.map((z) => (
+                      <span
+                        key={z.zip}
+                        className="inline-flex items-baseline gap-1 whitespace-nowrap rounded-full border border-bark bg-paper px-2 py-0.5 text-[11.5px]"
+                      >
+                        <span className="font-semibold tabular-nums">{z.zip}</span>
+                        <span className="text-muted">{z.signups}</span>
+                      </span>
+                    ))}
+                    {r.signups_no_zip > 0 && (
+                      <span className="whitespace-nowrap rounded-full border border-dashed border-bark px-2 py-0.5 text-[11.5px] text-muted">
+                        {r.signups_no_zip} with no ZIP
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {r.categories.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <SubLabel>Asked about</SubLabel>
+                    <span className="min-w-0 text-[12.5px] text-muted">
+                      {r.categories
+                        .map((c) => DEMAND_CATEGORY[c] ?? sentence(c))
+                        .join(" · ")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        {places.questions_no_place > 0 && (
+          <p className="mt-3 border-t border-bark/40 pt-2.5 text-[12.5px] text-muted">
+            {places.questions_no_place} question
+            {places.questions_no_place === 1 ? "" : "s"} from anonymous sessions,
+            with no neighborhood on record.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/** The 11px uppercase label `Fact` uses, for a line that is not a `<dl>`. */
+function SubLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+      {children}
+    </span>
   );
 }
