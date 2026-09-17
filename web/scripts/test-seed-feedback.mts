@@ -2360,71 +2360,63 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
     "the mechanic — who gets recorded as the referrer — answers a question nobody asked",
   );
   /**
-   * ⚠ Still true of **this** constant and still worth holding: the honest
-   * argument is the one that is checkable today, so it stays free of any
-   * promise. What changed on 17 Sep is that a *second* line beside it does
-   * make one — see `INVITE_REWARD` below, and note that this check would have
-   * gone on passing while the surface next to it promised a reward, which is
-   * how a guard quietly stops describing the screen.
-   */
-  ok(
-    "the honest line still promises nothing in return",
-    !/\bearn\b|\bfree\b|\bcredit\b|\breward\b|\bbonus\b|\bgift\b/i.test(why),
-    why,
-  );
-
-  /**
-   * 17 Sep — the developer asked for a reward beside the link and, told that
-   * no concrete one can be granted, asked for an abstract one:
-   * *"просто потрібна абстрактна нагорода, конкретного наразі нічого немає"*.
+   * 17 Sep — the second line, and the rule that produced it.
    *
-   * So this is pinned as **three separate claims**, because they fail
-   * independently and only the first is about the words existing at all.
+   * ⚠⚠ For one commit this slot held an abstract reward, hedged as *"we're
+   * working out how … you'll hear at launch"*, and the developer removed it:
+   * a sentence about a decision Pando has not taken gives a parent nothing to
+   * act on. The three checks that used to police the *shape* of that promise
+   * are one check that it has not come back.
    */
-  const rewardLine =
-    /export const INVITE_REWARD =\s*$/m.test(referralSrc)
-      ? (/export const INVITE_REWARD =\s*\n\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "")
-      : (/export const INVITE_REWARD =\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "");
-  ok("there is a reward line at all", rewardLine.length > 30, `${rewardLine.length} chars`);
+  const second =
+    /export const INVITE_GAP =\s*\n\s*"([^"]+)"/.exec(referralSrc)?.[1] ??
+    /export const INVITE_GAP =\s*"([^"]+)"/.exec(referralSrc)?.[1] ??
+    "";
+  ok("there is a second line at all", second.length > 40, `${second.length} chars`);
   /**
-   * ⚠⚠ The one that matters. A unit is what nothing in this codebase mints —
-   * the only `insert into credits` is the blast-expiry guarantee — so naming
-   * one is the 16 Sep fault restored in different words. A **digit** counts
-   * too: *$10*, *one free*, *three parents* are all units.
+   * ⚠ It has to add something `WHY_INVITE` does not, or it is the third
+   * saying of one sentence this file keeps recording. The standing argument is
+   * *who is in it is how good your answers are*; this one names the failure a
+   * parent has already met — an answer arriving as general information because
+   * nobody nearby had been there.
    */
   ok(
-    "and it names no unit, no amount and no count",
-    !/Network (Check|Ask)|\bcredit|\bfree\b|\$|\d/i.test(rewardLine),
-    rewardLine,
+    "and it names what a thin network costs rather than repeating the argument",
+    /general information|nobody near/i.test(second) && !/who is in it/i.test(second),
+    second,
   );
   /**
-   * ⚠ A **mechanic** implies a check somebody runs, and nobody does — *"when
-   * someone you invite completes their profile…"* is the exact sentence
-   * removed on 16 Sep, and a conditional is what made it a lie rather than a
-   * vague intention.
+   * ⚠⚠ **Both lines together**, which is the fix for the hole this guard had
+   * while it read `WHY_INVITE` alone: it went on asserting the invite promised
+   * nothing while the paragraph beside it promised a reward. A named unit is
+   * caught by the surface check further down; this catches the words.
    */
   ok(
-    "and states no condition anybody would have to enforce",
-    !/\bwhen\b|\bonce\b|\bif\b|\bper\b/i.test(rewardLine),
-    rewardLine,
+    "neither line offers the sender anything to earn",
+    !/\bearn\b|\bfree\b|\bcredit\b|\breward\b|\bbonus\b|\bgift\b/i.test(
+      `${why} ${second}`,
+    ),
+    `${why} ${second}`,
   );
   /**
-   * ⚠ Her own convention for a benefit that is not live yet, from the
-   * participation table: *"Label benefits that are not yet live 'during the
-   * pilot' or 'at launch'"*. Without the hedge this is a flat promise.
+   * ⚠ And neither says a decision is pending. *During the pilot* and *at
+   * launch* are her own hedges and are right on the participation table, where
+   * they qualify a benefit she has actually promised; in front of a parent
+   * being asked for a favour they are Pando talking about itself.
    */
   ok(
-    "and it admits nothing is settled yet",
-    /at launch|during the pilot/i.test(rewardLine) &&
-      /working out|deciding|figuring/i.test(rewardLine),
-    rewardLine,
+    "and neither says we are still deciding something",
+    !/working out|at launch|during the pilot|coming soon|for now/i.test(
+      `${why} ${second}`,
+    ),
+    `${why} ${second}`,
   );
 
   /* Every surface reads the one constant, which is what stopped three of them
      drifting and is what let the fourth be fixed in one place. */
   for (const [name, count] of [["ReferralInvite", 3], ["WhatsNext", 1]] as const) {
     const body = name === "ReferralInvite" ? referralSrc : nextSrc;
-    for (const token of ["WHY_INVITE", "INVITE_REWARD"] as const) {
+    for (const token of ["WHY_INVITE", "INVITE_GAP"] as const) {
       ok(
         `${name} renders ${token} on every surface`,
         (body.match(new RegExp(`\\{${token}\\}`, "g")) ?? []).length >= count,

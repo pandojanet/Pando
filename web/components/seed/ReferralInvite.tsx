@@ -169,47 +169,39 @@ export const WHY_INVITE =
   "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you, with children the age of yours, whose experience can come back in an answer.";
 
 /**
- * The second line: there is something in it for the sender, and deliberately
- * not what.
+ * The second line: what a thin network actually costs a parent today.
  *
- * ⚠⚠ **This is a promise with no write behind it, and that is the developer's
- * call made with the cost in front of them.** Told that the reward half could
- * not be built honestly, their answer was *"просто потрібна абстрактна
- * нагорода, конкретного наразі нічого немає"* — so what ships is the vaguest
- * form that still reads as a reward, and the thing that makes it honest is
- * that it **says nothing is decided yet**.
+ * ⚠⚠ **This slot held an abstract reward for one commit, and the developer
+ * removed it**: *"не потрібно цього тексту, що ми працюємо, напиши про якість
+ * відповідей, тощо, але не про те, що ми думаємо над винагородою"*. Worth
+ * keeping as a rule rather than as history — *we are working out how you get
+ * rewarded* tells a parent that a decision is pending, which is a sentence
+ * about Pando's internal state and gives them nothing to act on. The three
+ * guards in `test:feedback` that used to police the shape of that promise now
+ * assert it has not come back.
  *
- * **It follows her own convention rather than inventing one.** Three of the
- * benefits she wrote for the participation table name things that do not
- * exist, and her instruction there was to hedge rather than to drop them:
- * *"Label benefits that are not yet live 'during the pilot' or 'at launch'"*.
- * This is the same shape — a commitment that something exists, an admission
- * that its form is unsettled, and a date by which they will know.
+ * **Why this is not `WHY_INVITE` said twice.** That one is the standing
+ * argument — who is in the network *is* how good the answers are. This one
+ * names the **failure a parent has already met**: with nobody nearby who has
+ * been there, `composeAnswer` falls back to what the open web says and the
+ * answer arrives under *"Public/general information"* (`trust-labels.ts`,
+ * invariant 3). So the two say *why it matters* and *what it looks like when
+ * it is missing*, which is a reason to send the link rather than a repetition.
  *
- * ⚠⚠ **Three things it must never grow into**, and each is a fault this file
- * has already recorded. **A unit** — *Network Check*, *Ask*, a dollar figure,
- * a count: nothing in this codebase mints one, the only `insert into credits`
- * is the blast-expiry guarantee, and `test:feedback` still fails on the named
- * ones. **A mechanic** — *"when they finish their profile you get…"* is
- * precisely the sentence removed on 16 Sep, because a condition implies a
- * check somebody runs and nobody does. And **a number of people**, which
- * would turn an open-ended thank-you into a target a parent can miss.
+ * ⚠ It is measurable rather than a flourish, which is the only thing that
+ * earns a second paragraph here: measured 9 Sep, **six of thirteen** curated
+ * topics held zero records and **fifteen of thirty-nine** contributors could
+ * be matched at all.
  *
- * ⚠ **It is not `REWARD_OFFER` and must not read as it.** That is her $10,
- * it is for whoever *joins*, and it lives in the message a parent sends. This
- * is for the person doing the sending and never leaves their own screen —
- * `CopyLink`'s message is built from its own pieces, so nothing here can
- * reach somebody's clipboard.
+ * ⚠ **It still offers the sender nothing**, deliberately — not because the
+ * subject changed but because nothing in this codebase grants a referral
+ * credit, and her §6 of 10 Sep is that the guaranteed $10 is the only launch
+ * incentive. Both lines are checked for that together now.
  *
- * ⚠ **Its own constant rather than a third sentence on `WHY_INVITE`**: that
- * one is true today and testable, this one is a forward promise, and the day
- * she decides what backs it — or decides nothing does — exactly one of them
- * changes.
- *
- * ⚠ Provisional, ours, and on the list for her with everything else here.
+ * ⚠ Provisional and ours, like everything else on these surfaces.
  */
-export const INVITE_REWARD =
-  "We're working out how founding parents who bring others in get rewarded for it — you'll hear at launch.";
+export const INVITE_GAP =
+  "Some questions still come back as general information, because nobody near you has been there yet. The parents you bring are what turns those into real answers.";
 
 /**
  * The same link as a small box in a screen header — her instruction of 8 Sep:
@@ -289,7 +281,7 @@ export function ReferralHeaderInvite({ code }: { code: string }) {
         >
           <p className="text-[13.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
           <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-            {INVITE_REWARD}
+            {INVITE_GAP}
           </p>
           <CopyLink code={code} />
         </div>
@@ -307,7 +299,7 @@ export function ReferralPanel({ code }: { code: string }) {
         Know a parent everyone asks for recommendations?
       </h2>
       <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
-      <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_REWARD}</p>
+      <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_GAP}</p>
       <CopyLink code={code} />
     </Panel>
   );
@@ -375,7 +367,7 @@ export function ReferralDialog({
           Your invite link is ready.
         </h2>
         <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
-        <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_REWARD}</p>
+        <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_GAP}</p>
         <CopyLink code={code} />
       </div>
       <div className="flex justify-end border-t border-bark/70 px-5 py-3">
