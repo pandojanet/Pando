@@ -57,6 +57,7 @@ const EMPTY: Record<AdminResource, unknown> = {
   options: [],
   flags: [],
   demand: [],
+  demand_places: { rows: [], questions_no_place: 0 },
   conversations: { rows: [], unattributed: 0 },
   conversation: null,
   freshness: [],
@@ -136,6 +137,7 @@ const SAMPLE: Record<AdminResource, unknown> = {
   options: sample.samplePendingOptions,
   flags: sample.sampleFlags,
   demand: sample.sampleDemand,
+  demand_places: sample.samplePlaceDemand,
   /* 14.1. No sample rows: a conversation history is the one thing that would be
      actively misleading to fake — the whole page is "did Pando really text
      her", and invented rows answer yes. */

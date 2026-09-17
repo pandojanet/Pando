@@ -14,6 +14,7 @@ import type {
   Overview,
   PendingOptionRow,
   RestrictedNote,
+  PlaceDemand,
 } from "./types";
 
 /**
@@ -1013,3 +1014,52 @@ export const sampleAudit: AuditRow[] = [
     after: { founding: "founding" },
   },
 ];
+
+/**
+ * The expansion table, **derived from the sample questions above** rather than
+ * written out again.
+ *
+ * ⚠ Two hand-written lists would be two lists that disagree the first time
+ * somebody edits one — the same rule the live query follows, where the count and
+ * the list it describes come from one expression. Sign-ups are invented (the
+ * sample has no people), and the ZIPs deliberately cover only part of them, so
+ * the demo screen shows the state a real deployment is actually in: the ZIP
+ * question is newer than most of the profiles.
+ */
+export const samplePlaceDemand: PlaceDemand = (() => {
+  const byCity = new Map<string, { questions: number; categories: Set<string> }>();
+  let orphans = 0;
+  for (const d of sampleDemand) {
+    if (d.is_test) continue;
+    if (!d.neighborhood) {
+      orphans += 1;
+      continue;
+    }
+    const entry = byCity.get(d.neighborhood) ?? { questions: 0, categories: new Set() };
+    entry.questions += 1;
+    if (d.category) entry.categories.add(d.category);
+    byCity.set(d.neighborhood, entry);
+  }
+  const signups: Record<string, { total: number; zips: [string, number][] }> = {
+    altadena: { total: 6, zips: [["91001", 4]] },
+    "south-pasadena": { total: 3, zips: [["91030", 1]] },
+    pasadena: { total: 6, zips: [] },
+  };
+  return {
+    rows: [...byCity.entries()]
+      .map(([city, v]) => {
+        const s = signups[city] ?? { total: 0, zips: [] as [string, number][] };
+        const placed = s.zips.reduce((n, [, c]) => n + c, 0);
+        return {
+          city,
+          signups: s.total,
+          signups_no_zip: s.total - placed,
+          zips: s.zips.map(([zip, n]) => ({ zip, signups: n })),
+          questions: v.questions,
+          categories: [...v.categories],
+        };
+      })
+      .sort((a, b) => b.signups - a.signups || b.questions - a.questions),
+    questions_no_place: orphans,
+  };
+})();

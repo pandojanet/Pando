@@ -21,6 +21,7 @@ export type AdminResource =
   | "options"
   | "flags"
   | "demand"
+  | "demand_places"
   | "founding"
   | "invites"
   | "consents"
@@ -693,6 +694,74 @@ export interface FlagRow {
  * D1. What a parent asked for at the end. `sensitivity` decides what Pando said back;
  * anything not ordinary waits for a person before it can be used.
  */
+/**
+ * Where the people are — the client's own expansion question.
+ *
+ * *"Track how many people signed up (or tried to) from which ZIP codes/cities,
+ * to see where demand for geographic expansion is strongest."*
+ *
+ * ⚠⚠ **Rolled up to the city, and that is the whole reason this is a server
+ * query rather than four lines in a `useMemo`.** `market_options.neighborhoods`
+ * holds the seventeen towns **plus** fourteen Pasadena districts, so a raw
+ * `group by neighborhood` splits one city across Bungalow Heaven, San Rafael,
+ * East Pasadena and Old Pasadena — and measured on the live cohort that put
+ * **Altadena top with 6 while Pasadena's own six were scattered under four
+ * names and read as ones and twos.** An expansion decision taken off that list
+ * is taken off a ranking that is wrong at the top. `area_slug` has carried the
+ * roll-up since the taxonomy was imported; this is its fourth reader.
+ *
+ * ⚠ **Sign-ups and questions are both here on purpose.** They are two different
+ * populations — who lives there, and who asked from there — and the client's
+ * sentence is about the two together. Two cards side by side, one grouped by
+ * city and one by the raw stored value, is the *"some hide and some don't"*
+ * inconsistency this admin has already been reported for once.
+ *
+ * ⚠⚠ **What it deliberately cannot answer is "or tried to".** Nothing about a
+ * named parent is stored before their phone is verified (invariant 11), and the
+ * neighborhood is the first screen while the code is the last — so a parent who
+ * names their town and leaves is in `localStorage` on their own phone and in no
+ * row here. Counting those needs a non-personal counter and a decision about
+ * what Pando records before consent, which is the client's to take rather than
+ * ours to assume. Every number below is therefore **people who finished**.
+ */
+export interface PlaceDemandRow {
+  /**
+   * The city everything under it rolled up to, or the stored value itself when
+   * the taxonomy knows no city for it — never dropped, because a value with no
+   * roll-up is a retired option somebody is still stored under, and silently
+   * losing them is what makes a demand number untrustworthy.
+   */
+  city: string;
+  /** Finished profiles stored in this city. */
+  signups: number;
+  /**
+   * Sign-ups here with no ZIP on record.
+   *
+   * ⚠ Sent rather than derived on the client, so the ZIP list and the number
+   * describing it come from one expression (2 Sep). It is large today and that
+   * is history rather than a fault: the ZIP question only exists since
+   * `drizzle/0039` on 14 Sep, so every profile before it has none.
+   */
+  signups_no_zip: number;
+  /** Sign-ups by the ZIP they chose, commonest first. */
+  zips: { zip: string; signups: number }[];
+  /** D1 questions asked from this city. */
+  questions: number;
+  /** What those questions were about. */
+  categories: string[];
+}
+
+export interface PlaceDemand {
+  rows: PlaceDemandRow[];
+  /**
+   * Questions from a session with no neighborhood to read.
+   *
+   * Counted apart rather than folded into a city, which would quietly
+   * over-report whichever one it was folded into.
+   */
+  questions_no_place: number;
+}
+
 export interface DemandRow {
   id: string;
   question_text: string;

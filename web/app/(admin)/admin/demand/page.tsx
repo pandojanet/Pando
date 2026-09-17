@@ -35,7 +35,7 @@ import {
   DEMAND_STATUS,
   sentence,
 } from "@/lib/admin/labels";
-import type { DemandRow } from "@/lib/admin/types";
+import type { DemandRow, PlaceDemand } from "@/lib/admin/types";
 
 /**
  * Estimate 2.7 — what parents asked for (D1).
@@ -61,6 +61,11 @@ const FILTERS = ["urgent", "open", "all"] as const;
 export default function DemandPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<DemandRow[]>("demand");
+  /* Its own resource rather than a field on the rows above: this is an
+     aggregate over two tables with a roll-up the browser cannot do, and the
+     queue is filtered by tab while these totals never are. */
+  const { rows: placeData } = useAdminRows<PlaceDemand>("demand_places");
+  const places = placeData ?? { rows: [], questions_no_place: 0 };
 
   const [filter, setFilter] = useUrlFilter(FILTERS, "urgent");
   const [noteFor, setNoteFor] = useState<string | null>(null);
@@ -107,36 +112,6 @@ export default function DemandPage() {
     };
   }, [all]);
 
-  /**
-   * Demand by area — spec §9 and QC Answers Q7: "log the question with neighborhood
-   * … this becomes your market-expansion demand signal." The table answers "what did
-   * this parent want"; this answers the question the client actually asks the data,
-   * which is "where are people asking from, and about what".
-   *
-   * Anonymous sessions have no neighborhood to read, so they are counted apart
-   * rather than folded into a total that would quietly under-report every area.
-   */
-  const byArea = useMemo(() => {
-    const areas = new Map<string, { total: number; categories: Set<string> }>();
-    let unknown = 0;
-    for (const r of all) {
-      if (r.is_test) continue;
-      if (!r.neighborhood) {
-        unknown += 1;
-        continue;
-      }
-      const entry = areas.get(r.neighborhood) ?? { total: 0, categories: new Set() };
-      entry.total += 1;
-      if (r.category) entry.categories.add(r.category);
-      areas.set(r.neighborhood, entry);
-    }
-    return {
-      rows: [...areas.entries()]
-        .map(([area, v]) => ({ area, total: v.total, categories: [...v.categories] }))
-        .sort((a, b) => b.total - a.total),
-      unknown,
-    };
-  }, [all]);
 
   async function run(
     rowId: string,
@@ -393,30 +368,62 @@ export default function DemandPage() {
         <RevealMore n={hidden} onClick={revealAll} />
       </Card>
 
-      {(byArea.rows.length > 0 || byArea.unknown > 0) && (
+      {(places.rows.length > 0 || places.questions_no_place > 0) && (
         <Card className="mt-4">
           <div className="px-4 py-3">
-            <h2 className="text-[14px] font-semibold">Where the demand is</h2>
-            <ul className="mt-3 space-y-1.5">
-              {byArea.rows.map((r) => (
-                <li key={r.area} className="flex items-baseline gap-2 text-[13.5px]">
-                  <span className="w-40 shrink-0 font-medium">
-                    {slugLabel(r.area)}
-                  </span>
-                  <span className="tabular-nums font-semibold">{r.total}</span>
-                  {r.categories.length > 0 && (
+            <h2 className="text-[14px] font-semibold">
+              Where demand is strongest
+            </h2>
+            {/* The denominator, said once. Every number in this block is a
+                parent who finished — see `PlaceDemand` for why "or tried to"
+                is not answerable here. */}
+            <p className="mt-1 text-[12.5px] text-muted">
+              Grouped by city, so a Pasadena district counts towards Pasadena.
+              Sign-ups are parents who finished a profile.
+            </p>
+            <ul className="mt-3 space-y-2.5">
+              {places.rows.map((r) => (
+                <li key={r.city} className="text-[13.5px]">
+                  <div className="flex items-baseline gap-2">
+                    <span className="w-40 shrink-0 font-medium">
+                      {slugLabel(r.city)}
+                    </span>
+                    <span className="tabular-nums font-semibold">
+                      {r.signups}
+                    </span>
                     <span className="text-[12.5px] text-muted">
+                      {r.signups === 1 ? "sign-up" : "sign-ups"}
+                      {r.questions > 0 &&
+                        ` · ${r.questions} ${r.questions === 1 ? "question" : "questions"}`}
+                    </span>
+                  </div>
+                  {(r.zips.length > 0 || r.signups_no_zip > 0) && (
+                    <div className="mt-0.5 text-[12.5px] text-muted sm:pl-40">
+                      {[
+                        ...r.zips.map((z) => `${z.signups} in ${z.zip}`),
+                        /* Never folded into a ZIP bucket: the question is
+                           newer than most of these profiles, and a silent zero
+                           would make the split look complete when it is not. */
+                        ...(r.signups_no_zip > 0
+                          ? [`${r.signups_no_zip} with no ZIP on record`]
+                          : []),
+                      ].join(" · ")}
+                    </div>
+                  )}
+                  {r.categories.length > 0 && (
+                    <div className="mt-0.5 text-[12.5px] text-muted sm:pl-40">
                       {r.categories
                         .map((c) => DEMAND_CATEGORY[c] ?? sentence(c))
                         .join(" · ")}
-                    </span>
+                    </div>
                   )}
                 </li>
               ))}
-              {byArea.unknown > 0 && (
+              {places.questions_no_place > 0 && (
                 <li className="text-[12.5px] text-muted">
-                  {byArea.unknown} from anonymous sessions, with no neighborhood on
-                  record.
+                  {places.questions_no_place} question
+                  {places.questions_no_place === 1 ? "" : "s"} from anonymous
+                  sessions, with no neighborhood on record.
                 </li>
               )}
             </ul>

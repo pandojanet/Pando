@@ -24,6 +24,7 @@ import type {
   DeliveryHealthRow,
   MatchCandidateRow,
   MatchingResult,
+  PlaceDemand,
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
 import {
@@ -101,6 +102,8 @@ export async function readResource(
       return flagRows(db);
     case "demand":
       return demandRows(db);
+    case "demand_places":
+      return demandPlaces(db);
     case "founding":
       return foundingQueue(db);
     case "invites":
@@ -2250,5 +2253,136 @@ async function paymentRows(db: Db): Promise<PaymentsResult> {
         .filter((r) => r.payment_status === "refund_due")
         .reduce((sum, r) => sum + r.price_cents, 0),
     },
+  };
+}
+
+/**
+ * Where people joined from, and where they asked from — one table, by city.
+ *
+ * ## Why this is SQL rather than a `useMemo`
+ *
+ * The roll-up. `people.neighborhood` and `demand_signals.neighborhood` both hold
+ * the mixed vocabulary — seventeen towns and fourteen Pasadena districts — and
+ * only `market_options.area_slug` knows which city a district belongs to. A
+ * browser holding a list of rows has no way to ask.
+ *
+ * ⚠ **The join is per market, never a constant.** One market in the pilot makes
+ * `where market_id = 'pasadena'` tempting and wrong the day there are two:
+ * `option_value` is unique per (market, category), so a bare join on the value
+ * would let one market's districts roll another market's parents up.
+ *
+ * ⚠ **`demand_signals` has no market of its own**, so it borrows the asker's.
+ * That is sound rather than a workaround: its `neighborhood` is written from the
+ * profile and never from the request (11 Aug), so a row carrying one always has
+ * a person, and a row without one is the anonymous path — counted apart below.
+ *
+ * ⚠ **The two halves are counted separately and joined on the city**, rather
+ * than one query over people with demand attached. A city can have sign-ups and
+ * no questions (nobody asked yet) or questions and no sign-ups (they asked and
+ * left) — and the second is the more interesting half for an expansion
+ * decision, so an inner join would hide exactly the row worth reading.
+ */
+async function demandPlaces(db: Db): Promise<PlaceDemand> {
+  const rows = (await db.execute(sql`
+    with roll as (
+      select p.id,
+             coalesce(mo.area_slug, p.neighborhood) as city,
+             p.profile_captured_at,
+             p.selected_zip
+        from people p
+        left join market_options mo
+          on mo.market_id = p.market_id
+         and mo.category = 'neighborhoods'
+         and mo.option_value = p.neighborhood
+       where coalesce(p.is_test, false) = false
+         and p.neighborhood is not null
+    ),
+    signs as (
+      select city,
+             count(*)::int as signups,
+             count(*) filter (where selected_zip is null)::int as signups_no_zip
+        from roll
+       where profile_captured_at is not null
+       group by city
+    ),
+    zips as (
+      select city, selected_zip as zip, count(*)::int as n
+        from roll
+       where profile_captured_at is not null and selected_zip is not null
+       group by city, selected_zip
+    ),
+    zip_agg as (
+      select city,
+             jsonb_agg(jsonb_build_object('zip', zip, 'signups', n)
+                       order by n desc, zip) as zips
+        from zips group by city
+    ),
+    asks as (
+      select coalesce(mo.area_slug, d.neighborhood) as city,
+             count(*)::int as questions,
+             array_remove(array_agg(distinct d.category), null) as categories
+        from demand_signals d
+        /**
+         * ⚠⚠ **A left join, because a question can outlive the parent who
+         * asked it.** demand_signals.person_id is on delete set null, so a
+         * parent who removes their profile leaves the question behind with its
+         * neighborhood intact — and an inner join here dropped exactly that
+         * row. Measured before this shipped: 14 questions in the table, 13 in
+         * the total. One silently missing, from the one population an
+         * expansion number most wants to keep — somebody who arrived, asked,
+         * and left.
+         */
+        left join people p on p.id = d.person_id
+        /**
+         * The roll-up, resolved through the asker's market where there is one.
+         *
+         * ⚠ With the person gone the market is gone too, so rather than
+         * guessing one, the lateral rolls the value up **only when it means the
+         * same city in every market that has it** — having count(distinct …)
+         * = 1. An ambiguous value falls back to its own name, which reads as a
+         * city of its own and is honest, where picking a market would file a
+         * parent under a town they never chose.
+         */
+        left join lateral (
+          select max(m.area_slug) as area_slug
+            from market_options m
+           where m.category = 'neighborhoods'
+             and m.option_value = d.neighborhood
+             and (p.market_id is null or m.market_id = p.market_id)
+          having count(distinct m.area_slug) = 1
+        ) mo on true
+       where coalesce(d.is_test, false) = false
+         and d.neighborhood is not null
+       group by 1
+    )
+    select coalesce(s.city, a.city) as city,
+           coalesce(s.signups, 0) as signups,
+           coalesce(s.signups_no_zip, 0) as signups_no_zip,
+           coalesce(z.zips, '[]'::jsonb) as zips,
+           coalesce(a.questions, 0) as questions,
+           coalesce(a.categories, '{}') as categories
+      from signs s
+      full outer join asks a on a.city = s.city
+      left join zip_agg z on z.city = coalesce(s.city, a.city)
+     order by coalesce(s.signups, 0) desc,
+              coalesce(a.questions, 0) desc,
+              1
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  const orphans = (await db.execute(sql`
+    select count(*)::int as n from demand_signals
+     where coalesce(is_test, false) = false and neighborhood is null
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  return {
+    rows: rows.map((r) => ({
+      city: String(r.city),
+      signups: Number(r.signups),
+      signups_no_zip: Number(r.signups_no_zip),
+      zips: (r.zips as { zip: string; signups: number }[]) ?? [],
+      questions: Number(r.questions),
+      categories: (r.categories as string[]) ?? [],
+    })),
+    questions_no_place: Number(orphans[0]?.n ?? 0),
   };
 }
