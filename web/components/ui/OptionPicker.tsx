@@ -445,13 +445,35 @@ export function OptionPicker({
                keep them from meeting at all, but if a measurement is a few
                pixels out the failure has to be a list that overlaps the button
                rather than options nobody can see. */
-            /* The height belongs to the **panel**, not to the list inside it.
-               Clamping the `<ul>` alone left the "Can't find it?" footer hanging
-               past the ceiling and over the dock — measured: the list ended 5px
-               clear and the panel still covered Continue. */
+            /**
+             * The height belongs to the **panel**, and so does the scrolling.
+             *
+             * Clamping the `<ul>` alone left the "Can't find it?" footer hanging
+             * past the ceiling and over the dock — measured on 7 Sep: the list
+             * ended 5px clear and the panel still covered Continue.
+             *
+             * ⚠⚠ **And giving the list the scrollbar was the other half of that
+             * mistake, which took ten days to surface** (17 Sep). The panel was
+             * `overflow-hidden` with a scrolling `flex-1` list above a
+             * `shrink-0` footer — fine while the footer was one status line and
+             * one link, and wrong the moment the footer began carrying up to
+             * eight found places. `flex-1` is `flex: 1 1 0%`, so with the list
+             * empty it contributes nothing and the footer's ~500px is clipped at
+             * 288 by a panel that scrolls nowhere: **four rows on screen, four
+             * unreachable, and no scrollbar to say so.** Reported from the
+             * Detroit walk — *"немає можливості прогорнути на наступні опції"*.
+             *
+             * One scroller, on the panel, is what the mobile rule asks for
+             * anyway — *a box inside a box is the fastest way to make a layout
+             * feel wrong* — and it cannot develop this fault again, because
+             * nothing inside the panel can now be taller than the panel and
+             * still be out of reach. Keyboard navigation is unaffected:
+             * `scrollIntoView({ block: "nearest" })` scrolls whichever ancestor
+             * actually scrolls.
+             */
             style={{ maxHeight: placement.maxHeight }}
             className={cn(
-              "absolute left-0 right-0 z-40 flex flex-col overflow-hidden rounded-2xl border border-bark bg-card shadow-card",
+              "absolute left-0 right-0 z-40 flex flex-col overflow-y-auto overscroll-contain rounded-2xl border border-bark bg-card shadow-card",
               placement.above
                 ? "bottom-[calc(100%+0.375rem)]"
                 : "top-[calc(100%+0.375rem)]",
@@ -463,7 +485,7 @@ export function OptionPicker({
               role="listbox"
               aria-label={groupLabel}
               aria-multiselectable={mode === "multi" ? true : undefined}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1"
+              className="py-1"
             >
               {listed.map((option, i) => {
                 const on = selected.includes(option.id);
@@ -551,7 +573,7 @@ export function OptionPicker({
                 keeps it there even when there are matches, because the right
                 answer may be the one Pando does not know yet. */}
             {(status || onAddCustom) && (
-              <div className="shrink-0 border-t border-bark/60 px-4 py-2">
+              <div className="border-t border-bark/60 px-4 py-2">
                 {status}
                 {onAddCustom && (
                   <button

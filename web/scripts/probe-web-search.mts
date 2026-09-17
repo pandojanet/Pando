@@ -277,6 +277,13 @@ const CASES: Case[] = [
     about: "specific and well phrased: the case that should work with or without context",
   },
   {
+    id: "open-this-week",
+    text: "what's fun for toddlers in Pasadena this week?",
+    context: { area: "pasadena", children: [YEAR - 2] },
+    about:
+      "the client's own example of an 'open' question: no category the taxonomy names, and **'this week'** — the one thing the graph structurally cannot answer, because a contribution records what a parent did once and never what is on this Saturday. If the public half is ever worth its cost, it is here",
+  },
+  {
     id: "rainy-day",
     text: "its pouring and my 2yo is climbing the walls, anywhere indoors round pasadena thats not the mall",
     context: { area: "pasadena", children: [YEAR - 2] },
