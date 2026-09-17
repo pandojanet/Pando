@@ -2352,6 +2352,8 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
 
   /* The sentence itself, read out of the constant rather than restated here —
      a copy in the suite is a copy that drifts. */
+  const strip = (t: string) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const why = /export const WHY_INVITE =\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "";
   ok("there is a motivating line at all", why.length > 40, `${why.length} chars`);
   ok(
@@ -2360,63 +2362,66 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
     "the mechanic — who gets recorded as the referrer — answers a question nobody asked",
   );
   /**
-   * 17 Sep — the second line, and the rule that produced it.
+   * 17 Sep — **one paragraph beside the link, not two**, and that is the
+   * developer's answer to their own request rather than an omission.
    *
-   * ⚠⚠ For one commit this slot held an abstract reward, hedged as *"we're
-   * working out how … you'll hear at launch"*, and the developer removed it:
-   * a sentence about a decision Pando has not taken gives a parent nothing to
-   * act on. The three checks that used to police the *shape* of that promise
-   * are one check that it has not come back.
+   * Asked for motivating copy, the slot under `WHY_INVITE` held two different
+   * second paragraphs on one day and both were removed on sight. First an
+   * abstract reward hedged as *"we're working out how … you'll hear at
+   * launch"* — *"не потрібно цього тексту, що ми працюємо"*, because a
+   * decision Pando has not taken is a sentence about Pando. Then the honest
+   * replacement, naming what a thin network costs — *"прибери цей блок"*.
+   *
+   * ⚠ So what is pinned is the **claims**, not the shape: a future second
+   * paragraph is allowed, and these two are not. Reading the whole file
+   * rather than one constant is deliberate — the version that read
+   * `WHY_INVITE` alone went on passing while the paragraph beside it promised
+   * a reward, which is how a guard stops describing the screen.
    */
-  const second =
-    /export const INVITE_GAP =\s*\n\s*"([^"]+)"/.exec(referralSrc)?.[1] ??
-    /export const INVITE_GAP =\s*"([^"]+)"/.exec(referralSrc)?.[1] ??
-    "";
-  ok("there is a second line at all", second.length > 40, `${second.length} chars`);
   /**
-   * ⚠ It has to add something `WHY_INVITE` does not, or it is the third
-   * saying of one sentence this file keeps recording. The standing argument is
-   * *who is in it is how good your answers are*; this one names the failure a
-   * parent has already met — an answer arriving as general information because
-   * nobody nearby had been there.
+   * ⚠ The one named exception, and it is an **identifier** rather than copy:
+   * `REWARD_OFFER` is her $10, it is for whoever *joins*, and it belongs in
+   * the message a parent sends. Excusing the token by name rather than
+   * loosening the pattern is what keeps a `REWARD_OFFER_FOR_SENDER` catchable,
+   * and its own presence is still asserted separately below.
    */
+  /**
+   * ⚠⚠ **Comments, imports and one identifier come out first, and each
+   * exclusion is narrow on purpose** — what is left is as close to *what a
+   * parent reads* as a source file gets.
+   *
+   * `REWARD_OFFER` is excused **by name**: it is her $10, it is for whoever
+   * *joins*, and it belongs in the message a parent sends. Excusing the token
+   * rather than loosening the pattern keeps a `REWARD_OFFER_FOR_SENDER`
+   * catchable, and its presence is asserted separately below.
+   *
+   * Import lines go because a module path is never copy — `@/lib/rewards`
+   * matches `\breward` at the slash, which is the guard failing on its own
+   * plumbing rather than on anything anybody reads.
+   */
+  const invite = (strip(referralSrc) + strip(nextSrc))
+    .replace(/^import[\s\S]*?from\s+"[^"]*";$/gm, "")
+    .replaceAll("REWARD_OFFER", "");
   ok(
-    "and it names what a thin network costs rather than repeating the argument",
-    /general information|nobody near/i.test(second) && !/who is in it/i.test(second),
-    second,
+    "the invite offers the sender nothing to earn",
+    /* ⚠ Prefixes, never whole words. `\breward\b` does not match
+       **rewarded**, which is the exact wording just removed — the 9 Sep
+       `nosebleed` / `nosebleeds` fault, caught here by running the guard
+       against the sentence it exists to refuse rather than by reading it. */
+    !/\bearn|\bcredit|\breward|\bbonus|\bgift/i.test(invite),
+    "nothing in this codebase grants a referral credit",
   );
-  /**
-   * ⚠⚠ **Both lines together**, which is the fix for the hole this guard had
-   * while it read `WHY_INVITE` alone: it went on asserting the invite promised
-   * nothing while the paragraph beside it promised a reward. A named unit is
-   * caught by the surface check further down; this catches the words.
-   */
   ok(
-    "neither line offers the sender anything to earn",
-    !/\bearn\b|\bfree\b|\bcredit\b|\breward\b|\bbonus\b|\bgift\b/i.test(
-      `${why} ${second}`,
-    ),
-    `${why} ${second}`,
-  );
-  /**
-   * ⚠ And neither says a decision is pending. *During the pilot* and *at
-   * launch* are her own hedges and are right on the participation table, where
-   * they qualify a benefit she has actually promised; in front of a parent
-   * being asked for a favour they are Pando talking about itself.
-   */
-  ok(
-    "and neither says we are still deciding something",
-    !/working out|at launch|during the pilot|coming soon|for now/i.test(
-      `${why} ${second}`,
-    ),
-    `${why} ${second}`,
+    "and never says a decision about one is pending",
+    !/working out|at launch|during the pilot|coming soon/i.test(invite),
+    "a pending promise reads worse than no promise",
   );
 
   /* Every surface reads the one constant, which is what stopped three of them
      drifting and is what let the fourth be fixed in one place. */
   for (const [name, count] of [["ReferralInvite", 3], ["WhatsNext", 1]] as const) {
     const body = name === "ReferralInvite" ? referralSrc : nextSrc;
-    for (const token of ["WHY_INVITE", "INVITE_GAP"] as const) {
+    for (const token of ["WHY_INVITE"] as const) {
       ok(
         `${name} renders ${token} on every surface`,
         (body.match(new RegExp(`\\{${token}\\}`, "g")) ?? []).length >= count,
@@ -2430,8 +2435,6 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
    * is the *claim*, in whatever wording. Comments are stripped first: the fix
    * itself quotes the old sentence to explain why it went.
    */
-  const strip = (t: string) =>
-    t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   /**
    * ⚠ The **referral card**, not the whole module. `/done/next` also carries the
    * client's own *"their first Network Check on us"* on the Founding card — a

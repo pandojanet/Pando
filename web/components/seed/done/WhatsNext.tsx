@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/Screen";
 import { track } from "@/lib/analytics";
 import { REWARD_OFFER } from "@/lib/rewards";
-import { INVITE_GAP, WHY_INVITE } from "@/components/seed/ReferralInvite";
+import { WHY_INVITE } from "@/components/seed/ReferralInvite";
 import { NoSession, Next, useDoneSession } from "./shared";
 
 /**
@@ -236,9 +236,6 @@ ${REWARD_OFFER} Terms: pando.is/terms`;
         {code
           ? " The link below is yours — anyone who joins through it is recorded as having come from you."
           : ""}
-      </p>
-      <p className="mt-2 text-help leading-relaxed text-muted">
-        {INVITE_GAP}
       </p>
       <Panel
         as="p"

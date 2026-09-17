@@ -169,41 +169,6 @@ export const WHY_INVITE =
   "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you, with children the age of yours, whose experience can come back in an answer.";
 
 /**
- * The second line: what a thin network actually costs a parent today.
- *
- * ⚠⚠ **This slot held an abstract reward for one commit, and the developer
- * removed it**: *"не потрібно цього тексту, що ми працюємо, напиши про якість
- * відповідей, тощо, але не про те, що ми думаємо над винагородою"*. Worth
- * keeping as a rule rather than as history — *we are working out how you get
- * rewarded* tells a parent that a decision is pending, which is a sentence
- * about Pando's internal state and gives them nothing to act on. The three
- * guards in `test:feedback` that used to police the shape of that promise now
- * assert it has not come back.
- *
- * **Why this is not `WHY_INVITE` said twice.** That one is the standing
- * argument — who is in the network *is* how good the answers are. This one
- * names the **failure a parent has already met**: with nobody nearby who has
- * been there, `composeAnswer` falls back to what the open web says and the
- * answer arrives under *"Public/general information"* (`trust-labels.ts`,
- * invariant 3). So the two say *why it matters* and *what it looks like when
- * it is missing*, which is a reason to send the link rather than a repetition.
- *
- * ⚠ It is measurable rather than a flourish, which is the only thing that
- * earns a second paragraph here: measured 9 Sep, **six of thirteen** curated
- * topics held zero records and **fifteen of thirty-nine** contributors could
- * be matched at all.
- *
- * ⚠ **It still offers the sender nothing**, deliberately — not because the
- * subject changed but because nothing in this codebase grants a referral
- * credit, and her §6 of 10 Sep is that the guaranteed $10 is the only launch
- * incentive. Both lines are checked for that together now.
- *
- * ⚠ Provisional and ours, like everything else on these surfaces.
- */
-export const INVITE_GAP =
-  "Some questions still come back as general information, because nobody near you has been there yet. The parents you bring are what turns those into real answers.";
-
-/**
  * The same link as a small box in a screen header — her instruction of 8 Sep:
  * on the sharing screen, beside the Pando wordmark, a little highlighted
  * window with a way to copy.
@@ -280,9 +245,6 @@ export function ReferralHeaderInvite({ code }: { code: string }) {
           className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-green/25 bg-card p-3.5 text-left shadow-card"
         >
           <p className="text-[13.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-            {INVITE_GAP}
-          </p>
           <CopyLink code={code} />
         </div>
       )}
@@ -299,7 +261,6 @@ export function ReferralPanel({ code }: { code: string }) {
         Know a parent everyone asks for recommendations?
       </h2>
       <p className="mt-1.5 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
-      <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_GAP}</p>
       <CopyLink code={code} />
     </Panel>
   );
@@ -367,7 +328,6 @@ export function ReferralDialog({
           Your invite link is ready.
         </h2>
         <p className="mt-2 text-[14.5px] leading-relaxed text-ink-soft">{WHY_INVITE}</p>
-        <p className="mt-2 text-help leading-relaxed text-muted">{INVITE_GAP}</p>
         <CopyLink code={code} />
       </div>
       <div className="flex justify-end border-t border-bark/70 px-5 py-3">
