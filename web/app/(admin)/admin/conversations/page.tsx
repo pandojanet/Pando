@@ -112,7 +112,7 @@ export default function ConversationsPage() {
       if (view === "quiet" && !(r.outreach_30 >= 4 && r.answered_30 === 0)) return false;
       if (view === "failed" && r.failed === 0) return false;
       if (!q) return true;
-      return [r.name, r.phone_masked]
+      return [r.name, r.phone]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -288,8 +288,8 @@ function ConversationTableRow({
     <tr>
       <Td>
         <span className="font-semibold">{row.name ?? "Unnamed"}</span>
-        {row.phone_masked && (
-          <span className="ml-2 text-[12.5px] text-muted">{row.phone_masked}</span>
+        {row.phone && (
+          <span className="ml-2 text-[12.5px] text-muted">{row.phone}</span>
         )}
         {row.is_test && (
           <Badge tone="neutral">Test</Badge>

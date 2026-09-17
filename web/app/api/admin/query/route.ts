@@ -216,7 +216,7 @@ export async function POST(request: Request) {
      * opened it" is the only control left once someone has admin access at all.
      *
      * The consent export is the one read whose purpose is to leave the building
-     * with unmasked phone numbers (A2P §3.3). Nothing stops an admin exporting it —
+     * (A2P §3.3) — a file of numbers, decisions and wording versions. Nothing stops an admin exporting it —
      * it is their defence file — but every export is recorded, so the log can
      * answer "when did this list of numbers get taken out, and by whom".
      */

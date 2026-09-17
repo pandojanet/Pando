@@ -86,7 +86,7 @@ function AnswerCard({
             /* 5.9's subject: a stranger with no profile, texting cold. */
             <span>New number</span>
           )}
-          {row.asker_phone_masked && <span>{row.asker_phone_masked}</span>}
+          {row.asker_phone && <span>{row.asker_phone}</span>}
           <span>·</span>
           <span>{when(row.created_at)}</span>
         </p>

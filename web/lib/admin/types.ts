@@ -52,7 +52,7 @@ export interface MatchCandidateRow {
   person_id: string;
   name: string | null;
   neighborhood: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   score: number;
   affinity: number;
   relevance: number;
@@ -123,7 +123,7 @@ export interface BlastResponseRow {
   category: string | null;
   neighborhood: string | null;
   responder: string | null;
-  responder_phone_masked: string | null;
+  responder_phone: string | null;
   /** How many approved contributions they already have — a track record. */
   responder_contributions: number;
   response_text: string;
@@ -152,7 +152,7 @@ export interface AnswerRow {
   next_step: string;
   status: string;
   asker: string | null;
-  asker_phone_masked: string | null;
+  asker_phone: string | null;
   /** Null for a cold inbound — 5.9's subject, and they still get an answer. */
   known_person: boolean;
   created_at: string;
@@ -321,7 +321,7 @@ export interface Overview {
 export interface ContributorRow {
   id: string;
   name: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   neighborhood: string | null;
   /** Birth years now — ages go stale, years don't. */
   child_birth_years: number[];
@@ -585,7 +585,7 @@ export interface CaregiverClaimRow {
   id: string;
   first_name: string;
   last_initial: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   roles_wanted: string[];
   age_experience: string[];
   strengths: string[];
@@ -787,7 +787,7 @@ export interface DemandRow {
 export interface FoundingRow {
   id: string;
   name: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   neighborhood: string | null;
   child_birth_years: number[];
   school: string | null;
@@ -1176,7 +1176,7 @@ export interface AdminQueryResult<T> {
 export interface ConversationRow {
   person_id: string;
   name: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   /** Newest activity in either direction — what the list is ordered by. */
   last_at: string;
   /** Which way the newest message went, so a list of waiting replies reads. */
@@ -1216,7 +1216,7 @@ export interface ConversationMessage {
 export interface ConversationDetail {
   person_id: string;
   name: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   /** Their own agreement, so the history can be read against what they allowed. */
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
@@ -1263,7 +1263,7 @@ export interface FreshnessOutcomeRow {
 export interface StandingRow {
   person_id: string;
   name: string | null;
-  phone_masked: string | null;
+  phone: string | null;
   /** `member` … `founding`. Computed every read, never stored — see `tiers.ts`. */
   tier: string;
   /** The next rung, for the admin only. Null at the top, or when founding. */
@@ -1364,7 +1364,7 @@ export interface BlastRow {
    */
   answers_sent_at: string | null;
   created_at: string;
-  asker: { id: string; name: string | null; phone_masked: string | null } | null;
+  asker: { id: string; name: string | null; phone: string | null } | null;
   /**
    * The state of the money, deliberately separate from `status`: a blast can be
    * `fulfilled` and `refund_due` at once, because the guarantee is about whether
@@ -1407,7 +1407,7 @@ export interface BlastPoolResult {
   chosen: Array<{
     person_id: string;
     name: string | null;
-    phone_masked: string | null;
+    phone: string | null;
     score: number;
     reasons: Array<{ kind: string; value: string; points: number }>;
   }>;

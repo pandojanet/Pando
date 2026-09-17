@@ -32,11 +32,12 @@ import type { ConsentRow } from "@/lib/admin/types";
  * A2P §3.3: "consent records must be exportable. If there's ever a TCPA
  * complaint, this table is the defense."
  *
- * Three things this page does deliberately differently from every other admin page:
+ * Two things this page does deliberately differently from every other admin page.
+ * A third was here until 17 Sep and has stopped being a difference: this screen
+ * was the only one showing the number unmasked, and now every admin surface
+ * does. The reasoning it carried is the reasoning the whole admin now runs on —
+ * a defence file that cannot say *which number* agreed proves nothing.
  *
- *  - **the phone number is not masked.** Everywhere else it is, because nobody needs
- *    it to make a decision. Here the number *is* the record — a defence file that
- *    cannot say which number agreed proves nothing.
  *  - **test rows are shown and labelled, never filtered out.** A complaint arrives
  *    about a phone number, not about our idea of which rows count.
  *  - **the download is built here, from rows already on screen.** Reading this

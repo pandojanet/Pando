@@ -42,15 +42,27 @@ import {
  *  - **the list views never carry restricted text.** `admin_caregiver_rows`
  *    reports *whether* a private note exists; the body is its own resource,
  *    fetched one at a time, so a list render cannot leak it (invariant 12).
- *  - **a phone is masked before it leaves this file.** The admin needs to
- *    recognise a contributor, not to be able to read out their number
- *    (invariant 7).
+ *  - **a phone leaves this file whole.** It was masked to the last four digits
+ *    until 17 Sep, on the reading that an admin needs to recognise a contributor
+ *    rather than to read their number out. The client asked for the number
+ *    itself, and it is the same call `/admin/consents` has always made: a
+ *    number is what a parent is keyed on (invariant 10), what `sms_opt_outs`
+ *    joins by, and what arrives attached to a complaint — so four digits is
+ *    enough to tell two Sarahs apart and not enough to act on either.
+ *    Invariant 7 is untouched by it: that rule is about **logs**, and nothing
+ *    here is logged.
  */
 
-/** Enough to recognise a returning parent, not enough to call them. */
-function maskPhone(phone: string | null): string | null {
-  if (!phone) return null;
-  return phone.length <= 4 ? "•••" : `•••${phone.slice(-4)}`;
+/**
+ * E.164, verbatim — never a formatted copy.
+ *
+ * `formatPhone` would read more easily and would put a second rendering of one
+ * value on screen: `/admin/consents` has sent the raw string since it was
+ * written, and the 20 Aug rule is that the same value reads the same on every
+ * page. It is also the form an admin pastes into Twilio or greps a log for.
+ */
+function adminPhone(phone: string | null): string | null {
+  return phone || null;
 }
 
 type Row = Record<string, unknown>;
@@ -414,7 +426,7 @@ async function contributors(db: Db) {
     return {
       id: r.id,
       name: fullName(r.first_name, r.last_name),
-      phone_masked: maskPhone(r.phone as string | null),
+      phone: adminPhone(r.phone as string | null),
       neighborhood: r.neighborhood,
       child_birth_years: (r.birth_years as number[]) ?? [],
       submissions,
@@ -575,7 +587,7 @@ async function contributorDetail(db: Db, id: string) {
   return {
     id: p.id,
     name: fullName(p.first_name, p.last_name),
-    phone_masked: maskPhone(p.phone as string | null),
+    phone: adminPhone(p.phone as string | null),
     neighborhood: p.neighborhood,
     child_birth_years: kids.filter((y): y is number => typeof y === "number"),
     submissions: cards.length,
@@ -1063,7 +1075,7 @@ async function caregiverClaims(db: Db) {
     id: r.id,
     first_name: r.first_name,
     last_initial: r.last_initial,
-    phone_masked: maskPhone(r.phone as string | null),
+    phone: adminPhone(r.phone as string | null),
     roles_wanted: r.roles_wanted ?? [],
     age_experience: r.age_experience ?? [],
     strengths: r.strengths ?? [],
@@ -1144,7 +1156,7 @@ async function foundingQueue(db: Db) {
   return list.map((r) => ({
     id: r.person_id,
     name: fullName(r.first_name, r.last_name),
-    phone_masked: maskPhone(r.phone as string | null),
+    phone: adminPhone(r.phone as string | null),
     neighborhood: r.neighborhood,
     child_birth_years: (r.birth_years as number[]) ?? [],
     school: r.school,
@@ -1435,7 +1447,7 @@ async function matchingHarness(db: Db, params: Record<string, unknown>) {
         person_id: r.person_id,
         name: p ? [p.first_name, p.last_name].filter(Boolean).join(" ") || null : null,
         neighborhood: null,
-        phone_masked: maskPhone(p?.phone ? String(p.phone) : null),
+        phone: adminPhone(p?.phone ? String(p.phone) : null),
         score: r.score,
         affinity: r.affinity,
         relevance: r.relevance,
@@ -1511,7 +1523,7 @@ async function answerQueue(db: Db): Promise<AnswerRow[]> {
     next_step: String(r.next_step ?? "none"),
     status: String(r.status ?? "pending_review"),
     asker: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
-    asker_phone_masked: maskPhone(r.phone ? String(r.phone) : null),
+    asker_phone: adminPhone(r.phone ? String(r.phone) : null),
     known_person: r.person_id !== null,
     created_at: String(r.created_at ?? ""),
     sent_at: (r.sent_at as string | null) ?? null,
@@ -1587,7 +1599,7 @@ async function blastResponses(db: Db): Promise<BlastResponseRow[]> {
     category: r.category ? String(r.category) : null,
     neighborhood: r.neighborhood ? String(r.neighborhood) : null,
     responder: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
-    responder_phone_masked: maskPhone(r.phone ? String(r.phone) : null),
+    responder_phone: adminPhone(r.phone ? String(r.phone) : null),
     responder_contributions: Number(r.approved_count ?? 0),
     response_text: String(r.response_text ?? ""),
     responded_at: (r.responded_at as string | null) ?? null,
@@ -1688,7 +1700,7 @@ async function conversationRows(db: Db) {
     rows: list.map((r: Row) => ({
       person_id: String(r.id),
       name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
-      phone_masked: maskPhone(r.phone as string | null),
+      phone: adminPhone(r.phone as string | null),
       last_at: String(r.last_at),
       last_direction: r.last_direction === "in" ? "in" : "out",
       last_template: r.last_template ? String(r.last_template) : null,
@@ -1745,7 +1757,7 @@ async function conversationDetail(db: Db, personId: string) {
   return {
     person_id: String(person.id),
     name: [person.first_name, person.last_name].filter(Boolean).join(" ") || null,
-    phone_masked: maskPhone(person.phone as string | null),
+    phone: adminPhone(person.phone as string | null),
     monthly_contact_allowance:
       person.monthly_contact_allowance === null
         ? null
@@ -1903,7 +1915,7 @@ async function contributorStanding(db: Db) {
     return {
       person_id: String(r.id),
       name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
-      phone_masked: maskPhone(r.phone as string | null),
+      phone: adminPhone(r.phone as string | null),
       tier,
       next_tier: next?.id ?? null,
       equivalents: Math.round(equivalents * 100) / 100,
@@ -2075,7 +2087,7 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
       ? {
           id: String(r.asker_id),
           name: fullName(r.asker_first, r.asker_last),
-          phone_masked: maskPhone(r.asker_phone as string | null),
+          phone: adminPhone(r.asker_phone as string | null),
         }
       : null,
     payment_status: String(r.payment_status ?? "not_required"),
@@ -2153,7 +2165,7 @@ async function blastPool(
     chosen: pool.chosen.map((m) => ({
       person_id: m.person_id,
       name: names.get(m.person_id)?.name ?? null,
-      phone_masked: maskPhone(names.get(m.person_id)?.phone ?? null),
+      phone: adminPhone(names.get(m.person_id)?.phone ?? null),
       score: m.score,
       reasons: m.reasons,
     })),

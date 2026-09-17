@@ -283,9 +283,9 @@ export default function MatchingPage() {
                         <span className="font-semibold">
                           {i + 1}. {row.name ?? "Unnamed"}
                         </span>
-                        {row.phone_masked && (
+                        {row.phone && (
                           <span className="ml-2 text-[12.5px] text-muted">
-                            {row.phone_masked}
+                            {row.phone}
                           </span>
                         )}
                       </Td>

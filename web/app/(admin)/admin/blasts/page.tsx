@@ -783,8 +783,8 @@ function PoolPreview({ blastId }: { blastId: string }) {
             >
               <span className="text-[13.5px] font-semibold">
                 {i + 1}. {member.name ?? "Unnamed"}
-                {member.phone_masked && (
-                  <span className="ml-2 font-normal text-muted">{member.phone_masked}</span>
+                {member.phone && (
+                  <span className="ml-2 font-normal text-muted">{member.phone}</span>
                 )}
               </span>
               <span className="flex flex-wrap items-center gap-1.5">

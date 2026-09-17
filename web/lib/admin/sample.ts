@@ -74,7 +74,7 @@ export const sampleContributors: ContributorRow[] = [
   {
     id: "c1",
     name: "Sample Parent A",
-    phone_masked: "••• ••• 4821",
+    phone: "+16265554821",
     neighborhood: "south-pasadena",
     child_birth_years: [2023, 2020],
     submissions: 4,
@@ -90,7 +90,7 @@ export const sampleContributors: ContributorRow[] = [
   {
     id: "c2",
     name: "Sample Parent B",
-    phone_masked: "••• ••• 0093",
+    phone: "+16265550093",
     neighborhood: "altadena",
     child_birth_years: [2019],
     submissions: 3,
@@ -109,7 +109,7 @@ export const sampleContributors: ContributorRow[] = [
   {
     id: "c3",
     name: null,
-    phone_masked: null,
+    phone: null,
     neighborhood: "bungalow-heaven",
     child_birth_years: [2025],
     submissions: 1,
@@ -129,7 +129,7 @@ export const sampleContributors: ContributorRow[] = [
   {
     id: "c4",
     name: "QA Walkthrough",
-    phone_masked: "••• ••• 0000",
+    phone: "+16265550000",
     neighborhood: "old-pasadena",
     child_birth_years: [2021],
     submissions: 3,
@@ -146,7 +146,7 @@ export const sampleContributors: ContributorRow[] = [
     /** The case the client asked to be able to see: arrived, left nothing. */
     id: "c5",
     name: "Sample Parent C",
-    phone_masked: "••• ••• 7714",
+    phone: "+16265557714",
     neighborhood: "altadena",
     child_birth_years: [2022],
     submissions: 0,
@@ -275,7 +275,7 @@ export const sampleCaregiverClaims: CaregiverClaimRow[] = [
     id: "cl1",
     first_name: "Rosa",
     last_initial: "R",
-    phone_masked: "•••4410",
+    phone: "+16265554410",
     roles_wanted: ["regular_part_time", "before_after_school"],
     age_experience: ["toddler", "preschool"],
     strengths: ["calm_with_shy", "reliable", "drives"],
@@ -316,7 +316,7 @@ export const sampleCaregiverClaims: CaregiverClaimRow[] = [
     id: "cl2",
     first_name: "Dana",
     last_initial: "M",
-    phone_masked: "•••7781",
+    phone: "+16265557781",
     roles_wanted: ["occasional_sitting"],
     age_experience: ["grade", "tween"],
     strengths: ["homework", "no_screens"],
@@ -936,7 +936,7 @@ export const sampleFounding: FoundingRow[] = [
   {
     id: "c2",
     name: "Sample Parent B",
-    phone_masked: "••• ••• 0093",
+    phone: "+16265550093",
     neighborhood: "altadena",
     child_birth_years: [2019],
     school: "Field Elementary",
@@ -960,7 +960,7 @@ export const sampleFounding: FoundingRow[] = [
   {
     id: "c5",
     name: "Sample Parent C",
-    phone_masked: "••• ••• 7741",
+    phone: "+16265557741",
     neighborhood: "sierra-madre",
     child_birth_years: [2022, 2018],
     school: "Sierra Madre Elementary",

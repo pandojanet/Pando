@@ -206,7 +206,7 @@ export default function FoundingQueuePage() {
                               `Profile ${row.checklist.profile_depth}%`,
                               `${row.checklist.approved_contributions} approved`,
                               `${total} shared`,
-                              row.phone_masked ?? "no number",
+                              row.phone ?? "no number",
                             ].join(" · ")}
                           </p>
                         </div>

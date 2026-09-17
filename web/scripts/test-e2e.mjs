@@ -1641,7 +1641,15 @@ ok("an unknown action is rejected", (await act({ action: "not.a.real.action", id
 head("2.2 / 2.3  queues");
 const founding = (await q("founding")).json.rows;
 ok("the founding queue shows the checklist", founding.length > 0 && typeof founding[0].checklist.qualifying_approved === "number");
-ok("phones are masked before they leave the server", founding.every((f) => !f.phone_masked || f.phone_masked.startsWith("•")));
+/* Inverted on 17 Sep rather than deleted, because "a phone is masked before it
+   leaves the server" was true and deliberate for six weeks and the next reader
+   needs to know which way it went. The client asked for the whole number on
+   every admin surface; what is asserted now is that it arrives whole and in the
+   one form every page renders — E.164, never a formatted copy. */
+ok(
+  "a phone reaches the admin whole, as E.164",
+  founding.every((f) => f.phone === null || (f.phone.startsWith("+") && /^\d{7,15}$/.test(f.phone.slice(1)))),
+);
 /* `missed_deadline` is in the union here and not in the overview's three:
    a parent who did everything late is a real row and a state nobody is
    waiting on. */

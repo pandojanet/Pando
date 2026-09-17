@@ -85,7 +85,7 @@ export default function ContributorsPage() {
       if (hideTest && row.is_test) return false;
       if (reward !== "all" && row.reward_status !== reward) return false;
       if (!q) return true;
-      return [row.name, row.neighborhood, row.phone_masked]
+      return [row.name, row.neighborhood, row.phone]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -250,7 +250,7 @@ export default function ContributorsPage() {
                       {row.name ?? "Unknown"}
                     </TextLink>
                     <span className="mt-0.5 block text-[12.5px] text-muted">
-                      {row.phone_masked ?? "no number"}
+                      {row.phone ?? "no number"}
                     </span>
                     {row.is_test && (
                       <span className="mt-1 inline-block">

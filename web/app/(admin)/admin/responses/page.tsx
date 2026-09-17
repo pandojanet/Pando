@@ -99,7 +99,7 @@ function ResponseCard({
 
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted">
         <span className="font-medium text-ink-soft">{row.responder ?? "Unnamed"}</span>
-        {row.responder_phone_masked && <span>{row.responder_phone_masked}</span>}
+        {row.responder_phone && <span>{row.responder_phone}</span>}
         <span>·</span>
         <span>
           {row.responder_contributions} added before</span>

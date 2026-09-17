@@ -183,7 +183,7 @@ export default function ClaimsPage() {
             >
               <div className="grid gap-4 px-4 py-3 lg:grid-cols-2">
                 <SpecList>
-                  <Spec label="Number">{claim.phone_masked}</Spec>
+                  <Spec label="Number">{claim.phone}</Spec>
                   <Spec label="Looking for">{labels(CAREGIVER_TYPES, claim.roles_wanted)}</Spec>
                   <Spec label="Ages">{labels(CAREGIVER_AGE_BANDS, claim.age_experience)}</Spec>
                   <Spec label="Says they're good at">{labels(CAREGIVER_STRENGTHS, claim.strengths)}</Spec>

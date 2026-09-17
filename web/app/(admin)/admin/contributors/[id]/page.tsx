@@ -185,7 +185,7 @@ export default function ContributorDetailPage({
           <div className="space-y-4">
             <Card title="What they tapped">
               <dl className="grid gap-x-6 gap-y-2.5 px-4 py-3 text-[14px] sm:grid-cols-2">
-                <Pair label="Phone" value={c.phone_masked ?? "not given"} />
+                <Pair label="Phone" value={c.phone ?? "not given"} />
                 <Pair
                   label="Neighborhood"
                   value={c.neighborhood ? slugLabel(c.neighborhood) : "—"}
