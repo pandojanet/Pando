@@ -3103,7 +3103,7 @@ export function profileDepth(answers: ProfileAnswers): ProfileDepth {
 }
 
 /**
- * Whether the profile banner shows (21 Sep) — a pure rule beside the number
+ * Whether the profile reminder shows (21 Sep) — a pure rule beside the number
  * it reads, so the one line the whole feature turns on is exhaustively
  * testable: the banner itself is React and `test:feedback` cannot mount it.
  *
@@ -3111,7 +3111,7 @@ export function profileDepth(answers: ProfileAnswers): ProfileDepth {
  * against a smaller questionnaire, and a questionnaire with nothing left in
  * it must not produce a banner about questions that do not exist.
  */
-export function profileBannerShows(depth: ProfileDepth): boolean {
+export function profileReminderShows(depth: ProfileDepth): boolean {
   return depth.total > 0 && depth.percent < FOUNDING_MIN_PROFILE_DEPTH;
 }
 

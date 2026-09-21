@@ -2747,7 +2747,7 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ok("the review paragraph is gone", !depth.includes("{depth.total - depth.answered}"));
   ok("and nothing renders the old reminder", !/DepthReminder/.test(flow + chat + depth));
   const done = src("../components/seed/done/shared.tsx");
-  const banner = depth.slice(depth.indexOf("export function ProfileBanner"));
+  const reminder = depth.slice(depth.indexOf("export function ProfileReminder"));
   const rewards = (await import(
     `../lib/rewards.ts?v=${Date.now()}`
   )) as typeof import("../lib/rewards.ts");
@@ -2755,26 +2755,52 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     `../lib/questions.ts?v=${Date.now()}`
   )) as typeof import("../lib/questions.ts");
 
-  ok("the review page shows the banner instead", /<ProfileBanner /.test(flow));
-  /* ⚠ On what renders, never on the word: `ProfileDepth` names the pop-up in
-     the comment recording its removal, and a check that fails on a sentence
-     saying what used to be there is the fault this file keeps paying for. */
+  /**
+   * ⚠⚠ **The fourth instruction is a reversal of the second and third**, and
+   * the client took it: *"поверни вигляд і розташування вспливаючого попапа,
+   * але зроби його постійним … щоб він не зникав і був разом з прокруткою на
+   * всіх сторінках"*. So the pop-up's appearance and corner are back, with
+   * the two properties the banner rounds added kept on them — five screens,
+   * and no way to make it go.
+   */
   ok(
-    "and the pop-up is gone — timer, portal and all",
-    !/<ProfileToast/.test(flow + chat + depth) &&
-      !/export function ProfileToast/.test(depth) &&
-      !/createPortal/.test(depth) &&
-      !/setTimeout/.test(depth),
+    "the reminder is a fixed card in the bottom-right corner again",
+    /createPortal\(/.test(reminder) &&
+      /document\.body/.test(reminder) &&
+      /fixed/.test(reminder) &&
+      /sm:right-4/.test(reminder) &&
+      /justify-end/.test(reminder),
+  );
+  /* ⚠ On what renders, never on the word: this file names every shape it has
+     had in the comment recording the change, and a check that fails on a
+     sentence saying what used to be there is the fault it keeps paying for. */
+  ok(
+    "and neither the timer nor the dismiss came back with it",
+    !/setTimeout/.test(reminder) &&
+      !/usePresence/.test(reminder) &&
+      !/onClick/.test(reminder) &&
+      !/Dismiss/.test(reminder),
+  );
+  /* ⚠ Bottom-right on a phone is the dock, and covering its primary control
+     is the one thing this must never do. */
+  ok(
+    "it is held clear of the dock by measuring it, not by guessing a height",
+    /data-screen-dock/.test(reminder) &&
+      /innerHeight - box\.top/.test(reminder) &&
+      /* ⚠ And it watches the dock rather than waiting to be told: on
+         `/done/ask` it grows by 8px once `/verify/status` answers, which
+         fires neither a scroll nor a resize. */
+      /new ResizeObserver/.test(reminder),
   );
   /**
    * The threshold is the whole of *"потрібний відсоток"*, and it is the
    * product's own number rather than a new one: 100% is one parent in twelve
-   * on the live cohort, so a banner waiting for it would be permanent for
+   * on the live cohort, so a reminder waiting for it would be permanent for
    * everybody who took the flow's own shortest path.
    */
   const bar = rewards.FOUNDING_MIN_PROFILE_DEPTH;
   const shows = (percent: number, total = 20) =>
-    q.profileBannerShows({
+    q.profileReminderShows({
       percent,
       total,
       answered: Math.round((percent / 100) * total),
@@ -2788,63 +2814,30 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       shows(0) &&
       /* Nothing to fill in is not the same as a thin profile: an expecting
          parent measured against a smaller questionnaire must not meet a
-         banner about questions that do not exist. */
+         reminder about questions that do not exist. */
       !shows(0, 0),
   );
   ok(
     "and the component asks that rule rather than restating it",
-    /if \(!profileBannerShows\(depth\)\) return null;/.test(banner),
-  );
-  ok(
-    'and it cannot be sent away, which is what "until they fill it in" means',
-    !/onClick/.test(banner) && !/Dismiss/.test(banner),
+    /profileReminderShows\(depth\)/.test(reminder) &&
+      !/FOUNDING_MIN_PROFILE_DEPTH/.test(reminder),
   );
   /* ⚠⚠ It promises relevance and never access: P14 alone gates Community
      Access, and the Founding reward needs two approved contributions as well,
-     so a banner naming either would make a claim this number cannot keep. */
-  /**
-   * ⚠ It says the number and never what it earns. The explanatory sentence
-   * went when the strip was pinned — as a three-line block in the header it
-   * measured **181px, 22% of a 375×812 window, permanently** — so what is
-   * asserted now is the half that could still do damage.
-   */
+     so naming either would be a claim this number cannot keep. */
   ok(
-    "it says the figure and the way in, never what it earns",
-    /Profile \{depth\.percent\}% complete/.test(banner) &&
-      /Add more/.test(banner) &&
-      /* The constant's own name carries "FOUNDING" and is not copy — the
-         check is about what a parent reads. */
-      !/(founding|reward|\$10|access|unlock)/i.test(
-        banner.replaceAll("FOUNDING_MIN_PROFILE_DEPTH", ""),
-      ),
-  );
-  /* ⚠ Pinned, which is the whole of *"це має бути закріплено в хедері"* — and
-     `ScreenHeader` is the one `sticky` element on these screens, so being in
-     its `below` slot is what makes it stay. */
-  ok(
-    "and it is in the header rather than in the page",
-    [
-      ["../components/seed/chat/ChatSeeding.tsx", /below=\{<ProfileBanner /],
-      ["../components/seed/ProfileFlow.tsx", /below=\{[\s\S]{0,120}<ProfileBanner /],
-      ["../components/seed/done/Thanks.tsx", /below=\{<DoneProfileBanner /],
-      ["../components/seed/done/FinishAsks.tsx", /below=\{<DoneProfileBanner /],
-      ["../components/seed/done/WhatsNext.tsx", /below=\{<DoneProfileBanner /],
-    ].every(([f, re]) => (re as RegExp).test(src(f as string))),
-  );
-  /* ⚠ The review's own "N% done" label and bare bar render only while the
-     strip does not: the strip carries both, and two 4px tracks an inch apart
-     is one measure drawn twice. */
-  ok(
-    "and the review's own label steps aside for it",
-    /const pinned = profileBannerShows\(depth\);/.test(flow) &&
-      /right=\{pinned \? undefined : <ProfilePercentLabel/.test(flow),
+    "it says what a fuller profile does for the answers, never what it earns",
+    /match you with parents/.test(reminder) &&
+      /% complete/.test(reminder) &&
+      !/(founding|reward|\$10|access|unlock)/i.test(reminder),
   );
   ok(
-    "it is on the recommendations screen and on all three completion screens",
-    /<ProfileBanner depth=\{depth\}/.test(chat) &&
-      /export function DoneProfileBanner/.test(done) &&
+    "it is on the review, the recommendations screen and all three completion screens",
+    /<ProfileReminder depth=\{depth\} onProfile \/>/.test(flow) &&
+      /<ProfileReminder depth=\{depth\} \/>/.test(chat) &&
+      /export function DoneProfileReminder/.test(done) &&
       ["Thanks", "FinishAsks", "WhatsNext"].every((f) =>
-        /<DoneProfileBanner /.test(src(`../components/seed/done/${f}.tsx`)),
+        /<DoneProfileReminder /.test(src(`../components/seed/done/${f}.tsx`)),
       ),
   );
   /* One expression, not three: the copy that drifts is the one nobody
@@ -2854,6 +2847,13 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     ["Thanks", "FinishAsks", "WhatsNext"].every(
       (f) => !/profileDepth\(/.test(src(`../components/seed/done/${f}.tsx`)),
     ),
+  );
+  /* ⚠ The review keeps its own header label and bar — they stepped aside for
+     a few hours while the reminder was pinned there, and a card in the corner
+     takes nothing from them. */
+  ok(
+    "and the review's header says the number in its own slot",
+    /right=\{<ProfilePercentLabel depth=\{depth\} \/>\}/.test(flow),
   );
   ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
   /* ⚠ The header pill went when the banner arrived: the same number a hundred

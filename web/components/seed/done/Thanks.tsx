@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 import { submissionTitle } from "@/lib/seed-chat/engine";
 import type { Submission } from "@/lib/seed-chat/types";
 import {
-  DoneProfileBanner,
+  DoneProfileReminder,
   isAnonymous,
   KIND_LABEL,
   NoSession,
@@ -51,12 +51,10 @@ export function Thanks() {
 
   return (
     <Screen>
-      <ScreenHeader
-        left={<Wordmark />}
-        below={<DoneProfileBanner session={session} />}
-      />
+      <ScreenHeader left={<Wordmark />} />
 
       <ScreenBody className="pt-8">
+        <DoneProfileReminder session={session} />
         <div className="animate-rise">
           {/* The entry screen told the anonymous path, in so many words, that it
               gives up Founding Status. Showing them this badge anyway would be the

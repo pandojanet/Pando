@@ -26,7 +26,7 @@ import {
 } from "@/lib/submit";
 import { cn } from "@/lib/cn";
 import { saveSession } from "@/lib/storage";
-import { DoneProfileBanner, NoSession, useDoneSession } from "./shared";
+import { DoneProfileReminder, NoSession, useDoneSession } from "./shared";
 
 /**
  * Estimate 1.7, screen 2 of 3 — the only screen here that asks for anything.
@@ -270,12 +270,10 @@ export function FinishAsks() {
 
   return (
     <Screen>
-      <ScreenHeader
-        left={<Wordmark />}
-        below={<DoneProfileBanner session={session} />}
-      />
+      <ScreenHeader left={<Wordmark />} />
 
       <ScreenBody className="pt-7">
+        <DoneProfileReminder session={session} />
         <div className="animate-rise">
           <Eyebrow>Last step</Eyebrow>
           <h1 className="mt-2 font-display text-[1.7rem] font-extrabold leading-[1.1]">

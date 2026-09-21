@@ -15,7 +15,7 @@ import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import {
-  ProfileBanner,
+  ProfileReminder,
   ProfilePercentBar,
   ProfilePercentLabel,
   ProfilePercentPill,
@@ -64,7 +64,6 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
-  profileBannerShows,
   profileDepth,
   pruneAnswers,
   sameForAllChildren,
@@ -1453,30 +1452,30 @@ export function ProfileFlow() {
 
   if (stage === "review") {
     const depth = profileDepth(answers);
-    /**
-     * 16 Sep put "N% done" in the slot a question screen shows "3 left", over
-     * a bar of the same height and colours. 21 Sep pinned the reminder in the
-     * header, and it carries both — so ⚠ the label and the bare bar render
-     * only when it does not, or this screen says one number twice within an
-     * inch and draws two 4px tracks to do it.
-     */
-    const pinned = profileBannerShows(depth);
     return (
       <Screen>
         <ScreenHeader
           left={<BackButton onClick={goBack} />}
-          right={pinned ? undefined : <ProfilePercentLabel depth={depth} />}
+          /* 16 Sep: "N% done" in the slot a question screen shows "3 left",
+             over a bar of the same height and colours — one continuous fill
+             rather than segments, because every step is done here and how much
+             of the profile is filled in is the number worth showing.
+
+             ⚠ Back after a day out: the reminder was pinned here for a few
+             hours and carried both, so these two had to step aside for it.
+             It is a floating card again, in the corner, so they stay. */
+          right={<ProfilePercentLabel depth={depth} />}
           below={
-            pinned ? (
-              <ProfileBanner depth={depth} onProfile />
-            ) : (
-              <div className="mt-1">
-                <ProfilePercentBar depth={depth} />
-              </div>
-            )
+            <div className="mt-1">
+              <ProfilePercentBar depth={depth} />
+            </div>
           }
         />
         <ScreenBody>
+          {/* Portals to `body` and paints in the bottom-right corner, so
+              this call decides only that the screen has one. ⚠ `onProfile`
+              drops its link: it would point at the page they are on. */}
+          <ProfileReminder depth={depth} onProfile />
           <div className="animate-step-in">
             {/* 16 Sep, "minimal text on the final profile page": the heading,
                 the answers, and three lines — name private, change later, and

@@ -17,7 +17,7 @@ import {
 import { track } from "@/lib/analytics";
 import { REWARD_OFFER } from "@/lib/rewards";
 import { WHY_INVITE } from "@/components/seed/ReferralInvite";
-import { DoneProfileBanner, NoSession, Next, useDoneSession } from "./shared";
+import { DoneProfileReminder, NoSession, Next, useDoneSession } from "./shared";
 
 /**
  * Estimate 1.7, screen 3 of 3 — what happens after they close the tab.
@@ -33,12 +33,10 @@ export function WhatsNext() {
 
   return (
     <Screen>
-      <ScreenHeader
-        left={<Wordmark />}
-        below={<DoneProfileBanner session={session} />}
-      />
+      <ScreenHeader left={<Wordmark />} />
 
       <ScreenBody className="pt-7">
+        <DoneProfileReminder session={session} />
         <div className="animate-rise">
           <Eyebrow>What happens next</Eyebrow>
           <h1 className="mt-2 font-display text-[1.7rem] font-extrabold leading-[1.1]">

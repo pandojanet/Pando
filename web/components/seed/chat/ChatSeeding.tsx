@@ -36,7 +36,7 @@ import type {
   Submission,
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
-import { ProfileBanner } from "@/components/seed/ProfileDepth";
+import { ProfileReminder } from "@/components/seed/ProfileDepth";
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
@@ -961,7 +961,6 @@ export function ChatSeeding() {
             <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }
-        below={<ProfileBanner depth={depth} />}
       />
 
       {/**
@@ -994,6 +993,11 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
+
+        {/* Rendered here and painted in the bottom-right corner: it portals
+            to `body`, so where the call sits decides nothing but which
+            screens have one. */}
+        <ProfileReminder depth={depth} />
 
         <div className="space-y-2.5">
           {chat.messages.map((message) =>
