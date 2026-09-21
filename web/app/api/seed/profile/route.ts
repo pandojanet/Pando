@@ -1,4 +1,4 @@
-import { isRelationship } from "@/lib/inviter-relationship";
+import { storedRelationship } from "@/lib/inviter-relationship";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -213,11 +213,13 @@ export async function POST(request: Request) {
    */
   const invitedBy = await inviterIdFor(raw.invite_code ?? null);
   /* How they know that inviter (16 Sep). Kept only when there is an inviter to
-     know and the value is one the question offers. */
-  const inviterRelationship =
-    invitedBy && isRelationship(raw.inviter_relationship)
-      ? raw.inviter_relationship
-      : null;
+     know and the value is one the question offers — and **Prefer not to say**
+     is one of those and is not one of these: `storedRelationship` drops it
+     here, so the refusal never reaches `person_relationships`, whose CHECK
+     would refuse it and take the whole profile write down with it. */
+  const inviterRelationship = invitedBy
+    ? storedRelationship(raw.inviter_relationship)
+    : null;
 
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,

@@ -27,8 +27,10 @@ import {
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import {
+  isRelationship,
   RELATIONSHIP_OPTIONS,
   relationshipQuestion,
+  type Relationship,
 } from "@/lib/inviter-relationship";
 import {
   buildConsentRecord,
@@ -98,7 +100,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    */
   const [step, setStep] = useState<"form" | "verify" | "relationship">("form");
   /** The tap on the relationship question, before Continue saves it. */
-  const [relationship, setRelationship] = useState<string | null>(null);
+  const [relationship, setRelationship] = useState<Relationship | null>(null);
   const [session, setSession] = useState<SeedSession | null>(null);
   /**
    * A profile already exists on this number, found **after** the code rather
@@ -339,7 +341,11 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       !current.profile_saved_at;
     if (ask) {
       setSession(current);
-      setRelationship(current.inviter_relationship ?? null);
+      /* A resumed session's stored value is untrusted like any other (4 Aug):
+         anything the question no longer offers is dropped rather than carried
+         into the control as a selection nothing can show. */
+      const stored = current.inviter_relationship;
+      setRelationship(isRelationship(stored) ? stored : null);
       setStep("relationship");
       track("seed_inviter_relationship_shown", { named: Boolean(resolved.inviter_first_name) });
       return;
@@ -347,16 +353,20 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     router.push("/profile");
   }
 
-  function answerRelationship(value: string | null) {
+  /**
+   * ⚠ There is no longer a null case (21 Sep): **Prefer not to say** is an
+   * option rather than a control under the dock, so every way past this screen
+   * is an answer. The refusal is stored on the device like any other and
+   * dropped at the write — see `storedRelationship`.
+   */
+  function answerRelationship(value: Relationship) {
     if (!session) return;
     const next = saveSession({
       ...session,
       inviter_relationship: value,
       inviter_relationship_asked: true,
     });
-    track(value ? "seed_inviter_relationship_answered" : "seed_inviter_relationship_skipped", {
-      relationship: value ?? undefined,
-    });
+    track("seed_inviter_relationship_answered", { relationship: value });
     setSession(next);
     router.push("/profile");
   }
@@ -430,9 +440,13 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    */
   /**
    * "How do you know the person who invited you?" (16 Sep). One single-select
-   * question on its own screen, skippable, and worded by the inviter's own
-   * privacy: `inviter_first_name` only reaches this page when they let their
-   * first name show, so a private inviter is asked about generically.
+   * question on its own screen, worded by the inviter's own privacy:
+   * `inviter_first_name` only reaches this page when they let their first name
+   * show, so a private inviter is asked about generically.
+   *
+   * ⚠ **Every way past it is an answer** (21 Sep). There is no Skip; the last
+   * option is *Prefer not to say*, which is stored on the device and dropped
+   * at the write, so nothing about how these two know each other is recorded.
    */
   if (step === "relationship" && session) {
     const question = relationshipQuestion(resolved.inviter_first_name);
@@ -454,25 +468,31 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 options={RELATIONSHIP_OPTIONS.map((o) => ({ id: o.id, label: o.label }))}
                 mode="single"
                 selected={relationship ? [relationship] : []}
-                onChange={(next) => setRelationship(next[0] ?? null)}
+                onChange={(next) => {
+                  const picked = next[0];
+                  setRelationship(isRelationship(picked) ? picked : null);
+                }}
               />
             </div>
           </Container>
         </ScreenBody>
+        {/**
+         * ⚠ **No Skip** (21 Sep). The way past is *Prefer not to say*, in the
+         * list, where it says what it means — where Skip only said that this
+         * screen was over. It also puts the refusal one tap from the answers
+         * rather than in a different control at the other end of the screen,
+         * and it is the shape the questionnaire already uses on eight
+         * screens.
+         */}
         <ScreenDock>
           <Button
             full
             disabled={!relationship}
-            onClick={() => answerRelationship(relationship)}
+            onClick={() => relationship && answerRelationship(relationship)}
           >
             Continue
             <ArrowRight />
           </Button>
-          <div className="flex justify-center py-1">
-            <TextAction tone="quiet" onClick={() => answerRelationship(null)}>
-              Skip
-            </TextAction>
-          </div>
         </ScreenDock>
       </Screen>
     );

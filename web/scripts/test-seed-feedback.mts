@@ -887,7 +887,46 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         inviteSrc.includes("p.attribution = 'first_name_safe'"));
     const migration = fs.readFileSync(new URL("../drizzle/0044_person_relationships.sql", import.meta.url), "utf8");
     const allIds = rel.RELATIONSHIP_OPTIONS.map((o) => o.id);
-    ok("every offered relationship is allowed by the database", allIds.every((id) => migration.includes(`'${id}'`)));
+
+    /**
+     * 21 Sep — *"має бути опція, що людина хоче залишити цю інформацію
+     * анонімною, кнопку Skip з тієї сторінки потрібно прибрати"*.
+     *
+     * ⚠⚠ The refusal is the one option the database must **not** allow, so
+     * the old blanket check ("every offered relationship is allowed") would
+     * have gone red on it — and widening `person_relationships_relationship_check`
+     * to make it green is precisely the fix not to make: a refusal is not a
+     * relationship, and a value the route can never send would be a
+     * permission with nothing behind it. The three halves fail independently.
+     */
+    ok(
+      "the way out of the question is an option, in the app's own words",
+      allIds.includes(rel.DECLINED_RELATIONSHIP) &&
+        rel.RELATIONSHIP_OPTIONS.at(-1)?.id === rel.DECLINED_RELATIONSHIP &&
+        rel.RELATIONSHIP_OPTIONS.at(-1)?.label === "Prefer not to say",
+    );
+    ok(
+      "every relationship that can be stored is allowed by the database",
+      allIds
+        .filter((id) => id !== rel.DECLINED_RELATIONSHIP)
+        .every((id) => migration.includes(`'${id}'`)),
+    );
+    ok(
+      "and the refusal is neither allowed there nor storable",
+      !migration.includes(`'${rel.DECLINED_RELATIONSHIP}'`) &&
+        rel.storedRelationship(rel.DECLINED_RELATIONSHIP) === null &&
+        rel.storedRelationship("family") === "family" &&
+        rel.storedRelationship("best_friend_forever") === null,
+    );
+    const landingSrc = fs.readFileSync(
+      new URL("../components/seed/InviteLanding.tsx", import.meta.url),
+      "utf8",
+    );
+    ok(
+      "the screen offers no Skip, so nothing leaves it unanswered",
+      !/answerRelationship\(null\)/.test(landingSrc) &&
+        !/>\s*Skip\s*</.test(landingSrc.slice(landingSrc.indexOf('step === "relationship"'))),
+    );
   }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
