@@ -321,5 +321,115 @@ ok(
   "decideOutreach takes no transport, so it cannot be relaxed by one",
 );
 
+/**
+ * ## 21 Sep — the same counter, written twice, and it had drifted
+ *
+ * `repo/outreach.ts` counts what the **send** layer reads; `repo/blast.ts`
+ * counts the same thing for a *set* of people, in one statement, because
+ * against the pooler a round trip per candidate is the slow shape (10 Aug).
+ * Two copies of one piece of arithmetic, and only the first learned 13.4's
+ * rule: **a retry is one message the parent received once**, so it may not
+ * spend a second slot of their allowance or restart their 48-hour gap.
+ *
+ * Measured before the fix, on one real send plus one retry of it: the pool
+ * query counted **2** where the send layer counted **1**. It failed in the safe
+ * direction — a contributor held rather than over-messaged — but it is exactly
+ * the cost `drizzle/0029` exists to prevent, so a carrier hiccup was quietly
+ * charging somebody a slot and making them read as less responsive.
+ *
+ * A **source** check, and it has to be: both modules import `server-only`, so
+ * no plain-node suite can load them and nothing can compare their output. What
+ * it holds instead is the property that would break first — every counter over
+ * an outbound message, in either file, carries the clause. A new counter added
+ * to one and not the other fails here rather than in a pool six weeks later.
+ *
+ * It reads the branches rather than grepping the file, because a count of
+ * occurrences goes green the day somebody writes the clause twice in one
+ * branch and not at all in the next — and because a comment *about* retries is
+ * not a clause excluding them, which is the fault the rail check paid for on
+ * 10 Sep.
+ */
+console.log("\n=== the two copies of the counter agree about retries ===");
+
+const fs = await import("node:fs");
+
+/**
+ * Every predicate in one of these files that counts an **outbound** message.
+ *
+ * Two shapes, and the second is why this is a scanner rather than one regex:
+ * three of the four counters are `case when … then`, and the fourth
+ * (`blast_today`) is a `bool_or(…)`. The first version of this check matched
+ * only `case when`, found **3 of 4** in each file, and passed — so the one
+ * counter it could not see was the one it claimed to guard. A check that
+ * cannot fail on part of its own subject is worse than none, which is why
+ * `outboundBranches` is asserted to find four before anything is concluded
+ * from it.
+ *
+ * `bool_or(` is read with a balanced-paren scan rather than a lazy match,
+ * because its body contains `now()::date` and a `)` of its own.
+ */
+function outboundBranches(source: string): string[] {
+  const sql = source
+    .split("\n")
+    .filter((line) => !/^\s*(\*|\/\*|\/\/|--)/.test(line))
+    .join("\n");
+
+  const found: string[] = [];
+
+  for (const m of sql.matchAll(/case when([\s\S]*?)then/g)) found.push(m[1]);
+
+  for (const m of sql.matchAll(/bool_or\(/g)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const from = i;
+    while (i < sql.length && depth > 0) {
+      if (sql[i] === "(") depth++;
+      else if (sql[i] === ")") depth--;
+      i++;
+    }
+    found.push(sql.slice(from, i - 1));
+  }
+
+  return found
+    .map((b) => b.replace(/\s+/g, " ").trim())
+    .filter((b) => b.includes("direction = 'out'"));
+}
+
+for (const [label, file] of [
+  ["the send layer", "lib/server/repo/outreach.ts"],
+  ["the pool query", "lib/server/repo/blast.ts"],
+] as const) {
+  const branches = outboundBranches(fs.readFileSync(file, "utf8"));
+  /* Four, exactly: sent_30, last_outreach, pings_month, blast_today. Asserted
+     rather than assumed, because the failure that matters here is the extractor
+     quietly matching fewer — which is how the first version of this check
+     passed while leaving `blast_today` unguarded. */
+  ok(
+    `${label} has all four outbound counters`,
+    branches.length === 4,
+    `found ${branches.length} in ${file} — if a counter was added, extend the scanner; if one was removed, say so here`,
+  );
+  const naked = branches.filter((b) => !b.includes("retry_of is null"));
+  ok(
+    `${label} excludes retries from every one of them`,
+    naked.length === 0,
+    naked.length > 0 ? `missing in: ${naked[0].slice(0, 90)}…` : "",
+  );
+}
+
+ok(
+  "and the inbound branch deliberately does not",
+  (() => {
+    /* A retry is outbound by construction (`message_log_retry_is_outbound`), so
+       a clause on the reply counter would exclude nothing and imply a rule that
+       does not exist. Both files leave it alone; this pins that they still do. */
+    const src = fs.readFileSync("lib/server/repo/outreach.ts", "utf8");
+    const inbound = [...src.matchAll(/case when([\s\S]*?)then/g)]
+      .map((m) => m[1].replace(/\s+/g, " "))
+      .filter((b) => b.includes("direction = 'in'"));
+    return inbound.length > 0 && inbound.every((b) => !b.includes("retry_of"));
+  })(),
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

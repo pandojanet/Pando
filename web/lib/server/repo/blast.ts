@@ -133,6 +133,35 @@ export async function selectPool(input: {
    * for `decideOutreach` to judge. That split is deliberate: suppression is a
    * hard exclusion and belongs in SQL; the protection rules are a policy and
    * belong in the pure module that is exhaustively tested.
+   *
+   * ## Every outbound branch carries `m.retry_of is null`, and it must
+   *
+   * 13.4's whole point is that a retry is **one message the parent received
+   * once**, so it may not spend a second slot of the allowance they agreed to,
+   * and may not restart their 48-hour gap. `repo/outreach.ts` — the counters
+   * the *send* layer reads — has said so since `drizzle/0029`; this copy of
+   * the same arithmetic was written earlier and did not, so the two disagreed.
+   * Measured on one real send plus one retry of it: this query counted **2**
+   * where the send layer counted **1**.
+   *
+   * It failed in the safe direction — the pool held somebody the send layer
+   * would have allowed, so nobody was over-messaged — but it is exactly the
+   * cost `drizzle/0029` exists to prevent, arriving one module along: a carrier
+   * hiccup quietly costing a contributor a slot, and making them read as less
+   * responsive than they are.
+   *
+   * ⚠ **Two copies of one counter is the real fault here**, and it is not fixed
+   * — only made to agree. They cannot be merged today, because this one reads a
+   * *set* of people in one statement while `outreachAllowed` reads one, and
+   * against the pooler that difference is the whole reason this is a single
+   * query (10 Aug). So the rule is: **a change to either counter is a change to
+   * both.** `test:outreach` reads both files and fails on any outbound counter
+   * in either that does not carry the clause — a source check, because the
+   * modules import `server-only` and no plain-node suite can load them.
+   *
+   * The inbound branch deliberately has no such clause: a retry is outbound by
+   * construction (`message_log_retry_is_outbound`), so there is nothing there
+   * to exclude, and `repo/outreach.ts` leaves it alone for the same reason.
    */
   const result = await withDb(async (db: Db) => {
     /* An array literal, not a bound JS array: drizzle expands one into a record
@@ -144,18 +173,22 @@ export async function selectPool(input: {
         p.monthly_contact_allowance,
         p.allowance_mode,
         coalesce(sum(case when m.direction = 'out' and m.category = 'outreach'
+                           and m.retry_of is null
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                      as sent_30,
         coalesce(sum(case when m.direction = 'in' and m.responded_to is not null
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                      as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
+                  and m.retry_of is null
                  then m.sent_at end)                                   as last_outreach,
         coalesce(sum(case when m.direction = 'out' and m.template = 'freshness_ping'
+                           and m.retry_of is null
                            and date_trunc('month', m.sent_at)
                              = date_trunc('month', now())
                       then 1 else 0 end), 0)::int                      as pings_month,
         coalesce(bool_or(m.direction = 'out' and m.category = 'outreach'
+                     and m.retry_of is null
                      and m.template is distinct from 'freshness_ping'
                      and m.sent_at::date = now()::date), false)        as blast_today
       from people p

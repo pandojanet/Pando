@@ -177,6 +177,9 @@ and `/admin/contributors` shows the change. **The rule being tested** is that a
 bare `1` means a monthly allowance here and a one-year-old in the clarifying
 flow — the records decide, never the words.
 
+§D2.3 has the rest of it, including how to provoke that collision on purpose
+and the six inputs that must *not* be read as a settings choice.
+
 ### A3 · Adding a recommendation by text (10.1)
 
 ```
@@ -430,6 +433,321 @@ question wins. Nothing in the word separates them; only the records can.
 
 ---
 
+# D2 · Contributor protection (M8.1–8.4)
+
+Four estimate rows, and they are the only thing standing between "being asked
+feels like a compliment" and a helper who stops reading Pando's texts. Invariant
+5 says these numbers are *"enforced in code, never by judgement"*, so most of
+what follows checks a **refusal**. A pass here usually looks like nothing
+happening.
+
+Read §D2.0 before anything else — without it two of these read as broken when
+they are working, and two more read as working when they are half built.
+
+---
+
+## D2.0 · Before you start
+
+### Where the four rows live
+
+| Row | What | File |
+|---|---|---|
+| 8.1 | the 5 / 10 / as-relevant ceiling | `lib/outreach-policy.ts` · `lib/questions.ts` · `allowance_shape` CHECK |
+| 8.2 | the 48-hour gap | `lib/outreach-policy.ts` (`OUTREACH_GAP_DAYS`) |
+| 8.3 | the SETTINGS exchange | `lib/outreach-policy.ts` + `repo/onboarding.ts` + `lib/server/inbound.ts` |
+| 8.4 | the response-rate governor | `lib/outreach-policy.ts` (`effectiveAllowance`) |
+
+The rules are **pure** — no database, no clock — and the counters that feed them
+are one SQL statement in `lib/server/repo/outreach.ts`. That split is why the
+rules can be tested exhaustively and why the counters have to be tested against
+real rows: they are two different things and they fail differently.
+
+### The order a send is refused in, which is why a refusal can mislead you
+
+`sendSms` runs invariant 6 in this order, and **stops at the first no**:
+
+```
+opt-out  →  quiet hours  →  contributor protection (M8)  →  provider
+```
+
+So a message that does not go out has **four** possible reasons and only the
+third is M8. Two traps follow from that:
+
+- **Do not test M8 on `16265550013` (Helen).** She is already opted out in the
+  demo cohort, so every refusal you see is the first gate, not yours.
+- **Quiet hours are 8am–9pm Pacific**, which from Kyiv is 18:00–07:00 — most of
+  a European working day. On the Slack relay that check is **exempt** (a post in
+  a channel wakes nobody), so if you are testing over the relay it will not bite;
+  against real SMS it will, and the refusal is not an M8 fault.
+
+### Two more refusals that are not bugs
+
+`outreachAllowed` **fails closed**, unlike the rest of the app:
+
+- `counters_unavailable` — the database could not be read, so Pando refuses
+  rather than guessing. Everywhere else an outage means *"we could not save your
+  answer"*, which is recoverable; here it would mean *"we could not check whether
+  she asked us to stop"*.
+- `unknown_person` — an outreach send with no `personId` is refused, because the
+  limits are per person and a caller that cannot say who this is for must not be
+  able to route around them.
+
+### ⚠ Two things the estimate's own wording will make you report as bugs
+
+**1. "3, 5, 10 or 20; default 5" is not what is built.** The 18 Aug reciprocity
+round replaced that ladder with **5 · 10 · as relevant**, and the 1 Sep round
+made it a **required** choice with nothing preselected. A `3` or a `20` is
+refused by the database, correctly. The number lives in three places that must
+agree — `ALLOWANCE` in `questions.ts`, the profile route's allow-list, and the
+`allowance_shape` CHECK — and widening one without the others is what once
+turned a value the route had just accepted into a write that aborted a layer
+down.
+
+**2. "sends a friendly note" is not built.** The governor lowers the number and
+**nothing tells the contributor**. `effectiveAllowance` returns `lowered`,
+`decideOutreach` destructures only the allowance and discards it, and there is no
+template for it in `sms-templates.ts`. The only surface that knows is
+`/admin/contributors`. See *Not built, and how you would know* at the foot of this
+document — it is the client's to approve, because it is new user-facing copy on
+the subject of how often somebody will be asked.
+
+### Staging the rows you cannot produce by texting
+
+8.2 and 8.4 are both read out of `message_log`, so making either fire by hand
+means waiting a month or sending real requests to real contributors. That is why
+neither had ever been walked end to end.
+
+```bash
+cd web && npm run stage:outreach -- <case>
+```
+
+`gap` · `cap` · `governed` · `responsive` · `clear`, and `--phone` to pick
+somebody other than Priya (`+16265550003`, the demo cohort's 10-a-month).
+
+It **asserts nothing** — it writes rows and stops. Every judgement below is then
+made by production code: the counters in `repo/outreach.ts`, the standing view,
+the pool preview, `sendSms` itself. Rows carry `template = 'staged_outreach'`, so
+`clear` removes exactly what it made.
+
+---
+
+## D2.1 · The ceiling a parent chooses (8.1)
+
+Two ways in, and both must land on the same two columns.
+
+**In the flow.** The participation screen, the last question before review.
+
+- Three levels, **nothing preselected**, and Continue stays locked until one is
+  picked (`required: true`, `EMPTY_ANSWERS.allowance` is `null`).
+- Read it back at `/admin/contributors` → *What they have earned*.
+
+**Pass:** `monthly_contact_allowance` and `allowance_mode` move **together**.
+*As relevant* stores a **null** number — that pair is what the `allowance_shape`
+CHECK exists to enforce, and a `5` sitting next to `as_relevant` is what broke
+the thanks screen on 9 Sep with a bare 502.
+
+**Worth provoking:**
+
+| Try | Expect |
+|---|---|
+| skip the question and press Continue | refused — it is one of three required questions in the whole flow |
+| post `3` or `20` to `/api/seed/profile` | rejected; the CHECK is the last line, the route's allow-list the first |
+| choose *as relevant*, then read the row | number **null**, mode `as_relevant` |
+| choose *as relevant*, then stage `gap` | still refused — no ceiling is not no protection |
+
+That last one is the point of the level: *as relevant* removes the monthly cap
+and **keeps the 48-hour gap**.
+
+---
+
+## D2.2 · The 48-hour gap (8.2)
+
+```bash
+cd web && npm run stage:outreach -- gap
+```
+
+One request, six hours ago. Then on `/admin/blasts`, create an Ask whose pool
+would include them and press **Preview the pool**.
+
+**Pass:** they appear under *Matched, but not asked* with the reason **"Asked in
+the last 48 hours"**, not in the chosen list. A real send skips them and counts
+it as a **skip**, not a failure — a contributor inside their gap is the system
+working.
+
+**The number is 48 hours, and it has moved twice.** Spec §14 and the estimate row
+say 48; the 8.18 strategy said five days and was adopted on 27 Aug; the 1 Sep
+feedback says 48 three times and is newest. There is a second reason beyond
+recency: the allowance screen has promised *"with a 48-hour gap"* since 18 Aug,
+so enforcing five days meant the number a parent agreed to and the number the
+code kept were different. Do not "fix" it back by reading the strategy alone.
+
+**Worth provoking:**
+
+| Try | Expect |
+|---|---|
+| stage `responsive` instead — its most recent request is five days old | allowed, which is the same rule from the other side: the gap has cleared |
+| the gap against an `as_relevant` contributor | still refused |
+| the gap when they have budget left | still refused — **the gap is checked before the cap**, because budget left is not permission to burst |
+
+---
+
+## D2.3 · Changing it by text (8.3)
+
+This is A2 above; here is what is actually being tested.
+
+```
+16265550003: SETTINGS
+```
+
+then, as a **separate** message:
+
+```
+16265550003: 1
+```
+
+`1` = five a month, `2` = ten, `3` = anytime it is genuinely relevant.
+
+**Pass:** the menu states the **current** setting first (the commonest reason to
+text SETTINGS is to find out what it is); the confirmation names the new level
+**and repeats the 48-hour gap**, including on the `as_relevant` branch, where
+"no fixed limit" must never read as "as often as Pando likes"; and
+`/admin/contributors` shows the change.
+
+**The rule being tested is the ambiguity, not the menu.** A bare `1` means an
+allowance here and a one-year-old in the clarifying flow, and nothing in the
+words separates them. The records do: `awaitingSettingsChoice` asks which
+question was last put to this person. To provoke the collision:
+
+1. text `SETTINGS`, ignore the menu;
+2. ask a question that draws the clarifying *"how old is your child?"*;
+3. reply `1`.
+
+**Pass:** it is read as the child's age, not as an allowance. Reverse the order
+and it is read as the allowance.
+
+**Worth provoking:**
+
+| Try | Expect |
+|---|---|
+| `BLAST SETTINGS` | works — the printed word is `SETTINGS` since 10 Sep, but somebody may be acting on a text sent last month, and a keyword is not copy |
+| `settings?` | works — trailing punctuation is stripped |
+| `can you change my settings` | **not** a command; falls through to ordinary handling |
+| a bare `5` with no menu open | **not** an allowance; the menu has to have been the last thing asked |
+| `banana` right after the menu | falls through to ordinary handling — Pando does **not** re-send the menu, because a service that repeats itself at somebody who wrote something else has started arguing with them |
+| `SETTINGS` after STOP | nothing at all; opt-out is the first gate |
+
+---
+
+## D2.4 · The response-rate governor (8.4)
+
+```bash
+cd web && npm run stage:outreach -- governed     # asked 5, answered 0
+cd web && npm run stage:outreach -- responsive   # asked 5, answered 4
+```
+
+**The pair is the test; either alone proves nothing.** Both put the contributor
+on **10 a month** with **5 requests** in the window, so volume is held constant
+and only the response rate differs.
+
+**Pass, `governed`:** `/admin/contributors` → *What they have earned* shows **0%**
+and marks the row governed, and the pool preview **holds them** with *"Already at
+their monthly limit"* — which can only be the governor, since 5 is well inside a
+stated 10. The ceiling dropped one tier (10 → 5) and the cap was then measured
+against 5. **The standing view still says 10**: that distance between stated and
+effective is the rule, not a display bug.
+
+**Pass, `responsive`:** same volume, 80%, **not** governed, still contactable.
+
+**What will not happen:** the friendly note. See §D2.0.
+
+**Worth provoking — three refusals the estimate does not mention, and each is
+deliberate:**
+
+| Rule | Why it is there | How to see it |
+|---|---|---|
+| under **four** requests the governor does nothing | one unanswered text out of one is a 0% rate, and lowering a tier on it would punish somebody's first missed message | `test:outreach` holds it at one, three and four; on a screen, the standing view says *"0 of 3 — too few to judge"* rather than 0% |
+| it never goes **below five** | five is the floor of the community agreement, so it may take *as relevant* → 10 → 5 and stops; taking the floor would withdraw the access they were promised for answering | set the allowance to 5, stage `governed` → still 5, and `lowered` is false |
+| **PASS counts as answering** | strategy §6 promises *"nothing recorded against you"* — a polite decline is a response, not silence | reply `PASS` to a Network Ask three times and watch the rate **rise** |
+| *as relevant* **can be given a ceiling by the governor** | "no fixed limit" is what the parent agreed to while they are answering; a 0% rate lowers them one tier, and the tier below "no ceiling" is 10 | set the allowance to *as relevant*, stage `governed` → effective **10**, `lowered` true. Non-obvious, and not a bug |
+
+**And one that is easy to get backwards:** a **retry** of a failed message must
+not spend a second slot. Every counter carries `and m.retry_of is null`, so a
+carrier hiccup cannot cost a parent an allowance slot or restart their gap —
+and cannot make them read as less responsive. `test:payments-live` writes two
+rows and reads the counter back; it is the only way to know.
+
+---
+
+## D2.5 · The ping rules that ride on the same counters (v3.2 §10)
+
+Not an M8 row, but enforced by the same function and easy to miss.
+
+```bash
+curl -X POST -H "authorization: Bearer $JOBS_SECRET" \
+  "https://pando.is/api/jobs/run?job=freshness_ping"
+```
+
+**Pass:** at most **one** freshness ping per contributor per calendar month
+(`ping_this_month`), and **never on the same day as a blast**
+(`ping_same_day_as_blast`). Both are checked *before* the gap, because they are
+narrower.
+
+---
+
+## D2.6 · Where to read the answer
+
+| Surface | What it tells you |
+|---|---|
+| `/admin/contributors` → *What they have earned* | tier, asked/answered in 30 days, response rate, whether the governor is acting, and the allowance they chose |
+| `/admin/blasts` → *Preview the pool* | the **held** list with a reason per person — the pool preview calls the same `selectPool` a live send calls |
+| `/admin/conversations` | who was texted, whether it arrived, whether they replied, and how often against the allowance they chose. ⚠ **No message text, ever** — `message_log` has no body column |
+| `/admin/delivery` | 12.5's health view; useful for telling an M8 refusal apart from a carrier failure |
+
+The response rate is **not shown at all** below four requests — it says "too few
+to judge" in words instead, for the same reason the governor does not act there.
+
+---
+
+## D2.7 · The suites, and what each one holds
+
+Run these first. They are faster than any walk and they assert refusals.
+
+```bash
+cd web && npm run test:outreach      # 62 — pure: the gap, the ceiling, the governor, quiet hours, SETTINGS,
+                                     #      and that the two copies of the counter agree about retries
+cd web && npm run test:inbound       # 49 — pure: the keyword order, mostly forged requests
+cd web && npm run test:compliance    # live: the five acceptance checks, and the constants pinned
+cd web && npm run test:relay-live    # 65 — needs `npm run build`; includes the whole SETTINGS exchange
+cd web && npm run test:payments-live # 18 — includes "a retry does not spend the allowance twice"
+```
+
+Roughly half of `test:outreach` asserts a refusal, which is the point: a suite
+that only proved Pando can send would pass while it sent four times in a week to
+the same tired parent. `test:compliance` pins the four constants by value
+(`OUTREACH_GAP_DAYS` 2 · `ALLOWANCE_FLOOR` 5 · `RESPONSE_WINDOW_DAYS` 30 ·
+`RESPONSE_RATE_FLOOR` 0.25 · `PINGS_PER_MONTH` 1), so a session reading the 8.18
+strategy on its own cannot quietly halve the pilot's request rate again.
+
+---
+
+## D2.8 · Cleaning up
+
+```bash
+cd web && npm run stage:outreach -- clear
+```
+
+It removes only rows it wrote. It does **not** put the allowance back — the `cap`
+and `governed` cases move it, and the script never knew the original, so
+inventing a default would write a value nobody chose. It prints the current one
+instead; `npm run seed:demo` resets the whole cohort.
+
+One cosmetic thing you may see and need not report: a contributor held for being
+opted out renders as *"Opted out or test"* rather than the mapped
+*"Asked Pando to stop texting"* — `selectPool` pushes `opted_out_or_test` and
+`POOL_HELD_REASON` maps `opted_out`. The fallback is readable, so it is a label
+miss rather than a fault.
+
+
 # E · Thanks and impact (M9)
 
 ```bash
@@ -513,7 +831,7 @@ if a number below does not match, the table is out of date and not the suite.
 | `test:matching` | 53 | the two-layer scorer, the age ladder, the topic reader |
 | `test:starters` · `test:derive` | 27 · 21 | which taps a screen offers; a place → the tenure signal |
 | `test:blast` | 64 | tiers, the guarantee, and what the asker is finally told |
-| `test:outreach` | 57 | the gap, the ceiling, the governor, quiet hours |
+| `test:outreach` | 62 | the gap, the ceiling, the governor, quiet hours, and that the two copies of the counter agree about retries |
 | `test:inbound` | 49 | the keyword order, mostly forged requests |
 | `test:capture` | 66 | the five-question script, and which words a step accepts |
 | `test:caregiver` | 68 | the four consent scopes, the 18+ gate, the named-person detector |
@@ -550,6 +868,7 @@ Reporting these as failures wastes a round.
 |---|---|
 | ~~**Auto-send**~~ | **Built 8 Sep** on the client's instruction. `PILOT_HOLD_EVERYTHING` is `false`; only sensitive, caregiver-related and generator-asked answers wait. Every row carries the reason it was or was not held, so the queue can be re-read afterwards |
 | ~~**`unclear` → a person**~~ | **Built 8 Sep.** `pending_questions` asks for the detail twice, then hands over — and the handover raises an `unreadable_question` escalation carrying the words, rather than closing into a table nobody reads |
+| **8.4's "friendly note"** | the governor's **number** works and its **message** does not exist. `effectiveAllowance` returns `lowered`, `decideOutreach` discards it, and `sms-templates.ts` has no template for it — so a contributor's ceiling drops from 10 to 5 and nobody tells them. The only surface that knows is `/admin/contributors`. It is new user-facing copy on the subject of how often somebody will be asked, which makes it the client's to approve rather than ours to write. See §D2.0 |
 | **The automatic entry to a Network Ask** | a thin answer offers *"want me to ask a few nearby parents?"* and nothing reads the yes. Wiring it means saying what that reply costs — a decision, not missing code |
 | **The Pando Digest** (§10) | in the strategy, in **no estimate row**, unquoted |
 | **The grove** (§13) | same — a ledger with published exchange rates, and M9 is not it |
