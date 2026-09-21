@@ -66,6 +66,26 @@ export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
+ * The question screens' header (21 Sep): *"on this progress bar also add a
+ * number/banner — how many percent of the profile is filled in"*. It sits
+ * beside "3 left" rather than replacing it, and the two answer different
+ * questions — how many screens remain in this walk, and how much of the whole
+ * profile is filled in — so the pill names its subject ("Profile") or the two
+ * numbers read as one measure said twice and disagreeing. Green on the wash,
+ * never gold: a thin profile is not something pending or wrong.
+ */
+export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
+  return (
+    <span
+      className="rounded-full bg-green-wash px-2.5 py-0.5 font-semibold text-green-deep text-dock tabular-nums"
+      aria-label={`Profile ${depth.percent}% filled in`}
+    >
+      Profile {depth.percent}%
+    </span>
+  );
+}
+
+/**
  * *"20% done — the stronger your profile, the better your matches,"* with a
  * direct path to complete it (16 Sep). One line and one action, so it fits the
  * review page's minimal-text rule and the top of `/share` alike.

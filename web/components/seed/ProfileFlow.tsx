@@ -18,6 +18,7 @@ import {
   DepthReminder,
   ProfilePercentBar,
   ProfilePercentLabel,
+  ProfilePercentPill,
 } from "@/components/seed/ProfileDepth";
 import { OptionPicker } from "@/components/ui/OptionPicker";
 import { PlanGroup } from "@/components/ui/PlanGroup";
@@ -1788,8 +1789,13 @@ export function ProfileFlow() {
              for when a question does not apply to them moved, appeared and
              disappeared as they walked the flow. It is in the dock now, in one
              fixed slot under Continue, and this slot is always the count. */
-          <span className="px-1 font-medium text-muted text-dock">
-            {screensLeft > 0 ? `${screensLeft} left` : "Last one"}
+          <span className="flex items-center gap-2">
+            {/* How full the profile is (21 Sep), beside the distance left in
+                this walk — two measures, so the pill names its own. */}
+            <ProfilePercentPill depth={profileDepth(answers)} />
+            <span className="px-1 font-medium text-muted text-dock">
+              {screensLeft > 0 ? `${screensLeft} left` : "Last one"}
+            </span>
           </span>
         }
         below={
