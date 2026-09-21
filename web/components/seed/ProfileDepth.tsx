@@ -70,8 +70,10 @@ export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
  * number/banner — how many percent of the profile is filled in"*. It sits
  * beside "3 left" rather than replacing it, and the two answer different
  * questions — how many screens remain in this walk, and how much of the whole
- * profile is filled in — so the pill names its subject ("Profile") or the two
- * numbers read as one measure said twice and disagreeing. Green on the wash,
+ * profile is filled in — so the pill names its subject and what the number
+ * measures ("Profile 60% complete"), or the two read as one measure said twice
+ * and disagreeing. "Profile 60%" alone was reported (21 Sep) as not saying
+ * what the 60% was of. Green on the wash,
  * never gold: a thin profile is not something pending or wrong.
  */
 export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
@@ -80,7 +82,7 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
       className="rounded-full bg-green-wash px-2.5 py-0.5 font-semibold text-green-deep text-dock tabular-nums"
       aria-label={`Profile ${depth.percent}% filled in`}
     >
-      Profile {depth.percent}%
+      Profile {depth.percent}% complete
     </span>
   );
 }
