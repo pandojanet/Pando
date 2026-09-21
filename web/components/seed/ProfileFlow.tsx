@@ -15,7 +15,7 @@ import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import {
-  ProfileToast,
+  ProfileBanner,
   ProfilePercentBar,
   ProfilePercentLabel,
   ProfilePercentPill,
@@ -1477,9 +1477,11 @@ export function ProfileFlow() {
               Does this look right?
             </h1>
             {/* 21 Sep, the developer: the "N questions still to answer…"
-                paragraph is gone in full, and a pop-up saying how far the
-                profile is from complete takes its place. */}
-            <ProfileToast depth={profileDepth(answers)} />
+                paragraph is gone in full, and how far the profile is from
+                complete takes its place — first as a pop-up, then, the same
+                day, as a banner that stays until the profile clears the bar
+                and appears on every screen rather than only this one. */}
+            <ProfileBanner depth={profileDepth(answers)} className="mt-5" onProfile />
 
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than

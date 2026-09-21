@@ -16,7 +16,13 @@ import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { submissionTitle } from "@/lib/seed-chat/engine";
 import type { Submission } from "@/lib/seed-chat/types";
-import { isAnonymous, KIND_LABEL, NoSession, useDoneSession } from "./shared";
+import {
+  DoneProfileBanner,
+  isAnonymous,
+  KIND_LABEL,
+  NoSession,
+  useDoneSession,
+} from "./shared";
 
 /**
  * Estimate 1.7, screen 1 of 3 — what just happened.
@@ -91,6 +97,8 @@ export function Thanks() {
               </>
             )}
           </p>
+
+          <DoneProfileBanner session={session} className="mt-6" />
 
           {count > 0 && (
             <Panel raised flush className="mt-6">

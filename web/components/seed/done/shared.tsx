@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/ui/Panel";
+import { ProfileBanner } from "@/components/seed/ProfileDepth";
+import { profileDepth } from "@/lib/questions";
 import { loadSession } from "@/lib/storage";
 import type { SeedSession } from "@/lib/types";
 import type { ShareKind } from "@/lib/seed-chat/types";
@@ -42,6 +44,40 @@ export function useDoneSession() {
   }, []);
 
   return { session, setSession, loaded };
+}
+
+/**
+ * The profile banner on a completion screen (21 Sep).
+ *
+ * One wrapper rather than the same three-line expression on three screens:
+ * they would drift, and the one that drifts is the one nobody reopens.
+ *
+ * ⚠⚠ **High on the screen, under the heading — measured, not chosen.** It
+ * sat at the foot first, on the argument that these three screens are Pando
+ * *telling* a parent something and a green box asking for more above *Thank
+ * you.* replaces the point of the screen with an errand. That argument is
+ * still right about the order and wrong about the outcome: at the foot it
+ * landed at **y = 806 · 1579 · 1803** on a 375×812 phone, so on two of the
+ * three a parent would never see it — which is the whole of *"постійно у
+ * користувача"*. So it goes directly after each screen's own heading block
+ * and before the first thing they scroll through, which keeps the screen's
+ * point first and the banner on the first paint.
+ *
+ * On the review and `/share` it is at the top, because there the screen is
+ * about the profile and the recommendation rather than about news.
+ *
+ * Renders nothing with no session on this phone, and nothing once the profile
+ * clears the bar.
+ */
+export function DoneProfileBanner({
+  session,
+  className,
+}: {
+  session: SeedSession | null;
+  className?: string;
+}) {
+  if (!session) return null;
+  return <ProfileBanner depth={profileDepth(session.answers)} className={className} />;
 }
 
 /** They chose the labelled path with no Founding status and no follow-ups. */

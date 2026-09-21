@@ -36,7 +36,7 @@ import type {
   Submission,
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
-import { ProfilePercentPill } from "@/components/seed/ProfileDepth";
+import { ProfileBanner } from "@/components/seed/ProfileDepth";
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
@@ -952,16 +952,13 @@ export function ChatSeeding() {
          * database rather than an address that would 404.
          */
         right={
-          /* 21 Sep, the developer: the profile percentage moves up here,
-             beside the invite link, and the optional-details button
-             that sat above the thread is gone. */
-          session ? (
-            <div className="flex items-center gap-2">
-              <ProfilePercentPill depth={depth} />
-              {session.referral_code && (
-                <ReferralHeaderInvite code={session.referral_code} />
-              )}
-            </div>
+          /* 21 Sep: the percentage moved up here beside the invite link that
+             morning, and moved out again the same day when it became a
+             banner over the thread — ⚠ the pill said the same number a
+             hundred pixels from the banner's own, which is one measure said
+             twice on one screen. The invite link keeps the slot. */
+          session?.referral_code ? (
+            <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }
       />
@@ -996,6 +993,13 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
+
+        {/* 21 Sep: *"і не тільки на цій сторінці, а і на сторінці
+            рекомендацій"*. Above the thread rather than under the header,
+            because the thread grows downward and a banner inside the header
+            would sit over the one control this screen is for. It renders
+            nothing once the profile clears the bar. */}
+        <ProfileBanner depth={depth} className="mb-4" />
 
         <div className="space-y-2.5">
           {chat.messages.map((message) =>

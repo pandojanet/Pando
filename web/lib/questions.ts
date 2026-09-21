@@ -3,6 +3,7 @@ import {
   AFFILIATION_CONSENT_TEXT,
 } from "./consent";
 import { producesAffiliation } from "./affiliations";
+import { FOUNDING_MIN_PROFILE_DEPTH } from "./rewards";
 import { bandsForAge } from "./matching";
 import { zipChoiceNeeded, zipOptionsFor } from "./home-places";
 import { marketOptions, optionsForBands } from "./market-options";
@@ -3099,6 +3100,19 @@ export function profileDepth(answers: ProfileAnswers): ProfileDepth {
 
   const answered = questions.filter((q) => isQuestionAnswered(q, answers)).length;
   return { answered, total, percent: Math.round((answered / total) * 100) };
+}
+
+/**
+ * Whether the profile banner shows (21 Sep) — a pure rule beside the number
+ * it reads, so the one line the whole feature turns on is exhaustively
+ * testable: the banner itself is React and `test:feedback` cannot mount it.
+ *
+ * ⚠ `total === 0` is not a thin profile. An expecting parent is measured
+ * against a smaller questionnaire, and a questionnaire with nothing left in
+ * it must not produce a banner about questions that do not exist.
+ */
+export function profileBannerShows(depth: ProfileDepth): boolean {
+  return depth.total > 0 && depth.percent < FOUNDING_MIN_PROFILE_DEPTH;
 }
 
 export function labelForOption(

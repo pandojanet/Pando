@@ -17,7 +17,7 @@ import {
 import { track } from "@/lib/analytics";
 import { REWARD_OFFER } from "@/lib/rewards";
 import { WHY_INVITE } from "@/components/seed/ReferralInvite";
-import { NoSession, Next, useDoneSession } from "./shared";
+import { DoneProfileBanner, NoSession, Next, useDoneSession } from "./shared";
 
 /**
  * Estimate 1.7, screen 3 of 3 — what happens after they close the tab.
@@ -52,6 +52,8 @@ export function WhatsNext() {
               . Until that&apos;s answered, nothing below has started.
             </Panel>
           )}
+
+          <DoneProfileBanner session={session} className="mt-5" />
 
           <ol className="mt-5 space-y-2.5">
             {count === 0 && (

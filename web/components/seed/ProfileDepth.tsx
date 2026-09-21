@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { X } from "lucide-react";
-import { usePresence } from "@/lib/use-presence";
-import type { ProfileDepth } from "@/lib/questions";
+import { InlineAction } from "@/components/ui/TextAction";
+import { cn } from "@/lib/cn";
+import { profileBannerShows, type ProfileDepth } from "@/lib/questions";
 
 /**
  * How full a parent's profile is, and why filling it in is worth their time.
@@ -96,123 +94,93 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
- * A pop-up on arriving at the review page: how far the profile is from full,
- * to get a parent to fill in the rest (21 Sep). It replaced the paragraph that
- * sat under "Does this look right?" — *"6 questions still to answer. Pando
- * matches you on…"* — which the developer had removed in full.
+ * A banner on every screen a parent with a saved profile meets, until the
+ * profile is full enough (21 Sep, the developer: *"чи не можна його зробити
+ * постійним банером … щоб він був постійно у користувача до того моменту,
+ * поки він не заповнить профіль на потрібний відсоток. І не тільки на цій
+ * сторінці, а і на сторінці рекомендацій і на інших"*).
  *
- * ⚠⚠ **It promises relevance and never access.** The client's appendix is that
- * P14 alone gates Community Access, and `profileCompleteness` has carried
- * *"informational only — it never gates anything"* since it was written.
+ * ⚠ **This replaces `ProfileToast` and reverses the row above it**, which was
+ * written the same morning: a pop-up in the bottom-right corner, eight
+ * seconds, dismissible. What it could not do is be there when a parent came
+ * back to the screen and wondered what was left — it was gone by then, and it
+ * only ever appeared on one of the five screens they walk.
  *
- * Five rules:
+ * ## The threshold is the product's own number, not a new one
  *
- * - **Portalled to `body`.** It is `position: fixed`, and the review page sits
- *   inside an animated wrapper — a filled animation makes its element the
- *   containing block for `fixed` (the 5 Aug bug), so a toast rendered in place
- *   would be clipped to the review column.
- * - **Bottom right, above the dock** (21 Sep, the developer: *"чому він не
- *   збоку, тобто в правому нижньому куті, де якраз пустий кут"*). Across the
- *   top it sat over the header — the one place on this screen that carries the
- *   same number twice, in the label and the bar — and on a laptop the bottom
- *   right really is empty paper beside the centred column.
+ * *"Потрібний відсоток"* is `FOUNDING_MIN_PROFILE_DEPTH` — 80, the profile bar
+ * the Founding queue decides on (16 Sep). 100 was measured on the live cohort
+ * at **one parent in twelve**, so a banner that waited for it would be
+ * permanent for everybody who took the flow's own shortest path, which is the
+ * client's own 10 Sep design. Tying it to the existing constant also means the
+ * two cannot drift: the day she moves the Founding bar, the nagging stops at
+ * the same place.
  *
- *   ⚠ **On a phone that corner is the dock**, so the offset is measured rather
- *   than guessed: `window.innerHeight - dock.top` is the dock's height while
- *   it is pinned at the foot of the window, zero or less while it is static
- *   and below the fold on a laptop, and its visible part on a laptop scrolled
- *   to the end — one expression for all three. Re-measured on scroll and
- *   resize, because the last of those moves while the toast is up, and eased,
- *   so it glides rather than jumps. Covering **Save my profile** is the one
- *   thing this must never do.
- * - **Announced through a region that is already in the document.** The
- *   portal mounts together with its text, and a region that arrives with its
- *   message announces nothing (`TypingDots`, `CopyButton`) — so an in-flow
- *   `sr-only` status line carries the words and the visual toast is hidden
- *   from the accessibility tree.
- * - **Decided once, on arrival.** Whether it shows is read at mount; editing
- *   an answer and coming back is a new arrival and it shows again, which is
- *   the moment a parent is deciding whether they are done.
- * - **It leaves on its own and can be sent away.** Eight seconds, or the X —
- *   a message that cannot be dismissed is a banner that covers the header.
+ * ⚠⚠ **It still promises relevance and never access**, which is the line the
+ * whole of this file is about. The copy says what a fuller profile does for
+ * the answers a parent gets; it must never say what it earns, because the
+ * Founding reward also requires two approved contributions and P14 alone gates
+ * Community Access. The threshold decides when this stops appearing and
+ * nothing else.
+ *
+ * ⚠ Green, never gold: a profile under the bar is a parent who answered what
+ * was asked of them, not something pending or wrong.
+ *
+ * ⚠ **Not dismissible, which is the instruction and has a cost**: this file's
+ * own rule is that the depth never nags, and a banner a parent cannot send
+ * away is the closest this app comes to it. It is kept to three lines and one
+ * link for that reason, and it disappears the moment it is no longer true.
  */
-const TOAST_GAP = 12;
-
-export function ProfileToast({ depth }: { depth: ProfileDepth }) {
-  const [open, setOpen] = useState(false);
-  const [floor, setFloor] = useState(TOAST_GAP);
-  const shown = usePresence(open, 220);
-  const initial = useRef(depth);
-  const { percent } = initial.current;
-  const complete = initial.current.total === 0 || percent >= 100;
-
-  useEffect(() => {
-    if (complete) return;
-    const show = window.setTimeout(() => setOpen(true), 450);
-    const hide = window.setTimeout(() => setOpen(false), 8450);
-    return () => {
-      window.clearTimeout(show);
-      window.clearTimeout(hide);
-    };
-  }, [complete]);
-
-  useEffect(() => {
-    if (!shown) return;
-    const measure = () => {
-      const dock = document
-        .querySelector("[data-screen-dock]")
-        ?.getBoundingClientRect();
-      const covered = dock ? window.innerHeight - dock.top : 0;
-      setFloor(TOAST_GAP + Math.max(0, covered));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, { passive: true });
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure);
-    };
-  }, [shown]);
-
-  if (complete) return null;
-  const message = `Your profile is ${percent}% complete — ${100 - percent}% to go.`;
-  const why =
-    "Fill in the rest and Pando can match you with parents whose experience is closest to yours.";
-
+export function ProfileBanner({
+  depth,
+  className,
+  onProfile,
+}: {
+  depth: ProfileDepth;
+  className?: string;
+  /**
+   * ⚠ Set on the review page, where the link is dropped: a parent is
+   * standing on `/profile`, so *Add more* would be a control that visibly
+   * does nothing — and the fold directly beneath lists every question the
+   * percentage counts, each with its own **Add**. That is the same reasoning
+   * that took *Complete your profile* off this screen on 17 Sep.
+   */
+  onProfile?: boolean;
+}) {
+  if (!profileBannerShows(depth)) return null;
   return (
-    <>
-      <p className="sr-only" role="status">
-        {open ? `${message} ${why}` : ""}
-      </p>
-      {shown &&
-        createPortal(
-          <div
-            className="pointer-events-none fixed inset-x-3 z-50 flex justify-end transition-[bottom] duration-300 ease-out sm:inset-x-auto sm:right-4"
-            style={{ bottom: floor }}
-          >
-            <div
-              aria-hidden="true"
-              className={`pointer-events-auto flex w-full max-w-[23rem] items-start gap-2 rounded-2xl bg-green-deep py-3 pl-4 pr-1 text-white shadow-card ${
-                open ? "animate-rise" : "animate-sink"
-              }`}
-            >
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold leading-snug text-control tabular-nums">{message}</p>
-                <p className="mt-1 leading-snug text-help text-white/85">{why}</p>
-              </div>
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setOpen(false)}
-                className="grid size-11 shrink-0 place-items-center rounded-full text-white/85 hover:text-white"
-              >
-                <X size={18} aria-hidden />
-                <span className="sr-only">Dismiss</span>
-              </button>
-            </div>
-          </div>,
-          document.body,
+    <div
+      className={cn(
+        "rounded-2xl border border-green/25 bg-green-wash px-4 py-3.5",
+        className,
+      )}
+    >
+      {/**
+       * ⚠ **No bar in here**, and that is not an oversight: the review page's
+       * own header carries one (16 Sep, her instruction), so a second one
+       * 150px below it is the same measure drawn twice on one screen — the
+       * fault that took the percentage pill off `/share` in the same round.
+       * The figure and the count say it in words on the four screens that
+       * have no bar of their own.
+       */}
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="font-semibold text-green-deep text-control">
+          Your profile is {depth.percent}% complete
+        </p>
+        <span className="shrink-0 font-medium text-green-deep/75 text-dock tabular-nums">
+          {depth.answered} of {depth.total}
+        </span>
+      </div>
+      <p className="mt-1.5 leading-snug text-ink-soft text-help">
+        Fill in the rest and Pando can match you with parents whose experience
+        is closest to yours.
+        {!onProfile && (
+          <>
+            {" "}
+            <InlineAction href="/profile">Add more</InlineAction>
+          </>
         )}
-    </>
+      </p>
+    </div>
   );
 }

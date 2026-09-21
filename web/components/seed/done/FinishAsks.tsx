@@ -26,7 +26,7 @@ import {
 } from "@/lib/submit";
 import { cn } from "@/lib/cn";
 import { saveSession } from "@/lib/storage";
-import { NoSession, useDoneSession } from "./shared";
+import { DoneProfileBanner, NoSession, useDoneSession } from "./shared";
 
 /**
  * Estimate 1.7, screen 2 of 3 — the only screen here that asks for anything.
@@ -284,6 +284,8 @@ export function FinishAsks() {
               that decides whether Pando can come back to you.
             </p>
           )}
+
+          <DoneProfileBanner session={session} className="mt-6" />
 
           {/* Demand capture: the first moment in the whole flow where the parent
               gets to ask for something. Above the consent on purpose — its answer

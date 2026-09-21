@@ -2182,7 +2182,8 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   );
   ok(
     "and the pill itself is not behind it",
-    /\{session\.referral_code && \(\s*<ReferralHeaderInvite/.test(chat) && !/hasSavedRecommendation && \(\s*<ReferralHeaderInvite/.test(chat),
+    /session\?\.referral_code \? \(\s*<ReferralHeaderInvite/.test(chat) &&
+      !/hasSavedRecommendation[\s\S]{0,40}<ReferralHeaderInvite/.test(chat),
     "the invite link is on /share whenever Pando has one to give",
   );
 
@@ -2720,13 +2721,20 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
 }
 
 /**
- * ## 21 Sep — the review reminder is a pop-up, and /share lost its button
+ * ## 21 Sep — the reminder is a banner, on five screens, until the profile
+ * clears the bar
  *
- * The developer: remove the "N questions still to answer…" paragraph from the
- * review page and replace it with a pop-up saying how much is left; move the
- * percentage on /share into the header beside the invite link, and drop the
- * "Add optional details" button. (This replaces the 17 Sep checks, which
- * pinned the paragraph and the button.)
+ * Three instructions in one day on one thing, and they have to be read in
+ * order. Remove the "N questions still to answer…" paragraph and put a pop-up
+ * in its place; move that pop-up to the bottom-right corner; then *"чи не
+ * можна його зробити постійним банером … поки він не заповнить профіль на
+ * потрібний відсоток. І не тільки на цій сторінці, а і на сторінці
+ * рекомендацій і на інших"*.
+ *
+ * ⚠ So the pop-up's checks are **rewritten rather than deleted**: what
+ * replaced them is a banner with no timer and no X, and the next reader needs
+ * to know which way it went. The corner and the dock-clearance measurement
+ * went with it — a banner in the flow has neither.
  *
  * Read on the **source**, because all of it is React this suite cannot render.
  */
@@ -2738,32 +2746,93 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
 
   ok("the review paragraph is gone", !depth.includes("{depth.total - depth.answered}"));
   ok("and nothing renders the old reminder", !/DepthReminder/.test(flow + chat + depth));
-  ok("the review page shows the pop-up instead", /<ProfileToast /.test(flow));
+  const done = src("../components/seed/done/shared.tsx");
+  const banner = depth.slice(depth.indexOf("export function ProfileBanner"));
+  const rewards = (await import(
+    `../lib/rewards.ts?v=${Date.now()}`
+  )) as typeof import("../lib/rewards.ts");
+  const q = (await import(
+    `../lib/questions.ts?v=${Date.now()}`
+  )) as typeof import("../lib/questions.ts");
+
+  ok("the review page shows the banner instead", /<ProfileBanner /.test(flow));
+  /* ⚠ On what renders, never on the word: `ProfileDepth` names the pop-up in
+     the comment recording its removal, and a check that fails on a sentence
+     saying what used to be there is the fault this file keeps paying for. */
   ok(
-    "the pop-up is portalled, because a fixed element inside an animated wrapper is clipped",
-    /createPortal\(/.test(depth) && /document\.body/.test(depth),
+    "and the pop-up is gone — timer, portal and all",
+    !/<ProfileToast/.test(flow + chat + depth) &&
+      !/export function ProfileToast/.test(depth) &&
+      !/createPortal/.test(depth) &&
+      !/setTimeout/.test(depth),
+  );
+  /**
+   * The threshold is the whole of *"потрібний відсоток"*, and it is the
+   * product's own number rather than a new one: 100% is one parent in twelve
+   * on the live cohort, so a banner waiting for it would be permanent for
+   * everybody who took the flow's own shortest path.
+   */
+  const bar = rewards.FOUNDING_MIN_PROFILE_DEPTH;
+  const shows = (percent: number, total = 20) =>
+    q.profileBannerShows({
+      percent,
+      total,
+      answered: Math.round((percent / 100) * total),
+    });
+  ok(
+    "it stops at the bar the Founding queue already decides on",
+    bar < 100 &&
+      shows(bar - 1) &&
+      !shows(bar) &&
+      !shows(100) &&
+      shows(0) &&
+      /* Nothing to fill in is not the same as a thin profile: an expecting
+         parent measured against a smaller questionnaire must not meet a
+         banner about questions that do not exist. */
+      !shows(0, 0),
   );
   ok(
-    "and it is announced through a region already in the document",
-    /role="status"/.test(depth.slice(depth.indexOf("export function ProfileToast"))),
-  );
-  /* 21 Sep: *"чому він не збоку, тобто в правому нижньому куті"*. Two halves,
-     and they fail independently — the anchor is CSS and the clearance is the
-     measurement that keeps it off **Save my profile**, which is the one thing
-     this pop-up must never cover. */
-  const toast = depth.slice(depth.indexOf("export function ProfileToast"));
-  ok(
-    "the pop-up sits in the bottom-right corner",
-    /sm:right-4/.test(toast) && /justify-end/.test(toast) && !/top-3/.test(toast),
+    "and the component asks that rule rather than restating it",
+    /if \(!profileBannerShows\(depth\)\) return null;/.test(banner),
   );
   ok(
-    "and it is held clear of the dock by measuring it, not by guessing a height",
-    /data-screen-dock/.test(toast) && /innerHeight - dock\.top/.test(toast),
+    'and it cannot be sent away, which is what "until they fill it in" means',
+    !/onClick/.test(banner) && !/Dismiss/.test(banner),
+  );
+  /* ⚠⚠ It promises relevance and never access: P14 alone gates Community
+     Access, and the Founding reward needs two approved contributions as well,
+     so a banner naming either would make a claim this number cannot keep. */
+  ok(
+    "it says what a fuller profile does for the answers, never what it earns",
+    /match you with parents/.test(banner) &&
+      /* The constant's own name carries "FOUNDING" and is not copy — the
+         check is about what a parent reads. */
+      !/(founding|reward|\$10|access|unlock)/i.test(
+        banner.replaceAll("FOUNDING_MIN_PROFILE_DEPTH", ""),
+      ),
+  );
+  ok(
+    "it is on the recommendations screen and on all three completion screens",
+    /<ProfileBanner depth=\{depth\}/.test(chat) &&
+      /export function DoneProfileBanner/.test(done) &&
+      ["Thanks", "FinishAsks", "WhatsNext"].every((f) =>
+        /<DoneProfileBanner /.test(src(`../components/seed/done/${f}.tsx`)),
+      ),
+  );
+  /* One expression, not three: the copy that drifts is the one nobody
+     reopens. */
+  ok(
+    "and the three read it through one wrapper",
+    ["Thanks", "FinishAsks", "WhatsNext"].every(
+      (f) => !/profileDepth\(/.test(src(`../components/seed/done/${f}.tsx`)),
+    ),
   );
   ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
+  /* ⚠ The header pill went when the banner arrived: the same number a hundred
+     pixels from the banner's own is one measure said twice on one screen. */
   ok(
-    "and its header carries the profile percentage beside the invite link",
-    /<ProfilePercentPill depth=\{depth\} \/>[\s\S]{0,160}<ReferralHeaderInvite/.test(chat),
+    "and /share says the percentage once, in the banner",
+    !/ProfilePercentPill/.test(chat),
   );
 }
 
