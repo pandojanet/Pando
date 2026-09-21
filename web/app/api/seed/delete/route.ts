@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const limited = rateLimited(request, "seed_write");
   if (limited) return limited;
 
-  const verified = verifiedPhone(verifyCookie(request));
+  const verified = await verifiedPhone(verifyCookie(request));
   if (!verified) {
     return NextResponse.json(
       { error: "Confirm your number first" },

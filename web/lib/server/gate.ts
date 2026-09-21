@@ -29,11 +29,16 @@ export type GateResult =
   | { allowed: true; verified_at: string | null }
   | { allowed: false; reason: "verification_required" | "phone_mismatch" };
 
-export function submitGate(
+/**
+ * ⚠ Async since 21 Sep, because the verification record is a table rather than
+ * a map in this process — see `verify.ts` for what a deploy was doing to it.
+ * One read per write route, which each already spends several.
+ */
+export async function submitGate(
   request: Request,
   claim: { phone: string | null; wants_founding?: boolean },
-): GateResult {
-  const verified = verifiedPhone(verifyCookie(request));
+): Promise<GateResult> {
+  const verified = await verifiedPhone(verifyCookie(request));
 
   // Switched off for a local walkthrough or a pre-A2P demo; the log line on every
   // write still says whether a verification was behind it.

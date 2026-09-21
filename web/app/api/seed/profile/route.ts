@@ -441,7 +441,7 @@ export async function POST(request: Request) {
    * browser holds the profile until then; this is the half of that rule the
    * browser can't be trusted with.
    */
-  const gate = submitGate(request, {
+  const gate = await submitGate(request, {
     phone: claimedPhone,
     wants_founding: raw.wants_founding !== false,
   });

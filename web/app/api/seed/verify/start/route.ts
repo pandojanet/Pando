@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       .find((c) => c.startsWith(`${VERIFY_COOKIE}=`))
       ?.slice(VERIFY_COOKIE.length + 1) ?? null;
 
-  const started = startVerification(phone, existingId);
+  const started = await startVerification(phone, existingId);
 
   if (!started.ok) {
     console.info("[seed:verify] send refused", {
@@ -89,7 +89,12 @@ export async function POST(request: Request) {
         retry_in_seconds:
           started.reason === "locked" ? started.retry_in_seconds : undefined,
       },
-      { status: 429 },
+      /* ⚠ An unreachable store is **503, never 429**: the other three refusals
+         are Pando saying no on purpose and this one is Pando unable to answer.
+         Collapsing them would tell a parent they had asked too often when they
+         had asked once, and would put a retry-after on a number that has no
+         allowance problem. */
+      { status: started.reason === "unavailable" ? 503 : 429 },
     );
   }
 

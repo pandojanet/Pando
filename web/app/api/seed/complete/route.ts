@@ -72,7 +72,7 @@ export async function POST(request: Request) {
 
   /* Same gate as the other two writes: a completion record naming a phone is only
      stored after that phone confirmed a code. */
-  const gate = submitGate(request, { phone, wants_founding: phone !== null });
+  const gate = await submitGate(request, { phone, wants_founding: phone !== null });
   if (!gate.allowed) {
     console.info("[seed:complete] blocked", { reason: gate.reason });
     return NextResponse.json(

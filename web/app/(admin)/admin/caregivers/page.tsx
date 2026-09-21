@@ -181,7 +181,29 @@ export default function CaregiversPage() {
           ) : (
             <RecordList>
               {shown.map((row) => {
-                const answerable = row.consent_status === "consented" && row.active;
+                /**
+                 * ⚠⚠ **Invariant 1's four conditions, and it was two** (21 Sep).
+                 *
+                 * This read `consented && active` and the invariant is
+                 * `consented AND active AND discoverable AND is_adult` — so a
+                 * caregiver who agreed to be listed and declined to appear in
+                 * answers was labelled **"Families can see her"** while her own
+                 * menu, two inches right, offered *"Let families see her"*. The
+                 * card contradicting itself about the one fact on this page that
+                 * decides whether a named person reaches a stranger. Found on the
+                 * live cohort: Joy A. is exactly that row, and the 17 Sep audit
+                 * had already measured that `discoverable` withholds somebody the
+                 * two-condition version would publish.
+                 *
+                 * `is_adult` is not tested here because it cannot be false — the
+                 * column is `NOT NULL` with `CONSTRAINT adults_only CHECK
+                 * (is_adult)` — but the other three are all real states an admin
+                 * can put a row into from this very page.
+                 */
+                const answerable =
+                  row.consent_status === "consented" &&
+                  row.active &&
+                  row.discoverable;
                 const open = openConsent === row.id;
                 /**
                  * Stage 1 employment context, assembled once. It is only ever read
@@ -219,6 +241,27 @@ export default function CaregiversPage() {
                 const benefits = row.benefits.filter(
                   (b) => b !== "none" && b !== "prefer_not_to_say",
                 );
+                /**
+                 * What the menu would hold, counted before it is drawn.
+                 *
+                 * Every branch inside the menu is repeated here, which is the
+                 * duplication this repo usually refuses — and the alternative
+                 * is worse in the way it was already wrong: a `<Menu>` cannot
+                 * ask how many children React gave it without rendering them,
+                 * so the trigger either knows this list or guesses. The 2 Sep
+                 * rule (*a count and the list it describes come from one
+                 * expression*) is honoured by keeping them adjacent and in the
+                 * same order, so a new item that forgets this line shows up as
+                 * an item that does not open.
+                 */
+                const menu = [
+                  ...NEXT_STATES[row.consent_status].filter((to) => to !== "consented"),
+                  ...(row.consent_status === "consented" ? ["switch"] : []),
+                  ...(row.consent_status === "consented" && row.active
+                    ? ["discoverable"]
+                    : []),
+                  ...(row.has_restricted_notes ? ["note"] : []),
+                ];
                 return (
                   <RecordCard
                     key={row.id}
@@ -250,15 +293,26 @@ export default function CaregiversPage() {
                           {CONSENT_STATE[row.consent_status]?.label ??
                             sentence(row.consent_status)}
                         </Badge>
-                        {answerable ? (
-                          <Badge
-                            tone="green"
-                          >
-                            Families can see her
-                          </Badge>
-                        ) : (
-                          <Badge tone="muted">Not shown to anyone</Badge>
-                        )}
+                        {/**
+                          * ⚠ **Only where it says something the badge to its
+                          * left does not** (21 Sep). Visibility needs consent
+                          * (invariant 1), so for `mentioned`, `invited`,
+                          * `declined` and `revoked` *"Not shown to anyone"* is
+                          * already implied by the status — two pills for one
+                          * fact, on every row that is not consented, which is
+                          * most of them. It is the double badge `/admin/demand`
+                          * was fixed for on 7 Sep, here.
+                          *
+                          * Once she **has** consented it carries the whole
+                          * distinction this page exists to make: consented and
+                          * switched off, against consented and discoverable.
+                          */}
+                        {row.consent_status === "consented" &&
+                          (answerable ? (
+                            <Badge tone="green">Families can see her</Badge>
+                          ) : (
+                            <Badge tone="muted">Not shown to anyone</Badge>
+                          ))}
                         {row.review_hold && (
                           <Badge
                             tone="gold"
@@ -310,7 +364,44 @@ export default function CaregiversPage() {
                           </Button>
                         )}
 
-                        {/* Everything that is not the main move, in one place. */}
+                        {/**
+                          * ⚠ **Before the menu, not after it** (21 Sep). The
+                          * order across this admin is primary → secondary →
+                          * danger → **menu last**, and this row had the menu
+                          * in the middle of two buttons — which is the
+                          * *"десь є одні кнопки, десь інші"* the developer
+                          * reported: nothing tells a reader whether the next
+                          * thing along is a button or a list of them.
+                          */}
+                        {row.review_hold && (
+                          <Button
+                            tone="danger"
+                            disabled={busy === row.id}
+                            subject={row.first_name}
+                            onClick={() => setReleasing(row.id)}
+                          >
+                            Release the hold…
+                          </Button>
+                        )}
+
+                        {/**
+                          * ⚠⚠ **A menu with nothing in it is not a menu, and
+                          * this one opened onto blank paper** (21 Sep,
+                          * reported). Every item below is conditional, and for
+                          * a caregiver who **withdrew** — `revoked`, which
+                          * `NEXT_STATES` makes terminal — all of them are
+                          * false at once: no state to move her to, no
+                          * visibility switches (those need `consented`), and
+                          * no private note unless one was written. So the row
+                          * offered a **More** button whose whole content was
+                          * nothing, on the one status where the honest answer
+                          * is that there is nothing left to do.
+                          *
+                          * The trigger is gone in that case rather than
+                          * disabled: a disabled control still says there is
+                          * something behind it.
+                          */}
+                        {menu.length > 0 && (
                         <Menu label={`More for ${row.first_name}`}>
                           {NEXT_STATES[row.consent_status]
                             .filter((to) => to !== "consented")
@@ -421,20 +512,17 @@ export default function CaregiversPage() {
                             </>
                           )}
                         </Menu>
-
-                        {row.review_hold && (
-                          <Button
-                            tone="danger"
-                            disabled={busy === row.id}
-                            onClick={() => setReleasing(row.id)}
-                          >
-                            Release the hold…
-                          </Button>
                         )}
                       </>
                     }
                   >
-                    <FactGrid>
+                    {/**
+                      * Two groups, because this card carries two subjects.
+                      * See FactGrid#title: ungrouped, *Pay* landed beside
+                      * *Consent evidence*, and those are not the same kind of
+                      * fact at all.
+                      */}
+                    <FactGrid title="What she offers">
                       <Fact label="Good with">
                         {row.good_with_bands
                           .map((b) => optionLabel(CAREGIVER_AGE_BANDS, b))
@@ -459,6 +547,15 @@ export default function CaregiversPage() {
                           ? optionLabel(CAREGIVER_PAY_BANDS, row.pay_band)
                           : null}
                       </Fact>
+                    </FactGrid>
+
+                    {/**
+                     * ⚠ The second group leads with the consent, and that is
+                     * the ordering rather than the grouping doing work: it is
+                     * the fact invariant 1 turns on, and ungrouped it was the
+                     * fourth cell of six — read after her hourly rate.
+                     */}
+                    <FactGrid title="What this nomination carries">
                       <Fact
                         label="Consent evidence"
                         hint={

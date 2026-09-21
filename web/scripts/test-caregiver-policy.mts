@@ -12,6 +12,8 @@
  * transports.
  */
 
+import fs from "node:fs";
+
 const c = (await import(`../lib/consent.ts?v=${Date.now()}`)) as typeof import("../lib/consent.ts");
 const s = (await import(`../lib/sms-templates.ts?v=${Date.now()}`)) as typeof import("../lib/sms-templates.ts");
 
@@ -327,6 +329,38 @@ ok(
   lbl.flagTitle(np.NAMED_PERSON_FLAG) === "This record is a person",
   lbl.flagTitle(np.NAMED_PERSON_FLAG),
 );
+
+/**
+ * ## 21 Sep — the admin's own reading of invariant 1
+ *
+ * The invariant is enforced where it has to be, in the WHERE clause of every
+ * answering query and in `caregivers_answerable`. What it was **not** enforced
+ * in is the sentence the admin reads off the card: that said `consented &&
+ * active` — two of the four — so a caregiver who agreed to be listed and
+ * declined to appear in answers was labelled *"Families can see her"* while
+ * her own menu offered *"Let families see her"*. Measured on the live cohort:
+ * Joy A. is exactly that row.
+ *
+ * A source check, because the branch is inside a React component this pure
+ * suite cannot render — the 15 Sep precedent.
+ */
+{
+  const page = fs.readFileSync(
+    new URL("../app/(admin)/admin/caregivers/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const predicate = page.slice(
+    page.indexOf("const answerable ="),
+    page.indexOf("const open = openConsent"),
+  );
+  ok(
+    "the admin calls a caregiver visible only on all of invariant 1's states",
+    /consent_status === "consented"/.test(predicate) &&
+      /row\.active/.test(predicate) &&
+      /row\.discoverable/.test(predicate),
+    "consent is not visibility — that is what the discoverable rung is for",
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

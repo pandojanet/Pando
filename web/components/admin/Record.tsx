@@ -164,11 +164,39 @@ export function RecordCard({
  * maintain, and — the part a table could not do — **a fact never gets narrower
  * than a readable line**, because the grid drops a column instead.
  */
-export function FactGrid({ children }: { children: ReactNode }) {
+export function FactGrid({
+  children,
+  /**
+   * What these facts have in common, when a record carries more than one kind.
+   *
+   * ⚠⚠ **Added 21 Sep, and it is a legibility fix rather than decoration.**
+   * `auto-fit` fills the row with whatever is next, so six facts about two
+   * different subjects came out interleaved by nothing but declaration order:
+   * on `/admin/caregivers`, *Pay* sat beside *Consent evidence* — one is what
+   * she charges and the other is whether she ever agreed to be listed at all,
+   * which is the single most consequential fact on the card (invariant 1). The
+   * developer's words for the result were *"багато розкиданих полів"*, and a
+   * grid cannot group what it was never told belongs together.
+   *
+   * ⚠ Omit it and nothing changes: a record whose facts are all one kind gets
+   * no heading, which is every other page today.
+   */
+  title,
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
   return (
-    <dl className="grid gap-x-6 gap-y-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
-      {children}
-    </dl>
+    <>
+      {title && (
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+          {title}
+        </p>
+      )}
+      <dl className="grid gap-x-6 gap-y-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
+        {children}
+      </dl>
+    </>
   );
 }
 

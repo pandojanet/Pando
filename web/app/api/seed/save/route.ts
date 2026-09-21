@@ -154,7 +154,7 @@ export async function POST(request: Request) {
   /* A card belonging to a named contributor is only stored once that contributor's
      number is verified — the cards sit on their phone until then. An anonymous
      contribution has no number to verify and no founding status. */
-  const gate = submitGate(request, { phone: contributorPhone });
+  const gate = await submitGate(request, { phone: contributorPhone });
   if (!gate.allowed) {
     console.info("[seed:save] blocked", { kind, reason: gate.reason });
     return NextResponse.json(

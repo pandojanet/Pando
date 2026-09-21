@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       .find((c) => c.startsWith(`${VERIFY_COOKIE}=`))
       ?.slice(VERIFY_COOKIE.length + 1) ?? null;
 
-  const result = checkVerification(id, code);
+  const result = await checkVerification(id, code);
 
   console.info("[seed:verify] check", {
     ok: result.ok,
@@ -47,7 +47,16 @@ export async function POST(request: Request) {
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, reason: result.reason, attempts_left: result.attempts_left },
-      { status: result.reason === "unknown" ? 404 : 422 },
+      /* 503 for an unreachable store, so a retry is the right response to it —
+         422 would tell the parent their code was wrong when it was right. */
+      {
+        status:
+          result.reason === "unavailable"
+            ? 503
+            : result.reason === "unknown"
+              ? 404
+              : 422,
+      },
     );
   }
 

@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const gate = submitGate(request, { phone });
+  const gate = await submitGate(request, { phone });
   if (!gate.allowed) {
     console.info("[caregiver:claim] blocked", { reason: gate.reason });
     return NextResponse.json(

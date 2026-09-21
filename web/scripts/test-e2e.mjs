@@ -151,6 +151,7 @@ head("1.10  the §19 lock: three wrong guesses, then the number is out");
   ok("a fresh code is refused while locked", again.status === 429 && again.json.reason === "locked");
   ok("and it says for how long", again.json.retry_in_seconds > 0, `${again.json.retry_in_seconds}s`);
   ok("even the right code is now refused", !((await s.post("/api/seed/verify/check", { code: st.json.dev_code })).json || {}).ok);
+
 }
 
 head("1.2 / 1.3  profile, and the graph derived from it");
@@ -442,6 +443,49 @@ await settleExtraction();
  * payload is a **revocation with a timestamp**, not an absence. §G asks for the
  * effective time of the change, and this is the only derived table in the profile
  * write that is upserted rather than rebuilt, for exactly that reason. */
+head("21 Sep  the verification and its lock are rows, not a process");
+{
+  const locked = `+1626555${RUN}9`;
+  /**
+   * ⚠⚠ **The lock is a row, and that is the whole of the 21 Sep change.**
+   *
+   * It lived in `globalThis` until then, so every deploy cleared it — and this
+   * app ships several times a day, which means the only thing between a
+   * six-digit code and somebody working through it was being reset by us,
+   * several times a day, with nothing anywhere saying so. Asserted against the
+   * table rather than through the endpoint, because the endpoint answers the
+   * same either way: what changed is where the answer comes from.
+   */
+  const lockRow = await sql`select until from phone_verification_locks where phone = ${locked}`;
+  ok(
+    "the lock is stored, so a deploy cannot clear it",
+    lockRow.length === 1 && new Date(lockRow[0].until).getTime() > Date.now(),
+    `${lockRow.length} row(s)`,
+  );
+  const spent = await sql`
+    select cardinality(sent_at) as sends, attempts from phone_verifications where phone = ${locked}`;
+  ok(
+    "and the sends it cost outlive the verification that spent them",
+    spent.length === 1 && Number(spent[0].sends) >= 1,
+    "a deleted row would forgive them and reset the hourly ceiling",
+  );
+}
+
+head("1.10  the confirmed verification is a record, not a process");
+{
+  /* The developer's report, twice: a saved profile, one answer changed, and a
+     fresh code demanded. The cookie was fixed on 17 Sep; this is the other
+     half — the record itself, which every deploy used to drop. */
+  const row = await sql`
+    select verified_at, expires_at from phone_verifications
+     where phone = ${PHONE} and verified_at is not null`;
+  ok(
+    "the code the parent confirmed is stored",
+    row.length >= 1,
+    "in memory it was gone at the next deploy, whatever the 12-hour constant said",
+  );
+}
+
 head("24 Aug  per-affiliation privacy: grant, keep, revoke");
 {
   const s = session();
@@ -1863,6 +1907,34 @@ await sql`delete from social_affinities where person_id = any(${ids}::uuid[])`;
 await sql`delete from life_relevance where person_id = any(${ids}::uuid[])`;
 await sql`delete from children where person_id = any(${ids}::uuid[])`;
 await sql`delete from people where id = any(${ids}::uuid[])`;
+/**
+ * ⚠⚠ **The verification record and the §19 lock, which became real rows on
+ * 21 Sep** (`drizzle/0048`) — and without this the suite locks *itself* out.
+ *
+ * `RUN` is `seconds % 900`, so two runs a quarter-hour apart share a phone
+ * number, and one of this suite's own checks deliberately burns three guesses
+ * to prove the lock works. While that lock lived in memory the next run only
+ * inherited it when the server had not restarted; now it is a row, so it would
+ * survive into the next run and refuse every code — failures scattered through
+ * whichever section happened to use that number, which is exactly the
+ * environment trap this file already documents twice.
+ *
+ * Keyed on the numbers this run used rather than on a person, because a
+ * verification deliberately has no person behind it until the code is
+ * confirmed (invariant 11) — the same reason the demand-signal cleanup below
+ * lists its questions literally.
+ *
+ * ⚠ Matched on this run's whole **family** of numbers rather than on `PHONE`
+ * and `CG_PHONE`: the walk also uses `…8`, `…9` and a `3 + i` series for the
+ * rate-limit and lock checks, and the first version of this listed the two it
+ * could see — measured mid-run, the two locks standing were on `…49` and
+ * `…39`, neither of them in that list. `RUN` is this run's own token, so the
+ * prefix cannot reach another run's rows, and a suffix somebody adds later is
+ * covered without anybody remembering this line.
+ */
+const family = `+1626555${RUN}%`;
+await sql`delete from phone_verifications where phone like ${family}`;
+await sql`delete from phone_verification_locks where phone like ${family}`;
 await sql`delete from referrals`;
 await sql`delete from admin_users where created_by = 'test:e2e' or name like 'auditadmin%'`;
 /**

@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   const limited = rateLimited(request, "verify_check");
   if (limited) return limited;
 
-  const verified = verifiedPhone(verifyCookie(request));
+  const verified = await verifiedPhone(verifyCookie(request));
   if (!verified) {
     return NextResponse.json(
       { ok: false, reason: "verification_required" },
