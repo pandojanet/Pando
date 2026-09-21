@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Wordmark } from "@/components/ui/Logo";
+import { PandoMark, Wordmark } from "@/components/ui/Logo";
 import {
   BackButton,
   Screen,
@@ -36,7 +36,7 @@ import type {
   Submission,
 } from "@/lib/seed-chat/types";
 import { caregiverInviteMessage } from "@/lib/caregiver-invite";
-import { DepthReminder } from "@/components/seed/ProfileDepth";
+import { ProfilePercentPill } from "@/components/seed/ProfileDepth";
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
@@ -80,9 +80,18 @@ export function ChatSeeding() {
   /* The neighborhood chips inside these scripts come from `market_options`;
      `optionsVersion` changes when that table loads, which is what rebuilds them. */
   const optionsVersion = useMarketOptions(session?.market_id ?? "pasadena");
+  /* A place the parent found on the map and an admin has not approved yet is
+     still where they live, so their cards can name it (21 Sep). Joined into a
+     string for the dependency list: a fresh array each render would rebuild
+     every script on every keystroke. */
+  const ownPlaces = (session?.answers.other?.neighborhood ?? []).join("|");
   const scripts = useMemo(
-    () => buildScripts(session?.market_id ?? "pasadena"),
-    [session?.market_id, optionsVersion],
+    () =>
+      buildScripts(
+        session?.market_id ?? "pasadena",
+        ownPlaces ? ownPlaces.split("|") : [],
+      ),
+    [session?.market_id, optionsVersion, ownPlaces],
   );
 
   useEffect(() => {
@@ -908,7 +917,12 @@ export function ChatSeeding() {
         left={
           <div className="flex items-center gap-1">
             <BackButton onClick={() => router.push("/profile")} />
-            <Wordmark />
+            {/* On a phone the header also carries the profile badge and the invite
+                link (21 Sep), and the full lockup overlapped them at 375px — so the
+                mark alone there, and the word from sm up. Wrappers, not classes on
+                Wordmark: its own flex and a hidden would fight in one layer. */}
+            <span className="sm:hidden"><PandoMark className="h-6" /></span>
+            <span className="hidden sm:block"><Wordmark /></span>
           </div>
         }
         /**
@@ -938,8 +952,16 @@ export function ChatSeeding() {
          * database rather than an address that would 404.
          */
         right={
-          session?.referral_code ? (
-            <ReferralHeaderInvite code={session.referral_code} />
+          /* 21 Sep, the developer: the profile percentage moves up here,
+             beside the invite link, and the optional-details button
+             that sat above the thread is gone. */
+          session ? (
+            <div className="flex items-center gap-2">
+              <ProfilePercentPill depth={depth} />
+              {session.referral_code && (
+                <ReferralHeaderInvite code={session.referral_code} />
+              )}
+            </div>
           ) : undefined
         }
       />
@@ -974,26 +996,6 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
-
-        {/**
-          * ⚠ **Above the thread, and only while there is something to add.**
-          *
-          * The developer, 16 Sep: *"і на сторінці share також відображати
-          * зверху, що потрібно заповнити профіль для максимальної якості
-          * відповідей"*. This is the screen a contributor sits on, so it is
-          * where a thin profile is worth mentioning — and `href` points at
-          * `/profile`, which opens on the **review** for a saved profile
-          * (7 Sep), so "add more detail" lands on the list of what is missing
-          * rather than at question one.
-          *
-          * It disappears at 100%: a banner that cannot be acted on is the
-          * *"Nothing waiting" over twenty-two open flags* fault in the other
-          * direction — chrome that has stopped meaning anything, on the screen
-          * whose whole job is the conversation below it.
-          */}
-        {session && depth.percent < 100 && (
-          <DepthReminder depth={depth} href="/profile" className="mb-4" />
-        )}
 
         <div className="space-y-2.5">
           {chat.messages.map((message) =>

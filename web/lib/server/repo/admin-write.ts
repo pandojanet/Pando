@@ -1197,14 +1197,62 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         }
       }
 
+      /**
+       * A card may already name this place (21 Sep): a parent whose own town is
+       * pending can say an activity is there, and the record then carries the
+       * name they were shown. Promotion swaps that name for the slug, so the
+       * record matches like every other in the town — case- and space-blind,
+       * for the same reason as the duplicate rows above.
+       */
+      if (category === "neighborhoods") {
+        await tx.execute(
+          sql`update shares s
+              set neighborhoods = (
+                select coalesce(array_agg(distinct case
+                         when lower(btrim(n)) = lower(btrim(${submitted})) then ${slug}
+                         else n end), '{}')
+                from unnest(s.neighborhoods) n)
+              where s.market_id = ${market}
+                and exists (select 1 from unnest(s.neighborhoods) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))`,
+        );
+      }
+
       return { applied: true, resource: "market_option", resource_id: target };
     }
 
     case "option.reject": {
       const target = id(b.id);
-      await tx.execute(
-        sql`update pending_options set status = 'rejected' where id = ${target}::uuid`,
-      );
+      const [rejected] = (await tx.execute(
+        sql`update pending_options set status = 'rejected' where id = ${target}::uuid
+            returning market_id, category, submitted_value`,
+      )) as unknown as Array<Record<string, unknown>>;
+
+      /**
+       * The other half of the 21 Sep rule: a place nobody approved does not stay
+       * on the records that named it. Removed only when no *other* pending or
+       * approved row still carries the same value — two parents in one new town
+       * are one judgement, and rejecting one of their rows must not strip a
+       * place the other is still waiting on.
+       */
+      if (rejected && rejected.category === "neighborhoods") {
+        const market = rejected.market_id as string;
+        const submitted = rejected.submitted_value as string;
+        await tx.execute(
+          sql`update shares s
+              set neighborhoods = (
+                select coalesce(array_agg(n), '{}') from unnest(s.neighborhoods) n
+                where lower(btrim(n)) <> lower(btrim(${submitted})))
+              where s.market_id = ${market}
+                and exists (select 1 from unnest(s.neighborhoods) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))
+                and not exists (
+                  select 1 from pending_options p
+                  where p.market_id = ${market} and p.category = 'neighborhoods'
+                    and p.status in ('pending', 'approved')
+                    and lower(btrim(p.submitted_value)) = lower(btrim(${submitted})))`,
+        );
+      }
       return { applied: true, resource: "pending_option", resource_id: target };
     }
 

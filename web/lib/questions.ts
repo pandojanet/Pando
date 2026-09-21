@@ -1072,7 +1072,10 @@ export const ALL_SCREENS: Screen[] = [
      * which is `mayBeNamed` on screen. It is the strongest promise this screen
      * makes and it was enforced in three layers of code and printed in none.
      */
-    help: "Select all that apply — every one is optional. Adding a place means your family takes part; it is not a recommendation. Faith communities, private clubs and other sensitive affiliations are used only for private matching and are never named to other parents.",
+    /* ⚠ 21 Sep, the developer: *"Перший абзац взагалі повністю прибери"* —
+       so the screen carries no help line. The two rules it stated (adding a
+       place is not a recommendation; sensitive affiliations are never named)
+       are still enforced in code; they are simply no longer printed here. */
     questions: [
       {
         id: "schools",

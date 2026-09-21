@@ -88,8 +88,31 @@ const TIP_TOPICS: Option[] = [
   { id: "health", label: "Doctors & health" },
 ];
 
-export function buildScripts(market: MarketId): Record<ShareKind, Script> {
-  const neighborhoods: Option[] = marketOptions(market, "neighborhoods");
+export function buildScripts(
+  market: MarketId,
+  ownPlaces: readonly string[] = [],
+): Record<ShareKind, Script> {
+  /**
+   * The town list for a card, plus the parent's **own** place when it is not on
+   * the market's list yet (21 Sep, the developer: a parent who lives in Detroit
+   * must be able to say an activity is in Detroit).
+   *
+   * That place is the name Google resolved on the neighborhood question, waiting
+   * in `pending_options` for an admin (invariant 9). Offering it here stores the
+   * same canonical name on the record — and `option.promote` swaps it for the
+   * admin's slug, while `option.reject` removes it, so a record never keeps a
+   * place nobody approved. It is appended after the curated towns, and only
+   * when no curated option already carries that name.
+   */
+  const curated: Option[] = marketOptions(market, "neighborhoods");
+  const known = new Set(curated.map((o) => o.label.trim().toLowerCase()));
+  const neighborhoods: Option[] = [
+    ...curated,
+    ...ownPlaces
+      .map((p) => p.trim())
+      .filter((p) => p !== "" && !known.has(p.toLowerCase()))
+      .map((p) => ({ id: p, label: p })),
+  ];
 
   return {
     /**

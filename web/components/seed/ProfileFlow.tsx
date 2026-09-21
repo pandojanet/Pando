@@ -15,7 +15,7 @@ import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import {
-  DepthReminder,
+  ProfileToast,
   ProfilePercentBar,
   ProfilePercentLabel,
   ProfilePercentPill,
@@ -1476,9 +1476,10 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
-            {/* The argument, above the answers it is about. Since 17 Sep it is
-                the whole of the reminder on this screen — see `part="lead"`. */}
-            <DepthReminder depth={profileDepth(answers)} part="lead" className="mt-3" />
+            {/* 21 Sep, the developer: the "N questions still to answer…"
+                paragraph is gone in full, and a pop-up saying how far the
+                profile is from complete takes its place. */}
+            <ProfileToast depth={profileDepth(answers)} />
 
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than

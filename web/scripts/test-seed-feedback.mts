@@ -1468,10 +1468,14 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
     /Founding Contributor/.test(join) && !/Founding contributor/.test(join),
     "one capitalisation, not the current mixture",
   );
+  /* 21 Sep, the developer: the market line above the heading is gone too, so
+     the screen names no town at all — and never one town standing for the
+     market, which is what this check was written against. */
   ok(
-    "and San Gabriel Valley, not one town in it",
-    /San Gabriel Valley/.test(join) && !/Founding network · Pasadena/.test(join),
-    "seventeen towns are on offer; Pasadena is one of them",
+    "the join screen names no single town as the market",
+    !/Founding network · Pasadena/.test(join) &&
+      !/<Eyebrow>Founding Contributor · San Gabriel Valley<\/Eyebrow>/.test(join),
+    "the market eyebrow was removed on 21 Sep",
   );
 
   /* Blast is off every surface a parent reads. */
@@ -2139,7 +2143,7 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   );
   ok(
     "and the pill itself is not behind it",
-    /right=\{\s*session\?\.referral_code \? \(/.test(chat),
+    /\{session\.referral_code && \(\s*<ReferralHeaderInvite/.test(chat) && !/hasSavedRecommendation && \(\s*<ReferralHeaderInvite/.test(chat),
     "the invite link is on /share whenever Pando has one to give",
   );
 
@@ -2242,16 +2246,13 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     rewards.REWARD_OFFER,
   );
 
-  /* The circles screen states the two rules it enforces. */
+  /* 21 Sep, the developer: the circles screen's first paragraph is removed
+     in full. It stated two rules the code still enforces; the screen no
+     longer prints them. */
   const circles = screenById("communities")?.help ?? "";
   ok(
-    "adding a place is not a recommendation, and the screen says so",
-    /not a recommendation/i.test(circles),
-    circles,
-  );
-  ok(
-    "and that sensitive affiliations are never named to another parent",
-    /never named to other parents/i.test(circles),
+    "the circles screen carries no screen-level help paragraph",
+    circles === "",
     circles,
   );
   /* Once, under the first field only. `SEARCHABLE_QUESTIONS` is private, so
@@ -2680,52 +2681,37 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
 }
 
 /**
- * ## 17 Sep — the reminder stopped rhyming with Save
+ * ## 21 Sep — the review reminder is a pop-up, and /share lost its button
  *
- * The developer: *"під час редагування профілю не має бути опції Complete
- * Profile і спробуй її переназвати, бо вона співзвучна з Save Profile. Також
- * спробуй збільшити шрифт, додати більше акценту…"*
+ * The developer: remove the "N questions still to answer…" paragraph from the
+ * review page and replace it with a pop-up saying how much is left; move the
+ * percentage on /share into the header beside the invite link, and drop the
+ * "Add optional details" button. (This replaces the 17 Sep checks, which
+ * pinned the paragraph and the button.)
  *
- * Read on the **source**, because all three are branches inside React
- * components this pure suite cannot render — which is the same reason the
- * 16 Sep `reviewScreens` checks live there.
+ * Read on the **source**, because all of it is React this suite cannot render.
  */
 {
   const src = (f: string) => fs.readFileSync(new URL(f, import.meta.url), "utf8");
   const flow = src("../components/seed/ProfileFlow.tsx");
   const depth = src("../components/seed/ProfileDepth.tsx");
-  const dock = flow.slice(flow.indexOf("Save my profile"), flow.indexOf("Delete sits directly under Save"));
+  const chat = src("../components/seed/chat/ChatSeeding.tsx");
 
+  ok("the review paragraph is gone", !depth.includes("{depth.total - depth.answered}"));
+  ok("and nothing renders the old reminder", !/DepthReminder/.test(flow + chat + depth));
+  ok("the review page shows the pop-up instead", /<ProfileToast /.test(flow));
   ok(
-    "the review dock offers nothing that opens the questions",
-    !/<DepthReminder/.test(dock),
-    dock.slice(0, 120),
+    "the pop-up is portalled, because a fixed element inside an animated wrapper is clipped",
+    /createPortal\(/.test(depth) && /document\.body/.test(depth),
   );
   ok(
-    "and the review's own reminder is the emphasised one, with no control",
-    /part="lead"/.test(flow) && !/part="note"/.test(flow),
+    "and it is announced through a region already in the document",
+    /role="status"/.test(depth.slice(depth.indexOf("export function ProfileToast"))),
   );
+  ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
   ok(
-    "the control no longer rhymes with Save my profile",
-    !depth.includes(">Complete your profile<"),
-  );
-  /* Not new copy: it is the optional fork's own label, and this control does
-     literally what that button does. */
-  ok(
-    "it borrows the fork's own words instead",
-    depth.includes(">Add optional details<") &&
-      Object.values(q.SCREENS).some(() => true) &&
-      src("../lib/questions.ts").includes('detailLabel: "Add optional details"'),
-  );
-  ok(
-    "the argument is set at body size rather than as a footnote",
-    /part === "lead" \? \(/.test(depth) && /text-body/.test(depth),
-  );
-  /* It names the work rather than the score: the percentage is already on that
-     screen twice, in the header label and the bar under it. */
-  ok(
-    "and it counts what is left rather than repeating the percentage",
-    depth.includes("still to answer"),
+    "and its header carries the profile percentage beside the invite link",
+    /<ProfilePercentPill depth=\{depth\} \/>[\s\S]{0,160}<ReferralHeaderInvite/.test(chat),
   );
 }
 

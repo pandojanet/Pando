@@ -623,8 +623,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
          * Sep rule about how it had to be *worded* went with it.
          */}
         <div className="animate-rise">
-          <Eyebrow>Founding Contributor · San Gabriel Valley</Eyebrow>
-          <h1 className="mt-3 font-display text-[1.7rem] font-extrabold leading-[1.08]">
+          <h1 className="font-display text-[1.7rem] font-extrabold leading-[1.08]">
             Your number, and you&apos;re in.
           </h1>
           {/**
@@ -679,12 +678,9 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               Terms
             </InlineAction>
           </p>
-          <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
-            Pando is a text line for San Gabriel Valley parents. Tell us the
-            classes, camps and caregivers you&apos;d actually vouch for —{" "}
-            <strong className="font-semibold text-ink">about two minutes</strong>,
-            and it&apos;s tapping rather than typing.
-          </p>
+          {/* 21 Sep, the developer: the "Pando is a text line for San Gabriel
+              Valley parents…" paragraph is gone — the dock's own "about two
+              minutes" says the one thing in it a parent acts on. */}
         </div>
 
         {/**

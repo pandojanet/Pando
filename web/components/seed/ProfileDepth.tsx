@@ -1,6 +1,9 @@
 "use client";
 
-import { TextAction } from "@/components/ui/TextAction";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
+import { usePresence } from "@/lib/use-presence";
 import type { ProfileDepth } from "@/lib/questions";
 
 /**
@@ -73,13 +76,18 @@ export function ProfilePercentLabel({ depth }: { depth: ProfileDepth }) {
  * profile is filled in — so the pill names its subject and what the number
  * measures ("Profile 60% complete"), or the two read as one measure said twice
  * and disagreeing. "Profile 60%" alone was reported (21 Sep) as not saying
- * what the 60% was of. Green on the wash,
- * never gold: a thin profile is not something pending or wrong.
+ * what the 60% was of. Green, never gold: a thin profile is not something
+ * pending or wrong.
+ *
+ * ⚠ **Solid, not a wash** (21 Sep, the developer: *"він зливається з
+ * контентом"*). Green-wash on the paper header measured as one surface, so
+ * the one number meant to be noticed was the easiest thing on the screen to
+ * miss. White on green-deep is ~8:1 and reads as a badge rather than a tint.
  */
 export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
   return (
     <span
-      className="rounded-full bg-green-wash px-2.5 py-0.5 font-semibold text-green-deep text-dock tabular-nums"
+      className="whitespace-nowrap rounded-full bg-green-deep px-2.5 py-1 font-semibold text-white text-dock tabular-nums shadow-sm"
       aria-label={`Profile ${depth.percent}% filled in`}
     >
       Profile {depth.percent}% complete
@@ -88,108 +96,85 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
- * *"20% done — the stronger your profile, the better your matches,"* with a
- * direct path to complete it (16 Sep). One line and one action, so it fits the
- * review page's minimal-text rule and the top of `/share` alike.
+ * A pop-up on arriving at the review page: how far the profile is from full,
+ * to get a parent to fill in the rest (21 Sep). It replaced the paragraph that
+ * sat under "Does this look right?" — *"6 questions still to answer. Pando
+ * matches you on…"* — which the developer had removed in full.
  *
- * Exactly one of `onComplete` (the review page, which can jump straight to the
- * first unanswered question) or `href` (anywhere else). Renders nothing at 100%:
- * a reminder that cannot be acted on is chrome.
+ * ⚠⚠ **It promises relevance and never access.** The client's appendix is that
+ * P14 alone gates Community Access, and `profileCompleteness` has carried
+ * *"informational only — it never gates anything"* since it was written.
  *
- * ## `part`, and what each value is for
+ * Four rules:
  *
- * `both` is `/share`: the percentage, the argument and the way back to the
- * questions, in one block above the thread.
- *
- * `lead` is the review screen, and it carries **no percentage and no control**.
- * ⚠⚠ **Both absences are deliberate and each reverses something.** The number
- * is on that screen twice already — `ProfilePercentLabel` in the header slot
- * and `ProfilePercentBar` under it — so a third saying of it was the one thing
- * the 16 Sep dock note had already complained about, and spending the line on
- * the argument instead is what the developer asked for on 17 Sep: *"більше
- * акценту на тому, що потрібно заповнити профіль, можливо доповни текст"*. And
- * the control is gone from that screen entirely — see `action` below.
- *
- * `action` is the control alone. It has no caller since 17 Sep and is kept:
- * the day a surface wants the reminder split across a screen again, this is the
- * half that goes in the dock, and `/share` proves the other half still works.
- *
- * ⚠ The 100% rule is checked once, here, for every part — a build that rendered
- * the sentence and hid the control, or the reverse, is the fault this split
- * most easily introduces.
+ * - **Portalled to `body`.** It is `position: fixed`, and the review page sits
+ *   inside an animated wrapper — a filled animation makes its element the
+ *   containing block for `fixed` (the 5 Aug bug), so a toast rendered in place
+ *   would be clipped to the review column.
+ * - **Announced through a region that is already in the document.** The
+ *   portal mounts together with its text, and a region that arrives with its
+ *   message announces nothing (`TypingDots`, `CopyButton`) — so an in-flow
+ *   `sr-only` status line carries the words and the visual toast is hidden
+ *   from the accessibility tree.
+ * - **Decided once, on arrival.** Whether it shows is read at mount; editing
+ *   an answer and coming back is a new arrival and it shows again, which is
+ *   the moment a parent is deciding whether they are done.
+ * - **It leaves on its own and can be sent away.** Eight seconds, or the X —
+ *   a message that cannot be dismissed is a banner that covers the header.
  */
-export function DepthReminder({
-  depth,
-  onComplete,
-  href,
-  part = "both",
-  className,
-}: {
-  depth: ProfileDepth;
-  onComplete?: () => void;
-  href?: string;
-  part?: "both" | "lead" | "action";
-  className?: string;
-}) {
-  if (depth.total === 0 || depth.answered >= depth.total) return null;
+export function ProfileToast({ depth }: { depth: ProfileDepth }) {
+  const [open, setOpen] = useState(false);
+  const shown = usePresence(open, 220);
+  const initial = useRef(depth);
+  const { percent } = initial.current;
+  const complete = initial.current.total === 0 || percent >= 100;
+
+  useEffect(() => {
+    if (complete) return;
+    const show = window.setTimeout(() => setOpen(true), 450);
+    const hide = window.setTimeout(() => setOpen(false), 8450);
+    return () => {
+      window.clearTimeout(show);
+      window.clearTimeout(hide);
+    };
+  }, [complete]);
+
+  if (complete) return null;
+  const message = `Your profile is ${percent}% complete — ${100 - percent}% to go.`;
+  const why =
+    "Fill in the rest and Pando can match you with parents whose experience is closest to yours.";
+
   return (
-    <div className={className}>
-      {part === "lead" ? (
-        /**
-         * Body size rather than help size, because this is the argument the
-         * screen is making and not a footnote to it — 16.5px against 14px, the
-         * step the design system calls body.
-         *
-         * ⚠ **It counts what is left rather than what is done**, which is the
-         * same fact said as something to act on: "14 questions still to
-         * answer" names the work, where "30% done" names a score, and the
-         * score is already in the header twice.
-         *
-         * ⚠⚠ **It promises relevance and never access.** The client's own
-         * appendix is that P14 is the only thing gating Community Access, and
-         * `profileCompleteness` has carried *"informational only — it never
-         * gates anything"* since it was written. Everything claimed here is
-         * what `matchesFor` literally scores: the area, the children's ages,
-         * the shared connections, then life relevance.
-         */
-        <p className="leading-relaxed text-body">
-          <span className="font-semibold text-green-deep tabular-nums">
-            {depth.total - depth.answered} question
-            {depth.total - depth.answered === 1 ? "" : "s"} still to answer.
-          </span>{" "}
-          Pando matches you on what it knows about your family — your area, your
-          children&apos;s ages, what you have already navigated. Each answer you add
-          brings back parents whose experience is closer to yours.
-        </p>
-      ) : (
-        part !== "action" && (
-          <p className="leading-relaxed text-help text-muted">
-            <span className="font-semibold text-green-deep tabular-nums">
-              {depth.percent}% done
-            </span>
-            {" — the stronger your profile, the better your matches."}
-          </p>
-        )
-      )}
-      {/**
-        * ⚠ **"Add optional details", and the rename is the whole point of it**
-        * (17 Sep, the developer: *"спробуй її переназвати, бо вона співзвучна з
-        * Save Profile"*). It read *"Complete your profile"* and sat directly
-        * under **Save my profile** — two controls a syllable apart, one of them
-        * ending the flow and the other opening fourteen more questions.
-        *
-        * The new words are **not new copy**: they are the label the optional
-        * fork itself carries (`detailLabel` in `questions.ts`, the client's own
-        * 10 Sep round), and this control does literally that — it sets
-        * `wants_detail` and walks the optional screens. So the two places a
-        * parent is offered the same act now offer it in the same words.
-        */}
-      {part !== "lead" &&
-        (href ? (
-          <TextAction href={href}>Add optional details</TextAction>
-        ) : (
-          <TextAction onClick={onComplete}>Add optional details</TextAction>
-        ))}
-    </div>
+    <>
+      <p className="sr-only" role="status">
+        {open ? `${message} ${why}` : ""}
+      </p>
+      {shown &&
+        createPortal(
+          <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center px-4">
+            <div
+              aria-hidden="true"
+              className={`pointer-events-auto flex w-full max-w-[26rem] items-start gap-2 rounded-2xl bg-green-deep py-3 pl-4 pr-1 text-white shadow-card ${
+                open ? "animate-rise" : "animate-fade-out"
+              }`}
+            >
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold leading-snug text-control tabular-nums">{message}</p>
+                <p className="mt-1 leading-snug text-help text-white/85">{why}</p>
+              </div>
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setOpen(false)}
+                className="grid size-11 shrink-0 place-items-center rounded-full text-white/85 hover:text-white"
+              >
+                <X size={18} aria-hidden />
+                <span className="sr-only">Dismiss</span>
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

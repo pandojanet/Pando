@@ -166,7 +166,10 @@ async function writeShareCard(
         kind: input.kind,
         name,
         venue: str(f.venue),
-        neighborhoods: strArray(f.neighborhoods ?? f.neighborhood),
+        /* `location` is what the activity and place cards actually send — the
+           town step's id. It was never read here, so a town a parent tapped was
+           stored in `submissions.fields` and on no record (found 21 Sep). */
+        neighborhoods: strArray(f.neighborhoods ?? f.neighborhood ?? f.location),
         ageBands: strArray(f.age_bands),
         placeType: str(f.place_type),
         topic: str(f.topic),
