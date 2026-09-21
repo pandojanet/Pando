@@ -2708,6 +2708,19 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     "and it is announced through a region already in the document",
     /role="status"/.test(depth.slice(depth.indexOf("export function ProfileToast"))),
   );
+  /* 21 Sep: *"чому він не збоку, тобто в правому нижньому куті"*. Two halves,
+     and they fail independently — the anchor is CSS and the clearance is the
+     measurement that keeps it off **Save my profile**, which is the one thing
+     this pop-up must never cover. */
+  const toast = depth.slice(depth.indexOf("export function ProfileToast"));
+  ok(
+    "the pop-up sits in the bottom-right corner",
+    /sm:right-4/.test(toast) && /justify-end/.test(toast) && !/top-3/.test(toast),
+  );
+  ok(
+    "and it is held clear of the dock by measuring it, not by guessing a height",
+    /data-screen-dock/.test(toast) && /innerHeight - dock\.top/.test(toast),
+  );
   ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
   ok(
     "and its header carries the profile percentage beside the invite link",

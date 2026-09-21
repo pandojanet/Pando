@@ -105,12 +105,26 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
  * P14 alone gates Community Access, and `profileCompleteness` has carried
  * *"informational only — it never gates anything"* since it was written.
  *
- * Four rules:
+ * Five rules:
  *
  * - **Portalled to `body`.** It is `position: fixed`, and the review page sits
  *   inside an animated wrapper — a filled animation makes its element the
  *   containing block for `fixed` (the 5 Aug bug), so a toast rendered in place
  *   would be clipped to the review column.
+ * - **Bottom right, above the dock** (21 Sep, the developer: *"чому він не
+ *   збоку, тобто в правому нижньому куті, де якраз пустий кут"*). Across the
+ *   top it sat over the header — the one place on this screen that carries the
+ *   same number twice, in the label and the bar — and on a laptop the bottom
+ *   right really is empty paper beside the centred column.
+ *
+ *   ⚠ **On a phone that corner is the dock**, so the offset is measured rather
+ *   than guessed: `window.innerHeight - dock.top` is the dock's height while
+ *   it is pinned at the foot of the window, zero or less while it is static
+ *   and below the fold on a laptop, and its visible part on a laptop scrolled
+ *   to the end — one expression for all three. Re-measured on scroll and
+ *   resize, because the last of those moves while the toast is up, and eased,
+ *   so it glides rather than jumps. Covering **Save my profile** is the one
+ *   thing this must never do.
  * - **Announced through a region that is already in the document.** The
  *   portal mounts together with its text, and a region that arrives with its
  *   message announces nothing (`TypingDots`, `CopyButton`) — so an in-flow
@@ -122,8 +136,11 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
  * - **It leaves on its own and can be sent away.** Eight seconds, or the X —
  *   a message that cannot be dismissed is a banner that covers the header.
  */
+const TOAST_GAP = 12;
+
 export function ProfileToast({ depth }: { depth: ProfileDepth }) {
   const [open, setOpen] = useState(false);
+  const [floor, setFloor] = useState(TOAST_GAP);
   const shown = usePresence(open, 220);
   const initial = useRef(depth);
   const { percent } = initial.current;
@@ -139,6 +156,24 @@ export function ProfileToast({ depth }: { depth: ProfileDepth }) {
     };
   }, [complete]);
 
+  useEffect(() => {
+    if (!shown) return;
+    const measure = () => {
+      const dock = document
+        .querySelector("[data-screen-dock]")
+        ?.getBoundingClientRect();
+      const covered = dock ? window.innerHeight - dock.top : 0;
+      setFloor(TOAST_GAP + Math.max(0, covered));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+    };
+  }, [shown]);
+
   if (complete) return null;
   const message = `Your profile is ${percent}% complete — ${100 - percent}% to go.`;
   const why =
@@ -151,11 +186,14 @@ export function ProfileToast({ depth }: { depth: ProfileDepth }) {
       </p>
       {shown &&
         createPortal(
-          <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center px-4">
+          <div
+            className="pointer-events-none fixed inset-x-3 z-50 flex justify-end transition-[bottom] duration-300 ease-out sm:inset-x-auto sm:right-4"
+            style={{ bottom: floor }}
+          >
             <div
               aria-hidden="true"
-              className={`pointer-events-auto flex w-full max-w-[26rem] items-start gap-2 rounded-2xl bg-green-deep py-3 pl-4 pr-1 text-white shadow-card ${
-                open ? "animate-rise" : "animate-fade-out"
+              className={`pointer-events-auto flex w-full max-w-[23rem] items-start gap-2 rounded-2xl bg-green-deep py-3 pl-4 pr-1 text-white shadow-card ${
+                open ? "animate-rise" : "animate-sink"
               }`}
             >
               <div className="min-w-0 flex-1">
