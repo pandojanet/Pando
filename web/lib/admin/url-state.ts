@@ -45,6 +45,42 @@ import { useSearchParams } from "next/navigation";
  * built from, so a tab that is removed later cannot leave a link pointing at a
  * filter nothing can render.
  */
+/**
+ * The same three rules, for a value with no list to check it against.
+ *
+ * `useUrlFilter` validates against the pills it is drawn from, which is right
+ * for a tab and impossible for a **place**: the cities come from the database,
+ * so the allowed set is whatever the market happens to hold today. Validating
+ * a slug against the rows would also mean falling back to "everything" while
+ * the first fetch is still in flight — i.e. a shared link quietly showing the
+ * unfiltered page.
+ *
+ * So the value is carried as typed and the *page* decides what it means. An
+ * unknown one lists nothing and says so with a way out, which is the honest
+ * answer to a stale link and the one thing a silent fallback cannot give.
+ */
+export function useUrlValue(
+  key: string,
+): [string | null, (next: string | null) => void] {
+  const params = useSearchParams();
+  const [value, setValue] = useState<string | null>(
+    () => params.get(key) || null,
+  );
+
+  const set = useCallback(
+    (next: string | null) => {
+      setValue(next);
+      const url = new URL(window.location.href);
+      if (next) url.searchParams.set(key, next);
+      else url.searchParams.delete(key);
+      window.history.replaceState(null, "", url);
+    },
+    [key],
+  );
+
+  return [value, set];
+}
+
 export function useUrlFilter<T extends string>(
   allowed: readonly T[],
   fallback: T,

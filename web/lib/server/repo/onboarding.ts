@@ -167,10 +167,24 @@ export async function saveClarification(input: {
          not. `expecting` (-1) becomes this year, which is what the questionnaire
          already assumes. */
       const birthYear = new Date().getFullYear() - Math.max(0, age);
+      /**
+       * ⚠⚠ **`on conflict do nothing` stood here and guarded nothing** (21 Sep).
+       *
+       * It reads as the defence against writing the same child twice, and
+       * `children` has **no unique key to conflict on** — deliberately, because
+       * the client's own rule is one row per child with duplicate birth years
+       * allowed (10 Sep, twins). So the clause matched no arbiter and every
+       * call inserted. Measured live: one four-year-old, three rows.
+       *
+       * The real duplicate was upstream — a clarifying question nothing ever
+       * closed — and it is closed there, against the profile, where the fact
+       * being known is what ends the exchange. A clause that looks like a
+       * second line of defence and is not is worse than no clause, so it is
+       * gone rather than left reassuring the next reader.
+       */
       await db.execute(sql`
         insert into children (person_id, birth_year)
         values (${input.personId}::uuid, ${birthYear})
-        on conflict do nothing
       `);
       return true;
     });

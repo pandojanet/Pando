@@ -1524,19 +1524,29 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
   );
   ok(
     "a single-select screen advances itself",
-    /autoAdvances/.test(flow) && /AUTO_ADVANCE_MS/.test(flow),
+    /completesScreen/.test(flow) && /AUTO_ADVANCE_MS/.test(flow),
     "Auto-advance single-select screens",
   );
-  /* Three exclusions now, and the whole of why this is safe. The fourth was
-     "no consent under this screen", which went with the second consent
-     checkbox on 10 Sep — an exclusion for a control that no longer exists is
-     a rule nobody can violate. */
+  /**
+   * The exclusions, and the whole of why this is safe. Two have changed hands
+   * since:
+   *
+   * - *"no consent under this screen"* went with the second consent checkbox
+   *   on 10 Sep — an exclusion for a control that no longer exists is a rule
+   *   nobody can violate.
+   * - ⚠⚠ *"one question on the screen"* went on **21 Sep**, and this check had
+   *   to be rewritten rather than left standing: it read
+   *   `questions.length === 1` against the **whole file**, so with the rule
+   *   replaced it went on passing against the comment recording the
+   *   replacement. That is the mirror of the rail check above, which failed on
+   *   a sentence saying what used to be there — a source check has to read the
+   *   rule, not the prose around it. What replaces it is the 21 Sep block at
+   *   the foot of this file, which reads the function's own body.
+   */
   ok(
     "but never where the tap is not the whole answer",
-    /questions\.length === 1/.test(flow) &&
-      /!isLast/.test(flow) &&
-      /perSelectionStatus/.test(flow),
-    "one question, no follow-up tap, not the review",
+    /!isLast/.test(flow) && /perSelectionStatus/.test(flow),
+    "no follow-up tap, not the review",
   );
   ok(
     "and the participation screen no longer carries a second consent",
@@ -2716,6 +2726,78 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ok(
     "and it counts what is left rather than repeating the percentage",
     depth.includes("still to answer"),
+  );
+}
+
+/**
+ * ## 21 Sep — a screen advances when the tap finishes it
+ *
+ * The developer: *"коли вибирається neighborhood по zip-code, то воно не
+ * перекидає на наступну сторінку, а в інших випадках перекидає."*
+ *
+ * The rule was `questions.length === 1`, so her §5 ZIP follow-up switched
+ * auto-advance off for exactly the parents it asks twice — Altadena moved on
+ * its own, Pasadena did not. Read on the **source**, because the rule is a
+ * branch in a React component this pure suite cannot render (the 16 Sep
+ * `reviewScreens` precedent), plus the data facts that make it reachable.
+ */
+{
+  const flowSrc = fs.readFileSync(
+    new URL("../components/seed/ProfileFlow.tsx", import.meta.url),
+    "utf8",
+  );
+  const rule = flowSrc.slice(
+    flowSrc.indexOf("const completesScreen"),
+    flowSrc.indexOf("function setSelections"),
+  );
+
+  ok(
+    "the advance is decided by what is still unanswered, not by a count",
+    rule.length > 0 && !rule.includes("questions.length === 1"),
+    "a count leaves a parent with a ZIP follow-up on a finished screen",
+  );
+  ok(
+    "a sibling still waiting for an answer holds the screen",
+    rule.includes("q.id === question.id || isQuestionAnswered(q, answers)"),
+  );
+  /* ⚠ The half that keeps all four of the 9 Sep merges where they were: a
+     multi is "answered" on its first tap while the parent may mean three. */
+  ok(
+    "a screen holding a multi-select never advances itself",
+    rule.includes('questions.every((q) => q.kind === "single")'),
+  );
+  ok(
+    "and a tap that opens a question still cancels the advance it armed",
+    flowSrc.includes("if (visibleNow > visibleCount.current) clearAutoAdvance();"),
+  );
+
+  /* The data behind it: the neighborhood screen really is the two-single case
+     and the follow-up really is conditional. A screen with one question either
+     way would make every check above vacuous. */
+  const where = q.ALL_SCREENS.find((sc) => sc.id === "neighborhood")!;
+  ok(
+    "the neighborhood screen asks two single-select questions",
+    where.questions.length === 2 &&
+      where.questions.every((one) => one.kind === "single"),
+  );
+  const blank = { ...q.EMPTY_ANSWERS, other: {}, skipped: [] };
+  ok(
+    "a one-ZIP town leaves one question on the screen",
+    q.visibleQuestions(where, {
+      ...blank,
+      neighborhood: "altadena",
+      home_place: "altadena",
+    }).length === 1,
+  );
+  ok(
+    "a six-ZIP town leaves two, and the second is the one that finishes it",
+    q.visibleQuestions(where, {
+      ...blank,
+      neighborhood: "pasadena",
+      home_place: "pasadena",
+    })
+      .map((one) => one.id)
+      .join(",") === "neighborhood,home_zip",
   );
 }
 

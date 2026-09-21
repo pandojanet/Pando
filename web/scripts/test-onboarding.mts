@@ -7,6 +7,8 @@
  * about the data looks broken afterwards.
  */
 
+import fs from "node:fs";
+
 const o = (await import(`../lib/onboarding.ts?v=${Date.now()}`)) as typeof import("../lib/onboarding.ts");
 
 let pass = 0;
@@ -134,6 +136,61 @@ ok(
   o.questionFromTemplate("answer") === null && o.questionFromTemplate(null) === null,
   "an ordinary reply must not be read as answering something nobody asked",
 );
+
+/**
+ * ## 21 Sep — the answer is answered, and the question closes
+ *
+ * Reported from the live relay: the clarifying question went out with a real
+ * answer, the developer replied *"4"*, and heard nothing — three times, which
+ * is the second half of the same fault. Two of these read the **source** of
+ * `inbound.ts`, which carries `import "server-only"` and cannot be loaded
+ * here; both are branches rather than values, which is the 15 Sep precedent
+ * for source checks over a module this suite cannot import.
+ */
+console.log("\n=== answering it is not met with silence ===");
+{
+  const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+  const plan = seg.planSegments(o.CLARIFY_THANKS);
+  ok(
+    "the thank-you is one GSM-7 segment",
+    plan.segments === 1 && plan.encoding === "gsm7",
+    `${plan.segments} segment(s), ${plan.encoding}`,
+  );
+  /* It must not restart the exchange it is closing: a question here makes the
+     next message ambiguous all over again, which is the fault one turn later. */
+  ok("and it asks nothing", !o.CLARIFY_THANKS.includes("?"));
+  ok(
+    "it promises nothing about the answer they already have",
+    !/\b(again|resend|re-?send|new answer)\b/i.test(o.CLARIFY_THANKS),
+    "re-answering with the new age is a second bill and the client's call",
+  );
+
+  const inbound = fs.readFileSync(
+    new URL("../lib/server/inbound.ts", import.meta.url),
+    "utf8",
+  );
+  ok(
+    "a saved clarification replies rather than returning quietly",
+    inbound.includes("body: CLARIFY_THANKS"),
+  );
+  /* ⚠⚠ The close. Without it `pendingClarification` stayed open for seven days
+     and re-read every short message as an answer — three `children` rows, all
+     born 2022, for one four-year-old. */
+  ok(
+    "and the question is closed by the fact it asked for",
+    inbound.includes("pending === nextQuestion(person.profile)"),
+    "nothing else ever closed it",
+  );
+  const repo = fs.readFileSync(
+    new URL("../lib/server/repo/onboarding.ts", import.meta.url),
+    "utf8",
+  );
+  ok(
+    "the inert on-conflict guard is gone rather than left reassuring",
+    !/insert into children[\s\S]{0,160}on conflict/.test(repo),
+    "children has no unique key: twins are a supported answer",
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

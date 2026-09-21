@@ -24,6 +24,7 @@ import { TRUST_LABEL } from "@/lib/trust-labels";
 import { classifyDemand, escalateSensitivity } from "@/lib/demand";
 import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
 import {
+  CLARIFY_THANKS,
   CLARIFYING_COPY,
   clarifyTemplate,
   isClarifyingAnswer,
@@ -656,10 +657,31 @@ export async function handleInboundMessage(input: {
   let clarified = false;
   if (person && !attached.attached && !answeredSomething) {
     const pending = await pendingClarification(person.person_id);
+    /**
+     * ⚠⚠ **A clarifying question is open only while the fact it asks for is
+     * still missing** (21 Sep), and without that it was open for a week and
+     * ate everything short.
+     *
+     * `pendingClarification` reads the last outbound `clarify_*` template, and
+     * **nothing ever closed it** — so every later message of twelve words or
+     * fewer was re-read as an answer to a question already answered. Measured
+     * on the live relay: one *"what's fun for toddlers"* exchange, three short
+     * replies afterwards, and **three `children` rows all born 2022** for one
+     * four-year-old. The `on conflict do nothing` in `saveClarification` reads
+     * like the guard against that and is inert, because `children` has no
+     * unique key on purpose — twins are a supported answer (10 Sep).
+     *
+     * The close is the records rather than a new column, which is this
+     * pipeline's own rule: `nextQuestion` already computes what is still
+     * unknown, so a pending question the profile has since answered is simply
+     * no longer pending. It closes itself whichever way the fact arrived —
+     * over SMS, or in the web profile between two texts.
+     */
+    const open = pending && pending === nextQuestion(person.profile);
     /* ⚠ `isClarifyingAnswer` is what stops a new question being eaten by the
        age parser — see its own header. Without it, a question with a number in
        it stored the number and returned before answering anything. */
-    if (pending && isClarifyingAnswer(body)) {
+    if (open && pending && isClarifyingAnswer(body)) {
       const saved = await saveClarification({
         personId: person.person_id,
         question: pending,
@@ -671,6 +693,25 @@ export async function handleInboundMessage(input: {
          nothing and is not asked again — and it may well be a question, which is
          what the step below is for. */
       clarified = saved;
+      /**
+       * And it is answered out loud. See `CLARIFY_THANKS`: the parent did what
+       * was asked, and until today the whole of Pando's reply was to stop
+       * talking. One outbound for one inbound, as everywhere else on this path.
+       */
+      if (saved) {
+        await sendSms({
+          to: from,
+          body: CLARIFY_THANKS,
+          category: "transactional",
+          personId: person.person_id,
+          /* ⚠ Deliberately outside the `clarify_%` namespace
+             `pendingClarification` matches on: this is not a question, and a
+             template that happened to close the exchange by being named like
+             one would be an accident holding the mechanism up. */
+          template: "clarification_saved",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+      }
     }
   }
 

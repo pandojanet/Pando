@@ -82,6 +82,35 @@ export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
 };
 
 /**
+ * What Pando says when that answer lands.
+ *
+ * ⚠⚠ **Answering it used to be met with silence**, and the developer hit it on
+ * the live relay: the question went out with a real answer, they replied *"4"*,
+ * and the pipeline stored the age and `return`ed. From the phone it is
+ * indistinguishable from a dead number — which is the one thing 5.9 exists to
+ * prevent, and it lands on the parent who did exactly what was asked. The
+ * 14 Sep decision named this and left it, because an acknowledgement is new
+ * user-facing copy; it has now been reported, so it exists.
+ *
+ * ⚠ **It asks nothing**, for `SMALL_TALK`'s reason: 5.4 owns what gets asked
+ * and when, and a question here would make the *next* message ambiguous all
+ * over again — which is the fault above, one turn later.
+ *
+ * ⚠ **It promises nothing about this answer either.** The age sharpens what
+ * `retrieveFor` filters on *next* time; re-running the question they just
+ * asked with the new age would be a second answer nobody asked for and a
+ * second bill, and it is the client's call rather than a side effect of a
+ * thank-you. So the sentence says what is true: it is kept, and it is for what
+ * comes next.
+ *
+ * One GSM-7 segment, pinned by `test:onboarding` — this is the reply to the
+ * most-answered question in the onboarding path, so a curly apostrophe here
+ * would double the cost of every one of them.
+ */
+export const CLARIFY_THANKS =
+  "Got it, thanks. I'll use that to find parents closer to you next time you ask.";
+
+/**
  * Is this message a reply to what Pando asked, or a fresh question?
  *
  * ⚠ **The parsers cannot answer this on their own, and assuming they could cost

@@ -747,8 +747,25 @@ export interface PlaceDemandRow {
   zips: { zip: string; signups: number }[];
   /** D1 questions asked from this city. */
   questions: number;
-  /** What those questions were about. */
-  categories: string[];
+  /**
+   * What those questions were about, commonest first and **with counts**.
+   *
+   * ⚠ It was a bare `string[]` until 21 Sep, which is what made this card read
+   * as a wall: five topic names in one weight say nothing about which of them
+   * is the reason to open a town next, and that is the only question this
+   * table exists to answer.
+   */
+  categories: { category: string; questions: number }[];
+  /**
+   * The stored values that rolled up into this city, commonest first.
+   *
+   * The card says a Pasadena district counts towards Pasadena; this is what
+   * lets it say **which**, and it is the level the developer asked to be able
+   * to look at (*"переглянути її для кожного району, міста"*). A city with no
+   * districts under it returns one entry — itself — and the panel says nothing
+   * rather than repeating the row above it.
+   */
+  areas: { area: string; signups: number; questions: number }[];
 }
 
 export interface PlaceDemand {
@@ -772,6 +789,17 @@ export interface DemandRow {
    * path, which has no profile to read it from.
    */
   neighborhood: string | null;
+  /**
+   * The city that neighborhood rolls up to — `pasadena` for a question asked
+   * from Bungalow Heaven, and the stored value itself where the taxonomy knows
+   * no city for it.
+   *
+   * ⚠ Resolved on the server by the same lateral `demandPlaces` uses, because
+   * the roll-up needs `market_options` and the browser has no access to it.
+   * Without it the two panels of this page cannot be joined: the place table
+   * counts a city, the rows are stored under districts.
+   */
+  city: string | null;
   sensitivity: "ordinary" | "peer_support" | "high_stakes" | "named_allegation";
   requires_human_review: boolean;
   status: "open" | "matched" | "answered" | "closed";

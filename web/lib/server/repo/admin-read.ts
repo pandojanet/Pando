@@ -989,9 +989,29 @@ async function demandRows(db: Db) {
   const list = await rows(
     db,
     sql`
-      select d.*, p.id as person_id, p.first_name, p.last_name
+      select d.*, p.id as person_id, p.first_name, p.last_name,
+             /**
+              * The city this question rolls up to (21 Sep).
+              *
+              * ⚠⚠ **The same lateral as demandPlaces, and it has to be** —
+              * without it the two panels of this page cannot be joined at all:
+              * the place table counts *Pasadena* while the question rows are
+              * stored under *Bungalow Heaven*, so "show me the eight questions
+              * behind that 8" is unanswerable on the client. Same rule as
+              * there: roll up only where the value means one city in every
+              * market that has it, and otherwise leave it as its own name.
+              */
+             coalesce(mo.area_slug, d.neighborhood) as city
       from demand_signals d
       left join people p on p.id = d.person_id
+      left join lateral (
+        select max(m.area_slug) as area_slug
+          from market_options m
+         where m.category = 'neighborhoods'
+           and m.option_value = d.neighborhood
+           and (p.market_id is null or m.market_id = p.market_id)
+        having count(distinct m.area_slug) = 1
+      ) mo on true
       order by
         -- A claim about a named person sorts above everything, including a
         -- high-stakes question: it is the one class where nothing at all can
@@ -1011,6 +1031,7 @@ async function demandRows(db: Db) {
     question_text: r.question_text,
     category: r.category,
     neighborhood: r.neighborhood,
+    city: r.city ?? null,
     sensitivity: r.sensitivity,
     requires_human_review: r.requires_human_review,
     status: r.status,
@@ -2299,6 +2320,10 @@ async function demandPlaces(db: Db): Promise<PlaceDemand> {
     with roll as (
       select p.id,
              coalesce(mo.area_slug, p.neighborhood) as city,
+             /* The value they are actually stored under, kept beside the city
+                it rolls up to — area_agg below needs both, and without this
+                the roll-up is one-way and the districts stay invisible. */
+             p.neighborhood as area,
              p.profile_captured_at,
              p.selected_zip
         from people p
@@ -2329,10 +2354,20 @@ async function demandPlaces(db: Db): Promise<PlaceDemand> {
                        order by n desc, zip) as zips
         from zips group by city
     ),
-    asks as (
+    /**
+     * One row per question, carrying both the value the parent is stored under
+     * and the city it rolls up to — because 21 Sep needs the same question
+     * counted twice: once for the city's total, and once for the district
+     * inside it.
+     *
+     * ⚠ It used to aggregate straight to the city, which is why the districts
+     * behind a roll-up were invisible on screen: the page said *"a Pasadena
+     * district counts towards Pasadena"* and could not say **which**.
+     */
+    ask_roll as (
       select coalesce(mo.area_slug, d.neighborhood) as city,
-             count(*)::int as questions,
-             array_remove(array_agg(distinct d.category), null) as categories
+             d.neighborhood as area,
+             d.category
         from demand_signals d
         /**
          * ⚠⚠ **A left join, because a question can outlive the parent who
@@ -2365,17 +2400,67 @@ async function demandPlaces(db: Db): Promise<PlaceDemand> {
         ) mo on true
        where coalesce(d.is_test, false) = false
          and d.neighborhood is not null
-       group by 1
+    ),
+    asks as (
+      select city, count(*)::int as questions from ask_roll group by 1
+    ),
+    /**
+     * What each city was asked about, **with the number of times**.
+     *
+     * A bare list of category names was the driest thing on the card: five
+     * topics separated by interpuncts, in one weight, saying nothing about
+     * which of them is the reason to open that town next. The count is the
+     * whole point of an expansion table.
+     */
+    cat_agg as (
+      select city,
+             jsonb_agg(jsonb_build_object('category', category, 'questions', n)
+                       order by n desc, category) as categories
+        from (
+          select city, category, count(*)::int as n
+            from ask_roll where category is not null group by 1, 2
+        ) c
+       group by city
+    ),
+    /**
+     * The roll-up's own members: every stored value that became this city.
+     *
+     * ⚠ A full outer join for the same reason the city table has one — a
+     * district can have sign-ups and no questions, or questions and no
+     * sign-ups, and the second is the more interesting half when deciding
+     * where to open next.
+     */
+    area_agg as (
+      select city,
+             jsonb_agg(jsonb_build_object('area', area, 'signups', s, 'questions', q)
+                       order by s desc, q desc, area) as areas
+        from (
+          select coalesce(sa.city, aa.city) as city,
+                 coalesce(sa.area, aa.area) as area,
+                 coalesce(sa.n, 0)::int as s,
+                 coalesce(aa.n, 0)::int as q
+            from (
+              select city, area, count(*)::int as n
+                from roll where profile_captured_at is not null group by 1, 2
+            ) sa
+            full outer join (
+              select city, area, count(*)::int as n from ask_roll group by 1, 2
+            ) aa on aa.city = sa.city and aa.area = sa.area
+        ) m
+       group by city
     )
     select coalesce(s.city, a.city) as city,
            coalesce(s.signups, 0) as signups,
            coalesce(s.signups_no_zip, 0) as signups_no_zip,
            coalesce(z.zips, '[]'::jsonb) as zips,
            coalesce(a.questions, 0) as questions,
-           coalesce(a.categories, '{}') as categories
+           coalesce(c.categories, '[]'::jsonb) as categories,
+           coalesce(ar.areas, '[]'::jsonb) as areas
       from signs s
       full outer join asks a on a.city = s.city
       left join zip_agg z on z.city = coalesce(s.city, a.city)
+      left join cat_agg c on c.city = coalesce(s.city, a.city)
+      left join area_agg ar on ar.city = coalesce(s.city, a.city)
      order by coalesce(s.signups, 0) desc,
               coalesce(a.questions, 0) desc,
               1
@@ -2393,7 +2478,11 @@ async function demandPlaces(db: Db): Promise<PlaceDemand> {
       signups_no_zip: Number(r.signups_no_zip),
       zips: (r.zips as { zip: string; signups: number }[]) ?? [],
       questions: Number(r.questions),
-      categories: (r.categories as string[]) ?? [],
+      categories:
+        (r.categories as { category: string; questions: number }[]) ?? [],
+      areas:
+        (r.areas as { area: string; signups: number; questions: number }[]) ??
+        [],
     })),
     questions_no_place: Number(orphans[0]?.n ?? 0),
   };

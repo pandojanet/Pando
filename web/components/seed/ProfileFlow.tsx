@@ -340,7 +340,7 @@ export function ProfileFlow() {
   /**
    * ⚠⚠ **A tap that reveals a question cancels the advance it just armed.**
    *
-   * `autoAdvances` is computed from the questions visible *before* the tap, and
+   * `completesScreen` is computed from the questions visible *before* the tap, and
    * that was sound while every conditional question was gated on an answer from
    * an **earlier** screen. Her §5 broke it: picking a town is a single-select on
    * a screen showing one question, so the advance arms — and the same tap makes
@@ -476,25 +476,47 @@ export function ProfileFlow() {
   const screensLeft = screens.length - index - 1;
 
   /**
-   * *"Auto-advance single-select screens."*
+   * *"Auto-advance single-select screens."* — where the tap **finishes the
+   * screen**, which is not the same as the screen holding one question.
    *
-   * Only where the tap is unambiguously the whole answer: one question on the
-   * screen, single-select, and something now chosen. Everything else stays on
-   * Continue, and each exclusion is a case where advancing would take the screen
-   * away mid-answer —
+   * ⚠⚠ **That difference is a reported bug and this is the fix** (21 Sep).
+   * The rule was `questions.length === 1`, so her §5 ZIP follow-up turned
+   * auto-advance off for exactly the parents who get asked twice: pick
+   * **Altadena** (one residential ZIP, no follow-up) and the screen moves on
+   * its own; pick **Pasadena** (six) and answering *"Which ZIP code?"* — the
+   * last thing that screen wants — left them sitting on a finished screen
+   * looking for Continue. One question behaving two ways, decided by a
+   * property of the town they happen to live in.
    *
-   *  - **more than one question on the screen** (the 9 Sep merges put two and
-   *    three questions on four screens), or the parent answers the first and
-   *    the second is gone;
-   *    (a fourth exclusion stood here until 10 Sep — the participation screen,
-   *    whose single-select level sat above a recurring-messages checkbox, so
-   *    advancing on the level would have skipped a consent. That checkbox is
-   *    now part of the single consent on `/join`, so the screen is a plain
-   *    single-select and auto-advancing it takes nothing away.)
-   *  - **a per-selection follow-up** (a school's Current/Former, whose child it
-   *    is) — the tap opens a second question rather than finishing one;
+   * So the test is the one the old exclusion was always reaching for. Its own
+   * reasoning was *"the parent answers the first and the second is gone"* —
+   * i.e. about an **unanswered** sibling, never about the count. It now asks
+   * that directly: nothing else visible is still waiting.
+   *
+   *  - **every visible question is single-select.** A multi sibling is
+   *    "answered" on its first tap while the parent may mean three, so a
+   *    screen holding one can never do this — which keeps all four of the
+   *    9 Sep merges (parenting/work, the circles, travel/logistics,
+   *    budget/trust) exactly where they were.
+   *  - **every other visible question already has an answer**, optional ones
+   *    included. Picking the town while the ZIP is unanswered must not carry
+   *    the parent past a question they were about to answer; picking the ZIP
+   *    afterwards finishes the screen.
+   *  - **a per-selection follow-up** (a school's Current/Former, whose child
+   *    it is) — the tap opens a second question rather than finishing one.
    *  - **the last screen**, because "advance" there means the review, and
-   *    arriving at a summary you did not ask for reads as having lost the flow.
+   *    arriving at a summary you did not ask for reads as having lost the
+   *    flow.
+   *    (One more exclusion stood here until 10 Sep — the participation
+   *    screen, whose single-select level sat above a recurring-messages
+   *    checkbox, so advancing on the level would have skipped a consent. That
+   *    checkbox is now part of the single consent on `/join`.)
+   *
+   * ⚠ It reads the questions and answers from the render **before** the tap,
+   * which is why the guard above it still earns its place: a tap that *opens*
+   * a question cancels the advance it just armed. The two cover the two
+   * directions — this one a sibling that was already there, that one a
+   * sibling the tap created.
    *
    * The delay is what makes it legible rather than abrupt: the chip has to be
    * seen to go green, or the screen appears to change for no reason. It is
@@ -502,15 +524,19 @@ export function ProfileFlow() {
    * mind inside the window advances on their *second* choice and not their
    * first.
    */
-  const autoAdvances =
-    questions.length === 1 &&
-    questions[0].kind === "single" &&
-    !questions[0].perSelectionStatus &&
-    !questions[0].perChild &&
+  const completesScreen = (question: Question, next: string[]): boolean =>
+    next.length === 1 &&
+    question.kind === "single" &&
+    !question.perSelectionStatus &&
+    !question.perChild &&
     /* The consent that used to sit under the participation level is gone
-       (10 Sep), so this exclusion is too — the screen is a plain single-select
+       (10 Sep), so that exclusion is too — the screen is a plain single-select
        again and auto-advancing it takes nothing away. */
-    !isLast;
+    !isLast &&
+    questions.every((q) => q.kind === "single") &&
+    questions.every(
+      (q) => q.id === question.id || isQuestionAnswered(q, answers),
+    );
 
   function setSelections(question: Question, next: string[]) {
     update((s) => {
@@ -632,12 +658,12 @@ export function ProfileFlow() {
       return { ...s, answers: a };
     });
 
-    /* See `autoAdvances`. Cleared first, so a parent who taps twice inside the
-       window advances on the second choice rather than being carried away by
-       the first — which is the failure mode that makes an auto-advance feel
+    /* See `completesScreen`. Cleared first, so a parent who taps twice inside
+       the window advances on the second choice rather than being carried away
+       by the first — which is the failure mode that makes an auto-advance feel
        like the screen taking the decision. */
     clearAutoAdvance();
-    if (autoAdvances && next.length === 1) {
+    if (completesScreen(question, next)) {
       autoAdvanceRef.current = setTimeout(() => {
         autoAdvanceRef.current = null;
         track("seed_screen_auto_advanced", { screen: screen.id });

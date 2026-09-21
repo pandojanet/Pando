@@ -768,7 +768,17 @@ export const sampleFlags: FlagRow[] = [
   },
 ];
 
-export const sampleDemand: DemandRow[] = [
+/**
+ * `city` is **derived** from the neighborhood rather than written on each row.
+ *
+ * The sample's places are all cities already, so the roll-up is the identity
+ * here — and typing it out nine times is nine chances for one row to disagree
+ * with its own neighborhood, which on this page would show a question filed
+ * under a town it did not come from. Same rule as `samplePlaceDemand` below,
+ * which derives from this array for the same reason.
+ */
+export const sampleDemand: DemandRow[] = (
+  [
   {
     id: "d1",
     question_text: "Summer camps for a 5-year-old that aren't a fortune.",
@@ -823,7 +833,8 @@ export const sampleDemand: DemandRow[] = [
     is_test: false,
     created_at: now,
   },
-];
+  ] satisfies Omit<DemandRow, "city">[]
+).map((d) => ({ ...d, city: d.neighborhood }));
 
 /**
  * The consent export, as it looks with nothing real in it. The numbers are
@@ -1027,7 +1038,10 @@ export const sampleAudit: AuditRow[] = [
  * question is newer than most of the profiles.
  */
 export const samplePlaceDemand: PlaceDemand = (() => {
-  const byCity = new Map<string, { questions: number; categories: Set<string> }>();
+  const byCity = new Map<
+    string,
+    { questions: number; categories: Map<string, number> }
+  >();
   let orphans = 0;
   for (const d of sampleDemand) {
     if (d.is_test) continue;
@@ -1035,9 +1049,13 @@ export const samplePlaceDemand: PlaceDemand = (() => {
       orphans += 1;
       continue;
     }
-    const entry = byCity.get(d.neighborhood) ?? { questions: 0, categories: new Set() };
+    const entry = byCity.get(d.neighborhood) ?? {
+      questions: 0,
+      categories: new Map<string, number>(),
+    };
     entry.questions += 1;
-    if (d.category) entry.categories.add(d.category);
+    if (d.category)
+      entry.categories.set(d.category, (entry.categories.get(d.category) ?? 0) + 1);
     byCity.set(d.neighborhood, entry);
   }
   const signups: Record<string, { total: number; zips: [string, number][] }> = {
@@ -1056,7 +1074,13 @@ export const samplePlaceDemand: PlaceDemand = (() => {
           signups_no_zip: s.total - placed,
           zips: s.zips.map(([zip, n]) => ({ zip, signups: n })),
           questions: v.questions,
-          categories: [...v.categories],
+          categories: [...v.categories]
+            .map(([category, questions]) => ({ category, questions }))
+            .sort((x, y) => y.questions - x.questions),
+          /* One member, itself: the sample's places are cities already, so
+             there is no district to roll up and the panel says nothing rather
+             than repeating the row above it. */
+          areas: [{ area: city, signups: s.total, questions: v.questions }],
         };
       })
       .sort((a, b) => b.signups - a.signups || b.questions - a.questions),
