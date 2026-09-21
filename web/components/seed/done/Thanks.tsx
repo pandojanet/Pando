@@ -51,7 +51,10 @@ export function Thanks() {
 
   return (
     <Screen>
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        below={<DoneProfileBanner session={session} />}
+      />
 
       <ScreenBody className="pt-8">
         <div className="animate-rise">
@@ -97,8 +100,6 @@ export function Thanks() {
               </>
             )}
           </p>
-
-          <DoneProfileBanner session={session} className="mt-6" />
 
           {count > 0 && (
             <Panel raised flush className="mt-6">

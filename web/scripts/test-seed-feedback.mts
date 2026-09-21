@@ -2802,14 +2802,42 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   /* ⚠⚠ It promises relevance and never access: P14 alone gates Community
      Access, and the Founding reward needs two approved contributions as well,
      so a banner naming either would make a claim this number cannot keep. */
+  /**
+   * ⚠ It says the number and never what it earns. The explanatory sentence
+   * went when the strip was pinned — as a three-line block in the header it
+   * measured **181px, 22% of a 375×812 window, permanently** — so what is
+   * asserted now is the half that could still do damage.
+   */
   ok(
-    "it says what a fuller profile does for the answers, never what it earns",
-    /match you with parents/.test(banner) &&
+    "it says the figure and the way in, never what it earns",
+    /Profile \{depth\.percent\}% complete/.test(banner) &&
+      /Add more/.test(banner) &&
       /* The constant's own name carries "FOUNDING" and is not copy — the
          check is about what a parent reads. */
       !/(founding|reward|\$10|access|unlock)/i.test(
         banner.replaceAll("FOUNDING_MIN_PROFILE_DEPTH", ""),
       ),
+  );
+  /* ⚠ Pinned, which is the whole of *"це має бути закріплено в хедері"* — and
+     `ScreenHeader` is the one `sticky` element on these screens, so being in
+     its `below` slot is what makes it stay. */
+  ok(
+    "and it is in the header rather than in the page",
+    [
+      ["../components/seed/chat/ChatSeeding.tsx", /below=\{<ProfileBanner /],
+      ["../components/seed/ProfileFlow.tsx", /below=\{[\s\S]{0,120}<ProfileBanner /],
+      ["../components/seed/done/Thanks.tsx", /below=\{<DoneProfileBanner /],
+      ["../components/seed/done/FinishAsks.tsx", /below=\{<DoneProfileBanner /],
+      ["../components/seed/done/WhatsNext.tsx", /below=\{<DoneProfileBanner /],
+    ].every(([f, re]) => (re as RegExp).test(src(f as string))),
+  );
+  /* ⚠ The review's own "N% done" label and bare bar render only while the
+     strip does not: the strip carries both, and two 4px tracks an inch apart
+     is one measure drawn twice. */
+  ok(
+    "and the review's own label steps aside for it",
+    /const pinned = profileBannerShows\(depth\);/.test(flow) &&
+      /right=\{pinned \? undefined : <ProfilePercentLabel/.test(flow),
   );
   ok(
     "it is on the recommendations screen and on all three completion screens",

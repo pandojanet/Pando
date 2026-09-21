@@ -64,6 +64,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  profileBannerShows,
   profileDepth,
   pruneAnswers,
   sameForAllChildren,
@@ -1451,19 +1452,28 @@ export function ProfileFlow() {
   /* ── Review ──────────────────────────────────────────────────── */
 
   if (stage === "review") {
+    const depth = profileDepth(answers);
+    /**
+     * 16 Sep put "N% done" in the slot a question screen shows "3 left", over
+     * a bar of the same height and colours. 21 Sep pinned the reminder in the
+     * header, and it carries both — so ⚠ the label and the bare bar render
+     * only when it does not, or this screen says one number twice within an
+     * inch and draws two 4px tracks to do it.
+     */
+    const pinned = profileBannerShows(depth);
     return (
       <Screen>
         <ScreenHeader
           left={<BackButton onClick={goBack} />}
-          /* 16 Sep: "N% done" in the slot a question screen shows "3 left",
-             over a bar of the same height and colours — one continuous fill
-             rather than segments, because every step is done here and how much
-             of the profile is filled in is the number worth showing. */
-          right={<ProfilePercentLabel depth={profileDepth(answers)} />}
+          right={pinned ? undefined : <ProfilePercentLabel depth={depth} />}
           below={
-            <div className="mt-1">
-              <ProfilePercentBar depth={profileDepth(answers)} />
-            </div>
+            pinned ? (
+              <ProfileBanner depth={depth} onProfile />
+            ) : (
+              <div className="mt-1">
+                <ProfilePercentBar depth={depth} />
+              </div>
+            )
           }
         />
         <ScreenBody>
@@ -1476,13 +1486,6 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
-            {/* 21 Sep, the developer: the "N questions still to answer…"
-                paragraph is gone in full, and how far the profile is from
-                complete takes its place — first as a pop-up, then, the same
-                day, as a banner that stays until the profile clears the bar
-                and appears on every screen rather than only this one. */}
-            <ProfileBanner depth={profileDepth(answers)} className="mt-5" onProfile />
-
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than
               * anywhere in the middle of the answer list: this is the last

@@ -961,6 +961,7 @@ export function ChatSeeding() {
             <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }
+        below={<ProfileBanner depth={depth} />}
       />
 
       {/**
@@ -993,13 +994,6 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
-
-        {/* 21 Sep: *"і не тільки на цій сторінці, а і на сторінці
-            рекомендацій"*. Above the thread rather than under the header,
-            because the thread grows downward and a banner inside the header
-            would sit over the one control this screen is for. It renders
-            nothing once the profile clears the bar. */}
-        <ProfileBanner depth={depth} className="mb-4" />
 
         <div className="space-y-2.5">
           {chat.messages.map((message) =>

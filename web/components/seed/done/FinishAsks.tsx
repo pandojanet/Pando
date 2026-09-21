@@ -270,7 +270,10 @@ export function FinishAsks() {
 
   return (
     <Screen>
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        below={<DoneProfileBanner session={session} />}
+      />
 
       <ScreenBody className="pt-7">
         <div className="animate-rise">
@@ -284,8 +287,6 @@ export function FinishAsks() {
               that decides whether Pando can come back to you.
             </p>
           )}
-
-          <DoneProfileBanner session={session} className="mt-6" />
 
           {/* Demand capture: the first moment in the whole flow where the parent
               gets to ask for something. Above the consent on purpose — its answer

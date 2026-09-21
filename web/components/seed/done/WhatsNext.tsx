@@ -33,7 +33,10 @@ export function WhatsNext() {
 
   return (
     <Screen>
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        below={<DoneProfileBanner session={session} />}
+      />
 
       <ScreenBody className="pt-7">
         <div className="animate-rise">
@@ -52,8 +55,6 @@ export function WhatsNext() {
               . Until that&apos;s answered, nothing below has started.
             </Panel>
           )}
-
-          <DoneProfileBanner session={session} className="mt-5" />
 
           <ol className="mt-5 space-y-2.5">
             {count === 0 && (

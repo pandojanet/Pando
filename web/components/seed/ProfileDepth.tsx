@@ -94,17 +94,25 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
- * A banner on every screen a parent with a saved profile meets, until the
- * profile is full enough (21 Sep, the developer: *"чи не можна його зробити
- * постійним банером … щоб він був постійно у користувача до того моменту,
- * поки він не заповнить профіль на потрібний відсоток. І не тільки на цій
- * сторінці, а і на сторінці рекомендацій і на інших"*).
+ * A banner pinned in the header of every screen a parent with a saved profile
+ * meets, until the profile is full enough (21 Sep, three instructions in one
+ * day: make the pop-up a banner; put it on the recommendations screen and the
+ * others; *"це має бути закріплено в хедері"*).
  *
- * ⚠ **This replaces `ProfileToast` and reverses the row above it**, which was
- * written the same morning: a pop-up in the bottom-right corner, eight
- * seconds, dismissible. What it could not do is be there when a parent came
- * back to the screen and wondered what was left — it was gone by then, and it
- * only ever appeared on one of the five screens they walk.
+ * ⚠ It replaces `ProfileToast` — a pop-up in the corner, eight seconds,
+ * dismissible — which could not be there when a parent came back to the
+ * screen and wondered what was left, and only ever appeared on one of the
+ * five screens they walk.
+ *
+ * ## Why it is one line and not the paragraph it started as
+ *
+ * ⚠⚠ **Pinning is what decided the copy, and it was measured rather than
+ * argued.** As a three-line block in `ScreenHeader`'s `below` slot the
+ * header came to **181px on a 375×812 phone — 22% of the window, permanently**,
+ * on a screen that also carries a sticky dock. So the explanatory sentence
+ * (*"Fill in the rest and Pando can match you…"*) is **gone from the
+ * product**, which is a real loss and hers to place somewhere if she wants
+ * it: what is pinned is the figure, the count and the way in.
  *
  * ## The threshold is the product's own number, not a new one
  *
@@ -116,20 +124,18 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
  * two cannot drift: the day she moves the Founding bar, the nagging stops at
  * the same place.
  *
- * ⚠⚠ **It still promises relevance and never access**, which is the line the
- * whole of this file is about. The copy says what a fuller profile does for
- * the answers a parent gets; it must never say what it earns, because the
- * Founding reward also requires two approved contributions and P14 alone gates
- * Community Access. The threshold decides when this stops appearing and
- * nothing else.
+ * ⚠⚠ **It promises relevance and never access.** P14 alone gates Community
+ * Access and the Founding reward needs two approved contributions as well, so
+ * naming either would be a claim this number cannot keep. The threshold
+ * decides when this stops appearing and nothing else.
  *
  * ⚠ Green, never gold: a profile under the bar is a parent who answered what
  * was asked of them, not something pending or wrong.
  *
  * ⚠ **Not dismissible, which is the instruction and has a cost**: this file's
- * own rule is that the depth never nags, and a banner a parent cannot send
- * away is the closest this app comes to it. It is kept to three lines and one
- * link for that reason, and it disappears the moment it is no longer true.
+ * own rule is that the depth never nags, and a strip a parent cannot send
+ * away is the closest this app comes to it. It is one row for that reason,
+ * and it disappears the moment it is no longer true.
  */
 export function ProfileBanner({
   depth,
@@ -141,9 +147,9 @@ export function ProfileBanner({
   /**
    * ⚠ Set on the review page, where the link is dropped: a parent is
    * standing on `/profile`, so *Add more* would be a control that visibly
-   * does nothing — and the fold directly beneath lists every question the
+   * does nothing — and the fold on that screen lists every question the
    * percentage counts, each with its own **Add**. That is the same reasoning
-   * that took *Complete your profile* off this screen on 17 Sep.
+   * that took *Complete your profile* off it on 17 Sep.
    */
   onProfile?: boolean;
 }) {
@@ -151,36 +157,32 @@ export function ProfileBanner({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-green/25 bg-green-wash px-4 py-3.5",
+        "mt-2 rounded-xl border border-green/25 bg-green-wash px-3 py-2",
         className,
       )}
     >
-      {/**
-       * ⚠ **No bar in here**, and that is not an oversight: the review page's
-       * own header carries one (16 Sep, her instruction), so a second one
-       * 150px below it is the same measure drawn twice on one screen — the
-       * fault that took the percentage pill off `/share` in the same round.
-       * The figure and the count say it in words on the four screens that
-       * have no bar of their own.
-       */}
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="font-semibold text-green-deep text-control">
-          Your profile is {depth.percent}% complete
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate font-semibold text-green-deep text-dock">
+          Profile {depth.percent}% complete
+          <span className="font-medium text-green-deep/70">
+            {" · "}
+            {depth.answered} of {depth.total}
+          </span>
         </p>
-        <span className="shrink-0 font-medium text-green-deep/75 text-dock tabular-nums">
-          {depth.answered} of {depth.total}
-        </span>
-      </div>
-      <p className="mt-1.5 leading-snug text-ink-soft text-help">
-        Fill in the rest and Pando can match you with parents whose experience
-        is closest to yours.
         {!onProfile && (
-          <>
-            {" "}
-            <InlineAction href="/profile">Add more</InlineAction>
-          </>
+          <InlineAction href="/profile" className="shrink-0">
+            Add more
+          </InlineAction>
         )}
-      </p>
+      </div>
+      {/**
+       * ⚠ The bar is here and **not** on the review's header as well: that
+       * screen used to draw its own under the step counter, and two 4px
+       * tracks a few pixels apart are one measure drawn twice.
+       */}
+      <div className="mt-1.5">
+        <ProfilePercentBar depth={depth} />
+      </div>
     </div>
   );
 }
