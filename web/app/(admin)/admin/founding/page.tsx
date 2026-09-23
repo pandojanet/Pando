@@ -15,6 +15,7 @@ import {
   ResultNote,
   SampleBanner,
   slugLabel,
+  TextLink,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { FoundingRow } from "@/lib/admin/types";
@@ -136,7 +137,12 @@ export default function FoundingQueuePage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="flex flex-wrap items-center gap-2 text-[15.5px] font-semibold">
-                            {row.name ?? "Unknown name"}
+                            {/* 23 Sep: the person this decision is about opens
+                                their own page, where every card the approval
+                                rests on can be read in full. */}
+                            <TextLink href={`/admin/contributors/${row.id}`}>
+                              {row.name ?? "Unknown name"}
+                            </TextLink>
                             {/* "off-list" was jargon; "nobody vouched for them"
                                 was worse, because it read as a judgement about
                                 the person. What it actually means is that no
@@ -208,6 +214,13 @@ export default function FoundingQueuePage() {
                               `${total} shared`,
                               row.phone ?? "no number",
                             ].join(" · ")}
+                          </p>
+                          <p className="mt-1 text-[13px]">
+                            <TextLink href={`/admin/contributors/${row.id}#contributions`}>
+                              {`See the ${row.checklist.approved_contributions} approved ${
+                                row.checklist.approved_contributions === 1 ? "contribution" : "contributions"
+                              }`}
+                            </TextLink>
                           </p>
                         </div>
 

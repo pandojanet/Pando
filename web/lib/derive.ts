@@ -109,11 +109,12 @@ export function childrenFromAges(
       return {
         birth_year: null,
         expecting: true,
-        due_year: year,
-        /* A due month is the parent telling us when, so the year it sits in is
-           no longer an assumption. Only this calendar year is offered. */
+        /* 23 Sep: the chip reads next year (BIRTH_YEAR_OPTIONS), so the due year
+           is next year and the parent stated it — tapping "2027" is not an
+           assumption about the capture year, whether or not a month follows. */
+        due_year: year + 1,
         due_month: month ?? null,
-        due_year_precision: month ? ("stated" as const) : ("assumed_capture_year" as const),
+        due_year_precision: "stated" as const,
       };
     }
     return {
@@ -377,6 +378,7 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     phone_verified: session.phone_verified === true,
     sms_consent: session.sms_consent,
     inviter_relationship: session.inviter_relationship ?? null,
+    inviter_relationship_other: session.inviter_relationship_other ?? null,
     /**
      * Unlike `sms_consent` (taken early, at the phone field, and carried on the
      * session from that moment) this is an ordinary mid-profile tap — built here

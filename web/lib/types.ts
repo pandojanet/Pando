@@ -755,6 +755,8 @@ export interface SeedSession {
    * profile, never before the number is confirmed.
    */
   inviter_relationship?: string | null;
+  /** Their own words when the answer was "Something else" (23 Sep). */
+  inviter_relationship_other?: string | null;
   inviter_relationship_asked?: boolean;
   /**
    * Completion screen state (estimate 1.7). `follow_up_opt_in` is the one Phase 1
@@ -815,6 +817,8 @@ export interface ProfilePayload {
   phone_verified: boolean;
   /** 16 Sep: how they know their inviter; the server keeps it only on a personal link. */
   inviter_relationship?: string | null;
+  /** 23 Sep: the words for "Something else"; kept only beside an `other` answer. */
+  inviter_relationship_other?: string | null;
   sms_consent: import("./consent").ConsentRecord | null;
   /**
    * The listening-ear opt-in, recorded the same way every other consent is —

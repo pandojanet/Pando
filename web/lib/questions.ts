@@ -136,32 +136,23 @@ export const MONTH_OPTIONS: Option[] = [
 ].map((label, i) => ({ id: String(i + 1), label }));
 
 /**
- * Which months make sense for this child (16 Sep).
+ * Which months a row offers: **all twelve, for every row** (23 Sep).
  *
- * *"коли дитина Expecting, то показувати цей і наступні місяці в році … Коли
- * дитина народилась — показувати, які місяці пройшли з теперішнім, а не
- * наступні."* A child born this year cannot have been born in a month that has
- * not happened, and a baby on the way is not due in one that has. Every earlier
- * birth year offers all twelve.
+ * ⚠ **This reverses the 16 Sep rule** — a child born this year offered only the
+ * months that had happened, and a baby on the way only the ones that had not.
+ * The developer: *"показуй всі місяці всюди, а не обмежуй їх"*. The rule was
+ * also what made a baby due next spring impossible to date in the autumn, which
+ * is the report this answers together with the next-year chip below.
  *
- * ⚠ **An expecting parent is offered this calendar year only**, as she wrote
- * it — so in the autumn a baby due next spring has no month to tap. The month is
- * optional, so they are not blocked; they simply leave it blank.
+ * ⚠ The cost, stated: a parent can now tap a month that has not happened on a
+ * child born this year. It is stored as they gave it; nothing downstream reads
+ * the month yet (the band comes from the year), so it misleads nobody today.
  *
- * ⚠ **The oldest year on the list follows the same rule as this year** (16 Sep):
- * *"show months only up to and including the current one"* for 2008. That year
- * is on the list because a child born in it turns 18 this year, so only the
- * months up to now are offered.
- *
- * `now` is a parameter so the rule is testable and so the server can apply the
- * same filter at its own clock (`childrenFromAges`).
+ * Kept as a function, with its signature, because the chip row and the server's
+ * `childrenFromAges` both call it — the day a rule comes back, it comes back in
+ * one place for both.
  */
-export function monthOptionsFor(age: number, now: Date = new Date()): Option[] {
-  const current = now.getMonth() + 1;
-  if (age === EXPECTING) return MONTH_OPTIONS.filter((m) => Number(m.id) >= current);
-  if (age === 0 || age === OLDEST_CHILD_AGE) {
-    return MONTH_OPTIONS.filter((m) => Number(m.id) <= current);
-  }
+export function monthOptionsFor(_age: number, _now: Date = new Date()): Option[] {
   return MONTH_OPTIONS;
 }
 
@@ -182,7 +173,21 @@ export const OLDEST_CHILD_AGE = 18;
  * chat's age list, a different grid.
  */
 export const BIRTH_YEAR_OPTIONS: Option[] = [
-  { id: String(EXPECTING), label: "Expecting" },
+  /**
+   * ⚠⚠ **Next year, not "Expecting"** (23 Sep): *"A parent can be pregnant now
+   * with a 2027 due date — that option is currently missing from the list.
+   * Заміни Expecting на 2027 рік."* The stored value is **still `EXPECTING`**,
+   * and that is the part not to "tidy": every gate that keeps a child on the
+   * way out of per-child questions (`hasBornChild`, `answerableChildren`) and
+   * the matcher's `expecting` band read -1, so a real age of -1 would have
+   * meant nothing to any of them. What changed is the label and the due year
+   * the server records (`childrenFromAges`: next calendar year, stated).
+   *
+   * ⚠ **A baby due later this year now has no chip of its own**: the list reads
+   * 2027 · 2026 · …, and a parent due in December picks 2026 and a month, which
+   * records a born child. Hers to decide whether that case needs its own answer.
+   */
+  { id: String(EXPECTING), label: String(CURRENT_YEAR + 1) },
   ...Array.from({ length: OLDEST_CHILD_AGE + 1 }, (_, age) => ({
     id: String(age),
     label: String(CURRENT_YEAR - age),

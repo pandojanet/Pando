@@ -28,7 +28,9 @@ import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import {
   isRelationship,
-  RELATIONSHIP_OPTIONS,
+  OTHER_RELATIONSHIP,
+  RELATIONSHIP_CHIPS,
+  relationshipNote,
   relationshipQuestion,
   type Relationship,
 } from "@/lib/inviter-relationship";
@@ -101,6 +103,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [step, setStep] = useState<"form" | "verify" | "relationship">("form");
   /** The tap on the relationship question, before Continue saves it. */
   const [relationship, setRelationship] = useState<Relationship | null>(null);
+  /** Their words for "Something else" (23 Sep); set only beside `other`. */
+  const [relationshipOther, setRelationshipOther] = useState<string | null>(null);
   const [session, setSession] = useState<SeedSession | null>(null);
   /**
    * A profile already exists on this number, found **after** the code rather
@@ -346,6 +350,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
          into the control as a selection nothing can show. */
       const stored = current.inviter_relationship;
       setRelationship(isRelationship(stored) ? stored : null);
+      setRelationshipOther(relationshipNote(stored, current.inviter_relationship_other));
       setStep("relationship");
       track("seed_inviter_relationship_shown", { named: Boolean(resolved.inviter_first_name) });
       return;
@@ -364,6 +369,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     const next = saveSession({
       ...session,
       inviter_relationship: value,
+      inviter_relationship_other: value === OTHER_RELATIONSHIP ? relationshipOther : null,
       inviter_relationship_asked: true,
     });
     track("seed_inviter_relationship_answered", { relationship: value });
@@ -465,12 +471,34 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             <div className="mt-6">
               <ChipGroup
                 groupLabel={question}
-                options={RELATIONSHIP_OPTIONS.map((o) => ({ id: o.id, label: o.label }))}
+                options={RELATIONSHIP_CHIPS.map((o) => ({ id: o.id, label: o.label }))}
                 mode="single"
-                selected={relationship ? [relationship] : []}
+                selected={
+                  relationship && relationship !== OTHER_RELATIONSHIP ? [relationship] : []
+                }
                 onChange={(next) => {
                   const picked = next[0];
                   setRelationship(isRelationship(picked) ? picked : null);
+                  /* One answer, whichever control it came from (the 15 Sep
+                     single-select rule): a chip replaces their own words. */
+                  setRelationshipOther(null);
+                }}
+                /* 23 Sep: "Something else" is the profile's own control — the
+                   same "+ Something else" chip and sheet, taking their words. */
+                otherLabel="+ Something else"
+                /* Their words describe how two people know each other and join
+                   no directory, so the sheet must not promise they will. */
+                otherAddsToList={false}
+                custom={relationship === OTHER_RELATIONSHIP && relationshipOther ? [relationshipOther] : []}
+                onAddCustom={(value) => {
+                  const note = relationshipNote(OTHER_RELATIONSHIP, value);
+                  if (!note) return;
+                  setRelationship(OTHER_RELATIONSHIP);
+                  setRelationshipOther(note);
+                }}
+                onRemoveCustom={() => {
+                  setRelationship(null);
+                  setRelationshipOther(null);
                 }}
               />
             </div>

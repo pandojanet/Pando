@@ -273,11 +273,17 @@ const dbStore: Store = {
   },
   async create(entry) {
     const r = await withDb(async (db) => {
-      /* A day is well past every window this table has, and keeping the rows
-         that long is what lets the hourly ceiling see the sends a failed
-         verification already cost. */
+      /* A day is well past every window an *unconfirmed* row has, and keeping
+         those that long is what lets the hourly ceiling see the sends a failed
+         verification already cost. ⚠⚠ A confirmed row is kept for its whole
+         session window (23 Sep): this prune used to delete every row older than
+         a day, so the confirmation a parent was signed in on vanished the next
+         time anybody asked for a code — whatever VERIFICATION_SESSION_HOURS said. */
       await db.execute(sql`
-        delete from phone_verifications where created_at < now() - interval '1 day'
+        delete from phone_verifications
+         where (verified_at is null and created_at < now() - interval '1 day')
+            or (verified_at is not null
+                and expires_at + (interval '1 hour' * ${VERIFICATION_SESSION_HOURS}) < now())
       `);
       const rows = (await db.execute(sql`
         insert into phone_verifications (phone, code_hash, expires_at, sent_at)

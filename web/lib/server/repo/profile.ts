@@ -119,6 +119,8 @@ export interface ProfileInput {
   invited_by: string | null;
   /** How they know `invited_by` (16 Sep, drizzle/0044). Null unless both exist. */
   inviter_relationship?: string | null;
+  /** 23 Sep, drizzle/0050: their words for "Something else"; null otherwise. */
+  inviter_relationship_note?: string | null;
   children: ChildInput[];
   child_ages_at_capture: number[];
   profile_captured_at: string;
@@ -290,10 +292,11 @@ export async function writeProfile(
        otherwise abort the whole profile write on the not-self CHECK. */
     if (input.invited_by && input.inviter_relationship && input.invited_by !== personId) {
       await tx.execute(sql`
-        insert into person_relationships (person_id, related_person_id, relationship, source)
-        values (${personId}::uuid, ${input.invited_by}::uuid, ${input.inviter_relationship}, 'invite')
+        insert into person_relationships (person_id, related_person_id, relationship, note, source)
+        values (${personId}::uuid, ${input.invited_by}::uuid, ${input.inviter_relationship},
+                ${input.inviter_relationship_note ?? null}, 'invite')
         on conflict (person_id, related_person_id)
-        do update set relationship = excluded.relationship, updated_at = now()`);
+        do update set relationship = excluded.relationship, note = excluded.note, updated_at = now()`);
     }
 
     /**

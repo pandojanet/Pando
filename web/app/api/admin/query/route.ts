@@ -177,6 +177,21 @@ const SAMPLE: Record<AdminResource, unknown> = {
   audit: sample.sampleAudit,
 };
 
+/**
+ * The sample, narrowed the way the real read would be (23 Sep): the contributor
+ * page asks for one parent's cards, and handing it every sample card would show
+ * a stranger's recommendations under this parent's name.
+ */
+function sampleFor(resource: AdminResource, params: unknown): unknown {
+  const personId = (params as { person_id?: unknown } | null)?.person_id;
+  if (resource === "contributions" && typeof personId === "string") {
+    return (SAMPLE.contributions as Array<{ contributor: { id: string } | null }>).filter(
+      (row) => row.contributor?.id === personId,
+    );
+  }
+  return SAMPLE[resource];
+}
+
 export async function POST(request: Request) {
   const session = await readAdminSession(
     (await cookies()).get(ADMIN_COOKIE)?.value,
@@ -200,7 +215,7 @@ export async function POST(request: Request) {
   if (!db) {
     return NextResponse.json({
       configured: false,
-      rows: body?.demo === true ? SAMPLE[resource] : EMPTY[resource],
+      rows: body?.demo === true ? sampleFor(resource, body?.params) : EMPTY[resource],
       sample: body?.demo === true,
     });
   }

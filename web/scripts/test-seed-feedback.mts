@@ -622,8 +622,8 @@ ok(
   " is the dedicated multi-select kind — a family with three children needs three",
 );
 ok(
-  "“Expecting” sits alongside a real child",
-  q.BIRTH_YEAR_OPTIONS.find((o) => o.label === "Expecting")?.exclusive !== true,
+  "the child on the way sits alongside a real child",
+  q.BIRTH_YEAR_OPTIONS.find((o) => o.id === "-1")?.exclusive !== true,
 );
 ok(
   "“I grew up in this area” is its own question",
@@ -692,7 +692,9 @@ const twoOnTheWay: ProfileAnswers = { ...q.EMPTY_ANSWERS, ...detail, child_ages:
 const schoolQ = questionById("schools")!;
 ok(
   "an expecting child is not offered as a “whose is it?” chip",
-  q.childOptions(twoOnTheWay).every((c) => c.label !== "Expecting"),
+  q.childOptions(twoOnTheWay).every(
+    (c) => c.label !== "Expecting" && c.label !== String(new Date().getFullYear() + 1),
+  ),
   q.childOptions(twoOnTheWay).map((c) => c.label).join(","),
 );
 ok("and the born children still are", q.childOptions(twoOnTheWay).length === 2);
@@ -838,18 +840,26 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
   );
   const sep = new Date(2026, 8, 16);
   const ids = (age: number) => q.monthOptionsFor(age, sep).map((m) => m.id).join(",");
-  ok("born this year: only months that have happened, this one included", ids(0) === "1,2,3,4,5,6,7,8,9", ids(0));
-  ok("expecting: this month and the rest of the year", ids(-1) === "9,10,11,12", ids(-1));
-  ok("an earlier birth year: all twelve", ids(3) === "1,2,3,4,5,6,7,8,9,10,11,12", ids(3));
-  ok("the oldest year (turns 18 this year): only months up to now", ids(18) === "1,2,3,4,5,6,7,8,9", ids(18));
+  /* 23 Sep, reversing 16 Sep: "показуй всі місяці всюди, а не обмежуй їх". */
+  const all = "1,2,3,4,5,6,7,8,9,10,11,12";
+  for (const age of [-1, 0, 3, 18]) {
+    ok(`every row offers all twelve months (age ${age})`, ids(age) === all, ids(age));
+  }
+  /* And the child on the way reads next year (23 Sep: "Заміни Expecting на 2027"). */
+  ok(
+    "the child on the way is offered as next year, not as “Expecting”",
+    q.BIRTH_YEAR_OPTIONS[0]?.id === "-1" && q.BIRTH_YEAR_OPTIONS[0]?.label === String(thisYear + 1),
+    JSON.stringify(q.BIRTH_YEAR_OPTIONS[0]),
+  );
   const derive = (await import(`../lib/derive.ts?v=${Date.now()}`)) as typeof import("../lib/derive.ts");
-  const rows = derive.childrenFromAges([-1, 0, 0], sep, { "0": 11, "1": 3, "2": 12 });
-  ok("a due month is stored on the expecting child, and the due year is then stated",
-    rows[0].due_month === 11 && rows[0].due_year_precision === "stated", JSON.stringify(rows[0]));
+  const rows = derive.childrenFromAges([-1, 0, 0], sep, { "0": 2, "1": 3, "2": 12 });
+  ok("the child on the way is due next year, and the year is stated",
+    rows[0].due_year === 2027 && rows[0].due_year_precision === "stated", JSON.stringify(rows[0]));
+  ok("any month is stored as the due month", rows[0].due_month === 2, JSON.stringify(rows[0]));
   ok("a past month is kept for a child born this year", rows[1].birth_month === 3, JSON.stringify(rows[1]));
-  ok("a future birth month is dropped rather than stored", rows[2].birth_month === null, JSON.stringify(rows[2]));
-  ok("a past month on a baby on the way is dropped",
-    derive.childrenFromAges([-1], sep, { "0": 2 })[0].due_month === null);
+  ok("a later month is kept too — nothing restricts it any more", rows[2].birth_month === 12, JSON.stringify(rows[2]));
+  ok("a stated year needs no month",
+    derive.childrenFromAges([-1], sep, {})[0].due_year_precision === "stated");
   {
     /* Was: "complete-your-profile opens a screen with an unanswered question".
        That control and the function behind it went on 17 Sep, so what is left
@@ -927,6 +937,28 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       !/answerRelationship\(null\)/.test(landingSrc) &&
         !/>\s*Skip\s*</.test(landingSrc.slice(landingSrc.indexOf('step === "relationship"'))),
     );
+  }
+  {
+    /* 23 Sep: "Mommy and me group" → "parent group", and "Something else" takes
+       their own words, like every other Something else in the profile. */
+    const rel = (await import(`../lib/inviter-relationship.ts?v=${Date.now()}`)) as typeof import("../lib/inviter-relationship.ts");
+    const landingSrc = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
+    const screen = landingSrc.slice(landingSrc.indexOf('step === "relationship"'));
+    ok("the parent-group chip reads “Parent group”",
+      rel.RELATIONSHIP_OPTIONS.find((o) => o.id === "parent_group")?.label === "Parent group");
+    ok("“other” is not a bare chip — it is the profile's “+ Something else” field",
+      !rel.RELATIONSHIP_CHIPS.some((o) => (o.id as string) === rel.OTHER_RELATIONSHIP) &&
+        screen.includes('otherLabel="+ Something else"') && screen.includes("onAddCustom="));
+    ok("their words are kept beside “other”, whitespace collapsed",
+      rel.relationshipNote("other", "  we met   at swim  ") === "we met at swim");
+    ok("and never beside any other answer", rel.relationshipNote("family", "cousins") === null);
+    ok("an empty or over-long note is refused, never cut",
+      rel.relationshipNote("other", "   ") === null &&
+        rel.relationshipNote("other", "x".repeat(rel.RELATIONSHIP_NOTE_MAX + 1)) === null);
+    const noteMigration = fs.readFileSync(new URL("../drizzle/0050_relationship_note.sql", import.meta.url), "utf8");
+    ok("the database holds the same rule",
+      noteMigration.includes("relationship = 'other'") &&
+        noteMigration.includes(`BETWEEN 1 AND ${rel.RELATIONSHIP_NOTE_MAX}`));
   }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
@@ -2583,6 +2615,11 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
      * their own comment and must not borrow the other sentence's words.
      */
     ok(
+      `and asks it in the developer's words (23 Sep)`,
+      last?.prompt === "Is there anything you think other parents should know?",
+      String(last?.prompt),
+    );
+    ok(
       `and asks for their own comment rather than "anything else"`,
       !/anything else/i.test(String(last?.prompt)),
       String(last?.prompt),
@@ -2748,13 +2785,37 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ok("and nothing renders the old reminder", !/DepthReminder/.test(flow + chat + depth));
   const done = src("../components/seed/done/shared.tsx");
   const reminder = depth.slice(depth.indexOf("export function ProfileReminder"));
-  const fillSrc = depth.slice(depth.indexOf("export function reminderFill"));
+  /* The pure helpers, evaluated from the source: the file is a React module
+     this suite cannot import. The two thresholds are read the same way, so the
+     check follows the constants rather than restating them. */
+  const constant = (name: string) =>
+    Number(new RegExp(`export const ${name} = (\\d+)`).exec(depth)?.[1]);
+  const RED = constant("REMINDER_RED_BELOW");
+  const YELLOW = constant("REMINDER_YELLOW_BELOW");
+  const fnBody = (name: string) => {
+    const from = depth.slice(depth.indexOf(`export function ${name}`));
+    const start = from.indexOf("\n  if (");
+    return from.slice(start, from.indexOf("\n}", start));
+  };
   const depthLib = {
     reminderFill: new Function(
       "percent",
-      fillSrc.slice(fillSrc.indexOf("{") + 1, fillSrc.indexOf("\n}")),
-    ) as (percent: number) => string,
+      "REMINDER_RED_BELOW",
+      "REMINDER_YELLOW_BELOW",
+      fnBody("reminderFill"),
+    ) as (percent: number, r: number, y: number) => string,
+    reminderTone: new Function(
+      "percent",
+      "REMINDER_RED_BELOW",
+      "REMINDER_YELLOW_BELOW",
+      fnBody("reminderTone"),
+    ) as (percent: number, r: number, y: number) => { card: string },
   };
+  const fill = (n: number) => depthLib.reminderFill(n, RED, YELLOW);
+  const tone = (n: number) => depthLib.reminderTone(n, RED, YELLOW).card;
+  /* The strip is `ProfileReminder` up to the pop-up that follows it. */
+  const strip = reminder.slice(0, Math.max(0, reminder.indexOf("function FloatingReminder")) || undefined);
+  const popup = depth.slice(depth.indexOf("function FloatingReminder"));
   const rewards = (await import(
     `../lib/rewards.ts?v=${Date.now()}`
   )) as typeof import("../lib/rewards.ts");
@@ -2776,61 +2837,81 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
    * screenshot of the 21 Sep pinned strip annotated with four changes. So the
    * corner card is gone on a laptop too, and the header is the one place.
    */
+  /**
+   * ⚠⚠ **The ninth instruction brings the pop-up back first** (23 Sep):
+   * *"поверни той попап … перемісти його вверх … з можливістю його закрити
+   * (хрестиком). Після закриття цей банер стає таким, як є зараз."* So the
+   * card is in the top-right corner with an X, and the strip is what closing
+   * it leaves — on the same five screens.
+   */
   ok(
-    "it is in the header at every width, so it pushes rather than paints",
-    !/createPortal/.test(depth) &&
-      !/\bfixed\b/.test(reminder) &&
-      !/xl:hidden|md:hidden/.test(reminder) &&
-      !/FloatingReminder/.test(depth.replace(/\/\*[\s\S]*?\*\//g, "")) &&
-      [
-        ["../components/seed/chat/ChatSeeding.tsx", /below=\{<ProfileReminder /],
-        ["../components/seed/ProfileFlow.tsx", /below=\{[\s\S]{0,420}<ProfileReminder /],
-        ["../components/seed/done/Thanks.tsx", /below=\{<DoneProfileReminder /],
-        ["../components/seed/done/FinishAsks.tsx", /below=\{<DoneProfileReminder /],
-        ["../components/seed/done/WhatsNext.tsx", /below=\{<DoneProfileReminder /],
-      ].every(([f, re]) => (re as RegExp).test(src(f as string))),
+    "the reminder is on the same five screens, in the header slot",
+    [
+      ["../components/seed/chat/ChatSeeding.tsx", /below=\{<ProfileReminder /],
+      ["../components/seed/ProfileFlow.tsx", /below=\{[\s\S]{0,700}<ProfileReminder /],
+      ["../components/seed/done/Thanks.tsx", /below=\{<DoneProfileReminder /],
+      ["../components/seed/done/FinishAsks.tsx", /below=\{<DoneProfileReminder /],
+      ["../components/seed/done/WhatsNext.tsx", /below=\{<DoneProfileReminder /],
+    ].every(([f, re]) => (re as RegExp).test(src(f as string))),
   );
-  /* The screenshot's four notes, each pinned: spacing under the logo row,
-     "N out of M", a smaller and lighter "Add more", and the bar coloured by
-     how full the profile is. */
   ok(
-    "it sits apart from the logo row and counts 'out of'",
-    /mt-3 rounded-xl/.test(reminder) && /out of \$\{depth\.total\}/.test(reminder),
+    "until it is closed it is the pop-up, and only then the strip",
+    /if \(!closed\) \{\s*return <FloatingReminder/.test(reminder),
+  );
+  ok(
+    "the pop-up is in the top-right corner, portalled, under the header",
+    /createPortal/.test(popup) &&
+      /style=\{\{ top \}\}/.test(popup) &&
+      !/style=\{\{ bottom/.test(popup) &&
+      /sm:right-4/.test(popup) &&
+      /data-screen-header/.test(popup) &&
+      /data-screen-header/.test(src("../components/ui/Screen.tsx")),
+  );
+  ok(
+    "it closes with an X, and the device remembers that it did",
+    /onClick=\{onClose\}/.test(popup) &&
+      /<X /.test(popup) &&
+      /aria-label="Close/.test(popup) &&
+      /localStorage\.setItem\(CLOSED_KEY/.test(depth) &&
+      /try \{/.test(depth),
+  );
+  ok(
+    "and nothing closes it but the X — no timer",
+    !/setTimeout/.test(depth) && !/usePresence/.test(depth),
+  );
+  ok(
+    "the pop-up is coloured by how full the profile is",
+    tone(0).includes("bg-alert") &&
+      tone(RED - 1).includes("bg-alert") &&
+      tone(RED).includes("bg-gold") &&
+      tone(YELLOW - 1).includes("bg-gold") &&
+      tone(YELLOW).includes("bg-green-deep") &&
+      /reminderTone\(depth\.percent\)/.test(popup),
+  );
+  ok(
+    "and yellow carries dark text, because white on gold fails contrast",
+    tone(50).includes("text-ink") && !tone(50).includes("text-white"),
+  );
+  /* The strip's four notes (23 Sep screenshot), still pinned. */
+  ok(
+    "the strip sits apart from the logo row and counts 'out of'",
+    /mt-3 rounded-xl/.test(strip) && /out of \$\{depth\.total\}/.test(strip),
   );
   ok(
     "and its Add more is the small, light size rather than a bold one",
-    /font-medium text-dock[^"]*underline/.test(reminder) &&
-      !/font-semibold[^"]*underline/.test(reminder),
+    /font-medium text-dock[^"]*underline/.test(strip) &&
+      !/font-semibold[^"]*underline/.test(strip),
   );
   ok(
-    "and the bar is red under 50, yellow to 69, green from 70",
-    depthLib.reminderFill(0) === "bg-alert" &&
-      depthLib.reminderFill(49) === "bg-alert" &&
-      depthLib.reminderFill(50) === "bg-gold" &&
-      depthLib.reminderFill(69) === "bg-gold" &&
-      depthLib.reminderFill(70) === "bg-green" &&
-      depthLib.reminderFill(79) === "bg-green" &&
-      /fill=\{reminderFill\(depth\.percent\)\}/.test(reminder),
-  );
-  /* ⚠ On what renders, never on the word: this file names every shape it has
-     had in the comment recording the change, and a check that fails on a
-     sentence saying what used to be there is the fault it keeps paying for. */
-  ok(
-    "and neither the timer nor the dismiss came back with it",
-    !/setTimeout/.test(reminder) &&
-      !/usePresence/.test(reminder) &&
-      !/onClick/.test(reminder) &&
-      !/Dismiss/.test(reminder),
-  );
-  /* ⚠ The header strip needs no measuring — it is content inside a `sticky`
-     header — so the marker added for the version that measured the header is
-     gone. A measurement nothing reads is the fault this file keeps recording;
-     `data-screen-dock` stays, because the corner card and `OptionPicker` both
-     read it. */
-  ok(
-    "and nothing measures the header any more, nor carries a marker for one",
-    !/data-screen-header/.test(depth) &&
-      !/data-screen-header/.test(src("../components/ui/Screen.tsx")),
+    "the colours are the new ranges: red under 40, yellow to 69, green from 70",
+    RED === 40 && YELLOW === 70 &&
+      fill(0) === "bg-alert" &&
+      fill(39) === "bg-alert" &&
+      fill(40) === "bg-gold" &&
+      fill(69) === "bg-gold" &&
+      fill(70) === "bg-green" &&
+      fill(79) === "bg-green" &&
+      /fill=\{reminderFill\(depth\.percent\)\}/.test(strip),
   );
   /**
    * The threshold is the whole of *"потрібний відсоток"*, and it is the
@@ -2852,9 +2933,6 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       !shows(bar) &&
       !shows(100) &&
       shows(0) &&
-      /* Nothing to fill in is not the same as a thin profile: an expecting
-         parent measured against a smaller questionnaire must not meet a
-         reminder about questions that do not exist. */
       !shows(0, 0),
   );
   ok(
@@ -2871,9 +2949,12 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
      neither of them claims anything the number cannot keep. */
   ok(
     "it is the figure, the count and the way in, never what it earns",
-    /% complete/.test(reminder) &&
-      /Add more/.test(reminder) &&
-      !/match you with parents/.test(reminder) &&
+    /* 23 Sep: the pop-up is back "as it was", so its sentence is back with
+       it; the strip it leaves stays one line. */
+    /% complete/.test(strip) &&
+      /Add more/.test(strip) &&
+      !/match you with parents/.test(strip) &&
+      /match you with parents/.test(popup) &&
       !/(founding|reward|\$10|access|unlock)/i.test(
         reminder.replace(/FOUNDING_MIN_PROFILE_DEPTH/g, ""),
       ),
@@ -2903,10 +2984,11 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
      number rather than repeating it, and it is her own 16 Sep instruction. */
   ok(
     "and the review draws one bar and says the figure once",
-    /right=\{\s*profileReminderShows\(depth\) \? undefined/.test(flow) &&
-      /profileReminderShows\(depth\) \? \(\s*<ProfileReminder depth=\{depth\} onProfile \/>\s*\) : \(/.test(
-        flow,
-      ),
+    /* 23 Sep: the header steps aside only for the strip; while the pop-up is
+       up it keeps its own label and bar. */
+    /right=\{\s*reviewStrip \? undefined/.test(flow) &&
+      /reviewStrip \? \(\s*<ProfileReminder depth=\{depth\} onProfile \/>\s*\) : \(/.test(flow) &&
+      /profileReminderShows\(depth\) && reminderMounted && reminderClosed/.test(flow),
   );
   ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
   /* ⚠ The header pill went when the banner arrived: the same number a hundred

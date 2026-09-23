@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
   Card,
+  DisclosureChevron,
   Empty,
   ErrorNote,
   Field,
@@ -28,7 +29,13 @@ import {
   sentence,
 } from "@/lib/admin/labels";
 import { profileValueLabel } from "@/lib/questions";
-import type { ContributorDetail, ContributorRow } from "@/lib/admin/types";
+import type {
+  ContributionRow,
+  ContributorDetail,
+  ContributorRow,
+} from "@/lib/admin/types";
+import { ContributionFacts } from "@/components/admin/ContributionFacts";
+import { FOUNDING_MIN_APPROVED } from "@/lib/rewards";
 
 /**
  * Estimate 2.3 — one contributor.
@@ -53,6 +60,18 @@ export default function ContributorDetailPage({
   const [message, setMessage] = useState<string | null>(null);
 
   const c = rows;
+
+  /**
+   * Every card this parent shared, in full (23 Sep). The developer: from the
+   * Founding queue an admin opens this page and must be able to open *each*
+   * contribution the approval rests on. The list the page already had carried a
+   * name and a status and linked to the whole queue, so checking one card meant
+   * finding it among everybody else's. Same read as the queue, narrowed to this
+   * person, so both pages show one record the same way.
+   */
+  const { rows: contributions, loading: contributionsLoading } = useAdminRows<
+    ContributionRow[]
+  >("contributions", { person_id: id });
 
   /**
    * The picker's options. Linking a referral is an admin judgement — with one
@@ -347,37 +366,11 @@ export default function ContributorDetailPage({
               </Card>
             )}
 
-            <Card title={`Submitted (${c.cards.length})`}>
-              {c.cards.length === 0 ? (
-                <Empty title="Nothing shared yet" />
-              ) : (
-                <ul className="divide-y divide-bark/50">
-                  {c.cards.map((card) => (
-                    <li
-                      key={card.id}
-                      className="flex items-center justify-between gap-3 px-4 py-2.5 text-[14px]"
-                    >
-                      <span>
-                        <Badge tone="muted">{CARD_KIND[card.kind] ?? sentence(card.kind)}</Badge>
-                        <span className="ml-2">{card.title}</span>
-                      </span>
-                      <span className="flex items-center gap-2 text-[13px] text-muted">
-                        {REVIEW_STATUS[card.status]?.label ?? sentence(card.status)}
-                        <TextLink
-                          href={
-                            card.kind === "caregiver"
-                              ? "/admin/caregivers"
-                              : "/admin/activities"
-                          }
-                        >
-                          Review
-                        </TextLink>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+            <SharedCards
+              cards={c.cards}
+              contributions={contributions ?? []}
+              loading={contributionsLoading}
+            />
 
             <Card
               title="Conversation transcript"
@@ -569,6 +562,130 @@ function Pair({ label, value }: { label: string; value: string }) {
         {label}
       </dt>
       <dd className="mt-0.5">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * What the parent shared, and which of it the Founding decision rests on.
+ *
+ * ⚠ **"Counts toward Founding" is the rule the queue decides on, and nothing
+ * looser**: an approved contribution that is not a test row, a caregiver
+ * nomination only when approved (`founding_checklist.approved_contributions`,
+ * drizzle/0045). They are listed first, under their own heading, because they are
+ * what the Confirm button in the Founding queue is agreeing to.
+ *
+ * Each activity, place or tip opens in place (`<details>`, so it works before
+ * hydration and find-in-page reaches it) onto exactly what the contributions
+ * queue shows. A caregiver card does not open here: its private note is behind
+ * a logged read on the caregivers page (invariant 12), so it links there.
+ */
+function SharedCards({
+  cards,
+  contributions,
+  loading,
+}: {
+  cards: ContributorDetail["cards"];
+  contributions: ContributionRow[];
+  loading: boolean;
+}) {
+  const shares = contributions.filter((r) => !r.is_test);
+  const caregivers = cards.filter((card) => card.kind === "caregiver");
+  const counts = (status: string) => status === "approved";
+  const approved =
+    shares.filter((r) => counts(r.status)).length +
+    caregivers.filter((card) => counts(card.status)).length;
+  const total = shares.length + caregivers.length;
+
+  /**
+   * The Founding queue links here as `#contributions`, and this block arrives
+   * after the page does — so the browser looks for the anchor before it exists
+   * and lands at the top. Scrolled once, when the cards are in, and only for
+   * that link.
+   */
+  const anchor = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(false);
+  useEffect(() => {
+    if (scrolled.current || loading || total === 0) return;
+    if (window.location.hash !== "#contributions") return;
+    scrolled.current = true;
+    anchor.current?.scrollIntoView({ block: "start" });
+  }, [loading, total]);
+
+  const ordered = [
+    ...shares.filter((r) => counts(r.status)),
+    ...shares.filter((r) => !counts(r.status)),
+  ];
+
+  return (
+    <div id="contributions" ref={anchor} className="scroll-mt-4">
+      <Card
+        title={`What they shared (${total})`}
+        right={
+          <span className="text-[12px] text-muted">
+            {approved} approved · Founding needs {FOUNDING_MIN_APPROVED}
+          </span>
+        }
+      >
+        {loading && total === 0 ? (
+          <Loading />
+        ) : total === 0 ? (
+          <Empty title="Nothing shared yet" />
+        ) : (
+          <ul className="divide-y divide-bark/50">
+            {ordered.map((row) => (
+              <li key={row.id}>
+                <details className="group">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-[14px] hover:bg-paper [&::-webkit-details-marker]:hidden">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <DisclosureChevron />
+                      <Badge tone="muted">{CARD_KIND[row.kind] ?? sentence(row.kind)}</Badge>
+                      <span className="truncate font-medium">{row.share.name}</span>
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
+                      {counts(row.status) && (
+                        <Badge tone="green">Counts toward Founding</Badge>
+                      )}
+                      {!counts(row.status) &&
+                        (REVIEW_STATUS[row.status]?.label ?? sentence(row.status))}
+                      <span className="hidden sm:inline">{when(row.created_at)}</span>
+                    </span>
+                  </summary>
+                  {/* The queue gets this padding from `RecordCard`; here the
+                      facts sit straight in a list row, so it is given here. */}
+                  <div className="border-t border-bark/50 px-4 pb-3 pt-3">
+                    <ContributionFacts row={row} />
+                    <p className="pt-3 text-[13px]">
+                      <TextLink href="/admin/activities">
+                        Act on it in the contributions queue
+                      </TextLink>
+                    </p>
+                  </div>
+                </details>
+              </li>
+            ))}
+            {caregivers.map((card) => (
+              <li
+                key={card.id}
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-[14px]"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <Badge tone="muted">{CARD_KIND[card.kind] ?? sentence(card.kind)}</Badge>
+                  <span className="truncate font-medium">{card.title}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
+                  {counts(card.status) ? (
+                    <Badge tone="green">Counts toward Founding</Badge>
+                  ) : (
+                    (REVIEW_STATUS[card.status]?.label ?? sentence(card.status))
+                  )}
+                  <TextLink href="/admin/caregivers">Open</TextLink>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

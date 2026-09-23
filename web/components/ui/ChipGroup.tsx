@@ -33,6 +33,8 @@ interface Props {
   max?: number;
   /** Shown once the cap is reached. Worded by the caller — only it knows why. */
   maxHint?: string;
+  /** Passed to the sheet; false where a typed answer joins no list (23 Sep). */
+  otherAddsToList?: boolean;
 }
 
 export function ChipGroup({
@@ -50,6 +52,7 @@ export function ChipGroup({
   groupLabel,
   max,
   maxHint,
+  otherAddsToList,
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const exclusiveIds = options.filter((o) => o.exclusive).map((o) => o.id);
@@ -256,6 +259,7 @@ export function ChipGroup({
              it with, so a heading reading "+ Something else" is the same
              duplicate one screen along. */
           title={otherActionLabel(otherLabel ?? "Add your own")}
+          addsToList={otherAddsToList}
           onClose={() => setSheetOpen(false)}
           onSubmit={(value) => {
             onAddCustom(value);

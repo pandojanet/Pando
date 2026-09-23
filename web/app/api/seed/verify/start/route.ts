@@ -10,6 +10,7 @@ import { sendSms } from "@/lib/server/sms";
 import { rateLimited } from "@/lib/server/rate-limit";
 import {
   devCodesEnabled,
+  verifiedPhone,
   startVerification,
   VERIFICATION_SENDS_PER_HOUR,
   VERIFY_COOKIE,
@@ -68,6 +69,29 @@ export async function POST(request: Request) {
       .map((c) => c.trim())
       .find((c) => c.startsWith(`${VERIFY_COOKIE}=`))
       ?.slice(VERIFY_COOKIE.length + 1) ?? null;
+
+  /**
+   * ⚠⚠ **Already confirmed in this browser: send nothing, change nothing**
+   * (23 Sep). Asking for a code used to create a fresh, unconfirmed verification
+   * and point the cookie at it — so the confirmed one this browser was carrying
+   * was dropped the moment anything asked for a code again, and every card after
+   * that was held on the phone as if the parent had never verified. Measured on
+   * the developer's own number: confirmed at 07:04, a new code requested at 08:55
+   * and never entered, and nothing saved in between. A code is for proving the
+   * number once; a browser that has already proved it is answered as such, and
+   * the screen goes straight on.
+   */
+  const already = await verifiedPhone(existingId);
+  if (already && already.phone === phone) {
+    console.info("[seed:verify] already confirmed");
+    return NextResponse.json({
+      sent: false,
+      already_verified: true,
+      sends: 0,
+      max_sends: VERIFICATION_MAX_SENDS,
+      expires_at: "",
+    });
+  }
 
   const started = await startVerification(phone, existingId);
 

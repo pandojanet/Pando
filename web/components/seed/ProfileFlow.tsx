@@ -16,6 +16,7 @@ import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import {
   ProfileReminder,
+  useReminderClosed,
   ProfilePercentBar,
   ProfilePercentLabel,
   ProfilePercentPill,
@@ -156,6 +157,8 @@ function pickerPlaceholder(question: Question): string | undefined {
 }
 
 export function ProfileFlow() {
+  /* Whether the review header shows the strip or its own label (23 Sep). */
+  const [reminderMounted, reminderClosed] = useReminderClosed();
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
   const [stage, setStage] = useState<"questions" | "review" | "verify">(
@@ -1453,6 +1456,8 @@ export function ProfileFlow() {
 
   if (stage === "review") {
     const depth = profileDepth(answers);
+    const reviewStrip =
+      profileReminderShows(depth) && reminderMounted && reminderClosed;
     return (
       <Screen>
         <ScreenHeader
@@ -1474,21 +1479,23 @@ export function ProfileFlow() {
            * at the page they are standing on.
            */
           right={
-            profileReminderShows(depth) ? undefined : (
-              <ProfilePercentLabel depth={depth} />
-            )
+            reviewStrip ? undefined : <ProfilePercentLabel depth={depth} />
           }
           below={
             /* While the strip shows it carries the figure, the count and a
                bar, so the header's own label and bar step aside — two bars an
-               inch apart are one measure drawn twice. Above the bar they come
-               back, so the header is never empty. */
-            profileReminderShows(depth) ? (
+               inch apart are one measure drawn twice. While the pop-up is up
+               (23 Sep) the header keeps them, and the reminder rendered here
+               portals the card into the corner. */
+            reviewStrip ? (
               <ProfileReminder depth={depth} onProfile />
             ) : (
-              <div className="mt-1">
-                <ProfilePercentBar depth={depth} />
-              </div>
+              <>
+                <div className="mt-1">
+                  <ProfilePercentBar depth={depth} />
+                </div>
+                <ProfileReminder depth={depth} onProfile />
+              </>
             )
           }
         />
@@ -1580,7 +1587,9 @@ export function ProfileFlow() {
                           const due = MONTH_OPTIONS.find(
                             (m) => Number(m.id) === answers.child_months[String(index)],
                           )?.label;
-                          return due ? `Expecting (due ${due})` : "Expecting";
+                          /* 23 Sep: the chip reads next year, so the row does too. */
+                          const dueYear = CURRENT_YEAR + 1;
+                          return due ? `Due ${due} ${dueYear}` : `Due ${dueYear}`;
                         }
                         const year = String(CURRENT_YEAR - age);
                         const month = MONTH_OPTIONS.find(

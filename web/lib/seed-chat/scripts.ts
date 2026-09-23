@@ -88,6 +88,13 @@ const TIP_TOPICS: Option[] = [
   { id: "health", label: "Doctors & health" },
 ];
 
+/**
+ * The card's last question (23 Sep, the developer: *"Is there anything you think
+ * other parents should know?"*), one constant for all three kinds so the
+ * activity, place and tip cards cannot drift apart.
+ */
+export const EXTRA_NOTE_PROMPT = "Is there anything you think other parents should know?";
+
 export function buildScripts(
   market: MarketId,
   ownPlaces: readonly string[] = [],
@@ -388,7 +395,8 @@ export function buildScripts(
            * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything you'd add in your own words?",
+          /* 23 Sep, her wording verbatim for the card's last question. */
+          prompt: EXTRA_NOTE_PROMPT,
           aside:
             "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",
@@ -844,7 +852,8 @@ export function buildScripts(
            * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything you'd add in your own words?",
+          /* 23 Sep, her wording verbatim for the card's last question. */
+          prompt: EXTRA_NOTE_PROMPT,
           aside:
             "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",
@@ -922,7 +931,8 @@ export function buildScripts(
            * along. It asks for the thing rather than for permission to ask.
            */
           id: "extra_note",
-          prompt: "Anything you'd add in your own words?",
+          /* 23 Sep, her wording verbatim for the card's last question. */
+          prompt: EXTRA_NOTE_PROMPT,
           aside:
             "Your own comment on this one — whatever did not fit the questions above. Optional.",
           widget: "text",

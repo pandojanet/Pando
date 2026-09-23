@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { profileReminderShows, type ProfileDepth } from "@/lib/questions";
 
@@ -102,11 +105,11 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
- * The bar's colour, from how full the profile is (23 Sep): *"червоний 0–50%,
- * жовтий 50–70%, зелений 70–100%"*.
+ * The bar's colour, from how full the profile is — *"<40% red, 40-70% yellow,
+ * 70%+ green"* (23 Sep, second pass; the first said 50/70).
  *
- * ⚠ Boundaries read as half-open ranges — under 50 red, 50 to 69 yellow, 70 and
- * over green — so a profile at exactly 50 is yellow and at exactly 70 is green.
+ * ⚠ Boundaries read as half-open ranges — under 40 red, 40 to 69 yellow, 70 and
+ * over green — so a profile at exactly 40 is yellow and at exactly 70 is green.
  * The reminder stops showing at 80 (`FOUNDING_MIN_PROFILE_DEPTH`), so green is
  * only ever seen between 70 and 79.
  *
@@ -117,9 +120,86 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
  * is one class in one function, so reverting it is a one-line change.
  */
 export function reminderFill(percent: number): string {
-  if (percent < 50) return "bg-alert";
-  if (percent < 70) return "bg-gold";
+  if (percent < REMINDER_RED_BELOW) return "bg-alert";
+  if (percent < REMINDER_YELLOW_BELOW) return "bg-gold";
   return "bg-green";
+}
+
+/** The two thresholds, once, so the bar and the pop-up cannot disagree. */
+export const REMINDER_RED_BELOW = 40;
+export const REMINDER_YELLOW_BELOW = 70;
+
+/**
+ * The pop-up's colours — the same three ranges as the bar (23 Sep: *"той попап
+ * має бути в кольорі відповідно до відсотка заповненості профіля"*).
+ *
+ * ⚠ **Yellow carries dark text, and that is contrast rather than taste**:
+ * white on `gold` (#d9a31c) is about 2.3:1 and fails, ink on it passes. Red
+ * (`alert`) and green (`green-deep`) both carry white comfortably.
+ */
+export function reminderTone(percent: number): {
+  card: string;
+  soft: string;
+  link: string;
+} {
+  if (percent < REMINDER_RED_BELOW) {
+    return { card: "bg-alert text-white", soft: "text-white/85", link: "text-white" };
+  }
+  if (percent < REMINDER_YELLOW_BELOW) {
+    return { card: "bg-gold text-ink", soft: "text-ink/80", link: "text-ink" };
+  }
+  return { card: "bg-green-deep text-white", soft: "text-white/85", link: "text-white" };
+}
+
+/**
+ * Whether this device has closed the pop-up (23 Sep).
+ *
+ * A per-device convenience, so `localStorage` — and every read and write is
+ * wrapped, because a private window or blocked site data throws, and the
+ * reminder must still render (it falls back to the pop-up). Components on one
+ * page hear each other through an event, so the review header and the reminder
+ * in it change together when the X is pressed.
+ */
+const CLOSED_KEY = "pando.profile-reminder.closed";
+const CLOSED_EVENT = "pando:profile-reminder-closed";
+
+function readClosed(): boolean {
+  try {
+    return window.localStorage.getItem(CLOSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `[mounted, closed, close]`. Before mount nothing is known — the server has
+ * no `localStorage` — so callers render the neutral state until then rather
+ * than guess and change under the reader.
+ */
+export function useReminderClosed(): [boolean, boolean, () => void] {
+  const [mounted, setMounted] = useState(false);
+  const [closed, setClosed] = useState(false);
+  useEffect(() => {
+    setClosed(readClosed());
+    setMounted(true);
+    const sync = () => setClosed(readClosed());
+    window.addEventListener(CLOSED_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(CLOSED_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
+  const close = () => {
+    try {
+      window.localStorage.setItem(CLOSED_KEY, "1");
+    } catch {
+      /* Blocked storage: it closes for this page view, which is what was asked. */
+    }
+    setClosed(true);
+    window.dispatchEvent(new Event(CLOSED_EVENT));
+  };
+  return [mounted, closed, close];
 }
 
 /**
@@ -148,8 +228,9 @@ export function reminderFill(percent: number): string {
  * the scroll by being part of the thing that already does, and it covers
  * nothing — the complaint every floating version earned.
  *
- * ⚠ **It cannot be sent away**, which is instruction (4) in so many words. What
- * keeps it honest is that it is small and gone the moment it stops being true.
+ * ⚠ **The strip cannot be sent away; the pop-up can** (instruction 9, 23 Sep).
+ * Closing the pop-up is what brings the strip, so a parent always has one of
+ * the two until the profile clears the bar.
  *
  * ## The threshold is the product's own number, not a new one
  *
@@ -172,7 +253,19 @@ export function ProfileReminder({
    */
   onProfile?: boolean;
 }) {
-  if (!profileReminderShows(depth)) return null;
+  const [mounted, closed, close] = useReminderClosed();
+  if (!profileReminderShows(depth) || !mounted) return null;
+  /**
+   * ⚠⚠ **9. The pop-up comes back first, and the strip is what closing it
+   * leaves** (23 Sep): *"поверни той попап, що показував відсотки, як він був
+   * до того, але перемісти його вверх … з можливістю його закрити (хрестиком).
+   * Після закриття цей банер стає таким, як є зараз."* So until this device
+   * presses the X, the reminder is (4)'s card in the **top**-right corner; after
+   * it, the strip below. One reminder at a time, never both.
+   */
+  if (!closed) {
+    return <FloatingReminder depth={depth} onProfile={onProfile} onClose={close} />;
+  }
   return (
     <div className="mt-3 rounded-xl border border-green/25 bg-green-wash px-3 py-2">
       <div className="flex items-center justify-between gap-3">
@@ -199,5 +292,93 @@ export function ProfileReminder({
         <ProfilePercentBar depth={depth} fill={reminderFill(depth.percent)} />
       </div>
     </div>
+  );
+}
+
+/**
+ * (4)'s corner card, in the **top**-right corner this time, with an X.
+ *
+ * ⚠ **Portalled to `body`**: it is `position: fixed`, and these screens sit
+ * inside animated wrappers — a filled animation makes its element the
+ * containing block for `fixed` (the 5 Aug bug), so a card rendered in place
+ * would be clipped to its column.
+ *
+ * ⚠ **Just under the header, measured rather than guessed**: the header is
+ * sticky, so its bottom edge is where the free space starts, and it changes
+ * height (the review's bar, the safe-area inset) — hence a `ResizeObserver` on
+ * it rather than a constant. On a phone the card spans the width under the
+ * header, because a 375px screen has no empty corner; the X is what makes that
+ * acceptable, and the strip it leaves covers nothing.
+ */
+function FloatingReminder({
+  depth,
+  onProfile,
+  onClose,
+}: {
+  depth: ProfileDepth;
+  onProfile?: boolean;
+  onClose: () => void;
+}) {
+  const [top, setTop] = useState(80);
+  useEffect(() => {
+    const header = document.querySelector("[data-screen-header]");
+    const measure = () => {
+      const box = header?.getBoundingClientRect();
+      setTop((box ? Math.max(0, box.bottom) : 68) + 12);
+    };
+    measure();
+    const ro = header ? new ResizeObserver(measure) : null;
+    if (header) ro?.observe(header);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  const tone = reminderTone(depth.percent);
+  return createPortal(
+    <div
+      className="pointer-events-none fixed inset-x-3 z-40 flex justify-end sm:inset-x-auto sm:right-4"
+      style={{ top }}
+    >
+      <aside
+        aria-label="How full your profile is"
+        className={cn(
+          "pointer-events-auto relative w-full max-w-[23rem] animate-rise rounded-2xl py-3 pl-4 pr-12 shadow-card",
+          tone.card,
+        )}
+      >
+        <p className="font-semibold leading-snug text-control tabular-nums">
+          {`Your profile is ${depth.percent}% complete — ${100 - depth.percent}% to go.`}
+        </p>
+        <p className={cn("mt-1 leading-snug text-help", tone.soft)}>
+          Fill in the rest and Pando can match you with parents whose experience
+          is closest to yours.
+          {!onProfile && (
+            <>
+              {" "}
+              <Link
+                href="/profile"
+                className={cn("font-semibold underline underline-offset-2", tone.link)}
+              >
+                Add more
+              </Link>
+            </>
+          )}
+        </p>
+        {/* 44px, named, and the one way to send it away; what it leaves is the
+            strip in the header, which covers nothing. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close — keep it as a line in the header"
+          className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-full hover:bg-black/10"
+        >
+          <X aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </aside>
+    </div>,
+    document.body,
   );
 }

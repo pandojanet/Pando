@@ -135,6 +135,8 @@ export function ScreenHeader({
 }) {
   return (
     <header
+      /* Measured by the profile pop-up, which sits just under it (23 Sep). */
+      data-screen-header
       className="sticky top-0 z-30 border-b border-bark/70 bg-paper/90 backdrop-blur-md pt-safe md:pt-3"
     >
       <Container className="pb-2.5 md:pb-3">

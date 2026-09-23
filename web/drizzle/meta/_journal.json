@@ -351,6 +351,13 @@
       "when": 1790164800000,
       "tag": "0049_caregiver_invite_token",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790251200000,
+      "tag": "0050_relationship_note",
+      "breakpoints": true
     }
   ]
 }

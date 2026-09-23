@@ -12,6 +12,14 @@ interface Props {
   title: string;
   onClose: () => void;
   onSubmit: (value: string) => void;
+  /**
+   * Whether the answer joins a directory an admin reviews (23 Sep). True by
+   * default — every profile "Other" does, which is what the line under the
+   * title promises. The inviter question's "Something else" does not: those
+   * words describe how two people know each other and are never added to any
+   * list, so the promise would be false there.
+   */
+  addsToList?: boolean;
 }
 
 /**
@@ -32,7 +40,7 @@ interface Props {
  * for the life of the screen: full-width on a phone by luck, and on a laptop a
  * half-width sheet anchored to the bottom of the text.
  */
-export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
+export function OtherSheet({ open, title, onClose, onSubmit, addsToList = true }: Props) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -168,9 +176,11 @@ export function OtherSheet({ open, title, onClose, onSubmit }: Props) {
         >
           {title}
         </label>
-        <p className="mt-1 text-help text-muted">
-          We&apos;ll add it to the list for your area once we&apos;ve checked it.
-        </p>
+        {addsToList && (
+          <p className="mt-1 text-help text-muted">
+            We&apos;ll add it to the list for your area once we&apos;ve checked it.
+          </p>
+        )}
         {/* `fieldShell`, not `Field`: the sheet's own heading is already a real
             `<label htmlFor="other-value">`, and a second one would make the
             input's accessible name the two of them concatenated. This is the

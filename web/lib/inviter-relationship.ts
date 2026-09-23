@@ -51,13 +51,53 @@ export const RELATIONSHIP_OPTIONS = [
   { id: "friend", label: "Friend" },
   { id: "neighbor", label: "Neighbor" },
   { id: "colleague", label: "Colleague" },
-  { id: "parent_group", label: "Mommy-and-me or parent group" },
+  /* 23 Sep: "Mommy and me group" → "parent group". The id is unchanged — it
+     is a stored value with a CHECK behind it, and it already said this. */
+  { id: "parent_group", label: "Parent group" },
   { id: "school_parent", label: "Our kids are at the same school or daycare" },
+  /* Not a chip on the screen (23 Sep): the screen offers it as the profile's
+     own "+ Something else", which opens a field for their words. Kept in this
+     list because it is still a value the question produces and the CHECK
+     allows. */
   { id: "other", label: "Something else" },
   /* Last, like every other refusal in this app: it is the question's own
      furniture rather than one of its answers. */
   { id: DECLINED_RELATIONSHIP, label: "Prefer not to say" },
 ] as const;
+
+/**
+ * "Something else", in their own words (23 Sep, the developer: *"має бути, як
+ * всі Something else опції в профілі, з можливістю вписати щось своє"*).
+ *
+ * Tapping it used to select a chip that meant nothing more than *not the
+ * others*. The words are stored beside the edge (`person_relationships.note`,
+ * drizzle/0050) and **only** on an `other` edge — a note next to *Family* would
+ * be a second answer to a question already answered, and the CHECK refuses it.
+ */
+export const OTHER_RELATIONSHIP = "other";
+export const RELATIONSHIP_NOTE_MAX = 120;
+
+/** The chips the screen shows: everything but "other", which is the field. */
+export const RELATIONSHIP_CHIPS = RELATIONSHIP_OPTIONS.filter(
+  (o) => o.id !== OTHER_RELATIONSHIP,
+);
+
+/**
+ * What may be stored as the note. Whitespace collapsed, bounded, and null unless
+ * the relationship it describes is `other` — the rule the CHECK holds too,
+ * because a violation there would take the whole profile write down with it
+ * (the 18 Aug `allowance_shape` lesson). Over-long words are refused rather
+ * than cut, since a truncated sentence is one the parent did not write.
+ */
+export function relationshipNote(
+  relationship: unknown,
+  note: unknown,
+): string | null {
+  if (relationship !== OTHER_RELATIONSHIP || typeof note !== "string") return null;
+  const clean = note.replace(/\s+/g, " ").trim();
+  if (!clean || clean.length > RELATIONSHIP_NOTE_MAX) return null;
+  return clean;
+}
 
 /** Anything the screen can produce, the refusal included. */
 export type Relationship = (typeof RELATIONSHIP_OPTIONS)[number]["id"];

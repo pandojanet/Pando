@@ -1567,6 +1567,8 @@ export const personRelationships = pgTable(
       .notNull()
       .references(() => people.id, { onDelete: "cascade" }),
     relationship: text("relationship").notNull(),
+    /** 23 Sep, drizzle/0050: their words for "Something else", only on an `other` edge. */
+    note: text("note"),
     source: text("source").notNull().default("invite"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

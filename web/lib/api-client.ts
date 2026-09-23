@@ -77,6 +77,11 @@ export interface VerifyStartResult {
   retry_in_seconds?: number;
   /** Only when SEED_VERIFY_DEV_CODES=1, so QA can walk the flow pre-approval. */
   dev_code?: string;
+  /**
+   * This browser already holds a confirmed verification for this number, so no
+   * code was sent and nothing was replaced (23 Sep). The screen goes straight on.
+   */
+  already_verified?: boolean;
 }
 
 export async function startVerification(input: {

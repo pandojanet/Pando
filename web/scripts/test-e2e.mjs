@@ -41,6 +41,9 @@ for (const f of [".env.local", ".env"]) if (existsSync(f)) process.loadEnvFile(f
 
 const B = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 const RUN = String((Math.floor(Date.now() / 1000) % 900) + 100);
+/* The token the family's caregiver card mints and the caregiver's sign-up
+   carries back (23 Sep): 16 characters of [a-z0-9], unique to this run. */
+const CG_TOKEN = `auditcgtokenx${RUN}`;
 const PHONE = `+1626555${RUN}1`;
 const CG_PHONE = `+1626555${RUN}2`;
 
@@ -293,7 +296,7 @@ head("1.4 / 1.5  cards, R1-R11, fix-a-field");
 
 head("1.6  caregiver nomination — the refusals first");
 {
-  const nom = (fields, id) => parent.post("/api/seed/save", { invite_code: "sgv-founding", contributor_phone: PHONE, submission: { id, kind: "caregiver", fields } });
+  const nom = (fields, id, invite_token) => parent.post("/api/seed/save", { invite_code: "sgv-founding", contributor_phone: PHONE, submission: { id, kind: "caregiver", fields, ...(invite_token ? { invite_token } : {}) } });
   ok("secondhand nomination refused (inv 14)", (await nom({ name: ["Nope", "N"], age_gate: "yes", worked_for_you: "no" }, `cg-bad-${RUN}a`)).status === 422);
   ok("under-18 nomination refused (inv 2)", (await nom({ name: ["Nope", "N"], age_gate: "no", worked_for_you: "yes" }, `cg-bad-${RUN}b`)).status === 422);
   const held = await nom({
@@ -307,7 +310,7 @@ head("1.6  caregiver nomination — the refusals first");
     pay_band: "22_26", pay_benchmark_ok: "yes", reference_willing: "yes", send_invite: "yes",
     /* Smuggled: must all be refused. */
     contact: "+15550000000", caregiver_phone: "+15550000000", consent_status: "consented", active: true,
-  }, `audit-cg-${RUN}`);
+  }, `audit-cg-${RUN}`, CG_TOKEN);
   ok("a held nomination saved", held.status === 200 && held.json.persisted === true);
 }
 
@@ -356,8 +359,13 @@ head("2C  the caregiver's own flow");
   ok("claim refused before OTP", (await cg.post("/api/caregiver/claim", { phone: CG_PHONE, profile_consent: true, first_name: "Auditcarer" })).status === 401);
   const st = await cg.post("/api/seed/verify/start", { phone: CG_PHONE, sms_consent: true });
   await cg.post("/api/seed/verify/check", { code: st.json.dev_code });
-  ok("claim refused without G2 consent", (await cg.post("/api/caregiver/claim", { phone: CG_PHONE, profile_consent: false, first_name: "Auditcarer" })).status === 422);
+  ok("claim refused without G2 consent", (await cg.post("/api/caregiver/claim", { phone: CG_PHONE, profile_consent: false, first_name: "Auditcarer", invite_token: CG_TOKEN })).status === 422);
+  /* 23 Sep: the bare address is closed, so a verified caregiver with no invite
+     — or with a token that names nothing — is refused, not stored. */
+  ok("claim refused without an invite token", (await cg.post("/api/caregiver/claim", { phone: CG_PHONE, profile_consent: true, first_name: "Auditcarer" })).status === 403);
+  ok("claim refused with a token that names nothing", (await cg.post("/api/caregiver/claim", { phone: CG_PHONE, profile_consent: true, first_name: "Auditcarer", invite_token: "zzzzzzzzzzzzzzzz" })).status === 403);
   const claim = await cg.post("/api/caregiver/claim", {
+    invite_token: CG_TOKEN,
     phone: CG_PHONE, profile_consent: true, first_name: "Auditcarer", last_initial: "t",
     roles_wanted: ["regular_part_time", "not-a-real-role"], age_experience: ["preschool"],
     strengths: ["reliable"], areas_served: ["altadena"], drives: "yes",
@@ -1054,7 +1062,10 @@ head("1.6  the nomination, holds and restricted notes");
 const [n] = await sql`select cn.id as nomination_id, cn.*, c.consent_status, c.active, c.discoverable, c.introducible from caregiver_nominations cn join caregivers c on c.id = cn.caregiver_id where c.first_name = 'Auditcarer'`;
 ok("worked_for_family forced true", n && n.worked_for_family === true);
 ok("a hesitant answer held the card", n && n.review_hold === true, JSON.stringify(n && n.hold_reasons));
-ok("the ladder starts at mentioned", n && n.consent_status === "mentioned");
+/* It starts at mentioned; the caregiver then signed up through this card's own
+   invite (2C, below), which moves it to invited — never further on her own. */
+ok("the ladder is at invited, and no further", n && n.consent_status === "invited");
+ok("the card carries the token its invite was built from", n && n.invite_token === CG_TOKEN);
 ok("not active / discoverable / introducible", n && !n.active && !n.discoverable && !n.introducible);
 ok("pay band and benchmark consent are separate", n && n.pay_band === "22_26" && n.pay_benchmark_consent === true);
 ok("the job's shape, size and benefits landed with the rate (Stage 1)", n && n.hours_per_week === "10_20" && (n.schedule_pattern ?? []).includes("weekday_afternoons") && (n.benefits ?? []).includes("paid_time_off"), JSON.stringify([n && n.schedule_pattern, n && n.hours_per_week, n && n.benefits]));
@@ -1156,6 +1167,7 @@ const [claim] = await sql`select c.* from caregiver_claims c join people p on p.
   where p.first_name like 'Audit%' order by c.created_at desc limit 1`;
 ok("stored as pending, against a verified identity", claim && claim.status === "pending");
 ok("the initial was upper-cased", claim && claim.last_initial === "T");
+ok("the claim names the recommendation it came through", claim && claim.via_nomination_id === n.nomination_id);
 ok("an unknown option id was dropped", claim && !claim.roles_wanted.includes("not-a-real-role"));
 ok("introduce was demoted without appear", claim && claim.appear_in_answers === false && claim.open_to_introductions === false);
 ok("four caregiver consents recorded", (await sql`select 1 from consents c join people p on p.id = c.person_id

@@ -85,7 +85,10 @@ export async function readResource(
     case "contributor":
       return contributorDetail(db, String(params.id ?? ""));
     case "contributions":
-      return contributions(db);
+      /* 23 Sep: one parent's cards, for the contributor page the Founding
+         queue now links to. Anything that is not a uuid reads as "everyone"
+         rather than reaching the query. */
+      return contributions(db, uuidOrNull(params.person_id));
     case "caregivers":
       return caregivers(db);
     case "caregiver_claims":
@@ -694,7 +697,12 @@ async function contributorDetail(db: Db, id: string) {
 
 /* ── 2.4 Contributions ───────────────────────────────────────────────────── */
 
-async function contributions(db: Db) {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidOrNull(value: unknown): string | null {
+  return typeof value === "string" && UUID.test(value) ? value : null;
+}
+
+async function contributions(db: Db, personId: string | null = null) {
   const list = await rows(
     db,
     sql`
@@ -706,6 +714,7 @@ async function contributions(db: Db) {
       from share_contributions pc
       join shares pl on pl.id = pc.share_id
       left join people p on p.id = pc.person_id
+      where ${personId}::uuid is null or pc.person_id = ${personId}::uuid
       order by pc.created_at desc
       limit 500
     `,

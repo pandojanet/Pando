@@ -132,6 +132,13 @@ export function VerifyPhone({
     track("seed_verify_requested", { resend: stage === "sent" });
     try {
       const result = await startVerification({ phone, sms_consent: true });
+      /* Already confirmed in this browser: nothing was sent, so there is no
+         code to type — carry on as if it had just been confirmed. */
+      if (result.already_verified) {
+        track("seed_verify_already_confirmed");
+        onVerified();
+        return;
+      }
       setStart(result);
       if (result.sent || result.dev_code) {
         setStage("sent");

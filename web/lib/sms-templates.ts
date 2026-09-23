@@ -271,12 +271,23 @@ export const VERIFICATION_LOCK_MINUTES = 15;
  * fills fifteen screens, shares four cards and gets interrupted by a toddler —
  * where an hour was plenty when the code was the last thing they did.
  *
- * Twelve hours rather than days because the store is in memory: it does not
- * survive a deploy, and a longer promise would be one we cannot keep. Running past
- * it is not a data loss — the write is refused, the session falls back to holding
- * everything on the phone, and the gate at the end asks for a fresh code.
+ * ⚠⚠ **Ninety days, not twelve hours** (23 Sep). The developer: *"цей механізм
+ * має працювати лише під час створення або логіну"* — a code when the profile is
+ * made and when somebody signs in, and never again because they came back to
+ * change an answer. Twelve hours was chosen **because the store was in memory**
+ * and did not survive a deploy, so a longer promise could not be kept; since
+ * `drizzle/0048` the verification is a row and survives every deploy, which is
+ * the reason gone. What twelve hours produced instead was a parent verified
+ * several times over, asked again the next morning, with their cards held on the
+ * phone in the meantime — the report this answers.
+ *
+ * ⚠ The cost, stated: whoever holds this browser can change this profile for
+ * ninety days, which is what "stay signed in" means on any site. It matches
+ * `INVITE_COOKIE_MAX_AGE` in `lib/seed-gate.ts`, the other thing a parent
+ * returning days later must still be carrying. Running past it is still not a
+ * data loss — the write is refused and the gate asks for a fresh code.
  */
-export const VERIFICATION_SESSION_HOURS = 12;
+export const VERIFICATION_SESSION_HOURS = 24 * 90;
 
 /**
  * 12.3 — the keywords, and the precedence they carry.

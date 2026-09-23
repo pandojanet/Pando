@@ -83,6 +83,7 @@ export type SeedEvent =
    */
   | "seed_verify_number_changed"
   | "seed_verify_confirmed"
+  | "seed_verify_already_confirmed"
   /**
    * A parent deleted their own profile (client §1, 14 Sep).
    *

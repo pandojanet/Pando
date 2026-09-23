@@ -1,4 +1,4 @@
-import { storedRelationship } from "@/lib/inviter-relationship";
+import { relationshipNote, storedRelationship } from "@/lib/inviter-relationship";
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
@@ -220,6 +220,12 @@ export async function POST(request: Request) {
   const inviterRelationship = invitedBy
     ? storedRelationship(raw.inviter_relationship)
     : null;
+  /* Their words for "Something else" (23 Sep), kept only beside an `other`
+     edge; never logged (invariant 7). */
+  const inviterRelationshipNote = relationshipNote(
+    inviterRelationship,
+    raw.inviter_relationship_other,
+  );
 
   const childAges = cleanAges(
     raw.answers?.child_ages ?? raw.child_ages_at_capture,
@@ -672,6 +678,7 @@ export async function POST(request: Request) {
       selected_zip: selectedZip,
       invited_by: invitedBy,
       inviter_relationship: inviterRelationship,
+      inviter_relationship_note: inviterRelationshipNote,
       children: payload.children as never,
       child_ages_at_capture: payload.child_ages_at_capture,
       profile_captured_at: payload.profile_captured_at,

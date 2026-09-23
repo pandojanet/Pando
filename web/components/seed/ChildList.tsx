@@ -64,8 +64,10 @@ export function ChildList({
         <ul className="space-y-2.5">
           {children.map((age, index) => {
             const expecting = age === EXPECTING;
+            /* 23 Sep: the chip for a child on the way reads next year, so the
+               row says when rather than "On the way". */
             const heading = expecting
-              ? "On the way"
+              ? `Due ${new Date().getFullYear() + 1}`
               : (labelFor(index) ?? String(new Date().getFullYear() - age));
             const chosen = answers.child_months[String(index)];
             return (
@@ -90,9 +92,9 @@ export function ChildList({
                   </button>
                 </div>
 
-                {/* Expecting gets a month too since 16 Sep — the due month, from
-                    this one on. A child born this year gets the months up to
-                    now, and an earlier year all twelve (`monthOptionsFor`). */}
+                {/* All twelve months on every row since 23 Sep
+                    (`monthOptionsFor`); for a child on the way it is the due
+                    month. */}
                 <div
                     role="radiogroup"
                     aria-label={
