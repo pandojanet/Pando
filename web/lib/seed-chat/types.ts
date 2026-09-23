@@ -113,6 +113,13 @@ export interface Submission {
    * the default, never the decision.
    */
   show_name?: boolean;
+  /**
+   * A caregiver card's invite token (23 Sep, `drizzle/0049`) — minted when the
+   * card is finished so the message can be shown at once, and sent beside
+   * `fields` for the same reason as `show_name`: it is a fact about Pando's
+   * invite, not something the parent said about the caregiver.
+   */
+  invite_token?: string;
 }
 
 export interface ChatMessage {

@@ -64,6 +64,7 @@ import {
   maxSelectionsFor,
   optionsFor,
   profileCompleteness,
+  profileReminderShows,
   profileDepth,
   pruneAnswers,
   sameForAllChildren,
@@ -1456,26 +1457,42 @@ export function ProfileFlow() {
       <Screen>
         <ScreenHeader
           left={<BackButton onClick={goBack} />}
-          /* 16 Sep: "N% done" in the slot a question screen shows "3 left",
-             over a bar of the same height and colours — one continuous fill
-             rather than segments, because every step is done here and how much
-             of the profile is filled in is the number worth showing.
-
-             ⚠ Back after a day out: the reminder was pinned here for a few
-             hours and carried both, so these two had to step aside for it.
-             It is a floating card again, in the corner, so they stay. */
-          right={<ProfilePercentLabel depth={depth} />}
+          /**
+           * 16 Sep put "N% done" in the slot a question screen shows "3 left",
+           * over a bar of the same height and colours.
+           *
+           * ⚠ **On a phone** the reminder is in this header (22 Sep) and it
+           * carries the figure — so the label steps aside while it shows, or
+           * this screen says one number twice within an inch. On a laptop the
+           * reminder is the corner card and the label stays, which is why the
+           * hiding is a CSS variant rather than a branch. The **bar** stays
+           * either way: it draws the number rather than repeating it, and it
+           * is her own 16 Sep instruction. Above 80% the label comes back on
+           * both, so the header is never empty.
+           *
+           * ⚠ `onProfile` drops the reminder's link: *Add more* would point
+           * at the page they are standing on.
+           */
+          right={
+            profileReminderShows(depth) ? undefined : (
+              <ProfilePercentLabel depth={depth} />
+            )
+          }
           below={
-            <div className="mt-1">
-              <ProfilePercentBar depth={depth} />
-            </div>
+            /* While the strip shows it carries the figure, the count and a
+               bar, so the header's own label and bar step aside — two bars an
+               inch apart are one measure drawn twice. Above the bar they come
+               back, so the header is never empty. */
+            profileReminderShows(depth) ? (
+              <ProfileReminder depth={depth} onProfile />
+            ) : (
+              <div className="mt-1">
+                <ProfilePercentBar depth={depth} />
+              </div>
+            )
           }
         />
         <ScreenBody>
-          {/* Portals to `body` and paints in the bottom-right corner, so
-              this call decides only that the screen has one. ⚠ `onProfile`
-              drops its link: it would point at the page they are on. */}
-          <ProfileReminder depth={depth} onProfile />
           <div className="animate-step-in">
             {/* 16 Sep, "minimal text on the final profile page": the heading,
                 the answers, and three lines — name private, change later, and
@@ -2526,34 +2543,10 @@ export function ProfileFlow() {
             })}
           </div>
 
-          {/**
-           * ⚠⚠ **Keyed on the screen, not on its position** — it was
-           * `index === 1`, which meant "the second required question" right up
-           * until 15 Sep, when the two required questions merged onto one
-           * screen and index 1 became the fork. The sentence then rendered on a
-           * screen that already says the same thing twice, under a heading
-           * reading *"That's everything Pando needs."* A position is a fact
-           * about the flow's current shape; the screen is the fact this panel
-           * is actually about.
-           *
-           * ⚠ The two were separated again later the same day and this moved
-           * with them, from the merged screen to the **children**, which is
-           * where `index === 1` used to point: *"that's both required
-           * questions"* is only true once both have been asked. Keying it on
-           * the screen is what made that a one-word change instead of a fault
-           * nobody would have seen until the sentence was on the wrong page.
-           */}
-          {screen.id === "child_ages" && (
-            <Panel
-              as="p"
-              tone="positive"
-              size="inset"
-              className="mt-8 leading-relaxed text-green-deep text-help"
-            >
-              That&apos;s both required questions. Everything after this is
-              optional — it just sharpens who Pando asks on your behalf.
-            </Panel>
-          )}
+          {/* The "that's both required questions" panel that sat here is gone
+              (23 Sep, the developer: "прибери ще цю текстовку"). The dock's own
+              line already says the rest is optional, so the screen said it
+              twice. */}
 
           {/**
            * Under the questions, not over them.

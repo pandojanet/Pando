@@ -362,5 +362,50 @@ ok(
   );
 }
 
+/* ── The invite a parent sends names its recommendation (23 Sep, 0049) ─── */
+{
+  const inv = (await import(
+    `../lib/caregiver-invite.ts?v=${Date.now()}`
+  )) as typeof import("../lib/caregiver-invite.ts");
+  const tokens = Array.from({ length: 200 }, () => inv.newCaregiverInviteToken());
+  ok(
+    "a fresh token is 16 characters from [a-z0-9], the shape the database accepts",
+    tokens.every((t) => inv.isCaregiverInviteToken(t)),
+  );
+  ok("and two hundred of them are two hundred different tokens", new Set(tokens).size === 200);
+  ok(
+    "a token outside that shape is refused",
+    !inv.isCaregiverInviteToken("ABCDEFGHIJKLMNOP") &&
+      !inv.isCaregiverInviteToken("short") &&
+      !inv.isCaregiverInviteToken("abcdefghijklmnop'") &&
+      !inv.isCaregiverInviteToken(null),
+  );
+  const t = tokens[0];
+  const withToken = inv.caregiverInviteMessage({ caregiverFirstName: "Maria", token: t });
+  ok(
+    "the message carries the token as a path, never as a query parameter",
+    withToken.includes(`pando.is/caregiver/${t}`) && !withToken.includes("?"),
+  );
+  ok(
+    "and without one it keeps the bare address, which is still matched by hand",
+    inv.caregiverInviteMessage({ caregiverFirstName: "Maria" }).includes("pando.is/caregiver") &&
+      !/pando\.is\/caregiver\//.test(inv.caregiverInviteMessage({ caregiverFirstName: "Maria" })),
+  );
+  /* The reads that matter, on the source: the route never takes the
+     nomination from the body, and the admin page shows no restricted note. */
+  const route = fs.readFileSync(new URL("../app/api/caregiver/claim/route.ts", import.meta.url), "utf8");
+  ok(
+    "the claim route resolves the token against the database, never trusting an id",
+    /resolveCaregiverInvite\(db, inviteToken\)/.test(route) && !/raw\.via_nomination_id/.test(route),
+  );
+  const read = fs.readFileSync(new URL("../lib/server/repo/admin-read.ts", import.meta.url), "utf8");
+  const viaQuery = read.slice(read.indexOf("'nomination_id', n.id"), read.indexOf(") as via"));
+  ok(
+    "and the sign-up page's recommendation carries nothing from restricted_notes",
+    viaQuery.length > 0 && !/restricted_notes|private_note|hesitation/.test(viaQuery),
+    "invariant 12: the private note has its own audited read",
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

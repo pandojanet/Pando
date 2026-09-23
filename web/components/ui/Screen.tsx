@@ -134,7 +134,9 @@ export function ScreenHeader({
   below?: ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-bark/70 bg-paper/90 backdrop-blur-md pt-safe md:pt-3">
+    <header
+      className="sticky top-0 z-30 border-b border-bark/70 bg-paper/90 backdrop-blur-md pt-safe md:pt-3"
+    >
       <Container className="pb-2.5 md:pb-3">
         <div className="flex min-h-11 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">{left}</div>

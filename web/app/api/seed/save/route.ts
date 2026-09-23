@@ -9,6 +9,7 @@ import { saveCard, type CardKind } from "@/lib/server/repo/cards";
 import { scheduleExtraction } from "@/lib/server/repo/flags";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { rateLimited } from "@/lib/server/rate-limit";
+import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
 
 /**
  * POST /api/seed/save — one finished capture card (spec §16.1).
@@ -133,6 +134,7 @@ export async function POST(request: Request) {
       fields?: RawFields;
       created_at?: unknown;
       show_name?: unknown;
+      invite_token?: unknown;
     };
   } | null;
 
@@ -164,6 +166,15 @@ export async function POST(request: Request) {
   }
 
   const fields = cleanFields(raw.submission.fields ?? {});
+
+  /* The caregiver invite's token (drizzle/0049). Shape-checked and nothing else:
+     it names this card's own recommendation, so a client choosing its own can
+     only affect its own nomination, and the unique index refuses a collision
+     rather than letting one card take another's. */
+  const inviteToken =
+    kind === "caregiver" && isCaregiverInviteToken(raw.submission.invite_token)
+      ? raw.submission.invite_token
+      : null;
 
   const record: Record<string, unknown> = {
     kind,
@@ -305,6 +316,7 @@ export async function POST(request: Request) {
       pay_benchmark_consent: record.pay_benchmark_consent === true,
       reference_willing: (record.reference_willing as string | null) ?? null,
       consent_outreach: (record.consent_outreach as string | undefined) ?? undefined,
+      invite_token: inviteToken,
     });
   });
 

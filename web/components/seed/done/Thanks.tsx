@@ -51,10 +51,12 @@ export function Thanks() {
 
   return (
     <Screen>
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        below={<DoneProfileReminder session={session} />}
+      />
 
       <ScreenBody className="pt-8">
-        <DoneProfileReminder session={session} />
         <div className="animate-rise">
           {/* The entry screen told the anonymous path, in so many words, that it
               gives up Founding Status. Showing them this badge anyway would be the

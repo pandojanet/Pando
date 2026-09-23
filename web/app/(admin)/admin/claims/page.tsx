@@ -36,9 +36,11 @@ import {
  * 2C — caregivers who registered themselves, waiting to be matched to a nomination.
  *
  * The decision on this page is **identity**, not quality: is this Rosa R. the Rosa R.
- * a family put forward? Nothing here can be automated, which is the whole reason the
- * page exists — one shared invite link means no token to match on, and Pando holds no
- * contact detail for a nominee to match against either (invariant 13).
+ * a family put forward? Since 23 Sep a sign-up that followed a family's token link
+ * arrives already naming that recommendation (`ViaNomination`), and the admin
+ * confirms it; one that came through the bare address is still matched by name
+ * from a shortlist, because Pando holds no contact detail for a nominee to match
+ * against (invariant 13).
  *
  * What this page deliberately never shows: anything a parent wrote about them. No
  * nomination text, no chosen strengths, and above all no private note or hesitant
@@ -46,6 +48,83 @@ import {
  * state — enough to tell two people apart, and nothing that would let an admin read
  * a family's confidence back to the person it was about.
  */
+/**
+ * A sign-up that followed a family's token link (23 Sep, `drizzle/0049`).
+ *
+ * The recommendation is a **fact** here, resolved on the server from the token,
+ * not a guess from a name — so instead of a shortlist the page shows the one card
+ * she came through and who put it forward, and asks the admin to confirm it.
+ * Confirming is the same `claim.link` a shortlist match runs: the only place a
+ * caregiver reaches `consented`, still taking both her yes and an admin's.
+ *
+ * ⚠ It is still a confirmation rather than an automatic link, and that is the
+ * point of keeping a person here: a link can be forwarded beyond the caregiver
+ * it was written for, and the one thing this page exists to prevent is attaching
+ * a family's recommendation to somebody it was not about. The names side by side
+ * are what a reader checks.
+ *
+ * ⚠ A held card says so and links to where it can be read. Its private note and
+ * the reason behind a hesitant hire-again are never on this page (invariant 12).
+ */
+function ViaNomination({
+  via,
+  busy,
+  onConfirm,
+}: {
+  via: NonNullable<CaregiverClaimRow["via"]>;
+  busy: boolean;
+  onConfirm: () => void;
+}) {
+  const nominee = `${via.caregiver_first_name} ${via.caregiver_last_initial ?? ""}`.trim();
+  const open = via.consent_status === "mentioned" || via.consent_status === "invited";
+  return (
+    <div className="mt-1.5 rounded-lg border border-bark px-3 py-2.5">
+      <p className="text-[13.5px]">
+        {via.recommender ? (
+          <TextLink href={`/admin/contributors/${via.recommender.id}`}>
+            {via.recommender.name ?? "A parent"}
+          </TextLink>
+        ) : (
+          <span className="text-muted">A parent who has since left Pando</span>
+        )}
+        {via.recommender?.phone && (
+          <span className="ml-2 text-muted">{via.recommender.phone}</span>
+        )}
+      </p>
+      <p className="mt-1 text-[13px] text-muted">
+        Recommended <span className="font-semibold text-ink">{nominee}</span>
+        {via.care_type ? ` · ${optionLabel(CAREGIVER_TYPES, via.care_type)}` : ""}
+        {` · ${when(via.recommended_at)}`}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Badge tone="green">Came through their invite link</Badge>
+        {via.review_hold && (
+          <Badge tone="gold">
+            Card on hold —{" "}
+            <TextLink href="/admin/caregivers">read it first</TextLink>
+          </Badge>
+        )}
+      </div>
+      {open ? (
+        <Button
+          tone="primary"
+          className="mt-3"
+          disabled={busy}
+          subject={nominee}
+          onClick={onConfirm}
+        >
+          Confirm — this is her
+        </Button>
+      ) : (
+        <p className="mt-2 text-[13px] text-muted">
+          This recommendation is already{" "}
+          {(CONSENT_STATE[via.consent_status]?.label ?? sentence(via.consent_status)).toLowerCase()}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ClaimsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<CaregiverClaimRow[]>("caregiver_claims");
@@ -238,9 +317,15 @@ export default function ClaimsPage() {
                   </p>
 
                   <p className="mt-4 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
-                    Which nomination is this?
+                    {claim.via ? "Recommended by" : "Which nomination is this?"}
                   </p>
-                  {claim.candidates.length === 0 ? (
+                  {claim.via ? (
+                    <ViaNomination
+                      via={claim.via}
+                      busy={busy === claim.id}
+                      onConfirm={() => void link(claim.id, claim.via!.caregiver_id)}
+                    />
+                  ) : claim.candidates.length === 0 ? (
                     <p className="mt-1.5 text-[13px] leading-relaxed text-muted">
                       No family has put this name forward. Usually best to decline
                       and let the family send the invite again — never attach her to

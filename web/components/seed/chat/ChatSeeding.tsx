@@ -35,7 +35,10 @@ import type {
   ShareKind,
   Submission,
 } from "@/lib/seed-chat/types";
-import { caregiverInviteMessage } from "@/lib/caregiver-invite";
+import {
+  caregiverInviteMessage,
+  newCaregiverInviteToken,
+} from "@/lib/caregiver-invite";
 import { ProfileReminder } from "@/components/seed/ProfileDepth";
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import { loadSession, newSession, saveSession } from "@/lib/storage";
@@ -540,8 +543,10 @@ export function ChatSeeding() {
 
     const submission: Submission = {
       ...buildSubmission({ id: draftId, kind, fields, step_index: 0 }),
+      /* A caregiver card mints its invite token here, before any round trip,
+         so the message below can carry it at once (drizzle/0049). */
       ...(kind === "caregiver"
-        ? {}
+        ? { invite_token: newCaregiverInviteToken() }
         : { show_name: session?.answers.attribution === "first_name" }),
     };
 
@@ -612,6 +617,7 @@ export function ChatSeeding() {
                     ? String(fields.name[0])
                     : null,
                   parentFirstName: session?.first_name ?? session?.name ?? null,
+                  token: submission.invite_token,
                 }),
               },
             ]
@@ -750,6 +756,9 @@ export function ChatSeeding() {
              verbatim record of what the parent said about the *place*. A
              privacy decision about Pando does not belong in the evidence. */
           show_name: submission.show_name === true,
+          ...(submission.invite_token
+            ? { invite_token: submission.invite_token }
+            : {}),
           /* `__confirm_back_asked` is a fact about the conversation, not about
              the recommendation, and `/api/seed/save` would have no field to put
              it in. Stripped here rather than never stored, because it has to
@@ -961,6 +970,7 @@ export function ChatSeeding() {
             <ReferralHeaderInvite code={session.referral_code} />
           ) : undefined
         }
+        below={<ProfileReminder depth={depth} />}
       />
 
       {/**
@@ -993,11 +1003,6 @@ export function ChatSeeding() {
             one. Screen-reader-only is the whole fix: the document gets a name,
             and nothing on screen changes. */}
         <h1 className="sr-only">Share a recommendation</h1>
-
-        {/* Rendered here and painted in the bottom-right corner: it portals
-            to `body`, so where the call sits decides nothing but which
-            screens have one. */}
-        <ProfileReminder depth={depth} />
 
         <div className="space-y-2.5">
           {chat.messages.map((message) =>

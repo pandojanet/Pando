@@ -47,10 +47,10 @@ export const INVITE_COOKIE_MAX_AGE = 60 * 60 * 24 * 90;
  *
  * `/join` is deliberately absent: it is the door itself, and it does its own
  * resolving. `/caregiver` is absent too, and that is the 11 Aug decision rather
- * than an oversight — the caregiver's own flow is reached at `pando.is/caregiver`
- * with **no token**, because Pando holds no contact detail for a nominee
- * (invariant 13) and there is nothing to key one against. It is a link a parent
- * sends; gating it would break the only path 2C has.
+ * than an oversight — the caregiver's own flow is reached from a link a parent
+ * sends (`/caregiver` or, since 23 Sep, `/caregiver/<token>`), and nobody who
+ * opens it holds the parent flow's marker. Gating it would break the only path
+ * 2C has.
  */
 export function isGatedSeedPath(pathname: string): boolean {
   return (

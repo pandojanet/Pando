@@ -61,14 +61,40 @@ import type { MarketId } from "@/lib/types";
 
 type Stage = "intro" | "identity" | "tap" | "permissions" | "verify" | "done";
 
-export function CaregiverFlow({ market }: { market: MarketId }) {
+/**
+ * The recommendation she arrived through (`/caregiver/<token>`, 23 Sep).
+ *
+ * Only her own name comes with it, for her to **confirm** rather than retype —
+ * the page resolved the token on the server and sent nothing else from the
+ * parent's card (invariant 12). An empty name means the token did not resolve
+ * (already matched, or unknown); it is still sent with the claim, and the write
+ * route judges it again.
+ */
+export interface CaregiverInviteProp {
+  token: string;
+  first_name: string;
+  last_initial: string;
+}
+
+export function CaregiverFlow({
+  market,
+  invite,
+}: {
+  market: MarketId;
+  invite?: CaregiverInviteProp;
+}) {
   /* The areas-served chips are `market_options` neighborhoods, same as the
      parent's — so this rebuilds when that table loads. */
   const optionsVersion = useMarketOptions(market);
   const steps = useMemo(() => caregiverSteps(market), [market, optionsVersion]);
-  const [answers, setAnswers] = useState<CaregiverAnswers>(
-    EMPTY_CAREGIVER_ANSWERS,
-  );
+  const [answers, setAnswers] = useState<CaregiverAnswers>(() => ({
+    ...EMPTY_CAREGIVER_ANSWERS,
+    first_name: invite?.first_name ?? "",
+    last_initial: invite?.last_initial ?? "",
+  }));
+  /* Whether the name on the identity screen came from the family's card, so
+     that screen can say so — she is confirming it, not being told it. */
+  const prefilled = Boolean(invite?.first_name);
   const [stage, setStage] = useState<Stage>("intro");
   const [tapIndex, setTapIndex] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -128,7 +154,11 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
       const res = await fetch("/api/caregiver/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...answers, phone: e164 ?? answers.phone }),
+        body: JSON.stringify({
+          ...answers,
+          phone: e164 ?? answers.phone,
+          ...(invite ? { invite_token: invite.token } : {}),
+        }),
       });
       const body = (await res.json().catch(() => null)) as {
         error?: string;
@@ -266,6 +296,12 @@ export function CaregiverFlow({ market }: { market: MarketId }) {
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
             A first name and an initial is all Pando ever shows — never a surname.
           </p>
+          {prefilled && (
+            <p className="mt-2 text-help leading-relaxed text-muted">
+              This is how the family who recommended you wrote it. Change it if
+              it isn&apos;t right.
+            </p>
+          )}
 
           <div className="mt-6 space-y-4">
             <div className="flex gap-3">

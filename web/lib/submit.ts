@@ -162,6 +162,9 @@ export async function flushSession(
            lose the toggle at exactly the moment it finally reaches the
            database — which is every card on the founding path. */
         show_name: card.show_name === true,
+        /* Carried for the same reason: the parent may already have sent the
+           message containing it, so a held card must land with the same one. */
+        ...(card.invite_token ? { invite_token: card.invite_token } : {}),
         fields: card.fields as Record<string, unknown>,
         created_at: card.created_at,
       },

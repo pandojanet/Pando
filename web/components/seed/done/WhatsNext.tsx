@@ -33,10 +33,12 @@ export function WhatsNext() {
 
   return (
     <Screen>
-      <ScreenHeader left={<Wordmark />} />
+      <ScreenHeader
+        left={<Wordmark />}
+        below={<DoneProfileReminder session={session} />}
+      />
 
       <ScreenBody className="pt-7">
-        <DoneProfileReminder session={session} />
         <div className="animate-rise">
           <Eyebrow>What happens next</Eyebrow>
           <h1 className="mt-2 font-display text-[1.7rem] font-extrabold leading-[1.1]">

@@ -2748,6 +2748,13 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ok("and nothing renders the old reminder", !/DepthReminder/.test(flow + chat + depth));
   const done = src("../components/seed/done/shared.tsx");
   const reminder = depth.slice(depth.indexOf("export function ProfileReminder"));
+  const fillSrc = depth.slice(depth.indexOf("export function reminderFill"));
+  const depthLib = {
+    reminderFill: new Function(
+      "percent",
+      fillSrc.slice(fillSrc.indexOf("{") + 1, fillSrc.indexOf("\n}")),
+    ) as (percent: number) => string,
+  };
   const rewards = (await import(
     `../lib/rewards.ts?v=${Date.now()}`
   )) as typeof import("../lib/rewards.ts");
@@ -2763,13 +2770,47 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
    * the two properties the banner rounds added kept on them — five screens,
    * and no way to make it go.
    */
+  /**
+   * ⚠⚠ **The eighth instruction is the strip at every width** (23 Sep):
+   * *"змісти банер вгору і зроби все що описано на цьому скріншоті"*, on a
+   * screenshot of the 21 Sep pinned strip annotated with four changes. So the
+   * corner card is gone on a laptop too, and the header is the one place.
+   */
   ok(
-    "the reminder is a fixed card in the bottom-right corner again",
-    /createPortal\(/.test(reminder) &&
-      /document\.body/.test(reminder) &&
-      /fixed/.test(reminder) &&
-      /sm:right-4/.test(reminder) &&
-      /justify-end/.test(reminder),
+    "it is in the header at every width, so it pushes rather than paints",
+    !/createPortal/.test(depth) &&
+      !/\bfixed\b/.test(reminder) &&
+      !/xl:hidden|md:hidden/.test(reminder) &&
+      !/FloatingReminder/.test(depth.replace(/\/\*[\s\S]*?\*\//g, "")) &&
+      [
+        ["../components/seed/chat/ChatSeeding.tsx", /below=\{<ProfileReminder /],
+        ["../components/seed/ProfileFlow.tsx", /below=\{[\s\S]{0,420}<ProfileReminder /],
+        ["../components/seed/done/Thanks.tsx", /below=\{<DoneProfileReminder /],
+        ["../components/seed/done/FinishAsks.tsx", /below=\{<DoneProfileReminder /],
+        ["../components/seed/done/WhatsNext.tsx", /below=\{<DoneProfileReminder /],
+      ].every(([f, re]) => (re as RegExp).test(src(f as string))),
+  );
+  /* The screenshot's four notes, each pinned: spacing under the logo row,
+     "N out of M", a smaller and lighter "Add more", and the bar coloured by
+     how full the profile is. */
+  ok(
+    "it sits apart from the logo row and counts 'out of'",
+    /mt-3 rounded-xl/.test(reminder) && /out of \$\{depth\.total\}/.test(reminder),
+  );
+  ok(
+    "and its Add more is the small, light size rather than a bold one",
+    /font-medium text-dock[^"]*underline/.test(reminder) &&
+      !/font-semibold[^"]*underline/.test(reminder),
+  );
+  ok(
+    "and the bar is red under 50, yellow to 69, green from 70",
+    depthLib.reminderFill(0) === "bg-alert" &&
+      depthLib.reminderFill(49) === "bg-alert" &&
+      depthLib.reminderFill(50) === "bg-gold" &&
+      depthLib.reminderFill(69) === "bg-gold" &&
+      depthLib.reminderFill(70) === "bg-green" &&
+      depthLib.reminderFill(79) === "bg-green" &&
+      /fill=\{reminderFill\(depth\.percent\)\}/.test(reminder),
   );
   /* ⚠ On what renders, never on the word: this file names every shape it has
      had in the comment recording the change, and a check that fails on a
@@ -2781,16 +2822,15 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       !/onClick/.test(reminder) &&
       !/Dismiss/.test(reminder),
   );
-  /* ⚠ Bottom-right on a phone is the dock, and covering its primary control
-     is the one thing this must never do. */
+  /* ⚠ The header strip needs no measuring — it is content inside a `sticky`
+     header — so the marker added for the version that measured the header is
+     gone. A measurement nothing reads is the fault this file keeps recording;
+     `data-screen-dock` stays, because the corner card and `OptionPicker` both
+     read it. */
   ok(
-    "it is held clear of the dock by measuring it, not by guessing a height",
-    /data-screen-dock/.test(reminder) &&
-      /innerHeight - box\.top/.test(reminder) &&
-      /* ⚠ And it watches the dock rather than waiting to be told: on
-         `/done/ask` it grows by 8px once `/verify/status` answers, which
-         fires neither a scroll nor a resize. */
-      /new ResizeObserver/.test(reminder),
+    "and nothing measures the header any more, nor carries a marker for one",
+    !/data-screen-header/.test(depth) &&
+      !/data-screen-header/.test(src("../components/ui/Screen.tsx")),
   );
   /**
    * The threshold is the whole of *"потрібний відсоток"*, and it is the
@@ -2825,11 +2865,18 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   /* ⚠⚠ It promises relevance and never access: P14 alone gates Community
      Access, and the Founding reward needs two approved contributions as well,
      so naming either would be a claim this number cannot keep. */
+  /* ⚠ 22 Sep: *"прибрати додаткові стрічки, залишити тільки основну"*. The
+     relevance sentence is gone again — it came back when the card was floating
+     and had room — so what is asserted is the figure, the way in, and that
+     neither of them claims anything the number cannot keep. */
   ok(
-    "it says what a fuller profile does for the answers, never what it earns",
-    /match you with parents/.test(reminder) &&
-      /% complete/.test(reminder) &&
-      !/(founding|reward|\$10|access|unlock)/i.test(reminder),
+    "it is the figure, the count and the way in, never what it earns",
+    /% complete/.test(reminder) &&
+      /Add more/.test(reminder) &&
+      !/match you with parents/.test(reminder) &&
+      !/(founding|reward|\$10|access|unlock)/i.test(
+        reminder.replace(/FOUNDING_MIN_PROFILE_DEPTH/g, ""),
+      ),
   );
   ok(
     "it is on the review, the recommendations screen and all three completion screens",
@@ -2848,12 +2895,18 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       (f) => !/profileDepth\(/.test(src(`../components/seed/done/${f}.tsx`)),
     ),
   );
-  /* ⚠ The review keeps its own header label and bar — they stepped aside for
-     a few hours while the reminder was pinned there, and a card in the corner
-     takes nothing from them. */
+  /* ⚠ The review's own label steps aside while the strip shows — both carry
+     the figure, and an inch apart that is one number said twice. **Only on a
+     phone**, because above `md` the strip is gone and the label is the one
+     place the figure appears in that header; hence a variant rather than the
+     ternary that used to drop it. The **bar** stays either way: it draws the
+     number rather than repeating it, and it is her own 16 Sep instruction. */
   ok(
-    "and the review's header says the number in its own slot",
-    /right=\{<ProfilePercentLabel depth=\{depth\} \/>\}/.test(flow),
+    "and the review draws one bar and says the figure once",
+    /right=\{\s*profileReminderShows\(depth\) \? undefined/.test(flow) &&
+      /profileReminderShows\(depth\) \? \(\s*<ProfileReminder depth=\{depth\} onProfile \/>\s*\) : \(/.test(
+        flow,
+      ),
   );
   ok("/share carries no \"Add optional details\" button", !chat.includes("Add optional details"));
   /* ⚠ The header pill went when the banner arrived: the same number a hundred

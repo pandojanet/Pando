@@ -310,6 +310,7 @@ export const sampleCaregiverClaims: CaregiverClaimRow[] = [
         invite_sent_by_parent: false,
       },
     ],
+    via: null,
     created_at: now,
   },
   {
@@ -334,6 +335,17 @@ export const sampleCaregiverClaims: CaregiverClaimRow[] = [
     status: "pending",
     linked_caregiver: null,
     candidates: [],
+    via: {
+      nomination_id: "sample-nomination-dana",
+      caregiver_id: "sample-caregiver-dana",
+      caregiver_first_name: "Dana",
+      caregiver_last_initial: "M",
+      consent_status: "invited",
+      recommender: { id: "sample-parent-1", name: "Sarah Lee", phone: "+16265550143" },
+      care_type: "nanny",
+      review_hold: false,
+      recommended_at: now,
+    },
     created_at: now,
   },
 ];

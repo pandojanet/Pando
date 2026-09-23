@@ -577,9 +577,10 @@ export interface CaregiverRow {
  *
  * Carries nothing a parent said about them, and nothing that could identify which
  * family put them forward: this row is only what the caregiver claimed about
- * themselves. The admin's job is to decide *which* nomination it belongs to, which
- * is a judgement about identity, not a lookup — with one shared invite link and no
- * contact detail held for a nominee, there is nothing to match on automatically.
+ * themselves. The admin's job is to decide *which* nomination it belongs to. A
+ * sign-up that followed a token link names it already (`via`); one that did not
+ * is a judgement about identity from the shortlist, since no contact detail is
+ * held for a nominee to match on.
  */
 export interface CaregiverClaimRow {
   id: string;
@@ -616,6 +617,28 @@ export interface CaregiverClaimRow {
     consent_status: string;
     invite_sent_by_parent: boolean;
   }>;
+  /**
+   * The recommendation she arrived through, when she followed a token link
+   * (`drizzle/0049`) — resolved server-side, so this is a fact rather than a
+   * guess, and the page offers to confirm it instead of a shortlist.
+   *
+   * Carries who recommended her , the kind of care and when, and
+   * **nothing** from `restricted_notes`: the private note and the reason behind
+   * a hesitant hire-again stay behind their own audited read on the caregivers
+   * page (invariant 12). `review_hold` is here so the admin sees the card is
+   * held before confirming, not what it says.
+   */
+  via: {
+    nomination_id: string;
+    caregiver_id: string;
+    caregiver_first_name: string;
+    caregiver_last_initial: string | null;
+    consent_status: string;
+    recommender: { id: string; name: string | null; phone: string | null } | null;
+    care_type: string | null;
+    review_hold: boolean;
+    recommended_at: string;
+  } | null;
   created_at: string;
 }
 

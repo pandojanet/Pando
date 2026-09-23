@@ -52,13 +52,11 @@ export function useDoneSession() {
  * One wrapper rather than the same expression on three screens: they would
  * drift, and the one that drifts is the one nobody reopens.
  *
- * ⚠ **Where this is called decides nothing but whether the screen has one.**
- * `ProfileReminder` portals to `body` and paints itself in the bottom-right
- * corner, so it needs no place in the layout — which is why the three
- * screens' own arrangement is untouched. Two earlier rounds spent themselves
- * on exactly that question (the foot of the content measured at y = 806 ·
- * 1579 · 1803 on a phone, then a strip pinned in the header at 22% of the
- * window); the corner is the client's answer to both.
+ * ⚠ It goes in `ScreenHeader`'s `below` slot, which is the fourth placement
+ * this has had and the first that **pushes** rather than paints: at the foot
+ * of the content it measured y = 806 · 1579 · 1803 on a phone (unseen on two
+ * of the three), and every floating version hid 41px of whatever scrolled
+ * under it. See `ProfileReminder` for the six instructions in order.
  *
  * Renders nothing with no session on this phone, and nothing once the profile
  * clears the bar.

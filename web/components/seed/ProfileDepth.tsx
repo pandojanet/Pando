@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
+import { cn } from "@/lib/cn";
 import { profileReminderShows, type ProfileDepth } from "@/lib/questions";
 
 /**
@@ -24,11 +23,12 @@ import { profileReminderShows, type ProfileDepth } from "@/lib/questions";
  * zero (measured through the real derivation, 10 Sep), so their answers really
  * are matched on less.
  *
- * ⚠ And it never nags. There is no red, no "incomplete", no warning tone: gold
- * in this app means *pending or needs care* and `alert` never appears in the
- * parent flow at all. A profile at 14% is not a mistake somebody made, it is a
- * parent who answered what was asked of them — the optional questions are
- * optional, which is the whole of the 10 Sep round.
+ * ⚠ And it never nags in words. There is no "incomplete" and no warning copy:
+ * a profile at 14% is not a mistake somebody made, it is a parent who answered
+ * what was asked of them — the optional questions are optional, which is the
+ * whole of the 10 Sep round. ⚠ The reminder's **bar** is coloured red, yellow or
+ * green by how full the profile is since 23 Sep, on the developer's instruction;
+ * that is the one place `alert` appears in the parent flow — see `reminderFill`.
  */
 
 /**
@@ -40,7 +40,14 @@ import { profileReminderShows, type ProfileDepth } from "@/lib/questions";
  * because on the review page every step is done and what is still open is how
  * much of the profile is filled in.
  */
-export function ProfilePercentBar({ depth }: { depth: ProfileDepth }) {
+export function ProfilePercentBar({
+  depth,
+  fill = "bg-green",
+}: {
+  depth: ProfileDepth;
+  /** The fill's colour class. The reminder passes `reminderFill`. */
+  fill?: string;
+}) {
   return (
     <div
       role="progressbar"
@@ -51,7 +58,7 @@ export function ProfilePercentBar({ depth }: { depth: ProfileDepth }) {
       className="h-1 w-full overflow-hidden rounded-full bg-bark"
     >
       <div
-        className="h-full rounded-full bg-green transition-[width] duration-500"
+        className={cn("h-full rounded-full transition-[width] duration-500", fill)}
         style={{ width: `${depth.percent}%` }}
       />
     </div>
@@ -95,64 +102,65 @@ export function ProfilePercentPill({ depth }: { depth: ProfileDepth }) {
 }
 
 /**
- * The profile reminder: a card in the bottom-right corner that travels with
- * the scroll and stays until the profile is full enough.
+ * The bar's colour, from how full the profile is (23 Sep): *"червоний 0–50%,
+ * жовтий 50–70%, зелений 70–100%"*.
  *
- * ## Read the four instructions in order, because three of them are reversals
+ * ⚠ Boundaries read as half-open ranges — under 50 red, 50 to 69 yellow, 70 and
+ * over green — so a profile at exactly 50 is yellow and at exactly 70 is green.
+ * The reminder stops showing at 80 (`FOUNDING_MIN_PROFILE_DEPTH`), so green is
+ * only ever seen between 70 and 79.
  *
- * 1. Replace the review page's *"N questions still to answer…"* paragraph
- *    with a pop-up saying how much is left (21 Sep).
- * 2. Put that pop-up in the bottom-right corner, *"де якраз пустий кут"*.
- * 3. Make it a permanent banner, on the recommendations screen and the
- *    others too, until the profile reaches the needed percentage — so it
- *    became an in-flow green block, then a strip pinned in the header.
- * 4. **The client did not want that** (*"обриганство"*): bring back the
- *    pop-up's look and its place, and make it permanent there — *"щоб він не
- *    зникав і був разом з прокруткою на всіх сторінках"*.
+ * ⚠⚠ **This puts `alert` red in the parent flow, which this app has kept out of
+ * it on purpose**: the token's own rule is that red means *owed a person today*,
+ * and "a thin profile is not a mistake somebody made" is the first thing this
+ * file says. It is the developer's explicit instruction, so it is here — and it
+ * is one class in one function, so reverting it is a one-line change.
+ */
+export function reminderFill(percent: number): string {
+  if (percent < 50) return "bg-alert";
+  if (percent < 70) return "bg-gold";
+  return "bg-green";
+}
+
+/**
+ * The profile reminder — a strip inside the header, on every screen a parent
+ * with a saved profile meets, until the profile is full enough.
  *
- * So the appearance of (2) is back, with (3)'s two properties on it: it is on
- * **five** screens rather than one, and it has **no timer and no X**. What
- * went with the header strip is the strip's own compromise — the explanatory
- * sentence is back, because a floating card has room for it where 22% of a
- * pinned header did not.
+ * ## Read the instructions in order, because most of them are reversals
  *
- * ## Four rules, and the first is the one that breaks silently
+ * 1. Replace the review page's *"N questions still to answer…"* paragraph with
+ *    a pop-up saying how much is left (21 Sep).
+ * 2. Put that pop-up in the bottom-right corner.
+ * 3. Make it a permanent banner on five screens — then pin it in the header,
+ *    as a strip with the figure, a count, a bar and a link.
+ * 4. The client did not want the strip: bring back the corner pop-up.
+ * 5. On a phone that corner is the middle of the screen: move it up, one line.
+ * 6. Under the header it covered the first message: put it *in* the header.
+ * 7. Only on a phone; the laptop keeps the corner card (22 Sep).
+ * 8. **"змісти банер вгору і зроби все що описано на цьому скріншоті"** (23 Sep)
+ *    — the screenshot is (3)'s strip, annotated: spacing below the logo row,
+ *    the bar coloured by how full the profile is, "10 out of 20", and a
+ *    smaller, lighter "Add more". So it is the strip, in the header, at every
+ *    width, and the corner card is gone.
  *
- * - **Portalled to `body`.** It is `position: fixed`, and these screens sit
- *   inside animated wrappers — a filled animation makes its element the
- *   containing block for `fixed` (the 5 Aug bug), so a card rendered in place
- *   would be clipped to its column and simply not appear where it was asked
- *   to be.
- * - **Held clear of the dock, measured rather than guessed.**
- *   `window.innerHeight - dock.top`, clamped at zero, is the dock's height
- *   while it is pinned at the foot of a phone, zero while it is static and
- *   below the fold on a laptop, and its visible part on a laptop scrolled to
- *   the end — one expression for all three, off the `data-screen-dock` marker
- *   `OptionPicker` already measures. Re-measured on scroll and resize, eased
- *   over 300ms so it glides. ⚠ Covering the dock's primary control — **Save
- *   my profile**, **Continue** — is the one thing this must never do.
- * - **It cannot be sent away**, which is instruction (4) in so many words, and
- *   it is why there is no X: a control that hides it would make *не зникав*
- *   false. ⚠ The cost is real and this file's own rule is that the depth
- *   never nags — what keeps it honest is that it is small, it is green rather
- *   than gold, and it goes the moment it stops being true.
- * - **Ordinary content, not a live region.** The 8-second version needed an
- *   `sr-only role="status"` because a portal that mounts with its message
- *   announces nothing; a permanent card is just text a reader reaches.
+ * ⚠ **It pushes rather than paints.** It is ordinary content in
+ * `ScreenHeader`'s `below` slot, which is `sticky top-0`, so it travels with
+ * the scroll by being part of the thing that already does, and it covers
+ * nothing — the complaint every floating version earned.
+ *
+ * ⚠ **It cannot be sent away**, which is instruction (4) in so many words. What
+ * keeps it honest is that it is small and gone the moment it stops being true.
  *
  * ## The threshold is the product's own number, not a new one
  *
  * `FOUNDING_MIN_PROFILE_DEPTH` — 80, the profile bar the Founding queue
- * decides on (16 Sep). 100 was measured on the live cohort at **one parent in
- * twelve**, so a reminder waiting for it would be permanent for everybody who
- * took the flow's own shortest path, which is the client's own 10 Sep design.
+ * decides on (16 Sep). 100 was measured on the live cohort at one parent in
+ * twelve, so a reminder waiting for it would be permanent for everybody who took
+ * the flow's own shortest path.
  *
  * ⚠⚠ **It promises relevance and never access.** P14 alone gates Community
- * Access and the Founding reward needs two approved contributions as well, so
- * naming either would be a claim this number cannot keep.
+ * Access and the Founding reward needs two approved contributions as well.
  */
-const REMINDER_GAP = 12;
-
 export function ProfileReminder({
   depth,
   onProfile,
@@ -160,92 +168,36 @@ export function ProfileReminder({
   depth: ProfileDepth;
   /**
    * ⚠ Set on the review page, where the link is dropped: a parent is standing
-   * on `/profile`, so *Add more* would be a control that visibly does
-   * nothing — and the fold on that screen lists every question the percentage
-   * counts, each with its own **Add**. Same reasoning as 17 Sep.
+   * on `/profile`, so *Add more* would be a control that visibly does nothing.
    */
   onProfile?: boolean;
 }) {
-  const [floor, setFloor] = useState(REMINDER_GAP);
-  const shows = profileReminderShows(depth);
-
-  useEffect(() => {
-    if (!shows) return;
-    /**
-     * ⚠⚠ **Scroll and resize are not enough, and the shortfall was measured.**
-     * On `/done/ask` the dock grows from 73px to 81 once `/verify/status`
-     * answers and the screen learns which control to show — no scroll, no
-     * resize, so the floor stayed at 85 and the gap came out at **4px instead
-     * of 12**. So the thing being avoided is what is watched: a
-     * `ResizeObserver` on the dock itself, **plus `document.body`**, because
-     * React can replace the dock element rather than resize it and an
-     * observer bound to a node that is gone reports nothing — the body's
-     * height changes either way, which brings `measure` back round to re-bind.
-     *
-     * ⚠ **Unverified in a real browser, and the reason is worth knowing.** A
-     * hidden document does not run the rendering steps that deliver a
-     * `ResizeObserver` callback, so in the Browser pane that 4px stands: the
-     * same family as the frozen animations and the scroll that fires no
-     * event. What *was* proved there is that the arithmetic is right —
-     * dispatching a `resize` by hand corrects it to `bottom: 93px` and a gap
-     * of exactly 12.
-     */
-    let observed: Element | null = null;
-    const measure = () => {
-      const dock = document.querySelector("[data-screen-dock]");
-      if (dock !== observed) {
-        if (observed) ro.unobserve(observed);
-        if (dock) ro.observe(dock);
-        observed = dock;
-      }
-      const box = dock?.getBoundingClientRect();
-      const covered = box ? window.innerHeight - box.top : 0;
-      setFloor(REMINDER_GAP + Math.max(0, covered));
-    };
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(document.body);
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, { passive: true });
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure);
-    };
-  }, [shows]);
-
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
-  if (!shows || !mounted) return null;
-
-  return createPortal(
-    <div
-      className="pointer-events-none fixed inset-x-3 z-50 flex justify-end transition-[bottom] duration-300 ease-out sm:inset-x-auto sm:right-4"
-      style={{ bottom: floor }}
-    >
-      <div className="pointer-events-auto flex w-full max-w-[23rem] animate-rise flex-col rounded-2xl bg-green-deep px-4 py-3 text-white shadow-card">
-        <p className="font-semibold leading-snug text-control tabular-nums">
-          Your profile is {depth.percent}% complete — {100 - depth.percent}% to
-          go.
+  if (!profileReminderShows(depth)) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-green/25 bg-green-wash px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate font-semibold text-green-deep text-dock tabular-nums">
+          Profile {depth.percent}% complete
+          <span className="font-medium text-green-deep/70">
+            {` · ${depth.answered} out of ${depth.total}`}
+          </span>
         </p>
-        <p className="mt-1 leading-snug text-help text-white/85">
-          Fill in the rest and Pando can match you with parents whose
-          experience is closest to yours.
-          {!onProfile && (
-            <>
-              {" "}
-              <Link
-                href="/profile"
-                className="font-semibold text-white underline underline-offset-2"
-              >
-                Add more
-              </Link>
-            </>
-          )}
-        </p>
+        {!onProfile && (
+          /* Smaller and lighter than the other quiet actions, on the
+             screenshot's "задуже велике і жирне": it is the figure's aside,
+             not the screen's next step. The negative margin keeps the hit area
+             taller than the 12.5px line without moving it. */
+          <Link
+            href="/profile"
+            className="-my-2 shrink-0 py-2 font-medium text-dock text-green-deep underline underline-offset-2 hover:text-green"
+          >
+            Add more
+          </Link>
+        )}
       </div>
-    </div>,
-    document.body,
+      <div className="mt-1.5">
+        <ProfilePercentBar depth={depth} fill={reminderFill(depth.percent)} />
+      </div>
+    </div>
   );
 }

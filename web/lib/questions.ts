@@ -173,9 +173,16 @@ export const OLDEST_CHILD_AGE = 18;
  * still a child the family is parenting through the end of school, so the list
  * runs to age 18. `cleanAges` has always accepted up to 25, so nothing
  * downstream moves; the band is `teen`.
+ *
+ * ⚠ **Expecting is one cell of the grid, beside the current year** (23 Sep):
+ * *"змісти до 2026, а не розтягуй на весь рядок, щоб вийшла нормальна сітка"*.
+ * Spanning the row left it looking like a heading over the years. As a cell,
+ * twenty options fill a four-column grid exactly (five rows) and a three-column
+ * one with two over. `AGE_OPTIONS` above keeps its wide Expecting: that is the
+ * chat's age list, a different grid.
  */
 export const BIRTH_YEAR_OPTIONS: Option[] = [
-  { id: String(EXPECTING), label: "Expecting", wide: true },
+  { id: String(EXPECTING), label: "Expecting" },
   ...Array.from({ length: OLDEST_CHILD_AGE + 1 }, (_, age) => ({
     id: String(age),
     label: String(CURRENT_YEAR - age),

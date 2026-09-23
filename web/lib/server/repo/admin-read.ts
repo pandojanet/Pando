@@ -26,7 +26,7 @@ import type {
   MatchingResult,
   PlaceDemand,
 } from "@/lib/admin/types";
-import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE, type CaregiverClaimRow } from "@/lib/admin/types";
 import {
   FOUNDING_MIN_APPROVED,
   FOUNDING_MIN_PROFILE_DEPTH,
@@ -1054,9 +1054,15 @@ async function demandRows(db: Db) {
  * looser would invite an admin to link two different people who share a name, which
  * is the one mistake this table exists to make impossible to do by accident.
  *
- * Note what is absent: nothing from `caregiver_nominations` beyond a count, and
- * nothing at all from `restricted_notes`. A private note about a named person does
- * not travel to a screen about that person (invariant 12).
+ * Note what is absent: nothing at all from `restricted_notes`. A private note about
+ * a named person does not travel to a screen about that person (invariant 12).
+ *
+ * **`via` is the one exception to "a shortlist, not a match"** (23 Sep,
+ * `drizzle/0049`): a sign-up that followed a token link names the recommendation
+ * it came from, resolved on the server, so the page shows that card — who
+ * recommended her, the kind of care, whether it is held — and asks the admin to
+ * confirm it. The candidate list is still computed and still shown for a sign-up
+ * that came through the bare address.
  */
 async function caregiverClaims(db: Db) {
   const list = await rows(
@@ -1082,7 +1088,25 @@ async function caregiverClaims(db: Db) {
                   and lower(c.first_name) = lower(cc.first_name)
                   and coalesce(upper(c.last_initial), '') = coalesce(upper(cc.last_initial), '')
                   and c.consent_status in ('mentioned', 'invited')
-             ) as candidates
+             ) as candidates,
+             (select json_build_object(
+                       'nomination_id', n.id,
+                       'caregiver_id', c.id,
+                       'caregiver_first_name', c.first_name,
+                       'caregiver_last_initial', c.last_initial,
+                       'consent_status', c.consent_status,
+                       'recommender_id', rp.id,
+                       'recommender_first_name', rp.first_name,
+                       'recommender_last_name', rp.last_name,
+                       'recommender_phone', rp.phone,
+                       'care_type', n.care_type,
+                       'review_hold', n.review_hold,
+                       'recommended_at', n.created_at)
+                from caregiver_nominations n
+                join caregivers c on c.id = n.caregiver_id
+                left join people rp on rp.id = n.person_id
+               where n.id = cc.via_nomination_id
+             ) as via
       from caregiver_claims cc
       join people p on p.id = cc.person_id
       left join caregivers lc on lc.id = cc.linked_caregiver_id
@@ -1119,8 +1143,35 @@ async function caregiverClaims(db: Db) {
         }
       : null,
     candidates: Array.isArray(r.candidates) ? r.candidates : [],
+    via: viaOf(r.via),
     created_at: r.created_at,
   }));
+}
+
+/** The token-resolved recommendation, reshaped for the page (or null). */
+function viaOf(v: unknown): CaregiverClaimRow["via"] {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  return {
+    nomination_id: String(r.nomination_id),
+    caregiver_id: String(r.caregiver_id),
+    caregiver_first_name: String(r.caregiver_first_name ?? ""),
+    caregiver_last_initial: (r.caregiver_last_initial as string | null) ?? null,
+    consent_status: String(r.consent_status ?? ""),
+    recommender: r.recommender_id
+      ? {
+          id: String(r.recommender_id),
+          name: fullName(
+            r.recommender_first_name as string | null,
+            r.recommender_last_name as string | null,
+          ),
+          phone: adminPhone((r.recommender_phone as string | null) ?? null),
+        }
+      : null,
+    care_type: (r.care_type as string | null) ?? null,
+    review_hold: r.review_hold === true,
+    recommended_at: String(r.recommended_at ?? ""),
+  };
 }
 
 /* ── 2.2 Founding queue ──────────────────────────────────────────────────── */

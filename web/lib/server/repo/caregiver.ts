@@ -1,9 +1,15 @@
 import "server-only";
 
-import { eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_CONSENT_TEXT_VERSION } from "@/lib/consent";
-import { caregiverClaims, consents, people } from "@/lib/db/schema";
+import {
+  caregiverClaims,
+  caregiverNominations,
+  caregivers,
+  consents,
+  people,
+} from "@/lib/db/schema";
 
 /**
  * 2C — writing a caregiver's own claim.
@@ -43,6 +49,61 @@ export interface CaregiverClaimInput {
   appear_in_answers: boolean;
   open_to_introductions: boolean;
   is_test: boolean;
+  /**
+   * The recommendation this sign-up came through, already resolved from the
+   * invite token by `resolveCaregiverInvite` — never an id the browser sent.
+   */
+  via_nomination_id?: string | null;
+}
+
+/**
+ * What an invite token resolves to (`drizzle/0049`).
+ *
+ * The name is the only thing read from the parent's card, and it is read so the
+ * caregiver can **confirm** it rather than type it again: it is her own name,
+ * the one the family already wrote in the message they sent her. Nothing else
+ * from the nomination is here — not the strengths the parent chose, and never
+ * the private note or the reason behind a hesitant hire-again (invariant 12).
+ */
+export interface CaregiverInvite {
+  nomination_id: string;
+  caregiver_id: string;
+  first_name: string;
+  last_initial: string | null;
+  market_id: string;
+}
+
+/**
+ * A token names an open recommendation, or nothing.
+ *
+ * Open means the caregiver it points at is still `mentioned` or `invited` —
+ * somebody not yet matched to a sign-up. A token for a caregiver already
+ * consented, declined or withdrawn resolves to nothing, so a forwarded link
+ * cannot attach a second sign-up to somebody already matched; the page then
+ * behaves exactly like the bare `/caregiver` address rather than failing.
+ */
+export async function resolveCaregiverInvite(
+  db: Db,
+  token: string,
+): Promise<CaregiverInvite | null> {
+  const [row] = await db
+    .select({
+      nomination_id: caregiverNominations.id,
+      caregiver_id: caregivers.id,
+      first_name: caregivers.firstName,
+      last_initial: caregivers.lastInitial,
+      market_id: caregivers.marketId,
+    })
+    .from(caregiverNominations)
+    .innerJoin(caregivers, eq(caregivers.id, caregiverNominations.caregiverId))
+    .where(
+      and(
+        eq(caregiverNominations.inviteToken, token),
+        inArray(caregivers.consentStatus, ["mentioned", "invited"]),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 export interface CaregiverClaimResult {
@@ -118,6 +179,7 @@ export async function saveCaregiverClaim(
       openToIntroductions: introductions,
       consentTextVersion: CAREGIVER_CONSENT_TEXT_VERSION,
       isTest: input.is_test,
+      viaNominationId: input.via_nomination_id ?? null,
     };
 
     const [claim] = await tx
@@ -128,9 +190,43 @@ export async function saveCaregiverClaim(
         /* A revision replaces the answers and leaves the resolution alone: an
            admin who already matched this person should not have to do it again
            because they changed their hours. */
-        set: { ...values, updatedAt: new Date() },
+        set: {
+          ...values,
+          /* A revision through the bare address must not forget which card she
+             first came through — the admin would lose who recommended her. */
+          viaNominationId: sql`coalesce(excluded.via_nomination_id, ${caregiverClaims.viaNominationId})`,
+          updatedAt: new Date(),
+        },
       })
       .returning({ id: caregiverClaims.id });
+
+    /**
+     * Arriving through a token is proof the invite reached her, so the two facts
+     * that say so are made true here rather than left for an admin to set by
+     * hand: the nomination's "invite sent", and the caregiver's step from
+     * `mentioned` to `invited`. Conditional, so the ladder only ever climbs —
+     * nothing here can move somebody already consented, declined or withdrawn.
+     * It does **not** make her `consented`: that still takes an admin confirming
+     * the sign-up (`claim.link`), and visibility is a separate step after that.
+     */
+    if (input.via_nomination_id) {
+      const [nomination] = await tx
+        .update(caregiverNominations)
+        .set({ inviteSentByParent: true })
+        .where(eq(caregiverNominations.id, input.via_nomination_id))
+        .returning({ caregiverId: caregiverNominations.caregiverId });
+      if (nomination) {
+        await tx
+          .update(caregivers)
+          .set({ consentStatus: "invited" })
+          .where(
+            and(
+              eq(caregivers.id, nomination.caregiverId),
+              eq(caregivers.consentStatus, "mentioned"),
+            ),
+          );
+      }
+    }
 
     /**
      * Four consents, recorded separately and re-recorded on every revision — a

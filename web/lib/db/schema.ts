@@ -1032,6 +1032,11 @@ export const caregiverNominations = pgTable(
     referenceWilling: text("reference_willing"),
     /** C11 */
     inviteSentByParent: boolean("invite_sent_by_parent").notNull().default(false),
+    /**
+     * The token in the invite this card produced (`drizzle/0049`). It names the
+     * *recommendation*, never a way to reach the caregiver (invariant 13).
+     */
+    inviteToken: text("invite_token"),
 
     reviewHold: boolean("review_hold").notNull().default(false),
     holdReasons: text("hold_reasons")
@@ -1168,6 +1173,15 @@ export const caregiverClaims = pgTable(
     status: text("status").notNull().default("pending"),
     linkedCaregiverId: uuid("linked_caregiver_id").references(
       () => caregivers.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * The recommendation this sign-up arrived through, resolved server-side from
+     * the invite token (`drizzle/0049`). Null for somebody who came to the bare
+     * `/caregiver` address, who is still matched by hand.
+     */
+    viaNominationId: uuid("via_nomination_id").references(
+      () => caregiverNominations.id,
       { onDelete: "set null" },
     ),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),

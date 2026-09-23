@@ -61,6 +61,8 @@ export interface CardInput {
   pay_benchmark_consent?: boolean;
   reference_willing?: string | null;
   consent_outreach?: string;
+  /** Caregiver only — the invite token this card's message carries (0049). */
+  invite_token?: string | null;
 }
 
 export interface CardWriteResult {
@@ -423,6 +425,10 @@ async function writeCaregiver(
     payBenchmarkConsent: input.pay_benchmark_consent === true,
     referenceWilling: input.reference_willing ?? str(f.reference_willing),
     inviteSentByParent: input.consent_outreach === "parent_sent_invite",
+    /* Written once and kept: the parent may already have sent the message
+       carrying it, so a correction that arrives without one (an older client)
+       must not strand the link that is already in somebody's messages. */
+    ...(input.invite_token ? { inviteToken: input.invite_token } : {}),
     reviewHold,
     holdReasons: input.hold_reasons ?? [],
     isTest: input.is_test,

@@ -5,12 +5,14 @@ import type { MarketId } from "@/lib/types";
 const MARKET: MarketId = "pasadena";
 
 /**
- * `pando.is/caregiver` — the address in the invite a parent sends (C11).
+ * `pando.is/caregiver` — the bare address, for somebody who arrived without a
+ * token.
  *
- * No token in the URL, and there cannot be one: Pando holds no contact detail for a
- * nominated caregiver (invariant 13), so there is nothing to key a per-person link
- * against. Which nomination this person is gets decided by an admin afterwards —
- * see `drizzle/0004_caregiver_claims.sql`.
+ * Since 23 Sep the invite a parent sends carries one (`/caregiver/<token>`,
+ * `drizzle/0049`) naming the recommendation it came from, so a sign-up through it
+ * arrives already attached to that card. This address is what an older invite,
+ * or somebody who typed it, still reaches — and an admin matches that sign-up by
+ * name on `/admin/claims`, as before.
  */
 export default function CaregiverPage() {
   return <CaregiverFlow market={MARKET} />;

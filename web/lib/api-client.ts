@@ -263,6 +263,8 @@ export function saveSubmission(payload: {
      * anything in it as evidence of what they said.
      */
     show_name?: boolean;
+    /** A caregiver card's invite token, beside `fields` for the same reason. */
+    invite_token?: string;
   };
 }): Promise<SaveSubmissionResult> {
   return postJson<SaveSubmissionResult>("/api/seed/save", payload);

@@ -4,7 +4,11 @@ import { toE164 } from "@/lib/phone";
 import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
-import { saveCaregiverClaim } from "@/lib/server/repo/caregiver";
+import {
+  resolveCaregiverInvite,
+  saveCaregiverClaim,
+} from "@/lib/server/repo/caregiver";
+import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
 import { rateLimited } from "@/lib/server/rate-limit";
 import {
   CAREGIVER_AGE_BANDS,
@@ -117,16 +121,28 @@ export async function POST(request: Request) {
     appear_in_answers: appearInAnswers,
     introductions: appearInAnswers && raw.open_to_introductions === true,
     references: raw.open_to_reference_intros === true,
+    via_invite: isCaregiverInviteToken(raw.invite_token),
   });
 
-  const result = await withDb((db) =>
-    saveCaregiverClaim(db, {
+  /* The invite token, if she came through one (drizzle/0049). Only its shape is
+     trusted here; which recommendation it names is resolved against the database
+     inside the write, never taken from the body. */
+  const inviteToken = isCaregiverInviteToken(raw.invite_token)
+    ? raw.invite_token
+    : null;
+  const marketId = cleanId(raw.market_id) ?? "pasadena";
+
+  const result = await withDb(async (db) => {
+    const invite = inviteToken
+      ? await resolveCaregiverInvite(db, inviteToken)
+      : null;
+    return saveCaregiverClaim(db, {
       phone,
       first_name: firstName,
       /* An initial, upper-cased. `char(1)` in the database would refuse more. */
       last_initial:
         (cleanText(raw.last_initial, 1) ?? "").toUpperCase() || null,
-      market_id: cleanId(raw.market_id) ?? "pasadena",
+      market_id: marketId,
       roles_wanted: only(raw.roles_wanted, CAREGIVER_TYPES),
       age_experience: only(raw.age_experience, CAREGIVER_AGE_BANDS),
       strengths: only(raw.strengths, CAREGIVER_STRENGTHS),
@@ -152,8 +168,11 @@ export async function POST(request: Request) {
       open_to_introductions: raw.open_to_introductions === true,
       /* Session-level only, and never accepted from the client body. */
       is_test: false,
-    }),
-  );
+      /* A token for another market's recommendation attaches nothing. */
+      via_nomination_id:
+        invite && invite.market_id === marketId ? invite.nomination_id : null,
+    });
+  });
 
   if (!result.persisted) {
     if (result.reason === "unconfigured") {
