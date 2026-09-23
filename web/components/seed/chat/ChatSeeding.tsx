@@ -605,23 +605,6 @@ export function ChatSeeding() {
                 ? `${REWARD_CONFIRMATION}. Anything else you'd like to share?`
                 : "Got it, thank you. Anything else you'd like to share?",
         },
-        // C11: the invite is the parent's to send, so it appears here as text to
-        // copy rather than as something Pando promises to do.
-        ...(kind === "caregiver" && fields.send_invite === "yes"
-          ? [
-              {
-                id: uid(),
-                role: "pando" as const,
-                invite: caregiverInviteMessage({
-                  caregiverFirstName: Array.isArray(fields.name)
-                    ? String(fields.name[0])
-                    : null,
-                  parentFirstName: session?.first_name ?? session?.name ?? null,
-                  token: submission.invite_token,
-                }),
-              },
-            ]
-          : []),
       ],
     }));
 
@@ -731,6 +714,45 @@ export function ChatSeeding() {
     answerConfirmBack("");
   }
 
+  /**
+   * C11: the invite is the parent's to send, so it appears as text to copy
+   * rather than as something Pando promises to do.
+   *
+   * ⚠⚠ **Only once the card is saved** (23 Sep). It used to appear the moment the
+   * card was finished, before the round trip — and since the link carries a
+   * token that names this card, a message shown for a card that then failed to
+   * save, or was held on the phone, sent the caregiver to a token that existed
+   * nowhere. With the bare `/caregiver` address closed that is a dead end, and it
+   * is exactly what the developer hit: the link opened with her name blank. So
+   * the message waits for the server to say the card is in, and a correction
+   * that re-saves the same card does not add it twice.
+   */
+  function offerCaregiverInvite(submission: Submission) {
+    const token = submission.invite_token;
+    if (submission.kind !== "caregiver" || !token) return;
+    if (submission.fields.send_invite !== "yes") return;
+    const name = submission.fields.name;
+    patchChat((c) =>
+      c.messages.some((m) => m.invite?.includes(token))
+        ? c
+        : {
+            ...c,
+            messages: [
+              ...c.messages,
+              {
+                id: uid(),
+                role: "pando",
+                invite: caregiverInviteMessage({
+                  caregiverFirstName: Array.isArray(name) ? String(name[0]) : null,
+                  parentFirstName: session?.first_name ?? session?.name ?? null,
+                  token,
+                }),
+              },
+            ],
+          },
+    );
+  }
+
   async function persist(submission: Submission) {
     if (!session) return;
     /* No confirmed number yet — the anonymous path aside, that means a deployment
@@ -773,6 +795,7 @@ export function ChatSeeding() {
         },
       });
       markSubmission(submission.id, { persisted: result.persisted, error: false });
+      if (result.persisted) offerCaregiverInvite(submission);
       track("seed_card_saved", {
         kind: submission.kind,
         persisted: result.persisted,

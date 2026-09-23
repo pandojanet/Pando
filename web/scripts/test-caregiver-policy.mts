@@ -131,9 +131,9 @@ ok(
 );
 ok("STOP and HELP last, as registered", /Reply STOP to opt out, HELP for help\.$/.test(deleted));
 ok(
-  "a caregiver who contributed nothing is sent back to /caregiver, not /join",
-  /pando\.is\/caregiver/.test(deleted),
-  "the flow they came from is the one that can take them back",
+  "a caregiver who contributed nothing is told the way back is a family's invite",
+  /ask the family who recommended you/i.test(deleted) && !/pando\.is\/caregiver/.test(deleted),
+  "23 Sep: the bare /caregiver address is closed, so it must not be offered",
 );
 
 console.log("\n=== 14 Sep  the same word, for a parent ===");
@@ -387,9 +387,24 @@ ok(
     withToken.includes(`pando.is/caregiver/${t}`) && !withToken.includes("?"),
   );
   ok(
-    "and without one it keeps the bare address, which is still matched by hand",
-    inv.caregiverInviteMessage({ caregiverFirstName: "Maria" }).includes("pando.is/caregiver") &&
-      !/pando\.is\/caregiver\//.test(inv.caregiverInviteMessage({ caregiverFirstName: "Maria" })),
+    "and the bubble's pattern finds exactly that link, so it can be picked out",
+    inv.CAREGIVER_INVITE_URL_PATTERN.exec(withToken)?.[0] === `pando.is/caregiver/${t}`,
+  );
+  /* 23 Sep: the bare address is closed. Held on three sides, because each can
+     be undone alone: the page, the token page's fallback, and the write. */
+  const bare = fs.readFileSync(new URL("../app/(caregiver)/caregiver/page.tsx", import.meta.url), "utf8");
+  const tokenPage = fs.readFileSync(
+    new URL("../app/(caregiver)/caregiver/[token]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  ok(
+    "the bare /caregiver address no longer opens the flow when there is a database",
+    /isDbConfigured\(\)\) return <CaregiverFlow/.test(bare) &&
+      /<CaregiverInviteRequired reason="missing" \/>/.test(bare),
+  );
+  ok(
+    "and a token that names no open recommendation is refused rather than waved through",
+    /if \(!invite\) return <CaregiverInviteRequired reason="inactive" \/>/.test(tokenPage),
   );
   /* The reads that matter, on the source: the route never takes the
      nomination from the body, and the admin page shows no restricted note. */

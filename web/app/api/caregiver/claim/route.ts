@@ -136,6 +136,10 @@ export async function POST(request: Request) {
     const invite = inviteToken
       ? await resolveCaregiverInvite(db, inviteToken)
       : null;
+    /* 23 Sep: the bare address is closed, so a claim must arrive through a
+       token that names an open recommendation in this market. Enforced here as
+       well as on the page — a rule the page alone keeps is not a rule. */
+    if (!invite || invite.market_id !== marketId) return null;
     return saveCaregiverClaim(db, {
       phone,
       first_name: firstName,
@@ -169,8 +173,7 @@ export async function POST(request: Request) {
       /* Session-level only, and never accepted from the client body. */
       is_test: false,
       /* A token for another market's recommendation attaches nothing. */
-      via_nomination_id:
-        invite && invite.market_id === marketId ? invite.nomination_id : null,
+      via_nomination_id: invite.nomination_id,
     });
   });
 
@@ -187,6 +190,18 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "We couldn't save that right now" },
       { status: 502 },
+    );
+  }
+
+  if (result.data === null) {
+    console.info("[caregiver:claim] blocked", { reason: "no_open_invite" });
+    return NextResponse.json(
+      {
+        error:
+          "This sign-up needs the invite link a family sent you. Ask them to send the message again.",
+        reason: "invite_required",
+      },
+      { status: 403 },
     );
   }
 

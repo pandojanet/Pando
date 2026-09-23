@@ -11,6 +11,10 @@ the scope conversation about which line item pays for it is still open.
 
 ## The problem this design exists to solve
 
+> **Superseded 23 Sep.** The invite now carries a token (`pando.is/caregiver/<token>`,
+> `drizzle/0049`) naming the recommendation it came from, and the bare address is
+> closed. The paragraph below describes the design it replaced.
+
 The invite a parent sends is `pando.is/caregiver` — **one shared link with no
 token**. That is not laziness; there is nothing to key a token against, because
 Pando holds no contact detail for a nominated caregiver at all (invariant 13). So a

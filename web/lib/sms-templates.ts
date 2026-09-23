@@ -207,7 +207,10 @@ export function profileDeletedSms(input: {
   }
   parts.push(
     caregiverOnly
-      ? "You can set one up again any time at pando.is/caregiver."
+      ? /* 23 Sep: the bare /caregiver address is closed — a caregiver profile
+           now starts only from a family's invite link, so pointing her there
+           would send her to a page that turns her away. */
+        "To come back, ask the family who recommended you to send the invite again."
       : "You can start again any time at pando.is.",
   );
   parts.push("Reply STOP to opt out, HELP for help.");

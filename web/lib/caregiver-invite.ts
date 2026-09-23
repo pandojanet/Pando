@@ -16,8 +16,8 @@
  * forward, and an admin confirms rather than guesses (`drizzle/0049`). It is not a
  * way to reach anybody — Pando still holds no contact detail for her
  * (invariant 13) — and it is not authentication: she still proves her number with
- * a code. A message with no token keeps the bare `/caregiver` address, which is
- * still matched by hand.
+ * a code. **The bare `/caregiver` address is closed** (23 Sep), so every message
+ * carries a token — there is no longer a version of this text without one.
  *
  * Imports nothing, so a plain node test can load it.
  */
@@ -64,19 +64,24 @@ export function isCaregiverInviteToken(value: unknown): value is string {
  * query parameter changes what this app does (4 Aug) — `?i=` and `?src=` are the
  * only two read, and they are the product's own link.
  */
-export function caregiverInviteUrl(token?: string | null): string {
-  return isCaregiverInviteToken(token)
-    ? `${HOST}/caregiver/${token}`
-    : `${HOST}/caregiver`;
+export function caregiverInviteUrl(token: string): string {
+  return `${HOST}/caregiver/${token}`;
 }
+
+/**
+ * Finds the link inside a composed message, so the bubble can pick it out
+ * without the message itself carrying any markup — the text is what is copied,
+ * byte for byte, into a parent's messages.
+ */
+export const CAREGIVER_INVITE_URL_PATTERN = /pando\.is\/caregiver\/[a-z0-9]{16}/;
 
 interface InviteInput {
   /** The caregiver's first name, as the parent typed it. */
   caregiverFirstName?: string | null;
   /** The nominating parent's first name — the reason this gets read. */
   parentFirstName?: string | null;
-  /** This recommendation's token. Without one the bare address is used. */
-  token?: string | null;
+  /** This recommendation's token — required since the bare address closed. */
+  token: string;
 }
 
 export function caregiverInviteMessage({
