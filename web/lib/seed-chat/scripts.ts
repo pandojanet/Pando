@@ -513,7 +513,13 @@ export function buildScripts(
            * free weekday mornings" is the match this data exists to make.
            */
           id: "schedule_pattern",
-          prompt: "What did the week usually look like?",
+          /* 23 Sep: "What did the week usually look like?" was reported as an
+             odd question, and it was — it asked about a week and was answered
+             with times of day. It asks when, now, which is what the options
+             are. The ids are untouched: they are shared with the caregiver's
+             own G6 answer, and that match is what this question is for. */
+          prompt: "When did they usually work for you?",
+          aside: "Tap all that apply.",
           widget: "chips",
           options: CAREGIVER_SCHEDULE,
           optional: true,

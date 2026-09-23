@@ -91,7 +91,9 @@ const SCHEDULE_WINDOWS: Option[] = [
   { id: "weekday_mornings", label: "Weekday mornings" },
   { id: "weekday_afternoons", label: "Weekday afternoons" },
   { id: "weekday_evenings", label: "Weekday evenings" },
-  { id: "weeknights", label: "Weeknights (overnight)" },
+  /* "Weeknights (overnight)" said the same thing twice with a bracket; the id
+     stays, because stored answers on both sides resolve against it. */
+  { id: "weeknights", label: "Overnights" },
   { id: "saturday", label: "Saturdays" },
   { id: "sunday", label: "Sundays" },
 ];
