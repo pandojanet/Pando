@@ -1237,6 +1237,18 @@ async function answerQuestion(input: {
     caregivers: wantsCare,
   });
 
+  /**
+   * A Network Ask is offered only where there are parents near the place to
+   * ask — the same near set its pool is chosen from — so "a few nearby" is
+   * true when Pando says it. Nothing known about the place keeps today's
+   * behaviour: the pool is then the matcher's, unrestricted.
+   */
+  const askable =
+    place.near === null
+      ? null
+      : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null });
+  const canAsk = askable === null || askable >= MIN_ASKABLE_NEAR;
+
   const publicInfo: PublicSearchResult = wantsCare
     ? /* Never for a question about care. A page saying somebody is a wonderful
          nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
@@ -1249,6 +1261,9 @@ async function answerQuestion(input: {
         market: "pasadena",
         area: place.area,
         placeLabel: place.label,
+        /* Nobody near to ask, so this half is the whole answer: an empty
+           result is retried once rather than accepted (24 Sep). */
+        mustFind: !canAsk,
         location: searchLocationFor(place),
         /* The same bands and topic the retrieval above was narrowed by, so the
            two halves of one answer are looking for the same thing. Before this
@@ -1478,17 +1493,6 @@ async function answerQuestion(input: {
     })),
   ];
 
-  /**
-   * A Network Ask is offered only where there are parents near the place to
-   * ask — the same near set its pool is chosen from — so "a few nearby" is
-   * true when Pando says it. Nothing known about the place keeps today's
-   * behaviour: the pool is then the matcher's, unrestricted.
-   */
-  const askable =
-    place.near === null
-      ? null
-      : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null });
-  const canAsk = askable === null || askable >= MIN_ASKABLE_NEAR;
 
   const composed = composeAnswer({
     candidates,

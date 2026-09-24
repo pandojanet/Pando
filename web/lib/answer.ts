@@ -977,8 +977,14 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * experience, which is invariant 4 and the one thing this pass must not
    * loosen.
    */
+  /* Nobody near the place (24 Sep): say plainly there is nothing from parents
+     there yet, then the general information — still under the guard that it is
+     not from a parent, which is the line invariant 4 needs. */
+  const nobodyWhere = input.nobody_near?.place?.split(",")[0]?.trim() || "you";
   const head = publicOnly
-    ? "Here's what I can tell you. This is general information, not from a parent:"
+    ? input.nobody_near
+      ? `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
+      : "Here's what I can tell you. This is general information, not from a parent:"
     : "";
 
   /**

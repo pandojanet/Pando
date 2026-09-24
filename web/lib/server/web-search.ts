@@ -265,8 +265,32 @@ const MARKET_LOCATION: Record<
  * and never filters, the same rule the starter lists follow, and the exclusions
  * are enforced after the fact rather than trusted to the prompt. See `brief`.
  */
-export async function searchPublicInformation(input: {
+export async function searchPublicInformation(input: SearchInput): Promise<PublicSearchResult> {
+  const first = await searchOnce(input);
+  /**
+   * **Once more, when this half is all the answer has** (24 Sep).
+   *
+   * A search that errored or came back empty is, on a second try, frequently
+   * neither — the same Glendora question measured a finding on one run and
+   * nothing on the next. Where no parent near the place can answer, the public
+   * half is the whole reply, so it is worth the second call; elsewhere a miss
+   * costs a line under records that already answer. Never retried when the
+   * search is not configured: that is a setting, not a bad minute.
+   */
+  if (input.mustFind && first.configured && first.findings.length === 0) {
+    console.info("[web-search] retrying: the public half is the whole answer");
+    return searchOnce(input);
+  }
+  return first;
+}
+
+type SearchInput = {
   question: string;
+  /**
+   * Nothing from parents can answer this (24 Sep), so an empty result is
+   * retried once rather than accepted.
+   */
+  mustFind?: boolean;
   market: string;
   area?: string | null;
   /** `AgeBand`s, from the question first and the profile second. */
@@ -287,7 +311,9 @@ export async function searchPublicInformation(input: {
     | "market";
   /** What a person calls that place, for the brief — "New York, NY". */
   placeLabel?: string | null;
-}): Promise<PublicSearchResult> {
+};
+
+async function searchOnce(input: SearchInput): Promise<PublicSearchResult> {
   const question = input.question.trim();
   if (question.length === 0) return NOTHING;
   if (!isWebSearchConfigured()) return NOTHING;

@@ -1132,6 +1132,10 @@ console.log("\n=== DELETE, and it is everybody's word now (14 Sep) ===");
   ok("and no Network Ask is offered", row?.next_step !== "offer_blast", String(row?.next_step));
   const [sentRow] = await sql`select status, answer_text, hold_reason from answers where phone = ${NY}`;
   ok("nor handed to a person: nobody near can write it", sentRow?.status === "sent", `${sentRow?.status} ${sentRow?.hold_reason} :: ${sentRow?.answer_text}`);
+  ok("it says there is nothing from parents near New York yet",
+    /nothing from parents near New York/.test(String(sentRow?.answer_text ?? "")), String(sentRow?.answer_text));
+  ok("and still carries general information", /general information/.test(String(sentRow?.answer_text ?? "")),
+    "retried once when the first search came back empty");
   ok("and it does not promise an answer later",
     !/putting an answer together|come back to you/i.test(String(sentRow?.answer_text ?? "")));
 

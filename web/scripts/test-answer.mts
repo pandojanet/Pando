@@ -310,6 +310,11 @@ ok(
     "a place with nothing near still answers from what was found",
     compose([parent()], { can_offer_blast: false, nobody_near: { place: "New York" } }).used === 1,
   );
+  const general = compose([publicRecord()], { can_offer_blast: false, nobody_near: { place: "New York, NY" } });
+  ok("with general information, it says first that parents near there have nothing yet",
+    general.text.startsWith("There's nothing from parents near New York yet."), general.text);
+  ok("and the information is still marked as not from a parent", general.text.includes("not from a parent"));
+  ok("and it is sent, not queued for a person", general.next_step === "none");
 }
 
 console.log("\n=== the empty answer says so honestly ===");

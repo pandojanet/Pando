@@ -88,6 +88,11 @@ console.log("\n=== the answer path reads it (source checks) ===");
   ok("caregivers too",
     has(retrieval, "nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`"));
 
+  ok("with nobody near, an empty public half is retried", has(inbound, "mustFind: !canAsk,")
+    && inbound.indexOf("const canAsk") < inbound.indexOf("mustFind: !canAsk"));
+  ok("and the retry is a second search, only when configured",
+    has(fs.readFileSync("lib/server/web-search.ts", "utf8"), "if (input.mustFind && first.configured && first.findings.length === 0) {"));
+
   const areas = fs.readFileSync("lib/server/repo/areas.ts", "utf8");
   ok("near is read from neighborhood_adjacency", has(areas, "from neighborhood_adjacency where market_id"));
 
