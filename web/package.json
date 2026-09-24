@@ -37,6 +37,7 @@
     "test:compliance": "node --experimental-strip-types --no-warnings scripts/test-compliance.mts",
     "test:blast": "node --experimental-strip-types --no-warnings scripts/test-blast.mts",
     "test:intent": "node --experimental-strip-types --no-warnings scripts/test-intent.mts",
+    "test:place": "node --experimental-strip-types --no-warnings scripts/test-place.mts",
     "test:answer": "node --experimental-strip-types --no-warnings scripts/test-answer.mts",
     "test:routing": "node --experimental-strip-types --no-warnings scripts/test-routing.mts",
     "test:onboarding": "node --experimental-strip-types --no-warnings scripts/test-onboarding.mts",

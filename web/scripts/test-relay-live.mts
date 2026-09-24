@@ -1093,6 +1093,78 @@ console.log("\n=== DELETE, and it is everybody's word now (14 Sep) ===");
   await sql`delete from message_log where person_id is null and sent_at > now() - interval '5 minutes'`;
 }
 
+/* ── a question about a place outside the valley (24 Sep) ─────────────────── */
+{
+  console.log("\n=== a question about New York is not answered from Pasadena ===");
+  /**
+   * The developer asked about New York, approved New York as a place, asked
+   * again — and both times got Little Maestros, a class in South Pasadena.
+   * This walks the approved half: New York is a market neighborhood, nothing
+   * in the graph is tagged with it, so the parents' half must be empty and no
+   * Network Ask may be offered (the pool is the valley's parents). The Google
+   * half needs a key this suite does not have; `test:place` covers its rules.
+   */
+  const NY = "+16265559483";
+  await sql`delete from answers where phone = ${NY}`;
+  await sql`delete from people where phone = ${NY}`;
+  await sql`
+    insert into market_options (market_id, category, option_value, label, active)
+    values ('pasadena', 'neighborhoods', 'relaywalk-new-york', 'New York, NY', true)
+    on conflict do nothing`;
+
+  const res = await slackEvent(message(`${NY}: any good toddler classes in New York?`));
+  ok("the event is accepted", res.ok);
+  const landed = await settle(async () => {
+    const [row] = await sql`select id from answers where phone = ${NY}`;
+    return Boolean(row);
+  }, 35000);
+  ok("the answer was composed", landed);
+
+  const [row] = await sql`select answer_text, next_step, share_ids from answers where phone = ${NY}`;
+  const valley = await sql`select name from shares where market_id = 'pasadena' and status = 'approved' and not is_test`;
+  const named = valley
+    .map((s) => String(s.name))
+    .filter((name) => name.length > 3 && String(row?.answer_text ?? "").includes(name));
+  ok("no valley record is named in it", named.length === 0, named.join(", "));
+  ok("none is recorded as used", (row?.share_ids ?? []).length === 0);
+  ok("and no Network Ask is offered", row?.next_step !== "offer_blast", String(row?.next_step));
+
+
+  /* And a place the market holds is answered from itself and what touches it
+     — neighborhood_adjacency plus the roll-up, the same rule for every place. */
+  await sql`delete from answers where phone = ${NY}`;
+  const res2 = await slackEvent(message(`${NY}: any good toddler classes in South Pasadena?`));
+  ok("the second event is accepted", res2.ok);
+  await settle(async () => {
+    const [r] = await sql`select id from answers where phone = ${NY}`;
+    return Boolean(r);
+  }, 35000);
+  const [row2] = await sql`select share_ids from answers where phone = ${NY}`;
+  const near = await sql`
+    with city as (
+      select coalesce(area_slug, option_value) as c from market_options
+       where market_id = 'pasadena' and category = 'neighborhoods' and option_value = 'south-pasadena'),
+    adj as (
+      select c as a from city
+      union select na.area_b from neighborhood_adjacency na, city where na.area_a = city.c
+      union select na.area_a from neighborhood_adjacency na, city where na.area_b = city.c)
+    select option_value as a from market_options
+     where market_id = 'pasadena' and category = 'neighborhoods'
+       and coalesce(area_slug, option_value) in (select a from adj)
+    union select a from adj`;
+  const nearSet = near.map((r) => String(r.a));
+  const usedIds: string[] = row2?.share_ids ?? [];
+  const far = usedIds.length === 0 ? [] : await sql`
+    select name from shares where id = any(${usedIds}::uuid[])
+       and not (neighborhoods && ${nearSet}::text[])`;
+  ok("it used something", usedIds.length > 0);
+  ok("and every record it used is near South Pasadena", far.length === 0, far.map((r) => r.name).join(", "));
+
+  await sql`delete from answers where phone = ${NY}`;
+  await sql`delete from people where phone = ${NY}`;
+  await sql`delete from market_options where option_value = 'relaywalk-new-york'`;
+}
+
 /* ── cleanup ───────────────────────────────────────────────────────────────── */
 await sql`delete from answers where phone = ${PHONE}`;
 await sql`delete from people where phone = ${DELETER}`;

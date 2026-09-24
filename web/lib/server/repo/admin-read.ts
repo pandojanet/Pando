@@ -2212,17 +2212,22 @@ async function blastPool(
 
   const rows = (await db.execute(sql`
     select b.id::text as id, b.tier, b.asker_id::text as asker_id,
-           b.market_id, b.pool_target
+           b.market_id, b.pool_target, b.neighborhood
       from blasts b where b.id = ${blastId}::uuid
   `)) as unknown as Array<Record<string, unknown>>;
   const blast = rows[0];
   if (!blast?.asker_id) return null;
 
   const { selectPool } = await import("@/lib/server/repo/blast");
+  const { nearbyAreas } = await import("@/lib/server/repo/areas");
+  const market = String(blast.market_id ?? "pasadena");
+  /* The same near set the send uses, or the preview shows a pool the send
+     would not pick. */
   const pool = await selectPool({
     askerId: String(blast.asker_id),
     tier: String(blast.tier) as never,
-    marketId: String(blast.market_id ?? "pasadena"),
+    marketId: market,
+    near: blast.neighborhood ? await nearbyAreas(market, String(blast.neighborhood)) : null,
   });
 
   /* Names for the ids the pool came back with. One statement, and only for the

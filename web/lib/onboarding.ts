@@ -34,6 +34,13 @@ export interface KnownProfile {
   /** Birth years from `children`. Empty means it has never been asked. */
   child_birth_years: number[];
   neighborhood: string | null;
+  /**
+   * A place they gave on the web profile that no admin has approved yet
+   * (`raw_answers.other.neighborhood`, 24 Sep) — "New York, NY". Not
+   * matchable (invariant 9), but it *is* an answer: asking a parent where they
+   * live after they told us is the question Pando must not repeat.
+   */
+  pending_place?: string | null;
 }
 
 /**
@@ -46,7 +53,7 @@ export interface KnownProfile {
  */
 export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
   if (profile.child_birth_years.length === 0) return "child_age";
-  if (!profile.neighborhood) return "neighborhood";
+  if (!profile.neighborhood && !profile.pending_place) return "neighborhood";
   return null;
 }
 

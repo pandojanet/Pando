@@ -40,6 +40,20 @@ export interface QuestionContext {
   marketId?: string;
   /** The asker's area, used to rank — never to filter. Same rule as the chip list. */
   area?: string | null;
+  /**
+   * The neighborhoods near the place the question is about (24 Sep,
+   * `nearbyAreas`) — records outside them are not offered. Null means no place
+   * is known and nothing is filtered; an empty list is a place the database does
+   * not hold, which the graph therefore cannot answer.
+   *
+   * ⚠ This **reverses rank-never-filter for place**, on the developer's rule
+   * that everything the database supports is supported the same way: "near"
+   * is `neighborhood_adjacency` plus the roll-up, for every place alike, so a
+   * question about New York is not answered from Pasadena and a Monrovia
+   * parent is answered from Monrovia and what touches it. The topic still
+   * ranks and never filters.
+   */
+  near?: readonly string[] | null;
   /** What the question is about: `activity`, `camp`, `place`, `tip`. */
   kinds?: string[];
   /** Age bands the question is about, from the asker's children or the question. */
@@ -243,6 +257,8 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
      and `repo/caregiver.ts` and `option.promote` have each paid for it. Slugs
      only, so nothing here needs escaping beyond the quotes. */
   const areas = `{${areaIds.map((a) => `"${a}"`).join(",")}}`;
+  const nearList =
+    question.near == null ? null : `{${question.near.map((a) => `"${a}"`).join(",")}}`;
   const wantShares = question.shares !== false;
   const focus = question.focus ?? "";
   const wantCaregivers = question.caregivers !== false;
@@ -403,6 +419,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         and s.status = 'approved'
         and sc.status = 'approved'
         ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
+        ${nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`}
       group by s.id
       order by
         -- The topic the question is about, then the asker's own area, then a
@@ -470,6 +487,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         and c.active
         and c.discoverable
         and c.is_adult
+        ${nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`}
       group by c.id, cp.roles_wanted, cp.areas_served
       order by count(n.id) filter (where n.worked_for_family) desc,
                max(n.created_at) desc nulls last

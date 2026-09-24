@@ -53,7 +53,13 @@ const TTL_MS = 60_000;
 const store = globalThis as typeof globalThis & {
   __pandoAreaGroups?: Map<
     string,
-    { at: number; groups: Map<string, string[]>; cities: Map<string, string> }
+    {
+      at: number;
+      groups: Map<string, string[]>;
+      cities: Map<string, string>;
+      /** city -> the cities that touch it, both directions. */
+      adjacent: Map<string, string[]>;
+    }
   >;
 };
 store.__pandoAreaGroups ??= new Map();
@@ -71,15 +77,25 @@ async function loadAreas(marketId: string) {
          and category = 'neighborhoods'
          and active
     `)) as unknown as Array<Record<string, unknown>>;
-    return rows;
+    const pairs = (await db.execute(sql`
+      select area_a, area_b from neighborhood_adjacency where market_id = ${marketId}
+    `)) as unknown as Array<Record<string, unknown>>;
+    return { rows, pairs };
   });
 
   const groups = new Map<string, string[]>();
   /* id -> the one id that *is* the place, which is what `place_id` stores. */
   const cities = new Map<string, string>();
+  const adjacent = new Map<string, string[]>();
   if (result.persisted) {
+    for (const pair of result.data.pairs) {
+      const a = String(pair.area_a);
+      const b = String(pair.area_b);
+      (adjacent.get(a) ?? adjacent.set(a, []).get(a)!).push(b);
+      (adjacent.get(b) ?? adjacent.set(b, []).get(b)!).push(a);
+    }
     const byCity = new Map<string, string[]>();
-    for (const row of result.data) {
+    for (const row of result.data.rows) {
       const id = String(row.option_value);
       const city = String(row.city);
       cities.set(id, city);
@@ -95,8 +111,8 @@ async function loadAreas(marketId: string) {
 
   /* An unreachable database caches nothing — this is a ranking hint, and a
      minute of a wrong empty map is worse than a second round trip. */
-  if (result.persisted) cache.set(marketId, { at: Date.now(), groups, cities });
-  return { at: Date.now(), groups, cities };
+  if (result.persisted) cache.set(marketId, { at: Date.now(), groups, cities, adjacent });
+  return { at: Date.now(), groups, cities, adjacent };
 }
 
 async function groupsFor(marketId: string): Promise<Map<string, string[]>> {
@@ -141,6 +157,37 @@ export async function areaCity(
   const id = (area ?? "").trim();
   if (id === "") return null;
   return (await citiesFor(marketId)).get(id) ?? null;
+}
+
+/**
+ * Every neighborhood id **near** `area` (24 Sep): its own place and every place
+ * that touches it, each rolled up to all its districts.
+ *
+ * "Near" is read from the database and nothing else — `market_options` for
+ * the roll-up and `neighborhood_adjacency` for what touches what — so a place
+ * an admin approves is near itself the moment it is approved, and near nothing
+ * else until somebody records what it borders. That is the developer's rule:
+ * no place list in code that one feature honours and another does not.
+ *
+ * It is what an answer's parent records, the web search's place, the Network
+ * Ask offer and its pool all agree on. A place this market does not hold at all
+ * returns just itself, which matches only records tagged with exactly it.
+ */
+export async function nearbyAreas(
+  marketId: string,
+  area: string | null | undefined,
+): Promise<string[]> {
+  const id = (area ?? "").trim();
+  if (id === "") return [];
+  const { groups, cities, adjacent } = await loadAreas(marketId);
+  const city = cities.get(id) ?? id;
+  const near = new Set<string>(groups.get(id) ?? [id]);
+  near.add(city);
+  for (const next of adjacent.get(city) ?? []) {
+    near.add(next);
+    for (const member of groups.get(next) ?? [next]) near.add(member);
+  }
+  return [...near];
 }
 
 /** Clears the roll-up, so an `option.*` admin write is visible immediately. */

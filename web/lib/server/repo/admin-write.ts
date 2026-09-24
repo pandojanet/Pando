@@ -1215,6 +1215,18 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * for the same reason as the duplicate rows above.
        */
       if (category === "neighborhoods") {
+        /* Where they live, and not only an edge (24 Sep). The affinity above
+           makes them matchable; people.neighborhood is what the answer path
+           and 5.4 read, and it stayed null — so a parent whose New York an admin
+           had just approved was still answered as though Pando knew nothing
+           about where they are. Only where it is empty: a parent who has since
+           picked a listed town has answered for themselves. */
+        if (ids.length > 0) {
+          await tx.execute(
+            sql`update people set neighborhood = ${slug}
+                where id = any(${idArray}::uuid[]) and neighborhood is null`,
+          );
+        }
         await tx.execute(
           sql`update shares s
               set neighborhoods = (

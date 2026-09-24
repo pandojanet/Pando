@@ -40,6 +40,12 @@ import {
 } from "@/lib/onboarding";
 import { focusOptions, retrieveFor } from "@/lib/server/repo/retrieval";
 import {
+  MIN_ASKABLE_NEAR,
+  askablePeopleNear,
+  placeForQuestion,
+  searchLocationFor,
+} from "@/lib/server/place-for-question";
+import {
   searchPublicInformation,
   type PublicFinding,
   type PublicSearchResult,
@@ -654,10 +660,15 @@ export async function handleInboundMessage(input: {
       let created = false;
 
       if (claimed && helpedReply) {
+        /* The Ask is about the place the question was about, worked out again
+           from the question the same way the offer was (the geocode is
+           cached), so its pool is that place's parents. */
+        const asked = await placeForQuestion({ question: offer.question, profile: person.profile });
         const blast = await createBlast({
           askerId: person.person_id,
           question: offer.question,
           tier: "targeted",
+          neighborhood: asked.area,
         });
         created = blast.ok;
         if (blast.ok) {
@@ -1204,8 +1215,22 @@ async function answerQuestion(input: {
    * It still cannot fail the answer: `searchPublicInformation` returns rather
    * than throws, is bounded by its own timeout, and is inert with no API key.
    */
+  /**
+   * **Where** the question is about (24 Sep) — the question first, then the
+   * profile, then the place they gave and nobody has approved yet.
+   *
+   * The developer asked about New York and was answered with Little Maestros,
+   * a class in South Pasadena — twice, the second time after approving New York
+   * as a place. Now one answer to "where, and what is near it" is read from the
+   * database (`market_options` + `neighborhood_adjacency`) and every half of
+   * the answer uses it: the parents' records, the search's place, the Network
+   * Ask offer and, later, its pool. No place list in code decides any of it.
+   */
+  const place = await placeForQuestion({ question: body, profile: profile ?? null });
+
   const retrieved = await retrieveFor({
-    area: profile?.neighborhood ?? null,
+    area: place.area,
+    near: place.near,
     bands: asked.length > 0 ? asked : known,
     focus,
     shares: !wantsCare,
@@ -1222,7 +1247,9 @@ async function answerQuestion(input: {
         /* One market in the pilot, and the profile defaults a cold number to
            the same one. */
         market: "pasadena",
-        area: profile?.neighborhood ?? null,
+        area: place.area,
+        placeLabel: place.label,
+        location: searchLocationFor(place),
         /* The same bands and topic the retrieval above was narrowed by, so the
            two halves of one answer are looking for the same thing. Before this
            the web half got the raw question and nothing else. */
@@ -1451,7 +1478,23 @@ async function answerQuestion(input: {
     })),
   ];
 
-  const composed = composeAnswer({ candidates, has_question: true });
+  /**
+   * A Network Ask is offered only where there are parents near the place to
+   * ask — the same near set its pool is chosen from — so "a few nearby" is
+   * true when Pando says it. Nothing known about the place keeps today's
+   * behaviour: the pool is then the matcher's, unrestricted.
+   */
+  const askable =
+    place.near === null
+      ? null
+      : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null });
+  const canAsk = askable === null || askable >= MIN_ASKABLE_NEAR;
+
+  const composed = composeAnswer({
+    candidates,
+    has_question: true,
+    ...(canAsk ? {} : { can_offer_blast: false }),
+  });
 
   /**
    * Read three ways, and any one of them is enough: what the classifier decided,
@@ -1507,6 +1550,9 @@ async function answerQuestion(input: {
     next_step: composed.next_step,
     hold: verdict.reason,
     permanent: verdict.permanent,
+    place: place.source,
+    supported: place.area !== null,
+    askable,
   });
 
   if (answerId === null) return;

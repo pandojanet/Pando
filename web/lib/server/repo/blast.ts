@@ -14,6 +14,7 @@ import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-temp
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
 import { matchesFor } from "@/lib/server/repo/matching";
+import { nearbyAreas } from "@/lib/server/repo/areas";
 
 /**
  * M7.3 — pool selection.
@@ -76,6 +77,15 @@ export async function selectPool(input: {
   marketId?: string;
   /** Hard requirements the question demanded (6.5). Rare, and never inferred. */
   mustHave?: Array<{ affinity_type: string; affinity_value: string }>;
+  /**
+   * The Ask's place and what counts as near it (24 Sep, `nearbyAreas`) —
+   * the same answer the parents' half of an answer and the offer read. When
+   * set, only parents who live near are asked: ranked ones first in the
+   * matcher's order, then anybody else near at no score, because the matcher
+   * ranks by the *asker's* connections and a question about another town has
+   * to reach that town's parents whatever the asker has in common with them.
+   */
+  near?: readonly string[] | null;
 }): Promise<PoolResult> {
   const spec = TIERS[input.tier];
   const target = spec.pool_target;
@@ -108,7 +118,30 @@ export async function selectPool(input: {
     requirements: input.mustHave ? { mustHave: input.mustHave } : undefined,
   });
   if (!ranked.asker) return EMPTY;
-  if (ranked.ranked.length === 0) {
+
+  let candidates: PoolMember[] = ranked.ranked;
+  if (input.near) {
+    const nearLiteral = `{${input.near.map((a) => `"${a}"`).join(",")}}`;
+    const local = await withDb(async (db: Db) =>
+      (await db.execute(sql`
+        select id::text as id from people
+         where market_id = ${input.marketId ?? "pasadena"}
+           and not is_test
+           and id <> ${input.askerId}::uuid
+           and neighborhood = any(${nearLiteral}::text[])
+         limit 200
+      `)) as unknown as Array<Record<string, unknown>>,
+    );
+    const nearIds = new Set(local.persisted ? (local.data ?? []).map((r) => String(r.id)) : []);
+    const rankedNear = ranked.ranked.filter((r) => nearIds.has(r.person_id));
+    const seen = new Set(rankedNear.map((r) => r.person_id));
+    candidates = [
+      ...rankedNear,
+      ...[...nearIds].filter((id) => !seen.has(id)).map((id) => ({ person_id: id, score: 0, reasons: [] })),
+    ];
+  }
+
+  if (candidates.length === 0) {
     return {
       chosen: [],
       held: [],
@@ -123,7 +156,7 @@ export async function selectPool(input: {
     };
   }
 
-  const ids = ranked.ranked.map((r) => r.person_id);
+  const ids = candidates.map((r) => r.person_id);
 
   /**
    * One statement for the whole eligibility picture.
@@ -221,7 +254,7 @@ export async function selectPool(input: {
   const held: PoolResult["held"] = [];
 
   /* In ranked order, so the best match that clears the rules is asked first. */
-  for (const candidate of ranked.ranked) {
+  for (const candidate of candidates) {
     if (chosen.length >= target) break;
     const row = eligible.get(candidate.person_id);
     if (!row) {
@@ -298,6 +331,12 @@ export async function createBlast(input: {
   category?: string | null;
   marketId?: string;
   isTest?: boolean;
+  /**
+   * The place the question is about, when the server worked it out from the
+   * question itself (24 Sep, `placeForQuestion`) — never a request body.
+   * Without it the Ask is about the asker's own neighborhood, as before.
+   */
+  neighborhood?: string | null;
 }): Promise<
   | { ok: true; blast_id: string; credit_redeemed: boolean; expires_at: string | null }
   | { ok: false; reason: "unconfigured" | "unknown_asker" }
@@ -340,6 +379,7 @@ export async function createBlastIn(
     category?: string | null;
     marketId?: string;
     isTest?: boolean;
+    neighborhood?: string | null;
   },
 ): Promise<CreatedBlast | null> {
   const spec = TIERS[input.tier];
@@ -399,7 +439,8 @@ export async function createBlastIn(
     values
       (${marketId}, ${input.askerId}::uuid, ${input.question},
        ${input.category ?? null},
-       (select neighborhood from people where id = ${input.askerId}::uuid),
+       coalesce(${input.neighborhood ?? null},
+                (select neighborhood from people where id = ${input.askerId}::uuid)),
        ${input.tier},
        ${spec.always_human_review ? "pending_review" : "draft"},
        ${spec.pool_target},
@@ -479,6 +520,7 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
     const rows = (await db.execute(sql`
       select b.id, b.tier, b.status, b.human_review, b.question_text,
              b.asker_id, b.market_id, b.payment_status, b.credit_id, b.expires_at,
+             b.neighborhood,
              (select count(*)::int from blast_recipients r
                where r.blast_id = b.id and r.sent_at is not null) as already
         from blasts b where b.id = ${blastId}::uuid
@@ -569,10 +611,12 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   if (!blast.asker_id) return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
 
   const tier = String(blast.tier) as BlastTier;
+  const market = String(blast.market_id ?? "pasadena");
   const pool = await selectPool({
     askerId: String(blast.asker_id),
     tier,
-    marketId: String(blast.market_id ?? "pasadena"),
+    marketId: market,
+    near: blast.neighborhood ? await nearbyAreas(market, String(blast.neighborhood)) : null,
   });
 
   /* A pool that came back needing review is the cold-start case, and 6.6's answer

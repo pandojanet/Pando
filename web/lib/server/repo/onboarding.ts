@@ -91,7 +91,9 @@ export async function ensureInboundPerson(input: {
       `)) as unknown as Array<Record<string, unknown>>;
 
       const hood = (await tx.execute(sql`
-        select neighborhood from people where id = ${personId}::uuid
+        select neighborhood,
+               raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place
+          from people where id = ${personId}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
 
       return {
@@ -100,6 +102,7 @@ export async function ensureInboundPerson(input: {
         profile: {
           child_birth_years: (kids[0]?.years as number[] | null) ?? [],
           neighborhood: (hood[0]?.neighborhood as string | null) ?? null,
+          pending_place: (hood[0]?.pending_place as string | null) ?? null,
         },
       };
     }),

@@ -201,6 +201,7 @@ const BAND_PHRASE: Record<string, string> = {
  */
 function brief(input: {
   area?: string | null;
+  placeLabel?: string | null;
   bands?: readonly string[];
   focus?: string | null;
   exclude?: readonly string[];
@@ -208,7 +209,8 @@ function brief(input: {
 }): string[] {
   const lines: string[] = [];
 
-  if (input.area) lines.push(`Parent's area: ${input.area.replace(/-/g, " ")}`);
+  const where = input.placeLabel ?? (input.area ? input.area.replace(/-/g, " ") : null);
+  if (where) lines.push(`The question is about: ${where}`);
 
   const phrases = (input.bands ?? [])
     .map((band) => BAND_PHRASE[band])
@@ -273,12 +275,33 @@ export async function searchPublicInformation(input: {
   focus?: string | null;
   /** What the parents' half of the answer already names. */
   exclude?: readonly string[];
+  /**
+   * Where to search (24 Sep). `"market"` — or omitted — is the market's own
+   * location; anything else replaces it. A parent asking about New York, or a
+   * stranger nobody knows the place of, must not be searched as though they
+   * lived in Pasadena: that is how a question about Manhattan came back with
+   * a class in South Pasadena.
+   */
+  location?:
+    | { city?: string; region?: string; country: string; inMarket?: boolean }
+    | "market";
+  /** What a person calls that place, for the brief — "New York, NY". */
+  placeLabel?: string | null;
 }): Promise<PublicSearchResult> {
   const question = input.question.trim();
   if (question.length === 0) return NOTHING;
   if (!isWebSearchConfigured()) return NOTHING;
 
-  const location = MARKET_LOCATION[input.market] ?? null;
+  const market = MARKET_LOCATION[input.market] ?? null;
+  const location = (() => {
+    if (input.location === undefined || input.location === "market") return market;
+    const { inMarket, ...where } = input.location;
+    /* A market neighborhood's label carries no state ("Monrovia"), so it takes
+       the market's region and clock — or "Pasadena" is as likely Texas. */
+    return inMarket && market && !where.region
+      ? { ...where, region: market.region, timezone: market.timezone }
+      : where;
+  })();
   const context = brief(input);
 
   try {
