@@ -1114,9 +1114,11 @@ console.log("\n=== DELETE, and it is everybody's word now (14 Sep) ===");
 
   const res = await slackEvent(message(`${NY}: any good toddler classes in New York?`));
   ok("the event is accepted", res.ok);
+  /* Until the send has settled, not until the row exists: the row is queued
+     first and marked sent a moment later. */
   const landed = await settle(async () => {
-    const [row] = await sql`select id from answers where phone = ${NY}`;
-    return Boolean(row);
+    const [row] = await sql`select status, hold_reason from answers where phone = ${NY}`;
+    return Boolean(row) && (row.status === "sent" || row.hold_reason !== "not_held");
   }, 35000);
   ok("the answer was composed", landed);
 
@@ -1128,6 +1130,10 @@ console.log("\n=== DELETE, and it is everybody's word now (14 Sep) ===");
   ok("no valley record is named in it", named.length === 0, named.join(", "));
   ok("none is recorded as used", (row?.share_ids ?? []).length === 0);
   ok("and no Network Ask is offered", row?.next_step !== "offer_blast", String(row?.next_step));
+  const [sentRow] = await sql`select status, answer_text, hold_reason from answers where phone = ${NY}`;
+  ok("nor handed to a person: nobody near can write it", sentRow?.status === "sent", `${sentRow?.status} ${sentRow?.hold_reason} :: ${sentRow?.answer_text}`);
+  ok("and it does not promise an answer later",
+    !/putting an answer together|come back to you/i.test(String(sentRow?.answer_text ?? "")));
 
 
   /* And a place the market holds is answered from itself and what touches it

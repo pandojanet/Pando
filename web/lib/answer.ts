@@ -884,6 +884,14 @@ export interface ComposeInput {
   can_offer_blast?: boolean;
   /** Append the forwardable line. Off for a reply inside a conversation. */
   forwardable?: boolean;
+  /**
+   * There are no parents near the place to ask (24 Sep) — its name, or null
+   * for "near you". Not the same as having no budget: nobody can write this
+   * answer later, so an empty one must neither offer a Network Ask nor be
+   * handed to a person with "someone is putting an answer together". It says
+   * so and ends the exchange.
+   */
+  nobody_near?: { place: string | null };
 }
 
 /**
@@ -896,7 +904,19 @@ export interface ComposeInput {
 export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const ranked = rankForAnswer(input.candidates);
 
-  /* Nothing at all. Two different nothings, and they get different offers. */
+  /* Nothing at all. Three different nothings, and they get different offers. */
+  if (ranked.length === 0 && input.nobody_near) {
+    const where = input.nobody_near.place?.split(",")[0]?.trim();
+    return {
+      text: `I don't have anything from parents near ${where ? where : "you"} on this yet, and there aren't enough parents there for me to ask.`,
+      next_step: "none",
+      public_only: false,
+      used: 0,
+      parent_used: 0,
+      used_ids: [],
+      labels: [],
+    };
+  }
   if (ranked.length === 0) {
     return {
       text: input.can_offer_blast === false

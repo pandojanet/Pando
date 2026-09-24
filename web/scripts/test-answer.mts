@@ -298,6 +298,19 @@ ok(
   "and an answer never offers when the caller says it cannot",
   compose([parent()], { can_offer_blast: false }).next_step === "none",
 );
+{
+  /* 24 Sep: nobody near the place is not "no budget". Sent to a person it
+     became "someone is putting an answer together" for New York, which nobody
+     can keep. */
+  const nobody = compose([], { can_offer_blast: false, nobody_near: { place: "New York, NY" } });
+  ok("nobody near to ask ends the exchange, not a person's queue", nobody.next_step === "none");
+  ok("and says where, without the state", nobody.text.includes("near New York on this"));
+  ok("and promises no answer later", !/come back|putting an answer/i.test(nobody.text));
+  ok(
+    "a place with nothing near still answers from what was found",
+    compose([parent()], { can_offer_blast: false, nobody_near: { place: "New York" } }).used === 1,
+  );
+}
 
 console.log("\n=== the empty answer says so honestly ===");
 const empty = compose([]);

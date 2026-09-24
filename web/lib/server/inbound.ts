@@ -1493,7 +1493,12 @@ async function answerQuestion(input: {
   const composed = composeAnswer({
     candidates,
     has_question: true,
-    ...(canAsk ? {} : { can_offer_blast: false }),
+    /* Nobody near to ask is not "no budget": it must not reach a person as
+       "someone is putting an answer together" (the generator_asked hold), which
+       is a promise nobody near that place can keep. */
+    ...(canAsk
+      ? {}
+      : { can_offer_blast: false, nobody_near: { place: place.label ? (toGsm7(place.label) ?? place.label) : null } }),
   });
 
   /**

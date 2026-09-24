@@ -78,7 +78,7 @@ console.log("\n=== the answer path reads it (source checks) ===");
   ok("the search is told where", has(inbound, "location: searchLocationFor(place)"));
   ok("the offer needs parents near the place",
     has(inbound, "askable === null || askable >= MIN_ASKABLE_NEAR")
-      && has(inbound, "canAsk ? {} : { can_offer_blast: false }"));
+      && has(inbound, "canAsk ? {} : { can_offer_blast: false, nobody_near:"));
   ok("the Ask created from a yes is about the question's place",
     has(inbound, "neighborhood: asked.area,"));
 
