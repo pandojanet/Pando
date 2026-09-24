@@ -729,8 +729,8 @@ export function ChatSeeding() {
    */
   function offerCaregiverInvite(submission: Submission) {
     const token = submission.invite_token;
+    /* Always, since 23 Sep — the question asking whether to show it is gone. */
     if (submission.kind !== "caregiver" || !token) return;
-    if (submission.fields.send_invite !== "yes") return;
     const name = submission.fields.name;
     patchChat((c) =>
       c.messages.some((m) => m.invite?.includes(token))

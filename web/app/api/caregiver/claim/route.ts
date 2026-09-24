@@ -162,6 +162,24 @@ export async function POST(request: Request) {
             .filter((v): v is string => v !== null)
             .slice(0, 24)
         : [],
+      /**
+       * Places Google found, as the canonical names the screen showed (24 Sep).
+       * Text, never a slug — a slug here would claim a promotion nobody made —
+       * and capped at five, deduplicated without regard to case, because the
+       * repo files each one in `pending_options` and a crafted body must not
+       * be able to fill an admin's queue.
+       */
+      areas_found: Array.isArray(raw.areas_found)
+        ? [
+            ...new Map(
+              raw.areas_found
+                .filter((v): v is string => typeof v === "string")
+                .map((v) => cleanText(v, 80))
+                .filter((v): v is string => v !== null && v.length > 1)
+                .map((v) => [v.toLowerCase(), v] as const),
+            ).values(),
+          ].slice(0, 5)
+        : [],
       drives: drives === null ? null : drives === "yes",
       days_available: only(raw.days_available, CAREGIVER_DAYS),
       available_from: oneOf(raw.available_from, CAREGIVER_AVAILABLE_FROM),

@@ -198,8 +198,9 @@ message. Then five, one at a time:
 ```
 
 Closed steps are strict: `class`/`camp`/`place`/`tip` · `USED`/`HEARD` ·
-`YES`/`YES BUT`/`NO`. The last is free text or `SKIP`. `CANCEL` stops it at any
-point.
+`YES`/`YES BUT`/`NO`. The last is free text or `SKIP`. `NEVER MIND` (or `STOP ADDING`)
+stops it at any point. ⚠ **Never `CANCEL`**: it is a carrier opt-out keyword and
+unsubscribes the number from Pando entirely.
 
 **Pass:** a confirmation naming the record, and a `pending_review` row in
 `/admin/activities`.
@@ -669,6 +670,15 @@ deliberate:**
 | it never goes **below five** | five is the floor of the community agreement, so it may take *as relevant* → 10 → 5 and stops; taking the floor would withdraw the access they were promised for answering | set the allowance to 5, stage `governed` → still 5, and `lowered` is false |
 | **PASS counts as answering** | strategy §6 promises *"nothing recorded against you"* — a polite decline is a response, not silence | reply `PASS` to a Network Ask three times and watch the rate **rise** |
 | *as relevant* **can be given a ceiling by the governor** | "no fixed limit" is what the parent agreed to while they are answering; a 0% rate lowers them one tier, and the tier below "no ceiling" is 10 | set the allowance to *as relevant*, stage `governed` → effective **10**, `lowered` true. Non-obvious, and not a bug |
+
+**A thank-you is not a request** (24 Sep). The weekly thank-you asks nothing, so
+it spends no allowance, starts no 48-hour gap and is not in the governor's
+denominator — before that fix one answered Ask plus four thank-yous read as 20%
+and lowered a 10-a-month contributor to 5. *"Did it help?"* **is** a question and
+is counted like any Ask. And the rate is **requests answered**, not texts
+received: a reply links to the most recent request within **7 days**, one answer
+sent as three messages counts once, and a text three weeks after an ignored Ask
+is a new conversation rather than an answer.
 
 **And one that is easy to get backwards:** a **retry** of a failed message must
 not spend a second slot. Every counter carries `and m.retry_of is null`, so a

@@ -78,6 +78,38 @@ export const RESPONSE_MIN_SAMPLE = 4;
 export const PINGS_PER_MONTH = 1;
 
 /**
+ * How long after a request an inbound text can still be its answer (24 Sep).
+ *
+ * SMS carries no thread id, so a reply is linked to the most recent request.
+ * The link window used to be the governor's whole 30 days, which meant a parent
+ * who ignored five Network Asks and then, three weeks later, texted Pando a
+ * question of their own was read as having **answered** one — the governor
+ * exists to notice exactly that silence, and could not. Seven days covers every
+ * request Pando sends (a blast window plus its 48-hour grace, a freshness ping,
+ * a "did it help?"), and past it a text is a new conversation.
+ */
+export const REPLY_LINK_DAYS = 7;
+
+/**
+ * Outreach templates that ask for nothing (24 Sep).
+ *
+ * A thank-you is `category = 'outreach'` — it is proactive, so opt-out and
+ * quiet hours must still stop it — but it is not a **request**: its copy asks
+ * nothing and invites no reply (9.2). Counted as one, it did three wrong things
+ * at once: it spent a slot of an allowance the contributor agreed to for being
+ * *asked* things, it restarted their 48-hour gap so a thank-you held back the
+ * next Ask for two days, and it sat in the governor's denominator with no reply
+ * possible — measured, one answered Ask plus four weekly thank-yous is 20%, and
+ * that lowered a 10-a-month contributor to 5. The people thanked most are the
+ * people whose recommendations are used most, so the governor was punishing its
+ * best contributors for being useful.
+ *
+ * Every SQL counter that feeds `decideOutreach` excludes these by template, and
+ * `test:outreach` reads both copies of it to hold that.
+ */
+export const NON_REQUEST_TEMPLATES = ["thanks"] as const;
+
+/**
  * M8.3 — changing the agreement by text.
  *
  * ## Why this lives here and not in its own file
@@ -229,7 +261,14 @@ export interface OutreachHistory {
   blast_today: boolean;
 }
 
-export type OutreachKind = "blast" | "ping" | "thanks";
+/**
+ * What kind of proactive message this is.
+ *
+ * `prompt` is 9.1's "did it help?" — a question, so it is a request like any
+ * other. `thanks` is 9.2's thank-you, which asks nothing and is therefore held
+ * to neither the gap nor the ceiling (see `NON_REQUEST_TEMPLATES`).
+ */
+export type OutreachKind = "blast" | "ping" | "prompt" | "thanks";
 
 export type OutreachDecision =
   | { ok: true; allowance: number | null }
@@ -302,6 +341,14 @@ export function decideOutreach(
   now: Date = new Date(),
 ): OutreachDecision {
   const { allowance } = effectiveAllowance(stated, history);
+
+  /**
+   * A thank-you is not a request, so neither the gap nor the ceiling applies to
+   * it — both protect a contributor from being *asked* too often. What bounds it
+   * is its own rule, one per contributor per week (`repo/thanks.ts`), and the
+   * two gates the send layer runs before this one: opt-out and quiet hours.
+   */
+  if (kind === "thanks") return { ok: true, allowance };
 
   /* v3.2 §10's two ping rules, checked first because they are the narrowest. */
   if (kind === "ping") {

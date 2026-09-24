@@ -209,8 +209,18 @@ export function mentionsCaregiver(body: string): boolean {
   return CAREGIVER_WORDS.some((word) => text.includes(word));
 }
 
-/** Anywhere in the capture, this stops it. */
-const CANCEL_WORDS = ["CANCEL", "STOP ADDING", "NEVER MIND", "NEVERMIND", "FORGET IT"];
+/**
+ * Anywhere in the capture, this stops it.
+ *
+ * ⚠⚠ **Never "CANCEL"** (23 Sep). CANCEL is one of the CTIA opt-out keywords
+ * (`OPT_OUT_KEYWORDS`), handled before a capture is even looked at — and by
+ * the carrier itself under Advanced Opt-Out — so it was never reachable here,
+ * and the test plan told testers to use it. Walked live: a parent who texted
+ * CANCEL to stop adding a class was **unsubscribed from Pando entirely**, and
+ * every reply after it was suppressed. A word the carrier owns cannot be given
+ * a second meaning by the app.
+ */
+const CANCEL_WORDS = ["STOP ADDING", "NEVER MIND", "NEVERMIND", "FORGET IT"];
 
 export function isCaptureCancel(body: string): boolean {
   const word = body.trim().toUpperCase().replace(/[.!,]+$/, "");

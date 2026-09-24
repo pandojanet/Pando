@@ -456,7 +456,9 @@ export default function ContributorDetailPage({
                     </TextLink>
                   </div>
                 ) : !pickerOpen ? (
-                  <div className="mt-1 flex items-center justify-between gap-2">
+                  /* flex-wrap: in the 20rem side column the two did not fit on
+                     one line and the link was cut to "Record who invited…". */
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                     <span className="text-[13.5px] text-muted">Nobody recorded</span>
                     <TextLink
                       className="text-[12.5px]"
@@ -598,19 +600,22 @@ function SharedCards({
   const total = shares.length + caregivers.length;
 
   /**
-   * The Founding queue links here as `#contributions`, and this block arrives
-   * after the page does — so the browser looks for the anchor before it exists
-   * and lands at the top. Scrolled once, when the cards are in, and only for
-   * that link.
+   * The Founding queue links here as `#contributions`, and this block's rows
+   * arrive after the page does — so the browser looks for the anchor before
+   * the content exists and lands at the top.
+   *
+   * ⚠ Scrolled **once, on mount**, not when the rows land (23 Sep). Waiting for
+   * them meant the page appeared, then jumped a moment later — and a click
+   * aimed at a card during that moment landed on whatever the jump put under
+   * the pointer. The block holds a screen's height while it loads, so the first
+   * scroll can reach the top of it and the rows then fill in *below* the
+   * anchor, where nothing already on screen moves.
    */
   const anchor = useRef<HTMLDivElement>(null);
-  const scrolled = useRef(false);
   useEffect(() => {
-    if (scrolled.current || loading || total === 0) return;
     if (window.location.hash !== "#contributions") return;
-    scrolled.current = true;
     anchor.current?.scrollIntoView({ block: "start" });
-  }, [loading, total]);
+  }, []);
 
   const ordered = [
     ...shares.filter((r) => counts(r.status)),
@@ -618,7 +623,11 @@ function SharedCards({
   ];
 
   return (
-    <div id="contributions" ref={anchor} className="scroll-mt-4">
+    <div
+      id="contributions"
+      ref={anchor}
+      className={`scroll-mt-4 ${loading ? "min-h-[70vh]" : ""}`}
+    >
       <Card
         title={`What they shared (${total})`}
         right={
@@ -627,7 +636,10 @@ function SharedCards({
           </span>
         }
       >
-        {loading && total === 0 ? (
+        {/* While the rows load, nothing but the line: a caregiver card is known
+            first, and showing it alone reordered the list the moment the
+            approved cards arrived above it. */}
+        {loading ? (
           <Loading />
         ) : total === 0 ? (
           <Empty title="Nothing shared yet" />

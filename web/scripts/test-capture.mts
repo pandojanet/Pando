@@ -166,7 +166,20 @@ ok(
   !c.isCaptureStart("add me to the list"),
   "exact on the whole message, like every other parser here",
 );
-ok("CANCEL stops one", c.isCaptureCancel("cancel"));
+ok(
+  "CANCEL is not a capture word — it is a carrier opt-out",
+  !c.isCaptureCancel("cancel"),
+  "a parent stopping an add must not be unsubscribed from everything",
+);
+{
+  const t = await import(`../lib/sms-templates.ts?v=${Date.now()}`);
+  ok(
+    "and no capture stop word is an opt-out keyword",
+    ["never mind", "stop adding", "forget it", "nevermind"].every(
+      (w) => c.isCaptureCancel(w) && !(t.OPT_OUT_KEYWORDS as readonly string[]).includes(w.toUpperCase()),
+    ),
+  );
+}
 ok('"never mind" too', c.isCaptureCancel("never mind"));
 ok("and an ordinary answer does not", !c.isCaptureCancel("Aveson Music"));
 

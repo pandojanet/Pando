@@ -79,3 +79,29 @@ export const SMALL_TALK =
  */
 export const ASK_STARTED =
   "Pando: on it. I'll ask a few nearby parents who'd know, and text you what they say. Reply STOP to opt out, HELP for help.";
+
+/**
+ * The answers to Pando's own yes/no questions — acknowledged (23 Sep).
+ *
+ * 10.2's *"is it still worth recommending?"* and 9.1's *"did it help?"* were
+ * both met with **silence**, walked live over the relay on 23 Sep: the parent
+ * answered a question Pando had just put to them and heard nothing back — the
+ * same fault `CLARIFY_THANKS` closed on 21 Sep, one question along.
+ *
+ * **None of them asks anything** (the `SMALL_TALK` rule: a question here makes
+ * the next reply ambiguous) and **none promises a consequence nobody keeps**:
+ * a withdrawal is read by a person, so the no says so; a yes that helped does
+ * **not** say the contributors will be thanked, because that is a scheduled
+ * job and a sentence must not depend on a cron being wired.
+ *
+ * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment each,
+ * pinned by `test:routing`.
+ */
+export const PING_STILL_GOOD =
+  "Pando: thanks - noted that it's still worth recommending. Reply STOP to opt out, HELP for help.";
+export const PING_NO_LONGER =
+  "Pando: thanks for telling us - a person will take another look at it. Reply STOP to opt out, HELP for help.";
+export const HELPED_YES =
+  "Pando: glad it helped - thanks for letting us know. Reply STOP to opt out, HELP for help.";
+export const HELPED_NO =
+  "Pando: thanks for telling us - that helps Pando get better answers. Reply STOP to opt out, HELP for help.";

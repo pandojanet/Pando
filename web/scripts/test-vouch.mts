@@ -42,7 +42,11 @@ ok(
   !refresh.add_contribution,
   "the same parent saying still-good is not a second parent",
 );
-ok("a vouch also moves the date", vouch.refresh_freshness);
+ok(
+  "a vouch does not move the date until an admin approves it",
+  !vouch.refresh_freshness,
+  "an unread text must not decide what later answers say about the record",
+);
 ok(
   "and does add one",
   vouch.add_contribution,

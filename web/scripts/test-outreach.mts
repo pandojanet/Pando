@@ -46,7 +46,7 @@ const history = (over: Partial<OutreachHistory> = {}): OutreachHistory => ({
   ...over,
 });
 const decide = (
-  kind: "blast" | "ping" | "thanks",
+  kind: "blast" | "ping" | "prompt" | "thanks",
   a: Partial<Allowance> = {},
   h: Partial<OutreachHistory> = {},
 ) => p.decideOutreach(kind, allowance(a), history(h), NOW);
@@ -430,6 +430,86 @@ ok(
     return inbound.length > 0 && inbound.every((b) => !b.includes("retry_of"));
   })(),
 );
+
+/**
+ * 24 Sep — a thank-you is not a request, and a reply is one per request.
+ *
+ * Found by reviewing 8.2 and 8.4 against the jobs that send through them. The
+ * weekly thank-you (9.2) went through the same counters as a Network Ask, so it
+ * spent a slot of the allowance, restarted the 48-hour gap, and sat in the
+ * governor's denominator with no reply possible: one answered Ask plus four
+ * thank-yous was 20%, and a 10-a-month contributor was lowered to 5. And the
+ * numerator counted inbound *texts*, linked to the last outreach for 30 days —
+ * so a parent who ignored every Ask but texted Pando twice read as responsive.
+ */
+console.log("\n=== a thank-you is not a request ===");
+ok(
+  "a thank-you six hours after an Ask is not held by the gap",
+  decide("thanks", {}, { last_outreach_at: new Date(NOW.getTime() - 6 * 3600e3) }).ok,
+);
+ok(
+  "nor by the ceiling",
+  decide("thanks", { monthly_contact_allowance: 5 }, { sent_last_30_days: 5 }).ok,
+);
+ok(
+  'but "did it help?" is a question, and is gapped like one',
+  decide("prompt", {}, { last_outreach_at: daysAgo(1) }).ok === false,
+);
+ok("the list of templates that ask nothing is the thank-you", p.NON_REQUEST_TEMPLATES.join() === "thanks");
+ok("a reply is linked to a request for a week, not a month", p.REPLY_LINK_DAYS === 7);
+
+{
+  const jobs = fs.readFileSync("lib/server/repo/jobs.ts", "utf8");
+  const prompt = jobs.slice(jobs.indexOf("async function thanks_prompt"), jobs.indexOf("async function thanks_delivery"));
+  const delivery = jobs.slice(jobs.indexOf("async function thanks_delivery"));
+  ok('the "did it help?" job sends as a prompt', /outreachKind: "prompt"/.test(prompt));
+  ok("the thank-you job sends as thanks, under the template the counters exclude",
+    /outreachKind: "thanks"/.test(delivery) && /template: "thanks"/.test(delivery));
+}
+
+for (const [label, file] of [
+  ["the send layer", "lib/server/repo/outreach.ts"],
+  ["the pool query", "lib/server/repo/blast.ts"],
+] as const) {
+  const branches = outboundBranches(fs.readFileSync(file, "utf8"));
+  const requests = branches.filter((b) => b.includes("category = 'outreach'"));
+  ok(
+    `${label}: every request counter leaves the thank-you out`,
+    requests.length === 3 && requests.every((b) => b.includes("template is distinct from 'thanks'")),
+    `${requests.filter((b) => !b.includes("'thanks'")).length} of ${requests.length} do not`,
+  );
+  const src = fs.readFileSync(file, "utf8").replace(/\s+/g, " ");
+  ok(
+    `${label}: answered means distinct requests replied to`,
+    /count\(distinct case when m\.direction = 'in' and m\.responded_to is not null .{0,120}?then m\.responded_to end\)/.test(src),
+  );
+}
+
+{
+  const src = fs.readFileSync("lib/server/repo/outreach.ts", "utf8");
+  const link = src.slice(src.indexOf("answered as ("), src.indexOf("insert into message_log", src.indexOf("answered as (")));
+  ok("a reply is never linked to a thank-you", link.includes("template is distinct from 'thanks'"));
+  ok("and only within the reply window", link.includes("REPLY_LINK_DAYS") && !link.includes("interval '30 days'"));
+}
+
+{
+  const src = fs.readFileSync("lib/server/repo/admin-read.ts", "utf8").replace(/\s+/g, " ");
+  ok(
+    "the standing view counts the governor's numbers the way the send layer does",
+    src.includes("and m.template is distinct from 'thanks' and m.sent_at > now() - interval '30 days')::int as asked_30") &&
+      src.includes("(select count(distinct m.responded_to) from message_log m"),
+  );
+}
+
+console.log("\n=== hiding a caregiver takes the introduction with it ===");
+{
+  const src = fs.readFileSync("lib/server/repo/admin-write.ts", "utf8");
+  const vis = src.slice(src.indexOf('case "caregiver.visibility"'), src.indexOf('case "caregiver.merge"'));
+  ok(
+    "discoverable off clears introducible, or ladder_order refuses the write",
+    /if \(b\.discoverable === false\) sets\.push\(sql`introducible = false`\)/.test(vis),
+  );
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

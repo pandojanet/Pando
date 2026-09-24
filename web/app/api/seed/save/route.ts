@@ -230,12 +230,15 @@ export async function POST(request: Request) {
     record.reference_willing = fields.reference_willing ?? null;
 
     /**
-     * There is exactly one path in: the nominating parent sends the invite. Pando
-     * never reaches out, so this records whether the parent took the invite step —
-     * not who does the asking.
+     * There is exactly one path in: the nominating parent sends the invite.
+     *
+     * ⚠ Since 23 Sep every card is shown the invite and nobody is asked whether
+     * they want it, so at save time Pando does not know whether it was sent —
+     * and says so (`not_invited` → *Not sent yet*). The evidence arrives with
+     * her: a sign-up through the card's own link sets `invite_sent_by_parent`
+     * (`repo/caregiver.ts`), which is the only moment it is actually true.
      */
-    record.consent_outreach =
-      fields.send_invite === "yes" ? "parent_sent_invite" : "not_invited";
+    record.consent_outreach = "not_invited";
 
     /**
      * Pay: stored either way, poolable only on an explicit yes. Two decisions, so

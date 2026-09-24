@@ -241,5 +241,15 @@ ok(
   })(),
 );
 
+/* 23 Sep — a withdrawal marks the record stale, and a recent date must not hide it. */
+ok(
+  "a record somebody marked stale reads stale even when it was confirmed yesterday",
+  t.labelsFor({ ...candidate(), last_confirmed_at: daysAgo(1), marked_stale: true }, { now: NOW }).freshness === "stale",
+);
+ok(
+  "and without the mark the same date reads fresh",
+  t.labelsFor({ ...candidate(), last_confirmed_at: daysAgo(1) }, { now: NOW }).freshness === "fresh",
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

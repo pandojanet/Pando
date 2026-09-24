@@ -220,6 +220,10 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     ["the share invite", r.SHARE_INVITE],
     ["the small-talk reply", r.SMALL_TALK],
     ["the Ask acknowledgement", r.ASK_STARTED],
+    ["the still-good acknowledgement", r.PING_STILL_GOOD],
+    ["the withdrawal acknowledgement", r.PING_NO_LONGER],
+    ["the helped-yes acknowledgement", r.HELPED_YES],
+    ["the helped-no acknowledgement", r.HELPED_NO],
   ] as const) {
     const plan = s.planSegments(text);
     ok(
@@ -259,6 +263,15 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     "and it never says what an Ask costs",
     !r.ASK_STARTED.includes("$"),
     "payment is off for the pilot, and the price is not this message's to state",
+  );
+  ok(
+    "the four yes/no acknowledgements ask nothing back",
+    [r.PING_STILL_GOOD, r.PING_NO_LONGER, r.HELPED_YES, r.HELPED_NO].every((t) => !t.includes("?")),
+  );
+  ok(
+    "and the helped one does not promise the contributors a thank-you a job has to send",
+    !/thank (them|the parents|everyone)|let (them|the parents) know/i.test(r.HELPED_YES),
+    r.HELPED_YES,
   );
   ok(
     "and small talk asks no question of its own",

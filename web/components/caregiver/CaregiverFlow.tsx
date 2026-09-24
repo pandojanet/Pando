@@ -8,6 +8,7 @@ import { Note } from "@/components/ui/Note";
 import { Field } from "@/components/ui/Field";
 import { Consent } from "@/components/ui/Consent";
 import { ChipGroup } from "@/components/ui/ChipGroup";
+import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import {
@@ -384,18 +385,56 @@ export function CaregiverFlow({
           )}
 
           <div className="mt-6 space-y-7">
-            {step.questions.map((q) => (
-              <ChipGroup
-                key={q.key}
-                label={step.questions.length > 1 ? q.label : undefined}
-                groupLabel={q.label}
-                options={q.options}
-                mode={q.mode}
-                layout={q.layout}
-                selected={selectionsFor(q.key, answers)}
-                onChange={(next) => setTap(q.key, next)}
-              />
-            ))}
+            {step.questions.map((q) =>
+              q.directory ? (
+                /* The profile's place picker, as-is — see `CaregiverQuestion.directory`.
+                   `wholeList` for the profile's reason: this question is where
+                   the area is stated, so it cannot be trimmed by one. */
+                <SearchableChipGroup
+                  key={q.key}
+                  label={step.questions.length > 1 ? q.label : undefined}
+                  groupLabel={q.label}
+                  options={q.options}
+                  mode={q.mode}
+                  selected={selectionsFor(q.key, answers)}
+                  onChange={(next) => setTap(q.key, next)}
+                  category={q.directory.category}
+                  market={market}
+                  wholeList
+                  dropdown
+                  searchLabel={q.directory.searchLabel}
+                  /* A place Google found (24 Sep): a gold chip, pending an
+                     admin, exactly as on the profile. Five at most — a list of
+                     towns outside the market is a service radius, not an answer
+                     anybody can match yet. */
+                  custom={answers.areas_found}
+                  onRemoveCustom={(value: string) =>
+                    set(
+                      "areas_found",
+                      answers.areas_found.filter((v) => v !== value),
+                    )
+                  }
+                  onAddPlace={(value: string) => {
+                    const known = answers.areas_found.some(
+                      (v) => v.toLowerCase() === value.toLowerCase(),
+                    );
+                    if (known || answers.areas_found.length >= 5) return;
+                    set("areas_found", [...answers.areas_found, value]);
+                  }}
+                />
+              ) : (
+                <ChipGroup
+                  key={q.key}
+                  label={step.questions.length > 1 ? q.label : undefined}
+                  groupLabel={q.label}
+                  options={q.options}
+                  mode={q.mode}
+                  layout={q.layout}
+                  selected={selectionsFor(q.key, answers)}
+                  onChange={(next) => setTap(q.key, next)}
+                />
+              ),
+            )}
 
             {step.freeText && (
               <Field

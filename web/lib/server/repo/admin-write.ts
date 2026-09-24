@@ -979,7 +979,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (typeof b.active === "boolean") sets.push(sql`active = ${b.active}`);
       if (typeof b.discoverable === "boolean")
         sets.push(sql`discoverable = ${b.discoverable}`);
-      if (typeof b.introducible === "boolean")
+      /**
+       * Hiding her takes the introduction with it (24 Sep). `ladder_order` is
+       * `not introducible or discoverable`, so "Hide from families" on a
+       * caregiver who had reached introducible was refused by the database —
+       * the admin could not hide the one caregiver who had gone furthest, and
+       * the page has no separate control for the introduction. Being introduced
+       * without being seen is not a state the ladder has, so the smaller
+       * permission goes when the larger one does, as it does in 2C.
+       */
+      if (b.discoverable === false) sets.push(sql`introducible = false`);
+      else if (typeof b.introducible === "boolean")
         sets.push(sql`introducible = ${b.introducible}`);
       if (sets.length > 0) {
         /**
@@ -1216,6 +1226,30 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                 and exists (select 1 from unnest(s.neighborhoods) n
                             where lower(btrim(n)) = lower(btrim(${submitted})))`,
         );
+        /* And a caregiver who named the same place as an area she works in
+           (24 Sep) — her claim, and the profile a linked claim was copied
+           into, which is what retrieval reads. */
+        await tx.execute(
+          sql`update caregiver_claims c
+              set areas_served = (
+                select coalesce(array_agg(distinct case
+                         when lower(btrim(n)) = lower(btrim(${submitted})) then ${slug}
+                         else n end), '{}')
+                from unnest(c.areas_served) n)
+              where c.market_id = ${market}
+                and exists (select 1 from unnest(c.areas_served) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))`,
+        );
+        await tx.execute(
+          sql`update caregiver_profiles p
+              set areas_served = (
+                select coalesce(array_agg(distinct case
+                         when lower(btrim(n)) = lower(btrim(${submitted})) then ${slug}
+                         else n end), '{}')
+                from unnest(p.areas_served) n)
+              where exists (select 1 from unnest(p.areas_served) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))`,
+        );
       }
 
       return { applied: true, resource: "market_option", resource_id: target };
@@ -1251,6 +1285,26 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                   where p.market_id = ${market} and p.category = 'neighborhoods'
                     and p.status in ('pending', 'approved')
                     and lower(btrim(p.submitted_value)) = lower(btrim(${submitted})))`,
+        );
+        /* The same for a caregiver's areas (24 Sep). The pending row is one per
+           (market, value), so once it is rejected nothing else can be waiting
+           on this name and it simply goes. */
+        await tx.execute(
+          sql`update caregiver_claims c
+              set areas_served = (
+                select coalesce(array_agg(n), '{}') from unnest(c.areas_served) n
+                where lower(btrim(n)) <> lower(btrim(${submitted})))
+              where c.market_id = ${market}
+                and exists (select 1 from unnest(c.areas_served) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))`,
+        );
+        await tx.execute(
+          sql`update caregiver_profiles p
+              set areas_served = (
+                select coalesce(array_agg(n), '{}') from unnest(p.areas_served) n
+                where lower(btrim(n)) <> lower(btrim(${submitted})))
+              where exists (select 1 from unnest(p.areas_served) n
+                            where lower(btrim(n)) = lower(btrim(${submitted})))`,
         );
       }
       return { applied: true, resource: "pending_option", resource_id: target };

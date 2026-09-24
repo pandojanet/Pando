@@ -118,7 +118,16 @@ export interface ConfirmEffect {
 export function effectOf(reply: PingReply, kind: ConfirmKind): ConfirmEffect {
   if (reply === "still_good") {
     return {
-      refresh_freshness: true,
+      /**
+       * ⚠ **Only a refresh moves the date** (23 Sep). A vouch used to move it
+       * too, and that is a text nobody has read changing what every later
+       * answer says about the record — walked live, it put a record straight
+       * back to *fresh* over a withdrawal an hour old. The vouch's date moves
+       * when an admin approves the contribution, which `contribution.approve`
+       * already does (`last_confirmed_at = now()`): the same gate every other
+       * way into the graph goes through.
+       */
+      refresh_freshness: kind === "refresh",
       /* A refresh adds no contribution: the same parent is not a second parent. */
       add_contribution: kind === "vouch",
       record_impact: true,

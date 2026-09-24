@@ -265,6 +265,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       select
         s.id, s.kind, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
+        (s.freshness_state = 'stale') as marked_stale,
         /**
          * What a parent actually wrote, and the two guards on it.
          *
@@ -492,6 +493,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       /* Both halves were required by the query, so anything here has been read. */
       human_reviewed: true,
       last_confirmed_at: (r.last_confirmed_at as string | null) ?? null,
+      marked_stale: r.marked_stale === true,
     };
     if (!usable(candidate).ok) continue;
     shares.push({
@@ -552,7 +554,12 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       /* From her own profile (2C), so a caregiver who has not claimed one yet
          simply has no roles listed rather than roles a parent guessed at. */
       kind_of_care: (r.roles_wanted as string[] | null) ?? [],
-      areas: (r.areas_served as string[] | null) ?? [],
+      /* Slugs only: a place a caregiver named that is still pending (24 Sep)
+         is a name nobody has reviewed, and an answer is not where it is first
+         shown to a stranger. */
+      areas: ((r.areas_served as string[] | null) ?? []).filter((a) =>
+        /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(a),
+      ),
       trust: labelsFor(candidate, { policies }),
       firsthand_count: candidate.firsthand_count,
     });

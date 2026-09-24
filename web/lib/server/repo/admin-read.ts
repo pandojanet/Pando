@@ -1952,11 +1952,17 @@ async function contributorStanding(db: Db) {
                               and e.quality is null)::int                as asks_unrated,
         count(e.id) filter (where e.kind = 'blast_answered'
                               and e.quality >= 3)::int                   as asks_good,
+        -- The governor's own two numbers, counted the way the send layer counts
+        -- them (repo/outreach.ts): requests only, a retry once, a thank-you not
+        -- at all, and answered = distinct requests replied to. A standing view
+        -- that counted differently would show a rate the governor never used.
         (select count(*) from message_log m
           where m.person_id = p.id and m.direction = 'out'
             and m.category = 'outreach'
+            and m.retry_of is null
+            and m.template is distinct from 'thanks'
             and m.sent_at > now() - interval '30 days')::int             as asked_30,
-        (select count(*) from message_log m
+        (select count(distinct m.responded_to) from message_log m
           where m.person_id = p.id and m.direction = 'in'
             and m.responded_to is not null
             and m.sent_at > now() - interval '30 days')::int             as answered_30

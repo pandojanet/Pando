@@ -40,6 +40,8 @@ export interface CaregiverClaimInput {
   age_experience: string[];
   strengths: string[];
   areas_served: string[];
+  /** Canonical place names Google found, pending an admin (24 Sep). */
+  areas_found?: string[];
   drives: boolean | null;
   days_available: string[];
   available_from: string | null;
@@ -168,7 +170,11 @@ export async function saveCaregiverClaim(
       rolesWanted: input.roles_wanted,
       ageExperience: input.age_experience,
       strengths: input.strengths,
-      areasServed: input.areas_served,
+      /* The found names ride in the same array, as a parent's pending town
+         rides in `shares.neighborhoods`: `option.promote` swaps each for its
+         slug and `option.reject` removes it, so the claim never needs a
+         second column that every reader would have to learn. */
+      areasServed: [...input.areas_served, ...(input.areas_found ?? [])],
       drives: input.drives,
       daysAvailable: input.days_available,
       hoursNote: input.hours_note,
@@ -199,6 +205,24 @@ export async function saveCaregiverClaim(
         },
       })
       .returning({ id: caregiverClaims.id });
+
+    /**
+     * A place Google found is a pending neighborhood, the same row a parent's
+     * typed or found town becomes (invariant 9).
+     *
+     * ⚠ **`submitted_by` is null, deliberately.** `option.promote` gives every
+     * submitter a `neighborhood` affinity for the place — right for a parent,
+     * who lives there, and wrong for a caregiver, who only works there: the
+     * edge would put her in a Network Ask pool as a local parent. The claim
+     * itself is what promotion updates for her.
+     */
+    for (const name of input.areas_found ?? []) {
+      await tx.execute(sql`
+        insert into pending_options (market_id, category, submitted_value, submitted_by)
+        values (${input.market_id}, 'neighborhoods', ${name}, null)
+        on conflict (market_id, category, submitted_value)
+        do update set occurrences = pending_options.occurrences + 1`);
+    }
 
     /**
      * Arriving through a token is proof the invite reached her, so the two facts

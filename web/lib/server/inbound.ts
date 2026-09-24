@@ -14,7 +14,15 @@ import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { planSegments, toGsm7 } from "@/lib/sms-segments";
-import { ASK_STARTED, SHARE_INVITE, SMALL_TALK } from "@/lib/replies";
+import {
+  ASK_STARTED,
+  HELPED_NO,
+  HELPED_YES,
+  PING_NO_LONGER,
+  PING_STILL_GOOD,
+  SHARE_INVITE,
+  SMALL_TALK,
+} from "@/lib/replies";
 import {
   heldReply,
   routeAnswer,
@@ -386,7 +394,9 @@ export async function handleInboundMessage(input: {
    * exchange: a capture is a conversation the *parent* started, and the message
    * in front of us is the answer to the question Pando asked them one text ago.
    * A Network Ask that lands mid-capture is unfortunate rather than ambiguous —
-   * the parent can CANCEL, and the 48-hour gap makes the overlap rare.
+   * the parent can say NEVER MIND (never CANCEL, which is a carrier opt-out
+   * and unsubscribes them from everything), and the 48-hour gap makes the
+   * overlap rare.
    *
    * A caregiver is refused here and handed to the flow that can ask properly.
    * Invariants 14, 2 and 12 are three gates a text message cannot honestly pass,
@@ -580,6 +590,18 @@ export async function handleInboundMessage(input: {
         kind: outcome?.kind ?? "unknown",
         vouched: outcome?.vouched ?? false,
       });
+      /* Answered out loud (23 Sep) — only when the reply was recorded, so an
+         unreachable database is never thanked for a write that did not happen. */
+      if (outcome) {
+        await sendSms({
+          to: from,
+          body: pingReply === "still_good" ? PING_STILL_GOOD : PING_NO_LONGER,
+          category: "transactional",
+          personId: person.person_id,
+          template: "freshness_reply_saved",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+      }
       answeredSomething = true;
     } else if (offer && helpedReply !== null && asked(offer) === latest) {
       /**
@@ -626,8 +648,18 @@ export async function handleInboundMessage(input: {
       console.info("[sms:inbound] ask offer", { accepted: helpedReply, claimed, created });
       answeredSomething = true;
     } else if (prompt && helpedReply !== null) {
-      await recordHelped(prompt.answer_id, helpedReply);
+      const recorded = await recordHelped(prompt.answer_id, helpedReply);
       console.info("[sms:inbound] helped", { helped: helpedReply });
+      if (recorded) {
+        await sendSms({
+          to: from,
+          body: helpedReply ? HELPED_YES : HELPED_NO,
+          category: "transactional",
+          personId: person.person_id,
+          template: "helped_reply_saved",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+      }
       answeredSomething = true;
     }
   }

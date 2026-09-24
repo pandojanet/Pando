@@ -960,6 +960,19 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       noteMigration.includes("relationship = 'other'") &&
         noteMigration.includes(`BETWEEN 1 AND ${rel.RELATIONSHIP_NOTE_MAX}`));
   }
+  {
+    /* 23 Sep: "прибери … питання чи показувати інвайт, показуй інвайт завжди". */
+    const { buildScripts } = (await import(
+      `../lib/seed-chat/scripts.ts?v=${Date.now()}`
+    )) as typeof import("../lib/seed-chat/scripts.ts");
+    const cg = buildScripts("pasadena").caregiver;
+    const chatSrc = fs.readFileSync(new URL("../components/seed/chat/ChatSeeding.tsx", import.meta.url), "utf8");
+    const offer = chatSrc.slice(chatSrc.indexOf("function offerCaregiverInvite"), chatSrc.indexOf("async function persist"));
+    ok("the caregiver card no longer asks whether to show the invite",
+      !cg.steps.some((x) => x.id === "send_invite") && !cg.recap.some((r) => r.field === "send_invite"));
+    ok("and the invite is offered for every saved caregiver card",
+      offer.length > 0 && !/send_invite/.test(offer) && /caregiverInviteMessage\(/.test(offer));
+  }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
   const flowForReview = fs.readFileSync(new URL("../components/seed/ProfileFlow.tsx", import.meta.url), "utf8");

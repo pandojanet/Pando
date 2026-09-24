@@ -172,15 +172,19 @@ export async function selectPool(input: {
         p.id,
         p.monthly_contact_allowance,
         p.allowance_mode,
+        -- Same arithmetic as repo/outreach.ts, clause for clause: requests only
+        -- (a thank-you asks nothing), and answered = distinct requests replied to.
         coalesce(sum(case when m.direction = 'out' and m.category = 'outreach'
                            and m.retry_of is null
+                           and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                      as sent_30,
-        coalesce(sum(case when m.direction = 'in' and m.responded_to is not null
-                           and m.sent_at > now() - interval '30 days'
-                      then 1 else 0 end), 0)::int                      as answered_30,
+        count(distinct case when m.direction = 'in' and m.responded_to is not null
+                             and m.sent_at > now() - interval '30 days'
+                        then m.responded_to end)::int                  as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
                   and m.retry_of is null
+                  and m.template is distinct from 'thanks'
                  then m.sent_at end)                                   as last_outreach,
         coalesce(sum(case when m.direction = 'out' and m.template = 'freshness_ping'
                            and m.retry_of is null
@@ -190,6 +194,7 @@ export async function selectPool(input: {
         coalesce(bool_or(m.direction = 'out' and m.category = 'outreach'
                      and m.retry_of is null
                      and m.template is distinct from 'freshness_ping'
+                     and m.template is distinct from 'thanks'
                      and m.sent_at::date = now()::date), false)        as blast_today
       from people p
       left join message_log m on m.person_id = p.id

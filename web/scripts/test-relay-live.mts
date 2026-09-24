@@ -688,6 +688,10 @@ console.log("\n=== a caregiver offered by text is refused, not answered ===");
 {
   const before = posted.length;
   const answersBefore = await sql`select count(*)::int n from answers where phone = ${PHONE}`;
+  /* This step's own moment: a Marisol a parent nominated through the web card
+     on another day is a real record, not one this message created (23 Sep —
+     the check failed on exactly that). */
+  const [{ now: stepStart }] = await sql`select now()`;
   await slackEvent(
     message(`${PHONE}: I want to add our nanny Marisol, she is wonderful`, {
       ts: "1788401999.9",
@@ -709,7 +713,8 @@ console.log("\n=== a caregiver offered by text is refused, not answered ===");
     "a nomination in the answers queue is one nobody processes properly",
   );
   const [caregiver] = await sql`
-    select count(*)::int n from caregivers where lower(first_name) = 'marisol'`;
+    select count(*)::int n from caregivers
+     where lower(first_name) = 'marisol' and created_at >= ${stepStart}`;
   ok("nor was a caregiver record created", caregiver.n === 0, "invariants 2 and 14");
 }
 

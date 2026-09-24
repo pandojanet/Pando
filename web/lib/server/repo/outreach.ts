@@ -3,6 +3,7 @@ import { withDb, type Db } from "@/lib/server/db";
 import type { DeliveryCounts } from "@/lib/delivery";
 import {
   decideOutreach,
+  REPLY_LINK_DAYS,
   type OutreachHistory,
   type OutreachKind,
 } from "@/lib/outreach-policy";
@@ -126,19 +127,24 @@ export async function outreachAllowed(
         -- being asked things, which is the ceiling invariant 5 exists to keep —
         -- and it would make the response-rate governor read a parent as less
         -- responsive because Pando's carrier had a bad minute.
+        -- Requests only: a thank-you asks nothing (NON_REQUEST_TEMPLATES), so it
+        -- spends no allowance, starts no gap and cannot go unanswered.
         coalesce(sum(case when m.direction = 'out'
                            and m.category = 'outreach'
                            and m.retry_of is null
+                           and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                     as sent_30,
-        -- Answered: an inbound message that names an outbound one. That is what
-        -- responded_to is for, and it is why the column exists on the log.
-        coalesce(sum(case when m.direction = 'in'
-                           and m.responded_to is not null
-                           and m.sent_at > now() - interval '30 days'
-                      then 1 else 0 end), 0)::int                     as answered_30,
+        -- Answered: how many *requests* got a reply, not how many texts came in.
+        -- Distinct on the request, so one answer sent as three messages is one
+        -- answer, and the rate can never pass 100%.
+        count(distinct case when m.direction = 'in'
+                             and m.responded_to is not null
+                             and m.sent_at > now() - interval '30 days'
+                        then m.responded_to end)::int                 as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
                   and m.retry_of is null
+                  and m.template is distinct from 'thanks'
                  then m.sent_at end)                                  as last_outreach,
         coalesce(sum(case when m.direction = 'out'
                            and m.template = 'freshness_ping'
@@ -150,6 +156,7 @@ export async function outreachAllowed(
                      and m.category = 'outreach'
                      and m.retry_of is null
                      and m.template is distinct from 'freshness_ping'
+                     and m.template is distinct from 'thanks'
                      and m.sent_at::date = now()::date), false)       as blast_today
       from people p
       left join message_log m on m.person_id = p.id
@@ -271,12 +278,20 @@ export async function recordInbound(input: {
         -- "nothing recorded against you", so a polite decline has to count as a
         -- response for the governor — otherwise passing three times lowers the
         -- allowance of somebody who was being helpful about it.
+        --
+        -- Only a request can be answered: a thank-you asks nothing, and linking a
+        -- reply to one would take it from the Ask it was really about. And only
+        -- within REPLY_LINK_DAYS: past that a text is a new conversation, and
+        -- counting it would let a parent's own question weeks later read as an
+        -- answer to an Ask they ignored.
         select m.id
           from message_log m, sender s
          where m.person_id = s.id
            and m.direction = 'out'
            and m.category = 'outreach'
-           and m.sent_at > now() - interval '30 days'
+           and m.retry_of is null
+           and m.template is distinct from 'thanks'
+           and m.sent_at > now() - make_interval(days => ${REPLY_LINK_DAYS})
            and ${input.keyword === null || input.keyword === "pass"}
          order by m.sent_at desc
          limit 1

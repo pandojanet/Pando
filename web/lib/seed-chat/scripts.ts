@@ -733,23 +733,14 @@ export function buildScripts(
             { id: "no", label: "Prefer not to" },
           ],
         },
-        {
-          /**
-           * C11. Pando never contacts them and never stores their details, so the
-           * only way in is the parent's own message. Held back when the nomination
-           * is under review: offering the invite for a caregiver a human hasn't
-           * cleared would undo the hold.
-           */
-          id: "send_invite",
-          prompt: "Want to invite them to Pando? I'll give you a message you can send right now.",
-          aside: "You send it, not us. Nothing about them is stored until they accept and set up their own profile.",
-          widget: "quick",
-          when: (fields) => fields.review_hold !== "true",
-          options: [
-            { id: "yes", label: "Yes, show me the message" },
-            { id: "later", label: "Maybe later" },
-          ],
-        },
+        /**
+         * C11 is no longer a question (23 Sep, the developer: *"прибери … питання
+         * чи показувати інвайт, показуй інвайт завжди"*). Every saved caregiver
+         * card ends on the invite message (`offerCaregiverInvite` in
+         * `ChatSeeding`), held cards included — a held card's sign-up still
+         * waits for an admin at `/admin/claims`, where the hold is shown beside
+         * it, so the invite no longer undoes anything.
+         */
       ],
       recap: [
         { field: "type", label: "Kind of care" },
@@ -770,7 +761,6 @@ export function buildScripts(
         { field: "pay_band", label: "Paid" },
         { field: "pay_benchmark_ok", label: "Pay range use" },
         { field: "reference_willing", label: "Reference" },
-        { field: "send_invite", label: "Invite" },
       ],
     },
 

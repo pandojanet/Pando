@@ -144,6 +144,19 @@ export interface Candidate {
   human_reviewed: boolean;
   last_confirmed_at: Date | string | null;
   /**
+   * Somebody **said** it is out of date (`shares.freshness_state = 'stale'`).
+   *
+   * ⚠ The one stored freshness value a label trusts, and only in the stale
+   * direction (23 Sep). Since 10.3 exists the column is no longer a capture-time
+   * guess nobody maintains: every write to it is now an act — an approval or a
+   * refresh writes `fresh`, a contributor's "no" and an admin's *Keep it,
+   * marked old* write `stale`. Reading the date alone let a withdrawal vanish
+   * the moment the record had been confirmed recently, so an answer went on
+   * calling it current while `/admin/freshness` said somebody had withdrawn it.
+   * A stored `fresh` is still never trusted over the date.
+   */
+  marked_stale?: boolean;
+  /**
    * The contribution arrived from a live Network Ask rather than from the seed
    * base. Phase 2 sets it; nothing does today, so it defaults false and the
    * label simply never appears.
@@ -180,7 +193,9 @@ export function labelsFor(
   options: { policies?: FreshnessPolicy[]; now?: Date } = {},
 ): TrustLabels {
   const now = options.now ?? new Date();
-  const freshness = freshnessOf(candidate.last_confirmed_at, candidate.kind, options.policies, now);
+  const freshness = candidate.marked_stale
+    ? "stale"
+    : freshnessOf(candidate.last_confirmed_at, candidate.kind, options.policies, now);
 
   /**
    * The guard, as a branch rather than a flag.

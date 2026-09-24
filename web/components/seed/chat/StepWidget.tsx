@@ -479,7 +479,10 @@ function Actions({
   return (
     <div className="mt-3 flex gap-2">
       {step.optional && (
-        <Button variant="secondary" onClick={onSkip}>
+        /* shrink-0 + nowrap (23 Sep): beside a full-width Continue the flex row
+           squeezed this and "Nothing else" broke onto two lines at 375px. A
+           button is as wide as its words; Continue takes what is left. */
+        <Button variant="secondary" className="shrink-0 whitespace-nowrap" onClick={onSkip}>
           {/* "Nothing comes to mind" is an answer to the caveat question, not a
               skipped one — the wording comes from the step. */}
           {step.skipLabel ?? "Skip"}

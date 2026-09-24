@@ -187,7 +187,8 @@ async function thanks_prompt(): Promise<JobResult> {
       to: answer.phone,
       body: thanksPromptSms(),
       category: "outreach",
-      outreachKind: "thanks",
+      /* A question, so a request: gapped, capped and counted (24 Sep). */
+      outreachKind: "prompt",
       personId: answer.person_id ?? undefined,
       template: "thanks_prompt",
       templateVersion: SMS_TEMPLATE_VERSION,
@@ -394,19 +395,55 @@ async function freshness_ping(): Promise<JobResult> {
   const PER_RUN = 5;
 
   const candidates = await withDb(async (db: Db) => {
+    /**
+     * Two kinds of parent are asked, and only the second can produce a vouch.
+     *
+     * ⚠⚠ **Until 23 Sep this asked only the record's own contributors**, so every
+     * reply was a *refresh* and 10.2's vouch — a different parent saying they
+     * used it too, the one path by which a ping makes a record "Validated by
+     * multiple parents" — could not happen at all. `confirmKindFor` and the
+     * vouch write were correct and reachable from nothing; walked live, a vouch
+     * needed a ping row inserted by hand.
+     *
+     * The second kind is **a parent who told Pando an answer naming this record
+     * helped them** (9.1's yes on `answers.helped`, joined through
+     * `share_ids`). That is the honest reading of "somebody the matcher picked
+     * as connected to it": they have *used* it — they said so — and have not
+     * contributed it. A parent merely nearby would be asked to confirm
+     * something they may never have tried, and a vouch is a firsthand claim.
+     * Their yes still enters `pending_review`, so an admin reads it first.
+     */
     const rows = (await db.execute(sql`
-      select distinct on (sc.person_id)
-             sc.person_id, p.phone, s.id as share_id, s.name, s.kind
-        from share_contributions sc
-        join shares s on s.id = sc.share_id
-        join people p on p.id = sc.person_id
-       where sc.status = 'approved'
-         and s.status = 'approved'
-         and not s.is_test
-         and p.phone is not null
-         and s.last_confirmed_at is not null
-         and s.last_confirmed_at < now() - interval '90 days'
-       order by sc.person_id, s.last_confirmed_at asc
+      with stale as (
+        select id, name, kind, last_confirmed_at
+          from shares
+         where status = 'approved'
+           and not is_test
+           and last_confirmed_at is not null
+           and last_confirmed_at < now() - interval '90 days'
+      ),
+      candidates as (
+        select sc.person_id, s.id as share_id, s.name, s.kind, s.last_confirmed_at
+          from share_contributions sc
+          join stale s on s.id = sc.share_id
+         where sc.status = 'approved'
+        union
+        select a.person_id, s.id as share_id, s.name, s.kind, s.last_confirmed_at
+          from answers a
+          join stale s on s.id = any(a.share_ids)
+         where a.helped = true
+           and a.person_id is not null
+           and not exists (
+             select 1 from share_contributions sc
+              where sc.share_id = s.id and sc.person_id = a.person_id
+           )
+      )
+      select distinct on (c.person_id)
+             c.person_id, p.phone, c.share_id, c.name, c.kind
+        from candidates c
+        join people p on p.id = c.person_id
+       where p.phone is not null
+       order by c.person_id, c.last_confirmed_at asc
        limit ${PER_RUN}
     `)) as unknown as Array<Record<string, unknown>>;
     return rows;

@@ -218,9 +218,9 @@ async function rebuild(candidate: RetryCandidate): Promise<
       to: string;
       body: string;
       category: "transactional" | "outreach";
-      /* The three `OutreachKind` allows. A freshness ping is `ping` — the
+      /* The kinds `OutreachKind` allows. A freshness ping is `ping` — the
          policy's own vocabulary, which is not the template's name. */
-      outreachKind?: "blast" | "ping" | "thanks";
+      outreachKind?: "blast" | "ping" | "prompt" | "thanks";
     }
   | null
 > {

@@ -36,6 +36,14 @@ export interface CaregiverAnswers {
   age_experience: string[];
   strengths: string[];
   areas_served: string[];
+  /**
+   * Places Google found that are not in the market's list (24 Sep) — canonical
+   * names such as "Long Beach, CA", never slugs. Kept apart from
+   * `areas_served` on the device so a chip can say which is which (gold for
+   * pending, as in the profile); the server files each one as a pending
+   * neighborhood and an admin's promotion turns it into a slug on her profile.
+   */
+  areas_found: string[];
   drives: string | null;
   days_available: string[];
   available_from: string | null;
@@ -57,6 +65,7 @@ export const EMPTY_CAREGIVER_ANSWERS: CaregiverAnswers = {
   age_experience: [],
   strengths: [],
   areas_served: [],
+  areas_found: [],
   drives: null,
   days_available: [],
   available_from: null,
@@ -84,6 +93,11 @@ export interface CaregiverQuestion {
   mode: "single" | "multi";
   options: Option[];
   layout?: "wrap" | "grid";
+  /**
+   * Render as the profile's searchable place dropdown rather than as chips
+   * (24 Sep). Only the areas question sets it — see there.
+   */
+  directory?: { category: "neighborhoods"; searchLabel: string };
 }
 
 export interface CaregiverStep {
@@ -164,7 +178,29 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
           label: "Areas",
           mode: "multi",
           options: neighborhoods,
-          layout: "grid",
+          /**
+           * The same control a parent answers "Where do you live?" with (24 Sep,
+           * the developer: *"зробити заповнення нейборхуда таким самим, як і коли
+           * користувач заповнює свій профіль"*): a searchable dropdown over the
+           * seventeen towns, the 52 places of her §5 and their ZIPs, typed as a
+           * town, a district or a postcode. It was a grid of seventeen chips,
+           * so a caregiver in Duarte or Rosemead had no way to say so at all.
+           *
+           * ⚠ Multi-select, unlike the profile's: a caregiver names every area
+           * she would travel to.
+           *
+           * **Google answers where the list does not** (24 Sep, the developer:
+           * a parent from a new region signs up and nominates their nanny at
+           * once, and the nanny's town is on no list yet). It is the profile's
+           * path exactly: the place is stored under its canonical name, filed
+           * in `pending_options`, and `option.promote` swaps the name for the
+           * slug on her claim and her profile — the moment it can match a
+           * family. Until then it matches nobody, which is invariant 9.
+           */
+          directory: {
+            category: "neighborhoods",
+            searchLabel: "Towns, neighborhoods or ZIP codes you can work in",
+          },
         },
         { key: "drives", label: "Driving", mode: "single", options: YES_NO },
       ],

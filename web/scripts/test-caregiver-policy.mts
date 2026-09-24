@@ -422,5 +422,58 @@ ok(
   );
 }
 
+console.log("\n=== G5 is the profile's place picker (24 Sep) ===");
+{
+  /* A source check: `caregiver-flow.ts` imports the market-option runtime,
+     which this plain-node suite cannot load. */
+  const data = fs.readFileSync(new URL("../lib/caregiver-flow.ts", import.meta.url), "utf8");
+  const areas = data.slice(data.indexOf('key: "areas_served"'), data.indexOf('key: "drives"'));
+  ok(
+    "the areas question is a neighborhoods directory, not a grid of chips",
+    /directory:\s*\{\s*category:\s*"neighborhoods"/.test(areas) && !/layout:\s*"grid"/.test(areas),
+  );
+  ok("and it stays multi-select — she names every area she would travel to", /mode:\s*"multi"/.test(areas));
+
+  const flow = fs.readFileSync(new URL("../components/caregiver/CaregiverFlow.tsx", import.meta.url), "utf8");
+  const picker = flow.slice(flow.indexOf("<SearchableChipGroup"), flow.indexOf("/>", flow.indexOf("<SearchableChipGroup")));
+  ok(
+    "the flow renders it through the same SearchableChipGroup the profile uses, as a dropdown over the whole list",
+    picker.length > 0 && /\bdropdown\b/.test(picker) && /\bwholeList\b/.test(picker),
+  );
+  ok(
+    "Google answers where the list does not, and nothing typed by hand is accepted",
+    /onAddPlace=/.test(picker) && /custom=\{answers\.areas_found\}/.test(picker) && !/onAddCustom/.test(picker),
+    "a found place is a verified name; free text is the second 'Something else' her item 2 removed",
+  );
+
+  /* The write, and the two ways an admin's decision reaches it (24 Sep). */
+  const route = fs.readFileSync(new URL("../app/api/caregiver/claim/route.ts", import.meta.url), "utf8");
+  ok(
+    "the claim route takes found places as capped text, never as slugs",
+    /areas_found: Array\.isArray\(raw\.areas_found\)/.test(route) && /cleanText\(v, 80\)/.test(route) && /\.slice\(0, 5\)/.test(route),
+  );
+  const repo = fs.readFileSync(new URL("../lib/server/repo/caregiver.ts", import.meta.url), "utf8");
+  ok(
+    "each is filed as a pending neighborhood with no submitter, so promotion gives her no 'lives here' edge",
+    /insert into pending_options \(market_id, category, submitted_value, submitted_by\)\s*values \(\$\{input\.market_id\}, 'neighborhoods', \$\{name\}, null\)/.test(repo),
+  );
+  const write = fs.readFileSync(new URL("../lib/server/repo/admin-write.ts", import.meta.url), "utf8");
+  const promote = write.slice(write.indexOf('case "option.promote"'), write.indexOf('case "option.reject"'));
+  const reject = write.slice(write.indexOf('case "option.reject"'), write.indexOf('case "option.retire"'));
+  ok(
+    "promotion swaps the name for the slug on her claim and her profile",
+    /update caregiver_claims c/.test(promote) && /update caregiver_profiles p/.test(promote) && /then \$\{slug\}/.test(promote),
+  );
+  ok(
+    "rejection takes the name off both",
+    /update caregiver_claims c/.test(reject) && /update caregiver_profiles p/.test(reject),
+  );
+  const retrieval = fs.readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");
+  ok(
+    "and an answer names an area only once it is a slug",
+    /areas: \(\(r\.areas_served as string\[\] \| null\) \?\? \[\]\)\.filter\(/.test(retrieval),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);
