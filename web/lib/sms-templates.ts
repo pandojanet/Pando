@@ -7,9 +7,14 @@
  * ever has to change (a change means re-registering the sample).
  *
  * Carrier console settings that are *not* code, recorded here so they aren't lost:
+ *  - **Advanced Opt-Out on** the Pando Messaging Service. Twilio answers all
+ *    three keyword groups and Pando answers none of them (24 Sep) — see
+ *    `inbound.ts`. The console's reply texts are this file's, verbatim:
+ *    Help → `helpSms()`, Opt-in → `optInConfirmationSms()`, Opt-out → the
+ *    opt-out message registered with the A2P campaign;
  *  - opt-in keywords: START and UNSTOP only (YES must be removed — a parent
  *    answering "yes" to a Network Ask must never read as a re-subscribe);
- *  - opt-out: STOP, help: HELP, both handled by the messaging service;
+ *  - help keywords: HELP and INFO, matching `HELP_KEYWORDS`;
  *  - sends go through the Pando Messaging Service SID, never a bare number.
  */
 
@@ -361,6 +366,9 @@ export function keywordOf(
 /**
  * 12.4 — the HELP reply. **Registered copy: verbatim, like everything else here.**
  *
+ * ⚠ Sent by **Twilio** (Advanced Opt-Out's Help reply, pasted from here), not by
+ * Pando — the app sends it only on the Slack relay, which stands in for Twilio.
+ *
  * The estimate asks for "the service name, contact email, and how to opt out",
  * which is also the CTIA requirement. It is one segment on purpose — a HELP reply
  * that runs to two messages reads as a company that cannot answer a simple
@@ -372,6 +380,9 @@ export function helpSms(): string {
 
 /**
  * The confirmation after START.
+ *
+ * ⚠ Sent by **Twilio** (Advanced Opt-Out's Opt-in reply, pasted from here), not
+ * by Pando — the app sends it only on the Slack relay, as with `helpSms`.
  *
  * Sent because a person who re-subscribes and hears nothing cannot tell whether
  * it worked. Carriers send their own confirmation for STOP, so there is

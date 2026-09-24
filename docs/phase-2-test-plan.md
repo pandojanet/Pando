@@ -157,6 +157,13 @@ Start here. If A1 fails, nothing else in this document will work.
 **Pass:** the registered help text arrives in a thread headed by a **masked**
 number and a first name. A full number in the channel is a finding.
 
+⚠ **On a real number this reply comes from Twilio, not from Pando** (24 Sep).
+Advanced Opt-Out answers STOP, START and HELP itself, so the app stays silent on
+all three and only records them; on the relay, where Twilio is not in the loop,
+the app sends the same text on Twilio's behalf. So HELP arriving here proves the
+relay and the keyword branch — whether a real phone gets it is a console setting
+(Messaging Service → Opt-Out Management, Help reply = `helpSms()`).
+
 ### A2 · Settings, which is two messages (8.3)
 
 ```
@@ -241,8 +248,10 @@ Silence again — `sendSms` refuses at the first step. Then:
 16265550002: START
 ```
 
-Now a confirmation. `YES` deliberately does **not** opt anybody back in: it is
-an answer to a Network Ask.
+Now a confirmation — on the relay from the app, on a real number from Twilio's
+Opt-in reply (`optInConfirmationSms()`, pasted into the console). `YES`
+deliberately does **not** opt anybody back in: it is an answer to a Network Ask,
+and it must be removed from the console's opt-in keywords too.
 
 Helen (`16265550013`) is already opted out, so `16265550013: HELP` proves the
 refusal without changing anybody's state.

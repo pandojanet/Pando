@@ -112,6 +112,7 @@ import {
 } from "@/lib/server/repo/onboarding";
 import { recordInbound, setOptOut } from "@/lib/server/repo/outreach";
 import { sendSms } from "@/lib/server/sms";
+import { isSlackRelayEnabled } from "@/lib/server/slack";
 
 /**
  * What Pando does with an inbound message, whatever carried it.
@@ -176,18 +177,44 @@ export async function handleInboundMessage(input: {
     return;
   }
 
+  /**
+   * START and HELP are **answered by Twilio, not by Pando** (24 Sep), exactly
+   * as STOP always was.
+   *
+   * With Advanced Opt-Out on the Messaging Service, Twilio replies to all three
+   * keyword groups itself and still forwards the message here — so a reply from
+   * this branch was a **second** reply to the same word. It was invisible for a
+   * month because every test ran over the Slack relay, where Twilio is not in
+   * the loop and only this reply existed. One place now owns the words: the
+   * console, whose texts are `helpSms` and `optInConfirmationSms` verbatim and
+   * are what the carriers review.
+   *
+   * What stays here is the record — the opt-in mirror and the inbound row —
+   * because pools exclude by the mirror and a consent moment must not go
+   * unrecorded.
+   *
+   * ⚠ **Except on the relay**, which stands in for Twilio and so stands in for
+   * its keyword replies too: there is no Twilio there to answer, and a HELP met
+   * with silence in the test channel would read as a broken loop.
+   */
+  const repliesOnTwilioBehalf = isSlackRelayEnabled();
+
   if (keyword === "opt_in") {
     await setOptOut(from, "in", body);
     await recordInbound({ phone: from, category: "outreach", keyword: "opt_in" });
-    /* Through the single send layer like everything else — which re-checks the
-       opt-out list, so this cannot go to somebody still opted out. */
-    await sendSms({ to: from, body: optInConfirmationSms(), category: "transactional" });
+    if (repliesOnTwilioBehalf) {
+      /* Through the single send layer like everything else — which re-checks
+         the opt-out list, so this cannot go to somebody still opted out. */
+      await sendSms({ to: from, body: optInConfirmationSms(), category: "transactional" });
+    }
     return;
   }
 
   if (keyword === "help") {
     await recordInbound({ phone: from, category: "transactional", keyword: "help" });
-    await sendSms({ to: from, body: helpSms(), category: "transactional" });
+    if (repliesOnTwilioBehalf) {
+      await sendSms({ to: from, body: helpSms(), category: "transactional" });
+    }
     return;
   }
 

@@ -156,6 +156,31 @@ const back = tpl.optInConfirmationSms();
 ok("confirms they are back", /Pando/.test(back) && back.length <= 160, `${back.length} chars`);
 ok("and still says how to leave again", /STOP/.test(back));
 
+console.log("\n=== HELP and START are Twilio's to answer (24 Sep) ===");
+{
+  /* A source check: inbound.ts imports `server-only`. With Advanced Opt-Out,
+     Twilio replies to the keyword and forwards it here, so a send from these
+     branches is a second reply — unless the relay is on, where there is no
+     Twilio to answer. */
+  const fs = await import("node:fs");
+  const src = fs.readFileSync("lib/server/inbound.ts", "utf8");
+  const branch = (kw: string) => {
+    const from = src.indexOf(`if (keyword === "${kw}")`);
+    return src.slice(from, src.indexOf("return;", from));
+  };
+  for (const kw of ["opt_in", "help"]) {
+    const b = branch(kw);
+    const send = b.indexOf("sendSms(");
+    ok(
+      `${kw}: the app replies only on the relay`,
+      send > 0 && b.lastIndexOf("if (repliesOnTwilioBehalf)", send) > 0,
+      "two answers to one word is what the carriers would see",
+    );
+  }
+  ok("and the switch is the relay's own", /const repliesOnTwilioBehalf = isSlackRelayEnabled\(\);/.test(src));
+  ok("STOP still sends nothing at all", !branch("opt_out").includes("sendSms("));
+}
+
 console.log("\n=== ordinary text reaches the classifier, and only ordinary text ===");
 ok("a real question is not a keyword", tpl.keywordOf("any good swim lessons near Altadena?") === null);
 ok("an empty message is not a keyword", tpl.keywordOf("") === null);
