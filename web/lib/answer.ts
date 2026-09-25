@@ -122,6 +122,11 @@ export interface AnswerCandidate {
   detail?: string | null;
   trust: TrustLabels;
   firsthand_count: number;
+  /**
+   * Parents who told a freshness ping it is no longer worth recommending,
+   * since it was last confirmed (25 Sep). Said as that, never as "old".
+   */
+  withdrawn?: number;
   /** §17.1 — an admin marked it complete enough to answer with. */
   answer_ready?: boolean;
   /**
@@ -705,7 +710,19 @@ function clean(text: string | null | undefined): string | null {
   return flat === "" ? null : flat;
 }
 
+/**
+ * A withdrawal, said as one (25 Sep). A record another parent confirmed this
+ * month and one parent then withdrew is not *old* — it is disputed — and the
+ * evidence sentence above it already says when it was last confirmed.
+ */
+export function withdrawalNote(n: number): string {
+  return n === 1
+    ? "One parent recently said it may no longer be worth it, so check before you book."
+    : `${n} parents recently said it may no longer be worth it, so check before you book.`;
+}
+
 function freshnessNote(candidate: AnswerCandidate): string {
+  if ((candidate.withdrawn ?? 0) > 0) return withdrawalNote(candidate.withdrawn ?? 0);
   return candidate.trust.freshness === "fresh"
     ? ""
     : candidate.trust.freshness === "ageing"
@@ -811,8 +828,9 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
   const cost = extra ? ` ${extra}.` : "";
 
   const claims = labels.join(". ");
-  const age =
-    candidate.trust.freshness === "fresh"
+  const age = (candidate.withdrawn ?? 0) > 0
+    ? ` ${withdrawalNote(candidate.withdrawn ?? 0)}`
+    : candidate.trust.freshness === "fresh"
       ? ""
       : candidate.trust.freshness === "ageing"
         ? " Worth checking it hasn't changed."

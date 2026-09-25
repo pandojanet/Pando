@@ -317,6 +317,21 @@ ok(
   ok("and it is sent, not queued for a person", general.next_step === "none");
 }
 
+{
+  /* 25 Sep: a record confirmed this month and then withdrawn by one parent read
+     "last confirmed Sep 2026 ... This one is old". A withdrawal is said as one. */
+  const stale = { labels: [t.TRUST_LABEL.VALIDATED], freshness: "stale" as const, public_only: false };
+  const disputed = compose([parent({ withdrawn: 1, trust: stale })]);
+  ok("a withdrawal is not called old", !/This one is old/.test(disputed.text), disputed.text);
+  ok(
+    "it says a parent said it may no longer be worth it",
+    /One parent recently said it may no longer be worth it/.test(disputed.text),
+  );
+  const old = compose([parent({ trust: stale })]);
+  ok("age alone still reads as old", /This one is old/.test(old.text));
+  ok("two withdrawals are counted", a.withdrawalNote(2).startsWith("2 parents"));
+}
+
 console.log("\n=== the empty answer says so honestly ===");
 const empty = compose([]);
 ok("it does not invent anything", empty.used === 0 && empty.labels.length === 0);

@@ -288,6 +288,22 @@ console.log("\n=== segments ===");
   const redirect = segments(c.caregiverRedirectSms());
   ok("the caregiver redirect stays in GSM-7", redirect.gsm);
   ok("and costs two segments, not three", redirect.segs === 2, String(redirect.segs));
+
+  /* 25 Sep, from the relay walk: three texts carried an em dash or said the
+     wrong thing. */
+  const saved = segments(c.captureSavedSms("Lab Pottery Studio"));
+  ok("the saved receipt stays in GSM-7", saved.gsm, "it carried an em dash until 25 Sep");
+  ok("and is two segments at most", saved.segs <= 2, String(saved.segs));
+  const cancelled = segments(c.captureCancelledSms());
+  ok("NEVER MIND is answered, in one segment", cancelled.gsm && cancelled.segs === 1, String(cancelled.segs));
+  ok("and it says nothing was saved", /nothing was saved/.test(c.captureCancelledSms()));
+  const namedP = c.namedPersonRedirectSms();
+  ok("a person's name has its own refusal", !/nanny|sitter/i.test(namedP), namedP);
+  ok("with the same link", namedP.includes("pando.is/share"));
+  ok("in GSM-7 and two segments", segments(namedP).gsm && segments(namedP).segs <= 2);
+  const templates = (await import(`../lib/sms-templates.ts?v=${Date.now()}`)) as typeof import("../lib/sms-templates.ts");
+  const ping = templates.freshnessPingSms({ name: "Little Maestros" });
+  ok("the freshness ping stays in GSM-7", segments(ping).gsm, ping);
 }
 
 

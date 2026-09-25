@@ -184,7 +184,10 @@ export function thanksSms(what: string): string {
  * told about is not one.
  */
 export function freshnessPingSms(input: { name: string }): string {
-  return `Quick one — is ${input.name} still worth recommending? Reply yes, no, or PASS to skip.`;
+  /* A colon, not an em dash (25 Sep): the dash put every ping in UCS-2. This
+     is not one of the three registered samples, so the change is copy for the
+     client to confirm rather than a re-registration. */
+  return `Quick one: is ${input.name} still worth recommending? Reply yes, no, or PASS to skip.`;
 }
 
 export function profileDeletedSms(input: {

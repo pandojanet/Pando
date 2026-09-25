@@ -105,6 +105,13 @@ export interface ShareCandidate {
   /** §17.1 — an admin marked this complete enough to answer with, no Ask needed. */
   answer_ready: boolean;
   /**
+   * Parents who answered a freshness ping with "no" since it was last
+   * confirmed (25 Sep). What makes a stored stale mark a *withdrawal* rather
+   * than age, which an answer has to say differently: "this one is old" under
+   * "last confirmed Sep 2026" contradicted itself.
+   */
+  withdrawn: number;
+  /**
    * What it costs, **only when every parent who said so said the same thing.**
    *
    * R8 captures a band and a unit as taps, and it is the single most actionable
@@ -282,6 +289,10 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         s.id, s.kind, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
         (s.freshness_state = 'stale') as marked_stale,
+        (select count(*) from freshness_pings fp
+          where fp.share_id = s.id and fp.still_good = false
+            and fp.answered_at is not null
+            and (s.last_confirmed_at is null or fp.answered_at > s.last_confirmed_at))::int as withdrawn,
         /**
          * What a parent actually wrote, and the two guards on it.
          *
@@ -524,6 +535,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       trust: labelsFor(candidate, { policies }),
       firsthand_count: candidate.firsthand_count,
       secondhand_count: candidate.secondhand_count,
+      withdrawn: Number(r.withdrawn ?? 0),
       answer_ready: r.answer_ready === true,
       /* Agreement, checked here rather than in SQL so the rule is readable: one
          distinct answer means the parents agree and Pando may say it. */

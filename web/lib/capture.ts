@@ -328,9 +328,14 @@ export function cardFrom(answers: Record<string, unknown>): CapturedCard | null 
   };
 }
 
-/** The message that ends a capture. Says what happens next, and promises nothing. */
+/**
+ * The message that ends a capture. Says what happens next, and promises nothing.
+ *
+ * ⚠ A comma, not an em dash (25 Sep): one dash outside GSM-7 moved this
+ * receipt to UCS-2 and a third segment, on every capture that finishes.
+ */
 export function captureSavedSms(name: string): string {
-  return `Pando: got it — ${name} is saved. A person reads every new recommendation before it reaches anyone, so it won't show up straight away. Thank you. Reply STOP to opt out, HELP for help.`;
+  return `Pando: got it, ${name} is saved. A person reads every new recommendation before it reaches anyone, so it won't show up straight away. Thank you. Reply STOP to opt out, HELP for help.`;
 }
 
 /**
@@ -352,6 +357,27 @@ export function captureSavedSms(name: string): string {
  * value, exactly as `caregiverInviteMessage` does — a registered sample cannot
  * have a variable in it.
  */
+/**
+ * A capture stopped with NEVER MIND (25 Sep). It used to end in silence, which
+ * reads to the parent as the message not arriving; this says nothing was kept
+ * and how to start again. Asks nothing, so the next message is not ambiguous.
+ */
+export function captureCancelledSms(): string {
+  return "Pando: no problem, nothing was saved. Text ADD whenever you want to start again. Reply STOP to opt out, HELP for help.";
+}
+
+/**
+ * 11.4's refusal: the name a parent gave for a class is a person's (25 Sep).
+ *
+ * It used the caregiver redirect, which opens "for a nanny or sitter" — wrong
+ * for "Ms. Diane" the piano teacher, who is exactly the case 11.4 is about.
+ * Same promise (careful questions first, the same link), worded for any
+ * person rather than for childcare.
+ */
+export function namedPersonRedirectSms(): string {
+  return "Pando: that sounds like a person rather than a place. For a person we ask a few careful questions first. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
+}
+
 export function caregiverRedirectSms(): string {
   return "Pando: for a nanny or sitter we ask a few careful questions first, including whether you employed them yourself. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
 }

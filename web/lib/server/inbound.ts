@@ -86,8 +86,10 @@ import { readPingReply } from "@/lib/vouch";
 import { applyPingReply, pendingPing } from "@/lib/server/repo/vouch";
 import {
   CAPTURE_QUESTIONS,
+  captureCancelledSms,
   captureSavedSms,
   caregiverRedirectSms,
+  namedPersonRedirectSms,
   isCaptureCancel,
   isCaptureStart,
   isSkipWord,
@@ -441,6 +443,14 @@ export async function handleInboundMessage(input: {
     if (capture && isCaptureCancel(body)) {
       await cancelCapture(capture.capture_id);
       console.info("[sms:inbound] capture cancelled");
+      await sendSms({
+        to: from,
+        body: captureCancelledSms(),
+        category: "transactional",
+        personId: person.person_id,
+        template: "capture_cancelled",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
       return;
     }
 
@@ -505,12 +515,15 @@ export async function handleInboundMessage(input: {
             ? `named_person:${named.signal}`
             : "caregiver_words",
       });
+      /* A person's name gets its own wording (25 Sep): the caregiver one says
+         "for a nanny or sitter", which is wrong for a teacher or a coach. */
+      const personNamed = !offeringCaregiver && !mentionsCaregiver(body) && named.person;
       await sendSms({
         to: from,
-        body: caregiverRedirectSms(),
+        body: personNamed ? namedPersonRedirectSms() : caregiverRedirectSms(),
         category: "transactional",
         personId: person.person_id,
-        template: "capture_caregiver_redirect",
+        template: personNamed ? "capture_named_person_redirect" : "capture_caregiver_redirect",
         templateVersion: SMS_TEMPLATE_VERSION,
       });
       return;
@@ -1376,6 +1389,7 @@ async function answerQuestion(input: {
       worth: worthLine(share.worth_it, share.price_band),
       trust: share.trust,
       firsthand_count: share.firsthand_count,
+      withdrawn: share.withdrawn,
       answer_ready: share.answer_ready,
       /**
        * A parent's own words, approved, and guarded in the SQL against a record
