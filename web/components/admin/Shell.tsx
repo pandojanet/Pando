@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Gauge,
   Heart,
-  IdCard,
   Link2,
   ListChecks,
   MessageSquareReply,
@@ -119,13 +118,8 @@ const NAV: NavSection[] = [
         href: "/admin/caregivers",
         icon: Heart,
         label: "Caregivers",
-        count: (o) => o.quality.review_holds,
-      },
-      {
-        href: "/admin/claims",
-        icon: IdCard,
-        label: "Caregiver sign-ups",
-        count: (o) => o.quality.pending_claims,
+        /* Both tabs' work (25 Sep): the holds and the sign-ups to match. */
+        count: (o) => o.quality.review_holds + o.quality.pending_claims,
       },
       {
         href: "/admin/demand",

@@ -129,7 +129,7 @@ export default function AdminOverviewPage() {
         {
           label: "caregiver sign-ups to match",
           n: o.quality.pending_claims,
-          href: "/admin/claims",
+          href: "/admin/caregivers?view=signups",
           urgent: false,
         },
         {

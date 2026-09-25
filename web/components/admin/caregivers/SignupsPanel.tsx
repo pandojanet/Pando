@@ -12,7 +12,6 @@ import {
   Loading,
   NotConfigured,
   optionLabel,
-  PageHead,
   ResultNote,
   SampleBanner,
   TextLink,
@@ -125,7 +124,7 @@ function ViaNomination({
   );
 }
 
-export default function ClaimsPage() {
+export function SignupsPanel() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<CaregiverClaimRow[]>("caregiver_claims");
   const [busy, setBusy] = useState<string | null>(null);
@@ -150,7 +149,7 @@ export default function ClaimsPage() {
       });
       setMessage(
         result.persisted
-          ? "Matched. They're consented, and still not visible — raise that on the caregiver page."
+          ? "Matched. They're consented, and still not visible — raise that on the Caregivers tab."
           : "Not stored — no database connected.",
       );
       await reload();
@@ -228,7 +227,6 @@ export default function ClaimsPage() {
 
   return (
     <>
-      <PageHead title="Caregiver sign-ups" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}

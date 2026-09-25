@@ -738,7 +738,7 @@ export function buildScripts(
          * чи показувати інвайт, показуй інвайт завжди"*). Every saved caregiver
          * card ends on the invite message (`offerCaregiverInvite` in
          * `ChatSeeding`), held cards included — a held card's sign-up still
-         * waits for an admin at `/admin/claims`, where the hold is shown beside
+         * waits for an admin on the Sign-ups tab of `/admin/caregivers`, where the hold is shown beside
          * it, so the invite no longer undoes anything.
          */
       ],
