@@ -44,6 +44,7 @@
     "test:jobs": "node --experimental-strip-types --no-warnings scripts/test-jobs.mts",
     "test:tiers": "node --experimental-strip-types --no-warnings scripts/test-tiers.mts",
     "test:thanks": "node --experimental-strip-types --no-warnings scripts/test-thanks.mts",
+    "test:impact-live": "tsx --env-file=.env.local scripts/test-impact-live.mts",
     "test:vouch": "node --experimental-strip-types --no-warnings scripts/test-vouch.mts",
     "test:feedback": "tsx scripts/test-seed-feedback.mts",
     "test:starters": "node --experimental-strip-types --no-warnings scripts/test-starters.mts",

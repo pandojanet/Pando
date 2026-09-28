@@ -3,11 +3,12 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
+import { refundOwed } from "@/lib/payments";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
 import { EVENT_WEIGHT, nextTier, tierFor } from "@/lib/tiers";
-import { RESPONSE_MIN_SAMPLE, RESPONSE_RATE_FLOOR } from "@/lib/outreach-policy";
+import { RESPONSE_MIN_SAMPLE, effectiveAllowance } from "@/lib/outreach-policy";
 import type {
   AdminResource,
   AnswerRow,
@@ -233,8 +234,9 @@ async function overview(db: Db) {
            where status = 'open' and severity = 'escalation')                      as escalations,
         /* 14.9 — a subset of open_flags, counted separately because it is the
            one flag reason with its own decision rather than a read-and-resolve. */
-        (select count(*) from flags
-           where status = 'open' and reason = 'recommendation_withdrawn')          as withdrawn_records,
+        (select count(*) from flags f join shares s on s.id = f.subject_id
+           where f.status = 'open' and f.reason = 'recommendation_withdrawn'
+             and not s.is_test)                                                    as withdrawn_records,
         (select count(*) from pending_options where status = 'pending')            as pending_options,
         /* 14.2 — the nav has carried a comment since 27 Aug saying this page
            "counts, because 19 says every one is read by a person", and it had
@@ -279,9 +281,18 @@ async function overview(db: Db) {
         -- 14.3 / 14.5. Two numbers about Network Asks, and the second is the one
         -- painted red in two places: a refund an admin flagged and nobody has
         -- made yet is money owed to a parent.
+        -- (Note: no backticks in here — one inside a sql template closes it,
+        --  and tsc then reports the syntax error thirty lines away.)
+        -- And not past its window. expire_blasts is what writes the expired
+        -- status and nothing schedules it, so status alone counts an Ask that
+        -- shut ten days ago as work waiting on somebody. /admin/blasts reads
+        -- the date for the same reason (windowClosed), and a sidebar badge
+        -- that disagrees with the tab it points at is the fault the 7 Sep
+        -- worklist pass exists to have fixed.
         (select count(*) from blasts
           where not is_test
-            and status in ('draft', 'pending_review', 'active'))               as blasts_open,
+            and status in ('draft', 'pending_review', 'active')
+            and (expires_at is null or expires_at > now()))                    as blasts_open,
         (select count(*) from blasts
           where not is_test and payment_status = 'refund_due')                    as refunds_owed,
         -- Estimate 2.2's funnel. Four counts, each a real row rather than an
@@ -1583,7 +1594,16 @@ async function answerQueue(db: Db): Promise<AnswerRow[]> {
     sql`
       select a.id, a.question_text, a.answer_text, a.hold_reason, a.labels,
              a.public_only, a.next_step, a.status, a.created_at, a.sent_at,
-             a.phone, p.first_name, p.last_name, p.id as person_id
+             a.phone, p.first_name, p.last_name, p.id as person_id,
+             /* How many *other* answers are waiting for this number on this
+                question. A window rather than a second query — and it runs
+                before the LIMIT, over every non-test answer, so the count
+                stays true on the day the queue is longer than the hundred
+                rows this page renders. */
+             sum(case when a.status = 'pending_review' then 1 else 0 end)
+               over (partition by a.phone, a.question_text)
+               - case when a.status = 'pending_review' then 1 else 0 end
+               as pending_twins
         from answers a
         left join people p on p.id = a.person_id
        where not a.is_test
@@ -1606,6 +1626,11 @@ async function answerQueue(db: Db): Promise<AnswerRow[]> {
     asker: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
     asker_phone: adminPhone(r.phone ? String(r.phone) : null),
     known_person: r.person_id !== null,
+    /* Only meaningful while this row is itself waiting: on a sent one the
+       window still counts the pending twins, and "3 more waiting" under a
+       decision already taken would be a fact about somebody else's row. */
+    duplicates:
+      String(r.status ?? "") === "pending_review" ? Number(r.pending_twins ?? 0) : 0,
     created_at: String(r.created_at ?? ""),
     sent_at: (r.sent_at as string | null) ?? null,
   }));
@@ -1709,9 +1734,12 @@ async function deliveryHealthRow(
       window_days: windowDays,
       rate: null,
       below_floor: false,
+      coverage: null,
+      thin_sample: false,
       settled: 0,
       delivered: 0,
       in_flight: 0,
+      unreported: 0,
       alerts: [],
     };
   }
@@ -1747,10 +1775,17 @@ async function conversationRows(db: Db) {
         max(m.sent_at)                                                as last_at,
         count(*) filter (where m.direction = 'out')::int              as sent,
         count(*) filter (where m.direction = 'in')::int               as received,
+        -- The governor's own arithmetic (repo/outreach.ts), and the standing
+        -- view's: requests only, a retry once, a thank-you not at all, and
+        -- answered = distinct requests replied to. Until 25 Sep this counted
+        -- every outreach row and every linked text, so a weekly thank-you read
+        -- as "1 asked, 0 answered" and one answer in three texts as three.
         count(*) filter (where m.direction = 'out'
                            and m.category = 'outreach'
+                           and m.retry_of is null
+                           and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days')::int as outreach_30,
-        count(*) filter (where m.direction = 'in'
+        count(distinct m.responded_to) filter (where m.direction = 'in'
                            and m.responded_to is not null
                            and m.sent_at > now() - interval '30 days')::int as answered_30,
         count(*) filter (where m.status in ('failed', 'undelivered'))::int  as failed,
@@ -1886,22 +1921,33 @@ async function freshnessOutcomes(db: Db) {
         s.id, s.name, s.kind::text as kind, s.neighborhoods,
         s.last_confirmed_at, s.freshness_state, s.status::text as status, s.is_test,
         p.first_name                                                  as said_no_by,
-        max(fp.answered_at)                                           as said_no_at,
-        count(sc.id) filter (where sc.firsthand and sc.status = 'approved')::int
-                                                                      as firsthand_count,
-        count(sc.id) filter (where sc.firsthand and sc.status = 'approved'
-                               and sc.recommendation in ('yes','yes_with_caveats'))::int
-                                                                      as recommending_count
+        -- Scalar sub-selects, not two left joins under one group by: joining
+        -- the "no" replies and the contributions together multiplied every
+        -- contribution by the number of "no"s, so two withdrawals showed twice
+        -- the parents and twice the recommenders (25 Sep).
+        (select max(fp.answered_at) from freshness_pings fp
+          where fp.share_id = s.id and fp.still_good = false)         as said_no_at,
+        (select count(*) from share_contributions sc
+          where sc.share_id = s.id and not sc.is_test
+            and sc.firsthand and sc.status = 'approved')::int         as firsthand_count,
+        -- "Would still recommend" leaves out anybody who has since said no to
+        -- a freshness ping about this record: their contribution still reads
+        -- "yes", and counting it made a record whose only parent took it back
+        -- read "1 still recommends it".
+        (select count(*) from share_contributions sc
+          where sc.share_id = s.id and not sc.is_test
+            and sc.firsthand and sc.status = 'approved'
+            and sc.recommendation in ('yes','yes_with_caveats')
+            and not exists (
+              select 1 from freshness_pings fp
+               where fp.share_id = s.id and fp.person_id = sc.person_id
+                 and fp.still_good = false))::int                     as recommending_count
       from flags f
       join shares s on s.id = f.subject_id
       left join people p on p.id = f.person_id
-      left join freshness_pings fp on fp.share_id = s.id and fp.still_good = false
-      left join share_contributions sc on sc.share_id = s.id and not sc.is_test
       where f.reason = 'recommendation_withdrawn'
         and f.status = 'open'
-      group by s.id, s.name, s.kind, s.neighborhoods, s.last_confirmed_at,
-               s.freshness_state, s.status, s.is_test, p.first_name
-      order by max(fp.answered_at) desc nulls last
+      order by said_no_at desc nulls last
       limit 200`,
   );
 
@@ -1998,6 +2044,23 @@ async function contributorStanding(db: Db) {
     const asked = Number(r.asked_30 ?? 0);
     const answered = Number(r.answered_30 ?? 0);
     const rate = asked >= RESPONSE_MIN_SAMPLE ? answered / asked : null;
+    /* The send layer's own rule rather than a restatement of it (25 Sep): the
+       rate alone called a contributor already at five "Lowered" when the
+       governor has nothing left to take, and the page showed the limit they
+       chose rather than the one applied. */
+    const allowanceMode = r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed";
+    const stated = {
+      allowance_mode: allowanceMode,
+      monthly_contact_allowance:
+        r.monthly_contact_allowance === null ? null : Number(r.monthly_contact_allowance),
+    } as const;
+    const applied = effectiveAllowance(stated, {
+      sent_last_30_days: asked,
+      responded_last_30_days: answered,
+      last_outreach_at: null,
+      pings_this_month: 0,
+      blast_today: false,
+    });
 
     return {
       person_id: String(r.id),
@@ -2017,8 +2080,9 @@ async function contributorStanding(db: Db) {
         r.monthly_contact_allowance === null
           ? null
           : Number(r.monthly_contact_allowance),
-      allowance_mode: r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
-      governed: rate !== null && rate < RESPONSE_RATE_FLOOR,
+      allowance_mode: allowanceMode,
+      governed: applied.lowered,
+      effective_allowance: applied.allowance,
       is_test: r.is_test === true,
     };
   }) satisfies StandingRow[];
@@ -2055,8 +2119,13 @@ async function impactRows(db: Db) {
                     'person_id', cp.id::text,
                     'name', cp.first_name,
                     'last_thanked_at', (
+                      -- A thank-you sent after this answer went out, not any
+                      -- thank-you ever: one from last month for something else
+                      -- hid exactly the "helped but never thanked" case this
+                      -- page exists to show (25 Sep).
                       select max(m.sent_at) from message_log m
                        where m.person_id = cp.id and m.template = 'thanks'
+                         and m.sent_at >= coalesce(a.helped_asked_at, a.sent_at)
                     )))
              from share_contributions sc
              join people cp on cp.id = sc.person_id
@@ -2212,7 +2281,7 @@ async function blastPool(
 
   const rows = (await db.execute(sql`
     select b.id::text as id, b.tier, b.asker_id::text as asker_id,
-           b.market_id, b.pool_target, b.neighborhood
+           b.market_id, b.pool_target, b.neighborhood, b.released_at
       from blasts b where b.id = ${blastId}::uuid
   `)) as unknown as Array<Record<string, unknown>>;
   const blast = rows[0];
@@ -2264,13 +2333,17 @@ async function blastPool(
     held: pool.held.map((m) => ({
       person_id: m.person_id,
       name: names.get(m.person_id)?.name ?? null,
+      phone: adminPhone(names.get(m.person_id)?.phone ?? null),
       score: m.score,
       reason: m.reason,
     })),
     cold: pool.cold,
+    /* A released Ask has had its person already (0051): the send honours
+       `released_at`, so the preview must too, or it goes on saying a person
+       has to read a match somebody already read (25 Sep). */
     human_review: {
-      required: pool.human_review.required,
-      reason: pool.human_review.reason ?? null,
+      required: pool.human_review.required && !blast.released_at,
+      reason: blast.released_at ? null : (pool.human_review.reason ?? null),
     },
   };
 }
@@ -2339,8 +2412,37 @@ async function paymentRows(db: Db): Promise<PaymentsResult> {
     approved_responses: Number(r.approved_responses ?? 0),
     expires_at: (r.expires_at as string | null) ?? null,
     age_days: r.age_days === null ? null : Number(r.age_days),
+    refund_owed: false,
     is_test: r.is_test === true,
   }));
+
+  /**
+   * ⚠ What is owed, by the guarantee's own rule rather than by the stored flag.
+   *
+   * This page's whole question is what Pando owes and to whom, and it answered
+   * it from `payment_status = 'refund_due'` — a value only `expire_blasts` or
+   * an admin's Flag button writes. The job has never run on any deployment, so
+   * a paid Ask whose window closed with no approved answer sat under **Paid**
+   * here, owing nothing, while `/admin/blasts` (which reads `refundOwed` and
+   * the date) said in red that Pando owed that parent a refund. One fact, two
+   * pages, two answers — the 3 Sep clock bug arriving one page late.
+   *
+   * A manual flag still counts on its own, because an admin can owe a refund
+   * for a reason the guarantee does not cover.
+   */
+  for (const row of mapped) {
+    const rule = refundOwed({
+      status: row.status,
+      payment_status: row.payment_status as never,
+      credit_id: row.credit_funded ? "credit" : null,
+      approved_responses: row.approved_responses,
+      expires_at: row.expires_at,
+      credit_granted_at: row.credit_granted_at,
+    });
+    row.refund_owed =
+      row.payment_status === "refund_due" ||
+      (rule.owed && rule.as === "money");
+  }
 
   const real = mapped.filter((r) => !r.is_test);
   return {
@@ -2353,8 +2455,10 @@ async function paymentRows(db: Db): Promise<PaymentsResult> {
       refunded_cents: real
         .filter((r) => r.payment_status === "refunded")
         .reduce((sum, r) => sum + r.price_cents, 0),
+      /* The same field the Refunds-owed tab filters on, so the figure and
+         the list under it cannot disagree (the 2 Sep rule). */
       refund_due_cents: real
-        .filter((r) => r.payment_status === "refund_due")
+        .filter((r) => r.refund_owed)
         .reduce((sum, r) => sum + r.price_cents, 0),
     },
   };

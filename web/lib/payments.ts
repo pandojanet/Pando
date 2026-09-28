@@ -143,6 +143,30 @@ export function assessRefund(
  * the function that says which — so the payments page can list "refund needs"
  * without every reader having to remember the rule.
  */
+/**
+ * Whether an Ask's window has shut, **by the date** rather than by the status.
+ *
+ * `expire_blasts` is what writes `expired`, and nothing schedules it — so an
+ * Ask that closed ten days ago still reads `active` in the row. `sendBlast`
+ * has read the date since 14 Sep; this is the admin reading the same thing, in
+ * one place, so the Asks page's filter, badge, window fact and Send button and
+ * the Payments page's status line cannot give different answers to one
+ * question. Only a *live* status can be stale this way; a settled one is
+ * already the truth.
+ */
+export function windowClosed(
+  row: { status: string; expires_at: string | null },
+  now = Date.now(),
+): boolean {
+  return (
+    row.expires_at !== null &&
+    new Date(row.expires_at).getTime() < now &&
+    (row.status === "draft" ||
+      row.status === "active" ||
+      row.status === "pending_review")
+  );
+}
+
 export function refundOwed(
   input: {
     status: string;

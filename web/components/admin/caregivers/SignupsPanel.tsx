@@ -29,6 +29,7 @@ import {
   CAREGIVER_PAY_BANDS,
   CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
+  CAREGIVER_WEEKDAYS,
 } from "@/lib/caregiver-options";
 
 /**
@@ -268,7 +269,10 @@ export function SignupsPanel() {
                   <Spec label="Drives">
                     {claim.drives === null ? null : claim.drives ? "Yes" : "No"}
                   </Spec>
-                  <Spec label="Days">{labels(CAREGIVER_DAYS, claim.days_available)}</Spec>
+                  <Spec label="Days">{labels(
+                    [...CAREGIVER_DAYS, ...CAREGIVER_WEEKDAYS],
+                    claim.days_available.filter((d) => d !== "specific_days"),
+                  )}</Spec>
                   <Spec label="Can start">
                     {claim.available_from
                       ? optionLabel(CAREGIVER_AVAILABLE_FROM, claim.available_from)
@@ -339,19 +343,24 @@ export function SignupsPanel() {
                           <span className="text-[13.5px]">
                             <span className="font-semibold">
                               {c.first_name} {c.last_initial ?? ""}
-                            </span>
-                            <span className="ml-2 text-muted">
+                            </span>{" "}
+                            <span className="ml-1 text-muted">
                               {c.nominations}{" "}
                               {c.nominations === 1 ? "nomination" : "nominations"} ·{" "}
                               {CONSENT_STATE[c.consent_status]?.label ?? sentence(c.consent_status)}
-                              {c.invite_sent_by_parent
-                                ? " · invite sent"
-                                : " · no invite sent"}
+                              {/* Not on `invited`: that label is "Family sent
+                                  the invite", so the clause said it twice. */}
+                              {c.consent_status === "invited"
+                                ? ""
+                                : c.invite_sent_by_parent
+                                  ? " · invite sent"
+                                  : " · no invite sent"}
                             </span>
                           </span>
                           <Button
                             tone="primary"
                             disabled={busy === claim.id}
+                            subject={`${c.first_name} ${c.last_initial ?? ""}`.trim()}
                             onClick={() => void link(claim.id, c.id)}
                           >
                             This is them
@@ -368,12 +377,14 @@ export function SignupsPanel() {
                         setReasons((r) => ({ ...r, [claim.id]: e.target.value }))
                       }
                       placeholder="Why this can't be matched"
+                      aria-label={`Why ${claim.first_name}'s sign-up can't be matched`}
                       className={inputClass}
                     />
                     <Button
                       tone="danger"
                       className="mt-2"
                       disabled={busy === claim.id}
+                      subject={claim.first_name}
                       onClick={() => void decline(claim.id)}
                     >
                       Decline this sign-up
@@ -382,6 +393,7 @@ export function SignupsPanel() {
 
                   <DeleteRequest
                     claimId={claim.id}
+                    name={`${claim.first_name} ${claim.last_initial ?? ""}`.trim()}
                     via={via[claim.id] ?? ""}
                     onVia={(v) => setVia((s) => ({ ...s, [claim.id]: v }))}
                     confirming={confirming === claim.id}
@@ -392,9 +404,11 @@ export function SignupsPanel() {
                   />
                 </div>
               </div>
-              <RevealMore n={hidden} onClick={revealAll} />
             </Card>
           ))}
+          {/* Once, under the list. Inside the map it rendered "Show the other
+              N" on every card (25 Sep). */}
+          <RevealMore n={hidden} onClick={revealAll} />
 
           {resolved.length > 0 && (
             <Card title={`Resolved (${resolved.length})`}>
@@ -422,6 +436,7 @@ export function SignupsPanel() {
                         are actually listed. */}
                     <DeleteRequest
                       claimId={claim.id}
+                      name={`${claim.first_name} ${claim.last_initial ?? ""}`.trim()}
                       via={via[claim.id] ?? ""}
                       onVia={(v) => setVia((s) => ({ ...s, [claim.id]: v }))}
                       confirming={confirming === claim.id}
@@ -449,6 +464,7 @@ export function SignupsPanel() {
  */
 function DeleteRequest({
   claimId,
+  name,
   via,
   onVia,
   confirming,
@@ -458,6 +474,8 @@ function DeleteRequest({
   busy,
 }: {
   claimId: string;
+  /** Whose profile — five of these on one page all read the same otherwise. */
+  name: string;
   via: string;
   onVia: (value: string) => void;
   confirming: boolean;
@@ -468,7 +486,15 @@ function DeleteRequest({
 }) {
   if (!confirming) {
     return (
-      <TextLink tone="quiet" className="mt-2 text-[12.5px]" onClick={onArm}>
+      /* A 36px box rather than the bare 19px line: it arms the one action on
+         this page that deletes a person, and it was the smallest target on it.
+         Still quiet — the confirm step is where the weight belongs. */
+      <TextLink
+        tone="quiet"
+        className="mt-1 inline-flex min-h-9 items-center text-[12.5px]"
+        onClick={onArm}
+        subject={name}
+      >
         They asked to be removed
       </TextLink>
     );
@@ -491,6 +517,7 @@ function DeleteRequest({
         <Button
           tone="danger"
           disabled={busy || via.trim().length === 0}
+          subject={name}
           onClick={onConfirm}
         >
           Delete everything

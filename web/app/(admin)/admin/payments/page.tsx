@@ -29,8 +29,13 @@ import {
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
-import { BLAST_TIER, PAYMENT_STATUS, sentence } from "@/lib/admin/labels";
-import { REFUND_WINDOW_DAYS, assessRefund, formatCents } from "@/lib/payments";
+import { BLAST_STATUS, BLAST_TIER, PAYMENT_STATUS, sentence } from "@/lib/admin/labels";
+import {
+  REFUND_WINDOW_DAYS,
+  assessRefund,
+  formatCents,
+  windowClosed,
+} from "@/lib/payments";
 import type { PaymentsResult } from "@/lib/admin/types";
 
 /**
@@ -82,15 +87,18 @@ export default function PaymentsPage() {
   const all = useMemo(() => (data?.rows ?? []).filter((r) => !r.is_test), [data]);
 
   const visible = useMemo(() => {
-    if (filter === "owed") return all.filter((r) => r.payment_status === "refund_due");
-    if (filter === "paid") return all.filter((r) => r.payment_status === "paid");
+    if (filter === "owed") return all.filter((r) => r.refund_owed);
+    /* Paid and settled — an Ask owing its money back is not "paid" in any
+       sense a reader of this page means. */
+    if (filter === "paid")
+      return all.filter((r) => r.payment_status === "paid" && !r.refund_owed);
     if (filter === "refunded") return all.filter((r) => r.payment_status === "refunded");
     return all;
   }, [all, filter]);
 
   const counts = {
-    owed: all.filter((r) => r.payment_status === "refund_due").length,
-    paid: all.filter((r) => r.payment_status === "paid").length,
+    owed: all.filter((r) => r.refund_owed).length,
+    paid: all.filter((r) => r.payment_status === "paid" && !r.refund_owed).length,
     refunded: all.filter((r) => r.payment_status === "refunded").length,
     all: all.length,
   };
@@ -130,7 +138,7 @@ export default function PaymentsPage() {
 
       {/**
        * The configuration, first, and the order is the design — the same
-       * reasoning as `/admin/delivery`: a page reporting money has to say
+       * reasoning as the delivery section of `/admin/conversations`: a page reporting money has to say
        * whether the thing that moves money is switched on *before* it shows a
        * number, or a reader who met the total first has already decided how to
        * feel about it.
@@ -162,7 +170,7 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {data && (
+      {data && configured && (
         <div className="mb-5 grid gap-3 sm:grid-cols-3">
           <Stat
             label="Taken"
@@ -184,7 +192,7 @@ export default function PaymentsPage() {
 
       <div className="mb-4">
         <SegmentedFilter
-          unknown={!data}
+          unknown={!data || !configured}
           label="Which payments to show"
           value={filter}
           onChange={setFilter}
@@ -202,7 +210,7 @@ export default function PaymentsPage() {
           <Loading />
         ) : error && !data ? (
           <Failed />
-        ) : !configured && !data ? (
+        ) : !configured ? (
           <NotConfigured
               demo={demo}
               onDemo={setDemo}
@@ -215,7 +223,12 @@ export default function PaymentsPage() {
         ) : (
           <RecordList>
             {shown.map((row) => {
-              const payment = PAYMENT_STATUS[row.payment_status];
+              /* A row the guarantee says is owed reads as owed, whatever the
+                 stored flag says — see `refund_owed`. */
+              const payment =
+                row.refund_owed && row.payment_status === "paid"
+                  ? PAYMENT_STATUS.refund_due
+                  : PAYMENT_STATUS[row.payment_status];
               const refund = assessRefund({
                 payment_status: row.payment_status as never,
                 paid_at: row.paid_at,
@@ -230,7 +243,7 @@ export default function PaymentsPage() {
               return (
                 <RecordCard
                   key={row.blast_id}
-                  tone={row.payment_status === "refund_due" ? "urgent" : "plain"}
+                  tone={row.refund_owed ? "urgent" : "plain"}
                   title={
                     <span className="font-normal leading-relaxed">
                       “{row.question_text}”
@@ -277,6 +290,7 @@ export default function PaymentsPage() {
                         <Button
                           tone="danger"
                           disabled={busy === row.blast_id || stripe?.provisioned === false}
+                          subject={row.asker?.name ?? row.question_text}
                           onClick={() => {
                             setRefunding(row.blast_id);
                             setReason(row.refund_reason ?? "");
@@ -296,7 +310,14 @@ export default function PaymentsPage() {
                 >
                   <FactGrid>
                     <Fact label="Tier">{BLAST_TIER[row.tier] ?? sentence(row.tier)}</Fact>
-                    <Fact label="The Ask">{sentence(row.status)}</Fact>
+                    {/* The Asks page's own words for its status, and read from
+                        the date — this said "Active" beside "Refund owed" on an
+                        Ask whose window shut ten days earlier. */}
+                    <Fact label="The Ask">
+                      {windowClosed(row)
+                        ? BLAST_STATUS.expired.label
+                        : (BLAST_STATUS[row.status]?.label ?? sentence(row.status))}
+                    </Fact>
                     <Fact
                       label="Approved replies"
                     >
@@ -313,6 +334,15 @@ export default function PaymentsPage() {
                       <Fact label="Refunded">{when(row.refunded_at)}</Fact>
                     )}
                   </FactGrid>
+
+                  {/* Owed by the guarantee and never flagged by hand: say why,
+                      in the rule's own words, or the red card is unexplained. */}
+                  {row.refund_owed && !row.refund_reason && (
+                    <p className="mt-3.5 rounded-lg border border-alert-line bg-alert-wash px-3 py-2 text-[12.5px] leading-relaxed text-alert">
+                      The window closed with no approved answer, so Pando owes
+                      this parent a refund.
+                    </p>
+                  )}
 
                   {row.refund_reason && (
                     <div className="mt-3.5">
@@ -343,6 +373,7 @@ export default function PaymentsPage() {
                         <Button
                           tone="danger"
                           disabled={busy === row.blast_id || reason.trim().length < 3}
+                          subject={row.asker?.name ?? row.question_text}
                           onClick={() =>
                             void run(row.blast_id, "Refunded.", async () =>
                               adminAction({

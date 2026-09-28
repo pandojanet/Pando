@@ -267,7 +267,11 @@ export async function awaitingSettingsChoice(personId: string): Promise<boolean>
         from message_log
        where person_id = ${personId}::uuid
          and direction = 'out'
-         and template in (${SETTINGS_TEMPLATE}, 'clarify_child_age', 'clarify_neighborhood')
+         -- 'settings_confirmed' closes the menu (25 Sep). Without it the menu
+         -- stayed open for a day: walked over the relay, a bare "5" sent after a
+         -- confirmed "3" was read as a second settings choice and moved the
+         -- allowance again, when it could as well be a child's age.
+         and template in (${SETTINGS_TEMPLATE}, 'settings_confirmed', 'clarify_child_age', 'clarify_neighborhood')
          and sent_at > now() - interval '1 day'
        order by sent_at desc
        limit 1

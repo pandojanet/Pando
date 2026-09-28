@@ -292,10 +292,10 @@ export function CaregiverFlow({
         <ScreenBody>
           <Eyebrow>G1 · You</Eyebrow>
           <h1 ref={headingRef} tabIndex={-1} className="mt-2 font-display text-[1.7rem] font-bold leading-[1.12]">
-            What should families call you?
+            What&apos;s your name?
           </h1>
           <p className="mt-3 text-[16.5px] leading-relaxed text-ink-soft">
-            A first name and an initial is all Pando ever shows — never a surname.
+            Families only ever see your first name and last initial — never a surname.
           </p>
           {prefilled && (
             <p className="mt-2 text-help leading-relaxed text-muted">
@@ -385,7 +385,9 @@ export function CaregiverFlow({
           )}
 
           <div className="mt-6 space-y-7">
-            {step.questions.map((q) =>
+            {step.questions
+              .filter((q) => !q.when || q.when(answers))
+              .map((q) =>
               q.directory ? (
                 /* The profile's place picker, as-is — see `CaregiverQuestion.directory`.
                    `wholeList` for the profile's reason: this question is where

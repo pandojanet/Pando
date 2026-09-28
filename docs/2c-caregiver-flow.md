@@ -75,7 +75,7 @@ the CHECK is the one that cannot be argued with.
 Finishing with **all three refused** is a real, supported outcome: a profile that
 exists and is visible to nobody. The copy promises that, so it has to be reachable.
 
-## What the admin does — `/admin/claims`
+## What the admin does — the Sign-ups tab of `/admin/caregivers`
 
 The decision is **identity**, not quality: is this Rosa R. the Rosa R. a family put
 forward? The page offers a shortlist scoped to the same market, the same first name
@@ -97,7 +97,7 @@ and the ladder only ever increases.
 
 ## The leak rule
 
-Nothing in the caregiver's flow, and nothing on `/admin/claims`, carries what a
+Nothing in the caregiver's flow, and nothing on the Sign-ups tab, carries what a
 parent wrote about them — no nomination text, no strengths a family chose, and above
 all no private note or the reason behind a hesitant "would you hire them again"
 (invariant 12).

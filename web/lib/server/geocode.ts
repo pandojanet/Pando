@@ -51,7 +51,7 @@ import {
  * No `GOOGLE_MAPS_API_KEY` ⇒ `{ ok: false, reason: "not_configured" }`, which
  * the endpoint passes through and the screen renders as *nothing at all* —
  * exactly what a parent sees today. The honesty rule this whole app is built on
- * (`persisted: false`, `sendSms`'s `not_provisioned`, `/admin/delivery` naming
+ * (`persisted: false`, `sendSms`'s `not_provisioned`, the delivery section of `/admin/conversations` naming
  * an unconfigured Stripe before it shows a total): never report an empty answer
  * for a question that was never asked.
  *

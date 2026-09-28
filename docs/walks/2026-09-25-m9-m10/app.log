@@ -1,0 +1,195 @@
+▲ Next.js 16.2.12
+- Local:         http://localhost:4197
+- Network:       http://0.0.0.0:4197
+✓ Ready in 0ms
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms] sent via relay { category: 'transactional', threaded: false }
+[slack:events] { keyword: 'text', length: 5, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 5 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 18, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 18 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 4, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 4 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 7, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 7 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'pass', length: 4, via: 'addressed' }
+[sms:inbound] { keyword: 'pass', length: 4 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] capture saved { saved: true }
+[slack:events] { keyword: 'text', length: 49, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 49 }
+[sms:inbound] capture refused { reason: 'caregiver_offered' }
+[sms] sent via relay { category: 'transactional', threaded: false }
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 5, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 5 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 9, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 9 }
+[sms:inbound] capture refused { reason: 'named_person:honorific' }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms] sent via relay { category: 'transactional', threaded: false }
+[slack:events] { keyword: 'text', length: 10, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 10 }
+[sms:inbound] capture cancelled
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 43, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 43 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 5,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 17
+}
+[sms] sent via relay { category: 'transactional', threaded: false }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks_prompt' }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks_prompt' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks_prompt' }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks_prompt' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[job] ran {
+  job: 'thanks_prompt',
+  outcome: 'ok',
+  processed: 2,
+  skipped: 2,
+  failed: 0
+}
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms:inbound] helped { helped: true }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'answer_blast',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 3, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'thanks' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[job] ran {
+  job: 'thanks_delivery',
+  outcome: 'ok',
+  processed: 6,
+  skipped: 0,
+  failed: 0
+}
+[job] ran {
+  job: 'thanks_delivery',
+  outcome: 'ok',
+  processed: 0,
+  skipped: 0,
+  failed: 0
+}
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'freshness_ping' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'freshness_ping' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'freshness_ping' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'freshness_ping' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[job] ran {
+  job: 'freshness_ping',
+  outcome: 'ok',
+  processed: 4,
+  skipped: 0,
+  failed: 0
+}
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms:inbound] freshness { reply: 'still_good', kind: 'refresh', vouched: false }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[slack:events] { keyword: 'text', length: 2, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 2 }
+[sms:inbound] freshness { reply: 'no_longer', kind: 'refresh', vouched: false }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms:inbound] freshness { reply: 'still_good', kind: 'vouch', vouched: true }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[slack:events] { keyword: 'text', length: 44, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 44 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'offer_blast',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 18
+}
+[sms] sent via relay { category: 'transactional', threaded: false }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[job] ran {
+  job: 'impact_sync',
+  outcome: 'ok',
+  processed: 0,
+  skipped: 0,
+  failed: 0
+}

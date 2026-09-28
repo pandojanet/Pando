@@ -1,0 +1,302 @@
+▲ Next.js 16.2.12
+- Local:         http://localhost:4197
+- Network:       http://0.0.0.0:4197
+✓ Ready in 0ms
+[admin:login] signed in { user: 'lab-walk-m5' }
+[slack:events] { keyword: 'text', length: 42, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 42 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 4,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: false }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 7, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 7 }
+[sms:inbound] clarification { question: 'child_age', saved: true }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[slack:events] { keyword: 'text', length: 26, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 26 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'offer_blast',
+  hold: 'not_held',
+  permanent: false,
+  place: 'none',
+  supported: false,
+  askable: null
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 8, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 8 }
+[sms:inbound] clarification { question: 'neighborhood', saved: true }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[slack:events] { keyword: 'text', length: 34, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 34 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 5,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'profile',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 54, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 54 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'offer_blast',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 17
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 46, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 46 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[web-search] nothing to add { parsed: true, reply_length: 855 }
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'profile',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 56, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 56 }
+[sms:inbound] read as {
+  intent: 'ask_caregiver',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 1,
+  next_step: 'offer_blast',
+  hold: 'caregiver',
+  permanent: true,
+  place: 'question',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: false, sent: true, reason: null }
+[admin:action] {
+  action: 'answer.edit',
+  actor: 'lab-walk-m5',
+  resource_id: 'a063e7e0-e532-421f-a022-03756daba03b'
+}
+[admin:action] {
+  action: 'answer.approve',
+  actor: 'lab-walk-m5',
+  resource_id: 'a063e7e0-e532-421f-a022-03756daba03b'
+}
+[admin:action] {
+  action: 'answer.send',
+  actor: 'lab-walk-m5',
+  resource_id: 'a063e7e0-e532-421f-a022-03756daba03b'
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[admin:action] {
+  action: 'answer.send',
+  actor: 'lab-walk-m5',
+  resource_id: 'a063e7e0-e532-421f-a022-03756daba03b'
+}
+[slack:events] { keyword: 'text', length: 62, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 62 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'fallback',
+  sensitive: true,
+  attached: false
+}
+[web-search] nothing to add { parsed: false, reply_length: 584 }
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'none',
+  hold: 'sensitive',
+  permanent: true,
+  place: 'profile',
+  supported: true,
+  askable: 22
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: false, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 60, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 60 }
+[sms:inbound] read as {
+  intent: 'ask_caregiver',
+  source: 'model',
+  sensitive: true,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 1,
+  next_step: 'offer_blast',
+  hold: 'sensitive',
+  permanent: true,
+  place: 'profile',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: false, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 47, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 47 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[web-search] nothing to add { parsed: true, reply_length: 1243 }
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'profile',
+  supported: true,
+  askable: 27
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 13, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 13 }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] answered a non-question { intent: 'chitchat' }
+[slack:events] { keyword: 'text', length: 13, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 13 }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] answered a non-question { intent: 'chitchat' }
+[slack:events] { keyword: 'text', length: 7, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 7 }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] answered a non-question { intent: 'chitchat' }
+[slack:events] { keyword: 'text', length: 35, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 35 }
+[sms:inbound] read as {
+  intent: 'contribute',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] answered a non-question { intent: 'contribute' }
+[slack:events] { keyword: 'text', length: 32, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 32 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 1,
+  next_step: 'none',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 0
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[admin:action] { action: 'matching.weight', actor: 'lab-walk-m5', resource_id: null }
+[admin:action] { action: 'matching.weight', actor: 'lab-walk-m5', resource_id: null }
+[admin:action] { action: 'matching.weight', actor: 'lab-walk-m5', resource_id: null }
+[admin:action] {
+  action: 'matching.relevance_step',
+  actor: 'lab-walk-m5',
+  resource_id: null
+}
+[admin:action] {
+  action: 'matching.relevance_step',
+  actor: 'lab-walk-m5',
+  resource_id: null
+}

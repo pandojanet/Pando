@@ -206,10 +206,17 @@ function brief(input: {
   focus?: string | null;
   exclude?: readonly string[];
   now?: Date;
+  /** The state the search is located in, when the label does not carry one. */
+  region?: string | null;
 }): string[] {
   const lines: string[] = [];
 
-  const where = input.placeLabel ?? (input.area ? input.area.replace(/-/g, " ") : null);
+  const bare = input.placeLabel ?? (input.area ? input.area.replace(/-/g, " ") : null);
+  /* A market label carries no state, and a bare "Pasadena" is searched as
+     Texas as readily as California: walked over the relay on 25 Sep, a toddler
+     swim question came back with a swim school "in Pasadena, TX". The tool's
+     `user_location` already said California; the words it was given did not. */
+  const where = bare && input.region && !bare.includes(",") ? `${bare}, ${input.region}` : bare;
   if (where) lines.push(`The question is about: ${where}`);
 
   const phrases = (input.bands ?? [])
@@ -328,7 +335,7 @@ async function searchOnce(input: SearchInput): Promise<PublicSearchResult> {
       ? { ...where, region: market.region, timezone: market.timezone }
       : where;
   })();
-  const context = brief(input);
+  const context = brief({ ...input, region: location?.region ?? null });
 
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });

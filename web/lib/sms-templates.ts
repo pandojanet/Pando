@@ -87,6 +87,11 @@ export function blastRequestSms(input: {
  * question already does.
  */
 export function askReason(kinds: string[]): string {
+  /* No shared connection at all: they were asked because they live near the
+     place the question is about (24 Sep, `selectPool({ near })`). "Your
+     experience looked relevant" would be a claim nothing supports (25 Sep).
+     ⚠ New wording inside a registered sample, on the list for the client. */
+  if (kinds.length === 0) return "you live nearby";
   if (kinds.includes("school")) return "you're at the same school";
   if (kinds.includes("activity")) return "your kids do similar activities";
   if (kinds.includes("neighborhood")) return "you're in the same area";

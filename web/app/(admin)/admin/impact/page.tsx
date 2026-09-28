@@ -70,7 +70,19 @@ export default function ImpactPage() {
     useAdminRows<ImpactResult>("impact");
 
   const all = rows?.rows ?? [];
-  const totals = rows?.totals;
+  /* The pill counts come from the rows on screen, with test rows left out
+     while they are hidden — the server's totals include them, so a pill said
+     4 over a list of 3 (25 Sep, the 2 Sep "one expression" rule). */
+  const totals = useMemo(() => {
+    const seen = hideTest ? all.filter((r) => !r.is_test) : all;
+    return {
+      all: seen.length,
+      answered_yes: seen.filter((r) => r.helped === true).length,
+      answered_no: seen.filter((r) => r.helped === false).length,
+      awaiting: seen.filter((r) => r.helped_asked_at !== null && r.helped === null).length,
+      unasked: seen.filter((r) => r.helped_asked_at === null).length,
+    };
+  }, [all, hideTest]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -123,6 +135,7 @@ export default function ImpactPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Question, record, parent…"
+          aria-label="Search by question, record or parent"
           className={`${inputClass} w-[13rem]`}
         />
         {testCount > 0 && (
@@ -144,11 +157,11 @@ export default function ImpactPage() {
           value={view}
           onChange={(v) => setView(v as typeof view)}
           options={[
-            { id: "all" as const, label: "All sent", count: all.length },
-            { id: "yes" as const, label: "It helped", count: totals?.answered_yes },
-            { id: "no" as const, label: "It didn't", count: totals?.answered_no },
-            { id: "awaiting" as const, label: "No reply", count: totals?.awaiting },
-            { id: "unasked" as const, label: "Not asked", count: totals?.unasked },
+            { id: "all" as const, label: "All sent", count: totals.all },
+            { id: "yes" as const, label: "It helped", count: totals.answered_yes },
+            { id: "no" as const, label: "It didn't", count: totals.answered_no },
+            { id: "awaiting" as const, label: "No reply", count: totals.awaiting },
+            { id: "unasked" as const, label: "Not asked", count: totals.unasked },
           ]}
         />
       </div>
@@ -289,10 +302,25 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
         <Fact label="Parents behind it">
           {row.contributors.length === 0 ? "—" : row.contributors.length}
         </Fact>
+        {/**
+          * ⚠ Only a yes earns a thank-you (9.2), so only a yes says anything
+          * about thanks.
+          *
+          * `last_thanked_at` is *any* weekly thank-you sent after this answer —
+          * `message_log` holds no body and no answer id, so which answer a
+          * batched thank-you was for is not recoverable. On a yes that is
+          * exactly the question and close enough. On anything else it made the
+          * page say both wrong things on one screen: an answer nobody was even
+          * asked about read **"Thanked: all of them"** (they were thanked, for a
+          * different answer), and one sent an hour ago read **"Corinne never
+          * thanked"** as though Pando had failed her. Neither thanks was owed.
+          */}
         <Fact label="Thanked">
           {row.contributors.length === 0
             ? "—"
-            : thankedSummary(row.contributors.length - unthanked.length, row.contributors.length)}
+            : row.helped !== true
+              ? "not owed — nobody said it helped"
+              : thankedSummary(row.contributors.length - unthanked.length, row.contributors.length)}
         </Fact>
       </FactGrid>
 
@@ -300,10 +328,15 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
         <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
           {row.contributors.map((c) => (
             <li key={c.person_id}>
-              <span className="font-medium">{c.name ?? "Unnamed"}</span>{" "}
-              <span className="text-muted">
-                {c.last_thanked_at ? `thanked ${when(c.last_thanked_at)}` : "never thanked"}
-              </span>
+              <span className="font-medium">{c.name ?? "Unnamed"}</span>
+              {row.helped === true && (
+                <>
+                  {" "}
+                  <span className={c.last_thanked_at ? "text-muted" : "text-alert"}>
+                    {c.last_thanked_at ? `thanked ${when(c.last_thanked_at)}` : "not thanked yet"}
+                  </span>
+                </>
+              )}
             </li>
           ))}
         </ul>

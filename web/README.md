@@ -59,7 +59,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/contributors`    | Two tabs on the same people: what they shared, and the consent file (unmasked numbers, wording versions, downloadable). Detail per person. |
 | `/admin/activities`      | Review with confidence filter, edit, approve/reject.                        |
 | `/admin/caregivers`      | Consent state machine with evidence + duplicate candidates.                 |
-| `/admin/claims`          | 2C — match a caregiver's claim to a nomination, or decline it with a reason. |
+| `/admin/caregivers?view=signups` | 2C — match a caregiver's claim to a nomination, or decline it with a reason (the Sign-ups tab; `/admin/claims` is gone). |
 | `/admin/account`         | Change your own password. Adding or revoking an admin stays `npm run admin:user`. |
 | `/admin/invites`         | One link per group, and which group actually brought contributors.          |
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |

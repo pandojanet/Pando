@@ -346,7 +346,8 @@ ok(
  */
 {
   const page = fs.readFileSync(
-    new URL("../app/(admin)/admin/caregivers/page.tsx", import.meta.url),
+    /* Moved whole into the panel when the page became two tabs (25 Sep). */
+    new URL("../components/admin/caregivers/CaregiversPanel.tsx", import.meta.url),
     "utf8",
   );
   const predicate = page.slice(

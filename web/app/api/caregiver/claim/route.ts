@@ -17,6 +17,8 @@ import {
   CAREGIVER_PAY_BANDS,
   CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
+  CAREGIVER_WEEKDAYS,
+  wantsWeekdays,
 } from "@/lib/caregiver-options";
 
 /**
@@ -181,7 +183,14 @@ export async function POST(request: Request) {
           ].slice(0, 5)
         : [],
       drives: drives === null ? null : drives === "yes",
-      days_available: only(raw.days_available, CAREGIVER_DAYS),
+      /* The chosen weekdays ride in the same array as the windows (28 Sep),
+         and only while "Specific days of the week" is ticked. */
+      days_available: [
+        ...only(raw.days_available, CAREGIVER_DAYS),
+        ...(wantsWeekdays(raw.days_available)
+          ? only(raw.weekdays, CAREGIVER_WEEKDAYS)
+          : []),
+      ],
       available_from: oneOf(raw.available_from, CAREGIVER_AVAILABLE_FROM),
       hours_note: cleanText(raw.hours_note, MAX_NOTE),
       rate_band: oneOf(raw.rate_band, CAREGIVER_PAY_BANDS),

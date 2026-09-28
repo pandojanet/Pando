@@ -972,6 +972,31 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       !cg.steps.some((x) => x.id === "send_invite") && !cg.recap.some((r) => r.field === "send_invite"));
     ok("and the invite is offered for every saved caregiver card",
       offer.length > 0 && !/send_invite/.test(offer) && /caregiverInviteMessage\(/.test(offer));
+
+    /* 28 Sep — the caregiver questions, in both branches. */
+    const ids = cg.steps.map((x) => x.id);
+    ok("the card no longer asks who they are a great fit for",
+      !ids.includes("good_fit_for"));
+    ok("nor whether you would hire them again, nor why",
+      !ids.includes("hire_again") && !ids.includes("hesitation_reason"));
+    ok("the up-front note and the private note are one question",
+      !ids.includes("caveat") && ids.filter((x) => x === "private_note").length === 1);
+    const days = cg.steps.find((x) => x.id === "schedule_days");
+    ok("specific weekdays open only behind their option",
+      !!days && days.when?.({ schedule_pattern: ["weekday_mornings"] }) === false &&
+        days.when?.({ schedule_pattern: ["specific_days"] }) === true);
+    const { caregiverSteps } = (await import(
+      `../lib/caregiver-flow.ts?v=${Date.now()}`
+    )) as typeof import("../lib/caregiver-flow.ts");
+    const when = caregiverSteps("pasadena").find((x) => x.id === "when");
+    const wk = when?.questions.find((x) => x.key === "weekdays");
+    ok("and the caregiver's own days do the same",
+      !!wk && wk.when?.({ days_available: ["specific_days"] } as never) === true &&
+        wk.when?.({ days_available: [] } as never) === false);
+    const areas = caregiverSteps("pasadena").find((x) => x.id === "areas");
+    ok("driving and starting are whole questions, not labels",
+      !!areas?.questions.find((x) => x.key === "drives")?.label.endsWith("?") &&
+        !!when?.questions.find((x) => x.key === "available_from")?.label.endsWith("?"));
   }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
   ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));

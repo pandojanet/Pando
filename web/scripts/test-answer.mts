@@ -484,6 +484,16 @@ ok(
   "firsthand_count 0 + stale would lose on every other key — this is why public_only is its own",
 );
 ok(
+  "a detail that already ends in a full stop gets one, not two (25 Sep)",
+  (() => {
+    const out = a.composeAnswer({
+      candidates: [web("Code Ninjas", { detail: "Belt-based progression system." })],
+      has_question: true,
+    });
+    return out.text.includes("progression system.") && !out.text.includes("system..");
+  })(),
+);
+ok(
   "an answer built from both is not public_only",
   a.composeAnswer({ candidates: [parent(), web("Kidspace")], has_question: true }).public_only === false,
 );
@@ -842,6 +852,36 @@ console.log("\n=== 10 Sep: one name per record, and only where it was granted ==
     compose([parent({ area: "altadena" })]).text.includes(", a class in Altadena"),
     compose([parent({ area: "altadena" })]).text.split("\n")[0],
   );
+}
+
+console.log("\n=== the M5/M6 relay walk (25 Sep) ===");
+{
+  /* "About fair." went out: the hedge belongs to a price, never to an opinion. */
+  const worthOnly = compose([parent({ worth: "fair" })]).text;
+  ok("a worth with no price is not hedged", !/About fair/i.test(worthOnly), worthOnly);
+  ok("and says what it is", worthOnly.includes("Value for money: fair."), worthOnly);
+  const both = compose([parent({ price: "$50-100 a month", worth: "great value" })]).text;
+  ok("a price keeps its About", both.includes("About $50-100 a month, great value."), both);
+  /* The recorded walk caught a backspace byte where \b should have been, and
+     "About Over $200 a camp week" went out. */
+  const over = compose([parent({ price: "Over $200 a camp week" })]).text;
+  ok("an Over band is not hedged twice", over.includes("Over $200 a camp week.") && !/About Over/.test(over), over);
+  const free = compose([parent({ price: "Free" })]).text;
+  ok("nor is Free", !/About Free/.test(free), free);
+
+  /* A stale record one line down read exactly like a fresh one. */
+  const stale = parent({ name: "Tom Sawyer Camps", rank: 1, trust: { labels: [t.TRUST_LABEL.VALIDATED], freshness: "stale", public_only: false } });
+  const lead = parent({ name: "Kidspace summer camp", rank: 0 });
+  const out = compose([lead, stale]).text;
+  ok("a stale record in Also nearby says so", /Tom Sawyer Camps[^;.]*may be out of date/.test(out), out);
+  const disputed = compose([lead, parent({ name: "AYSO soccer", rank: 1, withdrawn: 1 })]).text;
+  ok("and a withdrawn one says it was questioned", /AYSO soccer[^;.]*recently questioned/.test(disputed), disputed);
+  const fresh = compose([lead, parent({ name: "AYSO soccer", rank: 1 })]).text;
+  ok("a fresh one carries no age at all", !/out of date|questioned/.test(fresh), fresh);
+
+  /* The named record leads because inbound gives it rank -1. */
+  const named = a.rankForAnswer([lead, { ...stale, rank: -1 }]);
+  ok("a record ranked -1 (named in the question) leads", named[0].name === "Tom Sawyer Camps");
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

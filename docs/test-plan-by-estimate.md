@@ -898,7 +898,7 @@ not finding a bug.
 
 | Row | State | What you should see |
 |---|---|---|
-| **2C** caregiver's own flow (G1–G10) | **built, first cut** — full guide in [2c-caregiver-flow.md](2c-caregiver-flow.md) | `/caregiver` writes a `caregiver_claims` row; an admin matches it at `/admin/claims`. Still missing: **DELETE-by-text, which the consent copy promises** — see that guide |
+| **2C** caregiver's own flow (G1–G10) | **built, first cut** — full guide in [2c-caregiver-flow.md](2c-caregiver-flow.md) | `/caregiver` writes a `caregiver_claims` row; an admin matches it on the Sign-ups tab of `/admin/caregivers`. DELETE-by-text is built (3 Sep, and for every parent since 14 Sep) |
 | Pay range / median by area | captured, not aggregated | `pay_band` and `pay_benchmark_consent` are stored; no query anywhere computes a range |
 | Credit granting | schema only | `credits` is never written. Referrals stop at `profile_complete` |
 | Freshness pings | policy table only | `freshness_policy` holds per-category thresholds; no job reads them |

@@ -95,6 +95,31 @@ function AnswerCard({
         “{row.question}”
       </p>
 
+      {/**
+       * ⚠ The same question, waiting more than once.
+       *
+       * The pipeline composes one answer per inbound message, so a question
+       * read twice is queued twice — and this queue's own contents are the
+       * proof: after the 4 Sep Slack retry, **eight of nine** pending rows were
+       * two questions queued four times each, identical down to the timestamp,
+       * with nothing on any card saying so. Worked top to bottom that is four
+       * identical texts to one parent.
+       *
+       * Said here rather than only at the send, because by the send the admin
+       * has already decided; `answer_duplicate_sent` is what catches the press
+       * that gets through anyway. Gold, because it is a thing to resolve rather
+       * than a mistake already made.
+       */}
+      {row.duplicates > 0 && (
+        <p className="mt-2 rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
+          {row.duplicates === 1
+            ? "One more answer to this same question from this number is also waiting."
+            : `${row.duplicates} more answers to this same question from this number are also waiting.`}{" "}
+          Send one and reject the rest, or the parent gets the same message
+          {row.duplicates === 1 ? " twice" : ` ${row.duplicates + 1} times`}.
+        </p>
+      )}
+
       <p className="mt-3 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
         What Pando would send
       </p>

@@ -41,7 +41,7 @@ import {
   poolHeldReason,
   sentence,
 } from "@/lib/admin/labels";
-import { formatCents, refundOwed } from "@/lib/payments";
+import { formatCents, refundOwed, windowClosed } from "@/lib/payments";
 import { TIERS, TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 import type {
   BlastPoolResult,
@@ -218,21 +218,16 @@ export default function BlastsPage() {
   }, [real]);
 
   const visible = useMemo(() => {
-    if (filter === "open")
-      return real.filter(
-        (r) => r.status === "draft" || r.status === "pending_review" || r.status === "active",
-      );
-    if (filter === "owed") return real.filter((r) => owedBy.get(r.id)?.owed === true);
+    if (filter === "open") return real.filter(stillOpen);
+    if (filter === "owed") return real.filter((r) => owesSomething(r, owedBy));
     if (filter === "paid") return real.filter((r) => r.payment_status === "paid");
     return real;
   }, [real, filter, owedBy]);
 
   /* Counts from the same expressions as the tabs — see the demand-queue rule. */
   const counts = {
-    open: real.filter(
-      (r) => r.status === "draft" || r.status === "pending_review" || r.status === "active",
-    ).length,
-    owed: real.filter((r) => owedBy.get(r.id)?.owed === true).length,
+    open: real.filter(stillOpen).length,
+    owed: real.filter((r) => owesSomething(r, owedBy)).length,
     paid: real.filter((r) => r.payment_status === "paid").length,
     all: real.length,
   };
@@ -355,7 +350,7 @@ export default function BlastsPage() {
           onChange={setFilter}
           options={[
             { id: "open", label: "Still open", count: counts.open },
-            { id: "owed", label: "Owes an answer", count: counts.owed },
+            { id: "owed", label: "Owes a refund or credit", count: counts.owed },
             { id: "paid", label: "Paid", count: counts.paid },
             { id: "all", label: "Everything", count: counts.all },
           ]}
@@ -381,7 +376,24 @@ export default function BlastsPage() {
           <RecordList>
             {shown.map((row) => {
               const owed = owedBy.get(row.id);
-              const status = BLAST_STATUS[row.status];
+              /**
+               * ⚠ The window, read from the date rather than from the status.
+               *
+               * `expire_blasts` is what writes `expired`, and no deployment
+               * has ever run it (nothing schedules `/api/jobs/run`) — so a
+               * live Ask keeps saying `active` for ever. Measured on this
+               * page: an Ask whose window shut on **Sep 15** was still badged
+               * "Out with parents", still said "Closes Sep 15", and still
+               * offered **Send the Ask** on the 25th. `sendBlast` learned to
+               * read the date on 14 Sep and refuses that press as `expired`;
+               * the page had not, so it offered a button that could only fail
+               * — which is the thing the comment on that very button warns
+               * against.
+               */
+              const closed = windowClosed(row);
+              const status = closed
+                ? BLAST_STATUS.expired
+                : BLAST_STATUS[row.status];
               const payment = PAYMENT_STATUS[row.payment_status];
               const drawer = noteFor?.id === row.id ? noteFor.kind : null;
               return (
@@ -429,12 +441,16 @@ export default function BlastsPage() {
                           tier and a credit-funded Ask are refused by
                           `openCheckout`, so offering it would be a button that
                           can only fail. */}
-                      {row.payment_status === "pending" ||
+                      {/* Not on a closed window either: paying for an Ask that
+                          can no longer be sent takes money for nothing. */}
+                      {!closed &&
+                      (row.payment_status === "pending" ||
                       row.payment_status === "failed" ||
                       (row.payment_status === "not_required" &&
                         !row.credit_funded &&
-                        (row.tier === "board" || row.tier === "targeted")) ? (
+                        (row.tier === "board" || row.tier === "targeted"))) ? (
                         <Button
+                          subject={row.question_text}
                           tone="primary"
                           disabled={busy === row.id}
                           onClick={() =>
@@ -478,7 +494,8 @@ export default function BlastsPage() {
                         * claim does, and it clears the flag without sending:
                         * every other refusal still applies afterwards.
                         */}
-                      {row.human_review &&
+                      {!closed &&
+                        row.human_review &&
                         (row.status === "draft" ||
                           row.status === "pending_review" ||
                           row.status === "active") && (
@@ -492,7 +509,8 @@ export default function BlastsPage() {
                           </Button>
                         )}
 
-                      {row.pool_target > 0 &&
+                      {!closed &&
+                        row.pool_target > 0 &&
                         row.recipients === 0 &&
                         (row.status === "draft" || row.status === "active") && (
                           <Button
@@ -533,6 +551,7 @@ export default function BlastsPage() {
                       )}
 
                       <Button
+                        subject={row.question_text}
                         tone="secondary"
                         disabled={busy === row.id}
                         onClick={() => setOpenPool(openPool === row.id ? null : row.id)}
@@ -544,6 +563,7 @@ export default function BlastsPage() {
                         row.status === "pending_review" ||
                         row.status === "expired") && (
                         <Button
+                          subject={row.question_text}
                           tone="secondary"
                           disabled={busy === row.id}
                           onClick={() => {
@@ -557,6 +577,7 @@ export default function BlastsPage() {
 
                       {row.payment_status === "paid" && (
                         <Button
+                          subject={row.question_text}
                           tone="danger"
                           disabled={busy === row.id}
                           onClick={() => {
@@ -601,9 +622,15 @@ export default function BlastsPage() {
                         : `${row.responded}, ${row.approved_responses} approved`}
                     </Fact>
                     <Fact label="Window">
-                      {row.expires_at
-                        ? `Closes ${when(row.expires_at)}`
-                        : "No window — nobody is contacted"}
+                      {/* The tense follows the date alone. `closed` asks a
+                          narrower question — did a *live* Ask run out — and
+                          an answered or expired one read "Closes Sep 5" on
+                          the 25th when the wording keyed on it. */}
+                      {!row.expires_at
+                        ? "No window — nobody is contacted"
+                        : new Date(row.expires_at).getTime() < Date.now()
+                          ? `Closed ${when(row.expires_at)}`
+                          : `Closes ${when(row.expires_at)}`}
                     </Fact>
                     {/**
                       * 14.2's gold card, one surface along: **an approved answer
@@ -620,6 +647,22 @@ export default function BlastsPage() {
                       </Fact>
                     )}
                   </FactGrid>
+
+                  {/**
+                    * Why there is no Send button on a row that otherwise looks
+                    * sendable. A control that is simply absent reads as a page
+                    * with something missing; the refusal it replaces
+                    * (`expired`, 14 Sep) said this only *after* the press.
+                    *
+                    * Suppressed when a refund is owed, because that note names
+                    * the closed window in its own first sentence.
+                    */}
+                  {closed && !owed?.owed && row.pool_target > 0 && (
+                    <p className="mt-3.5 rounded-lg border border-bark bg-paper px-3 py-2 text-[12.5px] leading-relaxed text-muted">
+                      The window closed on {when(row.expires_at!)}, so this Ask can
+                      no longer be sent.
+                    </p>
+                  )}
 
                   {/* 7.7's guarantee, said in words on the row it applies to
                       rather than left for a reader to work out from two badges. */}
@@ -671,6 +714,7 @@ export default function BlastsPage() {
                       </Field>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
+                          subject={row.question_text}
                           tone={drawer === "refund_due" ? "danger" : "primary"}
                           disabled={busy === row.id || note.trim().length < 3}
                           onClick={() =>
@@ -759,7 +803,17 @@ function PoolPreview({ blastId }: { blastId: string }) {
     );
   }
   if (error) return <ErrorNote>{error}</ErrorNote>;
-  if (!rows) return null;
+  /* The read answers null when the Ask has no asker left — they deleted their
+     profile, or a re-seeded cohort took them (`asker_id` is set null on
+     delete). Rendering nothing made the button look dead (25 Sep). */
+  if (!rows) {
+    return (
+      <p className="mt-4 rounded-xl border border-bark bg-paper/70 px-3.5 py-3 text-[13px] text-muted">
+        Nobody to match against: whoever asked this is no longer in Pando, so
+        there are no connections to rank the network by.
+      </p>
+    );
+  }
 
   return (
     <RecordDrawer title={`Who Pando would ask (${rows.chosen.length} of ${rows.wanted} wanted)`}>
@@ -828,4 +882,27 @@ function PoolPreview({ blastId }: { blastId: string }) {
       )}
     </RecordDrawer>
   );
+}
+
+/**
+ * The "owed" tab: the guarantee's own verdict, **or** a refund an admin
+ * flagged by hand (25 Sep). The sidebar's red badge counts `refund_due`, and a
+ * hand-flagged refund on an Ask still live or already answered was in neither
+ * this tab nor Paid — red in the nav and findable only under Everything.
+ */
+/** Live: not settled, and its window has not run out (`windowClosed`). */
+function stillOpen(row: { status: string; expires_at: string | null }): boolean {
+  return (
+    (row.status === "draft" ||
+      row.status === "pending_review" ||
+      row.status === "active") &&
+    !windowClosed(row)
+  );
+}
+
+function owesSomething(
+  row: { id: string; payment_status: string },
+  owedBy: Map<string, { owed: boolean }>,
+): boolean {
+  return owedBy.get(row.id)?.owed === true || row.payment_status === "refund_due";
 }

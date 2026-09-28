@@ -1,0 +1,222 @@
+▲ Next.js 16.2.12
+- Local:         http://localhost:4197
+- Network:       http://0.0.0.0:4197
+✓ Ready in 0ms
+[admin:login] signed in { user: 'lab-walk-m7' }
+[slack:events] { keyword: 'text', length: 59, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 59 }
+[sms:inbound] read as {
+  intent: 'ask_recommendation',
+  source: 'model',
+  sensitive: false,
+  attached: false
+}
+[sms:answer] queued {
+  queued: true,
+  used: 3,
+  next_step: 'offer_blast',
+  hold: 'not_held',
+  permanent: false,
+  place: 'question',
+  supported: true,
+  askable: 3
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:answer] delivered { auto: true, sent: true, reason: null }
+[slack:events] { keyword: 'text', length: 3, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 3 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] ask offer { accepted: true, claimed: true, created: true }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[blast] sending an unpaid Ask — PAYMENTS_ENFORCED is off { tier: 'targeted', payment_status: 'pending' }
+[blast] send refused { reason: 'needs_human_review' }
+[admin:action] {
+  action: 'blast.release',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[blast] sending an unpaid Ask — PAYMENTS_ENFORCED is off { tier: 'targeted', payment_status: 'pending' }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[blast] sent { tier: 'targeted', sent: 2, skipped: 0, wanted: 5 }
+[slack:events] { keyword: 'text', length: 84, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 84 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] read as {
+  intent: 'answer_blast',
+  source: 'context',
+  sensitive: false,
+  attached: true
+}
+[slack:events] { keyword: 'text', length: 35, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 35 }
+[sms:inbound] read as {
+  intent: 'answer_blast',
+  source: 'context',
+  sensitive: false,
+  attached: true
+}
+[slack:events] { keyword: 'pass', length: 4, via: 'addressed' }
+[sms:inbound] { keyword: 'pass', length: 4 }
+[admin:action] {
+  action: 'blast_response.rate',
+  actor: 'lab-walk-m7',
+  resource_id: null
+}
+[admin:action] {
+  action: 'blast_response.approve',
+  actor: 'lab-walk-m7',
+  resource_id: null
+}
+[admin:action] {
+  action: 'blast_response.approve',
+  actor: 'lab-walk-m7',
+  resource_id: null
+}
+[admin:action] {
+  action: 'blast.deliver',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[blast] answers delivered { used: 1, dropped: 0 }
+[admin:action] {
+  action: 'blast.deliver',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[blast] delivery refused { reason: 'already_sent' }
+[admin:action] {
+  action: 'blast.fulfil',
+  actor: 'lab-walk-m7',
+  resource_id: 'd9fbc4ed-5a6a-46cf-80f3-91e57634c0a4'
+}
+[admin:action] { action: 'blast.create', actor: 'lab-walk-m7', resource_id: null }
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: '58bea069-e1de-4a91-a85f-a41e3125c3fd'
+}
+[blast] send refused { reason: 'needs_human_review' }
+[admin:action] {
+  action: 'blast.release',
+  actor: 'lab-walk-m7',
+  resource_id: '58bea069-e1de-4a91-a85f-a41e3125c3fd'
+}
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: '58bea069-e1de-4a91-a85f-a41e3125c3fd'
+}
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[blast] sent { tier: 'last_minute', sent: 5, skipped: 0, wanted: 5 }
+[admin:action] { action: 'blast.create', actor: 'lab-walk-m7', resource_id: null }
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: '5e0e1473-3956-49e5-8c60-78a678d9e337'
+}
+[blast] send refused { reason: 'contacts_nobody' }
+[admin:action] { action: 'blast.create', actor: 'lab-walk-m7', resource_id: null }
+[admin:action] { action: 'blast.create', actor: 'lab-walk-m7', resource_id: null }
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: '6ade988c-f295-4778-84ba-573994f2185b'
+}
+[blast] send refused { reason: 'expired' }
+[job] ran {
+  job: 'expire_blasts',
+  outcome: 'ok',
+  processed: 5,
+  skipped: 0,
+  failed: 0,
+  note: '1 credited'
+}
+[admin:action] { action: 'blast.create', actor: 'lab-walk-m7', resource_id: null }
+[slack:events] { keyword: 'text', length: 8, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 8 }
+[sms] sent via relay { category: 'transactional', threaded: false }
+[slack:events] { keyword: 'text', length: 1, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 1 }
+[sms] non-GSM characters raise the segment count { category: 'transactional', segments: 1, offenders: '—' }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] allowance changed { mode: 'fixed' }
+[slack:events] { keyword: 'text', length: 14, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 14 }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[slack:events] { keyword: 'text', length: 1, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 1 }
+[sms] non-GSM characters raise the segment count { category: 'transactional', segments: 2, offenders: '—' }
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] allowance changed { mode: 'as_relevant' }
+[slack:events] { keyword: 'text', length: 1, via: 'addressed' }
+[sms:inbound] { keyword: 'text', length: 1 }
+[sms:inbound] read as {
+  intent: 'chitchat',
+  source: 'fallback',
+  sensitive: false,
+  attached: false
+}
+[sms] sent via relay { category: 'transactional', threaded: true }
+[sms:inbound] answered a non-question { intent: 'chitchat' }
+[slack:events] { keyword: 'opt_out', length: 4, via: 'addressed' }
+[sms:inbound] { keyword: 'opt_out', length: 4 }
+[slack:events] { keyword: 'opt_in', length: 5, via: 'addressed' }
+[sms:inbound] { keyword: 'opt_in', length: 5 }
+[sms] sent via relay { category: 'transactional', threaded: false }
+[admin:action] {
+  action: 'blast.send',
+  actor: 'lab-walk-m7',
+  resource_id: '466763e1-e4b9-46ef-8e6a-8a87958e4107'
+}
+[blast] sending an unpaid Ask — PAYMENTS_ENFORCED is off { tier: 'targeted', payment_status: 'pending' }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: true }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[sms] non-GSM characters raise the segment count { category: 'outreach', segments: 4, offenders: '—' }
+[sms] quiet hours ignored — relay, so nobody's phone buzzes { template: 'blast_request' }
+[sms] sent via relay { category: 'outreach', threaded: false }
+[blast] sent { tier: 'targeted', sent: 5, skipped: 0, wanted: 5 }

@@ -196,6 +196,11 @@ ok(
 );
 ok("a near age band still reads naturally", /similar age/.test(t2.askReason(["age_range_near"])));
 ok(
+  "somebody asked only because they live near is told exactly that (25 Sep)",
+  t2.askReason([]) === "you live nearby",
+  t2.askReason([]),
+);
+ok(
   "an unknown reason falls back rather than leaking one",
   /relevant/.test(t2.askReason(["mystery"])),
 );

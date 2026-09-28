@@ -57,12 +57,36 @@ export const CARRIER_ERRORS: Record<
  */
 export const DELIVERY_RATE_FLOOR = 0.95;
 
+/**
+ * How much of the window has to have reported back before the rate is a
+ * verdict rather than a sample.
+ *
+ * The rate is computed over messages with a *final* status, and the honest
+ * question underneath it is how many of the messages old enough to have
+ * reported actually did. On the live database that was **13 of 64**: the page
+ * read "100% — at or above the 95% floor" over an outage in which no status
+ * was coming back at all, which is the one failure 12.5 exists to surface
+ * (`/api/sms/status` unwired, or the relay, which reports nothing).
+ *
+ * The rule is the one the contributor standing view already follows for a
+ * response rate — *too few to judge is said in words, never drawn as a
+ * verdict* — applied one page along. Half, because below that the messages
+ * nobody can account for outnumber the ones the number is computed from.
+ */
+export const DELIVERY_MIN_COVERAGE = 0.5;
+
 export interface DeliveryCounts {
   /** Outbound messages with a terminal status in the window. */
   settled: number;
   delivered: number;
-  /** Still queued or sent — excluded from the rate rather than counted against it. */
+  /** Still queued or sent, and under a day old — excluded from the rate. */
   in_flight: number;
+  /**
+   * No final status after a day. Not travelling any more: the status never
+   * came back (a missing status callback, or the Slack relay). Also excluded
+   * from the rate, because nobody knows how it ended.
+   */
+  unreported: number;
   by_error: Array<{ code: number; count: number }>;
 }
 
@@ -70,9 +94,22 @@ export interface DeliveryHealth {
   /** Null when nothing has settled yet: a rate of 0 out of 0 is not a failure. */
   rate: number | null;
   below_floor: boolean;
+  /**
+   * Of the messages old enough to have reported, the share that did. Null when
+   * none are old enough yet — which is not the same as none reporting.
+   */
+  coverage: number | null;
+  /**
+   * The rate is computed from a minority of the messages that should have
+   * reported, so it does not support an all-clear. It never suppresses
+   * `below_floor`: a measured failure is still worth acting on, and it is the
+   * reassuring reading that has to be withheld, not the alarming one.
+   */
+  thin_sample: boolean;
   settled: number;
   delivered: number;
   in_flight: number;
+  unreported: number;
   /** Newest first, the ones with an entry in `CARRIER_ERRORS` first. */
   alerts: Array<{
     code: number;
@@ -115,12 +152,21 @@ export function deliveryHealth(counts: DeliveryCounts): DeliveryHealth {
         a.code - b.code,
     );
 
+  /* Messages that should have reported by now, whether or not they did. Ones
+     still in flight are deliberately absent: they are not late, they are young,
+     which is the same reason they sit outside the rate. */
+  const accountable = counts.settled + counts.unreported;
+  const coverage = accountable > 0 ? counts.settled / accountable : null;
+
   return {
     rate,
     below_floor: rate !== null && rate < DELIVERY_RATE_FLOOR,
+    coverage,
+    thin_sample: coverage !== null && coverage < DELIVERY_MIN_COVERAGE,
     settled: counts.settled,
     delivered: counts.delivered,
     in_flight: counts.in_flight,
+    unreported: counts.unreported,
     alerts,
   };
 }

@@ -96,7 +96,28 @@ const SCHEDULE_WINDOWS: Option[] = [
   { id: "weeknights", label: "Overnights" },
   { id: "saturday", label: "Saturdays" },
   { id: "sunday", label: "Sundays" },
+  /* 28 Sep, the developer: a custom choice of weekdays behind an option. It
+     opens CAREGIVER_WEEKDAYS underneath on both surfaces, and the days it
+     reveals are stored in the same array as the windows, so the parent's "she
+     worked Tuesdays" and her own "I am free Tuesdays" are one id and can meet. */
+  { id: "specific_days", label: "Specific days of the week" },
 ];
+
+/** The days `specific_days` opens. Stored beside the windows, never instead. */
+export const CAREGIVER_WEEKDAYS: Option[] = [
+  { id: "mon", label: "Monday" },
+  { id: "tue", label: "Tuesday" },
+  { id: "wed", label: "Wednesday" },
+  { id: "thu", label: "Thursday" },
+  { id: "fri", label: "Friday" },
+  { id: "sat", label: "Saturday" },
+  { id: "sun", label: "Sunday" },
+];
+
+/** Whether a "when" answer asked for particular days. */
+export function wantsWeekdays(value: unknown): boolean {
+  return Array.isArray(value) && value.includes("specific_days");
+}
 
 /**
  * Stage 1, parent's side: the shape of the week they actually employed them for.

@@ -7,7 +7,6 @@ import {
   BadgeCheck,
   CreditCard,
   Megaphone,
-  CalendarClock,
   ClipboardList,
   Flag,
   ChevronRight,
@@ -270,18 +269,8 @@ const NAV: NavSection[] = [
       },
       {
         /**
-         * 12.5. No count, same reason as the matching harness: the sidebar's
-         * numbers mean "something here is waiting for you", and a delivery rate
-         * is a gauge rather than a queue. The alarm for a bad one is the
-         * container log, which fires the minute it happens.
-         */
-        href: "/admin/delivery",
-        icon: CalendarClock,
-        label: "Message delivery",
-      },
-      {
-        /**
-         * 14.1. **No count**, on the 10 Aug rule: a number in this sidebar means
+         * 14.1, with 12.5's delivery health at the top of it since 25 Sep —
+         * "Message delivery" was its own item until then. **No count**, on the 10 Aug rule: a number in this sidebar means
          * "something here is waiting for you", and this is a record you open
          * rather than a queue that fills. The one view that *is* queue-shaped
          * ("they spoke last") is not a queue Pando owes an answer to either —
@@ -523,7 +512,19 @@ function NavGroup({
                   active ? "text-green-deep" : "text-muted",
                 )}
               />
-              <span className="truncate">{item.label}</span>
+              {/*
+                Wraps rather than truncates. The sidebar is a fixed 16rem, so
+                the label box is 162px — and "Withdrawn recommendations" is
+                191px *once its badge renders*, which is exactly when the row
+                has work in it. The 4 Sep measurement ("zero of twenty labels
+                truncate") was taken with that queue empty, so the one label
+                that overflows only overflows on the days it matters. Wrapping
+                costs 2px of row height and hides nothing; truncating loses the
+                tail of the longest name silently. On a phone this nav is a
+                horizontal strip whose rows are `shrink-0`, so nothing
+                constrains the width there and nothing wraps.
+              */}
+              <span>{item.label}</span>
               {count > 0 && (
                 <CountBadge count={count} urgent={urgent} />
               )}

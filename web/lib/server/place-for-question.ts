@@ -193,6 +193,10 @@ export async function askablePeopleNear(input: {
         from people p
        where p.market_id = ${input.marketId ?? "pasadena"}
          and not p.is_test
+         -- Somebody Pando can actually text (25 Sep). A row with no phone — a
+         -- nameless demo row near Temple City, walked over the relay — counted
+         -- toward the three and made the offer on a place with two parents.
+         and p.phone is not null
          and p.neighborhood = any(${literal}::text[])
          and (${input.askerId}::uuid is null or p.id <> ${input.askerId}::uuid)
          and not exists (

@@ -64,6 +64,7 @@ export const SUBJECT_LABEL: Record<string, string> = {
   demand_signal: "a question a parent asked",
   caregiver_nomination: "a caregiver someone put forward",
   caregiver: "a caregiver",
+  answer: "a question texted to Pando",
 };
 
 /**
@@ -319,6 +320,7 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   share_contribution: "a recommendation",
   place_contribution: "a recommendation",
   caregiver: "a caregiver",
+  answer: "a question texted to Pando",
   caregiver_nomination: "a caregiver someone put forward",
   caregiver_claim: "a caregiver's own sign-up",
   restricted_note: "a private note",
@@ -627,4 +629,68 @@ export const POOL_HELD_REASON: Record<string, string> = {
 
 export function poolHeldReason(reason: string): string {
   return POOL_HELD_REASON[reason] ?? sentence(reason);
+}
+
+/**
+ * What a message was, from `message_log.template` (25 Sep).
+ *
+ * `/admin/conversations` printed these through `slugLabel`, so an admin read
+ * "Capture Named Person Redirect" and "Thanks Prompt" — the stored id with
+ * capitals, which is the 19 Aug fault this file exists to end. Said as what
+ * happened rather than as what the code calls it. An id missing here falls
+ * back to a readable sentence rather than to nothing.
+ */
+export const MESSAGE_LABEL: Record<string, string> = {
+  // Inbound — what the parent's text was read as.
+  help: "Texted HELP",
+  opt_out: "Texted STOP",
+  opt_in: "Texted START",
+  pass: "Passed on an Ask",
+  delete: "Texted DELETE",
+  // Answers.
+  answer: "Answer, sent by an admin",
+  answer_sent: "Answer, sent automatically",
+  answer_queued: "Told an answer is on its way",
+  answer_high_stakes: "Pointed to professional help",
+  answer_allegation: "Told a person will read it",
+  blast_answers: "Answers from other parents",
+  // Onboarding and conversation.
+  clarify_child_age: "Asked the child's age",
+  clarify_neighborhood: "Asked where they live",
+  clarification_saved: "Thanked for an answer",
+  ask_detail: "Asked what they meant",
+  unclear_handover: "Handed to a person",
+  small_talk: "Said what Pando is for",
+  share_invite: "Sent the link to share",
+  settings_menu: "Sent the settings menu",
+  settings_confirmed: "Confirmed a settings change",
+  // Network Asks.
+  blast_request: "Asked to help another parent",
+  blast_reply_saved: "Thanked for an Ask reply",
+  ask_started: "Told the network is being asked",
+  // Freshness and thanks.
+  freshness_ping: "Asked if a record still holds",
+  freshness_reply_saved: "Thanked for a freshness reply",
+  thanks_prompt: "Asked if an answer helped",
+  helped_reply_saved: "Thanked for saying if it helped",
+  thanks: "Thanked for a recommendation",
+  // Adding a recommendation by text.
+  capture_name: "Adding by text: asked the name",
+  capture_kind: "Adding by text: asked the kind",
+  capture_firsthand: "Adding by text: asked if firsthand",
+  capture_recommend: "Adding by text: asked if they'd recommend",
+  capture_detail: "Adding by text: asked for a note",
+  capture_saved: "Adding by text: saved",
+  capture_cancelled: "Adding by text: stopped",
+  capture_caregiver_redirect: "Sent to the web form for a caregiver",
+  capture_named_person_redirect: "Sent to the web form for a person",
+  // Caregivers.
+  caregiver_invite: "Caregiver invite",
+  caregiver_delete_none: "Nothing to delete",
+  verification: "Verification code",
+};
+
+export function messageLabel(template: string | null, category?: string | null): string {
+  if (template) return MESSAGE_LABEL[template] ?? sentence(template);
+  return category ? sentence(category) : "Message";
 }

@@ -3,6 +3,7 @@ import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
+import { CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
 import {
   caregiverNominations,
   caregivers,
@@ -79,6 +80,14 @@ const bool = (v: unknown): boolean => v === true || v === "yes" || v === "true";
 
 const strArray = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+/** The windows, plus the chosen weekdays only while "specific days" is ticked. */
+const scheduleWithDays = (pattern: unknown, days: unknown): string[] => {
+  const windows = strArray(pattern);
+  if (!windows.includes("specific_days")) return windows;
+  const known = new Set(CAREGIVER_WEEKDAYS.map((o) => o.id));
+  return [...windows, ...strArray(days).filter((d) => known.has(d))];
+};
 
 const intArray = (v: unknown): number[] =>
   Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
@@ -409,7 +418,9 @@ async function writeCaregiver(
      * them is ever shown next to a name: they exist to make a pay band comparable
      * and to tell a ten-hour sitter from a full-time role.
      */
-    schedulePattern: strArray(f.schedule_pattern),
+    /* The days "Specific days of the week" opened (28 Sep) live in the same
+       array as the windows, so the two surfaces share one vocabulary of "when". */
+    schedulePattern: scheduleWithDays(f.schedule_pattern, f.schedule_days),
     hoursPerWeek: str(f.hours_per_week),
     benefits: strArray(f.benefits),
     caredForAges: strArray(f.cared_for_ages),

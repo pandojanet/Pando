@@ -2,12 +2,13 @@ import { marketOptions } from "../market-options";
 import {
   CAREGIVER_AGE_BANDS as AGE_BANDS,
   CAREGIVER_BENEFITS,
-  CAREGIVER_FIT,
   CAREGIVER_HOURS,
   CAREGIVER_PAY_BANDS as PAY_BANDS,
   CAREGIVER_SCHEDULE,
   CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
+  CAREGIVER_WEEKDAYS,
+  wantsWeekdays,
 } from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
 import type { Fields, Script, ShareKind } from "./types";
@@ -533,6 +534,17 @@ export function buildScripts(
           optional: true,
         },
         {
+          /* 28 Sep: "Specific days of the week" opens the days themselves.
+             cards.ts folds them into schedule_pattern beside the windows. */
+          id: "schedule_days",
+          prompt: "Which days?",
+          aside: "Tap all that apply.",
+          widget: "chips",
+          options: CAREGIVER_WEEKDAYS,
+          optional: true,
+          when: (fields) => wantsWeekdays(fields.schedule_pattern),
+        },
+        {
           /* The ages they actually cared for — evidence, not an opinion about who
              they'd be good with. */
           id: "cared_for_ages",
@@ -557,64 +569,28 @@ export function buildScripts(
           placeholder: "Calm with a shy kid, and she actually plays…",
         },
         {
-          id: "good_fit_for",
-          prompt: "Which families are they a great fit for?",
-          widget: "chips",
-          options: CAREGIVER_FIT,
-          optional: true,
-        },
-        {
-          id: "caveat",
-          prompt: "Anything a family should know up front?",
-          /* This is free text about a named third party, so the promise has to be
-             on the screen where it's typed: a person reads it, and it is never
-             published word for word (spec §12, and the client's own condition). */
-          aside: "Availability, scheduling, the practical things. A person reads this before anyone sees it, and we never publish it word for word.",
+          /**
+           * 28 Sep, the developer: "Anything a family should know up front?"
+           * and "Anything you'd only say privately?" are one question now, and
+           * "Would you hire them again?" with its "Comfortable telling Pando
+           * why?" are gone, as is "Which families are they a great fit for?".
+           *
+           * ⚠ The merged answer is stored as the **private note** — restricted,
+           * never shown to a family or to her (invariant 12) — because it is
+           * the one box a parent may now write a concern into, and the stricter
+           * of the two rules is the only one that is safe for both halves. The
+           * old public caveat on a caregiver card was never shown to a family
+           * either (only the admin read it), so nothing reaches fewer people
+           * than before. The cost, stated: any note now holds the card for a
+           * person, which the private note always did.
+           */
+          id: "private_note",
+          prompt: "Anything a family should know, or anything you'd only tell Pando?",
+          aside: "Only Pando's team reads this. It never reaches another parent or them in any form, and a person reads it before they are listed.",
           widget: "text",
           maxLength: 400,
           optional: true,
           placeholder: "Books up early in the summer…",
-        },
-        {
-          /* Deliberately a second question, not a longer first one: a concern you'd
-             only say privately should not sit in the same box as scheduling. */
-          id: "private_note",
-          prompt: "Anything you'd only say privately?",
-          aside: "This one never reaches another parent, in any form. Only Pando's team sees it, and it's used to decide whether to list them at all.",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          placeholder: "Only if there's something…",
-        },
-        {
-          id: "hire_again",
-          prompt: "Would you hire them again?",
-          widget: "quick",
-          options: [
-            { id: "yes", label: "Yes" },
-            { id: "hesitant", label: "Hesitant" },
-            { id: "no", label: "No" },
-          ],
-          /* Anything other than a clear yes holds the nomination back from the
-             invite step until a person has read it — the client's rule, and the
-             parent is told so rather than finding out later. */
-          holdIf: (value) =>
-            value === "hesitant" || value === "no"
-              ? "Thank you for being straight with me — that's more useful than a polite yes. This one goes to a person on our team, and I won't offer you the invite step for them in the meantime."
-              : null,
-        },
-        {
-          /* C7's branch. Restricted exactly like the private note: never shown,
-             never AI-summarized, and able to pause a nomination quietly. */
-          id: "hesitation_reason",
-          prompt: "Comfortable telling Pando why?",
-          aside: "Never shown to the caregiver, and never to a family. It goes only to our human review team.",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          when: (fields) =>
-            fields.hire_again === "hesitant" || fields.hire_again === "no",
-          placeholder: "Only if you want to…",
         },
         {
           /**
@@ -656,8 +632,8 @@ export function buildScripts(
         },
         {
           id: "recontact_ok",
-          prompt: "May Pando check back with you about it?",
-          aside: "It uses your normal monthly allowance — never an extra text.",
+          prompt: "May Pando text you nearer the time, to help them find their next family?",
+          aside: "It counts toward your normal monthly allowance, never an extra text.",
           widget: "quick",
           optional: true,
           when: (fields) =>
@@ -749,15 +725,14 @@ export function buildScripts(
         { field: "how_known", label: "How known" },
         { field: "how_long", label: "How long" },
         { field: "last_worked", label: "Last worked" },
+        { field: "schedule_pattern", label: "When" },
+        { field: "schedule_days", label: "Days" },
         { field: "strengths", label: "Good at" },
         { field: "what_makes_special", label: "In your words" },
-        { field: "good_fit_for", label: "Great fit for" },
-        { field: "caveat", label: "Know first" },
-        { field: "private_note", label: "Private note" },
-        { field: "hire_again", label: "Hire again" },
+        { field: "private_note", label: "Note for Pando" },
         { field: "needs_horizon", label: "Needs changing" },
         { field: "needs_change_type", label: "What changes" },
-        { field: "recontact_ok", label: "Check back" },
+        { field: "recontact_ok", label: "Text nearer the time" },
         { field: "pay_band", label: "Paid" },
         { field: "pay_benchmark_ok", label: "Pay range use" },
         { field: "reference_willing", label: "Reference" },

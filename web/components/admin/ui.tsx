@@ -554,6 +554,12 @@ type ButtonProps =
       onClick?: () => void;
       disabled?: boolean;
       type?: "button" | "submit";
+      /**
+       * For a row of buttons where one is the current choice — a rating.
+       * `tone="primary"` shows it to the eye and says nothing to a screen
+       * reader; `aria-pressed` is the part that is announced.
+       */
+      pressed?: boolean;
     })
   | (ButtonCommon & {
       href: string;
@@ -588,6 +594,7 @@ export function Button(props: ButtonProps) {
       onClick={props.onClick}
       disabled={props.disabled}
       aria-label={label}
+      aria-pressed={props.pressed}
       className={box}
     >
       {children}
@@ -612,6 +619,7 @@ export function TextLink({
   children,
   tone = "green",
   className,
+  subject,
 }: {
   href?: string;
   onClick?: () => void;
@@ -619,7 +627,16 @@ export function TextLink({
   /** `quiet` is for an aside — a destructive path, or a footnote's own link. */
   tone?: "green" | "quiet";
   className?: string;
+  /**
+   * The record this link acts on, for a link repeated down a list — the same
+   * convention as `Button`'s: an `aria-label` of "{label} — {subject}", the
+   * visible text untouched.
+   */
+  subject?: string;
 }) {
+  const ariaLabel = subject
+    ? `${plainText(children).replace(/\s+/g, " ").trim()} — ${subject}`
+    : undefined;
   const box = cn(
     "font-semibold underline underline-offset-2 transition-colors",
     tone === "green"
@@ -629,13 +646,13 @@ export function TextLink({
   );
   if (href !== undefined) {
     return (
-      <Link href={href} className={box}>
+      <Link href={href} className={box} aria-label={ariaLabel}>
         {children}
       </Link>
     );
   }
   return (
-    <button type="button" onClick={onClick} className={box}>
+    <button type="button" onClick={onClick} className={box} aria-label={ariaLabel}>
       {children}
     </button>
   );

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { HoldReason, RoutingInput } from "../lib/answer-routing.ts";
 
 /**
@@ -224,6 +225,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     ["the withdrawal acknowledgement", r.PING_NO_LONGER],
     ["the helped-yes acknowledgement", r.HELPED_YES],
     ["the helped-no acknowledgement", r.HELPED_NO],
+    ["the Ask-reply acknowledgement", r.BLAST_REPLY_THANKS],
   ] as const) {
     const plan = s.planSegments(text);
     ok(
@@ -256,7 +258,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
    */
   ok(
     "the Ask acknowledgement says what will happen and promises no time",
-    !/(minute|hour|today|shortly|soon)/i.test(r.ASK_STARTED),
+    !/\b(minute|hour|today|shortly|soon)\b/i.test(r.ASK_STARTED),
     r.ASK_STARTED,
   );
   ok(
@@ -266,7 +268,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
   );
   ok(
     "the four yes/no acknowledgements ask nothing back",
-    [r.PING_STILL_GOOD, r.PING_NO_LONGER, r.HELPED_YES, r.HELPED_NO].every((t) => !t.includes("?")),
+    [r.PING_STILL_GOOD, r.PING_NO_LONGER, r.HELPED_YES, r.HELPED_NO, r.BLAST_REPLY_THANKS].every((t) => !t.includes("?")),
   );
   ok(
     "and the helped one does not promise the contributors a thank-you a job has to send",
@@ -277,6 +279,46 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     "and small talk asks no question of its own",
     !r.SMALL_TALK.includes("?"),
     "5.4 owns onboarding; a second question here makes the next reply ambiguous",
+  );
+}
+
+console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives (25 Sep) ===");
+{
+  /* Walked over the relay: a fever of 104 was told Pando was putting together
+     an answer "from local parents". These are the replies that replace it. */
+  for (const [name, text] of [
+    ["the health, legal or safety reply", r.HIGH_STAKES_REPLY],
+    ["the claim-about-a-person reply", r.ALLEGATION_REPLY],
+  ] as const) {
+    const plan = seg.planSegments(text);
+    ok(`${name} is GSM-7`, plan.encoding === "gsm7", plan.offenders?.join("") ?? "");
+    ok(`${name} never promises parents' experience`, !/local parents|from parents/i.test(text), text);
+    ok(`${name} asks nothing back`, !text.includes("?"), text);
+  }
+  ok(
+    "the high-stakes reply carries the same four resources as the web panel",
+    ["911", "211", "988", "1-800-433-6251"].every((n) => r.HIGH_STAKES_REPLY.includes(n)),
+  );
+  ok(
+    "the allegation reply carries no resource list, only the number for a child at risk",
+    !/988|211|433-6251/.test(r.ALLEGATION_REPLY) && r.ALLEGATION_REPLY.includes("1-800-540-4000"),
+  );
+  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok(
+    "inbound sends them instead of the held reply, and flags the answer",
+    src.includes("HIGH_STAKES_REPLY") && src.includes("ALLEGATION_REPLY") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
+  );
+  ok(
+    "and asks no clarifying question under one",
+    /const clarifier = asking && !urgent/.test(src),
+  );
+  /* The second recording: the model read an allegation as an offer, and the
+     parent was asked for "ages, cost, whether you'd recommend it". */
+  const nonQuestion = src.indexOf("const unreadable =");
+  const guard = src.lastIndexOf("escalateSensitivity(classifyDemand(body, null), reading.sensitive)", nonQuestion);
+  ok(
+    "the words are read before a non-question is answered as an offer or small talk",
+    guard > 0 && guard < nonQuestion && src.indexOf("SHARE_INVITE : SMALL_TALK") > nonQuestion,
   );
 }
 

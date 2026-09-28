@@ -298,7 +298,7 @@ export function Fact({
  * about herself, where a grid would scatter them across three columns and make
  * two sign-ups impossible to compare side by side.
  *
- * It exists as a component because `/admin/claims` had already written it
+ * It exists as a component because the caregiver sign-ups page (then `/admin/claims`) had already written it
  * locally, which made it the fourth private implementation of "label, value" on
  * this surface. The label column is fixed-width on purpose: a ragged left edge
  * is what stops a column of ten values from reading as a column.

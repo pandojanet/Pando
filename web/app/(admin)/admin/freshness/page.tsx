@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -72,6 +72,7 @@ export default function FreshnessPage() {
     outcome: "retire" | "keep";
   } | null>(null);
   const [reason, setReason] = useState("");
+  const reasonId = useId();
 
   const { rows, configured, loading, error, demo, setDemo, reload } =
     useAdminRows<FreshnessOutcomeRow[]>("freshness");
@@ -137,6 +138,7 @@ export default function FreshnessPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Record name…"
+          aria-label="Search by record name"
           className={`${inputClass} w-[12rem]`}
         />
         {testCount > 0 && (
@@ -221,12 +223,14 @@ export default function FreshnessPage() {
                 <>
                   <Button
                     tone="secondary"
+                    subject={row.name}
                     onClick={() => setDeciding({ row, outcome: "keep" })}
                   >
                     Keep it, marked old
                   </Button>
                   <Button
                     tone="danger"
+                    subject={row.name}
                     onClick={() => setDeciding({ row, outcome: "retire" })}
                   >
                     Retire it
@@ -238,9 +242,11 @@ export default function FreshnessPage() {
                 <Fact label="Parents who used it">
                   {row.firsthand_count === 0 ? "—" : row.firsthand_count}
                 </Fact>
-                <Fact label="Would still recommend">
-                  {row.recommending_count === 0 ? "—" : row.recommending_count}
-                </Fact>
+                {/* No "Would still recommend" fact: the badge above says that
+                    number, in green or in red, and the card said it twice an
+                    inch apart (25 Sep) — the 7 Sep double-badge finding. Both
+                    of the numbers the decision rests on are still on the card:
+                    this one, and the badge. */}
                 <Fact label="Last confirmed">
                   {row.last_confirmed_at ? when(row.last_confirmed_at) : "—"}
                 </Fact>
@@ -266,10 +272,18 @@ export default function FreshnessPage() {
               : `Keep ${deciding.row.name}`
           }
         >
-          <label className="block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+          <label
+            htmlFor={reasonId}
+            className="block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted"
+          >
             Why
           </label>
+          {/* The drawer mounts below the whole list, so with a long queue a
+              click on row one opened something a screen away and looked like
+              nothing happened (25 Sep). Focus is what brings it into view. */}
           <textarea
+            id={reasonId}
+            autoFocus
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}

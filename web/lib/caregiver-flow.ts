@@ -5,6 +5,8 @@ import {
   CAREGIVER_PAY_BANDS,
   CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
+  CAREGIVER_WEEKDAYS,
+  wantsWeekdays,
 } from "@/lib/caregiver-options";
 import { marketOptions } from "@/lib/market-options";
 import type { MarketId, Option } from "@/lib/types";
@@ -46,6 +48,9 @@ export interface CaregiverAnswers {
   areas_found: string[];
   drives: string | null;
   days_available: string[];
+  /** The days "Specific days of the week" opens (28 Sep); merged into
+      days_available by the claim route, only while that option is ticked. */
+  weekdays: string[];
   available_from: string | null;
   hours_note: string;
   rate_band: string | null;
@@ -68,6 +73,7 @@ export const EMPTY_CAREGIVER_ANSWERS: CaregiverAnswers = {
   areas_found: [],
   drives: null,
   days_available: [],
+  weekdays: [],
   available_from: null,
   hours_note: "",
   rate_band: null,
@@ -84,6 +90,7 @@ export type TapKey =
   | "areas_served"
   | "drives"
   | "days_available"
+  | "weekdays"
   | "available_from"
   | "rate_band";
 
@@ -98,6 +105,8 @@ export interface CaregiverQuestion {
    * (24 Sep). Only the areas question sets it — see there.
    */
   directory?: { category: "neighborhoods"; searchLabel: string };
+  /** Shown only while this is true of the answers so far. */
+  when?: (answers: CaregiverAnswers) => boolean;
 }
 
 export interface CaregiverStep {
@@ -111,7 +120,7 @@ export interface CaregiverStep {
 }
 
 const YES_NO: Option[] = [
-  { id: "yes", label: "Yes, I drive" },
+  { id: "yes", label: "Yes, I can drive them" },
   { id: "no", label: "No" },
 ];
 
@@ -202,14 +211,22 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
             searchLabel: "Towns, neighborhoods or ZIP codes you can work in",
           },
         },
-        { key: "drives", label: "Driving", mode: "single", options: YES_NO },
+        /* 28 Sep: "Driving" and "Able to start" were the names of the
+           answers rather than questions, so a caregiver read a label and had
+           to guess what was being asked. Each is the whole question now. */
+        {
+          key: "drives",
+          label: "Can you drive children to school, classes or activities?",
+          mode: "single",
+          options: YES_NO,
+        },
       ],
     },
     {
       id: "when",
       eyebrow: "G6 · When",
       title: "When are you usually free?",
-      help: "Days, not a timetable — a family asks about a Friday night, not a calendar slot.",
+      help: "The times of the week you can usually work. Pick specific days if that is easier.",
       questions: [
         {
           key: "days_available",
@@ -218,22 +235,31 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
           options: CAREGIVER_DAYS,
         },
         {
+          key: "weekdays",
+          label: "Which days?",
+          mode: "multi",
+          options: CAREGIVER_WEEKDAYS,
+          when: (a) => wantsWeekdays(a.days_available),
+        },
+        {
           key: "available_from",
-          label: "Able to start",
+          label: "When could you start with a new family?",
           mode: "single",
           options: CAREGIVER_AVAILABLE_FROM,
         },
       ],
       freeText: {
         key: "hours_note",
-        label: "Anything about your hours a family should know?",
-        placeholder: "Optional — e.g. school pickups only until June",
+        /* 28 Sep: it asked about "your hours" without saying which. It asks
+           for the hours themselves now, beside the days above. */
+        label: "What hours are you available on those days?",
+        placeholder: "Optional — e.g. 3–7pm on weekdays, school pickups only until June",
       },
     },
     {
       id: "rate",
       eyebrow: "G7 · Rate",
-      title: "What do you charge?",
+      title: "What is your usual hourly rate?",
       help: "A range, never a number, and never shown as yours: Pando answers with the range for the area so a family arrives with a fair offer instead of a guess.",
       questions: [
         {

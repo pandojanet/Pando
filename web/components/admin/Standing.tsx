@@ -98,6 +98,7 @@ export function Standing() {
         <Toolbar>
           <SegmentedFilter
             label="Which tier"
+            unknown={!rows}
             value={tier}
             onChange={(v) => setTier(v as "all" | TierId)}
             options={[
@@ -113,6 +114,7 @@ export function Standing() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Name or number…"
+            aria-label="Search contributors by name or number"
             className={`${inputClass} w-[12rem]`}
           />
           {testCount > 0 && (
@@ -223,15 +225,22 @@ function StandingTableRow({ row }: { row: StandingRow }) {
         </span>
       </Td>
       <Td className="text-right text-[13px]">
-        {row.allowance_mode === "as_relevant"
-          ? "Anytime relevant"
-          : perMonth(row.monthly_contact_allowance ?? 5)}
-        {row.governed && (
-          <Badge
-            tone="gold"
-          >
-            Lowered
-          </Badge>
+        {/* What the send layer applies, not only what they chose: when the
+            governor lowers it, the stated limit is history (25 Sep). */}
+        {row.governed ? (
+          <>
+            {perMonth(row.effective_allowance ?? 5)}{" "}
+            <Badge tone="gold">
+              Lowered from{" "}
+              {row.allowance_mode === "as_relevant"
+                ? "anytime relevant"
+                : perMonth(row.monthly_contact_allowance ?? 5).toLowerCase()}
+            </Badge>
+          </>
+        ) : row.allowance_mode === "as_relevant" ? (
+          "Anytime relevant"
+        ) : (
+          perMonth(row.monthly_contact_allowance ?? 5)
         )}
       </Td>
     </tr>

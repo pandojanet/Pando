@@ -663,10 +663,6 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
   const tip = clean(candidate.notes?.tip);
   if (tip) parts.push(`One tip: ${lowerFirst(tip)}`);
 
-  const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
-  /* "About" because the bands are bands and the client's own example says it:
-     *"It runs about $30 a session."* Omitted for a free record, where "about
-     free" is nonsense. */
   /**
    * "About" because the bands are bands, and the client's own example says it:
    * *"It runs about $30 a session."*
@@ -675,10 +671,20 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
    * camp week" and "About Free" both came out of the live probe. `Over` and
    * `Under` are the band labels' own comparatives, and a price of Free is not
    * approximate.
+   *
+   * ⚠ **And only ever in front of a price** (25 Sep). With no agreed price the
+   * line was the worth judgement alone, so the relay walk sent *"About fair."*
+   * and *"About great value."* — a hedge on an opinion. Worth on its own says
+   * what it is instead.
    */
-  if (money) {
-    const hedged = /^(over|under|free)\b/i.test(candidate.price ?? "");
+  const price = candidate.price;
+  const worth = candidate.worth;
+  if (price) {
+    const hedged = /^(over|under|free)\b/i.test(price);
+    const money = [price, worth].filter(Boolean).join(", ");
     parts.push(hedged ? `${money}.` : `About ${money}.`);
+  } else if (worth) {
+    parts.push(`Value for money: ${lowerFirst(worth)}.`);
   }
 
   if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
@@ -775,7 +781,18 @@ function alsoPart(candidate: AnswerCandidate): string | null {
   const n = candidate.firsthand_count;
   const who = n === 1 ? "1 parent" : `${n} parents`;
   const money = [candidate.price, candidate.worth].filter(Boolean).join(", ");
-  return `${candidate.name}${placeOf(candidate)}, ${who}${money ? `, ${money}` : ""}`;
+  /* ⚠ The age travels to the short line too (25 Sep). A stale record in the
+     lead says "This one is old"; the same record one line down said nothing
+     at all, and read exactly like a fresh one. Short, because this is a
+     directory line, and never a trust label — those stay verbatim where 5.6
+     puts them. */
+  const age =
+    (candidate.withdrawn ?? 0) > 0
+      ? ", recently questioned"
+      : candidate.trust.freshness === "stale"
+        ? ", may be out of date"
+        : "";
+  return `${candidate.name}${placeOf(candidate)}, ${who}${money ? `, ${money}` : ""}${age}`;
 }
 
 /**
@@ -825,7 +842,9 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
      turns a bare name into something a parent can act on, and it is honest only
      because the heading above it says where it came from. */
   const extra = [money, candidate.detail].filter(Boolean).join(". ");
-  const cost = extra ? ` ${extra}.` : "";
+  /* A detail the page wrote as a sentence already ends in a full stop, and the
+     line then read "…progression system.." (walked over the relay, 25 Sep). */
+  const cost = extra ? ` ${extra.replace(/[.!?]+$/, "")}.` : "";
 
   const claims = labels.join(". ");
   const age = (candidate.withdrawn ?? 0) > 0

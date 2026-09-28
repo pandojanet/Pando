@@ -355,7 +355,15 @@ export async function deliveryCounts(days = 7): Promise<DeliveryCounts | null> {
           where status in ('delivered', 'undelivered', 'failed'))::int      as settled,
         count(*) filter (where status = 'delivered')::int                   as delivered,
         count(*) filter (
-          where status is null or status in ('queued', 'sent'))::int        as in_flight,
+          where (status is null or status in ('queued', 'sent'))
+            and sent_at > now() - interval '24 hours')::int                 as in_flight,
+        -- In flight is young. Twilio reports within minutes, so a message a day
+        -- old with no final status is not travelling: nothing came back, which
+        -- means a missing status callback, or the Slack relay, which sends
+        -- none. Counted apart rather than left in flight for ever (25 Sep).
+        count(*) filter (
+          where (status is null or status in ('queued', 'sent'))
+            and sent_at <= now() - interval '24 hours')::int                as unreported,
         coalesce(
           (select json_agg(json_build_object('code', code, 'count', n))
              from (select error_code as code, count(*)::int as n
@@ -379,6 +387,7 @@ export async function deliveryCounts(days = 7): Promise<DeliveryCounts | null> {
     settled: Number(row.settled ?? 0),
     delivered: Number(row.delivered ?? 0),
     in_flight: Number(row.in_flight ?? 0),
+    unreported: Number(row.unreported ?? 0),
     by_error: (row.by_error ?? []) as DeliveryCounts["by_error"],
   };
 }

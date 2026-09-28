@@ -97,6 +97,23 @@ export const ASK_STARTED =
  * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment each,
  * pinned by `test:routing`.
  */
+/**
+ * A reply to a Network Ask — acknowledged (25 Sep).
+ *
+ * Walked over the relay: a parent answered an Ask with a real recommendation
+ * and heard **nothing** — the fault `PING_STILL_GOOD` closed on 23 Sep, one
+ * question along. It says what happens next and nothing more: a person reads
+ * it first (invariant 8), so it promises no time and does not say it will
+ * reach the asker, because an admin may decide it should not.
+ *
+ * Sent once per reply. A follow-up text appended to the same reply is not
+ * acknowledged again.
+ *
+ * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment.
+ */
+export const BLAST_REPLY_THANKS =
+  "Pando: thank you! A person at Pando reads each reply before it's passed on. Reply STOP to opt out, HELP for help.";
+
 export const PING_STILL_GOOD =
   "Pando: thanks - noted that it's still worth recommending. Reply STOP to opt out, HELP for help.";
 export const PING_NO_LONGER =

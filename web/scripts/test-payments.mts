@@ -609,6 +609,49 @@ console.log("\n=== 13.4: mostly a list of refusals ===");
   );
 }
 
+/* ── 14.3 / 14.5 — the window, read from the date (25 Sep) ────────────────── */
+{
+  console.log("\n  an Ask's window is read from the date, not from the unrun job");
+  const NOW = Date.parse("2026-09-25T12:00:00Z");
+  const past = "2026-09-15T12:00:00Z";
+  const future = "2026-09-26T12:00:00Z";
+  const closed = (status: string, expires_at: string | null) =>
+    payments.windowClosed({ status, expires_at }, NOW);
+
+  /* The case the Asks page got wrong: `active` in the row, ten days late. */
+  ok("an active Ask whose window has passed is closed", closed("active", past));
+  ok("a draft past its window is closed too", closed("draft", past));
+  ok("one waiting for review past its window is closed", closed("pending_review", past));
+  ok("an Ask still inside its window is open", !closed("active", future));
+  /* A passive entry contacts nobody and has no window to run out. */
+  ok("no window is never closed", !closed("active", null));
+  /* A settled status is already the truth, so it is not re-read. */
+  ok("an answered Ask is not called closed", !closed("fulfilled", past));
+  ok("a refunded one is not either", !closed("refunded", past));
+}
+
+/* ── 12.5 — a thin sample is not an all-clear (25 Sep) ──────────────────────── */
+{
+  console.log("\n  the delivery rate is not a verdict when most reports never came back");
+  const health = (settled: number, delivered: number, unreported: number) =>
+    delivery.deliveryHealth({ settled, delivered, in_flight: 0, unreported, by_error: [] });
+
+  /* The live database on 25 Sep: 13 settled, 51 never reported. */
+  const live = health(13, 13, 51);
+  ok("13 of 64 reporting is a thin sample", live.thin_sample === true);
+  ok("and the rate itself is still reported, as a fact about the 13", live.rate === 1);
+  ok("coverage is the share that reported", Math.abs((live.coverage ?? 0) - 13 / 64) < 1e-9);
+  ok("a thin sample does not hide a measured failure", health(10, 5, 50).below_floor === true);
+  ok("most reports in is not thin", health(90, 90, 10).thin_sample === false);
+  ok(
+    "exactly half is not thin",
+    health(50, 50, 50).thin_sample === false && delivery.DELIVERY_MIN_COVERAGE === 0.5,
+  );
+  /* Nothing old enough to report is not the same as nothing reporting. */
+  const young = health(0, 0, 0);
+  ok("nothing accountable yet has no coverage", young.coverage === null && !young.thin_sample);
+}
+
 console.log(
   failures === 0
     ? `\n  ${checks} checks passed.`

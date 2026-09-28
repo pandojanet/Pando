@@ -249,3 +249,36 @@ export const HELD_ACK =
 export function heldReply(clarifying: string | null): string {
   return clarifying ? `${HELD_ACK} ${clarifying}` : HELD_ACK;
 }
+
+/**
+ * What a health, legal or safety question gets over SMS **instead of**
+ * `HELD_ACK` (25 Sep).
+ *
+ * Walked over the relay: *"my 3 year old has a fever of 104 and a rash, what
+ * should I do?"* was held correctly and answered with *"Someone at Pando is
+ * putting an answer together from local parents"* — a promise of parents'
+ * experience to somebody owed a professional today, and no flag, so nobody
+ * would have read it until they happened to open the answer queue. The web D1
+ * flow has done the right thing since 3 Aug; this is the same four resources
+ * (`DemandQuestion.tsx`), in GSM-7, and the caller raises the flag that is the
+ * other half of the promise.
+ *
+ * ⚠ New user-facing copy, on the list for the client.
+ */
+export const HIGH_STAKES_REPLY =
+  "Pando is a parent network, not a professional service, so for this please reach someone qualified today. " +
+  "Emergency: 911. Medical advice any hour: your pediatrician's after-hours line, or 211. " +
+  "Someone to talk to now: call or text 988. Legal help: 1-800-433-6251. " +
+  "A person at Pando will also read your message.";
+
+/**
+ * A claim about a named person: silence until a person has read it (11 Aug),
+ * so no resource list and nothing that reads as agreement — the web D1 panel's
+ * own wording, shortened. The one number it gives is for a child at risk,
+ * because that is the one case where waiting for Pando would be wrong.
+ *
+ * ⚠ New user-facing copy, on the list for the client.
+ */
+export const ALLEGATION_REPLY =
+  "Thank you for telling us. A person at Pando will read this, and it won't be shared or turned into an answer for anyone. " +
+  "If a child has been harmed or is at risk, please call 911 or LA County child protection at 1-800-540-4000.";

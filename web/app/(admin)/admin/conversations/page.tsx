@@ -20,9 +20,11 @@ import {
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
+import { DeliveryHealth } from "@/components/admin/conversations/DeliveryHealth";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import { slugLabel } from "@/components/admin/ui";
+import { messageLabel } from "@/lib/admin/labels";
 import type {
   ConversationDetail,
   ConversationRow,
@@ -30,7 +32,8 @@ import type {
 } from "@/lib/admin/types";
 
 /**
- * Estimate 14.1 — the conversation inbox.
+ * Estimate 14.1 — the conversation inbox, with 12.5's delivery health on top
+ * of it since 25 Sep (`components/admin/conversations/DeliveryHealth.tsx`).
  *
  * ## What it shows, and the thing it deliberately cannot
  *
@@ -79,29 +82,41 @@ export default function ConversationsPage() {
     { person_id: open ?? "" },
     open !== null,
   );
+  /* The hook keeps the previous rows while the next parent loads, so opening a
+     second history showed the first parent's messages under the first
+     parent's name until the read came back — or for good, if it failed
+     (25 Sep). Only rows for the parent that is open count. */
+  const history =
+    detail.rows && detail.rows.person_id === open ? detail.rows : null;
 
   const all = rows?.rows ?? [];
 
+  /* The pills count what the list shows: with test rows hidden, a count that
+     included them described a list nobody was looking at (25 Sep). */
+  const countable = useMemo(
+    () => (hideTest ? all.filter((r) => !r.is_test) : all),
+    [all, hideTest],
+  );
   const counts = useMemo(
     () => ({
-      all: all.length,
+      all: countable.length,
       /**
        * **Her turn was last** — the newest message came in and nothing has gone
        * back. Not a queue Pando owes an answer to (that is `/admin/answers`),
        * but the honest reading of "somebody said something and it stopped
        * there", which is worth being able to see.
        */
-      waiting: all.filter((r) => r.last_direction === "in").length,
+      waiting: countable.filter((r) => r.last_direction === "in").length,
       /**
        * Asked repeatedly and not answering. The governor lowers a tier at 25%
        * over 30 days with a floor of four requests (`RESPONSE_MIN_SAMPLE`), so
        * this is the same shape read early — a chance to notice that Pando is
        * asking the wrong person before it quietly asks them less.
        */
-      quiet: all.filter((r) => r.outreach_30 >= 4 && r.answered_30 === 0).length,
-      failed: all.filter((r) => r.failed > 0).length,
+      quiet: countable.filter((r) => r.outreach_30 >= 4 && r.answered_30 === 0).length,
+      failed: countable.filter((r) => r.failed > 0).length,
     }),
-    [all],
+    [countable],
   );
 
   const filtered = useMemo(() => {
@@ -138,6 +153,11 @@ export default function ConversationsPage() {
     <>
       <PageHead title="Conversations" />
 
+      {/* 12.5, moved here from its own page on 25 Sep. Above the list because
+          its alerts are the "is anything wrong right now" question, and the
+          list below is where the answer to "whose message" is. */}
+      <DeliveryHealth />
+
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <Toolbar>
@@ -145,6 +165,7 @@ export default function ConversationsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Name or number…"
+          aria-label="Search conversations by name or number"
           className={`${inputClass} w-[12rem]`}
         />
         {testCount > 0 && (
@@ -251,8 +272,8 @@ export default function ConversationsPage() {
         <div className="mt-5" ref={panelRef} tabIndex={-1}>
           <Card
             title={
-              detail.rows
-                ? `${detail.rows.name ?? "Unnamed"} — ${detail.rows.messages.length} message${detail.rows.messages.length === 1 ? "" : "s"}`
+              history
+                ? `${history.name ?? "Unnamed"} — ${history.messages.length} message${history.messages.length === 1 ? "" : "s"}`
                 : "History"
             }
             right={
@@ -261,14 +282,14 @@ export default function ConversationsPage() {
               </Button>
             }
           >
-            {detail.loading && !detail.rows ? (
+            {detail.loading && !history ? (
               <Loading />
-            ) : detail.error && !detail.rows ? (
+            ) : detail.error && !history ? (
               <Failed />
-            ) : !detail.rows ? (
+            ) : !history ? (
               <Empty title="No history for that parent" />
             ) : (
-              <History detail={detail.rows} />
+              <History detail={history} />
             )}
           </Card>
         </div>
@@ -297,14 +318,14 @@ function ConversationTableRow({
       </Td>
       <Td>
         <span className="flex flex-wrap items-center gap-1.5">
-          {/* Direction as a word, not an arrow: "she wrote" and "Pando wrote"
+          {/* Direction as a word, not an arrow: "they wrote" and "Pando wrote"
               are the two facts, and a glyph makes a reader decode it. */}
           <Badge tone={row.last_direction === "in" ? "green" : "neutral"}>
-            {row.last_direction === "in" ? "She wrote" : "Pando wrote"}
+            {row.last_direction === "in" ? "They wrote" : "Pando wrote"}
           </Badge>
           {row.last_template && (
             <span className="text-[12.5px] text-muted">
-              {slugLabel(row.last_template)}
+              {messageLabel(row.last_template)}
             </span>
           )}
         </span>
@@ -353,10 +374,10 @@ function History({ detail }: { detail: ConversationDetail }) {
         {detail.messages.map((m) => (
           <li key={m.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5">
             <Badge tone={m.direction === "in" ? "green" : "neutral"}>
-              {m.direction === "in" ? "She wrote" : "Pando wrote"}
+              {m.direction === "in" ? "They wrote" : "Pando wrote"}
             </Badge>
             <span className="text-[13.5px] font-medium">
-              {m.template ? slugLabel(m.template) : slugLabel(m.category)}
+              {messageLabel(m.template, m.category)}
             </span>
             <span className="text-[12.5px] text-muted">{when(m.sent_at)}</span>
             {m.answered_something && (

@@ -720,7 +720,7 @@ narrower.
 | `/admin/contributors` → *What they have earned* | tier, asked/answered in 30 days, response rate, whether the governor is acting, and the allowance they chose |
 | `/admin/blasts` → *Preview the pool* | the **held** list with a reason per person — the pool preview calls the same `selectPool` a live send calls |
 | `/admin/conversations` | who was texted, whether it arrived, whether they replied, and how often against the allowance they chose. ⚠ **No message text, ever** — `message_log` has no body column |
-| `/admin/delivery` | 12.5's health view; useful for telling an M8 refusal apart from a carrier failure |
+| `/admin/conversations` (top section) | 12.5's health view; useful for telling an M8 refusal apart from a carrier failure |
 
 The response rate is **not shown at all** below four requests — it says "too few
 to judge" in words instead, for the same reason the governor does not act there.
@@ -820,7 +820,7 @@ in a sandbox is the most misleading state this surface has.
 
 # H · Delivery health (12.5)
 
-`/admin/delivery` answers three questions in order: is anything wrong now, how
+The delivery section at the top of `/admin/conversations` answers three questions in order: is anything wrong now, how
 bad, and how much is not yet known.
 
 - **In-flight messages are their own figure**, never folded into the rate.

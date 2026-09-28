@@ -49,6 +49,7 @@ import {
   CAREGIVER_PAY_BANDS,
   CAREGIVER_SCHEDULE,
   CAREGIVER_TYPES,
+  CAREGIVER_WEEKDAYS,
 } from "@/lib/caregiver-options";
 
 /**
@@ -223,8 +224,12 @@ export function CaregiversPanel() {
                       ? "Hours varied"
                       : optionLabel(CAREGIVER_HOURS, row.hours_per_week)),
                   row.schedule_pattern
+                    /* "Specific days" is the switch, the days are the answer. */
+                    .filter((v) => v !== "specific_days")
                     .map((v) =>
-                      v === "varied" ? "days varied" : optionLabel(CAREGIVER_SCHEDULE, v),
+                      v === "varied"
+                        ? "days varied"
+                        : optionLabel([...CAREGIVER_SCHEDULE, ...CAREGIVER_WEEKDAYS], v),
                     )
                     .join(", ") || null,
                 ]

@@ -127,6 +127,9 @@ export async function selectPool(input: {
         select id::text as id from people
          where market_id = ${input.marketId ?? "pasadena"}
            and not is_test
+           -- A seat in the pool is for somebody Pando can text (25 Sep): a
+           -- phoneless row took one of five and the send then skipped it.
+           and phone is not null
            and id <> ${input.askerId}::uuid
            and neighborhood = any(${nearLiteral}::text[])
          limit 200
@@ -520,7 +523,7 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
     const rows = (await db.execute(sql`
       select b.id, b.tier, b.status, b.human_review, b.question_text,
              b.asker_id, b.market_id, b.payment_status, b.credit_id, b.expires_at,
-             b.neighborhood,
+             b.neighborhood, b.released_at,
              (select count(*)::int from blast_recipients r
                where r.blast_id = b.id and r.sent_at is not null) as already
         from blasts b where b.id = ${blastId}::uuid
@@ -620,8 +623,15 @@ export async function sendBlast(blastId: string): Promise<SendBlastResult> {
   });
 
   /* A pool that came back needing review is the cold-start case, and 6.6's answer
-     is to say so rather than send to two people while promising five. */
-  if (pool.human_review.required) {
+     is to say so rather than send to two people while promising five.
+
+     ⚠ **Unless a person already said yes to exactly that** (25 Sep, drizzle/0051).
+     `blast.release` is that yes, and without `released_at` this check undid it:
+     Last-Minute Care is flagged by its tier on every call, so it could never be
+     sent, and a released short pool was flagged again on the spot. After a
+     release the Ask goes to whoever the pool chose; an empty pool still refuses
+     below, as `nobody_reachable`. */
+  if (pool.human_review.required && !blast.released_at) {
     await withDb(async (db: Db) => {
       await db.execute(sql`
         update blasts set status = 'pending_review', human_review = true
@@ -909,7 +919,7 @@ const OPEN_FOR_SENDER = sql`
 export async function attachResponse(input: {
   phone: string;
   text: string;
-}): Promise<{ attached: boolean }> {
+}): Promise<{ attached: boolean; followUp: boolean }> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       update blast_recipients br
@@ -924,10 +934,45 @@ export async function attachResponse(input: {
          and br.blast_id = (${OPEN_FOR_SENDER})
       returning br.blast_id
     `)) as unknown as Array<Record<string, unknown>>;
-    return rows.length > 0;
+    if (rows.length > 0) return "attached" as const;
+
+    /**
+     * A second text a few minutes after the answer is the rest of the answer
+     * (25 Sep). Walked over the relay: *"also they have a free trial lesson"*
+     * sent a minute after the reply fell through to the ordinary pipeline, was
+     * read as an offer, and the parent was sent the /share link in the middle
+     * of answering somebody. So it is **appended** to the reply while nobody
+     * has read it yet — never overwriting, which is the rule above.
+     *
+     * Bounded twice, on the 14 Sep lesson that a message must not be claimed
+     * for ever: only within `REPLY_FOLLOW_UP_MINUTES` of the reply, and never a
+     * message shaped like a question, which is somebody asking Pando something
+     * of their own and must reach the pipeline.
+     */
+    if (/\?\s*$/.test(input.text.trim())) return null;
+    const appended = (await db.execute(sql`
+      update blast_recipients br
+         set response_text = left(br.response_text || E'\n' || ${input.text}, 2000)
+        from people p
+       where p.phone = ${input.phone}
+         and br.person_id = p.id
+         and br.response_text is not null
+         and br.review_status = 'pending_review'
+         and br.responded_at > now() - (${REPLY_FOLLOW_UP_MINUTES} || ' minutes')::interval
+         and br.blast_id = (
+           select r.blast_id from blast_recipients r
+            where r.person_id = p.id and r.responded_at is not null
+            order by r.responded_at desc limit 1)
+      returning br.blast_id
+    `)) as unknown as Array<Record<string, unknown>>;
+    return appended.length > 0 ? ("follow_up" as const) : null;
   });
-  return { attached: result.persisted === true && result.data === true };
+  const outcome = result.persisted ? result.data : null;
+  return { attached: outcome !== null && outcome !== undefined, followUp: outcome === "follow_up" };
 }
+
+/** How long a second text still counts as the rest of an Ask reply. */
+const REPLY_FOLLOW_UP_MINUTES = 30;
 
 /**
  * M7.5 / strategy §6 — PASS.

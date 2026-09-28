@@ -287,7 +287,10 @@ async function expire_blasts(): Promise<JobResult> {
         select b.id, b.tier, b.asker_id, b.payment_status,
                b.credit_id is not null as credit_funded
           from blasts b
-         where b.status in ('active', 'pending_review')
+         -- draft too (25 Sep): an Ask nobody sent is still a promise with a
+         -- clock. Left out, a credit-funded draft whose window passed kept the
+         -- parent's credit for ever and stayed a draft (walked over the relay).
+         where b.status in ('draft', 'active', 'pending_review')
            and b.expires_at is not null
            and b.expires_at < now()
            and not exists (
@@ -370,12 +373,31 @@ async function delivery_check(): Promise<JobResult> {
       alerts: health.alerts.map((a) => a.code),
     });
   }
+  /**
+   * ⚠ A thin sample is its own alarm, and until 25 Sep this job could not
+   * raise it: with 13 of 64 messages reporting it returned `ok · 100%`, so
+   * the one automated check 12.5 asks for was reporting an all-clear over
+   * exactly the outage its page warns about — no status callback, so no
+   * status. It is `partial` with a note naming the coverage, because a cron
+   * reads outcomes rather than percentages.
+   */
+  if (health.thin_sample) {
+    console.error("[job] delivery statuses are not coming back", {
+      settled: health.settled,
+      unreported: health.unreported,
+    });
+  }
   return {
-    outcome: health.below_floor ? "partial" : "ok",
+    outcome: health.below_floor || health.thin_sample ? "partial" : "ok",
     processed: health.settled,
     skipped: health.in_flight,
     failed: health.settled - health.delivered,
-    note: health.rate === null ? "nothing settled" : `${Math.round(health.rate * 100)}%`,
+    note:
+      health.rate === null
+        ? "nothing settled"
+        : health.thin_sample
+          ? `${Math.round(health.rate * 100)}% — only ${health.settled} of ${health.settled + health.unreported} reported back`
+          : `${Math.round(health.rate * 100)}%`,
   };
 }
 

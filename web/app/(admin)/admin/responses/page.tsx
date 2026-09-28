@@ -158,14 +158,27 @@ function ResponseCard({
       {/* 7.6 — the rating, separate from the decision. A reply can be genuinely
           useful and still be about something Pando already knows. */}
       <div className="mt-3">
-        <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <p
+          id={`rate-${k}`}
+          className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+        >
           How useful was it?
         </p>
-        <div className="mt-1 flex flex-wrap gap-1.5">
+        {/* Four replies on one screen gave a screen reader twenty buttons named
+            "1" to "5" and no way to tell which reply, or which number was the
+            current rating. The group is named for the reply, each button says
+            what it means, and `pressed` announces the one chosen. */}
+        <div
+          role="group"
+          aria-labelledby={`rate-${k}`}
+          className="mt-1 flex flex-wrap gap-1.5"
+        >
           {[1, 2, 3, 4, 5].map((q) => (
             <Button
               key={q}
               tone={row.quality === q ? "primary" : "secondary"}
+              pressed={row.quality === q}
+              subject={row.responder ?? "this reply"}
               disabled={busy}
               onClick={() =>
                 void run(`Rated ${q}/5.`, async () =>
@@ -197,6 +210,7 @@ function ResponseCard({
                 key={c.share_id}
                 tone="secondary"
                 disabled={busy}
+                subject={row.responder ?? undefined}
                 onClick={() =>
                   void run("Added to the existing record.", async () =>
                     adminAction({
@@ -209,9 +223,13 @@ function ResponseCard({
                 }
               >
                 {c.name}
+                {/* It was a bare "(5)" — a number in brackets nobody could read
+                    without knowing it counts the parents already behind the
+                    record, which is the whole reason to merge into it. */}
+                {c.firsthand_count > 0 && " "}
                 {c.firsthand_count > 0 && (
-                  <span className="ml-1.5 text-[12px] text-muted">
-                    ({c.firsthand_count})
+                  <span className="ml-1 text-[12.5px] font-normal text-muted">
+                    · {c.firsthand_count === 1 ? "1 parent" : `${c.firsthand_count} parents`}
                   </span>
                 )}
               </Button>
@@ -240,6 +258,7 @@ function ResponseCard({
           <Button
             tone="primary"
             disabled={busy}
+            subject={row.responder ?? undefined}
             onClick={() =>
               void run(
                 typed.trim()
@@ -260,6 +279,7 @@ function ResponseCard({
           <Button
             tone="danger"
             disabled={busy}
+            subject={row.responder ?? undefined}
             onClick={() =>
               void run("Set aside.", async () =>
                 adminAction({

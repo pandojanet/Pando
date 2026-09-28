@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 /**
@@ -66,6 +66,12 @@ export function useUrlValue(
   const [value, setValue] = useState<string | null>(
     () => params.get(key) || null,
   );
+  /* Follow a navigation to this same page with another query — see
+     useUrlFilter below for why the initialiser alone is not enough. */
+  const raw = params.get(key) || null;
+  useEffect(() => {
+    setValue(raw);
+  }, [raw]);
 
   const set = useCallback(
     (next: string | null) => {
@@ -97,6 +103,25 @@ export function useUrlFilter<T extends string>(
       ? (raw as T)
       : fallback;
   });
+
+  /**
+   * ...and follow a navigation (25 Sep). A link to this same page with another
+   * query, or with none like the sidebar's own link, does not remount it, so
+   * the initialiser never ran again and the tab stayed put: the sign-ups tab's
+   * "read it first" link to the caregivers tab visibly did nothing. Keyed on
+   * the parameter itself, so when the replaceState below is reflected into
+   * useSearchParams this only writes the value it already holds.
+   */
+  const current = params.get(key);
+  useEffect(() => {
+    setValue(
+      (allowed as readonly string[]).includes(current ?? "")
+        ? (current as T)
+        : fallback,
+    );
+    // `allowed` is a module-level constant at every call site.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, fallback]);
 
   const set = useCallback(
     (next: T) => {

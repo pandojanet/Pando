@@ -89,7 +89,15 @@ export type ActionOutcome =
         | "blast_nothing_approved"
         | "blast_answers_already_sent"
         | "blast_no_asker_phone"
-        | "blast_answers_not_sent";
+        | "blast_answers_not_sent"
+        /* 25 Sep, from the M5/M6 walk: a second Send on an answer already
+           sent, a send the send layer refused, and a weight for a kind of
+           connection the scorer does not have — all three used to read as
+           "that has changed since the page was loaded". */
+        | "answer_already_sent"
+        | "answer_duplicate_sent"
+        | "answer_not_sent"
+        | "unknown_weight";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -526,9 +534,12 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      * before the flag stopped it.
      *
      * ⚠ It clears the flag and **sends nothing**. Whoever released it still has
-     * to press Send, and every refusal below it still applies — the short pool
-     * that raised the flag may still be short, and `selectPool` will say so
-     * again.
+     * to press Send. `released_at` (drizzle/0051) is what makes the release
+     * stick: `sendBlast` re-runs `selectPool`, which flags a short pool and the
+     * Last-Minute tier on every call, and until 25 Sep that re-flag undid the
+     * release — a Last-Minute Ask could never be sent at all. The other
+     * refusals (opted out, inside a gap, over a ceiling, expired, unpaid) still
+     * apply; only the "a person should look first" one is answered.
      */
     case "blast.release": {
       const target = id(b.id);
@@ -538,6 +549,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const rows = (await tx.execute(sql`
         update blasts
            set human_review = false,
+               released_at = now(),
                status = case when status = 'pending_review' then 'draft' else status end
          where id = ${target}::uuid
            and human_review = true
@@ -685,12 +697,38 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (!target) return { applied: false, reason: "not_implemented" };
 
       const rows = (await tx.execute(sql`
-        select phone, answer_text, person_id, status
+        select phone, question_text, answer_text, person_id, status
           from answers where id = ${target}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
       const row = rows[0];
       if (!row) return { applied: false, reason: "not_found" };
-      if (row.status === "sent") return { applied: false, reason: "not_found" };
+      if (row.status === "sent") return { applied: false, reason: "answer_already_sent" };
+
+      /**
+       * The same guard one row along: `answer_already_sent` stops a second
+       * press on *this* answer, and this stops the second of two answers to one
+       * question. The pipeline composes one per inbound message, so a question
+       * read twice queues twice — and the queue's own history proves it, eight
+       * of nine pending rows being two questions queued four times each after
+       * the 4 Sep Slack retry. Approving each in turn is four identical texts.
+       *
+       * Bounded at a week (`REPLY_LINK_DAYS`, the same window the pipeline
+       * treats as one conversation), because a parent who asks the same thing
+       * again next month is asking again and deserves an answer. The card says
+       * so before the press; this is what holds when nobody read the card.
+       */
+      const twin = (await tx.execute(sql`
+        select 1 from answers
+         where id <> ${target}::uuid
+           and status = 'sent'
+           and phone = ${String(row.phone)}
+           and question_text = ${String(row.question_text ?? "")}
+           and sent_at > now() - interval '7 days'
+         limit 1
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (twin.length > 0) {
+        return { applied: false, reason: "answer_duplicate_sent" };
+      }
 
       /* Through the single send layer, which re-runs opt-out, quiet hours and the
          protection rules. An admin approving an answer for somebody who texted
@@ -716,7 +754,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
       return result.sent
         ? { applied: true, resource: "answer", resource_id: target }
-        : { applied: false, reason: "not_found" };
+        : { applied: false, reason: "answer_not_sent" };
     }
 
     /* ── 7.6 / 7.9 Blast responses ───────────────────────────────────────── */
@@ -811,7 +849,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * since 8 Sep (`already_sent`); approve never got one.
        */
       const rows = (await tx.execute(sql`
-        select br.response_text, br.quality, b.market_id, b.category, b.neighborhood
+        select br.response_text, br.quality, b.market_id, b.category, b.neighborhood, b.is_test
           from blast_recipients br
           join blasts b on b.id = br.blast_id
          where br.blast_id = ${blastId}::uuid
@@ -841,6 +879,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         quality: reply.quality === null || reply.quality === undefined
           ? null
           : Number(reply.quality),
+        /* A reply to a test Ask is a test event, as the sweep writes it. */
+        isTest: reply.is_test === true,
       });
 
       const mergeInto = id(b.merge_into);
@@ -1340,7 +1380,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      * with `config.weights[type] ?? 0`, so a row for a kind of connection the
      * scorer never looks up would be a number on a screen that does nothing —
      * and an admin who typed it would have no way to tell. Zero rows updated
-     * comes back as `not_found`, which is the honest answer to "change the
+     * comes back as `unknown_weight` (it read as `not_found` until 25 Sep, i.e.
+     * "reload and look again", which no reload could fix) — the answer to "change the
      * weight of something that isn't scored".
      *
      * The value is validated in the route (a whole number, at least 1). The
@@ -1359,7 +1400,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
              where affinity_type = ${type}
          returning affinity_type`,
       )) as unknown as Array<Record<string, unknown>>;
-      if (!row) return { applied: false, reason: "not_found" };
+      if (!row) return { applied: false, reason: "unknown_weight" };
       return { applied: true, resource: "affinity_weight", resource_id: type };
     }
 

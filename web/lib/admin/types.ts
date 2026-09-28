@@ -155,6 +155,17 @@ export interface AnswerRow {
   asker_phone: string | null;
   /** Null for a cold inbound — 5.9's subject, and they still get an answer. */
   known_person: boolean;
+  /**
+   * Other answers **still waiting** that were composed for the same number and
+   * the same question. Zero on anything already decided.
+   *
+   * The pipeline composes one answer per inbound message, so one question read
+   * twice queues twice — which is not hypothetical: the 4 Sep Slack retry left
+   * eight of nine pending answers as two questions queued four times each, and
+   * nothing on the card said so. Approving each in turn texts one parent the
+   * same message four times.
+   */
+  duplicates: number;
   created_at: string;
   sent_at: string | null;
 }
@@ -184,10 +195,16 @@ export interface DeliveryHealthRow {
   /** Null when nothing has settled yet: 0 out of 0 is not a failure. */
   rate: number | null;
   below_floor: boolean;
+  /** Of the messages old enough to have reported, the share that did. */
+  coverage: number | null;
+  /** Too few of them reported for the rate to read as an all-clear. */
+  thin_sample: boolean;
   settled: number;
   delivered: number;
-  /** Accepted and not yet reported on. Neither a success nor a failure. */
+  /** Accepted under a day ago and not yet reported on. Neither a success nor a failure. */
   in_flight: number;
+  /** A day or more with no final status: the report never came back. */
+  unreported: number;
   alerts: Array<{
     code: number;
     count: number;
@@ -1333,8 +1350,12 @@ export interface StandingRow {
   response_rate: number | null;
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
-  /** True when the governor would lower what they are asked. */
+  /** True when the governor actually lowers what they are asked — never for
+   *  somebody already at the floor of five, where there is nothing to take. */
   governed: boolean;
+  /** What the send layer applies this month: the stated limit, or one tier
+   *  down when governed. Null means no fixed ceiling. */
+  effective_allowance: number | null;
   is_test: boolean;
 }
 
@@ -1470,7 +1491,7 @@ export interface BlastPoolResult {
    * A row here is the system working — a contributor inside their 48-hour gap,
    * or over their monthly allowance — which is why the page says so in words.
    */
-  held: Array<{ person_id: string; name: string | null; score: number; reason: string }>;
+  held: Array<{ person_id: string; name: string | null; phone: string | null; score: number; reason: string }>;
   /** 6.6 — fewer than the tier promised. */
   cold: boolean;
   /** Set when the pool is short or the requirements are stacked (7.3). */
@@ -1505,6 +1526,14 @@ export interface PaymentRow {
   expires_at: string | null;
   /** Days since payment, for the ~60-day manual window (13.7). */
   age_days: number | null;
+  /**
+   * Money owed back, by `refundOwed` — the rule `/admin/blasts` already
+   * reads — **or** flagged by hand. Never `payment_status` alone: that is
+   * written by `expire_blasts` or the Flag button, and the job has never run,
+   * so a paid Ask whose window shut with no approved answer read "Paid" here
+   * while the Asks page said in red that a refund was owed.
+   */
+  refund_owed: boolean;
   is_test: boolean;
 }
 

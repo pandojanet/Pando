@@ -422,16 +422,6 @@ export async function POST(request: Request) {
   }
 
   /**
-   * Approving a reply either creates a record or merges into one, and it has to
-   * say which.
-   *
-   * 7.9's whole point is that merging is offered *beside* creating, because two
-   * parents on one record is "Validated by multiple parents" while two records
-   * with one parent each is nothing. Neither given means the action does not
-   * know what it is doing — and `admin-write.ts` would default the kind to
-   * `activity` and create a record named after nothing.
-   */
-  /**
    * 13.7 — a refund carries a reason, and so does marking one due.
    *
    * The same rule as `claim.decline` and `share.retire`: the audit row is the
@@ -479,6 +469,16 @@ export async function POST(request: Request) {
     );
   }
 
+  /**
+   * Approving a reply either creates a record or merges into one, and it has to
+   * say which.
+   *
+   * 7.9's whole point is that merging is offered *beside* creating, because two
+   * parents on one record is "Validated by multiple parents" while two records
+   * with one parent each is nothing. Neither given means the action does not
+   * know what it is doing — and `admin-write.ts` would default the kind to
+   * `activity` and create a record named after nothing.
+   */
   if (action === "blast_response.approve") {
     const merge = typeof body?.merge_into === "string" && body.merge_into !== "";
     const name = cleanText(body?.share_name, 200);
@@ -662,6 +662,14 @@ export async function POST(request: Request) {
          to go through and write another contribution from the same reply. */
       blast_reply_decided:
         "This reply has already been read — the decision stands. Reload to see it under \"Already read\".",
+      answer_already_sent:
+        "This answer has already been sent. Sending again would text the parent the same message twice.",
+      answer_duplicate_sent:
+        "This same question from this number has already been answered in the last week. Sending this copy would text the parent the same thing twice — reject it instead.",
+      answer_not_sent:
+        "Nothing went out. The parent may have texted STOP, or no messaging provider is configured here. The answer stays approved, so you can try again.",
+      unknown_weight:
+        "Pando has no weight for that kind of connection, so nothing was saved.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
     };

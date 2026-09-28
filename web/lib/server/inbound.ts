@@ -16,6 +16,7 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { planSegments, toGsm7 } from "@/lib/sms-segments";
 import {
   ASK_STARTED,
+  BLAST_REPLY_THANKS,
   HELPED_NO,
   HELPED_YES,
   PING_NO_LONGER,
@@ -24,6 +25,8 @@ import {
   SMALL_TALK,
 } from "@/lib/replies";
 import {
+  ALLEGATION_REPLY,
+  HIGH_STAKES_REPLY,
   heldReply,
   routeAnswer,
   mentionsCaregiver as answerMentionsCaregiver,
@@ -120,6 +123,8 @@ import {
 } from "@/lib/server/repo/onboarding";
 import { recordInbound, setOptOut } from "@/lib/server/repo/outreach";
 import { sendSms } from "@/lib/server/sms";
+import { withDb, type Db } from "@/lib/server/db";
+import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
 
 /**
@@ -594,6 +599,17 @@ export async function handleInboundMessage(input: {
   }
 
   const attached = await attachResponse({ phone: from, text: body });
+  /* The reply is acknowledged once (25 Sep) — a follow-up appended to it is
+     not, or two texts would earn two thank-yous. */
+  if (attached.attached && !attached.followUp) {
+    await sendSms({
+      to: from,
+      body: BLAST_REPLY_THANKS,
+      category: "transactional",
+      personId: person?.person_id,
+      template: "blast_reply_saved",
+    });
+  }
 
   /**
    * Three questions Pando may be waiting on, all answered with the word "yes":
@@ -901,6 +917,49 @@ export async function handleInboundMessage(input: {
    * Little Gym" is a real offer, and reading it as an unreadable turn would lose
    * a contribution to ask a question.
    */
+  /**
+   * ⚠ **What the words say outranks what kind of message it is** (25 Sep).
+   *
+   * The recorded M5/M6 walk sent *"our old sitter Rosa yelled at my son and
+   * lied to me about it"*: on one run the model read it as a question and it
+   * was held and flagged; on the next it read it as an *offer* and Pando
+   * replied *"thanks! A few taps captures it properly - ages, cost, whether
+   * you'd recommend it"*, with no flag. The intent is probabilistic; the
+   * allegation and health nets are not, so they decide first for anything that
+   * is not already a question (which gets the same treatment in
+   * `answerQuestion`, with its answer as the flag's subject). The subject here
+   * is the person, like `unreadable_question`, because there is no answer row.
+   */
+  if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
+    const urgent = escalateSensitivity(classifyDemand(body, null), reading.sensitive);
+    if (urgent === "high_stakes" || urgent === "named_allegation") {
+      if (person) {
+        await withDb(async (db: Db) => {
+          await writeFlagIfNew(db, {
+            severity: "escalation",
+            reason: urgent === "high_stakes" ? "high_stakes_demand" : "named_allegation",
+            subject_kind: "person",
+            subject_id: person.person_id,
+            person_id: person.person_id,
+            excerpt: body.slice(0, 500),
+          });
+          return true;
+        });
+      }
+      if (pending) await closeQuestion(pending.id, "resolved");
+      await sendSms({
+        to: from,
+        body: urgent === "high_stakes" ? HIGH_STAKES_REPLY : ALLEGATION_REPLY,
+        category: "transactional",
+        personId: person?.person_id,
+        template: urgent === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      console.info("[sms:inbound] sensitive non-question", { intent: reading.intent, class: urgent });
+      return;
+    }
+  }
+
   const unreadable =
     reading.intent === "unclear" || (pending !== null && reading.intent === "chitchat");
 
@@ -1374,7 +1433,12 @@ async function answerQuestion(input: {
       /* Where retrieval put it. See AnswerCandidate.rank: without this the topic
          and the area it ranked by were computed and then thrown away, and a
          question about schools came back with a park (8 Sep). */
-      rank: i,
+      /* ⚠ A record the question **names** leads (25 Sep). Walked over the
+         relay: *"is Tom Sawyer Camps any good for a 6 year old?"* led with
+         Kidspace, because the topic ranked it higher, and the camp asked about
+         was one clause in "Also nearby". `mentionsName` needs two words, so a
+         record called "Test" cannot promote itself out of any sentence. */
+      rank: mentionsName(body, share.name) ? -1 : i,
       /* Not rendered — this is what `answers.share_ids` is written from, and
          therefore the only path by which 9.2 can ever find the contributors
          behind an answer that helped. */
@@ -1527,6 +1591,8 @@ async function answerQuestion(input: {
    */
   const caregiverRelated = wantsCare || retrieved.caregivers.length > 0;
 
+  const sensitivity = escalateSensitivity(classifyDemand(body, null), input.sensitive);
+
   const verdict = routeAnswer({
     /**
      * Two readings, and the more cautious one wins.
@@ -1544,7 +1610,7 @@ async function answerQuestion(input: {
      * class carries its own storage rule (never circulated, review-only), which
      * is not something a boolean has said.
      */
-    sensitivity: escalateSensitivity(classifyDemand(body, null), input.sensitive),
+    sensitivity,
     caregiver_related: caregiverRelated,
     public_only: composed.public_only,
     /* The parents' half only. A web result is information, never evidence:
@@ -1592,10 +1658,17 @@ async function answerQuestion(input: {
    * whenever a question rides along — otherwise `pendingClarification` could
    * never see it, which is precisely how this half stayed dead.
    */
-  const asking =
-    person && (await pendingClarification(person.person_id)) === null
-      ? nextQuestion(person.profile)
-      : null;
+  /* ⚠ "Pending" is the last clarify_* template **that is still unanswered**
+     (25 Sep). `pendingClarification` returns the last one sent, answered or
+     not, for seven days — so once the age was answered it kept reading as open
+     and the area was never asked: walked over the relay, a stranger answered
+     "she's 3" and then asked two more questions with no area question, and her
+     "Pasadena" was read as small talk. The records decide, the same rule the
+     reading branch above has followed since 21 Sep: a pending question the
+     profile has since answered is not pending. */
+  const pendingAsked = person ? await pendingClarification(person.person_id) : null;
+  const nextAsked = person ? nextQuestion(person.profile) : null;
+  const asking = nextAsked && pendingAsked !== nextAsked ? nextAsked : null;
 
   /**
    * The answer itself when nothing needs a person, and the holding line when
@@ -1622,7 +1695,34 @@ async function answerQuestion(input: {
    * The clarifying question rides along either way: it is one outbound per
    * inbound, and this is the only one.
    */
-  const clarifier = asking ? CLARIFYING_COPY[asking] : null;
+  /**
+   * A health, legal or safety question, or a claim about a named person, is not
+   * owed "an answer from local parents" (25 Sep). It gets the web D1 flow's
+   * answer — professional resources now, or the quiet line an allegation is
+   * owed — and an escalation flag, which is the half of that promise the queue
+   * alone never kept: a held answer is a row somebody reads when they open the
+   * page, and a flag is what puts it in front of them today.
+   *
+   * No clarifying question rides along. Asking a child's age under a message
+   * about a fever is the wrong next sentence, and 5.4 will ask on the next turn.
+   */
+  const urgent =
+    sensitivity === "high_stakes" || sensitivity === "named_allegation" ? sensitivity : null;
+  if (urgent && answerId) {
+    await withDb(async (db: Db) => {
+      await writeFlagIfNew(db, {
+        severity: "escalation",
+        reason: urgent === "high_stakes" ? "high_stakes_demand" : "named_allegation",
+        subject_kind: "answer",
+        subject_id: answerId,
+        person_id: person?.person_id ?? null,
+        excerpt: body.slice(0, 500),
+      });
+      return true;
+    });
+  }
+
+  const clarifier = asking && !urgent ? CLARIFYING_COPY[asking] : null;
   const sending = !verdict.hold;
 
   const result = await sendSms({
@@ -1631,10 +1731,18 @@ async function answerQuestion(input: {
       ? clarifier
         ? `${composed.text}\n\n${clarifier}`
         : composed.text
-      : heldReply(clarifier),
+      : urgent === "high_stakes"
+        ? HIGH_STAKES_REPLY
+        : urgent === "named_allegation"
+          ? ALLEGATION_REPLY
+          : heldReply(clarifier),
     category: "transactional",
     personId: person?.person_id,
-    template: asking
+    template: urgent
+      ? urgent === "high_stakes"
+        ? "answer_high_stakes"
+        : "answer_allegation"
+      : clarifier && asking
       ? clarifyTemplate(asking)
       : sending
         ? "answer_sent"

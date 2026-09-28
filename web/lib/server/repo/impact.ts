@@ -7,6 +7,7 @@ import {
   type ImpactKind,
   type TierId,
 } from "@/lib/tiers";
+import { syncImpactIn, type SyncResult } from "@/lib/server/repo/impact-sync";
 
 /**
  * M9.3 + M9.4 — writing impact events, and reading a contributor's standing.
@@ -199,10 +200,7 @@ export async function standingsFor(personIds: string[]): Promise<Standing[]> {
     });
 }
 
-export interface SyncResult {
-  contributions: number;
-  blast_answers: number;
-}
+export type { SyncResult } from "@/lib/server/repo/impact-sync";
 
 /**
  * The catch-up sweep (a 9.5 job).
@@ -210,40 +208,14 @@ export interface SyncResult {
  * Two things make it necessary rather than tidy. The ledger starts empty while
  * the seed cohort's contributions were approved months earlier, so without a
  * backfill every founding contributor would read as a Member on day one. And a
- * live write can be lost — it is deliberately allowed to fail without failing
- * the admin action it accompanies, per the header — so something has to notice.
+ * live write can be lost, so something has to notice.
  *
  * Both inserts are `on conflict do nothing` against `impact_events_once`, which
- * is what lets this run beside the live path without coordinating with it.
+ * is what lets this run beside the live path without coordinating with it. The
+ * statements live in `impact-sync.ts` so `test:impact-live` runs these very
+ * ones inside a transaction it rolls back.
  */
 export async function syncImpact(): Promise<SyncResult | null> {
-  const result = await withDb(async (db: Db) => {
-    const contributions = (await db.execute(sql`
-      insert into impact_events (person_id, kind, share_id, is_test, created_at)
-      select sc.person_id, 'contribution_approved', sc.share_id, sc.is_test,
-             coalesce(sc.approved_at, sc.created_at)
-        from share_contributions sc
-       where sc.status = 'approved'
-         and sc.person_id is not null
-      on conflict do nothing
-      returning 1
-    `)) as unknown as unknown[];
-
-    /* An answered Ask enters the ledger when the reply was approved (7.6), not
-       when it arrived: an unread reply is not yet a contribution to anything,
-       and counting it would let somebody earn a tier by texting back "no idea". */
-    const answers = (await db.execute(sql`
-      insert into impact_events (person_id, kind, blast_id, quality, created_at)
-      select br.person_id, 'blast_answered', br.blast_id, br.quality,
-             coalesce(br.responded_at, br.sent_at)
-        from blast_recipients br
-       where br.review_status = 'approved'
-      on conflict do nothing
-      returning 1
-    `)) as unknown as unknown[];
-
-    return { contributions: contributions.length, blast_answers: answers.length };
-  });
-
+  const result = await withDb((db: Db) => syncImpactIn(db));
   return result.persisted ? (result.data ?? null) : null;
 }
