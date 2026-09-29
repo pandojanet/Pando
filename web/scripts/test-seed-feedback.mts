@@ -2894,7 +2894,7 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   );
   ok(
     "until it is closed it is the pop-up, and only then the strip",
-    /if \(!closed\) \{\s*return <FloatingReminder/.test(reminder),
+    /if \(!closed\) \{\s*return \(\s*<>[\s\S]*?<FloatingReminder/.test(reminder),
   );
   ok(
     "the pop-up is in the top-right corner, portalled, under the header",
@@ -2912,6 +2912,11 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       /aria-label="Close/.test(popup) &&
       /closedThisLoad = true/.test(depth) &&
       !/localStorage/.test(depth.replace(/`localStorage`/g, "")),
+  );
+  ok(
+    "on a phone it is content in the header and covers nothing; the corner card is not shown there",
+    /<div className="mt-3 sm:hidden">\s*<ReminderCard/.test(reminder) &&
+      /max-sm:hidden/.test(popup),
   );
   ok(
     "and nothing closes it but the X — no timer",

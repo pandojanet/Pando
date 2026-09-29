@@ -262,7 +262,17 @@ export function ProfileReminder({
    * it, the strip below. One reminder at a time, never both.
    */
   if (!closed) {
-    return <FloatingReminder depth={depth} onProfile={onProfile} onClose={close} />;
+    return (
+      <>
+        {/* 29 Sep: on a phone the card sat over the first message. Below `sm` it
+            is ordinary content in the header — it pushes the conversation down
+            instead of painting over it — and above `sm` it is the corner card. */}
+        <div className="mt-3 sm:hidden">
+          <ReminderCard depth={depth} onProfile={onProfile} onClose={close} />
+        </div>
+        <FloatingReminder depth={depth} onProfile={onProfile} onClose={close} />
+      </>
+    );
   }
   return (
     <div className="mt-3 rounded-xl border border-green/25 bg-green-wash px-3 py-2">
@@ -334,49 +344,71 @@ function FloatingReminder({
     };
   }, []);
 
-  const tone = reminderTone(depth.percent);
   return createPortal(
     <div
-      className="pointer-events-none fixed inset-x-3 z-40 flex justify-end sm:inset-x-auto sm:right-4"
+      className="pointer-events-none fixed inset-x-3 z-40 flex justify-end max-sm:hidden sm:inset-x-auto sm:right-4"
       style={{ top }}
     >
-      <aside
-        aria-label="How full your profile is"
-        className={cn(
-          "pointer-events-auto relative w-full max-w-[23rem] animate-rise rounded-2xl py-3 pl-4 pr-12 shadow-card",
-          tone.card,
-        )}
-      >
-        <p className="font-semibold leading-snug text-control tabular-nums">
-          {`Your profile is ${depth.percent}% complete — ${100 - depth.percent}% to go.`}
-        </p>
-        <p className={cn("mt-1 leading-snug text-help", tone.soft)}>
-          Fill in the rest and Pando can match you with parents whose experience
-          is closest to yours.
-          {!onProfile && (
-            <>
-              {" "}
-              <Link
-                href="/profile"
-                className={cn("font-semibold underline underline-offset-2", tone.link)}
-              >
-                Add more
-              </Link>
-            </>
-          )}
-        </p>
-        {/* 44px, named, and the one way to send it away; what it leaves is the
-            strip in the header, which covers nothing. */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close — keep it as a line in the header"
-          className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-full hover:bg-black/10"
-        >
-          <X aria-hidden="true" className="h-4 w-4" />
-        </button>
-      </aside>
+      <ReminderCard
+        depth={depth}
+        onProfile={onProfile}
+        onClose={onClose}
+        className="pointer-events-auto max-w-[23rem] animate-rise shadow-card"
+      />
     </div>,
     document.body,
+  );
+}
+
+/**
+ * The card itself, shared by the corner pop-up and the phone's in-header
+ * version so the words, the colour and the X cannot drift apart.
+ */
+function ReminderCard({
+  depth,
+  onProfile,
+  onClose,
+  className,
+}: {
+  depth: ProfileDepth;
+  onProfile?: boolean;
+  onClose: () => void;
+  className?: string;
+}) {
+  const tone = reminderTone(depth.percent);
+  return (
+    <aside
+      aria-label="How full your profile is"
+      className={cn("relative w-full rounded-2xl py-3 pl-4 pr-12", tone.card, className)}
+    >
+      <p className="font-semibold leading-snug text-control tabular-nums">
+        {`Your profile is ${depth.percent}% complete — ${100 - depth.percent}% to go.`}
+      </p>
+      <p className={cn("mt-1 leading-snug text-help", tone.soft)}>
+        Fill in the rest and Pando can match you with parents whose experience
+        is closest to yours.
+        {!onProfile && (
+          <>
+            {" "}
+            <Link
+              href="/profile"
+              className={cn("font-semibold underline underline-offset-2", tone.link)}
+            >
+              Add more
+            </Link>
+          </>
+        )}
+      </p>
+      {/* 44px, named, and the one way to send it away; what it leaves is the
+          strip in the header, which covers nothing. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close — keep it as a line in the header"
+        className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-full hover:bg-black/10"
+      >
+        <X aria-hidden="true" className="h-4 w-4" />
+      </button>
+    </aside>
   );
 }
