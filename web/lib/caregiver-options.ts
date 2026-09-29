@@ -94,13 +94,24 @@ const SCHEDULE_WINDOWS: Option[] = [
   /* "Weeknights (overnight)" said the same thing twice with a bracket; the id
      stays, because stored answers on both sides resolve against it. */
   { id: "weeknights", label: "Overnights" },
-  { id: "saturday", label: "Saturdays" },
-  { id: "sunday", label: "Sundays" },
+  /* "Saturdays" and "Sundays" were windows here until 29 Sep and said the same
+     thing as Saturday and Sunday under "Specific days", so a caregiver could
+     tick both. They live only in CAREGIVER_WEEKDAYS now. */
   /* 28 Sep, the developer: a custom choice of weekdays behind an option. It
      opens CAREGIVER_WEEKDAYS underneath on both surfaces, and the days it
      reveals are stored in the same array as the windows, so the parent's "she
      worked Tuesdays" and her own "I am free Tuesdays" are one id and can meet. */
   { id: "specific_days", label: "Specific days of the week" },
+];
+
+/**
+ * The two windows that left `SCHEDULE_WINDOWS` on 29 Sep. Never offered: kept so
+ * a stored `saturday` / `sunday` on an older nomination or sign-up still reads
+ * as words in the admin instead of as a raw id.
+ */
+export const RETIRED_SCHEDULE_WINDOWS: Option[] = [
+  { id: "saturday", label: "Saturdays" },
+  { id: "sunday", label: "Sundays" },
 ];
 
 /** The days `specific_days` opens. Stored beside the windows, never instead. */

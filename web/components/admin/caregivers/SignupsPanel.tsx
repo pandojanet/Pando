@@ -30,6 +30,7 @@ import {
   CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
   CAREGIVER_WEEKDAYS,
+  RETIRED_SCHEDULE_WINDOWS,
 } from "@/lib/caregiver-options";
 
 /**
@@ -270,7 +271,7 @@ export function SignupsPanel() {
                     {claim.drives === null ? null : claim.drives ? "Yes" : "No"}
                   </Spec>
                   <Spec label="Days">{labels(
-                    [...CAREGIVER_DAYS, ...CAREGIVER_WEEKDAYS],
+                    [...CAREGIVER_DAYS, ...CAREGIVER_WEEKDAYS, ...RETIRED_SCHEDULE_WINDOWS],
                     claim.days_available.filter((d) => d !== "specific_days"),
                   )}</Spec>
                   <Spec label="Can start">

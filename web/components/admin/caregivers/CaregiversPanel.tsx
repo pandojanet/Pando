@@ -50,6 +50,7 @@ import {
   CAREGIVER_SCHEDULE,
   CAREGIVER_TYPES,
   CAREGIVER_WEEKDAYS,
+  RETIRED_SCHEDULE_WINDOWS,
 } from "@/lib/caregiver-options";
 
 /**
@@ -229,7 +230,10 @@ export function CaregiversPanel() {
                     .map((v) =>
                       v === "varied"
                         ? "days varied"
-                        : optionLabel([...CAREGIVER_SCHEDULE, ...CAREGIVER_WEEKDAYS], v),
+                        : optionLabel(
+                            [...CAREGIVER_SCHEDULE, ...CAREGIVER_WEEKDAYS, ...RETIRED_SCHEDULE_WINDOWS],
+                            v,
+                          ),
                     )
                     .join(", ") || null,
                 ]
