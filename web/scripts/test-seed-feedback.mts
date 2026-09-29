@@ -2899,9 +2899,9 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   ok(
     "the pop-up is in the top-right corner, portalled, under the header",
     /createPortal/.test(popup) &&
-      /style=\{\{ top \}\}/.test(popup) &&
+      /style=\{\{ top, width \}\}/.test(popup) &&
       !/style=\{\{ bottom/.test(popup) &&
-      /sm:right-4/.test(popup) &&
+      /right-4/.test(popup) &&
       /data-screen-header/.test(popup) &&
       /data-screen-header/.test(src("../components/ui/Screen.tsx")),
   );
@@ -2915,8 +2915,9 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   );
   ok(
     "on a phone it is content in the header and covers nothing; the corner card is not shown there",
-    /<div className="mt-3 sm:hidden">\s*<ReminderCard/.test(reminder) &&
-      /max-sm:hidden/.test(popup),
+    /<div className="mt-3 xl:hidden">\s*<ReminderCard/.test(reminder) &&
+      /max-xl:hidden/.test(popup) &&
+      /#main > div/.test(popup),
   );
   ok(
     "and nothing closes it but the X — no timer",

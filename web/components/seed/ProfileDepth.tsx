@@ -264,10 +264,12 @@ export function ProfileReminder({
   if (!closed) {
     return (
       <>
-        {/* 29 Sep: on a phone the card sat over the first message. Below `sm` it
-            is ordinary content in the header — it pushes the conversation down
-            instead of painting over it — and above `sm` it is the corner card. */}
-        <div className="mt-3 sm:hidden">
+        {/* 29 Sep: the card sat over the first message on a phone, and over the
+            edge of the bubbles on a laptop. Below `xl` (1280) the gutter beside
+            the column is too narrow for a card, so it is ordinary content in the
+            header — it pushes the conversation down instead of painting over
+            it. From `xl` up it is the corner card, sized to the gutter. */}
+        <div className="mt-3 xl:hidden">
           <ReminderCard depth={depth} onProfile={onProfile} onClose={close} />
         </div>
         <FloatingReminder depth={depth} onProfile={onProfile} onClose={close} />
@@ -328,15 +330,27 @@ function FloatingReminder({
   onClose: () => void;
 }) {
   const [top, setTop] = useState(80);
+  /* The gutter beside the column, in px: the corner card must live entirely in
+     it. `Container` steps its measure with the window, so the free width is
+     read off the column's own right edge rather than assumed. `clientWidth`,
+     never `innerWidth`: the latter counts the scrollbar. */
+  const [width, setWidth] = useState(368);
   useEffect(() => {
     const header = document.querySelector("[data-screen-header]");
+    const column = document.querySelector("#main > div");
     const measure = () => {
       const box = header?.getBoundingClientRect();
       setTop((box ? Math.max(0, box.bottom) : 68) + 12);
+      if (column) {
+        const free =
+          document.documentElement.clientWidth - column.getBoundingClientRect().right - 16 - 12;
+        setWidth(Math.max(0, Math.min(368, Math.floor(free))));
+      }
     };
     measure();
-    const ro = header ? new ResizeObserver(measure) : null;
+    const ro = header || column ? new ResizeObserver(measure) : null;
     if (header) ro?.observe(header);
+    if (column) ro?.observe(column);
     window.addEventListener("resize", measure);
     return () => {
       ro?.disconnect();
@@ -346,14 +360,14 @@ function FloatingReminder({
 
   return createPortal(
     <div
-      className="pointer-events-none fixed inset-x-3 z-40 flex justify-end max-sm:hidden sm:inset-x-auto sm:right-4"
-      style={{ top }}
+      className="pointer-events-none fixed right-4 z-40 max-xl:hidden"
+      style={{ top, width }}
     >
       <ReminderCard
         depth={depth}
         onProfile={onProfile}
         onClose={onClose}
-        className="pointer-events-auto max-w-[23rem] animate-rise shadow-card"
+        className="pointer-events-auto animate-rise shadow-card"
       />
     </div>,
     document.body,
