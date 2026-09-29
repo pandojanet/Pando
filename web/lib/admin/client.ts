@@ -140,14 +140,27 @@ export async function adminAction(
 export async function readRestrictedNote(
   nominationId: string,
 ): Promise<string | null> {
-  const data = await post<QueryResponse<{ body?: string } | null>>(
-    "/api/admin/query",
-    { resource: "restricted_note", params: { nomination_id: nominationId } },
-  );
+  /**
+   * The server answers with a **list** (a nomination can carry both a private
+   * note and the reason behind a hesitant hire), and the sample answers with one
+   * object. This read `.body` off whatever came back, which on a real database
+   * is an array — so the note could never be shown ("No note on this
+   * nomination", every time). Both shapes are read now, joined by a blank line.
+   */
+  const data = await post<
+    QueryResponse<{ body?: string } | Array<{ body?: string }> | null>
+  >("/api/admin/query", {
+    resource: "restricted_note",
+    params: { nomination_id: nominationId },
+  });
   if (!data.configured) {
     return "No database is connected yet, so there is nothing to show.";
   }
-  return data.rows?.body ?? "No note on this nomination.";
+  const found = Array.isArray(data.rows) ? data.rows : data.rows ? [data.rows] : [];
+  const bodies = found
+    .map((n) => (typeof n.body === "string" ? n.body : ""))
+    .filter((b) => b.trim() !== "");
+  return bodies.length > 0 ? bodies.join("\n\n") : "No note on this nomination.";
 }
 
 export async function signOut(): Promise<void> {

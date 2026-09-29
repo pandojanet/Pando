@@ -1,6 +1,20 @@
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
-import { shouldPrompt, shouldThank, type AnswerState } from "@/lib/thanks";
+import { REPLY_LINK_DAYS } from "@/lib/outreach-policy";
+import {
+  THANKS_GAP_DAYS,
+  THANKS_WINDOWS,
+  shouldPrompt,
+  shouldThank,
+  type AnswerState,
+} from "@/lib/thanks";
+
+/**
+ * The longest any answer can still be asked about. Past this no window is open,
+ * whatever kinds it drew on (`windowFor` never returns a longer one), so an
+ * answer older than this can never be due.
+ */
+const LONGEST_PROMPT_WINDOW_DAYS = Math.max(...THANKS_WINDOWS.map((w) => w.before_days));
 
 /**
  * M9.1 + M9.2 — the queries behind the thanks loop.
@@ -76,6 +90,12 @@ export async function answersDuePrompt(limit = 25): Promise<DueAnswer[]> {
          and a.sent_at is not null
          and a.helped_asked_at is null
          and not a.is_test
+         -- Only answers whose window can still be open (26 Sep). An answer past
+         -- its ceiling is never asked about, so it is never stamped and stays a
+         -- candidate for ever; ordered oldest-first under a cap, a hundred of
+         -- those filled every run and the answers that were actually due never
+         -- reached the window check below.
+         and a.sent_at > now() - make_interval(days => ${LONGEST_PROMPT_WINDOW_DAYS})
        group by a.id, a.person_id, a.phone, a.sent_at
        order by a.sent_at asc
        limit ${limit * 4}
@@ -156,6 +176,10 @@ export async function pendingHelpedAnswer(phone: string): Promise<PendingHelped 
        where a.phone = ${phone}
          and a.helped_asked_at is not null
          and a.helped is null
+         -- Bounded on the reply side too: 9.1's ceiling stops Pando *asking*
+         -- late, and a yes to a prompt from months ago is the stale evidence it
+         -- exists to avoid (it writes impact events and texts a third person).
+         and a.helped_asked_at > now() - make_interval(days => ${REPLY_LINK_DAYS})
        order by a.helped_asked_at desc
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;
@@ -185,9 +209,14 @@ export async function pendingHelpedAnswer(phone: string): Promise<PendingHelped 
 export async function recordHelped(answerId: string, helped: boolean): Promise<boolean> {
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`
-        update answers set helped = ${helped} where id = ${answerId}::uuid
-      `);
+      /* Only an answer nobody has graded yet: a repeated delivery of the same
+         reply must not re-run the ledger write or flip a verdict. */
+      const graded = (await tx.execute(sql`
+        update answers set helped = ${helped}
+         where id = ${answerId}::uuid and helped is null
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (graded.length === 0) return false;
       if (!helped) return true;
 
       /* Every parent with an approved contribution behind a record this answer
@@ -209,7 +238,7 @@ export async function recordHelped(answerId: string, helped: boolean): Promise<b
       return true;
     }),
   );
-  return result.persisted === true;
+  return result.persisted === true && result.data === true;
 }
 
 export interface ThanksTarget {
@@ -252,7 +281,12 @@ export async function contributorsToThank(limit = 25): Promise<ThanksTarget[]> {
        where e.kind = 'answer_used'
          and not e.is_test
          and (lt.at is null or e.created_at > lt.at)
+         -- The week's gap in SQL as well as in shouldThank (26 Sep): applied only
+         -- afterwards, somebody thanked yesterday still took one of the fifty
+         -- unordered rows every day until their week was up.
+         and (lt.at is null or lt.at <= now() - make_interval(days => ${THANKS_GAP_DAYS}))
        group by p.id, p.phone, lt.at
+       order by min(e.created_at) asc
        limit ${limit * 2}
     `)) as unknown as Array<Record<string, unknown>>;
     return rows;

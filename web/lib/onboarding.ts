@@ -248,7 +248,20 @@ export function parseNeighborhood(
     const parts = option.id.split("-");
     if (parts.length < 2) continue;
     const needed = parts.slice(0, 2).map((p) => p.slice(0, 3));
-    if (needed.every((p) => body.includes(p))) return option.id;
+    /* Matched at the start of a *word*, never anywhere inside one, and a
+       two-letter part ("la" in la-canada) only as a whole word. `includes`
+       made "I can't say, later" a La Cañada Flintridge parent, and a wrong
+       area is filed permanently and looks fine afterwards. */
+    const words = body
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+    const at = (p: string) =>
+      words.some((w) => (p.length < 3 ? w === p : w.startsWith(p)));
+    if (needed.every(at) || words.some((w) => w.startsWith(needed.join("")))) {
+      return option.id;
+    }
   }
 
   return null;

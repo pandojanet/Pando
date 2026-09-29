@@ -8,14 +8,31 @@ import {
   recordFailure,
 } from "@/lib/admin/auth";
 import { adminCredentials, verifyAdminSignIn } from "@/lib/server/admin-auth";
+import { clientAddress } from "@/lib/rate-limits";
 
 /** POST /api/admin/session — sign in. DELETE — sign out. (Estimate 2.1.) */
 
+/**
+ * The address the 15-minute lock is keyed on.
+ *
+ * ⚠ This read the **leftmost** `X-Forwarded-For` entry, which is the one a
+ * caller writes themselves — a proxy appends the address it saw to the *right*.
+ * So sending a different made-up leading value with every attempt gave every
+ * attempt a fresh five-guess budget, and the lock on the admin password was no
+ * lock at all (audit, 29 Sep). `clientAddress` counts from the right, one hop
+ * per trusted proxy, which is the rule every other limiter in the app uses
+ * (`lib/rate-limits.ts`). No usable address still shares one key ("local"), so
+ * that case locks conservatively rather than opening.
+ */
 function clientKey(request: Request): string {
+  const raw = Number(process.env.TRUSTED_PROXIES ?? 1);
+  const proxies = Number.isInteger(raw) && raw >= 0 ? raw : 1;
   return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "local"
+    clientAddress(
+      request.headers.get("x-forwarded-for"),
+      request.headers.get("x-real-ip"),
+      proxies,
+    ) ?? "local"
   );
 }
 

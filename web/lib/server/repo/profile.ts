@@ -261,12 +261,29 @@ export async function writeProfile(
      */
     const provenance = {
       invitedBy: sql`coalesce(${people.invitedBy}, ${input.invited_by ?? null})`,
+      /* ⚠ Not stamped once a person is already activated: `people_activated_after_invited`
+         refuses an invitation dated after the activation it supposedly
+         produced, and that CHECK aborting would lose the whole profile write
+         for a Founding parent who re-saves through somebody's link. */
       invitedAt: sql`coalesce(${people.invitedAt}, case when ${
         input.invite_id ?? null
-      }::uuid is not null then now() end)`,
+      }::uuid is not null and ${people.activatedAt} is null then now() end)`,
+      /* ⚠ **The link they arrived on is provenance too, and is kept the same
+         way** (29 Sep). These three were *replaced* on every re-save, so a
+         parent who signed back in on another device — a session that carries no
+         invite code — and changed one answer had their attribution nulled,
+         which is what "which link delivered this contributor" (`/admin/invites`)
+         counts. Same reasoning as `invitedBy` above. */
+      inviteCode: sql`coalesce(${people.inviteCode}, ${input.invite_code ?? null})`,
+      inviteId: sql`coalesce(${people.inviteId}, ${input.invite_id ?? null}::uuid)`,
+      invitedViaGroup: sql`coalesce(${people.invitedViaGroup}, ${
+        input.invited_via_group ?? null
+      })`,
     };
 
     let personId: string;
+    /** The link this person **first** arrived on, after the coalesce above. */
+    let arrivalInviteId: string | null;
     if (input.phone) {
       const [row] = await tx
         .insert(people)
@@ -275,14 +292,16 @@ export async function writeProfile(
           target: people.phone,
           set: { ...personValues, ...provenance },
         })
-        .returning({ id: people.id });
+        .returning({ id: people.id, inviteId: people.inviteId });
       personId = row.id;
+      arrivalInviteId = row.inviteId ?? null;
     } else {
       const [row] = await tx
         .insert(people)
         .values(personValues)
-        .returning({ id: people.id });
+        .returning({ id: people.id, inviteId: people.inviteId });
       personId = row.id;
+      arrivalInviteId = row.inviteId ?? null;
     }
 
     /* The relationship edge to their inviter (16 Sep). The latest answer wins
@@ -552,9 +571,13 @@ export async function writeProfile(
       first_name: input.first_name,
       market_id: input.market_id,
     });
+    /* The arrival link the row now carries, not whatever this session happened
+       to hold: a re-save through a second personal link must not credit a
+       second referrer for a parent the first one brought (29 Sep). On a first
+       write the two are the same. */
     const referralRecorded = await recordReferral(tx as unknown as Db, {
       referred_person_id: personId,
-      invite_id: input.invite_id ?? null,
+      invite_id: arrivalInviteId,
     });
 
     return {

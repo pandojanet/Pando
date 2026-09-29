@@ -68,10 +68,27 @@ export async function runJob(name: JobName): Promise<RunOutcome> {
     if (!verdict.due) return { claimed: false as const, verdict };
 
     /* Claimed before the work. The unique index refuses a second one. */
-    const rows = (await db.execute(sql`
-      insert into job_runs (job) values (${name}) returning id
-    `)) as unknown as Array<Record<string, unknown>>;
-    return { claimed: true as const, runId: String(rows[0]?.id ?? "") };
+    try {
+      const rows = (await db.execute(sql`
+        insert into job_runs (job) values (${name}) returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      return { claimed: true as const, runId: String(rows[0]?.id ?? "") };
+    } catch (err) {
+      /* The index doing its job: another run claimed it between the read above
+         and this insert. That is `already_running`, which is what the caller
+         and the cron log should hear — left to escape, `withDb` reported the
+         database as unconfigured, a wrong answer to a healthy race. */
+      const code =
+        (err as { code?: string } | null)?.code ??
+        (err as { cause?: { code?: string } } | null)?.cause?.code;
+      if (code === "23505") {
+        return {
+          claimed: false as const,
+          verdict: { due: false as const, reason: "already_running" as const },
+        };
+      }
+      throw err;
+    }
   });
 
   if (!claim.persisted || !claim.data) {
@@ -362,7 +379,12 @@ async function expire_blasts(): Promise<JobResult> {
 
 /** 12.5 — the daily rate, reported. Reads only. */
 async function delivery_check(): Promise<JobResult> {
-  const counts = await deliveryCounts(1);
+  /* Two days, not one (26 Sep). `unreported` counts messages OLDER than 24 hours
+     that never got a final status, and a one-day window contains none of them
+     by construction — so the thin-sample alarm below could not fire, and a
+     total loss of status callbacks read as "nothing settled", an all-clear.
+     The second day is what gives the check something to be suspicious of. */
+  const counts = await deliveryCounts(2);
   if (!counts) return { outcome: "error", processed: 0, skipped: 0, failed: 1 };
 
   const health = deliveryHealth(counts);
@@ -460,12 +482,38 @@ async function freshness_ping(): Promise<JobResult> {
               where sc.share_id = s.id and sc.person_id = a.person_id
            )
       )
-      select distinct on (c.person_id)
-             c.person_id, p.phone, c.share_id, c.name, c.kind
-        from candidates c
-        join people p on p.id = c.person_id
-       where p.phone is not null
-       order by c.person_id, c.last_confirmed_at asc
+      -- Who is worth asking, chosen so the cap below cannot be spent on people
+      -- sendSms is certain to refuse (26 Sep). Two exclusions, both restating a
+      -- rule the send layer enforces anyway: somebody who asked Pando to stop,
+      -- and somebody already pinged this calendar month (PINGS_PER_MONTH).
+      -- Left in, the same handful of parents filled every run's five places,
+      -- were refused every time, and nobody else was ever reached.
+      select t.person_id, t.phone, t.share_id, t.name, t.kind
+        from (
+          select distinct on (c.person_id)
+                 c.person_id, p.phone, c.share_id, c.name, c.kind,
+                 c.last_confirmed_at
+            from candidates c
+            join people p on p.id = c.person_id
+           where p.phone is not null
+             and not exists (
+               select 1 from sms_opt_outs o
+                where o.phone = p.phone
+                  and o.opted_out_at is not null
+                  and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at))
+             and not exists (
+               select 1 from message_log m
+                where m.person_id = p.id
+                  and m.direction = 'out'
+                  and m.template = 'freshness_ping'
+                  and m.retry_of is null
+                  and date_trunc('month', m.sent_at) = date_trunc('month', now()))
+           order by c.person_id, c.last_confirmed_at asc
+        ) t
+       -- The oldest first, which is what the job's own header promises. The
+       -- inner ordering only serves distinct-on, so without this the five were
+       -- simply the lowest ids.
+       order by t.last_confirmed_at asc
        limit ${PER_RUN}
     `)) as unknown as Array<Record<string, unknown>>;
     return rows;

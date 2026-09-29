@@ -171,6 +171,17 @@ export interface CaregiverCandidate {
   display: string;
   kind_of_care: string[];
   areas: string[];
+  /**
+   * From her own profile and only from it (29 Sep): the ages she works with,
+   * her strengths and her rate band. All three sit inside what she agreed to
+   * have shown (`CAREGIVER_CONSENT_TEXT.listing`). Never a parent's note about
+   * her - those are restricted (invariant 12) and are not selected here.
+   */
+  age_experience: string[];
+  strengths: string[];
+  rate_band: string | null;
+  /** The most recent nomination - when a family last confirmed employing her. */
+  last_confirmed_at: string | null;
   trust: TrustLabels;
   /** How many families have employed them, which is what "firsthand" means here. */
   firsthand_count: number;
@@ -486,6 +497,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       select
         c.id, c.first_name, c.last_initial, c.provenance,
         cp.roles_wanted, cp.areas_served,
+        cp.age_experience, cp.strengths, cp.rate_band,
         max(n.created_at)                                               as last_confirmed_at,
         count(n.id) filter (where n.worked_for_family)                  as firsthand,
         bool_or(n.reference_willing = 'yes')                            as reference
@@ -499,7 +511,8 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         and c.discoverable
         and c.is_adult
         ${nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`}
-      group by c.id, cp.roles_wanted, cp.areas_served
+      group by c.id, cp.roles_wanted, cp.areas_served,
+               cp.age_experience, cp.strengths, cp.rate_band
       order by count(n.id) filter (where n.worked_for_family) desc,
                max(n.created_at) desc nulls last
       limit ${limit}
@@ -590,6 +603,10 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       areas: ((r.areas_served as string[] | null) ?? []).filter((a) =>
         /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(a),
       ),
+      age_experience: (r.age_experience as string[] | null) ?? [],
+      strengths: (r.strengths as string[] | null) ?? [],
+      rate_band: r.rate_band ? String(r.rate_band) : null,
+      last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
       trust: labelsFor(candidate, { policies }),
       firsthand_count: candidate.firsthand_count,
     });

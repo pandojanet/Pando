@@ -113,7 +113,12 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
          where sa.person_id = ${query.askerId}::uuid
       ),
       asker_kids as (
-        select coalesce(array_agg(c.birth_year), '{}') as years
+        /* A baby on the way has no birth_year (year_shape CHECK) but does have
+           a due_year, which is next year at capture, so it reads as age -1 --
+           the expecting and baby bands -- rather than as a null that the
+           scorer once took for the teen band. */
+        select coalesce(array_agg(coalesce(c.birth_year, c.due_year))
+                        filter (where coalesce(c.birth_year, c.due_year) is not null), '{}') as years
           from children c
          where c.person_id = ${query.askerId}::uuid
       ),
@@ -200,7 +205,10 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
              'neighborhood', e.neighborhood,
              'city', (select area from city where id = e.id),
              'child_birth_years', coalesce(
-               (select array_agg(c.birth_year) from children c where c.person_id = e.id),
+               (select array_agg(coalesce(c.birth_year, c.due_year))
+                  from children c
+                 where c.person_id = e.id
+                   and coalesce(c.birth_year, c.due_year) is not null),
                '{}'),
              'edges', coalesce((select json_agg(json_build_object(
                   'affinity_type', sa.affinity_type,

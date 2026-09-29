@@ -363,10 +363,16 @@ export function bandDistance(a: AgeBand, b: AgeBand): number {
  * written "as of capture": a toddler edge from February is a preschool child by
  * the summer.
  */
-export function bandsForBirthYears(years: number[], now: Date): AgeBand[] {
+export function bandsForBirthYears(years: Array<number | null>, now: Date): AgeBand[] {
   const bands = new Set<AgeBand>();
   const thisYear = now.getFullYear();
   for (const year of years) {
+    /* ⚠ A baby on the way has `birth_year` NULL (the `year_shape` CHECK), and
+       `array_agg` carries the NULL into the array. `thisYear - null` is
+       `thisYear` in JavaScript, so it read as a child aged 2026 — the **teen**
+       band — and an expecting parent was scored, and asked, as a parent of a
+       teenager. Skipped here so every caller is safe, whatever it aggregated. */
+    if (typeof year !== "number" || !Number.isFinite(year)) continue;
     for (const band of bandsForAge(thisYear - year)) bands.add(band);
   }
   return [...bands];

@@ -11,6 +11,10 @@ import {
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
 import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
+import { careFacts, careFit } from "@/lib/care-answer";
+import { alreadyGiven, asksForMore, withMoreSuffix } from "@/lib/more-options";
+import { placePhraseIn } from "@/lib/place-in-question";
+import { priorAnswersFor } from "@/lib/server/repo/answers-followup";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 import { planSegments, toGsm7 } from "@/lib/sms-segments";
@@ -844,6 +848,49 @@ export async function handleInboundMessage(input: {
    */
   const pending = person ? await openQuestion(person.person_id) : null;
 
+  /**
+   * "Any others?" - more of what Pando just answered (29 Sep).
+   *
+   * Pando answered a question and remembered nothing of having done so, so a
+   * parent who wrote "what else?" was read as a message with no subject: small
+   * talk, or a request for detail. The answer they wanted was the next-best
+   * records for the *same* question, which retrieval already returns ranked.
+   *
+   * Only when nothing else has claimed the message (no open question, no blast
+   * reply attached), and only when it is plainly *more of the same*: a message
+   * that names an age, a place or a different topic is a new question and takes
+   * the ordinary path. The previous answer must have been **sent** - see
+   * `priorAnswersFor`.
+   */
+  if (pending === null && !attached.attached && asksForMore(body)) {
+    const prior = await priorAnswersFor(from);
+    if (prior) {
+      const list = await focusOptions();
+      const before = focusInQuestion(prior.question, list);
+      const now = focusInQuestion(body, list);
+      const careBefore =
+        answerMentionsCaregiver(prior.question) ||
+        (before !== null && CARE_TOPICS.includes(before));
+      const newSubject =
+        bandsInQuestion(body).length > 0 ||
+        placePhraseIn(body) !== null ||
+        (now !== null && now !== before) ||
+        (answerMentionsCaregiver(body) && !careBefore);
+      if (!newSubject) {
+        console.info("[sms:inbound] asked for more", { answers: prior.texts.length });
+        await answerQuestion({
+          from,
+          body: prior.question,
+          person,
+          caregiverIntent: careBefore,
+          sensitive: false,
+          more: { texts: prior.texts, shareIds: prior.shareIds },
+        });
+        return;
+      }
+    }
+  }
+
   const reading = await classifyIntent({
     text: body,
     recent: contextFor(pending),
@@ -1011,6 +1058,24 @@ export async function handleInboundMessage(input: {
    * open — that branch is handled far above, and answering it twice would be
    * Pando talking over its own script.
    */
+  /**
+   * "Please text me less often" is a request about the allowance, and only the
+   * exact words SETTINGS reached the menu - the model read it as `settings` and
+   * the message met silence (29 Sep audit). The existing menu is the honest
+   * answer, and the parent's next message is read as the choice.
+   */
+  if (reading.intent === "settings" && person) {
+    await sendSms({
+      to: from,
+      body: settingsPrompt(await currentAllowance(person.person_id)),
+      category: "transactional",
+      personId: person.person_id,
+      template: SETTINGS_TEMPLATE,
+    });
+    console.info("[sms:inbound] settings menu offered from a model reading");
+    return;
+  }
+
   if (reading.intent === "contribute" || reading.intent === "chitchat") {
     await sendSms({
       to: from,
@@ -1184,6 +1249,9 @@ function publicSlots(
   return info.findings.slice(0, Math.max(2, 4 - shown));
 }
 
+/** The focus topics that mean a person is being asked about. See `answerQuestion`. */
+const CARE_TOPICS = ["nannies", "babysitters", "newborn_care"];
+
 async function answerQuestion(input: {
   from: string;
   body: string;
@@ -1191,6 +1259,13 @@ async function answerQuestion(input: {
   caregiverIntent: boolean;
   /** The model's escalation flag — see `escalateSensitivity`. */
   sensitive: boolean;
+  /**
+   * Set when the parent asked for more of what they were just sent: what they
+   * have already read, so it is not offered twice. `body` is then the
+   * *previous* question, so the place, the ages and the topic are read the way
+   * they were the first time.
+   */
+  more?: { texts: string[]; shareIds: string[] };
 }): Promise<void> {
   const { from, body, person } = input;
   const profile = person?.profile;
@@ -1258,7 +1333,6 @@ async function answerQuestion(input: {
    * `focusInQuestion` maps that vocabulary onto `nannies` / `babysitters` /
    * `newborn_care`. Either one is enough.
    */
-  const CARE_TOPICS = ["nannies", "babysitters", "newborn_care"];
   const wantsCare = aboutCare || (focus !== null && CARE_TOPICS.includes(focus));
 
   /**
@@ -1307,6 +1381,9 @@ async function answerQuestion(input: {
     focus,
     shares: !wantsCare,
     caregivers: wantsCare,
+    /* Deeper for a follow-up: the first answer took the best few, and "any
+       others?" is asked of what is left. */
+    ...(input.more ? { limit: 25 } : {}),
   });
 
   /**
@@ -1321,10 +1398,21 @@ async function answerQuestion(input: {
       : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null });
   const canAsk = askable === null || askable >= MIN_ASKABLE_NEAR;
 
-  const publicInfo: PublicSearchResult = wantsCare
+  /* Read before the search rather than after it, because it decides whether the
+     search happens at all. */
+  const sensitivity = escalateSensitivity(classifyDemand(body, null), input.sensitive);
+  const ownsAPerson = sensitivity === "high_stakes" || sensitivity === "named_allegation";
+
+  const publicInfo: PublicSearchResult = wantsCare || ownsAPerson
     ? /* Never for a question about care. A page saying somebody is a wonderful
          nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
-         name is the one thing that must not arrive from the open web. */
+         name is the one thing that must not arrive from the open web.
+
+         ⚠ And never for a health, legal or safety question or a claim about a
+         named person: the parent is sent the professional-resources reply (or the
+         quiet line) instead of any answer, so the search could only send a
+         child's symptoms to a third party and leave web-derived text sitting in
+         the held row for an admin to approve and send in its place (25 Sep). */
       { findings: [], configured: false }
     : await searchPublicInformation({
         question: body,
@@ -1428,7 +1516,28 @@ async function answerQuestion(input: {
    * 1's four conditions are already in `retrieveFor`'s WHERE clause, so anything
    * here has consented, is active, is discoverable and is an adult.
    */
-  const candidates: AnswerCandidate[] = [
+  const careBands = asked.length > 0 ? asked : known;
+  const rankedCaregivers = retrieved.caregivers
+    .map((caregiver, index) => {
+      const profile = {
+        ages: caregiver.age_experience,
+        strengths: caregiver.strengths,
+        roles: caregiver.kind_of_care,
+        rate: caregiver.rate_band,
+      };
+      const fit = careFit(body, careBands, profile);
+      return {
+        caregiver,
+        index,
+        fit,
+        facts: careFacts(profile),
+        role: fit.role ?? caregiver.kind_of_care[0] ?? null,
+      };
+    })
+    /* Stable, so ties keep retrieval's own order: most families first. */
+    .sort((a, b) => b.fit.score - a.fit.score || a.index - b.index);
+
+  const allCandidates: AnswerCandidate[] = [
     ...retrieved.shares.map((share, i) => ({
       /* Where retrieval put it. See AnswerCandidate.rank: without this the topic
          and the area it ranked by were computed and then thrown away, and a
@@ -1511,19 +1620,26 @@ async function answerQuestion(input: {
      * Both are missing on a caregiver with no profile of their own (Maria G.
      * today), and the line falls back to the plain word.
      */
-    ...retrieved.caregivers.map((caregiver, i) => ({
-      /* Their own list's order. Shares and caregivers are retrieved separately
-         and a question is narrowed to one half or the other, so the two index
-         spaces do not compete in practice — and where they would, the evidence
-         keys below still decide. */
+    ...rankedCaregivers.map(({ caregiver, fit, facts, role }, i) => ({
+      /* How well she fits the question, then how many families have employed
+         her (29 Sep). Before this the only key was the second, so a newborn
+         night nurse led an answer about after-school pick-ups. Ranks and never
+         filters: see `careFit`. */
       rank: i,
       name: caregiver.display,
       kind: "caregiver",
-      care:
-        CAREGIVER_TYPES.find((t) => t.id === caregiver.kind_of_care[0])?.label ?? null,
+      /* The kind of care the question asked for when she offers it, else the
+         first she listed. */
+      care: CAREGIVER_TYPES.find((t) => t.id === role)?.label ?? null,
       area: caregiver.areas[0] ?? null,
+      /* What she agreed to have shown, and what she matches - see
+         `lib/care-answer.ts` for what is deliberately not here. */
+      care_facts: facts.full,
+      care_brief: facts.brief,
+      fit: fit.fits.length > 0 ? fit.fits.join(", ") : null,
       trust: caregiver.trust,
       firsthand_count: caregiver.firsthand_count,
+      last_confirmed: caregiver.last_confirmed_at,
     })),
 
     /**
@@ -1571,10 +1687,24 @@ async function answerQuestion(input: {
     })),
   ];
 
+  /**
+   * "Any others?" is asked of what is left (29 Sep): whatever the parent has
+   * already read is not offered twice. Records go by id, everything else by the
+   * name in the text they were sent - see `alreadyGiven`.
+   */
+  const given = input.more
+    ? { ids: input.more.shareIds, texts: input.more.texts }
+    : null;
+  const candidates = given
+    ? allCandidates.filter((c) => !alreadyGiven(c, given))
+    : allCandidates;
 
   const composed = composeAnswer({
     candidates,
     has_question: true,
+    ...(given
+      ? { opening: "A few more that may fit:", nothing_left: candidates.length === 0 }
+      : {}),
     /* Nobody near to ask is not "no budget": it must not reach a person as
        "someone is putting an answer together" (the generator_asked hold), which
        is a promise nobody near that place can keep. */
@@ -1590,8 +1720,6 @@ async function answerQuestion(input: {
    * nobody having read it.
    */
   const caregiverRelated = wantsCare || retrieved.caregivers.length > 0;
-
-  const sensitivity = escalateSensitivity(classifyDemand(body, null), input.sensitive);
 
   const verdict = routeAnswer({
     /**
@@ -1623,7 +1751,9 @@ async function answerQuestion(input: {
   const answerId = await queueAnswer({
     personId: person?.person_id ?? null,
     phone: from,
-    question: body,
+    /* A follow-up is stored under its own text so the Send guard and the
+       queue's duplicate note do not mistake it for the same answer twice. */
+    question: input.more ? withMoreSuffix(body) : body,
     answerText: composed.text,
     nextStep: composed.next_step,
     labels: composed.labels,
@@ -1644,7 +1774,36 @@ async function answerQuestion(input: {
     askable,
   });
 
-  if (answerId === null) return;
+  if (answerId === null) {
+    /* The queue write failed. For an ordinary question there is nothing more to
+       do, but a health, legal or safety message must still get the resources
+       the web flow gives immediately, and a person must still hear about it —
+       silence here is the one failure this branch cannot afford. */
+    if (ownsAPerson) {
+      if (person) {
+        await withDb(async (db: Db) => {
+          await writeFlagIfNew(db, {
+            severity: "escalation",
+            reason: sensitivity === "high_stakes" ? "high_stakes_demand" : "named_allegation",
+            subject_kind: "person",
+            subject_id: person.person_id,
+            person_id: person.person_id,
+            excerpt: body.slice(0, 500),
+          });
+          return true;
+        });
+      }
+      await sendSms({
+        to: from,
+        body: sensitivity === "high_stakes" ? HIGH_STAKES_REPLY : ALLEGATION_REPLY,
+        category: "transactional",
+        personId: person?.person_id,
+        template: sensitivity === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+    }
+    return;
+  }
 
   /**
    * 5.4's question, finally sent.

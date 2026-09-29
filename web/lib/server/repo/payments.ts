@@ -85,7 +85,16 @@ export async function openCheckout(blastId: string): Promise<CheckoutOutcome> {
   });
 
   if (!decision.charge) return { ok: false, reason: "nothing_to_pay" };
-  if (blast.payment_status === "paid" || blast.payment_status === "refunded") {
+  /* `refund_due` is a paid Ask that an admin has flagged, not an unpaid one: the
+     store below only writes a session id onto `not_required`, `pending` and
+     `failed` rows, so a checkout opened here would be payable and unmatchable —
+     the webhook would answer `unknown_session` and the parent would be charged
+     with nothing on any row to say so. */
+  if (
+    blast.payment_status === "paid" ||
+    blast.payment_status === "refund_due" ||
+    blast.payment_status === "refunded"
+  ) {
     return { ok: false, reason: "already_paid" };
   }
 

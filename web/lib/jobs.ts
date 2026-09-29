@@ -71,7 +71,7 @@ export const JOBS: Record<JobName, JobSpec> = {
     name: "delivery_check",
     min_interval_minutes: 20 * 60,
     sends: false,
-    what: "Report the delivery rate over the last day, and anything below 95%.",
+    what: "Report the delivery rate over the last two days, and anything below 95%.",
   },
 
   /**

@@ -86,7 +86,13 @@ export async function ensureInboundPerson(input: {
       }
 
       const kids = (await tx.execute(sql`
-        select coalesce(array_agg(birth_year), '{}') as years
+        /* A baby on the way has no birth_year (the year_shape CHECK) but has a
+           due_year, which reads as expecting and baby. A bare array_agg carried
+           the NULL through, and JavaScript read it as a child aged 2026 - the
+           teen band - so an expecting parent was answered as a parent of a
+           teenager (29 Sep). */
+        select coalesce(array_agg(coalesce(birth_year, due_year))
+                        filter (where coalesce(birth_year, due_year) is not null), '{}') as years
           from children where person_id = ${personId}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
 

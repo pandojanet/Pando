@@ -72,9 +72,19 @@ export async function writeCompletion(
      * from the request body) applied to the one field that had escaped it.
      */
     if (input.person_id) {
+      /* ⚠ **Only ever `none` → `pending_founding`** (29 Sep). This was an
+         unconditional set, so a returning parent who re-opened the completion
+         screen — `/signin` leads there — was demoted from an admin-approved
+         `founding`, and a person an admin had moved to `request_invite` was put
+         back in the queue. Founding is a person's decision (`founding.approve`)
+         and finishing a form must never unmake it. */
       await tx
         .update(people)
-        .set({ founding: "pending_founding" })
+        .set({
+          founding: sql`case when ${people.founding} = 'none'
+                             then 'pending_founding'::founding_status
+                             else ${people.founding} end`,
+        })
         .where(eq(people.id, input.person_id));
 
       /**

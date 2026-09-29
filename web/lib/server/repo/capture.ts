@@ -223,7 +223,27 @@ export async function saveCapturedCard(
 
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
-      const created = (await tx.execute(sql`
+      /**
+       * An exact name in the same market and kind is the record that already
+       * exists, so it is reused rather than duplicated — the seed path's own rule
+       * (`writeShareCard` in `cards.ts`): five parents recommending one class is
+       * five contributions and one place. Without it every recommendation made by
+       * text created a second, pending copy of a place that may already carry
+       * several parents, and nothing said the two were the same thing.
+       */
+      const existing = (await tx.execute(sql`
+        select s.id::text as share_id
+          from shares s
+          join people p on p.id = ${capture.person_id}::uuid
+         where s.market_id = coalesce(p.market_id, 'pasadena')
+           and s.kind = ${card.kind}::share_kind
+           and lower(s.name) = lower(${card.name})
+         limit 1
+      `)) as unknown as Array<Record<string, unknown>>;
+
+      const created = existing[0]
+        ? existing
+        : ((await tx.execute(sql`
         insert into shares (market_id, kind, name, neighborhoods, status, provenance)
         select coalesce(p.market_id, 'pasadena'), ${card.kind}::share_kind, ${card.name},
                case when p.neighborhood is null then null
@@ -232,7 +252,7 @@ export async function saveCapturedCard(
           from people p
          where p.id = ${capture.person_id}::uuid
         returning id::text as share_id
-      `)) as unknown as Array<Record<string, unknown>>;
+      `)) as unknown as Array<Record<string, unknown>>);
 
       const shareId = created[0] ? String(created[0].share_id) : "";
       if (!shareId) return null;

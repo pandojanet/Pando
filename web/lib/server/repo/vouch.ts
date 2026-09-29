@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
+import { REPLY_LINK_DAYS } from "@/lib/outreach-policy";
 import { confirmKindFor, effectOf, type ConfirmKind, type PingReply } from "@/lib/vouch";
 
 /**
@@ -49,6 +50,10 @@ export async function pendingPing(phone: string): Promise<PendingPing | null> {
         join shares s on s.id = fp.share_id
        where p.phone = ${phone}
          and fp.answered_at is null
+         -- Bounded, like every other open question on this path: a ping nobody
+         -- answered must not claim a yes or a no sent months later about
+         -- something else, and a no marks a record stale and raises a flag.
+         and fp.asked_at > now() - make_interval(days => ${REPLY_LINK_DAYS})
        order by fp.asked_at desc
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;
@@ -110,11 +115,17 @@ export async function applyPingReply(
 
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`
+      /* Claimed first, conditionally: a second delivery of the same reply
+         matches nothing and does nothing. Without it a repeat would insert a
+         second pending vouch (that insert has no key to conflict on) and move
+         the same date twice. */
+      const claimed = (await tx.execute(sql`
         update freshness_pings
            set answered_at = now(), still_good = ${reply === "still_good"}
-         where id = ${ping.ping_id}::uuid
-      `);
+         where id = ${ping.ping_id}::uuid and answered_at is null
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (claimed.length === 0) return false;
 
       if (effect.refresh_freshness) {
         await tx.execute(sql`
@@ -179,7 +190,9 @@ export async function applyPingReply(
     }),
   );
 
-  if (!result.persisted) return null;
+  /* `false` is a reply that was already recorded: nothing changed, and nothing
+     is said to the parent a second time. */
+  if (!result.persisted || !result.data) return null;
   return {
     kind,
     refreshed: effect.refresh_freshness,

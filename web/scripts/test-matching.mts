@@ -86,6 +86,17 @@ ok(
   m.bandsForBirthYears([YEAR - 2], NOW).join(",") === "toddler",
 );
 
+ok(
+  "a NULL birth year (a baby on the way) is skipped, never read as a teenager",
+  m.bandsForBirthYears([null, YEAR - 2], NOW).join(",") === "toddler" &&
+    m.bandsForBirthYears([null], NOW).length === 0,
+);
+ok(
+  "a due year of next year reads as expecting + baby",
+  m.bandsForBirthYears([YEAR + 1], NOW).join(",") === "baby,expecting" ||
+    m.bandsForBirthYears([YEAR + 1], NOW).join(",") === "expecting,baby",
+);
+
 console.log("\n=== 6.1  shared connections, at the config weights ===");
 ok(
   "a shared school is the heaviest single edge",

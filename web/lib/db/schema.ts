@@ -343,11 +343,13 @@ export const consents = pgTable(
   (t) => [
     /**
      * Widened by 0004 for 2C (the caregiver's own four permissions, G2/G8–G10)
-     * and by 0012 for the listening-ear opt-in (18 Aug).
+     * by 0012 for the listening-ear opt-in (18 Aug), and by 0028 for the
+     * recurring-messages opt-in (2 Sep) — this line was missed then, so a
+     * `drizzle-kit generate` would have proposed dropping `sms_recurring`.
      */
     check(
       "consents_scope_check",
-      sql`${t.scope} in ('sms','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear')`,
+      sql`${t.scope} in ('sms','sms_recurring','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear')`,
     ),
     check(
       "consents_status_check",

@@ -96,8 +96,11 @@ export type ActionOutcome =
            "that has changed since the page was loaded". */
         | "answer_already_sent"
         | "answer_duplicate_sent"
+        | "answer_rejected"
         | "answer_not_sent"
-        | "unknown_weight";
+        | "unknown_weight"
+        /* 29 Sep — a hold the schema will not let go of (see release_hold). */
+        | "hold_locked";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -109,6 +112,19 @@ const id = (v: unknown): string => (typeof v === "string" ? v : "");
 
 const ids = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+/**
+ * The nomination an admin id refers to: that nomination if it is one, else the
+ * newest nomination of the caregiver with that id. See `nomination.approve`.
+ * A value that is not a uuid never reaches this: `id()` returns "" for a
+ * non-string and the cast then fails the action loudly, as every other id here.
+ */
+const nominationOf = (target: string) => sql`(
+  coalesce(
+    (select n.id from caregiver_nominations n where n.id = ${target}::uuid),
+    (select n.id from caregiver_nominations n
+      where n.caregiver_id = ${target}::uuid
+      order by n.created_at desc limit 1)))`;
 
 export async function applyAction(
   db: Db,
@@ -153,11 +169,22 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "contribution.approve": {
       const target = id(b.id);
-      await tx.execute(
+      /**
+       * A guard, not a filter (audit, 29 Sep). This used to run on every press:
+       * a second Approve on an already-approved card added another
+       * `validated_count`, reset the record's `last_confirmed_at` to now — so an
+       * old record read as freshly confirmed by an admin re-clicking — and wrote
+       * an audit row for a change that had not happened. Same fault the reply
+       * approval had until 14 Sep. Nothing to approve reads as `not_found`
+       * ("reload and look again"), which is what a stale screen needs to hear.
+       */
+      const approved = (await tx.execute(
         sql`update share_contributions
             set status = 'approved', approved_at = now(), approved_by = ${ctx.actor}
-            where id = ${target}::uuid`,
-      );
+            where id = ${target}::uuid and status <> 'approved'
+            returning share_id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (approved.length === 0) return { applied: false, reason: "not_found" };
       /**
        * Approving a contribution is also the moment a place becomes usable and
        * its freshness clock starts — a place with no approved contribution
@@ -169,7 +196,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                 validated_count = validated_count + 1,
                 last_confirmed_at = now(),
                 freshness_state = 'fresh'
-            where id = (select share_id from share_contributions where id = ${target}::uuid)`,
+            where id = ${String(approved[0].share_id)}::uuid`,
       );
       /**
        * 9.3 — and this is also the moment the contributor earned something.
@@ -703,6 +730,10 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const row = rows[0];
       if (!row) return { applied: false, reason: "not_found" };
       if (row.status === "sent") return { applied: false, reason: "answer_already_sent" };
+      /* A stale screen can still show Send on a row somebody has since
+         rejected, and sending it would put a decision back that an admin took
+         (29 Sep audit). Only the ones still awaiting or approved go out. */
+      if (row.status === "rejected") return { applied: false, reason: "answer_rejected" };
 
       /**
        * The same guard one row along: `answer_already_sent` stops a second
@@ -952,6 +983,21 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     /* ── 2.5 Caregivers ──────────────────────────────────────────────────── */
 
+    /**
+     * ⚠ **The id may be a nomination's or a caregiver's** (audit, 29 Sep).
+     *
+     * The caregivers page lists one row per *caregiver* (`admin_caregiver_rows`
+     * selects `c.id`) and sends that id — for "Release the hold" and for
+     * reading a private note — while these three updates matched
+     * `caregiver_nominations.id`. The two uuids never coincide, so the release
+     * matched **no row**, reported success and wrote an audit row for a hold
+     * that was still in place. `nominationOf` resolves either: the nomination
+     * itself if that is what was sent, otherwise the newest one of that
+     * caregiver — the same one the list row describes (`created_at desc`).
+     *
+     * And the outcome is truthful now: each update returns what it changed, so
+     * an audit row is written only for a change that happened.
+     */
     case "nomination.approve": {
       const target = id(b.id);
       /**
@@ -959,30 +1005,63 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * because a parent hesitated about a named person, and releasing it is a
        * separate, noted decision (invariant 12's sibling).
        */
-      await tx.execute(
+      const rows = (await tx.execute(
         sql`update caregiver_nominations
             set status = 'approved', approved_at = now(), approved_by = ${ctx.actor}
-            where id = ${target}::uuid and not review_hold`,
-      );
-      return { applied: true, resource: "caregiver_nomination", resource_id: target };
+            where id = ${nominationOf(target)} and not review_hold
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return {
+        applied: true,
+        resource: "caregiver_nomination",
+        resource_id: String(rows[0].id),
+      };
     }
 
     case "nomination.reject": {
       const target = id(b.id);
-      await tx.execute(
-        sql`update caregiver_nominations set status = 'rejected' where id = ${target}::uuid`,
-      );
-      return { applied: true, resource: "caregiver_nomination", resource_id: target };
+      const rows = (await tx.execute(
+        sql`update caregiver_nominations set status = 'rejected'
+            where id = ${nominationOf(target)}
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return {
+        applied: true,
+        resource: "caregiver_nomination",
+        resource_id: String(rows[0].id),
+      };
     }
 
     case "nomination.release_hold": {
       const target = id(b.id);
-      await tx.execute(
+      const rows = (await tx.execute(
         sql`update caregiver_nominations
             set review_hold = false, hold_reasons = '{}'
-            where id = ${target}::uuid`,
-      );
-      return { applied: true, resource: "caregiver_nomination", resource_id: target };
+            where id = ${nominationOf(target)} and review_hold
+              and (hire_again is null or hire_again = 'yes')
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) {
+        /* `hold_when_hesitant` (drizzle/0000) makes a "hesitant" or "no" hire
+           again a hold the database will not let go of, so releasing it would
+           abort the whole transaction as a bare 502. Said in words instead. */
+        const locked = (await tx.execute(
+          sql`select 1 from caregiver_nominations
+              where id = ${nominationOf(target)} and review_hold
+                and hire_again in ('hesitant', 'no')`,
+        )) as unknown as Array<Record<string, unknown>>;
+        return {
+          applied: false,
+          reason: locked.length > 0 ? "hold_locked" : "not_found",
+        };
+      }
+      return {
+        applied: true,
+        resource: "caregiver_nomination",
+        resource_id: String(rows[0].id),
+      };
     }
 
     case "caregiver.consent": {
@@ -1310,9 +1389,14 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "option.reject": {
       const target = id(b.id);
       const [rejected] = (await tx.execute(
-        sql`update pending_options set status = 'rejected' where id = ${target}::uuid
+        sql`update pending_options set status = 'rejected'
+            where id = ${target}::uuid and status = 'pending'
             returning market_id, category, submitted_value`,
       )) as unknown as Array<Record<string, unknown>>;
+      /* Only a name still waiting can be rejected. On a stale screen this used
+         to flip an already *approved* one to rejected — the option stayed live
+         in market_options while its queue row said otherwise. */
+      if (!rejected) return { applied: false, reason: "not_found" };
 
       /**
        * The other half of the 21 Sep rule: a place nobody approved does not stay
@@ -1429,22 +1513,41 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "flag.resolve": {
       const target = id(b.id);
-      await tx.execute(
+      /* Not `resolved` already: a second press used to overwrite who read it
+         and when with the second reader. */
+      const rows = (await tx.execute(
         sql`update flags
             set status = 'resolved', resolved_at = now(),
                 resolved_by = ${ctx.actor}, resolution_note = ${text(b.note)}
-            where id = ${target}::uuid`,
-      );
+            where id = ${target}::uuid and status <> 'resolved'
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "flag", resource_id: target };
     }
 
+    /**
+     * "Needs attention" — the button says *"Moved to the top"*, and that is what
+     * this has to do (audit, 29 Sep).
+     *
+     * It used to set `status = 'escalated'`. The flags page lists
+     * `status === 'open'` and the overview counts `status = 'open'`, so an
+     * escalated flag dropped out of the queue **and** out of every badge — an
+     * admin flagged something as needing attention and it vanished from every
+     * screen (only `retrieval.ts` still saw it). "The top" is what `severity
+     * = 'escalation'` already means: the page sorts on it, the red badge counts
+     * it, and it is what the raw SQL calls owed a person today. The flag stays
+     * `open` until somebody reads it.
+     */
     case "flag.escalate": {
       const target = id(b.id);
-      await tx.execute(
+      const rows = (await tx.execute(
         sql`update flags
-            set status = 'escalated', resolution_note = ${text(b.note)}
-            where id = ${target}::uuid`,
-      );
+            set severity = 'escalation', resolution_note = ${text(b.note)}
+            where id = ${target}::uuid and status in ('open', 'escalated')
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "flag", resource_id: target };
     }
 
@@ -1497,10 +1600,15 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       /**
        * Not a rejection: the person keeps every submission and becomes an
        * ordinary user at launch. Only the founding claim is withdrawn.
+       *
+       * `founding <> 'founding'` below: an admin's yes is final (`rewardStatus`
+       * checks it first), so a stale screen or a bulk call cannot quietly take
+       * a granted Founding status back.
        */
       await tx.execute(
         sql`update people set founding = 'request_invite'
-            where id in ${sql`(${sql.join(
+            where founding <> 'founding'
+              and id in ${sql`(${sql.join(
               targets.map((t) => sql`${t}::uuid`),
               sql`, `,
             )})`}`,
@@ -1537,7 +1645,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * `discoverable` and `introducible` stay as they are; turning them on is a
        * separate action with its own checks, and the ladder only ever increases.
        */
-      await tx.execute(
+      /**
+       * Two guards, audit 29 Sep. The claim has to be **pending**: linking a
+       * declined sign-up put a caregiver an admin had refused back on the
+       * ladder, and re-linking a linked one moved it. And the caregiver may not
+       * already be somebody else's: `profile_person_id` and the consent
+       * evidence would be overwritten by whoever was linked last — a second
+       * person taking over a listing the first had consented to. Neither is
+       * offered by the page, so both are refusals for a stale or crafted call.
+       * The claim is updated last, so a refusal here changes nothing.
+       */
+      const linkedRows = (await tx.execute(
         sql`
           update caregivers c
           set consent_status = 'consented',
@@ -1550,8 +1668,12 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
               updated_at = now()
           from caregiver_claims cc
           where cc.id = ${claim}::uuid and c.id = ${caregiver}::uuid
+            and cc.status = 'pending'
+            and (c.profile_person_id is null or c.profile_person_id = cc.person_id)
+          returning c.id
         `,
-      );
+      )) as unknown as Array<Record<string, unknown>>;
+      if (linkedRows.length === 0) return { applied: false, reason: "not_found" };
 
       /** The profile itself, copied across so answering paths read one shape. */
       await tx.execute(
@@ -1594,12 +1716,18 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const claim = id(b.id);
       if (!claim) return { applied: false, reason: "not_implemented" };
       /** Kept and marked, never deleted: the person still asked, and that is a fact. */
-      await tx.execute(
+      /* Only a sign-up still waiting can be declined: declining a *linked* one
+         used to mark the claim declined while the caregiver stayed consented
+         and answerable with the profile copied from it. Removing a linked
+         person is `claim.delete`, which does the whole cascade. */
+      const declined = (await tx.execute(
         sql`update caregiver_claims
             set status = 'declined', resolved_at = now(), resolved_by = ${ctx.actor},
                 updated_at = now()
-            where id = ${claim}::uuid`,
-      );
+            where id = ${claim}::uuid and status = 'pending'
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (declined.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "caregiver_claim", resource_id: claim };
     }
 
@@ -1681,7 +1809,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         sql`insert into referrals (referrer_id, referred_id, status)
             values (${referrer}::uuid, ${referred}::uuid, 'profile_complete')
             on conflict (referrer_id, referred_id)
-            do update set status = 'profile_complete'`,
+            do update set status = case when referrals.status = 'credited'
+                                        then referrals.status
+                                        else 'profile_complete' end`,
       );
       return { applied: true, resource: "referral", resource_id: referred };
     }

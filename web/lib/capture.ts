@@ -174,6 +174,13 @@ const CAREGIVER_WORDS = [
   "AU PAIR",
   "CHILDMINDER",
   "NANNIES",
+  /* The routing list (`answer-routing.ts`) already knows these, and a capture
+     that missed them let a caregiver through by a different door. "BABYSIT"
+     is the stem of babysits and babysitting, which "BABYSITTER" is not. */
+  "BABYSIT",
+  "AUPAIR",
+  "NIGHT NURSE",
+  "NEWBORN CARE",
 ];
 
 /**

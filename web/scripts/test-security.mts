@@ -436,6 +436,53 @@ console.log("\n=== invariant 7: no phone, no name, no free text in a log ===");
   );
 }
 
+/* ── audit 29 Sep: the admin sign-in lock and the admin writes ─────────────── */
+
+console.log("\n=== the admin sign-in lock is keyed on an address the caller cannot pick ===");
+{
+  const src = readFileSync("app/api/admin/session/route.ts", "utf8");
+  /* The leftmost X-Forwarded-For entry is written by the caller; a proxy appends
+     to the right. Keying the 15-minute lock on it gave every guess a fresh
+     five-attempt budget. */
+  ok(
+    "the sign-in route counts the address from the right",
+    /clientAddress\(/.test(src) && !/split\(","\)\[0\]/.test(src),
+    "use clientAddress(), never split(',')[0] on x-forwarded-for",
+  );
+}
+
+console.log("\n=== admin writes report what they changed ===");
+{
+  const write = readFileSync("lib/server/repo/admin-write.ts", "utf8");
+  const section = (name: string) => {
+    const at = write.indexOf(`case "${name}": {`);
+    return at === -1 ? "" : write.slice(at, at + 2600);
+  };
+  /* The caregivers page sends a caregiver id, not a nomination id, so these
+     three must resolve either or they match nothing and still write an audit
+     row (found 29 Sep: a hold could never be released). */
+  for (const name of ["nomination.approve", "nomination.reject", "nomination.release_hold"]) {
+    ok(
+      `${name} resolves a caregiver id as well as a nomination id`,
+      /nominationOf\(/.test(section(name)),
+    );
+  }
+  ok(
+    "a contribution is approved once — a second press changes nothing",
+    /status <> 'approved'/.test(section("contribution.approve")),
+  );
+  ok(
+    "escalating a flag keeps it open (the page lists and counts open ones)",
+    /severity = 'escalation'/.test(section("flag.escalate")) &&
+      !/status = 'escalated'/.test(section("flag.escalate")),
+  );
+  ok(
+    "only a sign-up still waiting can be linked or declined",
+    /cc\.status = 'pending'/.test(section("claim.link")) &&
+      /status = 'pending'/.test(section("claim.decline")),
+  );
+}
+
 console.log(
   failures === 0
     ? `\n  ${checks} checks passed.`

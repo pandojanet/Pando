@@ -110,6 +110,23 @@ export interface AnswerCandidate {
    */
   care?: string | null;
   /**
+   * What a caregiver agreed to have shown, already written out (29 Sep) -
+   * "Works with toddlers. Reliable and on time. Rate: $22-26/hr." The lead
+   * block carries it whole; a secondary line carries `care_brief`.
+   *
+   * Built by `lib/care-answer.ts` from her own profile only: never a parent's
+   * note about her (invariant 12), never availability, never a pay band from a
+   * nomination. Absent for everything that is not a caregiver.
+   */
+  care_facts?: string | null;
+  care_brief?: string | null;
+  /**
+   * What she matches in the question - "toddlers, full-time care". Only ever
+   * set when the question asked for something and her profile says she does it,
+   * so the sentence can never claim a fit nothing checked.
+   */
+  fit?: string | null;
+  /**
    * One short factual thing about a **public** finding — the ages it takes,
    * when it runs, drop-in or a term, a published price.
    *
@@ -556,18 +573,22 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
   if (candidate.trust.public_only) return `${candidate.trust.labels.join(". ")}.`;
 
   const n = candidate.firsthand_count;
+  /* A person is employed, not used (29 Sep). "2 parents near you have used
+     Elena V." read as though she were a class; the count is still the parents',
+     which is the claim the approved labels make. */
+  const verb = candidate.kind === "caregiver" ? "employed" : "used";
   const who =
     /* The client's own sentence, where it is true (10 Sep): one parent, and
        that parent turned their name on for this recommendation. `named` is
        already null wherever the caller is putting the name on a quote instead,
        so the two can never both fire. */
     named && n === 1
-      ? `${named} has used`
+      ? `${named} has ${verb}`
       : n <= 0
       ? "A local parent has shared"
       : n === 1
-        ? "One parent near you has used"
-        : `${n} parents near you have used`;
+        ? `One parent near you has ${verb}`
+        : `${n} parents near you have ${verb}`;
   const when = candidate.last_confirmed
     ? `, last confirmed ${monthOf(candidate.last_confirmed)}`
     : "";
@@ -586,7 +607,7 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
  */
 function placeOf(candidate: AnswerCandidate): string {
   const what = candidate.care
-    ? `${candidate.care.toLowerCase()} care`
+    ? careKindWords(candidate.care)
     : (KIND_WORD[candidate.kind] ?? candidate.kind);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   if (!what) return where;
@@ -600,9 +621,28 @@ function placeOf(candidate: AnswerCandidate): string {
    * San Marino"**: "care" is a mass noun and takes none. Measured in the probe,
    * on both care questions.
    */
-  return candidate.care
+  return candidate.care && !/sitter$/.test(what)
     ? `, ${what}${where}`
     : `, ${article(what)}${what}${where}`;
+}
+
+/**
+ * How a kind of care reads inside a sentence (29 Sep).
+ *
+ * The labels are for a tap - "Occasional sitting", "Night / newborn" - and
+ * "occasional sitting care" is not something anybody says. It lives here rather
+ * than in `care-answer.ts` because this module imports nothing at runtime.
+ */
+export function careKindWords(label: string): string {
+  const key = label.trim().toLowerCase();
+  const known: Record<string, string> = {
+    "occasional sitting": "occasional sitter",
+    "regular part-time": "part-time care",
+    "full-time": "full-time care",
+    "night / newborn": "night and newborn care",
+    "before / after school": "before and after-school care",
+  };
+  return known[key] ?? `${key} care`;
 }
 
 function article(what: string): string {
@@ -646,6 +686,15 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
    */
   const named = clean(candidate.named_by);
   const parts = [evidenceSentence(candidate, great ? null : named)];
+
+  /* A caregiver's line says what she matches and what she agreed to have shown
+     (29 Sep): the ages she works with, what she is good at, what she charges.
+     Before this the first answer about a nanny was the same one-line shape as
+     a class, and nothing a parent chooses on was in it. */
+  if (candidate.kind === "caregiver") {
+    if (candidate.fit) parts.push(`Fits what you asked: ${candidate.fit}.`);
+    if (candidate.care_facts) parts.push(candidate.care_facts);
+  }
 
   /* Who it suits, before what one parent thought of it: a reader deciding
      between two classes is deciding whether it fits their child, and that
@@ -792,7 +841,11 @@ function alsoPart(candidate: AnswerCandidate): string | null {
       : candidate.trust.freshness === "stale"
         ? ", may be out of date"
         : "";
-  return `${candidate.name}${placeOf(candidate)}, ${who}${money ? `, ${money}` : ""}${age}`;
+  const care =
+    candidate.kind === "caregiver" && candidate.care_brief
+      ? `, ${candidate.care_brief}`
+      : "";
+  return `${candidate.name}${placeOf(candidate)}, ${who}${care}${money ? `, ${money}` : ""}${age}`;
 }
 
 /**
@@ -828,7 +881,7 @@ const ALSO_LIMIT = 2;
 
 function line(candidate: AnswerCandidate, labels: readonly string[]): string {
   const what = candidate.care
-    ? `${candidate.care.toLowerCase()} care`
+    ? careKindWords(candidate.care)
     : (KIND_WORD[candidate.kind] ?? candidate.kind);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   const venue = candidate.venue ? `, ${candidate.venue}` : "";
@@ -929,6 +982,19 @@ export interface ComposeInput {
    * so and ends the exchange.
    */
   nobody_near?: { place: string | null };
+  /**
+   * A line above a parent-backed answer, budgeted like the rest (29 Sep). Used
+   * for "any others?", where the first record would otherwise read as though it
+   * were the answer to a new question. Ignored when the whole answer is public:
+   * there `head` is the guard that says so, and nothing may stand in for it.
+   */
+  opening?: string;
+  /**
+   * The parent asked for more and there is none left that they have not read.
+   * Says so, rather than "I don't have anything from local parents on this
+   * yet" - which is false, they were just sent some.
+   */
+  nothing_left?: boolean;
 }
 
 /**
@@ -938,8 +1004,105 @@ export interface ComposeInput {
  * appended, so the result is always whole lines — an answer that stops mid-record
  * is worse than a shorter one.
  */
+/**
+ * Two caregivers side by side, so there is a choice (29 Sep).
+ *
+ * The developer: an answer about a nanny should offer **two options** when there
+ * are two, not describe one in depth. A person choosing childcare is comparing,
+ * and the deep block that suits a class - what one parent said, a caveat, a
+ * tip - has none of that to say about a person (invariant 12 keeps every note
+ * about her out), so it was one long line about somebody the parent has no way
+ * to weigh against anybody.
+ *
+ * Each option is the same shape so they can be read across: who, what kind of
+ * care and where, how many parents have employed them, what they match, what
+ * they work with and charge. The trust claim is the same one the prose makes
+ * elsewhere - a count of parents - and every label the prose does not say
+ * (`Reference available`) still prints verbatim.
+ *
+ * Richest form that fits: full facts, then the short form, then evidence only.
+ * Never a cut sentence. Returns null when there are not two parent-backed
+ * caregivers or nothing fits, and the ordinary path answers.
+ */
+function composeCareChoice(
+  ranked: AnswerCandidate[],
+  input: ComposeInput,
+): ComposedAnswer | null {
+  const people = ranked.filter((c) => !c.trust.public_only && c.kind === "caregiver");
+  if (people.length < 2) return null;
+  /* Only when the answer is about care throughout: a caregiver ranked among
+     records of another kind is the ordinary lead-and-alternatives shape. */
+  if (ranked.some((c) => !c.trust.public_only && c.kind !== "caregiver")) return null;
+
+  const [first, second] = people;
+  const head = input.opening ?? "Two options:";
+  const tail = input.forwardable ? `\n${SHARE_LINE}` : "";
+  const room = SMS_BUDGET - head.length - tail.length - 2;
+
+  const block = (c: AnswerCandidate, n: number, tier: 0 | 1 | 2): string => {
+    const count = c.firsthand_count;
+    const by =
+      count <= 0
+        ? "Recommended by a local parent"
+        : count === 1
+          ? "Employed by one parent near you"
+          : `Employed by ${count} parents near you`;
+    const when = c.last_confirmed ? `, last confirmed ${monthOf(c.last_confirmed)}` : "";
+    const parts = [`${n}) ${c.name}${placeOf(c)}.`, `${by}${when}.`];
+    if (c.fit && tier < 2) parts.push(`Fits: ${c.fit}.`);
+    const facts =
+      tier === 0
+        ? c.care_facts
+        : tier === 1 && c.care_brief
+          ? `${c.care_brief.charAt(0).toUpperCase()}${c.care_brief.slice(1)}.`
+          : null;
+    if (facts) parts.push(facts);
+    const extras = extrasOf(c.trust.labels);
+    if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
+    const fresh = freshnessNote(c);
+    if (fresh) parts.push(fresh);
+    return parts.join(" ");
+  };
+
+  for (const tier of [0, 1, 2] as const) {
+    const a = block(first, 1, tier);
+    const b = block(second, 2, tier);
+    if (a.length + b.length + 1 > room) continue;
+    return {
+      text: `${head}\n${a}\n${b}${tail}`,
+      /* Two people to choose between is the answer; offering to ask the network
+         as well would be selling something the parent does not need. */
+      next_step: "none",
+      public_only: false,
+      used: 2,
+      parent_used: 2,
+      /* A caregiver has no `shares` row, so there is nothing to join a
+         thank-you to - see `AnswerCandidate.id`. */
+      used_ids: [],
+      labels: [...new Set([...first.trust.labels, ...second.trust.labels])],
+    };
+  }
+  return null;
+}
+
 export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const ranked = rankForAnswer(input.candidates);
+
+  /* They asked for more and have already been sent everything (29 Sep). */
+  if (ranked.length === 0 && input.nothing_left) {
+    const offer = input.can_offer_blast !== false;
+    return {
+      text: offer
+        ? "That's everything I have on this so far. Want me to ask a few nearby parents for more?"
+        : "That's everything I have on this so far.",
+      next_step: offer ? "offer_blast" : "none",
+      public_only: false,
+      used: 0,
+      parent_used: 0,
+      used_ids: [],
+      labels: [],
+    };
+  }
 
   /* Nothing at all. Three different nothings, and they get different offers. */
   if (ranked.length === 0 && input.nobody_near) {
@@ -967,6 +1130,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       labels: [],
     };
   }
+
+  /* Two caregivers to choose between, when there are two (29 Sep). */
+  const careChoice = composeCareChoice(ranked, input);
+  if (careChoice) return careChoice;
 
   const parentBacked = ranked.filter((c) => !c.trust.public_only);
   const publicOnly = parentBacked.length === 0;
@@ -1022,7 +1189,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     ? input.nobody_near
       ? `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
       : "Here's what I can tell you. This is general information, not from a parent:"
-    : "";
+    : (input.opening ?? "");
 
   /**
    * The labels every record shares come out of the lines and go under them once.
@@ -1104,6 +1271,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    */
   const leadOf = ranked.find((c) => !c.trust.public_only) ?? null;
   let leadRendered = false;
+  let leadBare = false;
   /* The heading is written once, and never when the whole answer is public —
      `head` already says it there, and saying it twice is worse than not at all. */
   let publicOpened = publicOnly;
@@ -1113,17 +1281,31 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
 
   for (const candidate of ranked) {
     const isLead = candidate === leadOf && !leadRendered;
-    const rendered = isLead
+    let rendered = isLead
       ? leadBlock(candidate, extrasOf(perLine(candidate)))
       : candidate.trust.public_only
         ? /* No label on the line: the heading above it carries the only one it
              has, and repeating it under its own heading is noise. */
           line(candidate, publicOnly ? perLine(candidate) : [])
         : alsoLine(candidate);
-    const cost = rendered.length + 1;
+    let cost = rendered.length + 1;
     /* The reserve applies to everything ahead of the public line and is released
        for the line it was held for. */
     const ceiling = candidate.trust.public_only ? SMS_BUDGET : SMS_BUDGET - reserved;
+    if (isLead && length + cost + tail.length > ceiling) {
+      /* The record the answer leads on does not vanish because a parent wrote a
+         long note: without the notes it is one evidence sentence, the price and
+         its age or withdrawal warning, and those are the parts that must never
+         be lost. The notes are dropped whole, never cut (the same rule
+         `sendableNote` follows) — otherwise the lead was skipped and a lesser
+         record went out as "Also nearby" with the best one missing. */
+      const bare = leadBlock({ ...candidate, notes: undefined }, extrasOf(perLine(candidate)));
+      if (length + bare.length + 1 + tail.length <= ceiling) {
+        rendered = bare;
+        cost = bare.length + 1;
+        leadBare = true;
+      }
+    }
     if (length + cost + tail.length > ceiling) {
       if (candidate.trust.public_only) break;
       /* A parent record that does not fit is skipped rather than ending the
@@ -1203,7 +1385,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     lines.length = 0;
     lines.push(
       chosen[0] === leadOf
-        ? leadBlock(chosen[0], extrasOf(chosen[0].trust.labels))
+        ? leadBlock(
+            leadBare ? { ...chosen[0], notes: undefined } : chosen[0],
+            extrasOf(chosen[0].trust.labels),
+          )
         : line(chosen[0], chosen[0].trust.labels),
     );
   }
@@ -1211,11 +1396,17 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   /* Everything was too long to fit even once. Send the best one alone rather than
      an opening sentence with nothing under it. */
   if (lines.length === 0) {
-    const only =
+    const room = SMS_BUDGET - head.length - tail.length - 2;
+    let only =
       ranked[0] === leadOf
         ? leadBlock(ranked[0], extrasOf(ranked[0].trust.labels))
         : line(ranked[0], ranked[0].trust.labels);
-    lines.push(only.slice(0, SMS_BUDGET - head.length - tail.length - 2));
+    /* Notes dropped whole before any cut is made — a cut takes the age or
+       withdrawal warning, which sits at the end, before it takes anything else. */
+    if (only.length > room && ranked[0] === leadOf) {
+      only = leadBlock({ ...ranked[0], notes: undefined }, extrasOf(ranked[0].trust.labels));
+    }
+    lines.push(only.slice(0, room));
     chosen.push(ranked[0]);
   }
 

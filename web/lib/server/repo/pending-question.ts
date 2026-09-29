@@ -72,6 +72,18 @@ export async function rememberTurn(input: {
   isTest?: boolean;
 }): Promise<void> {
   await withDb(async (db: Db) => {
+    /* A stale open row is closed before anything is written. `openQuestion`
+       stops *reading* one after `EXPIRY_HOURS`, but the row is still `open`, so
+       the one-open-per-person index made the insert below conflict onto it:
+       yesterday's turns were glued to today's message and its ask count carried
+       over, which handed a parent to a person after a single ask. */
+    await db.execute(sql`
+      update pending_questions
+         set status = 'given_up', updated_at = now()
+       where person_id = ${input.personId}::uuid
+         and status = 'open'
+         and updated_at <= now() - (${EXPIRY_HOURS} || ' hours')::interval
+    `);
     await db.execute(sql`
       insert into pending_questions (person_id, turns, asks, is_test)
       values (${input.personId}::uuid, array[${input.text}]::text[], 1,

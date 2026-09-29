@@ -594,12 +594,34 @@ export async function checkVerification(
     return { ok: false, reason: "too_many_attempts" };
   }
 
+  /**
+   * ⚠⚠ **The guess is counted before it is compared, and the count is what
+   * decides whether it is compared at all** (29 Sep).
+   *
+   * The attempts read above is a snapshot. Counting only *after* a wrong
+   * comparison meant N requests in flight together each saw `attempts = 0`,
+   * each compared against the code, and only then incremented — so §19's
+   * "3 attempts" was three *sequential* guesses and a parallel burst got as
+   * many as the per-address limiter allowed (90 in ten minutes). The
+   * increment is one atomic statement, so taking it first makes the fourth
+   * concurrent request see 4 and be refused without ever touching the code.
+   *
+   * A correct guess is counted too, which is harmless: the third try is still
+   * compared (`3 <= 3`), and a verification that has been confirmed has no use
+   * for its counter. What it can never do is let a fourth try in.
+   */
+  const attempts = await s.countAttempt(id);
+  if (attempts > VERIFICATION_MAX_ATTEMPTS) {
+    await s.invalidate(id);
+    await s.lock(entry.phone, now + VERIFICATION_LOCK_MINUTES * 60 * 1000);
+    return { ok: false, reason: "too_many_attempts", attempts_left: 0 };
+  }
+
   const given = Buffer.from(hash(code));
   const wanted = Buffer.from(entry.code_hash);
   const same = given.length === wanted.length && timingSafeEqual(given, wanted);
 
   if (!same) {
-    const attempts = await s.countAttempt(id);
     const left = VERIFICATION_MAX_ATTEMPTS - attempts;
     if (left <= 0) {
       await s.invalidate(id);

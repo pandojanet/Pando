@@ -121,6 +121,11 @@ ok(
   area("the nice bit near the park") === null,
   "the 27 Aug rule: a typed area is an answer, but it is never a matchable value",
 );
+ok(
+  "a two-letter part matches a whole word, never the inside of one",
+  area("I can't say exactly, planning to move later") === null,
+  "'la' and 'can' were both found inside other words, filing La Canada Flintridge",
+);
 
 console.log("\n=== how Pando remembers what it asked ===");
 ok(

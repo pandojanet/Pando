@@ -301,10 +301,20 @@ export async function extractCard(
     const focus =
       claimed !== "" && focusOptions.some((o) => o.id === claimed) ? claimed : null;
 
+    /* A missing or non-numeric score is a malformed response, not a 0 or a NaN:
+       `Math.max(0, NaN)` is NaN, which the 0–1 CHECK refuses *and* which would
+       sort out of every comparison the low-confidence rule makes. Unscored is
+       the honest state, and the sweep retries it. */
+    const score = Number(parsed.confidence);
+    if (!Number.isFinite(score)) {
+      console.warn("[extract] response carried no usable score; leaving unscored");
+      return null;
+    }
+
     return {
       // Clamp rather than trust: the column has a 0–1 CHECK, and a value
       // outside it would abort the update instead of just being wrong.
-      confidence: Math.min(1, Math.max(0, Number(parsed.confidence))),
+      confidence: Math.min(1, Math.max(0, score)),
       possible_named_person: parsed.possible_named_person === true,
       note: note.slice(0, 300),
       focus,

@@ -4,6 +4,7 @@ import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
+import { bandsForAge } from "@/lib/matching";
 import {
   caregiverNominations,
   caregivers,
@@ -166,6 +167,26 @@ async function writeShareCard(
     )
     .limit(1);
 
+  /* ⚠ The chat's step is `child_age` — a step id **is** the field key — and
+     this read only `child_age_at_time`, so the age at the time was in
+     `submissions.fields` and empty on every real contribution (found 29 Sep);
+     `test:e2e` sends the longer name and so passed throughout. */
+  const ageAtTime = intArray(f.child_age_at_time ?? f.age_at_time ?? f.child_age);
+  /* The bands this contribution speaks for: any the card names outright, plus
+     the ones its ages fall in. `shares.age_bands` is what retrieval filters on
+     (`age_bands && …`), and nothing on the chat path ever filled it — an empty
+     array overlaps nothing, so every card a parent actually wrote was excluded
+     from any question that named an age. */
+  const contributionBands = [
+    ...new Set([
+      ...strArray(f.age_bands),
+      /* The place card's "Who's it best for?" is a chip list of these very
+         band ids, under the step id `best_for`. */
+      ...strArray(f.best_for),
+      ...ageAtTime.flatMap((a) => bandsForAge(a)),
+    ]),
+  ].filter((b) => /^[a-z_]+$/.test(b));
+
   let shareId: string;
   if (found) {
     shareId = found.id;
@@ -181,8 +202,9 @@ async function writeShareCard(
            town step's id. It was never read here, so a town a parent tapped was
            stored in `submissions.fields` and on no record (found 21 Sep). */
         neighborhoods: strArray(f.neighborhoods ?? f.neighborhood ?? f.location),
-        ageBands: strArray(f.age_bands),
-        placeType: str(f.place_type),
+        ageBands: contributionBands,
+        /* The place card's step is `type` (step id = field key). */
+        placeType: str(f.place_type ?? f.type),
         topic: str(f.topic),
         isTest: input.is_test,
       })
@@ -214,6 +236,20 @@ async function writeShareCard(
     });
   }
 
+  /* A second parent's toddler widens what the record is for; it never narrows
+     it. The bands are a closed vocabulary (checked above) joined into a
+     Postgres array literal, because drizzle expands a JS array into a record,
+     which a `text[]` parameter refuses. */
+  if (found && contributionBands.length > 0) {
+    await tx.execute(sql`
+      update shares
+         set age_bands = (
+           select array_agg(distinct b order by b)
+             from unnest(coalesce(age_bands, '{}'::text[]) || ${`{${contributionBands.join(",")}}`}::text[]) b)
+       where id = ${shareId}::uuid
+    `);
+  }
+
   /**
    * R5 price. The `price_shape` CHECK refuses a band without a unit, because
    * $100/month and $100/term are different recommendations — so a band that
@@ -231,7 +267,7 @@ async function writeShareCard(
     submissionId,
     /** R2 — decides the label, and whether this can ever count toward Founding. */
     firsthand: f.firsthand === "secondhand" ? false : true,
-    childAgeAtTime: intArray(f.child_age_at_time ?? f.age_at_time),
+    childAgeAtTime: ageAtTime,
     lastThere: str(f.freshness ?? f.last_there),
     howMuch: str(f.how_much),
     recommendation: str(f.recommendation),
@@ -408,7 +444,12 @@ async function writeCaregiver(
     submissionId,
     /** C1 — the route refuses anything else; `firsthand_only` is the backstop. */
     workedForFamily: true,
-    careType: str(f.care_type),
+    /* ⚠ The chat's step is `type` — a step id **is** the field key written into
+       the draft — and this read `care_type`, so the kind of care every parent
+       chose was in `submissions.fields` and null on every nomination
+       (found 29 Sep). `care_type` stays as the first choice for a script or an
+       older client that already sends it. */
+    careType: str(f.care_type ?? f.type),
     howKnown: str(f.how_known),
     howLong: str(f.how_long),
     lastWorked: str(f.last_worked),

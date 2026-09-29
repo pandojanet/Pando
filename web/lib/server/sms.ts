@@ -343,7 +343,11 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
     if (!input.personId) {
       return { sent: false, reason: "frequency_cap", policy_reason: "no_person" };
     }
-    const verdict = await outreachAllowed(input.personId, input.outreachKind ?? "blast");
+    const verdict = await outreachAllowed(input.personId, input.outreachKind ?? "blast", {
+      /* A retry is the same message, so the failed original must not count as
+         the "previous request" that spaces it out (see `outreachAllowed`). */
+      excludeMessageId: input.retryOf ?? null,
+    });
     if (!verdict.ok) {
       return { sent: false, reason: "frequency_cap", policy_reason: verdict.reason };
     }

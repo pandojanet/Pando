@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
   ADMIN_COOKIE,
+  clearFailures,
   issueToken,
   loginLocked,
   passwordRecord,
@@ -106,6 +107,9 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   }
+
+  /* Proved, so the wrong-password counter starts again — as sign-in does. */
+  clearFailures(key);
 
   const record = await passwordRecord(next);
   const result = await withDb((db) => changeOwnPassword(db, session.user, record));

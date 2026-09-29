@@ -14,6 +14,7 @@ import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
 import { writeProfile } from "@/lib/server/repo/profile";
 import { inviterIdFor, validateInviteCode } from "@/lib/server/invite";
+import { invalidateInvites } from "@/lib/server/invite-cache";
 import {
   LISTENING_EAR_CONSENT_TEXT_VERSION,
   RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
@@ -381,11 +382,19 @@ export async function POST(request: Request) {
    * a month against a child who does not exist would put a fact in
    * `raw_answers` that no parent stated.
    */
-  const capturedAt =
-    typeof raw.profile_captured_at === "string" &&
-    !Number.isNaN(Date.parse(raw.profile_captured_at))
-      ? new Date(raw.profile_captured_at)
-      : new Date();
+  /* The moment the ages were tapped — the client's, because a session held on
+     the phone until the code is confirmed may be days old and a birth year is
+     `capture year − age`. **Never in the future**, though: a device with its
+     clock ahead would otherwise file every child a year too young (and stamp
+     `profile_captured_at` with a date that has not happened), and nothing the
+     parent could have tapped is later than now. */
+  const claimedCapture =
+    typeof raw.profile_captured_at === "string"
+      ? Date.parse(raw.profile_captured_at)
+      : Number.NaN;
+  const capturedAt = Number.isNaN(claimedCapture)
+    ? new Date()
+    : new Date(Math.min(claimedCapture, Date.now()));
 
   const childMonths: Record<string, number> = {};
   for (const [childId, month] of Object.entries(
@@ -416,6 +425,17 @@ export async function POST(request: Request) {
   const answers = {
     ...EMPTY_ANSWERS,
     neighborhood,
+    /* Her §5 pair, from the values this handler already resolved and checked
+       (never the body's own). They were left at their empty defaults, which had
+       two effects (29 Sep): `raw_answers` — what `/api/seed/me` hands back to
+       a parent signing in on another device — carried no ZIP, so editing one
+       answer there re-saved a null `selected_zip`; and `profileDepth` below saw
+       the "Which ZIP code?" follow-up as not asked at all for a six-ZIP town,
+       where the parent's own screen counted it — so the stored depth that
+       gates Founding could sit a few points under the bar they had watched
+       themselves clear. */
+    home_place: placeId,
+    home_zip: selectedZip,
     child_ages: childAges,
     child_months: childMonths,
     child_school_status: childSchoolStatus,
@@ -468,9 +488,14 @@ export async function POST(request: Request) {
     // QA walkthrough, not a contributor — the workflow must keep these out of the
     // graph and out of pilot metrics.
     is_test: raw.is_test === true,
-    name: cleanName(raw.name),
-    first_name: cleanName(raw.first_name),
-    last_name: cleanName(raw.last_name),
+    /* ⚠ Invariant 11: nothing about a *named* parent is stored before their
+       phone is verified. The gate above lets a phone-less write through for
+       the anonymous path (no number, no founding), so a name arriving on one
+       is dropped here rather than stored against a person nobody proved
+       anything about. With a phone the gate has already required the code. */
+    name: claimedPhone ? cleanName(raw.name) : null,
+    first_name: claimedPhone ? cleanName(raw.first_name) : null,
+    last_name: claimedPhone ? cleanName(raw.last_name) : null,
     // The client sends E.164; normalize anyway so a bare 10-digit US number from
     // a future caller isn't silently dropped.
     phone: claimedPhone,
@@ -545,11 +570,14 @@ export async function POST(request: Request) {
         : null,
     /** Disclosed at capture, so it starts true; texting PRIVACY turns it off. */
     aggregate_display: raw.aggregate_display !== false,
-    topic_preferences: (raw.topic_preferences ?? [])
+    topic_preferences: (Array.isArray(raw.topic_preferences) ? raw.topic_preferences : [])
       .map(cleanId)
       .filter((v): v is string => v !== null)
       .slice(0, 40),
-    topics_lived_experience: (raw.topics_lived_experience ?? [])
+    topics_lived_experience: (Array.isArray(raw.topics_lived_experience)
+      ? raw.topics_lived_experience
+      : []
+    )
       .map(cleanId)
       .filter((v): v is string => v !== null)
       .slice(0, 20),
@@ -609,8 +637,13 @@ export async function POST(request: Request) {
      * to (invariant 9), and that is not the client's call either.
      */
     pending_options: derivePendingOptions(derivationInput),
+    /* Whole and in range: the column is an `integer`, so a fraction or NaN from
+       a client would abort the entire profile write rather than be wrong. */
     profile_completeness:
-      typeof raw.profile_completeness === "number" ? raw.profile_completeness : 0,
+      typeof raw.profile_completeness === "number" &&
+      Number.isFinite(raw.profile_completeness)
+        ? Math.min(100, Math.max(0, Math.round(raw.profile_completeness)))
+        : 0,
     /**
      * DERIVED HERE, never read from the body — unlike the line above it.
      *
@@ -733,6 +766,13 @@ export async function POST(request: Request) {
   }
 
   console.info("[seed:profile] stored", result.data.counts);
+
+  /* The parent's own referral link may have just been minted, and the invite
+     table is cached for 60s per process — so the first friend to open it inside
+     that minute would be told the code is unknown and arrive with no attribution
+     and no referral. Dropped after the commit, never before: a read racing the
+     transaction would refill the cache with the table as it was. */
+  invalidateInvites();
 
   return NextResponse.json({
     ok: true,

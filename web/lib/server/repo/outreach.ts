@@ -111,7 +111,24 @@ export type OutreachVerdict = { ok: true } | { ok: false; reason: string };
 export async function outreachAllowed(
   personId: string,
   kind: OutreachKind,
+  opts?: {
+    /**
+     * A retry passes the `message_log` id it is retrying, and that row is left
+     * out of every counter below (26 Sep).
+     *
+     * The original failed send is an ordinary outbound row inside the last
+     * minutes, so without this the retry met its **own** original: `last_outreach`
+     * was five to sixty minutes old, the 48-hour gap said `too_soon`, and every
+     * retry of a ping or a blast request was refused by the rule that exists to
+     * stop a *second* message. `thanks` alone got through, because it skips the
+     * gap. The retry sweep therefore never retried the two messages it was
+     * written for. Every other row still counts, so a retry is still refused when
+     * something else was sent to this person since.
+     */
+    excludeMessageId?: string | null;
+  },
 ): Promise<OutreachVerdict> {
+  const excludeId = opts?.excludeMessageId ?? null;
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select
@@ -132,6 +149,7 @@ export async function outreachAllowed(
         coalesce(sum(case when m.direction = 'out'
                            and m.category = 'outreach'
                            and m.retry_of is null
+                           and m.id is distinct from ${excludeId}::uuid
                            and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                     as sent_30,
@@ -144,17 +162,20 @@ export async function outreachAllowed(
                         then m.responded_to end)::int                 as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
                   and m.retry_of is null
+                  and m.id is distinct from ${excludeId}::uuid
                   and m.template is distinct from 'thanks'
                  then m.sent_at end)                                  as last_outreach,
         coalesce(sum(case when m.direction = 'out'
                            and m.template = 'freshness_ping'
                            and m.retry_of is null
+                           and m.id is distinct from ${excludeId}::uuid
                            and date_trunc('month', m.sent_at)
                              = date_trunc('month', now())
                       then 1 else 0 end), 0)::int                     as pings_month,
         coalesce(bool_or(m.direction = 'out'
                      and m.category = 'outreach'
                      and m.retry_of is null
+                     and m.id is distinct from ${excludeId}::uuid
                      and m.template is distinct from 'freshness_ping'
                      and m.template is distinct from 'thanks'
                      and m.sent_at::date = now()::date), false)       as blast_today

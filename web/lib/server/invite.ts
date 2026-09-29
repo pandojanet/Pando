@@ -59,7 +59,10 @@ function codeTable(): Record<string, MarketId> {
 }
 
 export function normalizeCode(code: string | null | undefined): string | null {
-  const trimmed = code?.trim().toLowerCase();
+  /* `typeof`, not `?.`: the profile route passes `raw.invite_code` straight from
+     a JSON body, and a number or an object there used to throw out of `.trim()`
+     — an unhandled 500 on the parent's write instead of "no invite". */
+  const trimmed = typeof code === "string" ? code.trim().toLowerCase() : "";
   return trimmed ? trimmed : null;
 }
 

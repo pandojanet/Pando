@@ -83,7 +83,8 @@ const NOT_A_PLACE = new Set([
   "morning", "afternoon", "evening", "night", "weekend", "weekends", "person",
   "advance", "mind", "total", "particular", "case", "time", "january",
   "february", "march", "april", "may", "june", "july", "august", "september",
-  "october", "november", "december", "english", "spanish", "private", "public",
+  "october", "november", "december", "english", "spanish", "french", "german", "mandarin", "chinese", "japanese", "korean",
+  "italian", "russian", "portuguese", "arabic", "hebrew", "private", "public",
 ]);
 
 /**

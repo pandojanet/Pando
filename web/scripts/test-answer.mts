@@ -269,6 +269,26 @@ ok(
   })(),
   "the budget is checked with the tail included, not after it is appended",
 );
+{
+  /* A parent's very long note must cost the note, never the record or its age
+     warning: the lead used to be skipped (or the block cut mid-sentence, with the
+     "check before you book" line at its end lost). */
+  const wordy = compose([
+    parent({
+      name: "Wordy Studio",
+      firsthand_count: 1,
+      withdrawn: 1,
+      notes: { great: "loved it ".repeat(120).trim(), caveat: "parking is hard" },
+    }),
+  ]);
+  ok("a long note drops the note, not the record", wordy.text.includes("Wordy Studio"));
+  ok("and never cuts it mid-sentence", !wordy.text.includes("loved it loved"));
+  ok(
+    "the withdrawal warning survives",
+    wordy.text.includes("no longer be worth it"),
+    "it sits at the end of the block, which is exactly what a cut removes first",
+  );
+}
 
 console.log("\n=== the next step ===");
 ok(

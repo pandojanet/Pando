@@ -170,7 +170,11 @@ export async function recordReferral(
     return "person";
   }
 
-  if (invite.created_by) {
+  /* ⚠ `'app'` is who *minted a parent's own link* (`ensureReferralLink`), not an
+     admin. When that parent has since deleted themselves `referrer_person_id`
+     is null and this branch used to file the referral under an "admin" called
+     app — a referrer nobody is, on a row Janet reads as somebody's credit. */
+  if (invite.created_by && invite.created_by !== "app") {
     /* An admin's individual link. No unique constraint covers this pair —
        `referrals_referrer_id_referred_id_key` is on the person columns — so the
        insert asks first, which is what keeps a re-saved profile from stacking

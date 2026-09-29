@@ -229,9 +229,12 @@ async function overview(db: Db) {
         (select count(*) from caregivers where consent_status = 'declined'  and not is_test) as cg_declined,
         (select count(*) from share_contributions
            where confidence is not null and confidence < 0.6 and not is_test)      as low_confidence,
-        (select count(*) from flags where status = 'open')                         as open_flags,
+        -- Two statuses count as open: flag.escalate used to write the third,
+        -- so a flag an admin escalated left every count and every list.
+        (select count(*) from flags where status in ('open', 'escalated'))         as open_flags,
         (select count(*) from flags
-           where status = 'open' and severity = 'escalation')                      as escalations,
+           where status in ('open', 'escalated')
+             and (severity = 'escalation' or status = 'escalated'))                as escalations,
         /* 14.9 — a subset of open_flags, counted separately because it is the
            one flag reason with its own decision rather than a read-and-resolve. */
         (select count(*) from flags f join shares s on s.id = f.subject_id
@@ -726,7 +729,10 @@ async function contributions(db: Db, personId: string | null = null) {
       join shares pl on pl.id = pc.share_id
       left join people p on p.id = pc.person_id
       where ${personId}::uuid is null or pc.person_id = ${personId}::uuid
-      order by pc.created_at desc
+      -- Waiting ones first: the sidebar counts every pending row, and a plain
+      -- newest-first cut at 500 would drop the oldest of them once enough
+      -- decided cards had been added behind them.
+      order by (pc.status = 'pending_review') desc, pc.created_at desc
       limit 500
     `,
   );
@@ -838,10 +844,22 @@ async function caregivers(db: Db) {
  */
 async function restrictedNote(db: Db, nominationId: string) {
   if (!nominationId) return null;
+  /**
+   * The id may be a nomination's or a caregiver's (audit, 29 Sep): the
+   * caregivers page lists one row per caregiver and passes *that* id, which
+   * matched no `nomination_id` — so the private note could never be opened.
+   * A caregiver id resolves to the newest nomination, the one the list row
+   * describes and whose `has_restricted_notes` offered the button.
+   */
   const list = await rows(
     db,
     sql`select id, nomination_id, kind, body, created_at
-        from restricted_notes where nomination_id = ${nominationId}::uuid
+        from restricted_notes
+        where nomination_id = coalesce(
+                (select n.id from caregiver_nominations n where n.id = ${nominationId}::uuid),
+                (select n.id from caregiver_nominations n
+                  where n.caregiver_id = ${nominationId}::uuid
+                  order by n.created_at desc limit 1))
         order by created_at`,
   );
   return list;
@@ -955,6 +973,10 @@ async function flagRows(db: Db) {
       left join demand_signals ds
         on ds.id = f.subject_id and f.subject_kind = 'demand_signal'
       order by
+        -- Open ones first, or the 300 below fills with resolved escalations
+        -- (which sort first on severity) and cuts off open flags the sidebar
+        -- still counts.
+        case when f.status = 'resolved' then 1 else 0 end,
         case f.severity when 'escalation' then 0 when 'review' then 1 else 2 end,
         f.created_at desc
       limit 300
@@ -983,7 +1005,9 @@ async function flagRows(db: Db) {
 
     return {
       id: r.id,
-      severity: r.severity,
+      /* A legacy `escalated` row (flag.escalate wrote it until 29 Sep) is an
+         open flag at the top: the page lists `open` and sorts on severity. */
+      severity: r.status === "escalated" ? "escalation" : r.severity,
       reason: r.reason,
       excerpt: r.excerpt ?? "",
       field: r.field,
@@ -998,7 +1022,7 @@ async function flagRows(db: Db) {
       contributor: r.person_id
         ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
         : null,
-      status: r.status,
+      status: r.status === "escalated" ? "open" : r.status,
       confidence: r.confidence === null ? null : Number(r.confidence),
       created_at: r.created_at,
     };
@@ -1033,6 +1057,9 @@ async function demandRows(db: Db) {
         having count(distinct m.area_slug) = 1
       ) mo on true
       order by
+        -- Open first, so the 300 below is spent on work rather than on closed
+        -- questions that sort above it by sensitivity.
+        case when d.status = 'open' then 0 else 1 end,
         -- A claim about a named person sorts above everything, including a
         -- high-stakes question: it is the one class where nothing at all can
         -- happen until somebody has read it.
@@ -1229,13 +1256,14 @@ async function foundingQueue(db: Db) {
          * ready, and a queue that also lists the not-yet-ready is a queue
          * somebody has to re-triage by eye every morning.
          *
-         * NOTE: the thresholds are interpolated from lib/rewards.ts rather than
-         * written here. They are the same two numbers the contributors page
-         * shows a status from, and two copies would be two rules — so a parent
-         * can never be in this queue and read as unqualified one page over.
+         * NOTE: the predicate is MEETS_FOUNDING_REQUIREMENTS — the very one
+         * the overview counts the nav badge from. This query used to restate
+         * only two of its six conditions (depth and approvals), so a parent
+         * with an unverified number, or a "reason" under twelve characters,
+         * sat in the queue while the badge - and rewardStatus - called them
+         * unqualified: the two-expressions-that-happen-to-agree fault (29 Sep).
          */
-        and fc.profile_depth >= ${FOUNDING_MIN_PROFILE_DEPTH}
-        and fc.approved_contributions >= ${FOUNDING_MIN_APPROVED}
+        and ${MEETS_FOUNDING_REQUIREMENTS}
       group by fc.person_id, fc.founding, fc.verified, fc.has_neighborhood,
                fc.has_children, fc.allowance_ok, fc.qualifying_approved,
                fc.caregiver_approved, fc.profile_depth,

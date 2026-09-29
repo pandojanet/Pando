@@ -198,6 +198,24 @@ export async function POST(request: Request) {
     }
   }
 
+  /**
+   * A note about a parent lives in the audit row and nowhere else, so an empty
+   * one is an audit row that says nothing and appears on the contributor's page
+   * as a blank entry. The text is stored as sent, so it is bounded here.
+   */
+  if (action === "contributor.note") {
+    const note = typeof body?.body === "string" ? body.body.trim() : "";
+    if (typeof body?.id !== "string" || !body.id) {
+      return NextResponse.json({ error: "Which parent is this note about?" }, { status: 422 });
+    }
+    if (!note || note.length > 4000) {
+      return NextResponse.json(
+        { error: "A note needs some text, and at most 4000 characters" },
+        { status: 422 },
+      );
+    }
+  }
+
   /** "Needs more detail" is a question, so there has to be a question. */
   if (action === "contribution.needs_detail") {
     const question = cleanText(body?.question, 300);
@@ -664,12 +682,17 @@ export async function POST(request: Request) {
         "This reply has already been read — the decision stands. Reload to see it under \"Already read\".",
       answer_already_sent:
         "This answer has already been sent. Sending again would text the parent the same message twice.",
+      answer_rejected:
+        "This answer was rejected, so it cannot be sent. Compose a new one if the parent still needs an answer.",
       answer_duplicate_sent:
         "This same question from this number has already been answered in the last week. Sending this copy would text the parent the same thing twice — reject it instead.",
       answer_not_sent:
         "Nothing went out. The parent may have texted STOP, or no messaging provider is configured here. The answer stays approved, so you can try again.",
       unknown_weight:
         "Pando has no weight for that kind of connection, so nothing was saved.",
+      /* 29 Sep — `hold_when_hesitant` keeps a hesitant or "no" nomination held. */
+      hold_locked:
+        "This hold cannot be released. The family said they would not hire her again, or hesitated, and the database keeps a nomination like that held. Reject it instead.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
     };

@@ -56,6 +56,7 @@ console.log("\n=== a phrase to geocode ===");
   ok("not a month", p("camps in June") === null);
   ok("not 'in advance'", p("book in advance?") === null);
   ok("not a digit-word", p("in 4th grade") === null);
+  ok("not a language", p("toddler classes in French?") === null && p("lessons in Mandarin") === null);
   ok("no preposition, no phrase", p("toddler classes Pasadena") === null);
 }
 

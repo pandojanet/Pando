@@ -85,7 +85,7 @@ ok(
 );
 
 console.log("\n=== a caregiver is refused and handed on ===");
-for (const word of ["nanny", "I want to recommend our sitter", "AU PAIR", "babysitter"]) {
+for (const word of ["nanny", "I want to recommend our sitter", "AU PAIR", "babysitter", "she babysits our kids", "our aupair", "a night nurse"]) {
   ok(`"${word}" is recognised as a caregiver`, c.mentionsCaregiver(word));
 }
 ok("and an ordinary class is not", !c.mentionsCaregiver("a swim class at the Y"));
