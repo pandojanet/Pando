@@ -141,7 +141,7 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
          they share one. Each keeps its own sentence, as its label and help;
          the screen's title is the only new copy. */
       id: "roles",
-      eyebrow: "G3-G4 · Your work",
+      eyebrow: "G3 · Your work",
       title: "Your work and experience",
       questions: [
         {
@@ -161,16 +161,28 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
       ],
     },
     {
+      /* 29 Sep, the developer: the two remaining one-question screens, rate
+         and strengths, share one. Order in the flow is otherwise unchanged
+         (rate moves up from last); each keeps its own sentence, and the
+         screen's title and eyebrow are the only new copy. The eyebrow used to
+         repeat "G4" of the screen before. */
       id: "strengths",
-      eyebrow: "G4 · Experience",
-      title: "What are you especially good at?",
-      help: "The same list families choose from, so what you say and what they look for meet.",
+      eyebrow: "G4 · G7 · Skills and rate",
+      title: "Your strengths and your rate",
       questions: [
         {
           key: "strengths",
-          label: "Strengths",
+          label: "What are you especially good at?",
+          help: "The same list families choose from, so what you say and what they look for meet.",
           mode: "multi",
           options: CAREGIVER_STRENGTHS,
+        },
+        {
+          key: "rate_band",
+          label: "What is your usual hourly rate?",
+          help: "A range, never a number, and never shown as yours: Pando answers with the range for the area so a family arrives with a fair offer instead of a guess.",
+          mode: "single",
+          options: CAREGIVER_PAY_BANDS,
         },
       ],
     },
@@ -253,20 +265,6 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
         label: "What hours are you available on those days?",
         placeholder: "Optional — e.g. 3–7pm on weekdays, school pickups only until June",
       },
-    },
-    {
-      id: "rate",
-      eyebrow: "G7 · Rate",
-      title: "What is your usual hourly rate?",
-      help: "A range, never a number, and never shown as yours: Pando answers with the range for the area so a family arrives with a fair offer instead of a guess.",
-      questions: [
-        {
-          key: "rate_band",
-          label: "Rate",
-          mode: "single",
-          options: CAREGIVER_PAY_BANDS,
-        },
-      ],
     },
   ];
 }
