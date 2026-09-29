@@ -97,6 +97,8 @@ export type TapKey =
 export interface CaregiverQuestion {
   key: TapKey;
   label: string;
+  /** Under the label, and only on a screen with more than one question. */
+  help?: string;
   mode: "single" | "multi";
   options: Option[];
   layout?: "wrap" | "grid";
@@ -135,28 +137,24 @@ export function caregiverSteps(market: MarketId): CaregiverStep[] {
 
   return [
     {
+      /* 29 Sep, the developer: the first two questions were a screen each, so
+         they share one. Each keeps its own sentence, as its label and help;
+         the screen's title is the only new copy. */
       id: "roles",
-      eyebrow: "G3 · What you do",
-      title: "What kind of work are you looking for?",
-      help: "Pick as many as fit. This is what a family is asking about when they ask Pando.",
+      eyebrow: "G3-G4 · Your work",
+      title: "Your work and experience",
       questions: [
         {
           key: "roles_wanted",
-          label: "Kind of care",
+          label: "What kind of work are you looking for?",
+          help: "Pick as many as fit. This is what a family is asking about when they ask Pando.",
           mode: "multi",
           options: CAREGIVER_TYPES,
         },
-      ],
-    },
-    {
-      id: "ages",
-      eyebrow: "G4 · Experience",
-      title: "Which ages have you looked after?",
-      help: "What you've actually done, not what you'd be willing to do.",
-      questions: [
         {
           key: "age_experience",
-          label: "Ages",
+          label: "Which ages have you looked after?",
+          help: "What you've actually done, not what you'd be willing to do.",
           mode: "multi",
           options: CAREGIVER_AGE_BANDS,
         },

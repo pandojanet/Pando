@@ -152,23 +152,25 @@ export function reminderTone(percent: number): {
 }
 
 /**
- * Whether this device has closed the pop-up (23 Sep).
- *
- * A per-device convenience, so `localStorage` — and every read and write is
- * wrapped, because a private window or blocked site data throws, and the
- * reminder must still render (it falls back to the pop-up). Components on one
- * page hear each other through an event, so the review header and the reminder
- * in it change together when the X is pressed.
+ * Whether the pop-up has been closed on this page load (23 Sep, remembered in
+ * memory only since 29 Sep — see `closedThisLoad`). Components on one page
+ * hear each other through an event, so the review header and the reminder in
+ * it change together when the X is pressed.
  */
-const CLOSED_KEY = "pando.profile-reminder.closed";
 const CLOSED_EVENT = "pando:profile-reminder-closed";
 
+/**
+ * 29 Sep, the developer: *"поки зробимо після кожного перезавантаження"* — the
+ * pop-up comes back on every reload, so nothing is stored. A module variable
+ * is the whole memory: it survives a move between screens (the app navigates
+ * without reloading, and the pop-up must not reappear under the reader on
+ * every step) and is gone with the page. The 23 Sep version wrote
+ * `localStorage`, which is why a closed pop-up never came back at all.
+ */
+let closedThisLoad = false;
+
 function readClosed(): boolean {
-  try {
-    return window.localStorage.getItem(CLOSED_KEY) === "1";
-  } catch {
-    return false;
-  }
+  return closedThisLoad;
 }
 
 /**
@@ -191,11 +193,7 @@ export function useReminderClosed(): [boolean, boolean, () => void] {
     };
   }, []);
   const close = () => {
-    try {
-      window.localStorage.setItem(CLOSED_KEY, "1");
-    } catch {
-      /* Blocked storage: it closes for this page view, which is what was asked. */
-    }
+    closedThisLoad = true;
     setClosed(true);
     window.dispatchEvent(new Event(CLOSED_EVENT));
   };

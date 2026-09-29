@@ -2906,12 +2906,12 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       /data-screen-header/.test(src("../components/ui/Screen.tsx")),
   );
   ok(
-    "it closes with an X, and the device remembers that it did",
+    "it closes with an X, is remembered for this page load only, and returns after a reload",
     /onClick=\{onClose\}/.test(popup) &&
       /<X /.test(popup) &&
       /aria-label="Close/.test(popup) &&
-      /localStorage\.setItem\(CLOSED_KEY/.test(depth) &&
-      /try \{/.test(depth),
+      /closedThisLoad = true/.test(depth) &&
+      !/localStorage/.test(depth.replace(/`localStorage`/g, "")),
   );
   ok(
     "and nothing closes it but the X — no timer",

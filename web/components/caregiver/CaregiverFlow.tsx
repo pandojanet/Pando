@@ -428,6 +428,7 @@ export function CaregiverFlow({
                 <ChipGroup
                   key={q.key}
                   label={step.questions.length > 1 ? q.label : undefined}
+                  help={step.questions.length > 1 ? q.help : undefined}
                   groupLabel={q.label}
                   options={q.options}
                   mode={q.mode}
