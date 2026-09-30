@@ -94,7 +94,7 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
             aria-checked={on}
             onClick={() => onChange(on ? [] : [option.id], { id: option.id, on: !on })}
             className={cn(
-              "relative flex w-full flex-col gap-4 rounded-3xl border p-4 text-left sm:p-5",
+              "relative flex w-full flex-col gap-4 rounded-3xl border p-4 text-left sm:p-5 md:p-4 xl:p-5",
               "transition-[background-color,border-color,box-shadow] duration-150",
               "active:scale-[0.985]",
               on
@@ -106,19 +106,19 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
           >
             {recommended && <Recommended />}
 
-            <span className="flex items-center gap-3 md:min-h-28">
+            <span className="flex items-center gap-3 md:min-h-32 md:gap-2 xl:min-h-28 xl:gap-3">
               {icon && (
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "grid size-14 shrink-0 place-items-center rounded-full",
+                    "grid size-14 shrink-0 place-items-center rounded-full md:size-10 xl:size-14",
                     icon.circle,
                   )}
                 >
-                  <icon.Icon className={cn("size-6", icon.mark)} strokeWidth={1.75} />
+                  <icon.Icon className={cn("size-6 md:size-5 xl:size-6", icon.mark)} strokeWidth={1.75} />
                 </span>
               )}
-              <span className="grid gap-0.5">
+              <span className="grid min-w-0 gap-0.5">
                 <span
                   className={cn(
                     "block font-display text-card-title font-semibold leading-tight",
