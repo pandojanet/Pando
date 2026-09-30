@@ -10,6 +10,7 @@ import {
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
+import { isBareOpener } from "@/lib/intent";
 import { composeAnswer, type AnswerCandidate } from "@/lib/answer";
 import { careFacts, careFit } from "@/lib/care-answer";
 import { alreadyGiven, asksForMore, withMoreSuffix } from "@/lib/more-options";
@@ -23,6 +24,7 @@ import {
   BLAST_REPLY_THANKS,
   HELPED_NO,
   HELPED_YES,
+  OPENER_REPLY,
   PING_NO_LONGER,
   PING_STILL_GOOD,
   SHARE_INVITE,
@@ -889,6 +891,29 @@ export async function handleInboundMessage(input: {
         return;
       }
     }
+  }
+
+  /**
+   * "Can I ask a question?" is not a question (30 Sep).
+   *
+   * It has a question mark, so every reading of it leans towards answering, and
+   * retrieval reads no subject - so it was answered with the best-ranked record
+   * in the market, unasked-for and with nothing to justify it. Decided before
+   * the classifier, because the classifier is what gets it wrong. Only when
+   * nothing else has claimed the message: a reply to an Ask or to a question
+   * Pando put is never an opener.
+   */
+  if (!attached.attached && !answeredSomething && !clarified && isBareOpener(body)) {
+    await sendSms({
+      to: from,
+      body: OPENER_REPLY,
+      category: "transactional",
+      personId: person?.person_id,
+      template: "opener",
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] answered an opener");
+    return;
   }
 
   const reading = await classifyIntent({

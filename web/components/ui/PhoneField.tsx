@@ -36,7 +36,8 @@ interface Props {
  * pasted `+380 63 882 33 13` would be cut to ten digits and read as a different,
  * valid-looking American number: a silent wrong registration. So a value that
  * parses as Ukrainian (typed in full, pasted, or restored from a session saved
- * before this change) is cleared and the field says why.
+ * before this change) is cleared, silently: the system was only ever meant for US
+ * numbers, so there is nothing to explain and no message (30 Sep, the developer).
  */
 export function PhoneField({
   value,
@@ -46,15 +47,11 @@ export function PhoneField({
   id = "phone",
 }: Props) {
   const country = "US" as const;
-  const [refused, setRefused] = useState(false);
 
   /* A value restored from a session saved before the picker went is cleared
      once, so nobody is left looking at a number they can no longer change. */
   useEffect(() => {
-    if (phoneCountryOf(value) === "UA") {
-      setRefused(true);
-      onChange("");
-    }
+    if (phoneCountryOf(value) === "UA") onChange("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
@@ -69,16 +66,10 @@ export function PhoneField({
     const d = digitsOf(raw);
     const looksUkrainian = d.length > 10 && d.startsWith("380");
     if (looksUkrainian || phoneCountryOf(raw) === "UA") {
-      setRefused(true);
       onChange("");
       return;
     }
-    const next = formatPhone(raw, country);
-    /* The notice outlives the keystrokes that follow the refusal — the rest of
-       a Ukrainian number typed in a run would otherwise wipe it in a blink —
-       and goes once the field is empty or holds a whole US number. */
-    if (next === "" || isPhoneComplete(next, country)) setRefused(false);
-    onChange(next);
+    onChange(formatPhone(raw, country));
   }
 
   return (
@@ -128,7 +119,7 @@ export function PhoneField({
                used nowhere in this app at all. */
             aria-invalid={started && !complete ? true : undefined}
             aria-describedby={
-              [hint ? `${id}-hint` : null, refused || (started && !complete) ? `${id}-error` : null]
+              [hint ? `${id}-hint` : null, started && !complete ? `${id}-error` : null]
                 .filter(Boolean)
                 .join(" ") || undefined
             }
@@ -150,18 +141,11 @@ export function PhoneField({
         </div>
       </div>
 
-      {refused ? (
-        <p id={`${id}-error`} role="status" className="mt-1.5 text-help text-gold-ink">
-          Pando is only available with a US (+1) mobile number for now.
+      {/* Only once the digits are incomplete — never as they type. */}
+      {started && !complete && (
+        <p id={`${id}-error`} className="mt-1.5 text-help text-gold-ink">
+          That doesn&apos;t look like a complete US mobile number yet.
         </p>
-      ) : (
-        /* Only once the digits are incomplete — never as they type. */
-        started &&
-        !complete && (
-          <p id={`${id}-error`} className="mt-1.5 text-help text-gold-ink">
-            That doesn&apos;t look like a complete US mobile number yet.
-          </p>
-        )
       )}
     </div>
   );

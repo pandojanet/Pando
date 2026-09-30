@@ -1610,9 +1610,9 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
     "Ukrainian numbers removed from display",
   );
   ok(
-    "a Ukrainian number typed, pasted or restored is refused rather than read as a US one",
+    "a Ukrainian number typed, pasted or restored is dropped silently rather than read as a US one",
     /phoneCountryOf\(raw\) === "UA"/.test(phoneField) &&
-      /phoneCountryOf\(value\) === "UA"/.test(phoneField) && /only available with a US/.test(phoneField),
+      /phoneCountryOf\(value\) === "UA"/.test(phoneField) && !/only available with a US/.test(phoneField),
     "a pasted +380… would otherwise be cut to ten digits and become a different valid-looking number",
   );
   ok(

@@ -385,5 +385,33 @@ console.log("\n=== a clarifying answer is short and is not a question (14 Sep) =
   );
 }
 
+console.log("\n=== a message that only asks to ask is not a question (30 Sep) ===");
+for (const t of [
+  "Can I ask a question?",
+  "can i ask a question",
+  "Hi! Can I ask you something?",
+  "Hello, I have a question",
+  "Quick question",
+  "Can you help me?",
+  "I need help",
+  "Could I ask a quick question please?",
+  "are you there?",
+  "what can you do?",
+]) {
+  ok(`opener: "${t}"`, m.isBareOpener(t));
+}
+for (const t of [
+  "Can I ask a question about swim classes in Altadena?",
+  "any good toddler classes near South Pasadena?",
+  "Can you recommend a nanny?",
+  "I have a question about camps",
+  "where can I find a pediatrician",
+  "my 4 year old keeps having nosebleeds, is that normal?",
+  "",
+  "yes",
+]) {
+  ok(`not an opener: "${t}"`, !m.isBareOpener(t));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

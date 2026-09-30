@@ -60,6 +60,23 @@ export const SMALL_TALK =
   "Pando: ask me about local classes, camps, activities or childcare and I'll tell you what nearby parents recommend. Reply STOP to opt out, HELP for help.";
 
 /**
+ * To "Can I ask a question?" and its kin (30 Sep) - a message that asks to ask
+ * and asks nothing.
+ *
+ * It was answered with the best-ranked record in the market, because a question
+ * mark reads as a question and retrieval reads no subject. The reply is the
+ * general one: yes, and what to ask about. **No question mark and no question**,
+ * the `SMALL_TALK` rule, so the next message is unambiguous - and it is
+ * deliberately not `SMALL_TALK` itself, which opens with "ask me" and reads as
+ * a non-sequitur to somebody who just asked whether they could.
+ *
+ * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment,
+ * pinned by `test:routing`; not registered A2P text.
+ */
+export const OPENER_REPLY =
+  "Pando: go ahead! Ask about local classes, camps, activities or childcare and I'll share what nearby parents recommend. Reply STOP to opt out, HELP for help.";
+
+/**
  * The yes to *"Want me to ask a few nearby parents for more?"* — acknowledged.
  *
  * **It promises no time**, which is the same rule `heldReply` follows and for

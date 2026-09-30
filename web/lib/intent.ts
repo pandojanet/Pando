@@ -114,6 +114,56 @@ const CAREGIVER_WORDS =
 const SETTINGS_WORDS =
   /\b(unsubscribe me|fewer|less often|too many|stop asking|blast settings|settings|preferences|my profile|update my)\b/i;
 
+/**
+ * A message that asks to ask, or announces a question, and says nothing else
+ * (30 Sep).
+ *
+ * *"Can I ask a question?"* has a question mark, so the rules read it as
+ * `ask_recommendation` (and a model can too), and retrieval - which reads no
+ * subject - answered it with the best-ranked records in the market: a swim
+ * class nobody had asked about, with a quote, to somebody who had only asked
+ * whether they could ask. There is nothing to retrieve *for*, so the right reply
+ * is the general one, and that has to be decided **before** any reading, because
+ * every reading of a sentence with a question mark leans towards answering it.
+ *
+ * Exact on the whole message once greetings and softeners are stripped, so
+ * "can I ask a question about swim classes in Altadena?" is not an opener - it
+ * has a subject and is answered as a question.
+ */
+export function isBareOpener(text: string): boolean {
+  let s = text
+    .toLowerCase()
+    .replace(/[^a-z' ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  /* Greetings, addressing Pando, and softeners on either end. */
+  s = s
+    .replace(/^((hi|hello|hey|hiya|yo|good (morning|afternoon|evening)|excuse me|sorry|um+|so|ok(ay)?)( there| pando)?\s?)+/, "")
+    .replace(/\s?(please|pls|if that'?s ok(ay)?|if you don'?t mind|real quick|quickly|for you|pando|thanks|thank you)+$/g, "")
+    .trim();
+  if (s.length === 0) return false;
+  return OPENERS.some((re) => re.test(s));
+}
+
+const OPENERS: RegExp[] = [
+  /^(can|could|may|might|should|do) (i|we) (just |quickly |possibly )?(ask|check|run|bounce|get) (you |pando )?(a|an|one|another|some|something|a quick|a small|a little)( quick| small| little| simple| stupid| dumb)? ?(question|thing|something|questions|help)?$/,
+  /^(can|could|may) (i|we) ask$/,
+  /^(can|could|may) (i|we) ask (you |pando )?(something|anything)$/,
+  /^(i|we) (have|got|had|need|want) (a|an|one|some|another)( quick| small| little| simple)? (question|questions|thing to ask|help)$/,
+  /^(i|we) (want|need|would like|d like) to ask (you |pando )?(a|something|a quick)?( question)?$/,
+  /^(i|we) (have|got) (a )?(question|questions) (for you|for pando)?$/,
+  /^(quick |one |a quick |a )?question$/,
+  /^(got|have) (a )?(quick )?question$/,
+  /^(can|could|will|would) you (help|assist) (me|us)( out)?( with something)?$/,
+  /^(i|we) need (some )?(help|advice)$/,
+  /^(help|advice) (me|please)?$/,
+  /^(do|can|could) you (answer|take|do) (questions?|requests?)$/,
+  /^(are you|is anyone|is somebody|is someone) (there|here|around|available|real|a bot|a person)$/,
+  /^(who|what) (are|is) (you|this)$/,
+  /^(what|how) (can|do) you (do|help)( with)?$/,
+  /^(is|are) (this|you|it) (working|on|open)$/,
+];
+
 const QUESTION_SHAPE =
   /\?|\b(anyone know|does anyone|looking for|any recommendations?|can anyone|who do you|where can|is there a|any good)\b/i;
 

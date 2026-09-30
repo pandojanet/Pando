@@ -220,6 +220,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
   for (const [name, text] of [
     ["the share invite", r.SHARE_INVITE],
     ["the small-talk reply", r.SMALL_TALK],
+    ["the opener reply", r.OPENER_REPLY],
     ["the Ask acknowledgement", r.ASK_STARTED],
     ["the still-good acknowledgement", r.PING_STILL_GOOD],
     ["the withdrawal acknowledgement", r.PING_NO_LONGER],
@@ -274,6 +275,11 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     "and the helped one does not promise the contributors a thank-you a job has to send",
     !/thank (them|the parents|everyone)|let (them|the parents) know/i.test(r.HELPED_YES),
     r.HELPED_YES,
+  );
+  ok(
+    "and the opener reply asks no question either",
+    !r.OPENER_REPLY.includes("?"),
+    "a question here would make the next message ambiguous",
   );
   ok(
     "and small talk asks no question of its own",
