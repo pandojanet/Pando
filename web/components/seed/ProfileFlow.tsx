@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/cn";
 import { ArrowRight, Button } from "@/components/ui/Button";
 import { AnimatePresence, m } from "motion/react";
 import { MotionProvider, STEP } from "@/components/ui/Motion";
@@ -22,7 +23,7 @@ import {
   ProfilePercentPill,
 } from "@/components/seed/ProfileDepth";
 import { OptionPicker } from "@/components/ui/OptionPicker";
-import { PlanGroup } from "@/components/ui/PlanGroup";
+import { PlanFooter, PlanGroup } from "@/components/ui/PlanGroup";
 import { PhoneField } from "@/components/ui/PhoneField";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import { Progress } from "@/components/ui/Progress";
@@ -1886,15 +1887,27 @@ export function ProfileFlow() {
             exit={{ opacity: 0, x: direction * -14 }}
             transition={STEP}
           >
-          <Eyebrow>{screen.eyebrow}</Eyebrow>
-          <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
-            {screen.title}
-          </h1>
-          {screen.help && (
-            <p className="mt-2.5 text-[15px] leading-relaxed text-muted">
-              {screen.help}
-            </p>
-          )}
+          {/* `centered` (30 Sep): the participation screen's mockup centres its
+              heading over the three cards. A blank line in `help` starts a new
+              paragraph, so the ask and the reassurance can be two. */}
+          <div className={screen.centered ? "text-center" : undefined}>
+            <Eyebrow>{screen.eyebrow}</Eyebrow>
+            <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
+              {screen.title}
+            </h1>
+            {screen.help &&
+              screen.help.split("\n\n").map((paragraph) => (
+                <p
+                  key={paragraph}
+                  className={cn(
+                    "mt-2.5 text-[15px] leading-relaxed text-muted",
+                    screen.centered && "mx-auto max-w-[52ch]",
+                  )}
+                >
+                  {paragraph}
+                </p>
+              ))}
+          </div>
 
           {/**
             * Why they are back here, when they did not ask to be (15 Sep).
@@ -2339,6 +2352,10 @@ export function ProfileFlow() {
                     onChange={shared.onChange}
                     groupLabel={shared.groupLabel}
                   />
+                  {/* What every level shares, and that answers are not for sale
+                      (30 Sep, the client's mockup). Under the cards rather than
+                      in the screen's `footnote`, so it is part of the choice. */}
+                  <PlanFooter />
                 </div>
               ) : directory ? (
                 <SearchableChipGroup

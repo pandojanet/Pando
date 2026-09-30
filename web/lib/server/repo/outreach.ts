@@ -153,6 +153,15 @@ export async function outreachAllowed(
                            and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                     as sent_30,
+        -- The open level's ceiling is weekly (OPEN_WEEKLY_LIMIT): the same
+        -- requests, the same exclusions, over seven days.
+        coalesce(sum(case when m.direction = 'out'
+                           and m.category = 'outreach'
+                           and m.retry_of is null
+                           and m.id is distinct from ${excludeId}::uuid
+                           and m.template is distinct from 'thanks'
+                           and m.sent_at > now() - interval '7 days'
+                      then 1 else 0 end), 0)::int                     as sent_7,
         -- Answered: how many *requests* got a reply, not how many texts came in.
         -- Distinct on the request, so one answer sent as three messages is one
         -- answer, and the rate can never pass 100%.
@@ -196,6 +205,7 @@ export async function outreachAllowed(
   const row = result.data;
   const history: OutreachHistory = {
     sent_last_30_days: Number(row.sent_30 ?? 0),
+    sent_last_7_days: Number(row.sent_7 ?? 0),
     responded_last_30_days: Number(row.answered_30 ?? 0),
     last_outreach_at: (row.last_outreach as string | null) ?? null,
     pings_this_month: Number(row.pings_month ?? 0),

@@ -59,6 +59,25 @@ export const OUTREACH_GAP_DAYS = 2;
  */
 export const ALLOWANCE_FLOOR = 5;
 
+/**
+ * The open level's ceiling (30 Sep): **up to three relevant questions a week**.
+ *
+ * The participation screen's third card used to promise "whenever it's relevant,
+ * never more than one every 48 hours" and the code kept exactly that — no number
+ * at all. The client's mockup names one, so the level that had no ceiling has
+ * one: three requests in any rolling seven days, on top of the 48-hour gap that
+ * still applies to every level. It is stored as it always was (`as_relevant`,
+ * a null monthly number — what `allowance_shape` allows), so the value is a
+ * ceiling in *time* rather than a new column: a weekly figure cannot be held by
+ * a monthly one, and a migration for it would change nothing the CHECK enforces.
+ *
+ * ⚠ Both numbers are the mockup's, and the governor below still applies: an
+ * open contributor who answers under a quarter of what they are asked is
+ * lowered to ten a month like anybody else.
+ */
+export const OPEN_WEEKLY_LIMIT = 3;
+export const OPEN_WEEKLY_WINDOW_DAYS = 7;
+
 /** 8.4, and invariant 5's "response-rate governor at 25%/30 days". */
 export const RESPONSE_WINDOW_DAYS = 30;
 export const RESPONSE_RATE_FLOOR = 0.25;
@@ -128,7 +147,7 @@ export const NON_REQUEST_TEMPLATES = ["thanks"] as const;
 export const ALLOWANCE_CHOICES = [
   { value: 5 as number | null, mode: "fixed" as const, label: "Now and then", hint: "up to 5 a month" },
   { value: 10 as number | null, mode: "fixed" as const, label: "Happy to help more", hint: "up to 10 a month" },
-  { value: null as number | null, mode: "as_relevant" as const, label: "Anytime it's genuinely relevant", hint: "no fixed limit" },
+  { value: null as number | null, mode: "as_relevant" as const, label: "Whenever it's relevant", hint: "up to 3 a week" },
 ];
 
 /**
@@ -222,11 +241,11 @@ export function parseAllowanceChoice(
 export function settingsPrompt(current: Allowance): string {
   const now =
     current.allowance_mode === "as_relevant"
-      ? "anytime it's genuinely relevant"
+      ? `up to ${OPEN_WEEKLY_LIMIT} a week`
       : `up to ${current.monthly_contact_allowance ?? ALLOWANCE_FLOOR} a month`;
   return [
     `Right now Pando may ask you ${now}.`,
-    "Reply 1 for up to 5 a month, 2 for up to 10, or 3 for anytime it's genuinely relevant.",
+    `Reply 1 for up to 5 a month, 2 for up to 10, or 3 for up to ${OPEN_WEEKLY_LIMIT} a week.`,
     "However you set it, you'll never get two requests within 48 hours.",
   ].join(" ");
 }
@@ -237,13 +256,13 @@ export function settingsConfirmation(choice: {
   mode: "fixed" | "as_relevant";
 }): string {
   return choice.mode === "as_relevant"
-    ? "Done — Pando will ask anytime a question is genuinely relevant, and never twice within 48 hours."
+    ? `Done — up to ${OPEN_WEEKLY_LIMIT} a week, and never twice within 48 hours.`
     : `Done — up to ${choice.allowance} a month, and never twice within 48 hours.`;
 }
 
 /** What a contributor agreed to. Straight from `people`. */
 export interface Allowance {
-  /** 5 or 10; **null** means `as_relevant` — no fixed ceiling. */
+  /** 5 or 10; **null** means `as_relevant` — a weekly ceiling, not a monthly one. */
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
 }
@@ -252,6 +271,8 @@ export interface Allowance {
 export interface OutreachHistory {
   /** Proactive messages in the last 30 days. Replies and codes do not count. */
   sent_last_30_days: number;
+  /** The same requests in the last 7 days — what the open level is capped on. */
+  sent_last_7_days: number;
   /** How many of those they answered — the governor's numerator. */
   responded_last_30_days: number;
   last_outreach_at: Date | string | null;
@@ -276,6 +297,7 @@ export type OutreachDecision =
       ok: false;
       reason:
         | "monthly_cap"
+        | "weekly_cap"
         | "too_soon"
         | "ping_this_month"
         | "ping_same_day_as_blast";
@@ -371,10 +393,18 @@ export function decideOutreach(
   }
 
   /**
-   * `as_relevant` has no fixed ceiling — the parent's own words are "ask me
-   * anytime it's genuinely relevant". The 48-hour gap still applies to them,
-   * which is what stops "no ceiling" from meaning "no protection".
+   * The open level is capped in time rather than per month: three requests in
+   * any rolling seven days (`OPEN_WEEKLY_LIMIT`). It applies even once the
+   * governor has lowered the monthly figure — that is a second, tighter reading
+   * of the same parent, not a replacement for the first.
    */
+  if (
+    stated.allowance_mode === "as_relevant" &&
+    history.sent_last_7_days >= OPEN_WEEKLY_LIMIT
+  ) {
+    return { ok: false, reason: "weekly_cap", allowance };
+  }
+
   if (allowance !== null && history.sent_last_30_days >= allowance) {
     return { ok: false, reason: "monthly_cap", allowance };
   }

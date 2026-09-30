@@ -156,7 +156,18 @@ ok("a follow-up is only for a message no open question has claimed", /pending ==
 ok("a follow-up that names an age, a place or another topic is a new question", /bandsInQuestion\(body\)\.length > 0/.test(inbound) && /placePhraseIn\(body\) !== null/.test(inbound));
 const retrieval = readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");
 const careSql = retrieval.slice(retrieval.indexOf("const caregiverRows"), retrieval.indexOf("return { policies, shareRows, caregiverRows }"));
-ok("the caregiver query never selects a private note or the hire-again answer (invariant 12)", !/restricted|hire_again|in_their_words|caveat|pay_band/.test(careSql));
+ok("the caregiver query never selects a private note or the hire-again answer (invariant 12)", !/restricted|hire_again|in_their_words|pay_band/.test(careSql));
+/* 30 Sep: the parent's "anything a family should know up front" is public by the
+   developer's decision, and it is the nomination's `caveat`. The one place it is
+   read is gated three ways: no hold on the card, made after the question's
+   promise changed, and only the newest — so the test is no longer "never
+   caveat" but "caveat only through that gate". */
+ok("the public note is read only from a card with no hold, made after the cut-off",
+  (careSql.match(/caveat/g) ?? []).length === 3 &&
+    /not n\.review_hold/.test(careSql) && /PUBLIC_NOTE_SINCE/.test(careSql),
+  `${(careSql.match(/caveat/g) ?? []).length} mentions`);
+ok("a caregiver who is not looking right now is never in an answer",
+  /coalesce\(cp\.available_from, ''\) <> 'not_looking'/.test(careSql));
 ok("and still carries all four conditions of invariant 1", /consent_status = 'consented'/.test(careSql) && /c\.active/.test(careSql) && /c\.discoverable/.test(careSql) && /c\.is_adult/.test(careSql));
 
 console.log(`\n${pass} checks passed${fail ? `, ${fail} FAILED` : "."}`);

@@ -1,74 +1,61 @@
 "use client";
 
+import {
+  ArrowLeftRight,
+  Check,
+  Heart,
+  MessageSquare,
+  Search,
+  ShieldCheck,
+  Sprout,
+  User,
+  Users,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
-import type { Option } from "@/lib/types";
+import type { Option, OptionPlan } from "@/lib/types";
 
 /**
- * A single-select question presented as a comparison — one column per option,
- * the same rows down every column.
+ * A single-select question presented as a comparison — one card per option, the
+ * same three blocks down every card.
  *
  * ## Why this exists
  *
- * The client, 9 Sep, on the participation screen: she does not understand the
- * current presentation — *"once a week / up to five questions / etc."* — and
- * she asked for the pattern a pricing page uses, **while being explicit that it
- * is not pricing**. Her sketch is a table: Community Member and Active
- * Contributor as columns, Participation · Questions · Benefits as rows, and
- * *Recommended* marked on one of them.
+ * The client, 9 Sep, on the participation screen: she did not understand the
+ * presentation of "once a week / up to five questions / etc." and asked for the
+ * pattern a pricing page uses, **while being explicit that it is not pricing**.
+ * A chip holds a label and one hint, so three different facts — what agreeing
+ * means, how many questions, what you get back — were run together into one
+ * line, and comparing two levels meant holding two paragraphs in your head.
  *
- * The reading problem she hit is a property of the old control rather than of
- * the words. A chip holds a label and one `hint`, so three different facts —
- * what agreeing means, how many questions, and what you get back — were run
- * together into a single line per option, and the only way to compare two
- * levels was to read two paragraphs and hold them in your head. Rows are what
- * make a comparison a comparison.
+ * ## 30 Sep — redrawn to the client's mockup
  *
- * ## Three things not to undo
+ * Each card is now: an icon in a circle, the name and a tagline, then **How often
+ * Pando may ask you**, **Best for**, and the check-marked list of what you get,
+ * with a *Select* control at the foot. Under the cards, `PlanFooter` says what
+ * every level shares and that answers are not for sale.
  *
- * **It is a comparison and not a price list.** There is no currency, no "per
- * month", no cheapest-to-dearest ordering and no call-to-action per column —
- * the dock still carries the one action, as on every other screen in this flow.
- * `Recommended` is her word and comes from `Option.recommended`; it must never
- * become "Most popular", which she ruled out by name on 1 Sep for want of usage
- * data.
+ * ## Things not to undo
  *
- * **An empty cell is honest.** A level with no `benefits` renders nothing in
- * that row rather than an em dash or a sentence — the benefits are hers to
- * supply. See `OptionPlan`.
+ * **It is a comparison and not a price list.** No currency, no "per month", no
+ * cheapest-to-dearest ordering. *Select* is a label on the card, not a second
+ * control: the card is the radio, and a `<button>` may not hold a `<button>`.
+ * `Recommended` comes from `Option.recommended` and must never become "Most
+ * popular", which the client ruled out on 1 Sep for want of usage data.
  *
- * **The whole card is the control, and there is no tick** (developer, 15 Sep —
- * *"Прибери CheckBox на кожній з опцій, це буде клікабельна карточка без
- * нього"*). The card is already a ~300px target, and a 20px circle beside the
- * name was a second thing to aim at that did nothing the card did not.
- * ⚠ **The cost is stated rather than left to be discovered:** selection is now
- * carried by the border, the ring and the wash, so a sighted parent reads it
- * from a colour and a boundary rather than from a glyph. `aria-checked` is
- * untouched — a screen reader was never being told by the tick.
+ * **Nothing is preselected.** The recommended card is *marked*, never *chosen*:
+ * it has the green edge and the dark Select, but `aria-checked` is true only for
+ * the level the parent picked, and "Agree & Join" stays locked until they do.
  *
- * ## Mechanics
+ * **An empty block renders nothing**, not its label over a blank. A level with no
+ * `benefits` has no list at all.
  *
- * Radio semantics, and the same interaction `ChipGroup` settled on 8 Sep:
- * tapping the chosen column clears it, because a radiogroup with nothing
- * checked is legal and is the initial state of this question anyway
- * (`EMPTY_ANSWERS.allowance` is null and the choice is required, so the dock
- * stays locked until one is picked).
+ * Radio semantics, and the interaction `ChipGroup` settled on 8 Sep: tapping the
+ * chosen card clears it, because a radiogroup with nothing checked is legal and
+ * is this question's initial state.
  *
- * Each column is its own run of blocks, one `STEP` apart, and the three stretch
- * to the height of the tallest — so a card reads with a single rhythm from its
- * name to its last bullet, and the three start and end together.
- *
- * ⚠⚠ **This replaced `grid-rows-subgrid`, and the trade runs the other way from
- * what it sounds like.** Subgrid put every column's Participation label at the
- * same y, which is what a comparison seems to want — and it sized each row
- * track to the tallest cell **across** the columns, so a level whose answer
- * wrapped to two lines left the other two carrying a blank line before their
- * next label. Measured: every gap 16px except one at 38px, in all three columns
- * at once. The developer asked twice for the spacing to be even (15 Sep,
- * *"Відстані між розділами зроби однаковими"*, then *"рівномірно розподіли
- * текст"*) and pointed at a pricing page whose columns do **not** share row
- * lines — each card is its own list, and only the names align. Her rows survive
- * that intact, because every column still carries all three of her labels: what
- * is lost is the shared y, not the comparison.
+ * ⚠ **The recommended card's pill overlaps its top border** (mockup), so the
+ * card cannot be `overflow-hidden`. The grid gap is larger than the pill's
+ * overhang, so stacked on a phone it does not touch the card above.
  */
 interface Props {
   options: Option[];
@@ -78,55 +65,27 @@ interface Props {
   groupLabel: string;
 }
 
-/**
- * Her first two rows, in her order; the key is the field on `OptionPlan`.
- * Benefits is rendered separately because it is a list rather than a sentence.
- */
-const ROWS = [
-  { key: "participation", label: "Participation" },
-  { key: "questions", label: "Questions" },
-] as const;
-
-/**
- * One step between every block — the band, the name, each row, and between a
- * row's label and its answer (developer, 15 Sep: *"Відстані між розділами
- * зроби однаковими"*). It was `gap-3` stacked against `gap-4` in columns, with
- * an `mt-1` under each row label — so a phone and a laptop had different
- * rhythms, and a label sat nearer its own value than to anything else on the
- * card.
- */
-const STEP = "gap-4";
-
-/**
- * How far the recommended column stands above its neighbours: the band's own
- * height, exactly.
- *
- * ⚠⚠ **The three classes are one number and must not drift apart.** `height`
- * fixes the band, `pull` lifts the card by the same amount so its *name* lands
- * level with the other two — that alignment is the point of the treatment, and
- * it is what fixing the height buys — and `room` is the space above the row for
- * the card to be lifted into. Change one and the three plan names stop sharing
- * a baseline, which is the defect this shape exists to avoid: an earlier
- * attempt gave the recommended column an extra subgrid track instead, and put
- * that card's own heading **17px above the other two** (measured: 369 · 352 ·
- * 369), because a subgrid's padding comes out of its *first* track.
- *
- * All three are `md:` only. Stacked there is nothing to stand proud of, and a
- * card lifted on a phone would sit on the one above it.
- */
-const BAND = { height: "md:h-8", pull: "md:-mt-8", room: "md:pt-8" };
+const ICONS = {
+  person: { Icon: User, circle: "bg-green-wash", mark: "text-green-deep" },
+  sprout: { Icon: Sprout, circle: "bg-green-wash", mark: "text-green" },
+  /* The mockup's heart is red on pink. `alert` is otherwise kept out of the
+     parent flow (it means *owed a person today*); this is a decorative mark the
+     client drew, and it is one object in one place. */
+  heart: { Icon: Heart, circle: "bg-alert-wash", mark: "text-alert" },
+} as const satisfies Record<NonNullable<OptionPlan["icon"]>, unknown>;
 
 export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
   return (
     <div
       role="radiogroup"
       aria-label={groupLabel}
-      className={cn("grid", STEP, "md:grid-cols-3", BAND.room)}
+      className="grid items-stretch gap-6 md:grid-cols-3 md:gap-4 md:pt-2"
     >
       {options.map((option) => {
         const on = selected.includes(option.id);
         const plan = option.plan;
         const recommended = option.recommended === true;
+        const icon = plan?.icon ? ICONS[plan.icon] : null;
         return (
           <button
             key={option.id}
@@ -135,52 +94,98 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
             aria-checked={on}
             onClick={() => onChange(on ? [] : [option.id], { id: option.id, on: !on })}
             className={cn(
-              /* `content-start`: a card with less in it than its neighbours
-                 keeps the one rhythm and lets the difference fall at the foot
-                 of it. Spreading the blocks to fill the height would give each
-                 column its own spacing, which is the thing being fixed. */
-              "grid w-full content-start overflow-hidden rounded-3xl border p-4 text-left",
-              STEP,
+              "relative flex w-full flex-col gap-4 rounded-3xl border p-4 text-left sm:p-5",
               "transition-[background-color,border-color,box-shadow] duration-150",
               "active:scale-[0.985]",
-              recommended && BAND.pull,
               on
-                ? "border-green-deep bg-green-wash ring-1 ring-green-deep"
-                : "border-bark bg-card hover:border-green/50",
+                ? "border-green-deep bg-green-wash ring-2 ring-green-deep"
+                : recommended
+                  ? "border-green bg-green-wash/60 hover:border-green-deep"
+                  : "border-bark bg-card hover:border-green/50",
             )}
           >
             {recommended && <Recommended />}
 
-            <span
-              className={cn(
-                "block font-display text-card-title font-semibold",
-                on ? "text-green-deep" : "text-ink",
+            <span className="flex items-center gap-3 md:min-h-28">
+              {icon && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "grid size-14 shrink-0 place-items-center rounded-full",
+                    icon.circle,
+                  )}
+                >
+                  <icon.Icon className={cn("size-6", icon.mark)} strokeWidth={1.75} />
+                </span>
               )}
-            >
-              {option.label}
+              <span className="grid gap-0.5">
+                <span
+                  className={cn(
+                    "block font-display text-card-title font-semibold leading-tight",
+                    on ? "text-green-deep" : "text-ink",
+                  )}
+                >
+                  {option.label}
+                </span>
+                {plan?.tagline && (
+                  <span className="block text-help leading-snug text-muted">
+                    {plan.tagline}
+                  </span>
+                )}
+              </span>
             </span>
 
-            {ROWS.map((row) => (
-              <Cell key={row.key} label={row.label} answered={plan?.[row.key]} on={on}>
-                {plan?.[row.key]}
-              </Cell>
-            ))}
+            <Block label="How often Pando may ask you" answered={plan?.participation}>
+              <span className="block font-display text-[1.06rem] font-semibold leading-snug text-ink">
+                {plan?.participation}
+              </span>
+            </Block>
 
-            <Cell label="Benefits" answered={plan?.benefits?.length} on={on}>
-              {plan?.benefitsLead && <span className="block">{plan.benefitsLead}</span>}
+            <Block label="Best for" answered={plan?.bestFor}>
+              <span className="block text-help leading-relaxed text-ink-soft">
+                {plan?.bestFor}
+              </span>
+            </Block>
+
+            <Block
+              label={plan?.benefitsLead ?? "You’ll get"}
+              answered={plan?.benefits?.length}
+            >
               {plan?.benefits?.map((benefit) => (
                 /* A list inside a `<button>` is markup a button may not hold —
-                   phrasing content only — so the bullet is a glyph rather than
-                   a `<ul>`, and it is `aria-hidden` because a dot read aloud
+                   phrasing content only — so each line is a flex row of spans,
+                   and the check is `aria-hidden` because a mark read aloud
                    before every item is noise. */
-                <span key={benefit} className="flex gap-2">
-                  <span aria-hidden="true" className={on ? "text-green-deep" : "text-green"}>
-                    •
+                <span key={benefit} className="flex items-start gap-2.5">
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-green text-white"
+                  >
+                    <Check className="size-3" strokeWidth={3.5} />
                   </span>
-                  <span className="block">{benefit}</span>
+                  <span className="block text-help leading-snug text-ink-soft">
+                    {benefit}
+                  </span>
                 </span>
               ))}
-            </Cell>
+            </Block>
+
+            {/* The mockup's Select. It is a label, not a control (see above):
+                the recommended card wears the dark fill it has in the mockup,
+                and a chosen card always does, so "Selected" is never the same
+                as an unchosen card on sight. */}
+            <span
+              aria-hidden="true"
+              className={cn(
+                "mt-auto flex h-12 items-center justify-center gap-2 rounded-full border text-[15px] font-semibold",
+                on || recommended
+                  ? "border-green-deep bg-green-deep text-white"
+                  : "border-bark bg-card text-ink",
+              )}
+            >
+              {on && <Check className="size-4" strokeWidth={3} />}
+              {on ? "Selected" : "Select"}
+            </span>
           </button>
         );
       })}
@@ -189,70 +194,107 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
 }
 
 /**
- * One row of one column: her label, then the answer.
+ * One block of one card: a hairline, then the small-caps label, then the answer.
  *
- * An unanswered row renders **nothing at all** — not the label over a blank,
- * which announces "Benefits" to a screen reader and then says nothing, and
- * reads on the page as a heading that failed to load.
+ * An unanswered block renders **nothing at all** — not the label over a blank,
+ * which announces the label to a screen reader and then says nothing.
  */
-function Cell({
+function Block({
   label,
   answered,
-  on,
   children,
 }: {
   label: string;
-  /** Whatever says this row has something in it — a sentence, or a count. */
+  /** Whatever says this block has something in it — a sentence, or a count. */
   answered?: string | number;
-  on: boolean;
   children?: React.ReactNode;
 }) {
   if (!answered) return null;
   return (
-    <span className={cn("grid", STEP)}>
+    <span className="grid gap-2.5 border-t border-bark/60 pt-4">
       <span className="block text-eyebrow font-semibold uppercase tracking-eyebrow text-muted">
         {label}
       </span>
-      <span
-        className={cn(
-          "grid gap-1.5 leading-relaxed text-help",
-          on ? "text-green-deep" : "text-ink-soft",
-        )}
-      >
-        {children}
-      </span>
+      <span className="grid gap-2">{children}</span>
     </span>
   );
 }
 
 /**
  * Her word, and only hers — never "Most popular" (1 Sep, for want of usage
- * data).
- *
- * **The top of the card, standing above its neighbours** (developer, 15 Sep,
- * pointing at a pricing page twice: *"Recommended перенести над карткою"*, then
- * *"зроби верх так само по формату як тут"*). It was a pill stacked on top of
- * the plan name inside the card, which put the recommended column's name a line
- * lower than the other two — so the card the screen wants read first was the
- * one whose heading was out of line, and every other column had to render the
- * pill invisibly to hold its own name down.
- *
- * The card is lifted by exactly the band's height (`BAND`), so the band fills
- * the space above the row and the three plan names still share a baseline. The
- * negative margins carry it out of the card's padding to the border, where
- * `overflow-hidden` on the card rounds it.
+ * data). A pill straddling the card's top edge, as in the mockup.
  */
 function Recommended() {
   return (
-    <span
-      className={cn(
-        "-mx-4 -mt-4 flex items-center justify-center border-b border-gold-line bg-gold-wash px-4 py-2 text-eyebrow font-semibold uppercase tracking-eyebrow text-gold-ink",
-        /* Stacked, the band is simply the card's top edge and sizes itself. */
-        BAND.height,
-        "md:py-0",
-      )}
-    >
+    <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full border border-gold-line bg-gold-wash px-3.5 py-1 text-eyebrow font-semibold uppercase tracking-eyebrow text-gold-ink">
       Recommended
     </span>
+  );
+}
+
+/**
+ * The two blocks under the cards (30 Sep, the client's mockup): what every level
+ * shares, and that an answer cannot be bought.
+ *
+ * ⚠ **Copy is the mockup's, verbatim.** "Ordinary parent to parent introductions
+ * are free" and "Pando can run a Network Check when needed" name things that are
+ * not built yet, and the banner's "can never pay to … change what Pando tells
+ * you" is the old footnote ("There are no ads. No business or provider can ever
+ * pay to change an answer.") in the mockup's words — the claim is the same one,
+ * invariant 4's, and it is now wider: it also says *ranked higher*.
+ */
+const SHARED = [
+  { Icon: MessageSquare, text: "Ask Pando whenever you need help" },
+  { Icon: Users, text: "Get answers from parents with firsthand experience" },
+  { Icon: Search, text: "Pando can run a Network Check when needed" },
+  { Icon: ArrowLeftRight, text: "Ordinary parent to parent introductions are free" },
+] as const;
+
+export function PlanFooter() {
+  return (
+    <div className="mt-6 grid gap-3">
+      <div className="grid gap-4 rounded-3xl border border-bark bg-green-wash/50 p-4 sm:p-5">
+        <div>
+          <p className="font-display text-card-title font-semibold text-ink">
+            Everyone gets the same core Pando
+          </p>
+          <p className="mt-1.5 text-help leading-relaxed text-muted">
+            Your contribution level only changes how often we may ask for your
+            experience. It never changes the quality of help you receive from Pando.
+          </p>
+        </div>
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-4 border-t border-bark/60 pt-4 sm:grid-cols-4">
+          {SHARED.map(({ Icon, text }) => (
+            <li key={text} className="grid justify-items-center gap-2 text-center">
+              <span
+                aria-hidden="true"
+                className="grid size-11 place-items-center rounded-full bg-green-wash"
+              >
+                <Icon className="size-5 text-green-deep" strokeWidth={1.75} />
+              </span>
+              <span className="text-eyebrow leading-snug text-ink-soft">{text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="flex items-center gap-3.5 rounded-3xl border border-gold-line bg-gold-wash p-4 sm:p-5">
+        <span
+          aria-hidden="true"
+          className="grid size-11 shrink-0 place-items-center rounded-full bg-paper"
+        >
+          <ShieldCheck className="size-5 text-gold-ink" strokeWidth={1.75} />
+        </span>
+        <div>
+          <p className="font-display text-card-title font-semibold text-ink">
+            Pando’s answers aren’t for sale.
+          </p>
+          <p className="mt-0.5 text-help leading-relaxed text-ink-soft">
+            Businesses and providers can never pay to be recommended, ranked higher
+            or change what Pando tells you.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

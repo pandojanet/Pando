@@ -52,17 +52,18 @@ ok(
 );
 ok(
   "existing at all buys nothing visible",
-  /stays private/i.test(c.CAREGIVER_CONSENT_TEXT.profile),
-  "G2 is the price of entry — consent is not visibility (11 Aug)",
+  /private Pando profile/i.test(c.CAREGIVER_CONSENT_TEXT.profile),
+  "G2 is the price of entry — consent is not visibility (11 Aug); the client's 30 Sep heading says it by name",
 );
 ok(
   "being listed never includes the number",
-  /never my number/i.test(c.CAREGIVER_CONSENT_TEXT.listing),
+  /contact details will not be shown/i.test(c.CAREGIVER_CONSENT_TEXT.listing),
   "invariant 13 — Pando holds no contact detail for a nominee at all",
 );
 ok(
   "an introduction is asked for every single time",
-  /every time/i.test(c.CAREGIVER_CONSENT_TEXT.introduction),
+  /each time/i.test(c.CAREGIVER_CONSENT_TEXT.introduction) &&
+    /approve that specific introduction/i.test(c.CAREGIVER_CONSENT_TEXT.introduction),
   "strictly more exposure than being named, so it is never implied by it",
 );
 ok(

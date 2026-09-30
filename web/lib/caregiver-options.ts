@@ -13,12 +13,22 @@ import type { Option } from "@/lib/types";
  * So they live here, and `scripts.ts` imports them.
  */
 
+/**
+ * The client's wording (30 Sep, "Caregiver questions"): infants under 1, toddlers
+ * 1–2, preschoolers 3–4, school-age children 5–10, preteens and teens 11+.
+ *
+ * ⚠ Verbatim, and the ranges she wrote do not meet: nothing covers a child of
+ * 2 to 3 or of 4 to 5, where the old labels (1–3, 3–5) overlapped at the edges
+ * instead. The ids are untouched, so stored answers and the matcher's bands
+ * (`bandsForAge`) read as they did; only what a parent or a caregiver is shown
+ * moved. Put to the client as a gap in her ranges rather than fixed here.
+ */
 export const CAREGIVER_AGE_BANDS: Option[] = [
-  { id: "baby", label: "Babies (0–1)" },
-  { id: "toddler", label: "Toddlers (1–3)" },
-  { id: "preschool", label: "Preschool (3–5)" },
-  { id: "grade", label: "School age (5–11)" },
-  { id: "tween", label: "Tweens & teens (11+)" },
+  { id: "baby", label: "Infants under 1" },
+  { id: "toddler", label: "Toddlers 1–2" },
+  { id: "preschool", label: "Preschoolers 3–4" },
+  { id: "grade", label: "School-age children 5–10" },
+  { id: "tween", label: "Preteens and teens 11+" },
 ];
 
 /** C2 / G3, in the client's own categories: the kind of care, not a job title. */
@@ -43,10 +53,18 @@ export const CAREGIVER_STRENGTHS: Option[] = [
   { id: "bilingual", label: "Bilingual" },
   { id: "drives", label: "Drives / can do pickups" },
   { id: "cooks", label: "Cooks / handles meals" },
-  { id: "cpr", label: "CPR / first aid" },
+  /* Caregiver only (30 Sep): a parent cannot know it, and nobody checks it.
+     `PARENT_STRENGTHS` leaves it out; her own flow keeps it, labelled as what it
+     is. The id is unchanged so a stored one still reads. */
+  { id: "cpr", label: "CPR / first aid (self-reported, not verified)" },
   { id: "no_screens", label: "Not a screens babysitter" },
   { id: "flexible_hours", label: "Flexible hours" },
 ];
+
+/** What a parent is asked to tick: every strength but the one only she can state. */
+export const PARENT_STRENGTHS: Option[] = CAREGIVER_STRENGTHS.filter(
+  (s) => s.id !== "cpr",
+);
 
 export const CAREGIVER_FIT: Option[] = [
   { id: "first_time_parents", label: "First-time parents" },

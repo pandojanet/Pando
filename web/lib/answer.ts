@@ -1057,6 +1057,11 @@ function composeCareChoice(
           ? `${c.care_brief.charAt(0).toUpperCase()}${c.care_brief.slice(1)}.`
           : null;
     if (facts) parts.push(facts);
+    /* The parent's public note (30 Sep), in the richest form only: it is the one
+       part of a block that is a sentence rather than a fact, and a tier that has
+       already dropped her facts to fit has no room for it. */
+    const note = tier === 0 ? clean(c.notes?.caveat) : null;
+    if (note) parts.push(`Heads up: ${note}`);
     const extras = extrasOf(c.trust.labels);
     if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
     const fresh = freshnessNote(c);

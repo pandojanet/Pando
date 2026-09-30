@@ -3,7 +3,7 @@ import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
-import { CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
+import { CAREGIVER_AGE_BANDS, CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
 import { bandsForAge } from "@/lib/matching";
 import {
   caregiverNominations,
@@ -177,12 +177,20 @@ async function writeShareCard(
      (`age_bands && …`), and nothing on the chat path ever filled it — an empty
      array overlaps nothing, so every card a parent actually wrote was excluded
      from any question that named an age. */
+  const audience = strArray(f.best_for);
+  /* A tip's "Who does this help most?" may answer `parents` or `all_ages`
+     (30 Sep). Neither names a child's age, so both speak for **every** band —
+     stored as a single marker alone they would overlap nothing, and retrieval
+     would drop the tip from any question that named an age. The marker stays
+     beside the bands so the answer is still recoverable. */
+  const spansEveryBand = audience.some((a) => a === "parents" || a === "all_ages");
   const contributionBands = [
     ...new Set([
       ...strArray(f.age_bands),
       /* The place card's "Who's it best for?" is a chip list of these very
          band ids, under the step id `best_for`. */
-      ...strArray(f.best_for),
+      ...audience,
+      ...(spansEveryBand ? CAREGIVER_AGE_BANDS.map((b) => b.id) : []),
       ...ageAtTime.flatMap((a) => bandsForAge(a)),
     ]),
   ].filter((b) => /^[a-z_]+$/.test(b));

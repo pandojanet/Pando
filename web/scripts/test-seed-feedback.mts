@@ -455,13 +455,15 @@ ok(
 const levels = optionsOf("allowance");
 ok("there are three levels", levels.length === 3, levels.map((o) => o.id).join(","));
 /**
- * 9 Sep — the same three instructions, now carried by the comparison layout
- * rather than by two words appended to a label. Her rules did not change; where
- * they live did, so these assert the fields the screen actually renders.
+ * 30 Sep — the three levels are the client's mockup, not her 10 Sep table. The
+ * checks below assert what a parent reads from the cards and what the send layer
+ * keeps, and each one says which half of the old set it replaces.
  */
+const planFile = fs.readFileSync("components/ui/PlanGroup.tsx", "utf8");
+const policy = (await import(`../lib/outreach-policy.ts?v=${Date.now()}`)) as typeof import("../lib/outreach-policy.ts");
 ok(
-  "the minimum is named as the minimum",
-  /minimum/i.test(JSON.stringify(levels[0]?.plan ?? {})),
+  "the lowest level is the first card, at five a month",
+  levels[0]?.id === "5" && /5 relevant questions a month/.test(levels[0]?.plan?.participation ?? ""),
   JSON.stringify(levels[0]?.plan),
 );
 ok(
@@ -470,92 +472,90 @@ ok(
     !/popular/i.test(JSON.stringify(levels[1] ?? {})),
   "“Do not call it ‘Most popular’ without supporting usage data”",
 );
-/**
- * ⚠⚠ **Inverted on 10 Sep, because she wrote the missing cell.**
- *
- * This asserted that Community Member had **no** benefits, which was the right
- * check for four days: *"розробникам зараз можна дати layout task, але final
- * content не можна вигадувати. Janet прямо сказала, що ще дасть benefits."* She
- * has now given them, for all three levels, so the guard flips from "nobody
- * invented one" to "all three are hers" — and the empty cell would now be the
- * defect.
- */
 ok(
-  "every level answers all three of her rows",
+  "no other level is marked Recommended",
+  levels.filter((o) => o.recommended).length === 1,
+);
+ok(
+  "every level answers every block the card shows",
   levels.every(
-    (o) => o.plan?.participation && o.plan?.questions && o.plan?.benefits?.length,
+    (o) =>
+      o.plan?.icon &&
+      o.plan?.tagline &&
+      o.plan?.participation &&
+      o.plan?.bestFor &&
+      o.plan?.benefits?.length,
   ),
   levels.map((o) => `${o.id}:${o.plan?.benefits?.length ?? "MISSING"}`).join(" "),
 );
-/**
- * ⚠ **The cell is a list since 15 Sep** and every assertion below reads the
- * whole of it — `benefitsText` is the lead plus the bullets, which is what a
- * parent sees. Checking one bullet would pass while the rest of her sentence
- * had been dropped, which is exactly the failure the split could cause.
- */
 const benefitsText = (o?: { plan?: { benefitsLead?: string; benefits?: string[] } }) =>
   [o?.plan?.benefitsLead ?? "", ...(o?.plan?.benefits ?? [])].join(" ");
 ok(
-  "and the two paid ones build on the one below, in her words",
-  /^Everything above/.test(levels[1]?.plan?.benefitsLead ?? "") &&
-    /^Everything above/.test(levels[2]?.plan?.benefitsLead ?? ""),
-  "her table reads 'Everything above, plus …' — a level is never a different product",
+  "the two upper levels build on the one below, by name",
+  /Community member/.test(levels[1]?.plan?.benefitsLead ?? "") &&
+    /Active contributor/.test(levels[2]?.plan?.benefitsLead ?? ""),
+  "a level is never a different product: “You’ll get everything in … plus:”",
+);
+ok(
+  "the open level is three a week, and says the number the send layer enforces",
+  levels[2]?.id === "as_relevant" &&
+    new RegExp(`Up to ${policy.OPEN_WEEKLY_LIMIT} relevant questions a week`).test(
+      levels[2]?.plan?.participation ?? "",
+    ),
+  `screen says ${JSON.stringify(levels[2]?.plan?.participation)}, OPEN_WEEKLY_LIMIT is ${policy.OPEN_WEEKLY_LIMIT}`,
+);
+ok(
+  "the old Network Check / Pando+ benefits are gone with their hedges",
+  !levels.some((o) => /Network Check|Pando\+/.test(benefitsText(o))),
+  "the mockup replaced that list; nothing here may promise a balance nothing pays out",
+);
+ok(
+  "what every level shares is stated under the cards — asking and answers",
+  /Ask Pando whenever you need help/.test(planFile) &&
+    /answers from parents with firsthand experience/.test(planFile) &&
+    /never changes the quality of help/.test(planFile),
+  "her 1 Sep rule: access to what Pando already knows is never restricted by this choice",
+);
+ok(
+  "the screen's intro is centred and in two paragraphs, as the mockup has it",
+  screenById("allowance")?.centered === true &&
+    (screenById("allowance")?.help ?? "").split("\n\n").length === 2,
 );
 /**
- * ⚠ The bullets are a **split** of her sentences and not a rewrite (15 Sep), so
- * this pins the words that would go first if somebody tidied the fragments into
- * capitalised ones: her lower case, and the items she actually listed.
+ * ⚠⚠ **Gone from the screen, and it is worth saying so in a test**: the 48-hour
+ * gap. The 10 Sep table carried it in the third column, and the mockup does not.
+ * It is still enforced at every level (invariant 5, `OUTREACH_GAP_DAYS`), still
+ * stated by the completion confirmation and by every SETTINGS reply — but a
+ * parent choosing a level no longer reads it on this screen. On the list for the
+ * client.
  */
 ok(
-  "the bullets are her own fragments, not tidied ones",
-  (levels[1]?.plan?.benefits ?? []).every((b) => b === b.replace(/^(.)/, (c) => c.toLowerCase())),
-  JSON.stringify(levels[1]?.plan?.benefits),
+  "the gap is still enforced and still stated in the texts a parent reads after",
+  policy.OUTREACH_GAP_DAYS === 2 &&
+    /48 hours/.test(policy.settingsConfirmation({ allowance: null, mode: "as_relevant" })) &&
+    /48 hours/.test(fs.readFileSync("components/seed/done/FinishAsks.tsx", "utf8")),
 );
-/**
- * ⚠ Her instruction: *"Label benefits that are not yet live 'during the pilot'
- * or 'at launch.'"* Three of the things she promises do not exist — a Network
- * Check a month, Pando+, caregiver matching — and a credit is denominated in
- * Network Checks, which are not spendable yet (10 Aug). Without the hedge this
- * screen promises a balance nothing can pay out, so the hedge is part of the
- * sentence rather than a nicety.
- */
-for (const level of [levels[1], levels[2]]) {
-  const text = benefitsText(level);
+
+/* 30 Sep — a tip's "Who does this help most?" may say Parents or All ages. Both
+   are exclusive, and `cards.ts` reads either as every band, so the tip is not
+   dropped from an answer about a toddler. Read off the source: the script builder
+   and the card writer both import server modules. */
+{
+  const scripts = fs.readFileSync("lib/seed-chat/scripts.ts", "utf8");
+  const cards = fs.readFileSync("lib/server/repo/cards.ts", "utf8");
   ok(
-    `${level?.id} hedges what is not live yet`,
-    /during the pilot|at launch/.test(text),
-    text,
+    "the tip audience offers Parents and All ages, each exclusive",
+    /id: "parents", label: "Parents", exclusive: true/.test(scripts) &&
+      /id: "all_ages", label: "All ages", exclusive: true/.test(scripts) &&
+      /options: TIP_AUDIENCE/.test(scripts),
   );
+  ok(
+    "and the card writer stores either as every age band",
+    /a === "parents" \|\| a === "all_ages"/.test(cards) && /CAREGIVER_AGE_BANDS\.map/.test(cards),
+    "a marker band alone overlaps nothing, so retrieval would drop the tip from any question that names an age",
+  );
+  ok("the tip card is called Something else?", /label: "Something else\?"/.test(scripts));
 }
-/**
- * ⚠ The 48-hour gap moved out of the screen's intro when her own intro
- * replaced ours, and it now sits in the third level's own row — which is the
- * asymmetry already on the list for her, since invariant 5 applies it to every
- * level. What is asserted is only that the screen still states it *somewhere*:
- * a parent agreeing to a frequency has to be able to read the ceiling.
- */
-ok(
-  "48 hours is still stated on the screen",
-  /48 hours/.test(
-    (screenById("allowance")?.help ?? "") +
-      JSON.stringify(levels.map((o) => o.plan)),
-  ),
-  screenById("allowance")?.help,
-);
-/**
- * ⚠ Restated as the rule rather than as one sentence's wording. Her 1 Sep
- * instruction was *"Do not restrict access to useful information Pando already
- * has"* — so what must hold is that the **base** level already grants asking
- * and answering, and the levels above it add outreach rather than unlock
- * access. Checking the middle level's phrasing, as this did, broke the moment
- * she wrote her own.
- */
-ok(
-  "the minimum level already includes asking and getting answers",
-  /ask questions/i.test(benefitsText(levels[0])) &&
-    /answers/i.test(benefitsText(levels[0])),
-  benefitsText(levels[0]),
-);
 
 console.log("\n=== item 6: the privacy screen ===");
 const privacy = screenById("privacy_disclosure");
@@ -975,12 +975,53 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
 
     /* 28 Sep — the caregiver questions, in both branches. */
     const ids = cg.steps.map((x) => x.id);
-    ok("the card no longer asks who they are a great fit for",
-      !ids.includes("good_fit_for"));
-    ok("nor whether you would hire them again, nor why",
-      !ids.includes("hire_again") && !ids.includes("hesitation_reason"));
-    ok("the up-front note and the private note are one question",
-      !ids.includes("caveat") && ids.filter((x) => x === "private_note").length === 1);
+    /* 30 Sep — the client's "Caregiver questions" table restores two of the three
+       28 Sep removals and splits the merged note again. */
+    const step = (id: string) => cg.steps.find((x) => x.id === id);
+    ok("who they are a great fit for is back, optional", step("good_fit_for")?.optional === true);
+    ok("the recommendation question is hers, with three answers",
+      /recommend them to another family/.test(step("hire_again")?.prompt ?? "") &&
+        (step("hire_again")?.options ?? []).map((x) => x.id).join() === "yes,hesitant,no");
+    ok("the private follow-up only follows a hesitant answer or a No",
+      step("hesitation_reason")?.when?.({ hire_again: "yes" }) === false &&
+        step("hesitation_reason")?.when?.({ hire_again: "hesitant" }) === true &&
+        step("hesitation_reason")?.when?.({ hire_again: "no" }) === true &&
+        step("hesitation_reason")?.optional === true);
+    ok("the up-front note is public and there is no private-note question any more",
+      ids.includes("know_first") && !ids.includes("private_note") && !ids.includes("caveat"));
+    ok("firsthand care is asked first and 18+ second, each ending the flow with her words",
+      ids[0] === "worked_for_you" && ids[1] === "age_gate" &&
+        step("worked_for_you")?.stopIf?.("no") ===
+          "For now, Pando only accepts caregiver recommendations from families who have personally used the caregiver." &&
+        step("age_gate")?.stopIf?.("no") === "Pando currently supports adult caregivers only." &&
+        step("worked_for_you")?.stopIf?.("yes") === null);
+    ok("how they know them, the benefits and the pay-benchmark consent are gone",
+      !ids.includes("how_known") && !ids.includes("benefits") && !ids.includes("pay_benchmark_ok") &&
+        !ids.includes("needs_change_type") && !ids.includes("recontact_ok"));
+    ok("weekly hours are asked once, whether or not a pay range was given",
+      ids.filter((x) => x === "hours_per_week").length === 1 && step("hours_per_week")?.when === undefined);
+    ok("the change-of-needs question is only for a caregiver who still works for them",
+      step("needs_horizon")?.when?.({ last_worked: "current", hire_again: "yes" }) === true &&
+        step("needs_horizon")?.when?.({ last_worked: "over_year", hire_again: "yes" }) === false);
+    ok("a No is never asked for a reference",
+      step("reference_willing")?.when?.({ hire_again: "no" }) === false);
+    ok("and a No is not offered an invitation",
+      /hire_again === "no"\) return;/.test(offer));
+    const cgOpts = await import(`../lib/caregiver-options.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-options.ts");
+    ok("the client's age labels are on the caregiver questions",
+      cgOpts.CAREGIVER_AGE_BANDS.map((b) => b.label).join(" | ") ===
+        "Infants under 1 | Toddlers 1–2 | Preschoolers 3–4 | School-age children 5–10 | Preteens and teens 11+");
+    ok("CPR / first aid is the caregiver's alone, and says it is unverified",
+      !(step("strengths")?.options ?? []).some((x) => x.id === "cpr") &&
+        cgOpts.CAREGIVER_STRENGTHS.some((x) => x.id === "cpr" && /not verified/.test(x.label)));
+    ok("a place or tip card keeps its old age labels",
+      (buildScripts("pasadena").place.steps.find((x) => x.id === "best_for")?.options ?? [])[0]?.label === "Babies (0–1)");
+    const inviteMod = await import(`../lib/caregiver-invite.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-invite.ts");
+    const invite = inviteMod.caregiverInviteMessage({ caregiverFirstName: "Maria", parentFirstName: "Jen", token: "abcdefghij012345" });
+    ok("the invitation is the client's text, signed by the parent",
+      invite.startsWith("Hi Maria — I recommended you on Pando, a private network where local parents share firsthand caregiver recommendations.") &&
+        /Nothing about you will be visible unless you choose to create a profile and accept this invitation\./.test(invite) &&
+        invite.endsWith("pando.is/caregiver/abcdefghij012345\n\n— Jen"));
     const days = cg.steps.find((x) => x.id === "schedule_days");
     ok("specific weekdays open only behind their option",
       !!days && days.when?.({ schedule_pattern: ["weekday_mornings"] }) === false &&
@@ -1500,9 +1541,10 @@ console.log("\n=== 9 Sep, items 8 and 10: A–Z in a box, and one screen fewer =
     "an informational screen immediately before the one that says the same thing",
   );
   ok(
-    "its no-ads promise survives on the participation screen",
-    /no ads/i.test(screenById("allowance")?.footnote ?? ""),
-    screenById("allowance")?.footnote ?? "nothing",
+    "its no-ads promise survives under the participation cards, in the mockup's words",
+    /aren.t for sale/.test(planFile) &&
+      /ranked higher/.test(planFile),
+    "the banner replaced the footnote on 30 Sep",
   );
   ok(
     "the privacy disclosure is kept",

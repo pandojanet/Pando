@@ -2084,6 +2084,8 @@ async function contributorStanding(db: Db) {
     } as const;
     const applied = effectiveAllowance(stated, {
       sent_last_30_days: asked,
+      /* effectiveAllowance never reads the weekly count; only decideOutreach does. */
+      sent_last_7_days: 0,
       responded_last_30_days: answered,
       last_outreach_at: null,
       pings_this_month: 0,

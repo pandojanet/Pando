@@ -162,6 +162,18 @@ export interface ShareCandidate {
   last_confirmed_at: string | null;
 }
 
+/**
+ * Notes a parent wrote under "Anything a family should know up front?" are
+ * public only when the card was made on or after this moment (30 Sep).
+ *
+ * That question used to be read by nobody but an admin, and the parent who
+ * answered it was not told a family would see it. Publishing the old ones would
+ * show a stranger what somebody wrote believing it stayed in the office, so the
+ * cut-off is the day the question's promise changed. A plain string, compared in
+ * SQL, so it cannot drift from what the query actually does.
+ */
+export const PUBLIC_NOTE_SINCE = "2026-09-30T00:00:00Z";
+
 export interface CaregiverCandidate {
   caregiver_id: string;
   /**
@@ -180,6 +192,13 @@ export interface CaregiverCandidate {
   age_experience: string[];
   strengths: string[];
   rate_band: string | null;
+  /**
+   * The parent's "anything a family should know up front" (30 Sep) — public by
+   * the developer's decision, from a card no hold is on and that was written
+   * after `PUBLIC_NOTE_SINCE`. The private follow-up ("what would you want
+   * Pando to understand") is `restricted_notes` and is never read here.
+   */
+  up_front: string | null;
   /** The most recent nomination - when a family last confirmed employing her. */
   last_confirmed_at: string | null;
   trust: TrustLabels;
@@ -499,6 +518,11 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         cp.roles_wanted, cp.areas_served,
         cp.age_experience, cp.strengths, cp.rate_band,
         max(n.created_at)                                               as last_confirmed_at,
+        (array_agg(n.caveat order by n.created_at desc)
+           filter (where n.caveat is not null and btrim(n.caveat) <> ''
+                     and not n.review_hold
+                     and n.created_at >= ${PUBLIC_NOTE_SINCE}::timestamptz))[1]
+                                                                        as up_front,
         count(n.id) filter (where n.worked_for_family)                  as firsthand,
         bool_or(n.reference_willing = 'yes')                            as reference
       from caregivers c
@@ -510,6 +534,10 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         and c.active
         and c.discoverable
         and c.is_adult
+        -- "Not looking right now" (30 Sep, the client's table): the profile must
+        -- not appear in answers. Her own G6b answer, and it outranks her having
+        -- agreed to be listed — she has said she is not available.
+        and coalesce(cp.available_from, '') <> 'not_looking'
         ${nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`}
       group by c.id, cp.roles_wanted, cp.areas_served,
                cp.age_experience, cp.strengths, cp.rate_band
@@ -606,6 +634,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       age_experience: (r.age_experience as string[] | null) ?? [],
       strengths: (r.strengths as string[] | null) ?? [],
       rate_band: r.rate_band ? String(r.rate_band) : null,
+      up_front: r.up_front ? String(r.up_front) : null,
       last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
       trust: labelsFor(candidate, { policies }),
       firsthand_count: candidate.firsthand_count,

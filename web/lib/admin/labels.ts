@@ -618,6 +618,7 @@ export const PAYMENT_STATUS: Record<
  */
 export const POOL_HELD_REASON: Record<string, string> = {
   monthly_cap: "Already at their monthly limit",
+  weekly_cap: "Already at their weekly limit",
   too_soon: "Asked in the last 48 hours",
   ping_this_month: "Already had a freshness ping this month",
   ping_same_day_as_blast: "Already asked something today",

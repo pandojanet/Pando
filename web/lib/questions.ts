@@ -787,44 +787,64 @@ const SHARED_CONNECTIONS: Option[] = [
  * Capitalised Fragments is editing copy the client approved — and the hedges
  * above are the reason that matters.
  */
+/**
+ * ## 30 Sep — the client's mockup replaces the copy above, and the third level
+ * gets a number
+ *
+ * Every string in the three plans below is the mockup's, not the 10 Sep table
+ * quoted above — that table is history. What moved, so the next session does not
+ * mistake it for drift:
+ *
+ *  - **Open contributor is "up to 3 relevant questions a week"**, where it was
+ *    "whenever it's relevant". The stored value is unchanged (`as_relevant`, a
+ *    null monthly number, which is what `allowance_shape` allows) and the send
+ *    layer now caps it at three requests in any rolling seven days
+ *    (`OPEN_WEEKLY_LIMIT`). The 48-hour gap still applies to every level.
+ *  - **The benefits are the mockup's** — Deep Dive, Caregiver Search slots, new
+ *    pilots and betas, invitations. The Network Checks and Pando+ lines of the
+ *    old table are gone, and with them the "during the pilot" / "at launch"
+ *    hedges that guarded them. ⚠ Three of the new ones still name things that do
+ *    not exist yet (Deep Dive, Caregiver Search, beta features); the mockup
+ *    hedges none of them, so this is the client's promise rather than ours.
+ *  - Community member has a benefits list again (join · invite friends) after
+ *    being empty since 9 Sep.
+ *  - `icon` and `tagline` are new: the circle beside each name and the line
+ *    under it. Recommended is still the middle level and still never "Most
+ *    popular".
+ */
 const ALLOWANCE: Option[] = [
   {
     id: "5",
     label: "Community member",
     wide: true,
     plan: {
+      icon: "person",
+      tagline: "A great way to get started.",
       participation: "Up to 5 relevant questions a month",
-      questions: "The minimum level",
-      /* Her three sentences, split at her own full stops. No lead-in: this
-         level is not built on one below it. */
-      benefits: [
-        "Join Pando.",
-        "Ask questions and get answers from parents with firsthand experience.",
-        "Invite friends.",
-      ],
+      bestFor: "I’m happy to help occasionally.",
+      benefits: ["Join and use Pando", "Invite friends to Pando"],
     },
   },
   {
     id: "10",
     /**
      * 1 Sep, item 18: *"Highlight Active Contributor as **Recommended**. Do not
-     * call it 'Most popular' without supporting usage data."* — which is the
-     * badge rather than two words appended to the name.
+     * call it 'Most popular' without supporting usage data."*
      */
     label: "Active contributor",
     recommended: true,
     wide: true,
     plan: {
+      icon: "sprout",
+      tagline: "Help regularly, unlock more.",
       participation: "Up to 10 relevant questions a month",
-      questions: "Happy to help more",
-      /* Her one sentence, as the list it already was: the lead-in, then the
-         three items she separated with commas. Lower case is hers and the
-         hedges are load-bearing — see `OptionPlan`. */
-      benefitsLead: "Everything above, plus:",
+      bestFor: "I’m happy to help regularly when my experience is relevant.",
+      benefitsLead: "You’ll get everything in Community member, plus:",
       benefits: [
-        "one Network Check each month during the pilot",
-        "early access to caregiver matching",
-        "discounted Pando+ at launch",
+        "Early access to the Deep Dive pilot",
+        "Early access to Basic Caregiver Search",
+        "Additional Pando invitations",
+        "Early access to selected new features",
       ],
     },
   },
@@ -833,16 +853,16 @@ const ALLOWANCE: Option[] = [
     label: "Open contributor",
     wide: true,
     plan: {
-      participation: "Whenever it’s relevant — never more than one every 48 hours",
-      questions: "Ask me when it fits",
-      benefitsLead: "Everything above, plus:",
+      icon: "heart",
+      tagline: "For parents who are very happy to help.",
+      participation: "Up to 3 relevant questions a week",
+      bestFor: "I’m happy for Pando to ask whenever my experience is likely to be useful.",
+      benefitsLead: "You’ll get everything in Active contributor, plus:",
       benefits: [
-        "Pando+ during the pilot",
-        "two Network Checks a month",
-        "priority routing for questions",
-        "timely seasonal reminders",
-        "early access to caregiver matching",
-        "additional invitations",
+        "First access to limited Deep Dive pilot slots",
+        "First access to Caregiver Search slots",
+        "First access to new Pando pilots and beta features",
+        "The highest invitation allowance during the pilot",
       ],
     },
   },
@@ -1882,7 +1902,11 @@ export const ALL_SCREENS: Screen[] = [
      * on the list for her. Reinstating it would make this our sentence again
      * rather than hers, so it stays as written and stays on the list.
      */
-    help: "Pando works because parents help each other. Community Member is the minimum level. Every individual question is optional, and you can change your level at any time.",
+    /* The mockup's two sentences (30 Sep), as two paragraphs: the ask, then
+       the reassurance. A blank line splits them — `ProfileFlow` renders one
+       paragraph each on a screen that sets `centered`. */
+    help: "Pando works because parents share what they know. Choose how often you’re happy for Pando to ask for your firsthand experience.\n\nYou can ask Pando questions whenever you need to. Every request for your help is optional, and you can change your level at any time.",
+    centered: true,
     questions: [
       {
         id: "allowance",
@@ -1901,13 +1925,9 @@ export const ALL_SCREENS: Screen[] = [
         required: true,
       },
     ],
-    /* The one sentence rescued from "The Pando promise" when that screen was
-       removed (9 Sep) — verbatim, and the only place in the app it is said. It
-       sits under the levels because it is the reason to believe the bargain
-       they are agreeing to, and above the recurring-messages consent because
-       that is the act it qualifies. */
-    footnote:
-      "There are no ads. No business or provider can ever pay to change an answer.",
+    /* The "no ads" sentence rescued from "The Pando promise" (9 Sep) is the
+       banner under the cards now (30 Sep) — `PlanFooter`, with the mockup's
+       wording — so this screen carries no footnote of its own. */
   },
   /**
    * **The listening-ear screen is gone** (1 Sep), on her explicit

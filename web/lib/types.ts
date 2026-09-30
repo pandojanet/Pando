@@ -173,14 +173,20 @@ export interface Option {
  * what she approved rather than a nicety — see `questions.ts`.
  */
 export interface OptionPlan {
+  /** "How often Pando may ask you" — what agreeing to this level means. */
   participation: string;
-  questions: string;
+  /** "Best for" — the parent this level is written for, in their own voice. */
+  bestFor: string;
+  /** One line under the name: "A great way to get started." */
+  tagline?: string;
+  /** The mark in the circle beside the name. A name, never a component. */
+  icon?: "person" | "sprout" | "heart";
   /**
-   * The clause above the bullets — "Everything above, plus:". Hers; only the
-   * colon belongs to the list form.
+   * The label above the bullets. Absent on the first level ("You'll get");
+   * "You'll get everything in Community member, plus:" on the two above it.
    */
   benefitsLead?: string;
-  /** One bullet each, in her order. */
+  /** One check-marked line each, in order. */
   benefits?: string[];
 }
 
@@ -462,6 +468,12 @@ export interface Screen {
    * read and not hidden in a tooltip.
    */
   footnote?: string;
+  /**
+   * Centre the eyebrow, title and intro (30 Sep) — the participation screen is
+   * a three-card comparison and its mockup centres the heading over the cards.
+   * Every other screen is a column of questions and stays left-aligned.
+   */
+  centered?: boolean;
   /**
    * Skip the whole screen unless an earlier answer makes it worth asking.
    *

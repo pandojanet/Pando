@@ -1,13 +1,13 @@
 import { marketOptions } from "../market-options";
 import {
-  CAREGIVER_AGE_BANDS as AGE_BANDS,
-  CAREGIVER_BENEFITS,
+  CAREGIVER_AGE_BANDS,
+  CAREGIVER_FIT,
   CAREGIVER_HOURS,
   CAREGIVER_PAY_BANDS as PAY_BANDS,
   CAREGIVER_SCHEDULE,
-  CAREGIVER_STRENGTHS,
   CAREGIVER_TYPES,
   CAREGIVER_WEEKDAYS,
+  PARENT_STRENGTHS,
   wantsWeekdays,
 } from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
@@ -78,6 +78,20 @@ export const WORTH_IT: Option[] = [
  */
 const wantsMore = (fields: Fields): boolean => fields.more_detail === "yes";
 
+/**
+ * The child-age chips on the **place** and **tip** cards, with the labels they
+ * had before 30 Sep. The client's new wording ("Infants under 1 · Toddlers 1–2
+ * …") is for the caregiver questions, where it is her table; the same five ids
+ * on a place card keep their old labels rather than changing by association.
+ */
+const AGE_BANDS: Option[] = [
+  { id: "baby", label: "Babies (0–1)" },
+  { id: "toddler", label: "Toddlers (1–3)" },
+  { id: "preschool", label: "Preschool (3–5)" },
+  { id: "grade", label: "School age (5–11)" },
+  { id: "tween", label: "Tweens & teens (11+)" },
+];
+
 const TIP_TOPICS: Option[] = [
   { id: "schedules", label: "Schedules & timing" },
   { id: "costs", label: "Costs & deals" },
@@ -87,6 +101,20 @@ const TIP_TOPICS: Option[] = [
   { id: "food", label: "Eating out with kids" },
   { id: "new_to_area", label: "Being new here" },
   { id: "health", label: "Doctors & health" },
+];
+
+/**
+ * "Who does this help most?" on a tip: the five child bands, plus two answers a
+ * tip can give that a place cannot (30 Sep) — it is for **parents** themselves
+ * (nothing about a child's age), or for **all ages**. Each is exclusive, because
+ * "parents" beside "toddlers" says nothing the band alone does not, and `cards.ts`
+ * reads both as "every band" so a tip for all ages is not filtered out of an
+ * answer about a toddler.
+ */
+const TIP_AUDIENCE: Option[] = [
+  ...AGE_BANDS,
+  { id: "parents", label: "Parents", exclusive: true },
+  { id: "all_ages", label: "All ages", exclusive: true },
 ];
 
 /**
@@ -430,36 +458,40 @@ export function buildScripts(
       kind: "caregiver",
       label: "A caregiver",
       hint: "Sitter, nanny, tutor, coach",
-      /* The client's July question set changed this outright: Pando does not
-         contact the caregiver and does not store their details. At the end the
-         parent gets a message to send themselves. */
       intro:
         "This one works differently — we never contact anyone, and we don't store their details. At the end I'll give you an invite you can send them yourself.",
       steps: [
         {
           /**
-           * C1 — the hard gate. Firsthand only: a caregiver recommendation
-           * relayed from someone else is not something Pando will carry.
+           * C1 — the hard gate, and first (30 Sep, the client's "Caregiver
+           * questions"). Firsthand only: a caregiver recommendation relayed from
+           * someone else is not something Pando will carry.
+           *
+           * Her wording replaces "Did this caregiver work directly for your
+           * family?" — *personally cared for your child* is the thing being
+           * asked, and "worked directly for" read as a payroll question. The
+           * step id stays `worked_for_you`: it is the field key the save route
+           * refuses a card on (invariant 14), and a rename would make an older
+           * client's answer read as missing.
+           *
+           * A No ends the flow and keeps nothing — no recommendation,
+           * endorsement, trust edge, vouch or invitation.
            */
           id: "worked_for_you",
-          prompt: "Did this caregiver work directly for your family?",
+          prompt: "Has this caregiver personally cared for your child or children?",
           widget: "quick",
           options: [
-            { id: "yes", label: "Yes, for us" },
-            { id: "no", label: "No — someone else's" },
+            { id: "yes", label: "Yes" },
+            { id: "no", label: "No" },
           ],
           stopIf: (value) =>
             value === "no"
-              ? "Then I'll stop there and keep nothing. A caregiver recommendation only carries weight when it comes from the family who actually employed them — but an activity or a tip from a friend is genuinely useful, if you have one."
+              ? "For now, Pando only accepts caregiver recommendations from families who have personally used the caregiver."
               : null,
         },
         {
-          id: "type",
-          prompt: "What kind of care was it?",
-          widget: "quick",
-          options: CAREGIVER_TYPES,
-        },
-        {
+          /* After firsthand care is confirmed, not before (30 Sep): nothing below
+             is asked of somebody whose recommendation cannot be taken. */
           id: "age_gate",
           prompt: "Are they 18 or older?",
           aside: "Pando never lists anyone under 18.",
@@ -469,9 +501,7 @@ export function buildScripts(
             { id: "no", label: "No, under 18" },
           ],
           stopIf: (value) =>
-            value === "no"
-              ? "Thank you for thinking of them — but Pando only ever lists caregivers who are 18 or older, so I'll stop there and keep nothing. Anything else you'd like to share?"
-              : null,
+            value === "no" ? "Pando currently supports adult caregivers only." : null,
         },
         {
           id: "name",
@@ -480,16 +510,73 @@ export function buildScripts(
           widget: "name",
         },
         {
-          id: "how_known",
-          prompt: "How do you know them?",
+          id: "type",
+          prompt: "What kind of care was it?",
           widget: "quick",
-          options: [
-            { id: "watched_my_kids", label: "They've watched my kids" },
-            { id: "friends_caregiver", label: "A friend's caregiver we've used" },
-            { id: "through_school", label: "Through our school" },
-            { id: "neighbor", label: "Neighbor" },
-            { id: "family_friend", label: "Family friend" },
-          ],
+          options: CAREGIVER_TYPES,
+        },
+        {
+          /* The ages they actually cared for — evidence, not an opinion about who
+             they'd be good with. */
+          id: "cared_for_ages",
+          prompt: "How old were the kids they looked after?",
+          widget: "chips",
+          options: CAREGIVER_AGE_BANDS,
+        },
+        {
+          /* Closed first: strengths are the matchable half, so they must not
+             depend on extraction from free text. CPR / first aid is not offered
+             here (30 Sep): only the caregiver can state it, and it is unverified. */
+          id: "strengths",
+          prompt: "What are they especially good at?",
+          widget: "chips",
+          options: PARENT_STRENGTHS,
+        },
+        {
+          /**
+           * Same ids as the caregiver's own availability (2C, G6), because "she
+           * worked weekday mornings" and "I'm free weekday mornings" is the match
+           * this data exists to make.
+           */
+          id: "schedule_pattern",
+          prompt: "When did they usually work for you?",
+          aside: "Tap all that apply.",
+          widget: "chips",
+          options: CAREGIVER_SCHEDULE,
+          optional: true,
+        },
+        {
+          /* 28 Sep: "Specific days of the week" opens the days themselves.
+             cards.ts folds them into schedule_pattern beside the windows. */
+          id: "schedule_days",
+          prompt: "Which days?",
+          aside: "Tap all that apply.",
+          widget: "chips",
+          options: CAREGIVER_WEEKDAYS,
+          optional: true,
+          when: (fields) => wantsWeekdays(fields.schedule_pattern),
+        },
+        {
+          id: "pay_band",
+          prompt: "Roughly what did you pay?",
+          aside: "Optional. Ranges only, and never shown next to their name.",
+          widget: "quick",
+          optional: true,
+          options: PAY_BANDS,
+        },
+        {
+          /**
+           * Asked **once, and whether or not a pay range was given** (30 Sep, her
+           * rule: "ask weekly hours once, independently of whether a pay range
+           * was given"). It used to appear only after a band, so a parent who
+           * skipped the rate was never asked the size of the job.
+           */
+          id: "hours_per_week",
+          prompt: "Roughly how many hours a week?",
+          aside: "Optional.",
+          widget: "quick",
+          optional: true,
+          options: CAREGIVER_HOURS,
         },
         {
           id: "how_long",
@@ -516,51 +603,6 @@ export function buildScripts(
           ],
         },
         {
-          /**
-           * Stage 1: "schedule pattern". Same ids as the caregiver's own
-           * availability (2C, G6), because "she worked weekday mornings" and "I'm
-           * free weekday mornings" is the match this data exists to make.
-           */
-          id: "schedule_pattern",
-          /* 23 Sep: "What did the week usually look like?" was reported as an
-             odd question, and it was — it asked about a week and was answered
-             with times of day. It asks when, now, which is what the options
-             are. The ids are untouched: they are shared with the caregiver's
-             own G6 answer, and that match is what this question is for. */
-          prompt: "When did they usually work for you?",
-          aside: "Tap all that apply.",
-          widget: "chips",
-          options: CAREGIVER_SCHEDULE,
-          optional: true,
-        },
-        {
-          /* 28 Sep: "Specific days of the week" opens the days themselves.
-             cards.ts folds them into schedule_pattern beside the windows. */
-          id: "schedule_days",
-          prompt: "Which days?",
-          aside: "Tap all that apply.",
-          widget: "chips",
-          options: CAREGIVER_WEEKDAYS,
-          optional: true,
-          when: (fields) => wantsWeekdays(fields.schedule_pattern),
-        },
-        {
-          /* The ages they actually cared for — evidence, not an opinion about who
-             they'd be good with. */
-          id: "cared_for_ages",
-          prompt: "How old were the kids they looked after?",
-          widget: "chips",
-          options: AGE_BANDS,
-        },
-        {
-          /* Closed first: strengths are the matchable half, so they must not
-             depend on extraction from free text. */
-          id: "strengths",
-          prompt: "What are they especially good at?",
-          widget: "chips",
-          options: CAREGIVER_STRENGTHS,
-        },
-        {
           id: "what_makes_special",
           prompt: "Anything you'd add in your own words?",
           widget: "text",
@@ -569,24 +611,32 @@ export function buildScripts(
           placeholder: "Calm with a shy kid, and she actually plays…",
         },
         {
+          /* Back on the card (30 Sep); it was removed on 28 Sep and the client's
+             table restores it, optional, with her eight options. */
+          id: "good_fit_for",
+          prompt: "Which families are they a great fit for?",
+          widget: "chips",
+          options: CAREGIVER_FIT,
+          optional: true,
+        },
+        {
           /**
-           * 28 Sep, the developer: "Anything a family should know up front?"
-           * and "Anything you'd only say privately?" are one question now, and
-           * "Would you hire them again?" with its "Comfortable telling Pando
-           * why?" are gone, as is "Which families are they a great fit for?".
+           * 30 Sep, the developer, reading the client's table: *"Просто робиш
+           * публічним, лишається"* — this note is **public** (after a person has
+           * read the card), and the private "Anything you'd only say privately?"
+           * is gone. It is stored as the nomination's `caveat`; retrieval
+           * offers it to an answer only from a card a human has released, made
+           * on or after the change (`PUBLIC_NOTE_SINCE`), so nothing a parent
+           * wrote believing it was private is ever shown.
            *
-           * ⚠ The merged answer is stored as the **private note** — restricted,
-           * never shown to a family or to her (invariant 12) — because it is
-           * the one box a parent may now write a concern into, and the stricter
-           * of the two rules is the only one that is safe for both halves. The
-           * old public caveat on a caregiver card was never shown to a family
-           * either (only the admin read it), so nothing reaches fewer people
-           * than before. The cost, stated: any note now holds the card for a
-           * person, which the private note always did.
+           * ⚠ It is the one box where a parent can name a person, so the card
+           * is still read by a person before anyone is listed (invariant 8).
+           * What a parent would only say privately now has exactly one place:
+           * the follow-up to the recommendation answer below.
            */
-          id: "private_note",
-          prompt: "Anything a family should know, or anything you'd only tell Pando?",
-          aside: "Only Pando's team reads this. It never reaches another parent or them in any form, and a person reads it before they are listed.",
+          id: "know_first",
+          prompt: "Anything a family should know up front?",
+          aside: "Optional. Families may see this once someone at Pando has read it.",
           widget: "text",
           maxLength: 400,
           optional: true,
@@ -594,16 +644,63 @@ export function buildScripts(
         },
         {
           /**
-           * C10, and why it earns its place, in the client's words: when a wonderful
-           * nanny's hours end, parents scramble on Facebook to help her land with a
-           * good family. Pando can matchmake quietly instead — with her consent,
-           * and including a share if this family needs fewer hours.
+           * "Would you hire them again?" → "Would you recommend them to another
+           * family?" (30 Sep). The step id stays `hire_again` and the values stay
+           * yes / hesitant / no: the column, its `hold_when_hesitant` CHECK and
+           * the route's holds all key on them, and only the words changed.
+           *
+           * "Yes, with some context" is held for a person before it is used. A
+           * **No** must never generate a recommendation or an invitation: the
+           * card is kept only as a private, held record and the invite is not
+           * offered (`ChatSeeding`), and nothing below asks for a reference.
+           */
+          id: "hire_again",
+          prompt: "Would you recommend them to another family?",
+          widget: "quick",
+          options: [
+            { id: "yes", label: "Yes, without hesitation" },
+            { id: "hesitant", label: "Yes, with some context" },
+            { id: "no", label: "No" },
+          ],
+        },
+        {
+          id: "hesitation_reason",
+          prompt: "What would you want Pando to understand?",
+          aside: "Optional. Your response stays private unless you separately agree to share it.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          when: (fields) => fields.hire_again === "hesitant" || fields.hire_again === "no",
+        },
+        {
+          id: "reference_willing",
+          prompt: "If another parent asks about them, would you be willing to be a reference?",
+          aside: "We'd ask you again each time, and you can always say no.",
+          widget: "quick",
+          when: (fields) => fields.hire_again !== "no",
+          options: [
+            { id: "yes", label: "Yes, happy to" },
+            { id: "maybe", label: "Ask me at the time" },
+            { id: "no", label: "Prefer not to" },
+          ],
+        },
+        {
+          /**
+           * C10, and why it earns its place, in the client's words: when a
+           * wonderful nanny's hours end, parents scramble on Facebook to help her
+           * land with a good family. Pando can matchmake quietly instead — with
+           * her consent, and including a share if this family needs fewer hours.
+           *
+           * 30 Sep: only when the caregiver **currently works for the proposer**
+           * (her bracket in the table), and its two follow-ups — the kind of
+           * change and "may Pando check back with you" — are gone.
            */
           id: "needs_horizon",
           prompt: "Do you expect your childcare needs to change in the next year?",
-          aside: "When a nanny's hours end, parents scramble on Facebook to help her land somewhere good. Pando can do that quietly instead — with her consent, and nobody has to post anything publicly.",
+          aside: "When a nanny's hours end, parents scramble on Facebook to help her land somewhere good. Pando can do that quietly instead — with her consent, and including a share if you need fewer hours.",
           widget: "quick",
           optional: true,
+          when: (fields) => fields.last_worked === "current" && fields.hire_again !== "no",
           options: [
             { id: "3_months", label: "Yes — within 3 months" },
             { id: "6_months", label: "Yes — within 6 months" },
@@ -612,129 +709,33 @@ export function buildScripts(
             { id: "no_change", label: "No change expected" },
           ],
         },
-        {
-          id: "needs_change_type",
-          prompt: "What kind of change?",
-          widget: "quick",
-          optional: true,
-          when: (fields) =>
-            typeof fields.needs_horizon === "string" &&
-            fields.needs_horizon !== "" &&
-            fields.needs_horizon !== "no_change",
-          options: [
-            { id: "fewer_hours", label: "Fewer hours" },
-            { id: "role_ending", label: "Role ending" },
-            { id: "full_to_part", label: "Full-time → part-time" },
-            { id: "child_starting_school", label: "Child starting school" },
-            { id: "moving", label: "Moving" },
-            { id: "unsure", label: "Not sure yet" },
-          ],
-        },
-        {
-          id: "recontact_ok",
-          prompt: "May Pando text you nearer the time, to help them find their next family?",
-          aside: "It counts toward your normal monthly allowance, never an extra text.",
-          widget: "quick",
-          optional: true,
-          when: (fields) =>
-            typeof fields.needs_horizon === "string" &&
-            fields.needs_horizon !== "" &&
-            fields.needs_horizon !== "no_change",
-          options: [
-            { id: "yes", label: "Yes, check back" },
-            { id: "no", label: "No thanks" },
-          ],
-        },
-        {
-          id: "pay_band",
-          prompt: "Roughly what did you pay?",
-          aside: "Ranges only, and never shown next to their name.",
-          widget: "quick",
-          optional: true,
-          options: PAY_BANDS,
-        },
-        {
-          /**
-           * Stage 1: "rate, hours and benefits" — the three that only mean
-           * something together. Asked between the band and the benchmark consent on
-           * purpose, so the yes below covers the whole picture rather than a number
-           * that could describe two completely different jobs.
-           */
-          id: "hours_per_week",
-          prompt: "Roughly how many hours a week?",
-          widget: "quick",
-          optional: true,
-          options: CAREGIVER_HOURS,
-          when: (fields) =>
-            typeof fields.pay_band === "string" &&
-            fields.pay_band !== "" &&
-            fields.pay_band !== "prefer_not_to_say",
-        },
-        {
-          id: "benefits",
-          prompt: "Did anything come with the job?",
-          aside: "Guaranteed hours and paid time off are what make one rate comparable to another.",
-          widget: "chips",
-          optional: true,
-          options: CAREGIVER_BENEFITS,
-          when: (fields) =>
-            typeof fields.pay_band === "string" &&
-            fields.pay_band !== "" &&
-            fields.pay_band !== "prefer_not_to_say",
-        },
-        {
-          /* A separate, explicit yes — the client asked for pay and permission to
-             use it as a benchmark to be two decisions, not one. */
-          id: "pay_benchmark_ok",
-          prompt: "May Pando use that in anonymous pay ranges for the area?",
-          aside: "Pooled with other parents' numbers. Never tied to you or to them.",
-          widget: "quick",
-          when: (fields) =>
-            typeof fields.pay_band === "string" &&
-            fields.pay_band !== "" &&
-            fields.pay_band !== "prefer_not_to_say",
-          options: [
-            { id: "yes", label: "Yes, that's fine" },
-            { id: "no", label: "No, keep it to yourselves" },
-          ],
-        },
-        {
-          id: "reference_willing",
-          prompt: "If another parent asks about them, would you be willing to be a reference?",
-          aside: "We'd ask you again each time, and you can always say no.",
-          widget: "quick",
-          options: [
-            { id: "yes", label: "Yes, happy to" },
-            { id: "maybe", label: "Ask me at the time" },
-            { id: "no", label: "Prefer not to" },
-          ],
-        },
         /**
-         * C11 is no longer a question (23 Sep, the developer: *"прибери … питання
-         * чи показувати інвайт, показуй інвайт завжди"*). Every saved caregiver
+         * C11 is not a question (23 Sep, the developer): every saved caregiver
          * card ends on the invite message (`offerCaregiverInvite` in
-         * `ChatSeeding`), held cards included — a held card's sign-up still
-         * waits for an admin on the Sign-ups tab of `/admin/caregivers`, where the hold is shown beside
-         * it, so the invite no longer undoes anything.
+         * `ChatSeeding`), held cards included — except after a **No** (30 Sep).
+         * The client's table also lists "May Pando send {Name} an invitation?"
+         * and "What is {Name}'s mobile number?"; the developer's answer was that
+         * the caregiver fills in her own number **after** the invitation, so
+         * neither is asked here (invariant 13 stands).
          */
       ],
       recap: [
         { field: "type", label: "Kind of care" },
         { field: "name", label: "Caregiver" },
         { field: "cared_for_ages", label: "Looked after" },
-        { field: "how_known", label: "How known" },
         { field: "how_long", label: "How long" },
         { field: "last_worked", label: "Last worked" },
         { field: "schedule_pattern", label: "When" },
         { field: "schedule_days", label: "Days" },
         { field: "strengths", label: "Good at" },
         { field: "what_makes_special", label: "In your words" },
-        { field: "private_note", label: "Note for Pando" },
+        { field: "good_fit_for", label: "Great fit for" },
+        { field: "know_first", label: "Up front" },
+        { field: "hire_again", label: "Recommend" },
+        { field: "hesitation_reason", label: "Note for Pando" },
         { field: "needs_horizon", label: "Needs changing" },
-        { field: "needs_change_type", label: "What changes" },
-        { field: "recontact_ok", label: "Text nearer the time" },
         { field: "pay_band", label: "Paid" },
-        { field: "pay_benchmark_ok", label: "Pay range use" },
+        { field: "hours_per_week", label: "Hours a week" },
         { field: "reference_willing", label: "Reference" },
       ],
     },
@@ -841,7 +842,7 @@ export function buildScripts(
 
     tip: {
       kind: "tip",
-      label: "Something you learned",
+      label: "Something else?",
       hint: "The thing you wish someone had told you",
       intro: "These are often the most useful things in the whole network.",
       steps: [
@@ -863,7 +864,7 @@ export function buildScripts(
           id: "best_for",
           prompt: "Who does this help most?",
           widget: "chips",
-          options: AGE_BANDS,
+          options: TIP_AUDIENCE,
           optional: true,
         },
         {

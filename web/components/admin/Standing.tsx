@@ -233,12 +233,12 @@ function StandingTableRow({ row }: { row: StandingRow }) {
             <Badge tone="gold">
               Lowered from{" "}
               {row.allowance_mode === "as_relevant"
-                ? "anytime relevant"
+                ? "3 a week"
                 : perMonth(row.monthly_contact_allowance ?? 5).toLowerCase()}
             </Badge>
           </>
         ) : row.allowance_mode === "as_relevant" ? (
-          "Anytime relevant"
+          "3 a week"
         ) : (
           perMonth(row.monthly_contact_allowance ?? 5)
         )}

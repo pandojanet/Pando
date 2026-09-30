@@ -237,18 +237,40 @@ export const RECURRING_MESSAGES_CONSENT_TERMS =
  *
  * Same rule as above: bump the version, never edit the text.
  */
-export const CAREGIVER_CONSENT_TEXT_VERSION = "caregiver-2026-08-10";
+export const CAREGIVER_CONSENT_TEXT_VERSION = "caregiver-2026-09-30";
+
+/**
+ * The wording a caregiver's stored consent may still carry (`caregiver-2026-08-10`),
+ * kept because **a stored consent has to resolve to the text that was on screen**
+ * — never edit a version in place. 30 Sep replaced three of the four sentences
+ * with the client's own ("Caregiver questions"); rows written before then were
+ * agreed to under these.
+ */
+export const CAREGIVER_CONSENT_TEXT_2026_08_10 = {
+  profile:
+    "Yes — Pando may keep this profile. It stays private until I say otherwise, and I can delete it at any time by texting DELETE.",
+  listing:
+    "Families near me may see my first name, what I'm good with, my areas and my rate range when they ask Pando about care. Never my number.",
+  introduction:
+    "If a family wants to reach me, Pando may pass on my contact details — but only after asking me first, every time.",
+  reference:
+    "A family I've worked for may be asked to be a reference for me. Pando asks them, not me, and they can always say no.",
+} as const;
 
 export const CAREGIVER_CONSENT_TEXT = {
   /** G2 — the price of entry, and it buys nothing visible on its own. */
-  profile:
-    "Yes — Pando may keep this profile. It stays private until I say otherwise, and I can delete it at any time by texting DELETE.",
-  /** G9 — being named in an answer to a parent who asked. */
+  profile: "Create your private Pando profile",
+  /**
+   * G9 — being named in an answer to a parent who asked. 30 Sep: it now names
+   * **availability** and the care she provides, and says her details are shared
+   * only if she approves a specific introduction. ⚠ Availability is therefore
+   * something she agreed to have shown; `care-answer.ts` still does not print it.
+   */
   listing:
-    "Families near me may see my first name, what I'm good with, my areas and my rate range when they ask Pando about care. Never my number.",
+    "Families may see my first name and last initial, the care I provide, my experience, service areas, availability and rate range. My contact details will not be shown and will only be shared if I approve a specific introduction.",
   /** G10 — a family being put in touch. Strictly more than being named. */
   introduction:
-    "If a family wants to reach me, Pando may pass on my contact details — but only after asking me first, every time.",
+    "Pando will ask you each time. Your contact details will only be shared after you approve that specific introduction.",
   /** G8 — a former family speaking for you. Their consent is separate and theirs. */
   reference:
     "A family I've worked for may be asked to be a reference for me. Pando asks them, not me, and they can always say no.",

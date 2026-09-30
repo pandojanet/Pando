@@ -416,7 +416,7 @@ function askedAndAnswered(asked: number, answered: number): string {
 function agreement(detail: ConversationDetail): string {
   const limit =
     detail.allowance_mode === "as_relevant"
-      ? "anytime a question is genuinely relevant"
+      ? "up to 3 questions a week"
       : `up to ${detail.monthly_contact_allowance ?? 5} questions a month`;
   return `They agreed to be asked ${limit}, with at least 48 hours between any two.`;
 }

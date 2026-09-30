@@ -1636,6 +1636,9 @@ async function answerQuestion(input: {
          `lib/care-answer.ts` for what is deliberately not here. */
       care_facts: facts.full,
       care_brief: facts.brief,
+      /* The parent's public "up front" note (30 Sep) — the same field a record's
+         caveat travels in, so it reads "Heads up: …" in a lead answer. */
+      notes: caregiver.up_front ? { caveat: caregiver.up_front } : undefined,
       fit: fit.fits.length > 0 ? fit.fits.join(", ") : null,
       trust: caregiver.trust,
       firsthand_count: caregiver.firsthand_count,

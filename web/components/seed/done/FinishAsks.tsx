@@ -400,8 +400,8 @@ function FollowUpCard({
   hasPhone: boolean;
   /**
    * The cap the parent set on the profile screen, echoed back to them here —
-   * **null** for the open-ended level, which has no monthly number and whose
-   * ceiling is the 48-hour gap instead.
+   * **null** for the open level, which has no monthly number: its ceiling is
+   * three a week (`OPEN_WEEKLY_LIMIT`), on top of the 48-hour gap.
    */
   allowance: number | null;
   onAnswer: (value: boolean) => void;
@@ -423,11 +423,10 @@ function FollowUpCard({
         </p>
         <p className="mt-1.5 text-[14px] leading-relaxed text-muted">
           {answer
-            ? /* The open-ended level has no monthly number, so it echoes the
-                 ceiling it does have — her own 48-hour wording, the one thing
-                 that is true of every level. */
+            ? /* The open level has no monthly number, so it echoes the ceiling
+                 it does have: three a week, and never two within 48 hours. */
               allowance === null
-              ? "Never more than one question every 48 hours — the level you chose — and never a marketing message. Reply STOP any time once we're live."
+              ? "At most 3 a week, never two within 48 hours — the level you chose — and never a marketing message. Reply STOP any time once we're live."
               : `At most ${allowance} a month — the limit you set — and never a marketing message. Reply STOP any time once we're live.`
             : "You'll still be a founding parent. We just won't text you about what you shared."}
         </p>

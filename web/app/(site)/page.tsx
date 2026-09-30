@@ -31,7 +31,7 @@ const STEPS = [
   {
     tone: "var(--color-green)",
     title: "Text your question",
-    body: "Ask naturally, the way you’d text a friend. Pando may ask one quick question to understand what you actually need.",
+    body: "Ask naturally, the way you’d text a friend. Pando may ask a few quick questions to understand what you actually need.",
   },
   {
     tone: "var(--color-green-deep)",
@@ -41,7 +41,7 @@ const STEPS = [
   {
     tone: "var(--color-ink)",
     title: "Sometimes, you’re the friend",
-    body: "Pando works because parents help one another. Occasionally — at most three times a month, and you can always skip — Pando asks you a question your experience can answer. When another parent uses what you shared and says it helped, Pando remembers, and your access gets better.",
+    body: "Pando works because parents help one another. Occasionally — and you can always skip — Pando asks you a question your experience can answer. When another parent uses what you shared and says it helped, Pando remembers, and your access gets better.",
   },
 ];
 
@@ -135,8 +135,7 @@ export default function HomePage() {
               </span>
             </h1>
             <p className="mt-5 max-w-[46ch] text-[1.05rem] leading-relaxed text-ink-soft sm:text-[1.12rem]">
-              Pando is a text line for parents. Ask about local classes, camps,
-              activities, and caregivers — and get answers backed by real parents
+              Pando is a text line for parents. Get answers backed by real parents
               whose lives overlap with yours, labeled by who shared them and when.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-2.5">
@@ -291,7 +290,7 @@ export default function HomePage() {
                   },
                   {
                     lead: "Contribute, and it comes back",
-                    rest: "— founding contributions are rewarded, and inviting parents who join in earns you free Network Checks for when your neighborhood goes live.",
+                    rest: "— founding contributions are rewarded, and inviting parents who join in earns you perks when your neighborhood goes live.",
                   },
                   {
                     lead: "Founding Status, permanently",
@@ -299,7 +298,7 @@ export default function HomePage() {
                   },
                   {
                     lead: "Protected by design",
-                    rest: "— the network asks for your help at most three times a month by default, you set that number yourself, you can always skip, and there is no leaderboard. Ever.",
+                    rest: "— the network asks for your help at most five times a month by default, you set that number yourself, and there is no leaderboard. Ever.",
                   },
                 ].map((item) => (
                   <li

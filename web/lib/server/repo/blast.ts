@@ -215,6 +215,12 @@ export async function selectPool(input: {
                            and m.template is distinct from 'thanks'
                            and m.sent_at > now() - interval '30 days'
                       then 1 else 0 end), 0)::int                      as sent_30,
+        -- The open level's weekly ceiling (OPEN_WEEKLY_LIMIT), same clauses.
+        coalesce(sum(case when m.direction = 'out' and m.category = 'outreach'
+                           and m.retry_of is null
+                           and m.template is distinct from 'thanks'
+                           and m.sent_at > now() - interval '7 days'
+                      then 1 else 0 end), 0)::int                      as sent_7,
         count(distinct case when m.direction = 'in' and m.responded_to is not null
                              and m.sent_at > now() - interval '30 days'
                         then m.responded_to end)::int                  as answered_30,
@@ -266,6 +272,7 @@ export async function selectPool(input: {
     }
     const history: OutreachHistory = {
       sent_last_30_days: Number(row.sent_30 ?? 0),
+      sent_last_7_days: Number(row.sent_7 ?? 0),
       responded_last_30_days: Number(row.answered_30 ?? 0),
       last_outreach_at: (row.last_outreach as string | null) ?? null,
       pings_this_month: Number(row.pings_month ?? 0),

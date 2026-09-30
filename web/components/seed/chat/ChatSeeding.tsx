@@ -731,6 +731,10 @@ export function ChatSeeding() {
     const token = submission.invite_token;
     /* Always, since 23 Sep — the question asking whether to show it is gone. */
     if (submission.kind !== "caregiver" || !token) return;
+    /* 30 Sep, the client's table: a No must never generate a recommendation or
+       an invitation. The card is kept as a private, held record and nothing is
+       offered to send. */
+    if (submission.fields.hire_again === "no") return;
     const name = submission.fields.name;
     patchChat((c) =>
       c.messages.some((m) => m.invite?.includes(token))

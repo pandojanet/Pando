@@ -39,6 +39,7 @@ const allowance = (over: Partial<Allowance> = {}): Allowance => ({
 });
 const history = (over: Partial<OutreachHistory> = {}): OutreachHistory => ({
   sent_last_30_days: 0,
+  sent_last_7_days: 0,
   responded_last_30_days: 0,
   last_outreach_at: null,
   pings_this_month: 0,
@@ -91,10 +92,43 @@ ok(
          { sent_last_30_days: 8, responded_last_30_days: 8 }).ok === true,
 );
 ok(
-  "as_relevant has no ceiling",
+  "as_relevant has no monthly ceiling — its ceiling is weekly",
   decide("blast", { allowance_mode: "as_relevant", monthly_contact_allowance: null },
-         { sent_last_30_days: 40, responded_last_30_days: 40 }).ok === true,
+         { sent_last_30_days: 40, responded_last_30_days: 40, sent_last_7_days: 0 }).ok === true,
 );
+console.log("\n=== the open level is three a week (30 Sep) ===");
+const open = { allowance_mode: "as_relevant" as const, monthly_contact_allowance: null };
+ok("the constant is three in seven days", p.OPEN_WEEKLY_LIMIT === 3 && p.OPEN_WEEKLY_WINDOW_DAYS === 7);
+ok(
+  "two this week is fine",
+  decide("blast", open, { sent_last_7_days: 2, sent_last_30_days: 2, responded_last_30_days: 2 }).ok === true,
+);
+ok(
+  "the third is the last",
+  (() => {
+    const d = decide("blast", open, { sent_last_7_days: 3, sent_last_30_days: 3, responded_last_30_days: 3 });
+    return !d.ok && d.reason === "weekly_cap";
+  })(),
+  "three relevant questions a week, then the fourth waits",
+);
+ok(
+  "a level that chose a monthly number is not read on the week",
+  decide("blast", { monthly_contact_allowance: 10 },
+         { sent_last_7_days: 4, sent_last_30_days: 4, responded_last_30_days: 4 }).ok === true,
+  "five a month and ten a month are monthly promises; four in a week is inside them",
+);
+ok(
+  "the weekly cap still holds once the governor has lowered them to ten a month",
+  (() => {
+    const d = decide("blast", open, { sent_last_7_days: 3, sent_last_30_days: 5, responded_last_30_days: 0 });
+    return !d.ok && d.reason === "weekly_cap";
+  })(),
+);
+ok(
+  "a thank-you is not a request, so the week does not stop it",
+  decide("thanks", open, { sent_last_7_days: 3 }).ok === true,
+);
+
 ok(
   "but an unresponsive as_relevant contributor IS governed down to 10",
   (() => {
@@ -246,8 +280,9 @@ console.log("\n=== what Pando says back ===");
 const prompt = p.settingsPrompt({ monthly_contact_allowance: 5, allowance_mode: "fixed" });
 ok("it states the current setting first", /up to 5 a month/.test(prompt), prompt);
 ok(
-  "as_relevant reads as words, not as a number",
-  /anytime/i.test(p.settingsPrompt({ monthly_contact_allowance: null, allowance_mode: "as_relevant" })),
+  "as_relevant reads as three a week",
+  /up to 3 a week/.test(p.settingsPrompt({ monthly_contact_allowance: null, allowance_mode: "as_relevant" })) &&
+    /3 for up to 3 a week/.test(p.settingsPrompt({ monthly_contact_allowance: null, allowance_mode: "as_relevant" })),
 );
 ok(
   "and the 48-hour gap is stated whichever they pick",
@@ -311,6 +346,7 @@ ok(
        person may be contacted at all, so the relay must still run every one. */
     const d = p.decideOutreach("blast", { monthly_contact_allowance: 5, allowance_mode: "fixed" }, {
       sent_last_30_days: 5,
+      sent_last_7_days: 0,
       responded_last_30_days: 5,
       last_outreach_at: null,
       pings_this_month: 0,
@@ -400,13 +436,13 @@ for (const [label, file] of [
   ["the pool query", "lib/server/repo/blast.ts"],
 ] as const) {
   const branches = outboundBranches(fs.readFileSync(file, "utf8"));
-  /* Four, exactly: sent_30, last_outreach, pings_month, blast_today. Asserted
+  /* Five, exactly: sent_30, sent_7, last_outreach, pings_month, blast_today. Asserted
      rather than assumed, because the failure that matters here is the extractor
      quietly matching fewer — which is how the first version of this check
      passed while leaving `blast_today` unguarded. */
   ok(
-    `${label} has all four outbound counters`,
-    branches.length === 4,
+    `${label} has all five outbound counters`,
+    branches.length === 5,
     `found ${branches.length} in ${file} — if a counter was added, extend the scanner; if one was removed, say so here`,
   );
   const naked = branches.filter((b) => !b.includes("retry_of is null"));
@@ -475,7 +511,7 @@ for (const [label, file] of [
   const requests = branches.filter((b) => b.includes("category = 'outreach'"));
   ok(
     `${label}: every request counter leaves the thank-you out`,
-    requests.length === 3 && requests.every((b) => b.includes("template is distinct from 'thanks'")),
+    requests.length === 4 && requests.every((b) => b.includes("template is distinct from 'thanks'")),
     `${requests.filter((b) => !b.includes("'thanks'")).length} of ${requests.length} do not`,
   );
   const src = fs.readFileSync(file, "utf8").replace(/\s+/g, " ");

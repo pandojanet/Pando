@@ -246,7 +246,7 @@ export function CaregiverFlow({
             set this up and say yes.
           </p>
           <Panel className="mt-6">
-            <p className="text-[15px] leading-relaxed text-ink-soft">
+            <p className="font-display text-card-title font-semibold text-ink">
               {CAREGIVER_CONSENT_TEXT.profile}
             </p>
             <ul className="mt-4 space-y-2.5 text-[14px] leading-relaxed text-muted">
@@ -496,7 +496,7 @@ export function CaregiverFlow({
                    shows a state the write would refuse. */
                 if (!on) set("open_to_introductions", false);
               }}
-              title="Appear in answers"
+              title="Show my profile in relevant Pando answers"
             >
               {CAREGIVER_CONSENT_TEXT.listing}
             </Consent>
@@ -505,7 +505,7 @@ export function CaregiverFlow({
               checked={answers.open_to_introductions}
               disabled={!answers.appear_in_answers}
               onChange={(on) => set("open_to_introductions", on)}
-              title="Be introduced"
+              title="May Pando contact you when a family requests an introduction?"
               note={
                 answers.appear_in_answers
                   ? undefined

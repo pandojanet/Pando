@@ -22,7 +22,7 @@
  * Imports nothing, so a plain node test can load it.
  */
 
-export const CAREGIVER_INVITE_VERSION = "caregiver-invite-2026-09" as const;
+export const CAREGIVER_INVITE_VERSION = "caregiver-invite-2026-09-30" as const;
 
 /** The host the link is written with. The message is text, not a live anchor. */
 const HOST = "pando.is";
@@ -94,10 +94,14 @@ export function caregiverInviteMessage({
     : "Hi — ";
   const signature = parentFirstName?.trim() ? `\n\n— ${parentFirstName.trim()}` : "";
 
+  /* The client's text (30 Sep, "Caregiver questions"), word for word. It says
+     what the message is for, that nothing is visible unless she chooses, and that
+     she controls and can delete it — and it no longer says anything about being
+     "findable by families near me". */
   return (
-    `${greeting}I recommended you on Pando, a private network parents here use to find people they can trust. ` +
-    `Nothing about you is listed until you set up your own profile and say yes.\n\n` +
-    `You decide what's visible, and you can delete it at any point. If you'd like to be findable by families near me: ${caregiverInviteUrl(token)}` +
+    `${greeting}I recommended you on Pando, a private network where local parents share firsthand caregiver recommendations.\n\n` +
+    `Nothing about you will be visible unless you choose to create a profile and accept this invitation. You control what is shown and can update or delete your profile at any time.\n\n` +
+    `If you’d like to learn more and decide whether to join:\n${caregiverInviteUrl(token)}` +
     signature
   );
 }
