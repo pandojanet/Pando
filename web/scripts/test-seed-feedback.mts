@@ -1007,6 +1007,12 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       step("reference_willing")?.when?.({ hire_again: "no" }) === false);
     ok("and a No is not offered an invitation",
       /hire_again === "no"\) return;/.test(offer));
+    /* 30 Sep, the developer: "Yes, with some context" still ends on the invitation,
+       because every caregiver is read in the admin before she is listed. The
+       only answer that withholds it is No, so the offer must never read the
+       hesitant value or the hold that answer raises. */
+    ok("a hesitant answer still ends on the invitation — only No withholds it",
+      !/hesitant|review_hold|hold_reason/.test(offer) && /if \(result\.persisted\) offerCaregiverInvite/.test(chatSrc));
     const cgOpts = await import(`../lib/caregiver-options.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-options.ts");
     ok("the client's age labels are on the caregiver questions",
       cgOpts.CAREGIVER_AGE_BANDS.map((b) => b.label).join(" | ") ===
