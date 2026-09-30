@@ -1,6 +1,6 @@
 import { relationshipNote, storedRelationship } from "@/lib/inviter-relationship";
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import {
   cleanAffiliationRef,
   cleanAges,
@@ -29,6 +29,7 @@ import {
 import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
 import type { ProfileAnswers, ProfilePayload, QuestionId } from "@/lib/types";
 import { rateLimited } from "@/lib/server/rate-limit";
+import { notifyAdmins } from "@/lib/server/notify";
 import { areaCity } from "@/lib/server/repo/areas";
 import { normaliseZip, placeById, zipBelongsTo } from "@/lib/home-places";
 
@@ -773,6 +774,18 @@ export async function POST(request: Request) {
      and no referral. Dropped after the commit, never before: a read racing the
      transaction would refill the cache with the table as it was. */
   invalidateInvites();
+
+  /* A new parent, told to the team after the response (30 Sep). Only the first
+     capture of a profile, so a parent editing theirs never announces twice. */
+  if (result.data.created) {
+    const personId = result.data.person_id;
+    after(() =>
+      notifyAdmins(
+        { kind: "parent", person_id: personId, neighborhood },
+        { is_test: payload.is_test },
+      ),
+    );
+  }
 
   return NextResponse.json({
     ok: true,

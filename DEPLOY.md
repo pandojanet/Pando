@@ -213,6 +213,27 @@ deploy that has `DATABASE_URL` set.
 Re-run `npm run migrate` after any change to `web/lib/db/schema.ts` that
 `drizzle-kit generate` turns into a new file in `web/drizzle/`.
 
+**Run it with the deploy, and ahead of it where you can.** The image ships without
+waiting for a migration, so a release whose queries mention a column the
+production database does not have yet fails on that page until somebody migrates.
+`0052_reward_paid` (30 Sep) is written to survive that window — the contributors
+list and each contributor's page read the column through the row, so they show
+every reward as unpaid rather than failing — but ticking *Reward paid* answers with
+an error until it is applied. It is additive and safe to run ahead of the code.
+
+**Slack heads-up (optional, 30 Sep).** To be told in a channel when a new parent,
+activity, place, tip or caregiver arrives, create an Incoming Webhook (Slack app →
+*Incoming Webhooks* → *Add New Webhook to Workspace* → a channel), then add to
+`/docker/pando/.env` and run `docker compose up -d`:
+
+```bash
+SLACK_NOTIFY_WEBHOOK_URL=https://hooks.slack.com/services/…
+NOTIFY_BASE_URL=https://pando.is
+```
+
+Unset means nothing is sent. It is a separate thing from the test relay
+(`SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID`) and carries no names, numbers or free text.
+
 ## 4. Ingress — Traefik, not nginx
 
 **Do not install nginx or certbot on this box.** Traefik

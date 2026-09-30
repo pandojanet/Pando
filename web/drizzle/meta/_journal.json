@@ -365,6 +365,13 @@
       "when": 1790337600000,
       "tag": "0051_blast_released",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1790424000000,
+      "tag": "0052_reward_paid",
+      "breakpoints": true
     }
   ]
 }

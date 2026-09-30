@@ -361,6 +361,13 @@ export interface ContributorRow {
    * where the answer is "yes, but the offer had closed".
    */
   reward_status: "not_met" | "in_review" | "approved" | "missed_deadline";
+  /**
+   * When an admin recorded the reward as **paid** (30 Sep). `reward_status` says
+   * whether it is owed; this says whether it has been settled, which the status
+   * never could — `approved` read the same the day somebody earned it and the day
+   * it reached them. Null = not paid. Only an `approved` row can carry a value.
+   */
+  reward_paid_at: string | null;
   founding_status: FoundingStatus;
   follow_up_opt_in: boolean | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
@@ -1114,6 +1121,8 @@ export type AdminAction =
   | { action: "founding.request_invite"; ids: string[] }
   /* Contributors — 2.3 */
   | { action: "contributor.note"; id: string; body: string }
+  /** Ticks or unticks "reward paid". Only a Founding-approved person can be ticked. */
+  | { action: "contributor.reward_paid"; id: string; paid: boolean }
   /* 2C caregiver claims */
   /** Says this claim is that nominated caregiver. Moves the ladder to consented. */
   | { action: "claim.link"; id: string; caregiver_id: string }

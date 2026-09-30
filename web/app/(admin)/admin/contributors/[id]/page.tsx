@@ -22,6 +22,7 @@ import {
   yearList,
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { RewardPaid } from "@/components/admin/RewardPaid";
 import {
   AFFILIATION_KIND,
   CARD_KIND,
@@ -171,6 +172,15 @@ export default function ContributorDetailPage({
                 * requirement met, waiting on a person) and *not met* — and,
                 * rarely, a parent who did everything after the deadline.
                 */}
+              {/* Whether the reward has actually been paid: the status above
+                  says it was earned and nothing said it was settled (30 Sep). */}
+              <RewardPaid
+                id={c.id}
+                name={c.name}
+                status={c.reward_status}
+                paidAt={c.reward_paid_at}
+                onChanged={reload}
+              />
               {c.founding_status !== "founding" &&
                 (c.reward_status === "in_review" ? (
                   <Badge tone="gold">Reward in review</Badge>

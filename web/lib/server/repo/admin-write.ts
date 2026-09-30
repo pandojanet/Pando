@@ -1627,6 +1627,46 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "contributor_note", resource_id: id(b.id) };
     }
 
+    /**
+     * "Reward paid" — the fact `reward_status` could not hold (30 Sep).
+     *
+     * `reward_status = approved` says a person said yes; it says nothing about
+     * whether the money reached anybody, so an admin working the list could not
+     * tell whom they still owed. The box is on the person and records the moment
+     * and the admin's name.
+     *
+     * ⚠ **Only a Founding-approved person can be ticked**, enforced here and not
+     * only by the page hiding the box: the reward is paid on the admin's yes, and
+     * a stale screen or a crafted call must not record a payment against somebody
+     * nobody approved. Un-ticking is always allowed — it is how a box pressed by
+     * mistake is undone, and the audit row keeps both presses.
+     *
+     * ⚠ **`coalesce`, so ticking twice does not move the date.** The date is the
+     * record of when it was paid; a double click (or two admins) must not rewrite
+     * it, and the second press succeeds rather than reading as "that has changed".
+     */
+    case "contributor.reward_paid": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const paid = b.paid === true;
+      const updated = paid
+        ? ((await tx.execute(
+            sql`update people
+                   set reward_paid_at = coalesce(reward_paid_at, now()),
+                       reward_paid_by = coalesce(reward_paid_by, ${ctx.actor})
+                 where id = ${target}::uuid and founding = 'founding'
+                 returning id`,
+          )) as unknown as unknown[])
+        : ((await tx.execute(
+            sql`update people
+                   set reward_paid_at = null, reward_paid_by = null
+                 where id = ${target}::uuid
+                 returning id`,
+          )) as unknown as unknown[]);
+      if (updated.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "person", resource_id: target };
+    }
+
     /* ── 2C Caregiver claims ─────────────────────────────────────────────── */
 
     case "claim.link": {

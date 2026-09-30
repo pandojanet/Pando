@@ -219,6 +219,10 @@ export const people = pgTable(
     invitedAt: timestamp("invited_at", { withTimezone: true }),
     /** When it produced a founding contributor. Stamped by `founding.approve`. */
     activatedAt: timestamp("activated_at", { withTimezone: true }),
+    /** When an admin recorded the launch reward as paid, and who. Both or neither
+     *  (`reward_paid_pair`). Set by `contributor.reward_paid`; null = not paid. */
+    rewardPaidAt: timestamp("reward_paid_at", { withTimezone: true }),
+    rewardPaidBy: text("reward_paid_by"),
     /** 'link' | 'qr' | 'direct' */
     source: text("source"),
     /** P8a */

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
 import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { validateInviteCode } from "@/lib/server/invite";
@@ -9,6 +9,7 @@ import { saveCard, type CardKind } from "@/lib/server/repo/cards";
 import { scheduleExtraction } from "@/lib/server/repo/flags";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { rateLimited } from "@/lib/server/rate-limit";
+import { notifyAdmins } from "@/lib/server/notify";
 import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
 
 /**
@@ -354,6 +355,18 @@ export async function POST(request: Request) {
   if (kind !== "caregiver") {
     const db = getDb();
     if (db) scheduleExtraction(db, result.data.record_id);
+  }
+
+  /* A new card, told to the team after the response (30 Sep). `updated` is a
+     correction of one already saved — the recap-row fix and the name toggle both
+     re-send the card — and those must not announce again. */
+  if (!result.data.updated) {
+    after(() =>
+      notifyAdmins(
+        { kind: kind as "activity" | "place" | "tip" | "caregiver" },
+        { is_test: raw.is_test === true },
+      ),
+    );
   }
 
   return NextResponse.json({

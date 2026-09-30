@@ -89,6 +89,7 @@ const ACTIONS = new Set([
   "founding.approve",
   "founding.request_invite",
   "contributor.note",
+  "contributor.reward_paid",
   "claim.link",
   "claim.decline",
   "claim.delete",

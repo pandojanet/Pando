@@ -403,6 +403,11 @@ async function contributors(db: Db) {
     sql`
       select p.id, p.first_name, p.last_name, p.phone, p.neighborhood,
              p.founding, p.wants_founding, p.is_test, p.created_at,
+             -- Read through the row rather than by name, so this page keeps
+             -- working in the window between a deploy and npm run migrate
+             -- (0052): a missing key is null here, where a missing column is an
+             -- error that would take the whole contributors list down with it.
+             to_jsonb(p) ->> 'reward_paid_at'                                     as reward_paid_at,
              -- The three facts her 10 Sep completion trigger adds to the one
              -- this query already had. Each is a scalar sub-select rather than
              -- a join, on the 10 Aug rule: against the pooler the cost is round
@@ -478,6 +483,7 @@ async function contributors(db: Db) {
         reason: "x".repeat(Number(r.longest_reason ?? 0)),
         founding_approved: r.founding === "founding",
       }),
+      reward_paid_at: r.reward_paid_at ? String(r.reward_paid_at) : null,
       founding_status: r.founding,
       follow_up_opt_in: r.follow_up === null ? null : r.follow_up === "opted_in",
       wants_founding: r.wants_founding,
@@ -635,6 +641,7 @@ async function contributorDetail(db: Db, id: string) {
       reason: "x".repeat(Number(checklist[0]?.longest_reason ?? 0)),
       founding_approved: p.founding === "founding",
     }),
+    reward_paid_at: p.reward_paid_at ? String(p.reward_paid_at) : null,
     founding_status: p.founding,
     follow_up_opt_in:
       consentRows.find((c) => c.scope === "follow_up")?.status === "opted_in",

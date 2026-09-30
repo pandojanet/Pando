@@ -169,6 +169,14 @@ const SCHOOL_STATUSES = new Set(["current", "former", "not_yet", "homeschool"]);
 export interface ProfileWriteResult {
   person_id: string;
   /**
+   * True when this write is the first time this person's profile was captured —
+   * a new contributor — rather than a parent editing one already saved. A row can
+   * exist before that (a cold inbound text makes a nameless one), so this reads
+   * `profile_captured_at`, not whether the row was inserted. It is what the
+   * "new parent" notification keys on, so a re-save never announces twice.
+   */
+  created: boolean;
+  /**
    * This parent's own referral link, created on the first write and returned on
    * every one (`repo/referral.ts`).
    *
@@ -284,6 +292,17 @@ export async function writeProfile(
     let personId: string;
     /** The link this person **first** arrived on, after the coalesce above. */
     let arrivalInviteId: string | null;
+    /* Read before the upsert overwrites it. The anonymous path has no phone and
+       always inserts, so it is always a first capture. */
+    let firstCapture = true;
+    if (input.phone) {
+      const [before] = await tx
+        .select({ capturedAt: people.profileCapturedAt })
+        .from(people)
+        .where(eq(people.phone, input.phone))
+        .limit(1);
+      firstCapture = !before || before.capturedAt === null;
+    }
     if (input.phone) {
       const [row] = await tx
         .insert(people)
@@ -582,6 +601,7 @@ export async function writeProfile(
 
     return {
       person_id: personId,
+      created: firstCapture,
       referral_code: referralCode,
       referral_recorded: referralRecorded,
       counts: {

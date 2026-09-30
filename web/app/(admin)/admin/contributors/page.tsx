@@ -25,6 +25,7 @@ import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedTabs, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { Standing } from "@/components/admin/Standing";
+import { RewardPaid } from "@/components/admin/RewardPaid";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributorRow } from "@/lib/admin/types";
@@ -66,11 +67,15 @@ export default function ContributorsPage() {
     "people",
     "view",
   );
-  const { rows, configured, sample, demo, setDemo, loading, error } =
+  const { rows, configured, sample, demo, setDemo, loading, error, reload } =
     useAdminRows<ContributorRow[]>("contributors");
   const [search, setSearch] = useState("");
   const [hideTest, setHideTest] = useState(true);
-  const [reward, setReward] = useState<"all" | ContributorRow["reward_status"]>("all");
+  /* `owed` and `paid` are the two halves of an approved reward (30 Sep): the
+     status says it was earned, and only the box says it was settled. */
+  const [reward, setReward] = useState<
+    "all" | ContributorRow["reward_status"] | "owed" | "paid"
+  >("all");
   /**
    * The contest the client described ("give more information and you're entered")
    * has no threshold — she never named one, and inventing a number here would
@@ -83,7 +88,11 @@ export default function ContributorsPage() {
     const q = search.trim().toLowerCase();
     const matched = all.filter((row) => {
       if (hideTest && row.is_test) return false;
-      if (reward !== "all" && row.reward_status !== reward) return false;
+      if (reward === "owed") {
+        if (row.reward_status !== "approved" || row.reward_paid_at) return false;
+      } else if (reward === "paid") {
+        if (!row.reward_paid_at) return false;
+      } else if (reward !== "all" && row.reward_status !== reward) return false;
       if (!q) return true;
       return [row.name, row.neighborhood, row.phone]
         .filter(Boolean)
@@ -149,6 +158,8 @@ export default function ContributorsPage() {
               options={[
                 { id: "all", label: "Every contributor" },
                 { id: "approved", label: "Reward approved" },
+                { id: "owed", label: "Approved, not paid yet" },
+                { id: "paid", label: "Paid out" },
                 { id: "in_review", label: "Ready for review" },
                 { id: "not_met", label: "Requirements not met" },
               ]}
@@ -233,6 +244,7 @@ export default function ContributorsPage() {
                   Counts for Founding
                 </Th>
                 <Th>Reward</Th>
+                <Th>Reward paid</Th>
                 <Th>
                   Founding
                 </Th>
@@ -294,6 +306,22 @@ export default function ContributorsPage() {
                       <Badge tone="gold">In review</Badge>
                     ) : (
                       <Badge tone="muted">Requirements not met</Badge>
+                    )}
+                  </Td>
+                  <Td>
+                    {/* Only an approved reward can have been paid; everywhere
+                        else the cell is a dash rather than a box that could not
+                        be ticked. */}
+                    {row.reward_status === "approved" ? (
+                      <RewardPaid
+                        id={row.id}
+                        name={row.name}
+                        status={row.reward_status}
+                        paidAt={row.reward_paid_at}
+                        onChanged={reload}
+                      />
+                    ) : (
+                      <span className="text-muted">—</span>
                     )}
                   </Td>
                   <Td>

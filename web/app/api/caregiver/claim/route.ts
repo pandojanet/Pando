@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
 import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
 import { submitGate } from "@/lib/server/gate";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/server/repo/caregiver";
 import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
 import { rateLimited } from "@/lib/server/rate-limit";
+import { notifyAdmins } from "@/lib/server/notify";
 import {
   CAREGIVER_AGE_BANDS,
   CAREGIVER_AVAILABLE_FROM,
@@ -233,6 +234,10 @@ export async function POST(request: Request) {
   }
 
   console.info("[caregiver:claim] stored", { updated: result.data.updated });
+
+  /* A caregiver waiting to be matched, told to the team after the response
+     (30 Sep). A revision of a claim already made does not announce again. */
+  if (!result.data.updated) after(() => notifyAdmins({ kind: "caregiver_signup" }));
 
   return NextResponse.json({
     ok: true,

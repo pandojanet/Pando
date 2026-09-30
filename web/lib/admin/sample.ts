@@ -81,6 +81,7 @@ export const sampleContributors: ContributorRow[] = [
     qualifying_approved: 3,
     caregiver_approved: 1,
     reward_status: "approved",
+    reward_paid_at: "2026-09-20T15:00:00.000Z",
     founding_status: "founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -100,6 +101,7 @@ export const sampleContributors: ContributorRow[] = [
        pending row can never carry it — this one is the queue's own state:
        every requirement met, waiting on a person. */
     reward_status: "in_review",
+    reward_paid_at: null,
     founding_status: "pending_founding",
     follow_up_opt_in: true,
     wants_founding: true,
@@ -119,6 +121,7 @@ export const sampleContributors: ContributorRow[] = [
        the first of the six requirements — so this row can only ever read
        `not_met`, whatever they contribute. */
     reward_status: "not_met",
+    reward_paid_at: null,
     founding_status: "none",
     follow_up_opt_in: null,
     /** The anonymous path: welcome, labelled, not eligible for founding. */
@@ -136,6 +139,7 @@ export const sampleContributors: ContributorRow[] = [
     qualifying_approved: 0,
     caregiver_approved: 0,
     reward_status: "not_met",
+    reward_paid_at: null,
     founding_status: "pending_founding",
     follow_up_opt_in: false,
     wants_founding: true,
@@ -153,6 +157,7 @@ export const sampleContributors: ContributorRow[] = [
     qualifying_approved: 0,
     caregiver_approved: 0,
     reward_status: "not_met",
+    reward_paid_at: null,
     founding_status: "pending_founding",
     follow_up_opt_in: null,
     wants_founding: true,
