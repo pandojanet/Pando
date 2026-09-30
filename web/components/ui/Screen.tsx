@@ -1,6 +1,7 @@
 import type { ElementType, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { BrandPanel } from "./BrandPanel";
+import { InlineAction } from "./TextAction";
 
 /**
  * The one page skeleton every Seed Tool screen uses.
@@ -58,8 +59,34 @@ export function Screen({
         )}
       >
         {children}
+        <ScreenFooter />
       </div>
     </div>
+  );
+}
+
+/**
+ * Where to write if something is wrong or unclear - on every screen of the flow
+ * (30 Sep).
+ *
+ * The client: people reach out with questions, so `hello@pando.is` goes at the
+ * bottom of each page. The public site has carried it in `SiteFooter` since the
+ * pages were ported; this is the same line for the Seed Tool, the sign-in and the
+ * caregiver flow, which all render a `Screen`.
+ *
+ * It sits **after** the dock in the column, so on a phone the sticky dock still
+ * pins to the window and this appears when the page is scrolled to its end.
+ * `pb-safe` because it is now the last thing on the page, below the home
+ * indicator's clearance the dock used to provide alone.
+ *
+ * ⚠ New user-facing copy (the client's own words: "Questions? Contact ...").
+ */
+export function ScreenFooter() {
+  return (
+    <footer className="border-t border-bark/50 px-5 pt-3 text-center text-help text-muted pb-safe">
+      Questions? Contact{" "}
+      <InlineAction href="mailto:hello@pando.is">hello@pando.is</InlineAction>
+    </footer>
   );
 }
 

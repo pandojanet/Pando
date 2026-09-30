@@ -119,9 +119,6 @@ export function WhatsNext() {
         <TextAction href="/profile" full className="mt-2">
           Review my answers
         </TextAction>
-        <p className="py-2 text-center text-muted text-dock">
-          hello@pando.is · Pasadena, CA
-        </p>
       </ScreenDock>
     </Screen>
   );
