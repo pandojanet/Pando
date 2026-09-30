@@ -43,7 +43,7 @@ import type { Option, OptionPlan } from "@/lib/types";
  * popular", which the client ruled out on 1 Sep for want of usage data.
  *
  * **Nothing is preselected.** The recommended card is *marked*, never *chosen*:
- * it has the green edge and the dark Select, but `aria-checked` is true only for
+ * it has the green edge and the Recommended pill, but `aria-checked` is true only for
  * the level the parent picked, and "Agree & Join" stays locked until they do.
  *
  * **An empty block renders nothing**, not its label over a blank. A level with no
@@ -170,15 +170,16 @@ export function PlanGroup({ options, selected, onChange, groupLabel }: Props) {
               ))}
             </Block>
 
-            {/* The mockup's Select. It is a label, not a control (see above):
-                the recommended card wears the dark fill it has in the mockup,
-                and a chosen card always does, so "Selected" is never the same
-                as an unchosen card on sight. */}
+            {/* The mockup's Select. It is a label, not a control (see above).
+                White on every card that is not chosen, the recommended one
+                included (30 Sep, the developer: it had the dark fill and read as
+                already picked); only a chosen card goes dark, so "Selected" is
+                never the same as an unchosen card on sight. */}
             <span
               aria-hidden="true"
               className={cn(
                 "mt-auto flex h-12 items-center justify-center gap-2 rounded-full border text-[15px] font-semibold",
-                on || recommended
+                on
                   ? "border-green-deep bg-green-deep text-white"
                   : "border-bark bg-card text-ink",
               )}
