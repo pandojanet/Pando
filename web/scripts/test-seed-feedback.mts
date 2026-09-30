@@ -1594,17 +1594,38 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
     !/Share without joining/.test(join),
     "Remove the no-account route",
   );
+  /* 30 Sep, the developer: the Ukrainian option is gone from every page —
+     existing accounts stay in the database, nobody new registers or signs in
+     with one. The picker lived in `PhoneField`, which every screen asking for a
+     number renders, so it is gone everywhere at once. */
+  /* Comments stripped: the file explains what it removed, and a check for the
+     picker must read the code rather than the sentence saying it is gone. */
+  const phoneField = read("../components/ui/PhoneField.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
   ok(
-    "the country code is fixed to +1 there",
-    /country="US"/.test(join),
-    "Fix the code to +1 vs current number",
+    "no screen offers a country choice: the field is a fixed +1, with no picker",
+    !/<select/.test(phoneField) && !/Country code/.test(phoneField) &&
+      !/PHONE_COUNTRIES/.test(phoneField) && /phoneCountryLabel\(country\)/.test(phoneField),
+    "Ukrainian numbers removed from display",
   );
-  /* Fixed on the join screen only — a number already stored as +380 has to be
-     able to sign back in, so the picker stays everywhere else. */
   ok(
-    "but sign-in keeps the picker",
-    !/country="US"/.test(read("../components/seed/SignIn.tsx")),
-    "a stored +380 must still be able to get back in",
+    "a Ukrainian number typed, pasted or restored is refused rather than read as a US one",
+    /phoneCountryOf\(raw\) === "UA"/.test(phoneField) &&
+      /phoneCountryOf\(value\) === "UA"/.test(phoneField) && /only available with a US/.test(phoneField),
+    "a pasted +380… would otherwise be cut to ten digits and become a different valid-looking number",
+  );
+  ok(
+    "and every screen that asks for a number uses that one field",
+    ["../components/seed/InviteLanding.tsx", "../components/seed/SignIn.tsx",
+     "../components/caregiver/CaregiverFlow.tsx", "../components/seed/chat/StepWidget.tsx",
+     "../components/seed/ProfileFlow.tsx"].every((f) => /<PhoneField/.test(read(f)) && !/country=/.test(read(f).replace(/\/\*[\s\S]*?\*\//g, ""))),
+    "the country choice cannot come back on one screen alone",
+  );
+  ok(
+    "while lib/phone.ts still understands a stored +380, so an existing account is untouched",
+    /UA/.test(read("../lib/phone.ts")),
+    "old accounts remain",
   );
 
   /* Join: the inviter line, and the case it must stay silent in. */

@@ -761,23 +761,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
           />
 
           <div className="mt-4">
-          {/**
-           * `country="US"` — *"Fix the code to +1 vs current number."*
-           *
-           * The picker was added on 20 Aug so a `+380` could be typed at all,
-           * which is a testing need rather than a parent's: the market is the
-           * San Gabriel Valley, so every real contributor on this screen has a
-           * `+1`, and a country selector in front of the number reads as a
-           * question about something they have no reason to think about.
-           *
-           * ⚠ It is fixed **here only**. `/signin`, the caregiver flow and the
-           * chat keep the picker, so a `+380` already stored can still get
-           * back in — and the parsing in `lib/phone.ts` is untouched, so
-           * nothing about how a number is stored or compared changed.
-           */}
           <PhoneField
             label="Mobile number"
-            country="US"
             value={phone}
             onChange={(next) => {
               setPhone(next);
