@@ -179,6 +179,7 @@ export default function ContributorDetailPage({
                 name={c.name}
                 status={c.reward_status}
                 paidAt={c.reward_paid_at}
+                labelled
                 onChanged={reload}
               />
               {c.founding_status !== "founding" &&
