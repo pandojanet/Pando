@@ -812,6 +812,17 @@ const SHARED_CONNECTIONS: Option[] = [
  *    under it. Recommended is still the middle level and still never "Most
  *    popular".
  */
+/**
+ * ## 1 Oct — broader again
+ *
+ * The client rewrote the three cards a day after the 30 Sep mockup: the benefits
+ * stop naming specific pilots (Deep Dive, Caregiver Search) and speak of "select
+ * pilots", "new features" and "new Pando experiences", and the lead-in sentence
+ * is gone — "Everything above" is now the first bullet of each upper level, so
+ * `benefitsLead` is unused (the block label falls back to "You’ll get").
+ * Counts are unchanged (5 a month · 10 a month · 3 a week). Every string is hers.
+ * Icons and taglines were not part of her text and are untouched.
+ */
 const ALLOWANCE: Option[] = [
   {
     id: "5",
@@ -822,7 +833,7 @@ const ALLOWANCE: Option[] = [
       tagline: "A great way to get started.",
       participation: "Up to 5 relevant questions a month",
       bestFor: "I’m happy to help occasionally.",
-      benefits: ["Join and use Pando", "Invite friends to Pando"],
+      benefits: ["Use Pando whenever you need help", "Invite friends to join Pando"],
     },
   },
   {
@@ -839,12 +850,11 @@ const ALLOWANCE: Option[] = [
       tagline: "Help regularly, unlock more.",
       participation: "Up to 10 relevant questions a month",
       bestFor: "I’m happy to help regularly when my experience is relevant.",
-      benefitsLead: "You’ll get everything in Community member, plus:",
       benefits: [
-        "Early access to the Deep Dive pilot",
-        "Early access to Basic Caregiver Search",
-        "Additional Pando invitations",
-        "Early access to selected new features",
+        "Everything above",
+        "Early access to select Pando pilots",
+        "Opportunities to try new features first",
+        "Additional invitations as Pando grows",
       ],
     },
   },
@@ -856,13 +866,12 @@ const ALLOWANCE: Option[] = [
       icon: "heart",
       tagline: "For parents who are very happy to help.",
       participation: "Up to 3 relevant questions a week",
-      bestFor: "I’m happy for Pando to ask whenever my experience is likely to be useful.",
-      benefitsLead: "You’ll get everything in Active contributor, plus:",
+      bestFor: "I’m happy for Pando to ask when my experience is likely to be useful.",
       benefits: [
-        "First access to limited Deep Dive pilot slots",
-        "First access to Caregiver Search slots",
-        "First access to new Pando pilots and beta features",
-        "The highest invitation allowance during the pilot",
+        "Everything above",
+        "Priority access when pilot spaces are limited",
+        "First access to select new Pando experiences",
+        "Greater flexibility to invite others into Pando",
       ],
     },
   },

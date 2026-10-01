@@ -491,10 +491,14 @@ ok(
 const benefitsText = (o?: { plan?: { benefitsLead?: string; benefits?: string[] } }) =>
   [o?.plan?.benefitsLead ?? "", ...(o?.plan?.benefits ?? [])].join(" ");
 ok(
-  "the two upper levels build on the one below, by name",
-  /Community member/.test(levels[1]?.plan?.benefitsLead ?? "") &&
-    /Active contributor/.test(levels[2]?.plan?.benefitsLead ?? ""),
-  "a level is never a different product: “You’ll get everything in … plus:”",
+  "the two upper levels build on the one below (“Everything above” leads their benefits)",
+  levels[1]?.plan?.benefits?.[0] === "Everything above" &&
+    levels[2]?.plan?.benefits?.[0] === "Everything above",
+  "a level is never a different product (1 Oct: the lead-in sentence became the first bullet)",
+);
+ok(
+  "the benefits no longer name specific pilots (1 Oct, broader again)",
+  !levels.some((o) => /Deep Dive|Caregiver Search/.test(benefitsText(o))),
 );
 ok(
   "the open level is three a week, and says the number the send layer enforces",
