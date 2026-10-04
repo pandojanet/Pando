@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/run-tests.mjs",
+    "gate": "npm run typecheck && npm test",
     "migrate": "node scripts/migrate.mjs",
     "seed": "node scripts/seed.mjs",
     "seed:demo": "node scripts/seed-demo.mjs",
@@ -80,6 +82,7 @@
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
     "tailwindcss": "^4",
+    "tsx": "^4.23.9",
     "typescript": "^5"
   }
 }

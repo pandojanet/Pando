@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -54,6 +54,10 @@ jobs:
       # next build type-checks too, but tsc first fails in seconds and covers
       # files outside the build graph.
       - run: npm run typecheck
+
+      # The offline suites only — scripts/run-tests.mjs names what it leaves out
+      # and why (live database, running server).
+      - run: npm test
 
       - run: npm run build
         env:
