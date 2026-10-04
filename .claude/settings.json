@@ -19,12 +19,22 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/context-guard.mjs\" snapshot"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/context-guard.sh\""
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/context-guard.mjs\" check"
           }
         ]
       }

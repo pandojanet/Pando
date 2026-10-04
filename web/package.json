@@ -61,7 +61,7 @@
     "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts",
     "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
-    "test:hooks": "node ../.claude/hooks/protect-files.test.mjs",
+    "test:hooks": "node ../.claude/hooks/protect-files.test.mjs && node ../.claude/hooks/context-guard.test.mjs",
     "test:githooks": "node ../.githooks/pre-commit.test.mjs",
     "test:relay-live": "tsx scripts/test-relay-live.mts",
     "test:referral-live": "node scripts/test-referral-live.mjs",
