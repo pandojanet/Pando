@@ -26,8 +26,8 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 changed=$(git status --porcelain 2>/dev/null | sed 's/^...//' | sed 's/.* -> //')
 [ -z "$changed" ] && exit 0
 
-# CLAUDE.md already updated — nothing to nag about.
-printf '%s\n' "$changed" | grep -qx 'CLAUDE.md' && exit 0
+# Project context already updated (CLAUDE.md, or the status/decisions files it points to).
+printf '%s\n' "$changed" | grep -qxE 'CLAUDE.md|docs/status.md|docs/decisions.md' && exit 0
 
 code_changes=$(printf '%s\n' "$changed" \
   | grep -E '^(web/(app|lib|components)/|docs/)' \
@@ -38,9 +38,9 @@ code_changes=$(printf '%s\n' "$changed" \
 [ "${code_changes:-0}" -lt 3 ] && exit 0
 
 cat >&2 <<EOF
-CLAUDE.md was not updated, but $code_changes files under web/ or docs/ changed this turn.
-Before finishing: update the status table, and add a Decisions row if a choice was made
+Project context was not updated, but $code_changes files under web/ or docs/ changed this turn.
+Before finishing: update docs/status.md, and add a docs/decisions.md row if a choice was made
 that a future session could unknowingly undo (see CLAUDE.md → "Keeping this file current").
-If this turn genuinely needs no context change, touch CLAUDE.md's date line or say so explicitly.
+If this turn genuinely needs no context change, say so explicitly.
 EOF
 exit 2
