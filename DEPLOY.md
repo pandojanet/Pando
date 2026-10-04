@@ -1,13 +1,13 @@
 # Deploying Pando
 
-Push to `main` → GitHub Actions type-checks and builds → a Docker image is
+Push to `main` → GitHub Actions type-checks, tests and builds → a Docker image is
 pushed to GHCR → the VPS pulls it and restarts. A rollout that never reports
 healthy is rolled back automatically and the job fails.
 
 | File                                | What it is                                                  |
 | ----------------------------------- | ----------------------------------------------------------- |
 | `web/Dockerfile`                    | Production image (Next.js `output: "standalone"`, Node 22).  |
-| `.github/workflows/ci.yml`          | `npm ci` → `tsc --noEmit` → `next build`. Every branch/PR.   |
+| `.github/workflows/ci.yml`          | `npm ci` → `tsc --noEmit` → `npm test` → `next build`. Every branch/PR. |
 | `.github/workflows/deploy.yml`      | CI → build/push image → SSH deploy. `main` only.             |
 | `.github/scripts/remote-deploy.sh`  | What actually runs on the server.                            |
 | `deploy/docker-compose.yml`         | What runs on the VPS, incl. the Traefik labels. Lives on the server, not deployed by CI. |
