@@ -1,0 +1,3 @@
+#!/bin/sh
+# Enabled by `npm install` in web/ (the prepare script sets core.hooksPath).
+exec node "$(dirname "$0")/scan-staged.mjs"
