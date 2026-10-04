@@ -24,7 +24,7 @@
 `web/lib/demand.ts` — D1 routing: what Pando says back to which kind of question.
 `web/lib/seed-gate.ts` — link-only access: the marker cookie, and which screens
                        need it. `proxy.ts` issues it on `/join` and enforces it
-                       on the rest. Not authentication — see Decisions.
+                       on the rest. Not authentication — see [decisions.md](../decisions.md).
 `web/lib/caregiver-invite.ts` — the message the parent sends themselves (C11).
 `web/lib/server/repo/parent-delete.ts` · `app/api/seed/delete/route.ts` — the
                        **one** "remove me", reached by the web control *and*
@@ -39,7 +39,7 @@
 `web/components/seed/ProfileDepth.tsx` — how full a profile is, and why filling it
                        in is worth a parent’s time. Measured by `profileDepth`,
                        which is **not** the stored `profileCompleteness` — see
-                       Decisions.
+                       [decisions.md](../decisions.md).
 `web/components/seed/ReferralInvite.tsx` — that link on screen: the popup over
                        `/share`, the panel on `/done`, one icon copy button.
 `web/components/seed/SignIn.tsx` · `web/app/api/seed/me/route.ts` — coming back
@@ -78,7 +78,7 @@
 `web/lib/payments.ts` — M13.5–13.7. Whether a refund is coherent and whether the
                        guarantee is owed. Imports **nothing** — `paymentFor`
                        lives in `blast-tiers.ts` beside the prices, for that
-                       reason (see Decisions).
+                       reason (see [decisions.md](../decisions.md)).
 `web/lib/stripe-signature.ts` — M13.6. Verifying a payment webhook, including
                        the replay tolerance the Twilio verifier has no
                        equivalent of.
@@ -159,13 +159,13 @@
                        `inputClass` — one look, with and without a width.
 `web/components/admin/kit.tsx` — the admin's *mechanics*, on platform primitives
                        rather than a component library: `Hint` · `Select` ·
-                       `SegmentedFilter` · `Menu` · `Dialog`. See Decisions for
+                       `SegmentedFilter` · `Menu` · `Dialog`. See [decisions.md](../decisions.md) for
                        what that swap cost and what it bought.
 `web/components/admin/Record.tsx` — the admin's second layout, for the queues a
                        table cannot hold: `RecordCard` · `FactGrid`/`Fact` ·
                        `SpecList`/`Spec` · `Quote` · `RecordGroup` ·
                        `RecordDrawer`. Which one a page uses is a property of
-                       its data, never a preference — see Decisions.
+                       its data, never a preference — see [decisions.md](../decisions.md).
 `web/components/ui/OptionPicker.tsx` — the searchable dropdown the circles
                        questions use. Which control a question gets is a
                        property of its options: a directory here, a short closed

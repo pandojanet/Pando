@@ -6,20 +6,21 @@
 
 ## decisions.md is 890 KB
 
-**Now.** [decisions.md](decisions.md) holds 398 rows in one table, newest first.
-It is not loaded into sessions; CLAUDE.md says to `grep` it by area. Its header row has
-no `| --- |` separator, so it does not render as a table.
+**Now.** [decisions.md](decisions.md) holds 402 rows in one table, newest first
+(`grep -c '^| ' docs/decisions.md`, minus the header and the separator). It is not loaded
+into sessions; CLAUDE.md says to `grep` it by area. The `| --- |` separator sits at row
+184 instead of under the header, so the top of the file does not render as a table.
 
 **Due when** a grep for an area returns more rows than can be read in one sitting, or a
 reader misses a decision because it sat in an unrelated row.
 
 **Then.** Split by area (the seed flow, caregivers, SMS and outreach, admin, payments,
 infrastructure), one file each under `docs/decisions/`, and keep `decisions.md` as the
-index. Add the separator row.
+index. Move the separator under the header.
 
 ## Code comments still point at "CLAUDE.md" for decisions
 
-**Now.** 60 lines under `web/` mention CLAUDE.md (`git grep -n CLAUDE.md -- web`), many
+**Now.** 61 lines under `web/` mention CLAUDE.md (`git grep -n CLAUDE.md -- web`), many
 of them to say a decision "is recorded in CLAUDE.md" — for example
 `components/admin/kit.tsx`, `app/(seed)/join/page.tsx`, `web/.env.example`. Decisions moved to [decisions.md](decisions.md) on 4 Oct 2026, and the
 invariants to [.claude/rules/invariants.md](../.claude/rules/invariants.md).
@@ -28,18 +29,18 @@ invariants to [.claude/rules/invariants.md](../.claude/rules/invariants.md).
 
 **Then.** Point the comment at the file that now holds it, in that change.
 
-## The agent's path guard reads paths as text
+## A changed migration is caught at commit, not at the write
 
-**Now.** `.claude/hooks/protect-files.mjs` finds paths in a Bash command by pattern. A
-path built at run time (`$(printf …)`, a variable, base64) or a write made by a script
-whose source does not name the path gets past it; `test:hooks` pins one such case as a
-known limit. The pre-commit secret scan and code review are the layers behind it.
+**Now.** The agent's PreToolUse hook blocks Edit and Write on a committed migration,
+but not a Bash command that writes one (`sed -i`, `perl -pi`, `rm -rf web/drizzle`): a
+path cannot be read reliably out of command text, and trying blocked plain reads. The
+git pre-commit hook refuses the commit instead. A person can still skip it with
+`git commit --no-verify`; only the agent is stopped from doing that.
 
-**Due when** a committed migration or a vendored skill changes without a reviewer
-noticing.
+**Due when** a changed migration reaches `main` anyway.
 
-**Then.** Add a CI step that fails when a file under `web/drizzle/` that exists on the
-target branch is modified.
+**Then.** A CI step on pull requests that fails when a file under `web/drizzle/` that
+exists on the target branch is modified or deleted (`_journal.json` excepted).
 
 ## CI runs no database
 

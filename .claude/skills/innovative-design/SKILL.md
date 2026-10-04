@@ -4,8 +4,9 @@ description: >-
   Motion and interaction direction at showcase level: scroll choreography, transitions,
   micro-interactions with a performance budget. Use when a public page under
   web/app/(site) needs a signature moment or its motion feels flat. Triggers: "add
-  motion to the landing page", "scroll animation", "make the hero feel alive". Not for
-  the Seed Tool flow, the chat or the admin, where motion is restrained by
+  motion to the landing page", "scroll animation", "make the hero feel alive". Works
+  inside pando-design-system's tokens, type and icons, which win on any conflict. Not
+  for the Seed Tool flow, the chat or the admin, where motion is restrained by
   mobile-first-ui and pando-design-system.
 ---
 

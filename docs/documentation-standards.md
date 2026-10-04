@@ -23,9 +23,10 @@ prevented, and says which one — not in advance.
 
 ## Banner
 
-Every doc under `docs/` opens with a one-line banner: its **type** (rules, inventory,
-runbook, test plan, scope reconciliation, decision log, open question) and, when it
-moved or stopped being current, the date and where it went.
+A new doc under `docs/`, and an older one when it is next substantially edited, opens
+with a one-line banner: its **type** (rules, inventory, runbook, test plan, scope
+reconciliation, decision log, open question) and, when it moved or stopped being
+current, the date and where it went.
 
 ## Link to other documents
 

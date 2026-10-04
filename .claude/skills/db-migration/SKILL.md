@@ -32,31 +32,37 @@ repo is the only source of truth for the schema; Supabase's dashboard is not.
 5. Prefer additive. If the code that reads the change may ship before the migration
    runs, make the read tolerate its absence (DEPLOY.md §3b, the `0052` example).
 6. A new enum value: `ALTER TYPE … ADD VALUE` cannot be used in the transaction that
-   adds it, and every pending migration runs in **one** transaction. Ship the value in
-   one migration and anything that writes it in a later one.
+   adds it, and every pending migration runs in **one** transaction — two pending files
+   share it. So the value is applied by its own `npm run migrate` run first; a migration
+   or code that uses it comes after that run.
 
 ## Rules
 
 - A committed migration is never edited, renamed or deleted — fix forward. The
-  `protect-files` hook blocks it; drizzle would not re-run an edited file, so the
+  `protect-files` hook blocks Edit/Write on it and the git pre-commit hook refuses a
+  commit that changes it; drizzle would not re-run an edited file, so the
   environments would drift apart without an error.
 - No schema edits in the Supabase dashboard and no `drizzle-kit push`.
-- `npm run migrate` reads `web/.env.local`, then `web/.env`, which point at production.
+- `npm run migrate` uses `MIGRATE_DATABASE_URL` when set, otherwise `DATABASE_URL`, read
+  from `web/.env.local`, then `web/.env` — both point at production. Port 5432 (session
+  mode) is the one for migrations; 6543 is the app's (DEPLOY.md §3b).
 
 ## Stop and ask a person when
 
 - the migration drops, renames or narrows anything, or rewrites existing rows;
 - you are about to run `npm run migrate`, or any SQL that writes, against the hosted
-  project — say which host the command resolved to and wait for a "yes";
+  project — say which variable and host the command will use and wait for a "yes";
 - the change needs a backfill of more than the rows this feature created.
 
-Before a destructive step the user approved: copy the affected table first
-(`create table backup_<date>_<table> as table <table>`).
+The production-write rule, including when a backup table is needed, is
+[validation §2](../../../docs/reference/validation.md#2-proof-by-area) → Database.
 
 ## Verify
 
 - [ ] `npm --prefix web run gate` passes.
 - [ ] The journal's new `when` is the largest, and `tag` matches the file name.
-- [ ] After the user's "yes" and `npm run migrate`: it reports the expected total, and
-      `npm --prefix web run check` (read-only) shows the change.
+- [ ] After the user's "yes" and `npm run migrate`: the "N migration(s) applied in total"
+      line equals the journal's entry count, and a read-only query on
+      `information_schema` / `pg_enum` shows the object itself. (`npm run check` counts
+      rows; it cannot see a schema change.)
 - [ ] docs/status.md and, for a choice a later session could undo, docs/decisions.md.

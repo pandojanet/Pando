@@ -5,7 +5,8 @@ description: >-
   type, colour and motion that could not be mistaken for a template. Use when designing
   or restyling a public page under web/app/(site) — the landing page, an about or
   campaign page — or when such a page "looks generic". Triggers: "landing page",
-  "make the homepage less generic", "redesign the site page". Not for the Seed Tool flow
+  "make the homepage less generic", "redesign the site page". Works inside pando-design-system's tokens, type and icons, which win on any conflict.
+  Not for the Seed Tool flow
   screens, the chat or the admin — those follow pando-design-system, mobile-first-ui
   and tap-first-flow.
 ---

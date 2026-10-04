@@ -29,8 +29,15 @@ dev server and the `mobile-ui-review` skill at 375px; look at the screenshots. C
 empty, error and resume states of the flow you touched.
 
 **Database.** The `db-migration` skill. The hosted Supabase project is the only database
-and it is production, so `npm run migrate`, any write and any `*-live` suite need the
-user's "yes" in this conversation first. `npm run check` is read-only and safe.
+and it is production. This is the one statement of the rule; CLAUDE.md and the skills
+link here:
+
+- reading is fine, and `npm run check` is read-only;
+- `npm run migrate`, any SQL that writes, and the suites that write (`*-live`,
+  `test:compliance`, `test:e2e`) need the user's "yes" in this conversation, after you
+  say which host they will reach;
+- a step that drops, narrows or rewrites existing rows also copies the affected table
+  first: `create table backup_<date>_<table> as table <table>`.
 
 **SMS, outreach and money.** `test:outreach` and `test:compliance` pin invariant 5's
 numbers; `test:payments` and `test:relay` cover the guarantee and the relay.
@@ -46,7 +53,9 @@ cause, not the trigger. A regression test is shown failing on the old code first
 
 ## 3. Review
 
-Run by the `self-review` skill. The rules it must satisfy here:
+Run by the `self-review` skill, which lives in the user's `~/.claude/skills/`, not in this
+repository; its area checklists are that skill's `checklists.md`. Without it, a reviewer
+reads the files and applies the same rules. The rules it must satisfy here:
 
 1. **Full scope** — `git status --porcelain`; untracked files are part of the change.
 2. **Size** — above roughly 15 files or 800 changed lines, one reviewer per area below;

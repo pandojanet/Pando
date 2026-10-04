@@ -5,6 +5,7 @@ description: >-
   type, colour and composition that carry it. Use when starting or rethinking a public
   page under web/app/(site) and the brief is "make it feel like Pando, not like
   everyone else". Triggers: "design a new site page", "visual identity for the page".
+  Works inside pando-design-system's tokens, type and icons, which win on any conflict.
   Not for the Seed Tool flow screens, the chat or the admin — use pando-design-system.
 ---
 

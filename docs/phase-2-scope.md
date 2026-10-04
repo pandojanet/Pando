@@ -38,7 +38,7 @@ pairs; Whittier, San Dimas, Glendora and West Covina are selectable neighborhood
 with curated starters and touch nothing else on the list, because on the ground
 they do not. A parent there gets no adjacency credit, which is the honest answer
 rather than an omission — and the migration cannot be annotated after the fact,
-since drizzle hashes it.
+since a committed migration is never edited.
 
 **Three client answers, 27 Aug.** (1) The A2P campaign is **approved** — Twilio
 provisioning is unblocked, and the ordering rule in the dev-codes decision applies
