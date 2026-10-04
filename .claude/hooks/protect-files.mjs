@@ -2,18 +2,23 @@
 // PreToolUse hook (Edit|Write|NotebookEdit|Bash). Exit 2 blocks the call; stderr
 // is what the agent reads.
 //
-// 1. Files that are never edited in place:
-//    - a committed migration or snapshot under web/drizzle/. Drizzle hashes each
-//      applied file, so an edit desynchronises every environment silently. A new,
-//      untracked migration passes; meta/_journal.json passes because a new
-//      migration appends to it.
-//    - vendored skills under .agents/skills/. They are updated by moving
-//      skills-lock.json to a new tag, never by hand.
-// 2. Skipping the pre-commit secret scan (--no-verify, -n, core.hooksPath).
+// Edit / Write / NotebookEdit — the path is exact, so these are blocked here:
+//   - a committed migration or snapshot under web/drizzle/. Drizzle never re-runs
+//     an applied file, so an edit desynchronises every environment silently. A new,
+//     untracked migration passes; meta/_journal.json passes because a new
+//     migration appends to it.
+//   - vendored skills under .agents/skills/, updated only by moving skills-lock.json
+//     to a new tag.
+//   - .githooks/, the pre-commit check itself.
 //
-// Fail-closed: a payload that is not JSON blocks. Known gaps, by design a filter
-// and not a sandbox: a path assembled from variables or encodings, and a write
-// made by a script whose source does not name the path.
+// Bash — a write can be spelled too many ways to find its target in the command
+// text (quoted paths with spaces, perl -pi, a heredoc fed to node, a directory), and
+// guessing also blocks plain reads. So Bash writes to those files are caught by the
+// git pre-commit hook instead, which compares the staged change with HEAD. What is
+// blocked here is switching that hook off: `git commit --no-verify`/`-n` (or any
+// prefix git accepts), and pointing or unsetting core.hooksPath.
+//
+// Fail-closed: a payload that is not JSON blocks.
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -26,10 +31,6 @@ function block(message) {
   process.exit(2);
 }
 
-function git(args) {
-  return execFileSync("git", args, { cwd: projectDir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-}
-
 // Project-relative POSIX path, or null when it lies outside the project.
 function toProjectPath(candidate) {
   const rel = relative(projectDir, resolve(projectDir, candidate));
@@ -39,7 +40,7 @@ function toProjectPath(candidate) {
 
 function isTracked(path) {
   try {
-    git(["ls-files", "--error-unmatch", "--", path]);
+    execFileSync("git", ["ls-files", "--error-unmatch", "--", path], { cwd: projectDir, stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -50,8 +51,11 @@ function protectedReason(path) {
   if (path.startsWith(".agents/skills/")) {
     return "vendored skill — update it by moving skills-lock.json to a new tag, not by hand";
   }
+  if (path.startsWith(".githooks/")) {
+    return "the pre-commit check — a change to it is the user's to make";
+  }
   if (path.startsWith("web/drizzle/") && path !== "web/drizzle/meta/_journal.json" && isTracked(path)) {
-    return "committed migration — drizzle hashes it; fix forward with a new migration (db-migration skill)";
+    return "committed migration — drizzle never re-runs an applied file, so an edit silently splits the environments; fix forward with a new migration (db-migration skill)";
   }
   return null;
 }
@@ -75,39 +79,52 @@ if (input?.tool_name !== "Bash") {
   process.exit(0);
 }
 
-// A heredoc body is data (a commit message, a file's content), not an operation;
-// the line that opens it stays, since `cat <<EOF > file` writes on that line.
-const command = String(toolInput.command ?? "").replace(/(<<-?\s*['"]?(\w+)['"]?[^\n]*)\n[\s\S]*?^\s*\2$/gm, "$1");
-
-// `2>&1` duplicates a descriptor and `> /dev/null` discards; neither writes a file.
-const redirectsToFile = [...command.matchAll(/(?:^|\s)\d?>>?\s*([^\s|;&]+)/g)].some(
-  ([, target]) => target !== "/dev/null" && !target.startsWith("&")
-);
-const WRITE_HINTS =
-  /\btee\b|\bsed\b[^|;]*\s-i|\brm\b|\bmv\b|\bcp\b|\btruncate\b|\bdd\b|\bchmod\b|writeFileSync|appendFileSync|createWriteStream|\bpatch\b|git\s+(?:checkout|restore|apply|clean|rm|mv)\b/;
-
-if (redirectsToFile || WRITE_HINTS.test(command)) {
-  // Normalised, not matched as text: web/lib/../drizzle/0001_x.sql is a migration.
-  const tokens = command.match(/[A-Za-z0-9._~@+-]*(?:\/[A-Za-z0-9._~@*+-]+)+\/?/g) ?? [];
-  for (const token of tokens) {
-    const path = toProjectPath(token);
-    const reason = path && protectedReason(path);
-    if (reason) block(`${path}: ${reason}. Reading is fine; changing it is not.`);
-  }
+// Heredoc bodies and quoted text (a commit message, a grep pattern) are data.
+const unheredoc = String(toolInput.command ?? "").replace(/(<<-?\s*['"]?(\w+)['"]?[^\n]*)\n[\s\S]*?^\s*\2$/gm, "$1");
+if (/\s-c\s+['"]core\.hookspath=(?!\.githooks['"\s])/i.test(unheredoc)) {
+  block("pointing core.hooksPath elsewhere skips the pre-commit scan; fix what it found instead.");
 }
+const command = unheredoc.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, "''");
 
-// The secret scan is the git pre-commit hook (.githooks/); skipping it or
-// pointing git elsewhere is the same as committing the secret.
-// Setting it to .githooks is the install (web/package.json → prepare), not a bypass.
-const skipsScan = /\bgit\b[^|;&]*\bcommit\b[^|;&]*\s(?:--no-verify|-[A-Za-z]*n[A-Za-z]*)\b/.test(command);
-// Reading it (`git config --get core.hooksPath`) is fine.
-const movesHooks =
-  /--unset(?:-all)?\s+core\.hooksPath/.test(command) ||
-  [...command.matchAll(/core\.hooksPath(?:[\s=]+['"]?([^\s'";&|]*))?/g)].some(
-    ([, value]) => value !== undefined && value !== ".githooks"
-  );
-if (skipsScan || movesHooks) {
-  block("bypassing the pre-commit scan is blocked; fix what it found instead.");
+for (const segment of command.split(/&&|\|\||[;|\n]/)) {
+  const words = segment.trim().split(/\s+/);
+  if (words[0] !== "git") continue;
+  // git's global options come before the subcommand: -C <dir>, -c <key=value>, …
+  let i = 1;
+  const configOverrides = [];
+  while (i < words.length && words[i].startsWith("-")) {
+    if (words[i] === "-c" || words[i] === "-C") {
+      if (words[i] === "-c") configOverrides.push(words[i + 1] ?? "");
+      i += 2;
+    } else i++;
+  }
+  const sub = words[i];
+  const args = words.slice(i + 1);
+
+  if (configOverrides.some((kv) => /^core\.hookspath=/i.test(kv) && kv.split("=")[1] !== ".githooks")) {
+    block("pointing core.hooksPath elsewhere skips the pre-commit scan; fix what it found instead.");
+  }
+
+  if (sub === "commit") {
+    for (const arg of args) {
+      if (arg === "--") break;
+      const noVerify = arg.length > 4 && "--no-verify".startsWith(arg);
+      const shortN = /^-[A-Za-z]*n[A-Za-z]*$/.test(arg) && !arg.startsWith("--");
+      if (noVerify || shortN) block(`\`git commit ${arg}\` skips the pre-commit scan; fix what it found instead.`);
+    }
+  }
+
+  if (sub === "config") {
+    const keyAt = args.findIndex((a) => /^core\.hookspath$/i.test(a));
+    if (keyAt === -1) continue;
+    const before = args.slice(0, keyAt);
+    const value = args[keyAt + 1];
+    const reading = before.some((a) => /^(--get|--get-all|--get-regexp|get|--list|-l|--show-origin)$/.test(a));
+    const unsetting = before.some((a) => /^(--unset|--unset-all|unset)$/.test(a));
+    if (unsetting || (!reading && value !== undefined && value !== ".githooks")) {
+      block("changing core.hooksPath switches off the pre-commit scan; it is set by `npm install` in web/.");
+    }
+  }
 }
 
 process.exit(0);

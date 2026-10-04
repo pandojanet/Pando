@@ -22,6 +22,7 @@ const put = (path, content) => {
 git("init", "-q");
 git("config", "user.email", "fixture@example.com");
 git("config", "user.name", "Fixture");
+git("config", "commit.gpgsign", "false");
 for (const f of ["web/lib/a.ts", "web/lib/b.ts", "web/lib/c.ts", "web/app/d.tsx", "docs/status.md"]) put(f, "1\n");
 git("add", ".");
 git("commit", "-q", "-m", "fixture");
@@ -67,6 +68,13 @@ check("two files is a tweak", run("check"), 0);
 
 turn(() => {}, () => ["web/lib/new/x.ts", "web/lib/new/y.ts", "web/lib/new/z.ts"].forEach((f) => put(f, "1\n")));
 check("three new files in one new folder", run("check"), 2);
+
+turn(() => {}, () => { three(); git("commit", "-qam", "during the turn"); });
+check("three files committed during the turn", run("check"), 2);
+git("reset", "-q", "--hard", "HEAD~1");
+
+turn(() => {}, () => { execFileSync("git", ["init", "-q", join(repo, "web/lib/nested")]); });
+check("an untracked nested repository does not crash it", run("check"), 0);
 
 turn(() => {}, () => ["web/lib/a.test.ts", "web/lib/b.test.ts", "web/lib/c.test.ts"].forEach((f) => put(f, "1\n")));
 check("tests alone do not count", run("check"), 0);

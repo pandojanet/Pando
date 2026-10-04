@@ -7,7 +7,8 @@
 //
 // Only what changed after the snapshot counts, so uncommitted work left by another
 // session or an earlier turn does not trip it. A path counts as changed when its
-// content hash differs from the snapshot (or it was not dirty then).
+// content hash differs from the snapshot (or it was not dirty then), or when a
+// commit made during the turn touched it.
 //
 // To disable: remove both entries from .claude/settings.json.
 
@@ -42,10 +43,15 @@ function dirtyFiles() {
   for (let i = 0; i < fields.length; i++) {
     const entry = fields[i];
     if (entry.length < 4) continue;
-    paths.push(entry.slice(3));
+    if (!entry.endsWith("/")) paths.push(entry.slice(3)); // a nested repository: not hashable
     if (entry[0] === "R" || entry[0] === "C") i++; // the next field is the old path
   }
   const state = {};
+  try {
+    state["\0HEAD"] = git(["rev-parse", "HEAD"]).trim();
+  } catch {
+    /* no commits yet */
+  }
   for (const path of paths) {
     state[path] = existsSync(join(projectDir, path)) ? git(["hash-object", "--", path]).trim() : "deleted";
   }
@@ -64,7 +70,14 @@ if (process.argv[2] === "snapshot") {
 if (payload.stop_hook_active || !existsSync(stateFile)) process.exit(0);
 
 const before = JSON.parse(readFileSync(stateFile, "utf8"));
-const changed = Object.keys(now).filter((path) => before[path] !== now[path]);
+const changed = Object.keys(now).filter((path) => !path.startsWith("\0") && before[path] !== now[path]);
+if (before["\0HEAD"] && before["\0HEAD"] !== now["\0HEAD"]) {
+  try {
+    changed.push(...git(["diff", "--name-only", before["\0HEAD"], "HEAD"]).split("\n").filter(Boolean));
+  } catch {
+    /* the snapshot's commit is gone (rebase); count the worktree only */
+  }
+}
 
 if (changed.some((path) => CONTEXT.test(path))) process.exit(0);
 

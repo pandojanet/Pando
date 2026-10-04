@@ -2,7 +2,8 @@
 //
 // Runs protect-files.mjs the way Claude Code does — JSON on stdin, exit code
 // read back — against a throwaway git repository, so tracked and untracked are
-// fixed by the test rather than by whatever Pando's tree holds.
+// fixed by the test rather than by whatever Pando's tree holds. The repository's
+// path has a space in it, as Pando's does.
 // Then checks the wiring: a hook that is never called protects nothing, and unit
 // cases cannot see that.
 
@@ -14,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hook = join(here, "protect-files.mjs");
-const repo = mkdtempSync(join(tmpdir(), "protect-files-"));
+const repo = mkdtempSync(join(tmpdir(), "protect files-"));
 const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
 
 function put(path, content) {
@@ -25,10 +26,12 @@ function put(path, content) {
 git("init", "-q");
 git("config", "user.email", "fixture@example.com");
 git("config", "user.name", "Fixture");
+git("config", "commit.gpgsign", "false");
 put("web/drizzle/0001_a.sql", "create table a ();\n");
 put("web/drizzle/meta/0001_snapshot.json", "{}\n");
 put("web/drizzle/meta/_journal.json", "{}\n");
 put(".agents/skills/vendor/SKILL.md", "---\nname: vendor\n---\n");
+put(".githooks/pre-commit", "#!/bin/sh\n");
 put("web/lib/x.ts", "export const x = 1;\n");
 git("add", ".");
 git("commit", "-q", "-m", "fixture");
@@ -53,19 +56,13 @@ const cases = [
   ["path outside the project", edit("/tmp/elsewhere.ts", "Write"), 0],
   ["payload that is not JSON", "not json", 2],
 
-  // Bash writes
-  ["redirect into a migration", bash("echo x > web/drizzle/0001_a.sql"), 2],
-  ["redirect through ../", bash("echo x >> web/lib/../drizzle/0001_a.sql"), 2],
-  ["sed -i on a migration", bash("sed -i '' 's/a/b/' web/drizzle/0001_a.sql"), 2],
-  ["git checkout of a migration", bash("git checkout -- web/drizzle/0001_a.sql"), 2],
-  ["cp over a vendored skill", bash("cp /tmp/x .agents/skills/vendor/SKILL.md"), 2],
-  ["rm an untracked migration", bash("rm web/drizzle/0002_new.sql"), 0],
+  ["edit the pre-commit check", edit(abs(".githooks/pre-commit")), 2],
 
-  // Bash reads
-  ["cat a migration", bash("cat web/drizzle/0001_a.sql"), 0],
-  ["2>&1 is not a write", bash("cat web/drizzle/0001_a.sql 2>&1 | head"), 0],
-  ["> /dev/null is not a write", bash("ls web/drizzle > /dev/null"), 0],
-  ["heredoc body naming a migration", bash("cat <<'EOF' > /tmp/note.txt\nweb/drizzle/0001_a.sql\nEOF"), 0],
+  // Bash writes are the pre-commit hook's to catch (.githooks/pre-commit.test.mjs),
+  // so ordinary commands that mention a migration are not blocked here.
+  ["cp a migration out to /tmp", bash("cp web/drizzle/0001_a.sql /tmp/backup.sql"), 0],
+  ["git diff of a migration into a file", bash("git diff HEAD~1 -- web/drizzle/0001_a.sql > /tmp/d.txt"), 0],
+  ["sed -n on a migration and grep elsewhere", bash("sed -n '1,5p' web/drizzle/0001_a.sql && grep -i create web/lib/x.ts"), 0],
 
   // Skipping the pre-commit secret scan
   ["commit --no-verify", bash("git commit --no-verify -m 'x'"), 2],
@@ -75,12 +72,20 @@ const cases = [
   ["unset core.hooksPath", bash("git config --unset core.hooksPath"), 2],
   ["point core.hooksPath elsewhere", bash("git config core.hooksPath /tmp/none"), 2],
   ["install core.hooksPath", bash("git config core.hooksPath .githooks"), 0],
+  ["commit --no-verif (git accepts the prefix)", bash("git commit --no-verif -m x"), 2],
+  ["lower-case core.hookspath", bash("git config core.hookspath /dev/null"), 2],
+  ["git -c lower-case hookspath", bash("git -c core.hookspath=/dev/null commit -m x"), 2],
+  ["git -c hooksPath in quotes", bash('git -c "core.hooksPath=/dev/null" commit -m x'), 2],
+  ["config unset subcommand", bash("git config unset core.hooksPath"), 2],
   ["read core.hooksPath", bash("git config --get core.hooksPath; git status"), 0],
+  ["read core.hooksPath && echo", bash("git config --get core.hooksPath && echo ok"), 0],
+  ["read core.hooksPath 2>/dev/null", bash("git config --get core.hooksPath 2>/dev/null"), 0],
+  ["git log -n with 'commit' in it", bash("git log --oneline --grep commit -n 5"), 0],
+  ["-n inside a commit message", bash('git commit -m "Support -n in the CLI"'), 0],
+  ["--no-verify inside a heredoc message", bash("git commit -F - <<'EOF'\nnever use --no-verify\nEOF"), 0],
   ["plain commit", bash("git commit -m 'x'"), 0],
   ["commit --amend --no-edit", bash("git commit --amend --no-edit"), 0],
 
-  // Known limit, pinned so a change in it is noticed: a path assembled at run time.
-  ["known limit: path built by printf", bash("echo x > \"$(printf 'web/dri%s' zzle/0001_a.sql)\""), 0],
 ];
 
 let failed = 0;
