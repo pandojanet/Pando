@@ -1,3 +1,15 @@
+---
+name: design-taste
+description: >-
+  Anti-slop art direction for marketing surfaces: infer the brief, then pick layout,
+  type, colour and motion that could not be mistaken for a template. Use when designing
+  or restyling a public page under web/app/(site) — the landing page, an about or
+  campaign page — or when such a page "looks generic". Triggers: "landing page",
+  "make the homepage less generic", "redesign the site page". Not for the Seed Tool flow
+  screens, the chat or the admin — those follow pando-design-system, mobile-first-ui
+  and tap-first-flow.
+---
+
 tasteskill: Anti-Slop Frontend Skill
 Landing pages, portfolios, and redesigns. Not dashboards, not data tables, not multi-step product UI. Every rule below is contextual. None of it fires automatically. First read the brief, then pull only what fits.
 
