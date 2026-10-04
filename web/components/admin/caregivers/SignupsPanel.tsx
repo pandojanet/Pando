@@ -349,13 +349,11 @@ export function SignupsPanel() {
                               {c.nominations}{" "}
                               {c.nominations === 1 ? "nomination" : "nominations"} ·{" "}
                               {CONSENT_STATE[c.consent_status]?.label ?? sentence(c.consent_status)}
-                              {/* Not on `invited`: that label is "Family sent
-                                  the invite", so the clause said it twice. */}
-                              {c.consent_status === "invited"
-                                ? ""
-                                : c.invite_sent_by_parent
-                                  ? " · invite sent"
-                                  : " · no invite sent"}
+                              {/* ⚠ No "invite sent" clause (4 Oct): Pando
+                                  never sees the parent send it, and "no invite
+                                  sent" was a guess presented as a fact. Whether
+                                  she came through her link is the `invited`
+                                  label itself. */}
                             </span>
                           </span>
                           <Button

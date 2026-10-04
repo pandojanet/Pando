@@ -23,7 +23,7 @@ import { SegmentedFilter } from "@/components/admin/kit";
 import { RecordCard, RecordDrawer, RecordList } from "@/components/admin/Record";
 import {
   ContributionFacts,
-  missingForFounding,
+  missingDetails,
 } from "@/components/admin/ContributionFacts";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
@@ -90,6 +90,8 @@ export default function ContributionsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<ContributionRow>>({});
   const [question, setQuestion] = useState("");
+  /* The record's own name, with the reason the audit row needs (4 Oct). */
+  const [rename, setRename] = useState({ name: "", reason: "" });
   /* The card being acted on, not the queue. Reading the next recommendation
      while one is saving is ordinary work; the page used to disable every button
      on every row for the round trip. */
@@ -105,7 +107,7 @@ export default function ContributionsPage() {
       return list.filter((r) => r.confidence !== null && r.confidence < 0.6);
     if (filter === "secondhand") return list.filter((r) => !r.firsthand);
     if (filter === "incomplete")
-      return list.filter((r) => missingForFounding(r).length > 0 && r.firsthand);
+      return list.filter((r) => missingDetails(r).length > 0 && r.firsthand);
     /**
      * "Needs one more detail" is a held state, not a dead end — the screen's own
      * promise is that the card "stays in the queue until they answer" (there is
@@ -147,7 +149,7 @@ export default function ContributionsPage() {
       ).length,
       low: real.filter((r) => r.confidence !== null && r.confidence < 0.6).length,
       incomplete: real.filter(
-        (r) => r.firsthand && missingForFounding(r).length > 0,
+        (r) => r.firsthand && missingDetails(r).length > 0,
       ).length,
       secondhand: real.filter((r) => !r.firsthand).length,
       golden: real.filter((r) => r.share.answer_ready).length,
@@ -170,6 +172,7 @@ export default function ContributionsPage() {
       );
       setEditing(null);
       setQuestion("");
+      setRename({ name: "", reason: "" });
       await reload();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
@@ -222,7 +225,7 @@ export default function ContributionsPage() {
           <RecordList>
             {shown.map((row) => {
               const open = editing === row.id;
-              const missing = missingForFounding(row);
+              const missing = missingDetails(row);
               return (
                 <RecordCard
                   key={row.id}
@@ -306,6 +309,7 @@ export default function ContributionsPage() {
                              already asked something should show what, not a
                              blank field. */
                           setQuestion(open ? "" : row.needs_detail_note ?? "");
+                          setRename({ name: open ? "" : row.share.name, reason: "" });
                         }}
                       >
                         {open ? "Close" : "Edit or hold"}
@@ -430,6 +434,65 @@ export default function ContributionsPage() {
                             }
                           >
                             Save changes
+                          </Button>
+                        </div>
+                      </RecordDrawer>
+
+                      {/**
+                        * ⚠ Its own drawer, not a field in "Tidy up" (4 Oct):
+                        * the name belongs to the record, so this renames it
+                        * for every parent who shared it and in every answer —
+                        * what "A hiking trail" needed, and what nothing here
+                        * could do.
+                        */}
+                      <RecordDrawer title="Rename the record">
+                        <p className="mb-3 text-[12.5px] text-muted">
+                          Renames it for everyone who shared it.
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Field label="Name">
+                            <input
+                              className={inputClass}
+                              maxLength={80}
+                              value={rename.name}
+                              onChange={(e) =>
+                                setRename({ ...rename, name: e.target.value })
+                              }
+                            />
+                          </Field>
+                          <Field label="Why">
+                            <input
+                              className={inputClass}
+                              placeholder="The real name is in their caveat"
+                              value={rename.reason}
+                              onChange={(e) =>
+                                setRename({ ...rename, reason: e.target.value })
+                              }
+                            />
+                          </Field>
+                        </div>
+                        <div className="mt-3">
+                          <Button
+                            tone="secondary"
+                            subject={row.share.name}
+                            disabled={
+                              busy === row.id ||
+                              rename.name.trim().length < 3 ||
+                              rename.name.trim() === row.share.name ||
+                              rename.reason.trim().length === 0
+                            }
+                            onClick={() =>
+                              void run(row.id, "Renamed", async () =>
+                                adminAction({
+                                  action: "share.rename",
+                                  id: row.share.id,
+                                  name: rename.name.trim(),
+                                  reason: rename.reason.trim(),
+                                }),
+                              )
+                            }
+                          >
+                            Rename
                           </Button>
                         </div>
                       </RecordDrawer>

@@ -213,5 +213,23 @@ ok(
   }) === "approved",
 );
 
+/* 4 Oct — a parent who never reached the last screen is still owed a decision.
+   Only `/done/ask` writes pending_founding, and the one parent who met every
+   requirement on the live cohort had closed the tab before it. */
+{
+  const fs = await import("node:fs");
+  const read = fs.readFileSync(new URL("../lib/server/repo/admin-read.ts", import.meta.url), "utf8");
+  ok(
+    "the Founding queue takes 'none' as well as 'pending_founding'",
+    /AWAITING_FOUNDING_DECISION = sql`fc\.founding in \('none', 'pending_founding'\)`/.test(read),
+  );
+  ok(
+    "and the queue and its badge read that one expression",
+    /where \$\{AWAITING_FOUNDING_DECISION\}/.test(read) &&
+      /\$\{AWAITING_FOUNDING_DECISION\} and \$\{MEETS_FOUNDING_REQUIREMENTS\}/.test(read) &&
+      !/founding = 'pending_founding'/.test(read),
+  );
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

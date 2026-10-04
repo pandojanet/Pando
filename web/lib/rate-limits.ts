@@ -103,6 +103,7 @@ export type RateLimitName =
   | "seed_write"
   | "market_read"
   | "geocode"
+  | "age_relevance"
   | "caregiver_claim"
   | "invite_check"
   | "phone_lookup";
@@ -193,6 +194,17 @@ export const LIMITS: Record<RateLimitName, RateLimit> = {
     max: 40,
     windowSeconds: 600,
     message: "Too many place lookups from here just now. Try again in a minute.",
+  },
+
+  /**
+   * Whether a place's age matters, asked of the model once per place card
+   * (4 Oct). Billed per call like a geocode, and sized the same way: a roomful
+   * of parents adding two places each is well inside it.
+   */
+  age_relevance: {
+    max: 40,
+    windowSeconds: 600,
+    message: "Too many requests from here just now. Try again in a minute.",
   },
 
   caregiver_claim: {

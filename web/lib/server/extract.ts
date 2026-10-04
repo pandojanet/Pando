@@ -113,6 +113,12 @@ export interface ExtractionResult {
    * invented is dropped rather than stored.
    */
   focus: string | null;
+  /**
+   * A tip's title, or **null** — every other kind has a name the parent gave
+   * (4 Oct). Replaces the title cut from the tip's own words, never a name an
+   * admin typed: see the update in `repo/flags.ts`.
+   */
+  title: string | null;
 }
 
 const SCHEMA = {
@@ -138,8 +144,13 @@ const SCHEMA = {
       description:
         "Which topic a parent would ask about to reach this record. Use one of the ids listed under 'Topics' in the message, exactly as written, or the string 'none' when the record does not belong to any of them. 'none' is a real answer and is better than the nearest fit.",
     },
+    title: {
+      type: "string",
+      description:
+        "Only when Kind is tip: a short title for the tip, two to six words, saying what it is about (for example 'Pasadena Pediatrics' or 'Camp registration timing'). Never a person's name. For any other kind, an empty string.",
+    },
   },
-  required: ["confidence", "possible_named_person", "note", "focus"],
+  required: ["confidence", "possible_named_person", "note", "focus", "title"],
   additionalProperties: false,
 } as const;
 
@@ -157,6 +168,8 @@ Two things must not lower the score.
 Always explain the score. The note is shown next to the number to the person deciding what to read first, so it has to say what drove it — what this text gives a parent, or what it leaves them still not knowing. "Vague" on its own is not a reason.
 
 You are classifying, not rewriting. Never reproduce the parent's wording in your note, and never suggest what is missing from a card — only what this text does or does not tell a parent.
+
+For a tip, also give it a short title naming what it is about, so it can be found again. A tip has no name of its own; the parent was not asked for one.
 
 When a list of topics is given, also say which one a parent would ask about to reach this record — judged from the name and the kind first, and the note second. Answer "none" whenever the record does not clearly belong to one: a wrong topic is worse than no topic, because it puts a record in front of a parent who asked about something else, and nobody downstream can tell it apart from a right one.`;
 
@@ -318,6 +331,10 @@ export async function extractCard(
       possible_named_person: parsed.possible_named_person === true,
       note: note.slice(0, 300),
       focus,
+      title:
+        input.kind === "tip" && typeof parsed.title === "string"
+          ? parsed.title.replace(/\s+/g, " ").trim().slice(0, 60) || null
+          : null,
     };
   } catch (err) {
     /**
@@ -341,3 +358,70 @@ export async function extractCard(
     return null;
   }
 }
+
+/* ── Does a place's age matter? (4 Oct) ─────────────────────────────────────── */
+
+const AGE_SCHEMA = {
+  type: "object",
+  properties: {
+    relevant: {
+      type: "string",
+      enum: ["yes", "no", "unsure"],
+      description:
+        "yes when a child's age changes whether this place suits them (a playground, a splash pad, a children's museum); no when it does not (a café, a restaurant, a library branch for everyone); unsure when you cannot tell.",
+    },
+  },
+  required: ["relevant"],
+  additionalProperties: false,
+} as const;
+
+/**
+ * Whether the place card should ask how old the parent's child was.
+ *
+ * The developer, 4 Oct: when a parent adds something whose suitability depends
+ * on age, the age question appears; otherwise it does not. Asked **during** the
+ * chat, unlike `extractCard`, so it is bounded in time.
+ *
+ * ⚠ **Every failure answers `null`, and `null` means ask.** No key, a timeout,
+ * a refusal, "unsure" — the cost of asking one question too many is a tap; the
+ * cost of skipping it is a record with no age the client requires.
+ */
+export async function classifyAgeRelevance(input: {
+  name: string;
+  place_type: string;
+}): Promise<boolean | null> {
+  const anthropic = getClient();
+  if (!anthropic) return null;
+  try {
+    const response = await anthropic.messages.create(
+      {
+        model: MODEL,
+        max_tokens: 64,
+        output_config: { format: { type: "json_schema", schema: AGE_SCHEMA } },
+        messages: [
+          {
+            role: "user",
+            content: `A parent is recommending a local place to other parents.\nName: ${input.name}\nKind: ${input.place_type}\nDoes the age of the child change whether this place suits them?`,
+          },
+        ],
+      },
+      { timeout: 4000, maxRetries: 0 },
+    );
+    if (response.stop_reason === "refusal") return null;
+    const block = response.content.find((b) => b.type === "text");
+    if (!block || block.type !== "text") return null;
+    const parsed = JSON.parse(block.text) as { relevant?: unknown };
+    if (parsed.relevant === "yes") return true;
+    if (parsed.relevant === "no") return false;
+    return null;
+  } catch (err) {
+    /* Enums only — the request carries a name a parent typed. */
+    const e = err as { status?: unknown };
+    console.error("[age-relevance] failed", {
+      status: typeof e?.status === "number" ? e.status : null,
+      klass: err instanceof Error ? err.constructor.name : "unknown",
+    });
+    return null;
+  }
+}
+

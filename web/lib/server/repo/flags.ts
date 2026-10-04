@@ -4,6 +4,7 @@ import { looksLikePerson, NAMED_PERSON_FLAG } from "@/lib/named-person";
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { extractCard, isExtractionConfigured } from "@/lib/server/extract";
+import { tipTitle } from "@/lib/seed-chat/engine";
 
 /**
  * Estimate 1.9 — the annotation and flagging layer, plus the trigger for 1.8.
@@ -221,6 +222,33 @@ export async function extractAndFlag(
              set focus = ${result.focus}
            where id = ${row.share_id}::uuid and focus is null`,
     );
+  }
+
+  /**
+   * A tip's title (4 Oct). The record was stored under a cut of the tip's own
+   * words (`tipTitle`); the model's title replaces it **only while it is still
+   * exactly that cut**, so an admin's rename is never overwritten and a re-run
+   * of the sweep cannot rename it twice.
+   */
+  const tipText = (row.tip_text as string | null) ?? null;
+  if (row.kind === "tip" && result.title && tipText) {
+    const renamed = (await db.execute(
+      sql`update shares
+             set name = ${result.title}, updated_at = now()
+           where id = ${row.share_id}::uuid
+             and kind = 'tip'
+             and name = ${tipTitle(tipText)}
+       returning id`,
+    )) as unknown as unknown[];
+    /* A new name is read for a person the way a new record's is (11.4). */
+    if (renamed.length > 0) {
+      await flagNamedPersonRecord(db, {
+        shareId: String(row.share_id),
+        name: result.title,
+        marketId: String(row.market_id ?? "pasadena"),
+        personId: (row.person_id as string | null) ?? null,
+      });
+    }
   }
 
   /**

@@ -1024,8 +1024,34 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     ok("CPR / first aid is the caregiver's alone, and says it is unverified",
       !(step("strengths")?.options ?? []).some((x) => x.id === "cpr") &&
         cgOpts.CAREGIVER_STRENGTHS.some((x) => x.id === "cpr" && /not verified/.test(x.label)));
-    ok("a place or tip card keeps its old age labels",
-      (buildScripts("pasadena").place.steps.find((x) => x.id === "best_for")?.options ?? [])[0]?.label === "Babies (0–1)");
+    ok("a tip card keeps its old age labels",
+      (buildScripts("pasadena").tip.steps.find((x) => x.id === "best_for")?.options ?? [])[0]?.label === "Babies (0–1)");
+
+    /* 4 Oct — the client's P0 round. */
+    const built = buildScripts("pasadena");
+    const placeAge = built.place.steps.find((x) => x.id === "child_age");
+    ok("a place asks the child's age instead of who it is best for",
+      !built.place.steps.some((x) => x.id === "best_for") && placeAge?.widget === "ages");
+    ok("and only where the model did not say age does not matter",
+      placeAge?.when?.({ child_age_scope: "not_child_specific" }) === false &&
+        placeAge?.when?.({ type: "playground" }) === true &&
+        placeAge?.when?.({}) === true);
+    ok("and a skip says what it means",
+      placeAge?.skipLabel === "Not child-specific");
+    const actSteps = built.activity.steps;
+    const caveatAt = actSteps.findIndex((x) => x.id === "caveat");
+    ok("an activity always asks what to know first, before the fork",
+      caveatAt >= 0 && !actSteps[caveatAt].when &&
+        caveatAt < actSteps.findIndex((x) => x.id === "more_detail"));
+    ok("and 'nothing to flag' is an answer",
+      actSteps[caveatAt]?.skipLabel === "Nothing to flag" && actSteps[caveatAt]?.optional === true);
+    const engine = await import(`../lib/seed-chat/engine.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/engine.ts");
+    ok("a tip is titled from its own words, never 'Untitled'",
+      engine.tipTitle("  Book the  park shelters early ") === "Book the park shelters early" &&
+        engine.tipTitle("x".repeat(60)) === `${"x".repeat(48)}...`);
+    ok("and a long one is cut on a word, in GSM-7",
+      engine.tipTitle("Most Pasadena day camps open registration in the second half of January") ===
+        "Most Pasadena day camps open registration in...");
     const inviteMod = await import(`../lib/caregiver-invite.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-invite.ts");
     const invite = inviteMod.caregiverInviteMessage({ caregiverFirstName: "Maria", parentFirstName: "Jen", token: "abcdefghij012345" });
     ok("the invitation is the client's text, signed by the parent",

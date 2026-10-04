@@ -26,7 +26,7 @@ import type { Fields, Script, ShareKind } from "./types";
  * here is the structured capture: every answer already arrives as a field.
  */
 
-const PLACE_TYPES: Option[] = [
+export const PLACE_TYPES: Option[] = [
   { id: "park", label: "Park" },
   { id: "playground", label: "Playground" },
   { id: "library", label: "Library" },
@@ -182,11 +182,9 @@ export function buildScripts(
      * can say the more info you provide, the more targeted your responses."* So
      * nothing was deleted for length; eight steps moved behind one tap.
      *
-     * ⚠ **The caveat is the painful one.** This file has called it "often the most
-     * useful sentence there is" and the composer gives it its own line. It is
-     * behind the fork because her provenance row asks for *"why **or** caveat"*
-     * and the why is the one that must always be there. A parent who has a
-     * warning to give is exactly the parent who taps *Add more detail*.
+     * ⚠ **The caveat came back out from behind the fork on 4 Oct** — the
+     * client's P0 round requires it on every activity, with "Nothing to flag"
+     * as an answer — so the short path is seven questions, not six.
      *
      * ⚠ **`follow_up_ok` is a permission rather than detail**, and behind a fork
      * most cards will not carry one. That is safe in the only direction that
@@ -286,6 +284,25 @@ export function buildScripts(
         },
         {
           /**
+           * R7, asked of every activity card (4 Oct, the client: *"What should
+           * another parent know before trying it? A parent can answer 'nothing
+           * to flag', but they must be asked."*). It sat behind the fork, so
+           * none of the first eight real activity cards had one.
+           *
+           * ⚠ This reverses the 10 Sep placement and puts a seventh question
+           * on the short path. The skip is still an answer: an empty value
+           * lands as `caveat_answered` in `cards.ts`.
+           */
+          id: "caveat",
+          prompt: "What should another parent know before trying it?",
+          aside: "The waitlist, the parking, the one instructor to avoid.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          skipLabel: "Nothing to flag",
+        },
+        {
+          /**
            * The fork, and her framing rather than a nudge (10 Sep): *"the more
            * info you provide, the more targeted your responses."* One tap, and
            * **Save it** is the first option — a parent who stops here has given
@@ -311,17 +328,6 @@ export function buildScripts(
             { id: "no", label: "That's it", wide: true },
             { id: "yes", label: "Add more detail", wide: true },
           ],
-        },
-        {
-          /* R7 — "nothing comes to mind" is an answer, and Founding counts it. */
-          id: "caveat",
-          prompt: "Anything a parent should know before signing up — even something small?",
-          aside: "The waitlist, the parking, the one instructor to avoid.",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          skipLabel: "Nothing comes to mind",
-          when: wantsMore,
         },
         {
           id: "how_much",
@@ -767,11 +773,26 @@ export function buildScripts(
           optional: true,
         },
         {
-          id: "best_for",
-          prompt: "Who's it best for?",
-          widget: "chips",
-          options: AGE_BANDS,
+          /**
+           * The child's age at the time, asked only where age matters (4 Oct).
+           * The client requires it "where the experience relates to a child";
+           * the developer: a playground asks it, a café does not. The model
+           * decides right after the kind is tapped, and only a clear "no" skips
+           * it — written into the card as `child_age_scope`, which the server
+           * reads, so "not asked" is never confused with "not answered".
+           *
+           * ⚠ Replaces "Who's it best for?" — two age questions on one card
+           * would be one question asked twice. A skip is "Not child-specific",
+           * which `cards.ts` stores as every band so the place is not dropped
+           * from a question that names an age.
+           */
+          id: "child_age",
+          prompt: "How old was your child when you went?",
+          aside: "Tap every age that applies.",
+          widget: "ages",
           optional: true,
+          skipLabel: "Not child-specific",
+          when: (fields) => fields.child_age_scope !== "not_child_specific",
         },
         {
           id: "what_makes_it_great",
@@ -833,7 +854,7 @@ export function buildScripts(
         { field: "name", label: "Place" },
         { field: "type", label: "Kind" },
         { field: "location", label: "Where" },
-        { field: "best_for", label: "Best for" },
+        { field: "child_age", label: "Child's age" },
         { field: "what_makes_it_great", label: "Why go" },
         { field: "caveat", label: "Caveat" },
         { field: "extra_note", label: "Anything else" },

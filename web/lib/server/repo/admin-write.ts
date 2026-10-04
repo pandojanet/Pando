@@ -10,6 +10,7 @@ import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
 import { sql } from "drizzle-orm";
+import { cleanText } from "@/lib/sanitize";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
@@ -100,7 +101,9 @@ export type ActionOutcome =
         | "answer_not_sent"
         | "unknown_weight"
         /* 29 Sep — a hold the schema will not let go of (see release_hold). */
-        | "hold_locked";
+        | "hold_locked"
+        /* 4 Oct — a rename onto a name another record of this kind holds. */
+        | "share_name_taken";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -315,6 +318,62 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
              where id = ${target}::uuid`,
       );
       await resolveWithdrawalFlag(tx, target, ctx.actor, text(b.reason));
+      return { applied: true, resource: "share", resource_id: target };
+    }
+
+    /**
+     * Rename a record (4 Oct, the client's "A hiking trail").
+     *
+     * ⚠ **The name belongs to the record, not to one parent's contribution**, so
+     * this renames it for everyone who shared it and in every answer Pando
+     * sends. That is why it is its own action with a required reason rather than
+     * one more field on `contribution.edit`.
+     *
+     * ⚠ A name another record of the same kind already holds is refused, not
+     * merged: `cards.ts` reuses a record on an exact name match, so two records
+     * under one name would split the next parent's contribution unpredictably,
+     * and folding them together is a merge — a separate decision.
+     */
+    case "share.rename": {
+      const target = id(b.id);
+      /* The route has already refused a short or empty name; this only keeps
+         the stored value to one line and the length a record name has. */
+      const name = cleanText(b.name, 80);
+      if (!target || !name) return { applied: false, reason: "not_implemented" };
+      const [current] = (await tx.execute(
+        sql`select name, kind from shares where id = ${target}::uuid for update`,
+      )) as unknown as Array<{ name: string; kind: string }>;
+      if (!current) return { applied: false, reason: "not_found" };
+      /* A tip is never matched by name (`cards.ts`), so two tips sharing a
+         title split nothing and need no refusal. */
+      if (current.kind !== "tip") {
+        const clash = (await tx.execute(
+          sql`select 1 from shares other
+                join shares s on s.id = ${target}::uuid
+               where other.id <> s.id
+                 and other.market_id = s.market_id
+                 and other.kind = s.kind
+                 and lower(other.name) = lower(${name})
+               limit 1`,
+        )) as unknown as unknown[];
+        if (clash.length > 0) return { applied: false, reason: "share_name_taken" };
+      }
+      const renamed = (await tx.execute(
+        sql`update shares set name = ${name}, updated_at = now()
+             where id = ${target}::uuid
+             returning id, market_id`,
+      )) as unknown as Array<{ id: string; market_id: string }>;
+      if (renamed.length === 0) return { applied: false, reason: "not_found" };
+      /* The audit row is the request body, which has only the new name; a
+         rename of the wrong record must be reversible from it. */
+      b.previous_name = current.name;
+      /* A new name is a new chance to be a person's name (11.4), so it is read
+         again the way a new record's is. */
+      await flagNamedPersonRecord(tx, {
+        shareId: target,
+        name,
+        marketId: renamed[0].market_id,
+      });
       return { applied: true, resource: "share", resource_id: target };
     }
 

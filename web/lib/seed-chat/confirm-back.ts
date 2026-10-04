@@ -69,6 +69,8 @@ const TEXT_FIELDS = [
  */
 const THIN = 12;
 
+const NOTHING_TO_FLAG = /^(none|no|nope|nothing|n\/a|na|not really|nothing to flag)[.!]?$/i;
+
 /**
  * Words that fill a sentence without saying anything. Only counted *with* the
  * length test, never alone: "we loved it" is short and vague, while "we loved it
@@ -118,6 +120,11 @@ export function confirmBackFor(submission: Submission): ConfirmBack | null {
     if (typeof raw !== "string") continue;
     const value = raw.trim();
     if (value === "") continue;
+
+    /* "None" typed into the caveat is the "Nothing to flag" answer in words
+       (4 Oct): the question is asked of every activity now, so re-asking it
+       of a parent who just declined would be asking twice. */
+    if (field === "caveat" && NOTHING_TO_FLAG.test(value)) continue;
 
     if (value.length < THIN || EMPTY_PRAISE.test(value)) {
       return { field, question: QUESTIONS[field] ?? QUESTIONS.what_makes_it_great };

@@ -143,6 +143,25 @@ export function buildSubmission(draft: ChatDraft): Submission {
   };
 }
 
+/**
+ * A tip's title, made from its own words.
+ *
+ * ⚠ A tip has no name question, and asking a parent to title their own advice
+ * is a chore (4 Oct, the developer). The record stores this until the
+ * extraction pass replaces it with a better one, and only while it is still
+ * exactly this — so an admin's rename is never overwritten.
+ */
+export function tipTitle(tip: string): string {
+  const text = tip.replace(/\s+/g, " ").trim();
+  if (text.length <= 48) return text;
+  /* Cut on a word, and with three dots rather than "…": this name reaches SMS
+     (a freshness ping, a thank-you), and one character outside GSM-7 moves the
+     whole message to UCS-2. */
+  const cut = text.slice(0, 48);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 20 ? cut.slice(0, space) : cut).replace(/[\s,;:.—-]+$/, "")}...`;
+}
+
 /** Headline used for a saved card in lists and on the completion screen. */
 export function submissionTitle(submission: Submission): string {
   const { fields, kind } = submission;
@@ -156,9 +175,7 @@ export function submissionTitle(submission: Submission): string {
   }
   if (kind === "tip") {
     const tip = fields.tip;
-    return typeof tip === "string" && tip.length > 0
-      ? `${tip.slice(0, 48)}${tip.length > 48 ? "…" : ""}`
-      : "Tip";
+    return typeof tip === "string" && tip.trim().length > 0 ? tipTitle(tip) : "Tip";
   }
   const name = fields.name;
   return typeof name === "string" && name.length > 0 ? name : "Untitled";

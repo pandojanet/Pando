@@ -582,11 +582,13 @@ function Pair({ label, value }: { label: string; value: string }) {
 /**
  * What the parent shared, and which of it the Founding decision rests on.
  *
- * ⚠ **"Counts toward Founding" is the rule the queue decides on, and nothing
- * looser**: an approved contribution that is not a test row, a caregiver
- * nomination only when approved (`founding_checklist.approved_contributions`,
- * drizzle/0045). They are listed first, under their own heading, because they are
- * what the Confirm button in the Founding queue is agreeing to.
+ * ⚠ **The badge says "Added to Pando", because that is all it knows** (4 Oct).
+ * It read "Counts toward Founding" and sat on the same card as "Fully answered:
+ * Not yet", which the client reported as a contradiction. Founding today counts
+ * approved cards (`founding_checklist.approved_contributions`, drizzle/0045) — the
+ * header says so — and whether a card is good enough to count is the quality
+ * model's to decide, so no badge here claims it. Approved cards are still listed
+ * first: they are what the Confirm button in the Founding queue rests on.
  *
  * Each activity, place or tip opens in place (`<details>`, so it works before
  * hydration and find-in-page reaches it) onto exactly what the contributions
@@ -604,10 +606,10 @@ function SharedCards({
 }) {
   const shares = contributions.filter((r) => !r.is_test);
   const caregivers = cards.filter((card) => card.kind === "caregiver");
-  const counts = (status: string) => status === "approved";
+  const added = (status: string) => status === "approved";
   const approved =
-    shares.filter((r) => counts(r.status)).length +
-    caregivers.filter((card) => counts(card.status)).length;
+    shares.filter((r) => added(r.status)).length +
+    caregivers.filter((card) => added(card.status)).length;
   const total = shares.length + caregivers.length;
 
   /**
@@ -629,8 +631,8 @@ function SharedCards({
   }, []);
 
   const ordered = [
-    ...shares.filter((r) => counts(r.status)),
-    ...shares.filter((r) => !counts(r.status)),
+    ...shares.filter((r) => added(r.status)),
+    ...shares.filter((r) => !added(r.status)),
   ];
 
   return (
@@ -666,10 +668,10 @@ function SharedCards({
                       <span className="truncate font-medium">{row.share.name}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
-                      {counts(row.status) && (
-                        <Badge tone="green">Counts toward Founding</Badge>
+                      {added(row.status) && (
+                        <Badge tone="green">Added to Pando</Badge>
                       )}
-                      {!counts(row.status) &&
+                      {!added(row.status) &&
                         (REVIEW_STATUS[row.status]?.label ?? sentence(row.status))}
                       <span className="hidden sm:inline">{when(row.created_at)}</span>
                     </span>
@@ -697,8 +699,8 @@ function SharedCards({
                   <span className="truncate font-medium">{card.title}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-2 text-[13px] text-muted">
-                  {counts(card.status) ? (
-                    <Badge tone="green">Counts toward Founding</Badge>
+                  {added(card.status) ? (
+                    <Badge tone="green">Added to Pando</Badge>
                   ) : (
                     (REVIEW_STATUS[card.status]?.label ?? sentence(card.status))
                   )}

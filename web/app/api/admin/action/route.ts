@@ -38,6 +38,8 @@ const ACTIONS = new Set([
   "contribution.reject",
   "contribution.edit",
   "share.answer_ready",
+  /* 4 Oct — a record's own name, for everyone who shared it. */
+  "share.rename",
   /* 14.9 — the two ways out of the freshness queue. */
   "share.retire",
   "share.keep",
@@ -158,6 +160,22 @@ export async function POST(request: Request) {
         );
       }
     }
+  }
+
+  /**
+   * ⚠ `invited` is never an admin's to set (4 Oct). The parent sends the invite
+   * themselves, Pando cannot see that happen, and the step moves on its own when
+   * the caregiver opens her link (`repo/caregiver.ts`). Setting it by hand is how
+   * a nominee came to read "Family sent the invite" beside "Invite: not sent".
+   */
+  if (action === "caregiver.consent" && body?.to === "invited") {
+    return NextResponse.json(
+      {
+        error:
+          "The invite is the parent's to send; it moves on its own when she opens her link",
+      },
+      { status: 422 },
+    );
   }
 
   if (action === "caregiver.consent" && !CONSENT_TARGETS.has(String(body?.to))) {
@@ -355,6 +373,28 @@ export async function POST(request: Request) {
    * find out why the record stopped answering, or why it kept going after a
    * contributor said it should not.
    */
+  if (action === "share.rename") {
+    const name = cleanText(body?.name, 80);
+    if (!name || name.length < 3) {
+      return NextResponse.json(
+        { error: "Give the record a name of at least three characters" },
+        { status: 422 },
+      );
+    }
+    if (/^untitled$/i.test(name)) {
+      return NextResponse.json(
+        { error: "Give it a real name — that is the one this replaces" },
+        { status: 422 },
+      );
+    }
+    if (!cleanText(body?.reason, 300)) {
+      return NextResponse.json(
+        { error: "Say why — the audit row is the only record of this decision" },
+        { status: 422 },
+      );
+    }
+  }
+
   if (action === "share.retire" || action === "share.keep") {
     if (!cleanText(body?.reason, 300)) {
       return NextResponse.json(
@@ -694,6 +734,8 @@ export async function POST(request: Request) {
       /* 29 Sep — `hold_when_hesitant` keeps a hesitant or "no" nomination held. */
       hold_locked:
         "This hold cannot be released. The family said they would not hire her again, or hesitated, and the database keeps a nomination like that held. Reject it instead.",
+      share_name_taken:
+        "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
     };

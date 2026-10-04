@@ -86,4 +86,10 @@ assert.ok(many);
 assert.equal(many.field, "what_makes_it_great");
 ok("three thin fields still produce one question, the most useful one");
 
+for (const word of ["None", "nope", "n/a", "Nothing."]) {
+  assert.equal(confirmBackFor(card("activity", { caveat: word })), null, word);
+}
+assert.ok(confirmBackFor(card("activity", { caveat: "parking" })));
+ok("'none' typed into the caveat is the declined answer, not a thin one (4 Oct)");
+
 console.log(`\n${pass} checks passed.`);

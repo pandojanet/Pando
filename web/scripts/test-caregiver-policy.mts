@@ -477,5 +477,40 @@ console.log("\n=== G5 is the profile's place picker (24 Sep) ===");
   );
 }
 
+{
+  console.log("\n=== 4 Oct: nomination, invite and consent are three states ===");
+  const labels = await import(`../lib/admin/labels.ts?v=${Date.now()}`) as typeof import("../lib/admin/labels.ts");
+  const base = { has_invite_link: true, claim_status: null, consent_status: "mentioned" } as const;
+  ok("a link nobody used reads as with the parent, never as sent",
+    labels.inviteState(base).label === "With the parent — not used yet");
+  ok("her sign-up waiting for an admin says so",
+    labels.inviteState({ ...base, claim_status: "pending", consent_status: "invited" }).label ===
+      "She signed up — confirm it is her");
+  ok("a matched sign-up is accepted",
+    labels.inviteState({ ...base, claim_status: "linked", consent_status: "consented" }).label ===
+      "Accepted — she signed up");
+  ok("her refusal outranks everything else",
+    labels.inviteState({ ...base, claim_status: "linked", consent_status: "declined" }).label === "Declined");
+  ok("a held nomination says held until somebody decides",
+    labels.nominationState("pending_review", true).label === "Held" &&
+      labels.nominationState("pending_review", false).label === "Received");
+  ok("and a rejection outranks a hold the schema keeps",
+    labels.nominationState("rejected", true).label === "Not used");
+  ok("a consent recorded another way never reads as an unused link",
+    labels.inviteState({ ...base, consent_status: "consented" }).label === "No sign-up through her link");
+  ok("consent is only her own yes: invited is still 'not yet'",
+    labels.CAREGIVER_CONSENT.invited.label === "Not yet" &&
+      labels.CAREGIVER_CONSENT.consented.label === "Obtained");
+  ok("no label claims the family sent an invite",
+    !Object.values(labels.CONSENT_STATE).some((v) => /family sent/i.test(v.label)));
+
+  const route = fs.readFileSync(new URL("../app/api/admin/action/route.ts", import.meta.url), "utf8");
+  ok("the action route refuses to mark a caregiver invited",
+    /body\?\.to === "invited"\)\s*\{\s*return NextResponse\.json/.test(route));
+  const panel = fs.readFileSync(new URL("../components/admin/caregivers/CaregiversPanel.tsx", import.meta.url), "utf8");
+  ok("and the admin is never offered it",
+    /mentioned: \["declined"\]/.test(panel));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

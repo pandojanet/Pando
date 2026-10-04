@@ -37,9 +37,11 @@ import {
 } from "@/lib/admin/client";
 import type { CaregiverRow, ConsentStatus, DuplicateCandidate } from "@/lib/admin/types";
 import {
-  CONSENT_STATE,
+  CAREGIVER_CONSENT,
   HOLD_REASON,
   REFERENCE_WILLING,
+  inviteState,
+  nominationState,
   sentence,
 } from "@/lib/admin/labels";
 import {
@@ -78,9 +80,12 @@ import {
  * The visibility ladder. It only moves forward, and only on the caregiver's own word:
  * `invited` is as far as a parent's action reaches, `consented` needs evidence recorded
  * here, and a revoke is always available.
+ *
+ * ⚠ `invited` is not offered from `mentioned` (4 Oct): it is set by the system when
+ * she opens the link the parent sent, never by an admin — the route refuses it too.
  */
 const NEXT_STATES: Record<ConsentStatus, ConsentStatus[]> = {
-  mentioned: ["invited", "declined"],
+  mentioned: ["declined"],
   invited: ["consented", "declined"],
   consented: ["revoked"],
   declined: [],
@@ -288,21 +293,9 @@ export function CaregiversPanel() {
                     }
                     badges={
                       <>
-                        <Badge
-                          tone={
-                            row.consent_status === "consented"
-                              ? "green"
-                              : row.consent_status === "declined"
-                                ? "red"
-                                : "gold"
-                          }
-                        >
-                          {CONSENT_STATE[row.consent_status]?.label ??
-                            sentence(row.consent_status)}
-                        </Badge>
                         {/**
-                          * ⚠ **Only where it says something the badge to its
-                          * left does not** (21 Sep). Visibility needs consent
+                          * ⚠ **Only where it says something the consent state
+                          * does not** (21 Sep). Visibility needs consent
                           * (invariant 1), so for `mentioned`, `invited`,
                           * `declined` and `revoked` *"Not shown to anyone"* is
                           * already implied by the status — two pills for one
@@ -320,13 +313,6 @@ export function CaregiversPanel() {
                           ) : (
                             <Badge tone="muted">Not shown to anyone</Badge>
                           ))}
-                        {row.review_hold && (
-                          <Badge
-                            tone="gold"
-                          >
-                            On hold
-                          </Badge>
-                        )}
                         {row.has_restricted_notes && (
                           <Badge
                             tone="red"
@@ -524,6 +510,41 @@ export function CaregiversPanel() {
                     }
                   >
                     {/**
+                      * ⚠ Three states, one line each (4 Oct, the client's own
+                      * list). A single status used to carry all three, so one
+                      * card read "Family sent the invite" beside "Invite: not
+                      * sent yet". The nomination is what Pando decided about
+                      * the parent's recommendation, the invite is whether she
+                      * used her link, and consent is her own yes — and they
+                      * move independently. They replace the consent and hold
+                      * badges that used to sit in the header.
+                      */}
+                    {(() => {
+                      const nomination = nominationState(
+                        row.nomination_status,
+                        row.review_hold,
+                      );
+                      const invite = inviteState(row);
+                      const consent = CAREGIVER_CONSENT[row.consent_status] ?? {
+                        label: sentence(row.consent_status),
+                        tone: "neutral" as const,
+                      };
+                      return (
+                        <FactGrid title="Where she stands">
+                          <Fact label="Nomination">
+                            <Badge tone={nomination.tone}>{nomination.label}</Badge>
+                          </Fact>
+                          <Fact label="Invite">
+                            <Badge tone={invite.tone}>{invite.label}</Badge>
+                          </Fact>
+                          <Fact label="Her consent">
+                            <Badge tone={consent.tone}>{consent.label}</Badge>
+                          </Fact>
+                        </FactGrid>
+                      );
+                    })()}
+
+                    {/**
                       * Two groups, because this card carries two subjects.
                       * See FactGrid#title: ungrouped, *Pay* landed beside
                       * *Consent evidence*, and those are not the same kind of
@@ -598,11 +619,6 @@ export function CaregiversPanel() {
                           ? (REFERENCE_WILLING[row.contributor_reference_opt_in] ??
                             sentence(row.contributor_reference_opt_in))
                           : null}
-                      </Fact>
-                      <Fact label="Invite">
-                        {row.invite_sent_by_parent
-                          ? "The parent sent it themselves"
-                          : "Not sent yet"}
                       </Fact>
                       {row.review_hold && (
                         <Fact label="Why it is held">

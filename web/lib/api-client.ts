@@ -378,3 +378,33 @@ export async function geocodePlaces(input: {
     places: Array.isArray(body.places) ? body.places : [],
   };
 }
+
+/**
+ * Does this place's suitability depend on the child's age? (4 Oct.)
+ *
+ * `null` on any failure, and the caller asks the age question on `null` — a
+ * slow or missing answer must never be the reason a question is skipped.
+ */
+export async function placeAgeRelevance(
+  name: string,
+  placeType: string,
+): Promise<boolean | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch("/api/seed/age-relevance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, place_type: placeType }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { relevant?: unknown };
+    return typeof data.relevant === "boolean" ? data.relevant : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+

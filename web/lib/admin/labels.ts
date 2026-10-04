@@ -174,9 +174,17 @@ export const CONSENT_STATE: Record<string, { label: string; meaning: string }> =
     label: "Put forward by a family",
     meaning: "She does not know she is here. Nothing is visible to anyone.",
   },
+  /**
+   * ⚠ Not "Family sent the invite" (4 Oct): Pando cannot see a parent send
+   * anything, so the old label claimed a fact nobody records, beside an Invite
+   * line reading "not sent yet". Nor "signed up through her link": an admin
+   * could set this by hand until 4 Oct, and a declined sign-up leaves it here,
+   * and the audit log reads old rows through this label. What actually
+   * happened with her link is the card's Invite line (`inviteState`).
+   */
   invited: {
-    label: "Family sent the invite",
-    meaning: "Waiting for her to say yes herself. Still invisible.",
+    label: "Invited",
+    meaning: "Past being mentioned, not yet her own confirmed yes. Still invisible.",
   },
   consented: {
     label: "She said yes",
@@ -349,6 +357,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   "contribution.needs_detail": "Asked the parent for one more detail",
   "contribution.edit": "Corrected a field on a recommendation",
   "share.answer_ready": "Marked a record good enough to answer with",
+  "share.rename": "Renamed a record",
   "caregiver.consent": "Recorded a caregiver's answer about being listed",
   "caregiver.visibility": "Changed who can see a caregiver",
   "caregiver.merge": "Merged two records for the same caregiver",
@@ -695,3 +704,59 @@ export function messageLabel(template: string | null, category?: string | null):
   if (template) return MESSAGE_LABEL[template] ?? sentence(template);
   return category ? sentence(category) : "Message";
 }
+
+/* ── A caregiver's three states (4 Oct) ─────────────────────────────────────── */
+
+/**
+ * The client: *"Separate these into three explicit states — nomination, invite,
+ * caregiver consent."* One status had been carrying all three, so a card could
+ * read "Family sent the invite" beside "Invite: not sent yet". Each of these
+ * reads one fact and nothing else.
+ */
+type StateLabel = { label: string; tone: "green" | "gold" | "red" | "neutral" };
+
+/** What Pando decided about the parent's recommendation. */
+export function nominationState(status: string, held: boolean): StateLabel {
+  /* A decision outranks the hold: `hold_when_hesitant` keeps a hesitant or
+     "no" nomination held for ever, including after an admin rejects it. */
+  if (status === "rejected") return { label: "Not used", tone: "neutral" };
+  if (status === "approved") return { label: "Approved", tone: "green" };
+  if (held) return { label: "Held", tone: "gold" };
+  if (status === "needs_detail") return { label: "Held for a detail", tone: "gold" };
+  return { label: "Received", tone: "gold" };
+}
+
+/**
+ * Where the invite has got to.
+ *
+ * ⚠ There is no "sent on [date]" and there cannot be: the parent sends the
+ * message themselves and Pando never sees it (invariant 13). What is knowable is
+ * whether there is a link to send and whether she used it.
+ */
+export function inviteState(row: {
+  has_invite_link: boolean;
+  claim_status: "pending" | "linked" | "declined" | null;
+  consent_status: string;
+}): StateLabel {
+  if (row.consent_status === "declined") return { label: "Declined", tone: "red" };
+  if (row.claim_status === "linked") return { label: "Accepted — she signed up", tone: "green" };
+  if (row.claim_status === "pending")
+    return { label: "She signed up — confirm it is her", tone: "gold" };
+  if (row.claim_status === "declined") return { label: "Sign-up was not her", tone: "neutral" };
+  /* Her yes reached Pando another way (recorded by an admin), or she deleted
+     her sign-up: "not used yet" beside "Obtained" or "Withdrawn" would argue
+     with the consent line. */
+  if (row.consent_status === "consented" || row.consent_status === "revoked")
+    return { label: "No sign-up through her link", tone: "neutral" };
+  if (row.has_invite_link) return { label: "With the parent — not used yet", tone: "neutral" };
+  return { label: "No invite link", tone: "neutral" };
+}
+
+/** Whether she herself agreed. Only her own yes moves this. */
+export const CAREGIVER_CONSENT: Record<string, StateLabel> = {
+  mentioned: { label: "Not yet", tone: "neutral" },
+  invited: { label: "Not yet", tone: "gold" },
+  consented: { label: "Obtained", tone: "green" },
+  declined: { label: "Declined", tone: "red" },
+  revoked: { label: "Withdrawn", tone: "red" },
+};

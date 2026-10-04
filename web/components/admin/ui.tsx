@@ -1201,10 +1201,10 @@ export function ProvenanceBadge({ provenance }: { provenance: string }) {
  * The score, and — since it is a number somebody is asked to sort a queue by —
  * the sentence saying what it is a number about.
  *
- * The reason is shown, not hidden in a tooltip: an admin deciding whether to read
- * a card first should not have to hover to find out why it is at the top. It is
- * written by the review pass about the *text*, never a quote of the parent, and
- * it disappears with the score when the text is edited.
+ * Since 4 Oct the band is on the card and the number and the reason sit in its
+ * hint (see the note in the body). The reason is written by the review pass
+ * about the *text*, never a quote of the parent, and it disappears with the
+ * score when the text is edited.
  */
 export function ConfidenceBadge({
   value,
@@ -1233,15 +1233,25 @@ export function ConfidenceBadge({
           ? { label: "Useful", tone: "neutral" as const }
           : { label: "Very useful", tone: "green" as const };
 
+  /**
+   * ⚠ **The word on the card, the number behind the hint** (4 Oct). The client:
+   * the percentages "imply precision we don't need". The score is one model's
+   * guess, so a reader should see a band they can act on and reach the figure
+   * and the model's reason only if they ask. The bands are unchanged, so the
+   * queue's low-confidence filter still agrees with what is on screen.
+   */
   return (
-    <div className="flex flex-col items-start gap-1">
-      <span className="inline-flex shrink-0 items-center gap-1.5">
-        <Badge tone={band.tone}>{band.label}</Badge>
-        <span className="text-[12px] tabular-nums text-muted">{pct}%</span>
-      </span>
-      {note && (
-        <p className="max-w-[16rem] text-[12px] leading-snug text-muted">{note}</p>
-      )}
+    <div>
+      <Badge
+        tone={band.tone}
+        hint={
+          <>
+            Model estimate: {pct}%.{note ? ` ${note}` : ""}
+          </>
+        }
+      >
+        {band.label}
+      </Badge>
     </div>
   );
 }

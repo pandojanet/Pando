@@ -17,7 +17,7 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
  * the same record.
  */
 export function ContributionFacts({ row }: { row: ContributionRow }) {
-  const missing = missingForFounding(row);
+  const missing = missingDetails(row);
   return (
     <>
       <FactGrid>
@@ -82,26 +82,23 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             : "Not offered"}
         </Fact>
         {/**
-            * ⚠⚠ **"Fully answered", not "Counts toward Founding"** (23 Sep). That
-            * was this fact's label, and since 16 Sep it has been false: Founding
-            * counts two contributions an admin **approved**, whatever they answer
-            * (`FOUNDING_MIN_APPROVED`, `lib/rewards.ts`), while this reads the
-            * older six-field checklist. On the contributor page it sat under an
-            * approved card that counts and said "Not yet". What it measures is
-            * whether the record is complete, so that is what it now says.
+            * ⚠⚠ **"Missing", never a verdict about Founding** (4 Oct). This was
+            * "Fully answered: Not yet" beside a badge reading "Counts toward
+            * Founding" on the same card — the client read that as a
+            * contradiction, and it was one. The list names what this kind of
+            * card asks and the parent did not say; whether the card counts is
+            * a separate question.
             */}
-          <Fact label="Fully answered">
+        <Fact label="Missing">
           {!row.firsthand ? (
-            <span className="text-muted">No — heard from a friend</span>
+            <span className="text-muted">Not counted — heard from a friend</span>
           ) : missing.length === 0 ? (
-            <Badge tone="green">Yes</Badge>
+            <Badge tone="green">Nothing</Badge>
           ) : (
-            <span className="text-gold-ink">
-              Not yet — they didn&apos;t say {missing.join(", ")}
-            </span>
+            <span className="text-gold-ink">{sentence(missing.join(", "))}</span>
           )}
         </Fact>
-        <Fact label="How useful their words are">
+        <Fact label="How useful">
           <ConfidenceBadge
             value={row.confidence}
             note={row.confidence_note}
@@ -168,20 +165,37 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
 /**
  * What the record still lacks, in the words a parent was actually asked.
  *
- * These read out on screen as "missing a strength, fit, caveat asked" — which
- * were the *column* names and not questions anybody recognises. Each one now
- * names the question the parent skipped, so an admin can tell at a glance
- * whether it is worth asking for.
+ * ⚠ **Only questions this kind of card asks** (4 Oct). It used to hold every
+ * card to the activity script, so a place — which never asks the child's age
+ * or when they were last there — read as incomplete for ever, and a tip was
+ * "missing" a recommendation it has no question for.
  *
- * ⚠ Not the Founding rule (see "Fully answered" above): the name is kept so
- * the queue's filters, which use it, did not move in this change.
+ * ⚠ It is not the Founding rule. Founding still counts approved cards
+ * (`FOUNDING_MIN_APPROVED`); whether a card is complete enough to count is the
+ * quality model that comes next, and this list is what it will start from.
  */
-export function missingForFounding(row: ContributionRow): string[] {
+export function missingDetails(row: ContributionRow): string[] {
   const missing: string[] = [];
-  if (row.child_age_at_time.length === 0) missing.push("how old their child was");
-  if (!row.last_there) missing.push("when they were last there");
+  if (row.kind === "tip") {
+    if (!row.tip_text) missing.push("the tip itself");
+    return missing;
+  }
+  if (row.kind === "activity") {
+    if (row.child_age_at_time.length === 0) missing.push("how old their child was");
+    if (!row.last_there) missing.push("when they were last there");
+  }
+  /* A place asks the child's age only where age matters; "not child-specific"
+     puts `all_ages` on the record, so only an age-less card under a record
+     without it is missing one. */
+  if (
+    row.kind === "place" &&
+    row.child_age_at_time.length === 0 &&
+    !row.share.age_bands.includes("all_ages")
+  )
+    missing.push("how old their child was");
   if (!row.what_makes_it_great) missing.push("what they liked about it");
-  if (!row.who_for && !row.who_not_for) missing.push("who it suits");
+  if (row.kind === "activity" && !row.who_for && !row.who_not_for)
+    missing.push("who it suits");
   if (!row.caveat_answered) missing.push("whether there's a catch");
   return missing;
 }

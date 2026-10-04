@@ -27,7 +27,7 @@ import type {
   MatchingResult,
   PlaceDemand,
 } from "@/lib/admin/types";
-import { AUDIT_PAGE_SIZE, type CaregiverClaimRow } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE, type CaregiverClaimRow, type CaregiverRow } from "@/lib/admin/types";
 import {
   FOUNDING_MIN_APPROVED,
   FOUNDING_MIN_PROFILE_DEPTH,
@@ -167,6 +167,19 @@ const MEETS_FOUNDING_REQUIREMENTS = sql`(
   and fc.longest_reason >= ${REASON_MIN_LENGTH}
 )`;
 
+/**
+ * Somebody whose Founding standing is still undecided.
+ *
+ * ⚠ **`none` belongs here as well as `pending_founding`** (4 Oct). Only the
+ * completion screen writes `pending_founding`, so a parent who saved a profile
+ * and approved cards but closed the tab before `/done/ask` stayed `none` — and
+ * was invisible to the queue however much they had done. Measured on the live
+ * cohort: the one parent who met every requirement (three approved cards,
+ * profile at 84%) was such a parent. `request_invite` stays out: an admin set
+ * it on purpose.
+ */
+const AWAITING_FOUNDING_DECISION = sql`fc.founding in ('none', 'pending_founding')`;
+
 /* ── 2.1 Overview ────────────────────────────────────────────────────────── */
 
 async function overview(db: Db) {
@@ -185,7 +198,9 @@ async function overview(db: Db) {
       with checklist as (
         select fc.founding,
                fc.approved_contributions,
-               ${MEETS_FOUNDING_REQUIREMENTS} as meets_requirements
+               ${MEETS_FOUNDING_REQUIREMENTS} as meets_requirements,
+               ${AWAITING_FOUNDING_DECISION} and ${MEETS_FOUNDING_REQUIREMENTS}
+                                                 as in_founding_queue
         from founding_checklist fc
       ),
       reward as (
@@ -207,8 +222,7 @@ async function overview(db: Db) {
           count(*) filter (where founding <> 'founding'
                              and not meets_requirements)                   as reward_not_met,
           /* The nav badge, and it must equal what foundingQueue returns. */
-          count(*) filter (where founding = 'pending_founding'
-                             and meets_requirements)                       as founding_pending
+          count(*) filter (where in_founding_queue)                        as founding_pending
         from checklist
       )
       select
@@ -800,7 +814,17 @@ async function caregivers(db: Db) {
     sql`
       select r.*, n.needs_horizon, n.needs_change_type, n.recontact_ok,
              n.pay_band, n.pay_benchmark_consent,
-             n.schedule_pattern, n.hours_per_week, n.benefits
+             n.schedule_pattern, n.hours_per_week, n.benefits,
+             exists (select 1 from caregiver_nominations n2
+                      where n2.caregiver_id = r.id
+                        and n2.invite_token is not null)        as has_invite_link,
+             (select cl.status from caregiver_claims cl
+               where cl.linked_caregiver_id = r.id
+                  or cl.via_nomination_id in (
+                       select n3.id from caregiver_nominations n3
+                        where n3.caregiver_id = r.id)
+               order by cl.created_at desc
+               limit 1)                                         as claim_status
       from admin_caregiver_rows r
       left join caregiver_nominations n
         on n.caregiver_id = r.id and n.status = r.nomination_status
@@ -823,6 +847,8 @@ async function caregivers(db: Db) {
     introducible: r.introducible,
     consent_evidence: r.consent_evidence,
     invite_sent_by_parent: r.invite_sent_by_parent,
+    has_invite_link: r.has_invite_link === true,
+    claim_status: (r.claim_status ?? null) as CaregiverRow["claim_status"],
     hire_again: null,
     review_hold: r.review_hold ?? false,
     hold_reasons: r.hold_reasons ?? [],
@@ -1250,7 +1276,7 @@ async function foundingQueue(db: Db) {
       from founding_checklist fc
       join people p on p.id = fc.person_id
       left join children c on c.person_id = p.id
-      where fc.founding = 'pending_founding'
+      where ${AWAITING_FOUNDING_DECISION}
         /**
          * THE QUEUE IS THE REQUIREMENTS, not everybody who finished.
          * writeCompletion writes pending_founding for every parent who

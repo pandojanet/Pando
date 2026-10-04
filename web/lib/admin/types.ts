@@ -563,6 +563,13 @@ export interface CaregiverRow {
   consent_evidence: { method: string; note: string | null; at: string } | null;
   /** C11 — the parent sent the invite themselves. The only path in. */
   invite_sent_by_parent: boolean;
+  /**
+   * Whether a parent's card carries an invite link for her (a token, 23 Sep).
+   * Pando cannot see the parent send it — only whether there is one to send.
+   */
+  has_invite_link: boolean;
+  /** Her own sign-up, if she made one: `pending` · `linked` · `declined`. */
+  claim_status: "pending" | "linked" | "declined" | null;
   /** C7 — yes | hesitant | no. Anything but yes holds the card. */
   hire_again: string | null;
   /** Held for a human. Derived from the answers, and never cleared by a re-save. */
@@ -944,6 +951,8 @@ export type AdminAction =
    * clearing the flag are one act, or the Flags page keeps insisting on
    * something this page has dealt with.
    */
+  /* 4 Oct — renames the record for everyone who shared it. */
+  | { action: "share.rename"; id: string; name: string; reason: string }
   | { action: "share.retire"; id: string; reason: string }
   | { action: "share.keep"; id: string; reason: string }
   /**

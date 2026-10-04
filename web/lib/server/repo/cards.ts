@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_AGE_BANDS, CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
 import { bandsForAge } from "@/lib/matching";
+import { tipTitle } from "@/lib/seed-chat/engine";
 import {
   caregiverNominations,
   caregivers,
@@ -147,25 +148,50 @@ async function writeShareCard(
   submissionId: string,
 ): Promise<string> {
   const f = input.fields;
-  const name = str(f.name) ?? str(f.place_name) ?? "Untitled";
+  const isTip = input.kind === "tip";
+  /**
+   * ⚠ A tip is titled from its own words (`tipTitle`), never "Untitled" (4 Oct).
+   * Every tip used to be called "Untitled", and the lookup below reuses a record
+   * by name — so every parent's tip, about anything, was filed under one record.
+   */
+  const tipText = str(f.tip ?? f.tip_text);
+  const name =
+    str(f.name) ??
+    str(f.place_name) ??
+    (isTip && tipText ? tipTitle(tipText) : "Untitled");
 
   /**
    * Five parents recommending one class is five contributions and one place, so
    * an exact name match in the same market and kind is reused. Anything less
    * exact is *not* merged here — a near-match becomes a flag for a human below,
    * because silently folding two different places together corrupts both.
+   *
+   * ⚠ **A tip is never matched by name** (4 Oct): it is one parent's advice,
+   * not a place several parents go to, and two tips that open with the same
+   * words are still two tips. A corrected tip keeps the record it already has.
    */
-  const [found] = await tx
-    .select({ id: shares.id })
-    .from(shares)
-    .where(
-      and(
-        eq(shares.marketId, input.market_id),
-        eq(shares.kind, input.kind),
-        sql`lower(${shares.name}) = lower(${name})`,
-      ),
-    )
-    .limit(1);
+  const [ownTip] = isTip
+    ? ((await tx.execute(
+        sql`select share_id as id, tip_text from share_contributions
+             where submission_id = ${submissionId}::uuid
+             limit 1`,
+      )) as unknown as Array<{ id: string; tip_text: string | null }>)
+    : [];
+  const [found] = isTip
+    ? ownTip
+      ? [{ id: ownTip.id }]
+      : []
+    : await tx
+        .select({ id: shares.id })
+        .from(shares)
+        .where(
+          and(
+            eq(shares.marketId, input.market_id),
+            eq(shares.kind, input.kind),
+            sql`lower(${shares.name}) = lower(${name})`,
+          ),
+        )
+        .limit(1);
 
   /* ⚠ The chat's step is `child_age` — a step id **is** the field key — and
      this read only `child_age_at_time`, so the age at the time was in
@@ -183,7 +209,22 @@ async function writeShareCard(
      stored as a single marker alone they would overlap nothing, and retrieval
      would drop the tip from any question that named an age. The marker stays
      beside the bands so the answer is still recoverable. */
-  const spansEveryBand = audience.some((a) => a === "parents" || a === "all_ages");
+  /* A place is "not child-specific" (4 Oct) only on an explicit signal: the
+     parent skipped the age question with that label (an empty `child_age`), or
+     the model judged age does not matter and the chat said so
+     (`child_age_scope`). Then it suits every age and takes every band — the tip
+     rule above. ⚠ Never inferred from absence: a card from an older build that
+     skipped "Who's it best for?" sends neither, and widening it would make a
+     toddler playground answer questions about teenagers, for good, since bands
+     only ever widen. */
+  const notChildSpecific =
+    input.kind === "place" &&
+    ageAtTime.length === 0 &&
+    audience.length === 0 &&
+    (f.child_age_scope === "not_child_specific" ||
+      (Array.isArray(f.child_age) && f.child_age.length === 0));
+  const spansEveryBand =
+    notChildSpecific || audience.some((a) => a === "parents" || a === "all_ages");
   const contributionBands = [
     ...new Set([
       ...strArray(f.age_bands),
@@ -191,6 +232,7 @@ async function writeShareCard(
          band ids, under the step id `best_for`. */
       ...audience,
       ...(spansEveryBand ? CAREGIVER_AGE_BANDS.map((b) => b.id) : []),
+      ...(notChildSpecific ? ["all_ages"] : []),
       ...ageAtTime.flatMap((a) => bandsForAge(a)),
     ]),
   ].filter((b) => /^[a-z_]+$/.test(b));
@@ -198,6 +240,16 @@ async function writeShareCard(
   let shareId: string;
   if (found) {
     shareId = found.id;
+    /* A corrected tip takes the title of its new words — but only while the
+       record still carries the cut of its old ones, so neither an admin's
+       rename nor the extraction pass's title is undone by a correction. */
+    const previous = ownTip?.tip_text ?? null;
+    if (isTip && previous && tipText && previous !== tipText) {
+      await tx.execute(
+        sql`update shares set name = ${name}, updated_at = now()
+             where id = ${shareId}::uuid and name = ${tipTitle(previous)}`,
+      );
+    }
   } else {
     const [created] = await tx
       .insert(shares)
@@ -219,7 +271,9 @@ async function writeShareCard(
       .returning({ id: shares.id });
     shareId = created.id;
 
-    await flagNearDuplicateShare(tx, {
+    /* Not for a tip: its title is a cut of its own words, so "near another
+       record's name" says nothing about it being the same thing. */
+    if (!isTip) await flagNearDuplicateShare(tx, {
       shareId,
       marketId: input.market_id,
       kind: input.kind,
@@ -289,7 +343,7 @@ async function writeShareCard(
     priceUnit: safeBand === null ? null : priceUnit,
     worthIt: str(f.worth_it),
     followUpOk: bool(f.follow_up_ok),
-    tipText: str(f.tip ?? f.tip_text),
+    tipText,
     /**
      * The card's last question (17 Sep), `drizzle/0046`.
      *

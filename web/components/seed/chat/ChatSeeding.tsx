@@ -11,7 +11,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { saveSubmission } from "@/lib/api-client";
+import { placeAgeRelevance, saveSubmission } from "@/lib/api-client";
 import {
   FOUNDING_MIN_APPROVED,
   FOUNDING_MIN_PROFILE_DEPTH,
@@ -237,6 +237,10 @@ export function ChatSeeding() {
    */
   const hasSavedRecommendation = (chat?.submissions ?? []).some((s) => s.persisted);
   const draft = chat?.draft ?? null;
+  /* The latest draft, for an async answer to check it still belongs (4 Oct). */
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const ageCheckFor = useRef<string | null>(null);
   const script = draft ? scripts[draft.kind] : null;
   const step = script && draft ? script.steps[draft.step_index] : null;
   const savedCount = chat?.submissions.length ?? 0;
@@ -368,6 +372,45 @@ export function ChatSeeding() {
     );
   }
 
+  /**
+   * After a place's kind: does the age question apply? (4 Oct.)
+   *
+   * Only a clear "no" from the model skips it, and that is written into the
+   * card as `child_age_scope`, a real field the server reads — never inferred
+   * from an age that is simply absent. Guarded twice: one check per draft at a
+   * time, and the answer is dropped if the parent has moved on meanwhile (the
+   * card was cancelled, or a reload resumed it).
+   */
+  function continueAfterPlaceKind(id: string, fields: Fields, typeIndex: number) {
+    if (ageCheckFor.current === id) return;
+    ageCheckFor.current = id;
+    setTyping(true);
+    void placeAgeRelevance(String(fields.name ?? ""), String(fields.type ?? "")).then(
+      (relevant) => {
+        ageCheckFor.current = null;
+        setTyping(false);
+        const live = draftRef.current;
+        if (!live || live.id !== id || live.step_index !== typeIndex || live.editing) return;
+        const next: Fields =
+          relevant === false ? { ...fields, child_age_scope: "not_child_specific" } : fields;
+        const upcomingStep = nextIndex(scripts.place, next, typeIndex + 1);
+        if (upcomingStep < 0) finishCard("place", id, next);
+        else pushPrompt("place", next, upcomingStep);
+      },
+    );
+  }
+
+  /**
+   * A reload while that check was in flight leaves the card on the kind step
+   * with the kind already answered; carry on from there rather than ask again.
+   */
+  useEffect(() => {
+    if (!draft || draft.kind !== "place" || draft.editing) return;
+    if (scripts.place.steps[draft.step_index]?.id !== "type") return;
+    if (typeof draft.fields.type !== "string" || draft.fields.type === "") return;
+    continueAfterPlaceKind(draft.id, draft.fields, draft.step_index);
+  }, [draft?.id]);
+
   /** Applying a correction: update the saved card in place, then re-save it. */
   function applyFieldEdit(value: FieldValue) {
     if (!draft?.editing || !step || !chat) return;
@@ -378,9 +421,14 @@ export function ChatSeeding() {
 
     // Built outside the state updater: React may run an updater twice, so it has
     // to stay pure.
+    const fields: Fields = { ...draft.fields, [step_id]: value };
+    /* A corrected place kind voids the model's "age does not matter here": the
+       card then carries no age and no scope, which the server stores as neither
+       and the admin sees as a missing age, rather than as not child-specific. */
+    if (existing.kind === "place" && step_id === "type") delete fields.child_age_scope;
     const updated: Submission = {
       ...existing,
-      fields: { ...draft.fields, [step_id]: value },
+      fields,
       persisted: false,
       error: false,
     };
@@ -475,6 +523,17 @@ export function ChatSeeding() {
       draft: { ...draft, fields, step_index: draft.step_index },
       messages: [...c.messages, parentMessage],
     }));
+
+    /**
+     * A place card asks the child's age only where age matters (4 Oct). The
+     * model is asked once, here, as soon as the kind is known; the typing
+     * indicator covers the wait. `null` — slow, failed, unsure — asks, because
+     * a skipped question cannot be recovered and an extra one costs a tap.
+     */
+    if (draft.kind === "place" && step.id === "type") {
+      continueAfterPlaceKind(draft.id, fields, draft.step_index);
+      return;
+    }
 
     const upcoming = nextIndex(script, fields, draft.step_index + 1);
     withTyping(() => {
