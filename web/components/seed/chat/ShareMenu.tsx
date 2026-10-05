@@ -14,14 +14,24 @@ export function ShareMenu({
   onPick,
   onDone,
   savedCount,
+  heading,
 }: {
   scripts: Record<ShareKind, Script>;
   onPick: (kind: ShareKind) => void;
   onDone: () => void;
   savedCount: number;
+  /**
+   * The call to action after the first completed contribution (5 Oct): "Add
+   * one more contribution". Over the same four choices rather than a fifth
+   * button, so the way to do it is the menu the parent already knows.
+   */
+  heading?: string;
 }) {
   return (
     <div>
+      {heading && (
+        <p className="mb-2 text-center text-[14px] font-semibold text-green-deep">{heading}</p>
+      )}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {SHARE_ORDER.map((kind) => (
           <button

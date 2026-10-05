@@ -23,8 +23,10 @@ import { SegmentedFilter } from "@/components/admin/kit";
 import { RecordCard, RecordDrawer, RecordList } from "@/components/admin/Record";
 import {
   ContributionFacts,
-  missingDetails,
+  QualityBadge,
 } from "@/components/admin/ContributionFacts";
+import { ContributionEditor } from "@/components/admin/ContributionEditor";
+import { qualityOf } from "@/lib/admin/quality";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributionRow } from "@/lib/admin/types";
@@ -73,8 +75,8 @@ import { REVIEW_STATUS } from "@/lib/admin/labels";
 const FILTERS = [
   "pending",
   "low",
-  "incomplete",
-  "secondhand",
+  "follow_up",
+  "too_thin",
   "golden",
   "all",
 ] as const;
@@ -88,7 +90,6 @@ export default function ContributionsPage() {
      page never read search params, so the parameter did nothing at all. */
   const [filter, setFilter] = useUrlFilter(FILTERS, "pending");
   const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Partial<ContributionRow>>({});
   const [question, setQuestion] = useState("");
   /* The record's own name, with the reason the audit row needs (4 Oct). */
   const [rename, setRename] = useState({ name: "", reason: "" });
@@ -105,9 +106,11 @@ export default function ContributionsPage() {
     const list = real;
     if (filter === "low")
       return list.filter((r) => r.confidence !== null && r.confidence < 0.6);
-    if (filter === "secondhand") return list.filter((r) => !r.firsthand);
-    if (filter === "incomplete")
-      return list.filter((r) => missingDetails(r).length > 0 && r.firsthand);
+    /* The one status (5 Oct), not several fields read side by side. */
+    if (filter === "follow_up")
+      return list.filter((r) => qualityOf(r).status === "needs_follow_up");
+    if (filter === "too_thin")
+      return list.filter((r) => qualityOf(r).status === "too_thin");
     /**
      * "Needs one more detail" is a held state, not a dead end — the screen's own
      * promise is that the card "stays in the queue until they answer" (there is
@@ -148,10 +151,8 @@ export default function ContributionsPage() {
         (r) => r.status === "pending_review" || r.status === "needs_detail",
       ).length,
       low: real.filter((r) => r.confidence !== null && r.confidence < 0.6).length,
-      incomplete: real.filter(
-        (r) => r.firsthand && missingDetails(r).length > 0,
-      ).length,
-      secondhand: real.filter((r) => !r.firsthand).length,
+      follow_up: real.filter((r) => qualityOf(r).status === "needs_follow_up").length,
+      too_thin: real.filter((r) => qualityOf(r).status === "too_thin").length,
       golden: real.filter((r) => r.share.answer_ready).length,
       all: real.length,
     }),
@@ -202,8 +203,8 @@ export default function ContributionsPage() {
           options={[
             { id: "pending", label: "To review", count: counts.pending },
             { id: "low", label: "Needs a read", count: counts.low },
-            { id: "incomplete", label: "Missing a detail", count: counts.incomplete },
-            { id: "secondhand", label: "Heard from a friend", count: counts.secondhand },
+            { id: "follow_up", label: "Needs follow-up", count: counts.follow_up },
+            { id: "too_thin", label: "Too thin", count: counts.too_thin },
             { id: "golden", label: "Ready to answer with", count: counts.golden },
             { id: "all", label: "Everything", count: counts.all },
           ]}
@@ -225,7 +226,6 @@ export default function ContributionsPage() {
           <RecordList>
             {shown.map((row) => {
               const open = editing === row.id;
-              const missing = missingDetails(row);
               return (
                 <RecordCard
                   key={row.id}
@@ -251,6 +251,10 @@ export default function ContributionsPage() {
                       <Badge tone={REVIEW_STATUS[row.status]?.tone ?? "neutral"}>
                         {REVIEW_STATUS[row.status]?.label ?? row.status}
                       </Badge>
+                      {/* The one status (5 Oct). Whether it is in Pando is the
+                          badge above; whether it counts toward Founding is a
+                          fact on the card, because the two are different. */}
+                      <QualityBadge row={row} />
                       {/* R2 — the label reads the source, never who typed it. */}
                       {row.firsthand ? (
                         <Badge tone="green">
@@ -303,7 +307,6 @@ export default function ContributionsPage() {
                         subject={row.share.name}
                         onClick={() => {
                           setEditing(open ? null : row.id);
-                          setDraft(open ? {} : { ...row });
                           /* Otherwise a question typed for one row and left
                              unsent reappears in the next row's box — and a row
                              already asked something should show what, not a
@@ -369,73 +372,20 @@ export default function ContributionsPage() {
 
                   {open && (
                     <>
-                      <RecordDrawer title="Tidy up what they wrote">
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="What makes it good">
-                            <textarea
-                              className={inputClass}
-                              rows={2}
-                              value={draft.what_makes_it_great ?? ""}
-                              onChange={(e) =>
-                                setDraft({
-                                  ...draft,
-                                  what_makes_it_great: e.target.value,
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Know first (caveat)">
-                            <textarea
-                              className={inputClass}
-                              rows={2}
-                              value={draft.caveat ?? ""}
-                              onChange={(e) =>
-                                setDraft({ ...draft, caveat: e.target.value })
-                              }
-                            />
-                          </Field>
-                          <Field label="Perfect for">
-                            <input
-                              className={inputClass}
-                              value={draft.who_for ?? ""}
-                              onChange={(e) =>
-                                setDraft({ ...draft, who_for: e.target.value })
-                              }
-                            />
-                          </Field>
-                          <Field label="Might not suit">
-                            <input
-                              className={inputClass}
-                              value={draft.who_not_for ?? ""}
-                              onChange={(e) =>
-                                setDraft({ ...draft, who_not_for: e.target.value })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <div className="mt-3">
-                          <Button
-                            tone="primary"
-                            disabled={busy === row.id}
-                            onClick={() =>
-                              void run(row.id, "Saved", async () =>
-                                adminAction({
-                                  action: "contribution.edit",
-                                  id: row.id,
-                                  patch: {
-                                    what_makes_it_great:
-                                      draft.what_makes_it_great ?? null,
-                                    caveat: draft.caveat ?? null,
-                                    who_for: draft.who_for ?? null,
-                                    who_not_for: draft.who_not_for ?? null,
-                                  },
-                                }),
-                              )
-                            }
-                          >
-                            Save changes
-                          </Button>
-                        </div>
+                      <RecordDrawer title="Edit what they said">
+                        <ContributionEditor
+                          row={row}
+                          busy={busy === row.id}
+                          onSave={(patch) =>
+                            void run(row.id, "Saved", async () =>
+                              adminAction({
+                                action: "contribution.edit",
+                                id: row.id,
+                                patch,
+                              }),
+                            )
+                          }
+                        />
                       </RecordDrawer>
 
                       {/**

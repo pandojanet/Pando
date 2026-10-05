@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_AGE_BANDS, CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
 import { bandsForAge } from "@/lib/matching";
+import { isNothingToFlag } from "@/lib/contribution-quality";
 import { tipTitle } from "@/lib/seed-chat/engine";
 import {
   caregiverNominations,
@@ -77,6 +78,18 @@ export interface CardWriteResult {
 
 const str = (v: unknown): string | null =>
   typeof v === "string" && v.trim() !== "" ? v.trim() : null;
+
+/**
+ * What a parent typed into "what should another parent know" — or null when it
+ * was "nothing to flag" (5 Oct). The question has no skip button any more, so
+ * that answer is typed, and it is an answer, not a caveat: stored as text it
+ * would reach another parent as "Heads up: nothing to flag". `caveat_answered`
+ * still records that the question was asked and answered.
+ */
+const caveatText = (v: unknown): string | null => {
+  const text = str(v);
+  return text !== null && !isNothingToFlag(text) ? text : null;
+};
 
 const bool = (v: unknown): boolean => v === true || v === "yes" || v === "true";
 
@@ -209,22 +222,7 @@ async function writeShareCard(
      stored as a single marker alone they would overlap nothing, and retrieval
      would drop the tip from any question that named an age. The marker stays
      beside the bands so the answer is still recoverable. */
-  /* A place is "not child-specific" (4 Oct) only on an explicit signal: the
-     parent skipped the age question with that label (an empty `child_age`), or
-     the model judged age does not matter and the chat said so
-     (`child_age_scope`). Then it suits every age and takes every band — the tip
-     rule above. ⚠ Never inferred from absence: a card from an older build that
-     skipped "Who's it best for?" sends neither, and widening it would make a
-     toddler playground answer questions about teenagers, for good, since bands
-     only ever widen. */
-  const notChildSpecific =
-    input.kind === "place" &&
-    ageAtTime.length === 0 &&
-    audience.length === 0 &&
-    (f.child_age_scope === "not_child_specific" ||
-      (Array.isArray(f.child_age) && f.child_age.length === 0));
-  const spansEveryBand =
-    notChildSpecific || audience.some((a) => a === "parents" || a === "all_ages");
+  const spansEveryBand = audience.some((a) => a === "parents" || a === "all_ages");
   const contributionBands = [
     ...new Set([
       ...strArray(f.age_bands),
@@ -232,7 +230,6 @@ async function writeShareCard(
          band ids, under the step id `best_for`. */
       ...audience,
       ...(spansEveryBand ? CAREGIVER_AGE_BANDS.map((b) => b.id) : []),
-      ...(notChildSpecific ? ["all_ages"] : []),
       ...ageAtTime.flatMap((a) => bandsForAge(a)),
     ]),
   ].filter((b) => /^[a-z_]+$/.test(b));
@@ -334,7 +331,7 @@ async function writeShareCard(
     howMuch: str(f.how_much),
     recommendation: str(f.recommendation),
     whatMakesItGreat: str(f.what_makes_it_great ?? f.what_makes_special),
-    caveat: str(f.caveat),
+    caveat: caveatText(f.caveat),
     /** R7 — "nothing comes to mind" is an answer, and Founding counts it. */
     caveatAnswered: f.caveat !== undefined,
     whoFor: str(f.who_for),
@@ -530,7 +527,7 @@ async function writeCaregiver(
     strengths: strArray(f.strengths),
     inTheirWords: str(f.in_their_words),
     goodFitFor: strArray(f.good_fit_for),
-    caveat: str(f.know_first ?? f.caveat),
+    caveat: caveatText(f.know_first ?? f.caveat),
     hireAgain: validHireAgain,
     needsHorizon: str(f.needs_horizon),
     needsChangeType: str(f.needs_change_type),

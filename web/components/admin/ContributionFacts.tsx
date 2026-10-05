@@ -3,7 +3,9 @@
 import { Badge, ConfidenceBadge, optionLabel, slugLabel, when } from "@/components/admin/ui";
 import { Fact, FactGrid, Quote, RecordNotes } from "@/components/admin/Record";
 import type { ContributionRow } from "@/lib/admin/types";
-import { FRESHNESS, RECOMMENDATION, sentence } from "@/lib/admin/labels";
+import { FRESHNESS, QUALITY_STATUS, RECOMMENDATION, sentence } from "@/lib/admin/labels";
+import { countsTowardFounding, qualityOf } from "@/lib/admin/quality";
+import { missingLine } from "@/lib/contribution-quality";
 import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
 
 /**
@@ -17,7 +19,7 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
  * the same record.
  */
 export function ContributionFacts({ row }: { row: ContributionRow }) {
-  const missing = missingDetails(row);
+  const quality = qualityOf(row);
   return (
     <>
       <FactGrid>
@@ -82,23 +84,29 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             : "Not offered"}
         </Fact>
         {/**
-            * ⚠⚠ **"Missing", never a verdict about Founding** (4 Oct). This was
-            * "Fully answered: Not yet" beside a badge reading "Counts toward
-            * Founding" on the same card — the client read that as a
-            * contradiction, and it was one. The list names what this kind of
-            * card asks and the parent did not say; whether the card counts is
-            * a separate question.
+            * ⚠⚠ **One status and the exact gap, and "added to Pando" is a
+            * different fact from "counts toward Founding"** (5 Oct). The queue
+            * used to show a verdict badge beside a "Fully answered" line that
+            * measured something else, and the client read that as a
+            * contradiction. The status is `lib/contribution-quality.ts`; whether
+            * the card is in Pando is its review status, in the header.
             */}
-        <Fact label="Missing">
-          {!row.firsthand ? (
-            <span className="text-muted">Not counted — heard from a friend</span>
-          ) : missing.length === 0 ? (
-            <Badge tone="green">Nothing</Badge>
-          ) : (
-            <span className="text-gold-ink">{sentence(missing.join(", "))}</span>
+        <Fact label="Quality">
+          <QualityBadge row={row} />
+          {quality.missing.length > 0 && (
+            <span className="mt-1 block text-gold-ink">{missingLine(quality)}</span>
           )}
         </Fact>
-        <Fact label="How useful">
+        <Fact label="Counts toward Founding">
+          {countsTowardFounding(row) ? (
+            <Badge tone="green">Yes</Badge>
+          ) : row.status !== "approved" ? (
+            <span className="text-muted">Not until it is added to Pando</span>
+          ) : quality.status === "qualifies" ? null : (
+            <span className="text-muted">Not yet — see what is missing</span>
+          )}
+        </Fact>
+        <Fact label="How detailed">
           <ConfidenceBadge
             value={row.confidence}
             note={row.confidence_note}
@@ -162,40 +170,9 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
   );
 }
 
-/**
- * What the record still lacks, in the words a parent was actually asked.
- *
- * ⚠ **Only questions this kind of card asks** (4 Oct). It used to hold every
- * card to the activity script, so a place — which never asks the child's age
- * or when they were last there — read as incomplete for ever, and a tip was
- * "missing" a recommendation it has no question for.
- *
- * ⚠ It is not the Founding rule. Founding still counts approved cards
- * (`FOUNDING_MIN_APPROVED`); whether a card is complete enough to count is the
- * quality model that comes next, and this list is what it will start from.
- */
-export function missingDetails(row: ContributionRow): string[] {
-  const missing: string[] = [];
-  if (row.kind === "tip") {
-    if (!row.tip_text) missing.push("the tip itself");
-    return missing;
-  }
-  if (row.kind === "activity") {
-    if (row.child_age_at_time.length === 0) missing.push("how old their child was");
-    if (!row.last_there) missing.push("when they were last there");
-  }
-  /* A place asks the child's age only where age matters; "not child-specific"
-     puts `all_ages` on the record, so only an age-less card under a record
-     without it is missing one. */
-  if (
-    row.kind === "place" &&
-    row.child_age_at_time.length === 0 &&
-    !row.share.age_bands.includes("all_ages")
-  )
-    missing.push("how old their child was");
-  if (!row.what_makes_it_great) missing.push("what they liked about it");
-  if (row.kind === "activity" && !row.who_for && !row.who_not_for)
-    missing.push("who it suits");
-  if (!row.caveat_answered) missing.push("whether there's a catch");
-  return missing;
+/** The card's one status — what an admin reads first. */
+export function QualityBadge({ row }: { row: ContributionRow }) {
+  const status = qualityOf(row).status;
+  const meta = QUALITY_STATUS[status];
+  return <Badge tone={meta.tone}>{meta.label}</Badge>;
 }

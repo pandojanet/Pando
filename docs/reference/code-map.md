@@ -175,6 +175,10 @@
                        for `<button>` and `<a>` alike, which is the whole point.
 `web/components/ui/Panel.tsx` — the block on a flow screen. `tone` is what it
                        means, `raised` is the one card the screen is about.
+`web/lib/contribution-quality.ts` — is a contribution complete? Qualifies / needs follow-up / too thin, with the exact gap. Pure, no imports; read by the admin (`lib/admin/quality.ts`), the chat and `test:quality`.
+`web/lib/admin/contribution-edit.ts` — what an admin may change on a contribution and how a patch is cleaned (route and write share it).
+`web/lib/server/repo/founding-count.ts` — how many complete contributions each parent has, handed to the Founding SQL as arrays (one TypeScript rule, no migration).
+`web/lib/rewards.ts` — the Founding rules and the chat's progress copy (`foundingProgressLine`).
 `web/components/ui/Screen.tsx` — the app shell (phone + desktop).
 `web/components/site/Shell.tsx` — the public-site shell.
 

@@ -7,6 +7,7 @@ import { TIER_IDS } from "@/lib/blast-tiers";
 import { withDb } from "@/lib/server/db";
 import { invalidateOptions } from "@/lib/server/market-cache";
 import { invalidateInvites } from "@/lib/server/invite-cache";
+import { cleanContributionPatch } from "@/lib/admin/contribution-edit";
 import { applyAction } from "@/lib/server/repo/admin-write";
 
 /**
@@ -373,6 +374,19 @@ export async function POST(request: Request) {
    * find out why the record stopped answering, or why it kept going after a
    * contributor said it should not.
    */
+  /**
+   * Every field of a contribution is editable (5 Oct), so the patch is checked
+   * here: a value the question never offered is refused in words rather than
+   * stored, and the write sees only what was cleaned.
+   */
+  if (action === "contribution.edit") {
+    const cleaned = cleanContributionPatch(body?.patch);
+    if (!cleaned.ok) {
+      return NextResponse.json({ error: cleaned.error }, { status: 422 });
+    }
+    (body as Record<string, unknown>).patch = cleaned.patch;
+  }
+
   if (action === "share.rename") {
     const name = cleanText(body?.name, 80);
     if (!name || name.length < 3) {

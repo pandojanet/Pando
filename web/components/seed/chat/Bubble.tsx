@@ -126,10 +126,11 @@ export function CardRecap({
   /** The parent's first name, so the control can show what turning it on means. */
   firstName?: string | null;
 }) {
-  const rows = recapRows(script, submission.fields);
+  /* The editable recap lists every question, answered or not (5 Oct). */
+  const rows = recapRows(script, submission.fields, { all: Boolean(onEditField) });
   /* Every field name in this card belongs to a script we no longer have — it was
      filled in before an update. An empty card reads as broken, so say what it is. */
-  const fromAnOlderVersion = rows.length === 0;
+  const fromAnOlderVersion = rows.every((row) => row.empty);
 
   /* The chat recap is the same box as any raised flow panel; what makes it a
      recap is the green-wash header and the divided rows inside it. */
@@ -148,16 +149,20 @@ export function CardRecap({
             <dt className="w-[6.5rem] shrink-0 pt-[2px] text-[12.5px] font-semibold uppercase tracking-[0.06em] text-muted">
               {row.label}
             </dt>
-            <dd className="min-w-0 flex-1 text-[15px] leading-snug">{row.value}</dd>
+            <dd
+              className={`min-w-0 flex-1 text-[15px] leading-snug ${row.empty ? "text-muted" : ""}`}
+            >
+              {row.empty ? "Not added" : row.value}
+            </dd>
             {onEditField && (
               <TextAction
                 tone="quiet"
                 underline={false}
                 onClick={() => onEditField(row.field)}
-                aria-label={`Edit ${row.label.toLowerCase()}`}
+                aria-label={`${row.empty ? "Add" : "Edit"} ${row.label.toLowerCase()}`}
                 className="-my-1 -mr-1 shrink-0 px-2"
               >
-                Edit
+                {row.empty ? "Add" : "Edit"}
               </TextAction>
             )}
           </div>

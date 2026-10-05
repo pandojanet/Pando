@@ -49,7 +49,6 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/registered` | Does this number already have a profile? A boolean and nothing else. ⚠ The one route that answers about somebody who has proved nothing — read its header and the 8 Sep Decisions row before touching it. |
-| `POST /api/seed/age-relevance` | `{ name, place_type }` → `{ relevant: true \| false \| null }`: should the place card ask the child's age. `null` (no model key, timeout, unsure) means ask. Stores nothing; own `age_relevance` rate bucket. |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
 | `/caregiver`             | 2C — the caregiver's own flow (G1–G10). Writes a **claim**, never a listing. |

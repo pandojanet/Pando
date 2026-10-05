@@ -1027,24 +1027,43 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     ok("a tip card keeps its old age labels",
       (buildScripts("pasadena").tip.steps.find((x) => x.id === "best_for")?.options ?? [])[0]?.label === "Babies (0–1)");
 
-    /* 4 Oct — the client's P0 round. */
+    /* 4–5 Oct — the client's P0 round. */
     const built = buildScripts("pasadena");
-    const placeAge = built.place.steps.find((x) => x.id === "child_age");
-    ok("a place asks the child's age instead of who it is best for",
-      !built.place.steps.some((x) => x.id === "best_for") && placeAge?.widget === "ages");
-    ok("and only where the model did not say age does not matter",
-      placeAge?.when?.({ child_age_scope: "not_child_specific" }) === false &&
-        placeAge?.when?.({ type: "playground" }) === true &&
-        placeAge?.when?.({}) === true);
-    ok("and a skip says what it means",
-      placeAge?.skipLabel === "Not child-specific");
+    ok("a place asks who it is best for again — the child-age model call is gone",
+      built.place.steps.some((x) => x.id === "best_for" && x.widget === "chips" && x.optional === true) &&
+        !built.place.steps.some((x) => x.id === "child_age"));
+    /* The developer, 5 Oct: what must be answered comes first and cannot be
+       skipped; what may be skipped follows. Asserted on the built scripts, per
+       kind, because *first* is a property of the array. */
+    const requiredFirst = (kind: "activity" | "place" | "tip" | "caregiver") => {
+      const steps = built[kind].steps;
+      const firstOptional = steps.findIndex((x) => x.optional === true);
+      /* The fork is a choice about the rest of the card, not a question about the recommendation. */
+      return steps.slice(firstOptional).filter((x) => !x.optional && !x.when && x.id !== "more_detail").length === 0;
+    };
+    for (const kind of ["activity", "place", "tip", "caregiver"] as const)
+      ok(`${kind}: every always-asked question without a skip comes before the first that has one`, requiredFirst(kind));
     const actSteps = built.activity.steps;
+    const byId = (steps: typeof actSteps, id: string) => steps.find((x) => x.id === id);
+    ok("an activity's age, 'what makes it good' and what to know first cannot be skipped",
+      ["child_age", "what_makes_it_great", "caveat"].every(
+        (id) => byId(actSteps, id) && !byId(actSteps, id)?.optional && !byId(actSteps, id)?.skipLabel));
     const caveatAt = actSteps.findIndex((x) => x.id === "caveat");
-    ok("an activity always asks what to know first, before the fork",
+    ok("and the caveat is asked of everyone, before the fork",
       caveatAt >= 0 && !actSteps[caveatAt].when &&
         caveatAt < actSteps.findIndex((x) => x.id === "more_detail"));
-    ok("and 'nothing to flag' is an answer",
-      actSteps[caveatAt]?.skipLabel === "Nothing to flag" && actSteps[caveatAt]?.optional === true);
+    ok("a place's why and what to know are required too",
+      ["what_makes_it_great", "caveat"].every((id) => !byId(built.place.steps, id)?.optional));
+    ok("a tip asks what to do and when it is useful, both required",
+      ["tip", "what_makes_it_great"].every((id) => byId(built.tip.steps, id) && !byId(built.tip.steps, id)?.optional) &&
+        /do or know/i.test(byId(built.tip.steps, "tip")?.prompt ?? "") &&
+        /useful|help/i.test(byId(built.tip.steps, "what_makes_it_great")?.prompt ?? ""));
+    ok("no new category was added for it",
+      Object.keys(built).sort().join(",") === "activity,caregiver,place,tip");
+    ok("a caregiver's public note is required unless she would not be recommended",
+      !byId(built.caregiver.steps, "know_first")?.optional &&
+        byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "no" }) === false &&
+        byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "yes" }) === true);
     const engine = await import(`../lib/seed-chat/engine.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/engine.ts");
     ok("a tip is titled from its own words, never 'Untitled'",
       engine.tipTitle("  Book the  park shelters early ") === "Book the park shelters early" &&
@@ -1052,6 +1071,21 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     ok("and a long one is cut on a word, in GSM-7",
       engine.tipTitle("Most Pasadena day camps open registration in the second half of January") ===
         "Most Pasadena day camps open registration in...");
+
+    /* 5 Oct — every question on a card can be edited, answered or not. */
+    const actRecap = engine.recapRows(built.activity, { name: "Little Maestros", child_age: [3] }, { all: true });
+    ok("the editable recap lists a skipped question, so it can be added afterwards",
+      actRecap.some((r) => r.field === "caveat" && r.empty === true));
+    ok("and the questions behind the 'more detail' fork, for the parent who tapped That's it",
+      actRecap.some((r) => r.field === "who_for" && r.empty === true));
+    ok("but not one whose own condition is false: a price unit with no price",
+      !actRecap.some((r) => r.field === "price_unit"));
+    ok("an answered row keeps its value and is not marked empty",
+      actRecap.find((r) => r.field === "name")?.empty !== true && actRecap.find((r) => r.field === "name")?.value === "Little Maestros");
+    ok("the plain recap, as before, lists only what was answered",
+      engine.recapRows(built.activity, { name: "Little Maestros" }).length === 1);
+    ok("a caregiver's recap never offers the 18+ or firsthand gate to be re-asked",
+      !engine.recapRows(built.caregiver, {}, { all: true }).some((r) => r.field === "worked_for_you" || r.field === "age_gate"));
     const inviteMod = await import(`../lib/caregiver-invite.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-invite.ts");
     const invite = inviteMod.caregiverInviteMessage({ caregiverFirstName: "Maria", parentFirstName: "Jen", token: "abcdefghij012345" });
     ok("the invitation is the client's text, signed by the parent",

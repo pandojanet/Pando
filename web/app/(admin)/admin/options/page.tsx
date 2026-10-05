@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   Button,
   Card,
@@ -16,13 +16,14 @@ import {
   slugLabel,
   TableWrap,
   Td,
+  TextLink,
   Th,
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { PendingOptionRow } from "@/lib/admin/types";
-import { CATEGORY_LABEL } from "@/lib/admin/labels";
+import { CATEGORY_LABEL, REVIEW_STATUS, sentence } from "@/lib/admin/labels";
 
 /**
  * Estimate 2.6 — the "other" queue.
@@ -40,6 +41,8 @@ export default function PendingOptionsPage() {
 
   /* The name being decided on, not the whole list. */
   const [busy, setBusy] = useState<string | null>(null);
+  /* The name whose parents and recommendations are open (5 Oct). */
+  const [openId, setOpenId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const pending = (rows ?? []).filter((r) => r.status === "pending");
@@ -96,6 +99,7 @@ export default function PendingOptionsPage() {
                 <Th className="text-right">
                   Parents who typed it
                 </Th>
+                <Th>Recommendations</Th>
                 <Th>First from</Th>
                 <Th>When</Th>
                 <Th />
@@ -103,7 +107,8 @@ export default function PendingOptionsPage() {
             </thead>
             <tbody>
               {shown.map((row) => (
-                <tr key={row.id}>
+                <Fragment key={row.id}>
+                <tr>
                   <Td>
                     {/* The badge here said "asked for 3×" and the column three
                         cells along said "3" — the same number twice on one row.
@@ -113,11 +118,26 @@ export default function PendingOptionsPage() {
                   </Td>
                   <Td>{CATEGORY_LABEL[row.category] ?? slugLabel(row.category)}</Td>
                   <Td className="text-right">
-                    {row.occurrences > 1 ? (
-                      <span className="font-semibold text-green-deep">
-                        {row.occurrences}</span>
+                    {/* The number opens onto who it is (5 Oct). It is counted
+                        from the profiles, falling back to the stored counter
+                        for a value no saved profile carries any more. */}
+                    <button
+                      type="button"
+                      aria-expanded={openId === row.id}
+                      aria-label={`Show who typed ${row.submitted_value}`}
+                      onClick={() => setOpenId(openId === row.id ? null : row.id)}
+                      className="font-semibold text-green-deep underline underline-offset-2 hover:text-green"
+                    >
+                      {row.parent_count > 0 ? row.parent_count : row.occurrences}
+                    </button>
+                  </Td>
+                  <Td className="text-[13px]">
+                    {row.recommendations.length === 0 ? (
+                      <span className="text-muted">None — only mentioned</span>
                     ) : (
-                      row.occurrences
+                      row.recommendations
+                        .map((rec) => `${rec.contributions} on ${rec.name}`)
+                        .join(", ")
                     )}
                   </Td>
                   <Td className="text-[13px]">{row.submitted_by?.name ?? "—"}</Td>
@@ -158,6 +178,71 @@ export default function PendingOptionsPage() {
                     </div>
                   </Td>
                 </tr>
+                {openId === row.id && (
+                  <tr>
+                    <td colSpan={7} className="bg-paper px-4 py-3">
+                      <div className="grid gap-4 text-[13px] sm:grid-cols-2">
+                        <div>
+                          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                            Who typed it
+                          </p>
+                          {row.parents.length === 0 ? (
+                            <p className="text-muted">
+                              No saved profile carries it any more.
+                            </p>
+                          ) : (
+                            <ul className="space-y-1">
+                              {row.parents.map((pp) => (
+                                <li key={pp.id}>
+                                  <TextLink href={`/admin/contributors/${pp.id}`}>
+                                    {pp.name ?? "Unnamed"}
+                                  </TextLink>
+                                  <span className="text-muted">
+                                    {pp.neighborhood ? ` · ${sentence(pp.neighborhood)}` : ""}
+                                    {pp.at ? ` · ${when(pp.at)}` : ""}
+                                  </span>
+                                </li>
+                              ))}
+                              {row.parent_count > row.parents.length && (
+                                <li className="text-muted">
+                                  and {row.parent_count - row.parents.length} more
+                                </li>
+                              )}
+                            </ul>
+                          )}
+                        </div>
+                        <div>
+                          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                            Recommendations under this name
+                          </p>
+                          {row.recommendations.length === 0 ? (
+                            <p className="text-muted">
+                              Nobody has recommended it yet — a parent only mentioned it,
+                              which is not a contribution.
+                            </p>
+                          ) : (
+                            <ul className="space-y-1">
+                              {row.recommendations.map((rec) => (
+                                <li key={rec.id}>
+                                  <span className="font-medium">{rec.name}</span>
+                                  <span className="text-muted">
+                                    {` · ${slugLabel(rec.kind)} · ${REVIEW_STATUS[rec.status]?.label ?? sentence(rec.status)} · ${rec.contributions} contribution${rec.contributions === 1 ? "" : "s"}, ${rec.approved} added`}
+                                  </span>
+                                </li>
+                              ))}
+                              <li>
+                                <TextLink href="/admin/activities">
+                                  Read them in the contributions queue
+                                </TextLink>
+                              </li>
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </TableWrap>

@@ -115,19 +115,46 @@ export function formatAnswer(step: Step, value: FieldValue): string {
   return (value as string[]).map((id) => labelFor(step, id)).join(" · ");
 }
 
+export interface RecapRow {
+  field: string;
+  label: string;
+  value: string;
+  /** Not answered. Only present in an editable recap, where it reads "Add". */
+  empty?: boolean;
+}
+
 /**
  * Label/value pairs for the structured recap card. The field id travels with each
  * row so a recap row can be tapped to correct that one answer.
+ *
+ * ⚠ **`all` is the editable recap, and it lists every question the card asks —
+ * not only the ones that were answered** (5 Oct, the developer: *"all fields
+ * editable, not only some or the unfilled ones"*). It used to skip an empty
+ * value, so a question a parent had skipped had no row and so no Edit: the only
+ * way to add it afterwards was to start the card again. A question behind the
+ * "more detail" fork is listed too — the parent who tapped *That's it* is the
+ * one most likely to come back for it — and one whose own condition is false
+ * (a price unit with no price) is not, because there is nothing to attach it
+ * to yet.
  */
 export function recapRows(
   script: Script,
   fields: Fields,
-): Array<{ field: string; label: string; value: string }> {
-  const rows: Array<{ field: string; label: string; value: string }> = [];
+  options: { all?: boolean } = {},
+): RecapRow[] {
+  const rows: RecapRow[] = [];
+  /* Asking to see the detail questions: the fork's own answer is "yes". */
+  const asIfDetailWanted: Fields = { ...fields, more_detail: "yes" };
   for (const { field, label } of script.recap) {
     const step = script.steps.find((s) => s.id === field);
+    if (!step) continue;
     const value = fields[field];
-    if (!step || isEmptyValue(value)) continue;
+    if (isEmptyValue(value)) {
+      if (!options.all) continue;
+      if (step.when && !step.when(asIfDetailWanted)) continue;
+      rows.push({ field, label, value: "", empty: true });
+      continue;
+    }
     rows.push({ field, label, value: formatAnswer(step, value as FieldValue) });
   }
   return rows;

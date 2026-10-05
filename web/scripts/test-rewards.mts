@@ -71,16 +71,32 @@ ok(
   `${deadlineInPacific} vs ${r.REWARD_DEADLINE_LABEL}`,
 );
 /**
- * Her sentence promised payment *that week*, and under the Founding
- * requirements a saved card is no longer the last step: two admin approvals
- * are. So the check is that the copy no longer commits somebody else's
- * decision - not that it matches a string, which would only pin our own
- * provisional wording in place.
+ * The chat's Founding progress (5 Oct), the client's own sentences. Read from
+ * FOUNDING_MIN_APPROVED, and none of them promises a payment date: the last
+ * step is an admin's, not the parent's.
  */
+const progress = (completed: number, justCompleted: boolean, profileReady = true) =>
+  r.foundingProgressLine({ completed, justCompleted, profileReady });
+ok("nothing completed says what to do", progress(0, false) === "Complete 2 contributions to become a Founding Contributor.", String(progress(0, false)));
 ok(
-  "the confirmation no longer promises a payment date",
-  !/this week|payment/i.test(r.REWARD_CONFIRMATION),
-  r.REWARD_CONFIRMATION,
+  "the first completed card is a moment, in her words",
+  progress(1, true) ===
+    "Great — this counts. You’re 1 of 2 contributions in and 50% of the way to becoming a Founding Contributor.",
+  String(progress(1, true)),
+);
+ok(
+  "a card that did not complete, with one already done, reads the plain progress",
+  progress(1, false) === "1 of 2 complete — you’re 50% of the way there.",
+  String(progress(1, false)),
+);
+ok("the second completed card is the Founding line", progress(2, true) === "You did it — you’re a Founding Contributor.", String(progress(2, true)));
+ok("but not while the profile is below the bar", progress(2, true, false) === null);
+ok("and a third card repeats nothing", progress(3, true) === null && progress(3, false) === null);
+ok(
+  "no line promises a payment date",
+  [progress(0, false), progress(1, true), progress(1, false), progress(2, true)].every(
+    (line) => !/this week|payment|reward|[$][0-9]/i.test(String(line)),
+  ),
 );
 
 console.log("\n=== all six conditions, and each one alone ===");
@@ -226,8 +242,23 @@ ok(
   ok(
     "and the queue and its badge read that one expression",
     /where \$\{AWAITING_FOUNDING_DECISION\}/.test(read) &&
-      /\$\{AWAITING_FOUNDING_DECISION\} and \$\{MEETS_FOUNDING_REQUIREMENTS\}/.test(read) &&
+      /\$\{AWAITING_FOUNDING_DECISION\} and \$\{meetsFoundingRequirements\(completeCount\)\}/.test(read) &&
+      /and \$\{meetsFoundingRequirements\(completeCount\)\}\s+group by fc\.person_id/.test(read) &&
       !/founding = 'pending_founding'/.test(read),
+  );
+  /* 5 Oct — Founding counts COMPLETE contributions, not approved ones: the
+     predicate takes the count as a parameter, and nothing in the file still
+     reads the view's approved_contributions as the number that decides. */
+  ok(
+    "the requirements predicate counts complete contributions, from one TypeScript rule",
+    /function meetsFoundingRequirements\(completeCount: SQL\)/.test(read) &&
+      /\(\$\{completeCount\}\) >= \$\{FOUNDING_MIN_APPROVED\}/.test(read) &&
+      !/fc\.approved_contributions >= /.test(read) &&
+      !/MEETS_FOUNDING_REQUIREMENTS/.test(read),
+  );
+  ok(
+    "and the list, the detail page, the queue and the overview all take the count from it",
+    (read.match(/completeCounts\(db/g) ?? []).length >= 4,
   );
 }
 

@@ -36,6 +36,7 @@ import type {
   ContributorRow,
 } from "@/lib/admin/types";
 import { ContributionFacts } from "@/components/admin/ContributionFacts";
+import { countsTowardFounding } from "@/lib/admin/quality";
 import { FOUNDING_MIN_APPROVED } from "@/lib/rewards";
 
 /**
@@ -239,7 +240,7 @@ export default function ContributorDetailPage({
                 <Pair label="Profile complete" value={`${c.profile_completeness}%`} />
                 <Pair
                   label="Profile filled in"
-                  value={`${c.profile_depth}% · ${c.approved_contributions} approved`}
+                  value={`${c.profile_depth}% · ${c.approved_contributions} complete and added`}
                 />
                 <Pair label="Invite code" value={c.invite_code ?? "—"} />
                 <Pair label="Arrived via" value={c.source ?? "—"} />
@@ -582,13 +583,10 @@ function Pair({ label, value }: { label: string; value: string }) {
 /**
  * What the parent shared, and which of it the Founding decision rests on.
  *
- * ⚠ **The badge says "Added to Pando", because that is all it knows** (4 Oct).
- * It read "Counts toward Founding" and sat on the same card as "Fully answered:
- * Not yet", which the client reported as a contradiction. Founding today counts
- * approved cards (`founding_checklist.approved_contributions`, drizzle/0045) — the
- * header says so — and whether a card is good enough to count is the quality
- * model's to decide, so no badge here claims it. Approved cards are still listed
- * first: they are what the Confirm button in the Founding queue rests on.
+ * ⚠ **"Added to Pando" and "Counts toward Founding" are two badges** (5 Oct). A card is
+ * added when an admin approves it; it counts when it is added **and** complete
+ * (`lib/admin/quality.ts`), which is the number the Founding queue now decides on.
+ * Approved cards are listed first: they are what the Confirm button rests on.
  *
  * Each activity, place or tip opens in place (`<details>`, so it works before
  * hydration and find-in-page reaches it) onto exactly what the contributions
@@ -611,6 +609,12 @@ function SharedCards({
     shares.filter((r) => added(r.status)).length +
     caregivers.filter((card) => added(card.status)).length;
   const total = shares.length + caregivers.length;
+  /* ⚠ Added to Pando and counting toward Founding are two facts (5 Oct): a card
+     counts when it has been added **and** qualifies. A caregiver card is judged
+     on its own page, so an added one is counted here as it always was. */
+  const counting =
+    shares.filter((r) => countsTowardFounding(r)).length +
+    caregivers.filter((card) => added(card.status)).length;
 
   /**
    * The Founding queue links here as `#contributions`, and this block's rows
@@ -645,7 +649,8 @@ function SharedCards({
         title={`What they shared (${total})`}
         right={
           <span className="text-[12px] text-muted">
-            {approved} approved · Founding needs {FOUNDING_MIN_APPROVED}
+            {approved} added · {counting} count toward Founding · it needs{" "}
+            {FOUNDING_MIN_APPROVED}
           </span>
         }
       >
@@ -671,6 +676,12 @@ function SharedCards({
                       {added(row.status) && (
                         <Badge tone="green">Added to Pando</Badge>
                       )}
+                      {added(row.status) &&
+                        (countsTowardFounding(row) ? (
+                          <Badge tone="green">Counts toward Founding</Badge>
+                        ) : (
+                          <Badge tone="gold">Does not count yet</Badge>
+                        ))}
                       {!added(row.status) &&
                         (REVIEW_STATUS[row.status]?.label ?? sentence(row.status))}
                       <span className="hidden sm:inline">{when(row.created_at)}</span>

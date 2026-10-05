@@ -724,6 +724,15 @@ export const samplePendingOptions: PendingOptionRow[] = [
     occurrences: 3,
     status: "pending",
     created_at: now,
+    parent_count: 3,
+    parents: [
+      { id: "c1", name: "Sample Parent A", neighborhood: "altadena", at: now },
+      { id: "c3", name: "Sample Parent C", neighborhood: "pasadena", at: now },
+      { id: "c4", name: "Sample Parent D", neighborhood: "altadena", at: now },
+    ],
+    recommendations: [
+      { id: "s9", name: "Sierra Vista Co-op", kind: "activity", status: "approved", contributions: 2, approved: 1 },
+    ],
   },
   {
     id: "o2",
@@ -734,6 +743,9 @@ export const samplePendingOptions: PendingOptionRow[] = [
     occurrences: 1,
     status: "pending",
     created_at: now,
+    parent_count: 1,
+    parents: [{ id: "c2", name: "Sample Parent B", neighborhood: "altadena", at: now }],
+    recommendations: [],
   },
 ];
 

@@ -11,6 +11,8 @@ import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
 import { sql } from "drizzle-orm";
 import { cleanText } from "@/lib/sanitize";
+import { cleanContributionPatch, TEXT_COLUMNS } from "@/lib/admin/contribution-edit";
+import { bandsForAge } from "@/lib/matching";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
@@ -240,39 +242,73 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "contribution.edit": {
       const target = id(b.id);
-      const patch = (b.patch ?? {}) as Record<string, unknown>;
       /**
-       * Only the curated columns are editable, and by an explicit allow-list:
-       * the capture in `submissions.fields` is never touched, because it is the
-       * answer to "did the parent actually say that".
+       * Every curated column is editable, answered or not (5 Oct) — and only the
+       * columns: the capture in `submissions.fields` is never touched, because it
+       * is the answer to "did the parent actually say that". The patch is cleaned
+       * again here (`lib/admin/contribution-edit.ts`), so a caller that skipped
+       * the route still cannot store a value no question offered.
        */
+      const cleaned = cleanContributionPatch(b.patch);
+      if (!cleaned.ok) return { applied: false, reason: "not_implemented" };
+      const patch = cleaned.patch;
       const sets = [];
-      if (text(patch.what_makes_it_great) !== null)
-        sets.push(sql`what_makes_it_great = ${text(patch.what_makes_it_great)}`);
-      if (text(patch.caveat) !== null) sets.push(sql`caveat = ${text(patch.caveat)}`);
-      if (text(patch.who_for) !== null) sets.push(sql`who_for = ${text(patch.who_for)}`);
-      if (text(patch.who_not_for) !== null)
-        sets.push(sql`who_not_for = ${text(patch.who_not_for)}`);
-      if (text(patch.tip_text) !== null)
-        sets.push(sql`tip_text = ${text(patch.tip_text)}`);
+      const col = (name: string, value: unknown) =>
+        sets.push(sql`${sql.raw(name)} = ${value as string | boolean | null}`);
+      if ("what_makes_it_great" in patch) col("what_makes_it_great", patch.what_makes_it_great ?? null);
+      if ("caveat" in patch) col("caveat", patch.caveat ?? null);
+      if ("caveat_answered" in patch) col("caveat_answered", patch.caveat_answered === true);
+      if ("who_for" in patch) col("who_for", patch.who_for ?? null);
+      if ("who_not_for" in patch) col("who_not_for", patch.who_not_for ?? null);
+      if ("tip_text" in patch) col("tip_text", patch.tip_text ?? null);
+      if ("extra_note" in patch) col("extra_note", patch.extra_note ?? null);
+      if ("last_there" in patch) col("last_there", patch.last_there ?? null);
+      if ("how_much" in patch) col("how_much", patch.how_much ?? null);
+      if ("recommendation" in patch) col("recommendation", patch.recommendation ?? null);
+      if ("price_band" in patch) {
+        col("price_band", patch.price_band ?? null);
+        col("price_unit", patch.price_unit ?? null);
+      }
+      if ("worth_it" in patch) col("worth_it", patch.worth_it ?? null);
+      if ("follow_up_ok" in patch) col("follow_up_ok", patch.follow_up_ok === true);
+      if (patch.child_age_at_time !== undefined) {
+        /* An array literal, not a parameter: `sql` expands a JS array into a
+           record (the trap `repo/caregiver.ts` documents). Every value is an
+           integer the cleaner has already bounded. */
+        sets.push(sql`child_age_at_time = ${`{${patch.child_age_at_time.join(",")}}`}::int[]`);
+      }
       if (sets.length > 0) {
-        /**
-         * The score describes *this text*, so editing the text retires it. Cleared
-         * rather than recomputed here: extraction is a network call to another API
-         * and this is inside the transaction that also writes the audit row — one
-         * slow provider must not be able to fail an admin's edit. Null puts the
-         * card back in the sweep (`POST /api/admin/extract`), which is the path
-         * that exists for exactly this.
-         *
-         * Leaving the old number would have been worse than having none: it was
-         * about a sentence that no longer exists, and the low-confidence queue
-         * would sort on it.
-         */
+        /* The score describes *this text*, so editing the text retires it.
+           Cleared rather than recomputed here: extraction is a network call to
+           another API and this is inside the transaction that also writes the
+           audit row — one slow provider must not be able to fail an admin's
+           edit. Null puts the card back in the sweep (`POST /api/admin/extract`).
+           Leaving the old number would have been worse than having none. */
+        const textChanged = TEXT_COLUMNS.some((k) => k in patch);
         await tx.execute(
           sql`update share_contributions
-              set ${sql.join(sets, sql`, `)}, confidence = null, confidence_note = null
+              set ${sql.join(sets, sql`, `)}${
+                textChanged ? sql`, confidence = null, confidence_note = null` : sql``
+              }
               where id = ${target}::uuid`,
         );
+      }
+      /* The record is what retrieval filters on (`age_bands &&`), so an age
+         the admin supplies widens its bands exactly as a parent's would on
+         save — bands only ever widen. */
+      if (patch.child_age_at_time && patch.child_age_at_time.length > 0) {
+        const bands = [...new Set(patch.child_age_at_time.flatMap((a) => bandsForAge(a)))].filter(
+          (x) => /^[a-z_]+$/.test(x),
+        );
+        if (bands.length > 0) {
+          await tx.execute(
+            sql`update shares s
+                   set age_bands = array(select distinct unnest(s.age_bands || ${`{${bands.join(",")}}`}::text[])),
+                       updated_at = now()
+                  from share_contributions sc
+                 where sc.id = ${target}::uuid and s.id = sc.share_id`,
+          );
+        }
       }
       return { applied: true, resource: "share_contribution", resource_id: target };
     }

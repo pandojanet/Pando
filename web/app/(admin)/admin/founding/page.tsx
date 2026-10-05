@@ -210,14 +210,14 @@ export default function FoundingQueuePage() {
                           <p className="mt-1 text-[13px] text-muted">
                             {[
                               `Profile ${row.checklist.profile_depth}%`,
-                              `${row.checklist.approved_contributions} approved`,
+                              `${row.checklist.approved_contributions} complete`,
                               `${total} shared`,
                               row.phone ?? "no number",
                             ].join(" · ")}
                           </p>
                           <p className="mt-1 text-[13px]">
                             <TextLink href={`/admin/contributors/${row.id}#contributions`}>
-                              {`See the ${row.checklist.approved_contributions} approved ${
+                              {`See the ${row.checklist.approved_contributions} complete ${
                                 row.checklist.approved_contributions === 1 ? "contribution" : "contributions"
                               }`}
                             </TextLink>

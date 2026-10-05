@@ -49,22 +49,52 @@ export const REWARD_OFFER =
   `Verify your number, answer the two required questions and share one real recommendation with a reason by ${REWARD_DEADLINE_LABEL}, and we’ll send a $${REWARD_AMOUNT_USD} reward.`;
 
 /**
- * What the chat says once a parent has done their own half.
+ * What the chat says after a contribution, about the way to Founding.
  *
- * ⚠⚠ **Her sentence was *"Done — watch out for your payment this week"*, and it
- * stopped being true on 16 Sep.** It was written when one approved contribution
- * earned the $10, so a saved card really was the last step. Under the Founding
- * requirements the parent's card is not the last step: an admin has to approve
- * **two** of them, and a screen promising money that week would be the product
- * committing somebody else's decision — the third time this file has recorded a
- * surface promising something nothing grants.
+ * The client (5 Oct): *"0 completed: Complete 2 contributions to become a
+ * Founding Contributor. 1 completed: 1 of 2 complete — you’re 50% of the way
+ * there. 2 completed: You’re a Founding Contributor."* and, at the end of the
+ * first, *"Great — this counts. You’re 1 of 2 contributions in and 50% of the
+ * way to becoming a Founding Contributor."* / *"You did it — you’re a Founding
+ * Contributor."* Her wording, with the numbers read from
+ * `FOUNDING_MIN_APPROVED` rather than written in, so the day the requirement
+ * moves the sentence moves with it.
  *
- * So it says what is true at that moment and names the step that is left.
- * ⚠ The wording is ours and provisional: hers was approved copy, and the
- * replacement is on the list for her.
+ * ⚠⚠ **"Completed" is what a phone can know: the card answered everything its
+ * kind requires** (`lib/contribution-quality.ts`). It replaces the old
+ * "That's everything we need from you — once both are checked, we'll be in
+ * touch", which counted cards with a reason in them and promised nothing the
+ * app could not keep. An admin still adds a card to Pando and still confirms
+ * Founding; the sentence says "complete" for the first and the badge is the
+ * second's to claim, so the last line is only shown once the profile also
+ * clears the bar (`FOUNDING_MIN_PROFILE_DEPTH`) — see `foundingProgressLine`.
+ *
+ * Replaces `REWARD_CONFIRMATION`.
  */
-export const REWARD_CONFIRMATION =
-  "That's everything we need from you — once both of your recommendations are checked, we'll be in touch about the reward";
+export function foundingProgressLine(input: {
+  /** Completed contributions, including the card just finished. */
+  completed: number;
+  /** Did the card just finished complete one? */
+  justCompleted: boolean;
+  /** Phone verified and the profile past `FOUNDING_MIN_PROFILE_DEPTH`. */
+  profileReady: boolean;
+}): string | null {
+  const need = FOUNDING_MIN_APPROVED;
+  const percent = (n: number) => Math.round((Math.min(n, need) / need) * 100);
+  const { completed, justCompleted } = input;
+
+  if (justCompleted && completed === need) {
+    return input.profileReady ? "You did it — you’re a Founding Contributor." : null;
+  }
+  if (completed >= need) return null;
+  if (justCompleted) {
+    return `Great — this counts. You’re ${completed} of ${need} contributions in and ${percent(completed)}% of the way to becoming a Founding Contributor.`;
+  }
+  if (completed === 0) {
+    return `Complete ${need} contributions to become a Founding Contributor.`;
+  }
+  return `${completed} of ${need} complete — you’re ${percent(completed)}% of the way there.`;
+}
 
 /**
  * The four conditions, and **all four** — her completion trigger.
@@ -111,6 +141,10 @@ export const FOUNDING_MIN_PROFILE_DEPTH = 80;
 
 /**
  * How many contributions an admin has to have approved.
+ *
+ * ⚠⚠ **Superseded 5 Oct: it counts *complete* contributions** (`repo/founding-count.ts`),
+ * approved and answering their kind's minimum questions. What follows is the 16 Sep
+ * reasoning for not using the six-field `qualifying_approved`, which still stands.
  *
  * ⚠⚠ **Plain `status = 'approved'`, not `qualifying_approved`.** The
  * developer's words were *"2 активності/няні/тощо, які апрувнуті адміном"* —

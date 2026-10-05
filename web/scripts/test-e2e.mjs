@@ -1290,7 +1290,7 @@ ok(
   `${o.reward.approved}+${o.reward.in_review}+${o.reward.not_met} = ${o.contributors.total}`,
 );
 /* The count the nav badge paints and the list the queue returns come from one
-   SQL predicate (`MEETS_FOUNDING_REQUIREMENTS`), and this is the check that
+   SQL predicate (`meetsFoundingRequirements`), and this is the check that
    they have not become two — the 2 Sep rule, on the screen that decides who
    is paid. Asserted against the live database rather than by reading the
    query, because a second copy would look right in both places. */

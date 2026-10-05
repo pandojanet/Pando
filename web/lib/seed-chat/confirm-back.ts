@@ -1,3 +1,4 @@
+import { isNothingToFlag, isThinAnswer } from "../contribution-quality";
 import type { Submission } from "./types";
 
 /**
@@ -59,25 +60,12 @@ const TEXT_FIELDS = [
   "who_not_for",
 ] as const;
 
-/**
- * Below this, a sentence carries almost nothing another parent could act on.
- *
- * Twelve characters, not a word count: "good" and "it's fine" and "great!" are
- * all under it, and any real recommendation clears it easily. Deliberately
- * generous — the cost of asking unnecessarily is one extra tap, and the cost of
- * not asking is a card that reaches an admin thin.
+/*
+ * What counts as thin — twelve characters, or praise with nothing in it — lives
+ * in `lib/contribution-quality.ts` (5 Oct): the chat asks for more when an answer
+ * is under the bar, and a card still under it afterwards is not complete, so the
+ * two cannot be allowed to disagree about where the bar is.
  */
-const THIN = 12;
-
-const NOTHING_TO_FLAG = /^(none|no|nope|nothing|n\/a|na|not really|nothing to flag)[.!]?$/i;
-
-/**
- * Words that fill a sentence without saying anything. Only counted *with* the
- * length test, never alone: "we loved it" is short and vague, while "we loved it
- * because the teacher remembers every child's name" is neither.
- */
-const EMPTY_PRAISE =
-  /^(it'?s |we |they |i )?(really |very |so )?(good|great|nice|fine|ok|okay|lovely|amazing|the best|fun|loved it|liked it|recommend)[.!]?$/i;
 
 export interface ConfirmBack {
   /** Which field the question is about. */
@@ -124,9 +112,13 @@ export function confirmBackFor(submission: Submission): ConfirmBack | null {
     /* "None" typed into the caveat is the "Nothing to flag" answer in words
        (4 Oct): the question is asked of every activity now, so re-asking it
        of a parent who just declined would be asking twice. */
-    if (field === "caveat" && NOTHING_TO_FLAG.test(value)) continue;
+    if (field === "caveat" && isNothingToFlag(value)) continue;
 
-    if (value.length < THIN || EMPTY_PRAISE.test(value)) {
+    /* "What makes it good" is also judged on what is left once the place's own
+       name and the praise are taken out (5 Oct): "The Family Room is excellent"
+       is 29 characters and says nothing. */
+    const own = typeof fields.name === "string" ? fields.name : null;
+    if (isThinAnswer(value, { name: own, content: field === "what_makes_it_great" })) {
       return { field, question: QUESTIONS[field] ?? QUESTIONS.what_makes_it_great };
     }
   }

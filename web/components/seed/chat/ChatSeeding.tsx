@@ -11,13 +11,9 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { placeAgeRelevance, saveSubmission } from "@/lib/api-client";
-import {
-  FOUNDING_MIN_APPROVED,
-  FOUNDING_MIN_PROFILE_DEPTH,
-  hasReason,
-  REWARD_CONFIRMATION,
-} from "@/lib/rewards";
+import { saveSubmission } from "@/lib/api-client";
+import { assessChatCard } from "@/lib/contribution-quality";
+import { FOUNDING_MIN_PROFILE_DEPTH, foundingProgressLine } from "@/lib/rewards";
 import {
   buildSubmission,
   formatAnswer,
@@ -237,10 +233,6 @@ export function ChatSeeding() {
    */
   const hasSavedRecommendation = (chat?.submissions ?? []).some((s) => s.persisted);
   const draft = chat?.draft ?? null;
-  /* The latest draft, for an async answer to check it still belongs (4 Oct). */
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const ageCheckFor = useRef<string | null>(null);
   const script = draft ? scripts[draft.kind] : null;
   const step = script && draft ? script.steps[draft.step_index] : null;
   const savedCount = chat?.submissions.length ?? 0;
@@ -350,7 +342,7 @@ export function ChatSeeding() {
         {
           id: uid(),
           role: "parent",
-          text: `Edit: ${editScript.recap.find((r) => r.field === field)?.label ?? field}`,
+          text: `${isEmptyValue(submission.fields[field]) ? "Add" : "Edit"}: ${editScript.recap.find((r) => r.field === field)?.label ?? field}`,
         },
       ],
     }));
@@ -365,54 +357,17 @@ export function ChatSeeding() {
             id: uid(),
             role: "pando",
             text: editStep.prompt,
-            aside: `It currently says “${formatAnswer(editStep, submission.fields[field] as FieldValue)}”.`,
+            aside: isEmptyValue(submission.fields[field])
+              ? editStep.aside
+              : `It currently says “${formatAnswer(editStep, submission.fields[field] as FieldValue)}”.`,
           },
         ],
       })),
     );
   }
 
-  /**
-   * After a place's kind: does the age question apply? (4 Oct.)
-   *
-   * Only a clear "no" from the model skips it, and that is written into the
-   * card as `child_age_scope`, a real field the server reads — never inferred
-   * from an age that is simply absent. Guarded twice: one check per draft at a
-   * time, and the answer is dropped if the parent has moved on meanwhile (the
-   * card was cancelled, or a reload resumed it).
-   */
-  function continueAfterPlaceKind(id: string, fields: Fields, typeIndex: number) {
-    if (ageCheckFor.current === id) return;
-    ageCheckFor.current = id;
-    setTyping(true);
-    void placeAgeRelevance(String(fields.name ?? ""), String(fields.type ?? "")).then(
-      (relevant) => {
-        ageCheckFor.current = null;
-        setTyping(false);
-        const live = draftRef.current;
-        if (!live || live.id !== id || live.step_index !== typeIndex || live.editing) return;
-        const next: Fields =
-          relevant === false ? { ...fields, child_age_scope: "not_child_specific" } : fields;
-        const upcomingStep = nextIndex(scripts.place, next, typeIndex + 1);
-        if (upcomingStep < 0) finishCard("place", id, next);
-        else pushPrompt("place", next, upcomingStep);
-      },
-    );
-  }
-
-  /**
-   * A reload while that check was in flight leaves the card on the kind step
-   * with the kind already answered; carry on from there rather than ask again.
-   */
-  useEffect(() => {
-    if (!draft || draft.kind !== "place" || draft.editing) return;
-    if (scripts.place.steps[draft.step_index]?.id !== "type") return;
-    if (typeof draft.fields.type !== "string" || draft.fields.type === "") return;
-    continueAfterPlaceKind(draft.id, draft.fields, draft.step_index);
-  }, [draft?.id]);
-
   /** Applying a correction: update the saved card in place, then re-save it. */
-  function applyFieldEdit(value: FieldValue) {
+  function applyFieldEdit(value: FieldValue, extra?: Fields) {
     if (!draft?.editing || !step || !chat) return;
     const { submission_id, step_id } = draft.editing;
 
@@ -421,11 +376,9 @@ export function ChatSeeding() {
 
     // Built outside the state updater: React may run an updater twice, so it has
     // to stay pure.
-    const fields: Fields = { ...draft.fields, [step_id]: value };
-    /* A corrected place kind voids the model's "age does not matter here": the
-       card then carries no age and no scope, which the server stores as neither
-       and the admin sees as a missing age, rather than as not child-specific. */
-    if (existing.kind === "place" && step_id === "type") delete fields.child_age_scope;
+    /* `extra` is the second field the `place` widget writes — the town of a
+       name it matched — so correcting the name corrects both (5 Oct). */
+    const fields: Fields = { ...draft.fields, [step_id]: value, ...(extra ?? {}) };
     const updated: Submission = {
       ...existing,
       fields,
@@ -472,7 +425,7 @@ export function ChatSeeding() {
     if (!draft || !script || !step) return;
 
     if (draft.editing) {
-      applyFieldEdit(value);
+      applyFieldEdit(value, extra);
       return;
     }
 
@@ -524,17 +477,6 @@ export function ChatSeeding() {
       messages: [...c.messages, parentMessage],
     }));
 
-    /**
-     * A place card asks the child's age only where age matters (4 Oct). The
-     * model is asked once, here, as soon as the kind is known; the typing
-     * indicator covers the wait. `null` — slow, failed, unsure — asks, because
-     * a skipped question cannot be recovered and an extra one costs a tap.
-     */
-    if (draft.kind === "place" && step.id === "type") {
-      continueAfterPlaceKind(draft.id, fields, draft.step_index);
-      return;
-    }
-
     const upcoming = nextIndex(script, fields, draft.step_index + 1);
     withTyping(() => {
       if (hold) {
@@ -551,6 +493,27 @@ export function ChatSeeding() {
       if (upcoming < 0) finishCard(draft.kind, draft.id, fields);
       else pushPrompt(draft.kind, fields, upcoming);
     });
+  }
+
+  /**
+   * What to say about the way to Founding after `card` (5 Oct).
+   *
+   * "Completed" is what the phone can know — every question the card's kind
+   * requires is answered (`assessChatCard`) — and `others` are the cards this
+   * parent has already finished. The last line, "you're a Founding
+   * Contributor", is held back until the profile also clears the bar, because
+   * the badge needs both.
+   */
+  function progressLine(card: Submission, others: Submission[]): string | null {
+    const done = (s: Submission) => assessChatCard(s.kind, s.fields).status === "qualifies";
+    const justCompleted = done(card);
+    const completed = others.filter((s) => s.id !== card.id && done(s)).length + (justCompleted ? 1 : 0);
+    const profileReady =
+      session?.phone_verified === true &&
+      Boolean(session?.answers.neighborhood) &&
+      (session?.answers.child_ages ?? []).length > 0 &&
+      profileDepth(session.answers).percent >= FOUNDING_MIN_PROFILE_DEPTH;
+    return foundingProgressLine({ completed, justCompleted, profileReady });
   }
 
   function finishCard(kind: ShareKind, draftId: string, fields: Fields) {
@@ -572,34 +535,6 @@ export function ChatSeeding() {
      * already, it writes no `share_contributions` row, and the toggle is not
      * offered on it.
      */
-    /**
-     * Has this parent now done everything **they** can do toward the reward?
-     *
-     * ⚠⚠ **Rewritten 16 Sep, because the old version promised money this app
-     * could no longer deliver.** It fired on the *first* card carrying a
-     * reason and said "watch out for your payment this week" — true while one
-     * approved contribution earned the $10, and false the moment the Founding
-     * requirements became a full profile plus **two** contributions an admin
-     * has approved. A phone cannot know what an admin will approve, so the
-     * trigger now reports only what is knowable here: their own side is done.
-     *
-     * ⚠ Counted **inclusive of the card being saved**, which is why the
-     * comparison is `=== FOUNDING_MIN_APPROVED` rather than `>=`: this is the
-     * moment they reach two, and a third card must not repeat it.
-     */
-    const withReason =
-      (chat?.submissions ?? []).filter((s) =>
-        hasReason(String(s.fields.what_makes_it_great ?? "")),
-      ).length + (hasReason(String(fields.what_makes_it_great ?? "")) ? 1 : 0);
-
-    const justFinishedTheirPart =
-      kind !== "caregiver" &&
-      withReason === FOUNDING_MIN_APPROVED &&
-      session?.phone_verified === true &&
-      Boolean(session?.answers.neighborhood) &&
-      (session?.answers.child_ages ?? []).length > 0 &&
-      profileDepth(session.answers).percent >= FOUNDING_MIN_PROFILE_DEPTH;
-
     const submission: Submission = {
       ...buildSubmission({ id: draftId, kind, fields, step_index: 0 }),
       /* A caregiver card mints its invite token here, before any round trip,
@@ -608,6 +543,12 @@ export function ChatSeeding() {
         ? { invite_token: newCaregiverInviteToken() }
         : { show_name: session?.answers.attribution === "first_name" }),
     };
+
+    /* A card with a thin answer is asked about it before it is sent, and the
+       progress line waits for what the parent says: it is judged on the card as
+       it will be saved, not on the one they are about to improve. */
+    const ask = confirmBackFor(submission);
+    const progress = ask ? null : progressLine(submission, chat?.submissions ?? []);
 
     patchChat((c) => ({
       ...c,
@@ -620,27 +561,6 @@ export function ChatSeeding() {
         {
           id: uid(),
           role: "pando",
-          /**
-           * The confirmation, on the card that completes the parent's own half
-           * of the Founding requirements — see `justFinishedTheirPart` above
-           * for the six conditions and why the comparison is exact.
-           *
-           * ⚠⚠ **This comment used to describe her 10 Sep sentence and the
-           * rule under it, and both are gone.** It said the copy promises a
-           * payment *"this week"* rather than stating one has been made, which
-           * was the right distinction for a rule where one approved
-           * contribution earned the $10. Under the Founding requirements the
-           * last step is not the parent's at all: an admin has to approve two
-           * cards. So the copy names no date, and the comment saying it does
-           * would have outlived the sentence it described.
-           *
-           * ⚠ **What this screen cannot know, it still does not claim.** One
-           * reward per verified phone, no duplicate payouts, and whether an
-           * admin approves anything are all server-side; this says only that
-           * their side is finished. The admin computes the status from the
-           * same `lib/rewards.ts` rule, and if the two ever disagree the
-           * server wins.
-           */
           /**
            * ⚠⚠ **"Anything else you'd pass on?" was the reported confusion
            * and it is fixed here rather than reworded.** It arrives *after*
@@ -660,10 +580,11 @@ export function ChatSeeding() {
           text:
             kind === "caregiver"
               ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
-              : justFinishedTheirPart
-                ? `${REWARD_CONFIRMATION}. Anything else you'd like to share?`
-                : "Got it, thank you. Anything else you'd like to share?",
+              : "Got it, thank you. Anything else you'd like to share?",
         },
+        /* The way to Founding, after the card (5 Oct) — in the chat, where the
+           parent is, rather than in a banner they have to notice. */
+        ...(progress ? [{ id: uid(), role: "pando" as const, text: progress }] : []),
       ],
     }));
 
@@ -678,7 +599,6 @@ export function ChatSeeding() {
      * A card that triggers one is not persisted yet — `answerConfirmBack` and
      * `skipConfirmBack` are the only two ways out, and both end in `persist`.
      */
-    const ask = confirmBackFor(submission);
     if (ask) {
       patchChat((c) => ({
         ...c,
@@ -743,6 +663,7 @@ export function ChatSeeding() {
         };
         return updated;
       });
+      const progress = updated ? progressLine(updated, submissions) : null;
       return {
         ...c,
         submissions,
@@ -754,6 +675,8 @@ export function ChatSeeding() {
             : []),
           /* Re-render the recap so the parent sees what the card now says. */
           ...(updated ? [{ id: uid(), role: "pando" as const, card: updated }] : []),
+          /* And the progress line the card was waiting to give (5 Oct). */
+          ...(progress ? [{ id: uid(), role: "pando" as const, text: progress }] : []),
         ],
       };
     });
@@ -1200,6 +1123,13 @@ export function ChatSeeding() {
             onPick={startCard}
             onDone={doneForNow}
             savedCount={savedCount}
+            heading={
+              (chat.submissions ?? []).filter(
+                (sub) => assessChatCard(sub.kind, sub.fields).status === "qualifies",
+              ).length === 1
+                ? "Add one more contribution"
+                : undefined
+            }
           />
         )}
         {/* One line mid-card: the widget is already the tallest thing on screen,

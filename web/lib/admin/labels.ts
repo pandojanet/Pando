@@ -760,3 +760,20 @@ export const CAREGIVER_CONSENT: Record<string, StateLabel> = {
   declined: { label: "Declined", tone: "red" },
   revoked: { label: "Withdrawn", tone: "red" },
 };
+
+/* ── A contribution's one status (5 Oct) ────────────────────────────────────── */
+
+/**
+ * The client: *"Qualifies · Needs follow-up · Too thin / unusable."* The rule is
+ * `lib/contribution-quality.ts`; these are only its words. "Too thin" is neutral
+ * rather than red: `alert` means owed a person today, and a name with nothing
+ * behind it is not that.
+ */
+export const QUALITY_STATUS: Record<
+  "qualifies" | "needs_follow_up" | "too_thin",
+  { label: string; tone: "green" | "gold" | "neutral" }
+> = {
+  qualifies: { label: "Qualifies", tone: "green" },
+  needs_follow_up: { label: "Needs follow-up", tone: "gold" },
+  too_thin: { label: "Too thin / unusable", tone: "neutral" },
+};

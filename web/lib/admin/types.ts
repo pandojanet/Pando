@@ -704,6 +704,33 @@ export interface PendingOptionRow {
   occurrences: number;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+  /**
+   * The parents whose saved profile holds this value, counted from the profiles
+   * themselves (5 Oct). `occurrences` is bumped on every save that carries the
+   * value, so a parent who edits their profile twice counts twice there; this is
+   * who actually typed it.
+   */
+  parent_count: number;
+  /** The newest few, so the number can be opened and read. */
+  parents: Array<{
+    id: string;
+    name: string | null;
+    neighborhood: string | null;
+    at: string | null;
+  }>;
+  /**
+   * Recommendations already filed under this name — what parents said about it,
+   * as opposed to the fact that they mentioned it. A name with none is a
+   * mention, not a contribution.
+   */
+  recommendations: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    status: string;
+    contributions: number;
+    approved: number;
+  }>;
 }
 
 export interface MarketOptionRow {

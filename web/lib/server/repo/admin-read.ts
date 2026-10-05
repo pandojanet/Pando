@@ -1,9 +1,10 @@
 import "server-only";
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
 import { refundOwed } from "@/lib/payments";
+import { completeCounts, completeCountSql } from "@/lib/server/repo/founding-count";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
@@ -158,14 +159,24 @@ export async function readResource(
  * so the two can drift in wording and never in arithmetic. `test:rewards` walks
  * both against the same fixtures.
  */
-const MEETS_FOUNDING_REQUIREMENTS = sql`(
+/**
+ * ⚠⚠ **The count is a parameter, and it is of *complete* contributions** (5 Oct).
+ * It was `fc.approved_contributions` — cards an admin had added to Pando,
+ * whatever they answered — and the client's rule is that Founding counts a
+ * contribution once its minimum questions are answered. The number comes from
+ * `repo/founding-count.ts` (the one TypeScript rule, handed in as arrays), so
+ * this predicate, the nav badge, the queue and the reward column all read it.
+ */
+function meetsFoundingRequirements(completeCount: SQL): SQL {
+  return sql`(
   fc.verified
   and fc.has_neighborhood
   and fc.has_children
   and fc.profile_depth >= ${FOUNDING_MIN_PROFILE_DEPTH}
-  and fc.approved_contributions >= ${FOUNDING_MIN_APPROVED}
+  and (${completeCount}) >= ${FOUNDING_MIN_APPROVED}
   and fc.longest_reason >= ${REASON_MIN_LENGTH}
 )`;
+}
 
 /**
  * Somebody whose Founding standing is still undecided.
@@ -183,6 +194,7 @@ const AWAITING_FOUNDING_DECISION = sql`fc.founding in ('none', 'pending_founding
 /* ── 2.1 Overview ────────────────────────────────────────────────────────── */
 
 async function overview(db: Db) {
+  const completeCount = completeCountSql(await completeCounts(db), sql`fc.person_id`);
   const [r] = await rows(
     db,
     sql`
@@ -197,9 +209,9 @@ async function overview(db: Db) {
        */
       with checklist as (
         select fc.founding,
-               fc.approved_contributions,
-               ${MEETS_FOUNDING_REQUIREMENTS} as meets_requirements,
-               ${AWAITING_FOUNDING_DECISION} and ${MEETS_FOUNDING_REQUIREMENTS}
+               ${completeCount} as approved_contributions,
+               ${meetsFoundingRequirements(completeCount)} as meets_requirements,
+               ${AWAITING_FOUNDING_DECISION} and ${meetsFoundingRequirements(completeCount)}
                                                  as in_founding_queue
         from founding_checklist fc
       ),
@@ -412,6 +424,7 @@ async function overview(db: Db) {
 /* ── 2.3 Contributors ────────────────────────────────────────────────────── */
 
 async function contributors(db: Db) {
+  const complete = await completeCounts(db);
   const list = await rows(
     db,
     sql`
@@ -490,7 +503,8 @@ async function contributors(db: Db) {
         neighborhood_answered: Boolean(r.neighborhood),
         children_answered: ((r.birth_years as number[]) ?? []).length > 0,
         profile_depth: Number(r.profile_depth ?? 0),
-        approved_contributions: Number(r.approved_contributions ?? 0),
+        /* Complete, not merely approved (5 Oct) — see `founding-count.ts`. */
+        approved_contributions: complete.get(String(r.id)) ?? 0,
         /* A length rather than the text: the sentence itself is a parent's own
            words and has no business travelling to a list view (invariant 7 is
            about logs, and this is the same instinct one layer over). */
@@ -618,6 +632,8 @@ async function contributorDetail(db: Db, id: string) {
   const consentRows = list<Row>(p.consent_rows);
   const notes = list<Row>(p.notes);
   const checklist = p.checklist ? [p.checklist as Row] : [];
+  /* Complete, not merely approved (5 Oct) - see `founding-count.ts`. */
+  const completeForPerson = (await completeCounts(db, id)).get(String(p.id)) ?? 0;
   const referredBy = p.referred_by ? [p.referred_by as Row] : [];
   const referred = list<Row>(p.referred);
 
@@ -650,7 +666,7 @@ async function contributorDetail(db: Db, id: string) {
       neighborhood_answered: Boolean(p.neighborhood),
       children_answered: kids.some((y) => typeof y === "number"),
       profile_depth: Number(checklist[0]?.profile_depth ?? 0),
-      approved_contributions: Number(checklist[0]?.approved_contributions ?? 0),
+      approved_contributions: completeForPerson,
       /* A length, never the sentence — see the note on the list query. */
       reason: "x".repeat(Number(checklist[0]?.longest_reason ?? 0)),
       founding_approved: p.founding === "founding",
@@ -666,7 +682,7 @@ async function contributorDetail(db: Db, id: string) {
     source: p.source,
     profile_completeness: Number(p.profile_completeness ?? 0),
     profile_depth: Number(checklist[0]?.profile_depth ?? 0),
-    approved_contributions: Number(checklist[0]?.approved_contributions ?? 0),
+    approved_contributions: completeForPerson,
     time_in_area: p.time_in_area,
     moved_from: p.moved_from,
     attribution: p.attribution,
@@ -946,10 +962,55 @@ async function duplicates(db: Db) {
 /* ── 2.6 Tap lists ───────────────────────────────────────────────────────── */
 
 async function pendingOptions(db: Db) {
+  /**
+   * One statement with the details as sub-selects (the pooler rule: round trips
+   * are the cost, not query complexity).
+   *
+   * ⚠ **Who typed it comes from the profiles, not from `pending_options`**
+   * (5 Oct). That table keeps one row per value with the *first* submitter and a
+   * counter bumped on every save that carries it, so it can say "3" and name one
+   * parent — and it counts a parent who edits their profile twice twice. The
+   * profiles themselves hold what each parent typed (`raw_answers.other`, keyed
+   * by question id, so every key is read), and that is what a reader opening the
+   * number needs.
+   *
+   * `recommendations` is the other half: a name a parent only *mentioned* is
+   * not a contribution, and this is where an admin sees whether anyone has also
+   * *said* something about it — filed under the same name in the same market.
+   */
+  const mentions = sql`exists (
+      select 1
+        from jsonb_each(
+               case when jsonb_typeof(pp.raw_answers -> 'other') = 'object'
+                    then pp.raw_answers -> 'other' else '{}'::jsonb end) e,
+             jsonb_array_elements_text(
+               case when jsonb_typeof(e.value) = 'array' then e.value else '[]'::jsonb end
+             ) v
+       where lower(trim(v)) = lower(trim(po.submitted_value)))`;
   const list = await rows(
     db,
     sql`
-      select po.*, p.id as person_id, p.first_name, p.last_name
+      select po.*, p.id as person_id, p.first_name, p.last_name,
+             (select count(*) from people pp
+               where not pp.is_test and ${mentions})                    as parent_count,
+             (select coalesce(json_agg(m), '[]'::json) from (
+                select pp.id, pp.first_name, pp.last_name, pp.neighborhood,
+                       pp.profile_captured_at as at
+                  from people pp
+                 where not pp.is_test and ${mentions}
+                 order by pp.profile_captured_at desc nulls last
+                 limit 12) m)                                          as parents,
+             (select coalesce(json_agg(r), '[]'::json) from (
+                select s.id, s.name, s.kind, s.status,
+                       (select count(*) from share_contributions sc
+                         where sc.share_id = s.id and not sc.is_test)   as contributions,
+                       (select count(*) from share_contributions sc
+                         where sc.share_id = s.id and not sc.is_test
+                           and sc.status = 'approved')                  as approved
+                  from shares s
+                 where s.market_id = po.market_id
+                   and lower(trim(s.name)) = lower(trim(po.submitted_value))
+                 limit 6) r)                                           as recommendations
       from pending_options po
       left join people p on p.id = po.submitted_by
       where po.status = 'pending'
@@ -958,18 +1019,47 @@ async function pendingOptions(db: Db) {
     `,
   );
 
-  return list.map((r) => ({
-    id: r.id,
-    market_id: r.market_id,
-    category: r.category,
-    submitted_value: r.submitted_value,
-    submitted_by: r.person_id
-      ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
-      : null,
-    occurrences: Number(r.occurrences ?? 1),
-    status: r.status,
-    created_at: r.created_at,
-  }));
+  return list.map((r) => {
+    const parents = (r.parents ?? []) as Array<{
+      id: string;
+      first_name: string | null;
+      last_name: string | null;
+      neighborhood: string | null;
+      at: string | null;
+    }>;
+    const recommendations = (r.recommendations ?? []) as Array<{
+      id: string;
+      name: string;
+      kind: string;
+      status: string;
+      contributions: number | string;
+      approved: number | string;
+    }>;
+    return {
+      id: r.id,
+      market_id: r.market_id,
+      category: r.category,
+      submitted_value: r.submitted_value,
+      submitted_by: r.person_id
+        ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
+        : null,
+      occurrences: Number(r.occurrences ?? 1),
+      status: r.status,
+      created_at: r.created_at,
+      parent_count: Number(r.parent_count ?? 0),
+      parents: parents.map((pp) => ({
+        id: pp.id,
+        name: fullName(pp.first_name, pp.last_name),
+        neighborhood: pp.neighborhood,
+        at: pp.at,
+      })),
+      recommendations: recommendations.map((rec) => ({
+        ...rec,
+        contributions: Number(rec.contributions ?? 0),
+        approved: Number(rec.approved ?? 0),
+      })),
+    };
+  });
 }
 
 /* ── 2.7 Flags and demand ────────────────────────────────────────────────── */
@@ -1257,6 +1347,8 @@ function viaOf(v: unknown): CaregiverClaimRow["via"] {
 /* ── 2.2 Founding queue ──────────────────────────────────────────────────── */
 
 async function foundingQueue(db: Db) {
+  const complete = await completeCounts(db);
+  const completeCount = completeCountSql(complete, sql`fc.person_id`);
   const list = await rows(
     db,
     sql`
@@ -1289,14 +1381,14 @@ async function foundingQueue(db: Db) {
          * ready, and a queue that also lists the not-yet-ready is a queue
          * somebody has to re-triage by eye every morning.
          *
-         * NOTE: the predicate is MEETS_FOUNDING_REQUIREMENTS — the very one
+         * NOTE: the predicate is meetsFoundingRequirements — the very one
          * the overview counts the nav badge from. This query used to restate
          * only two of its six conditions (depth and approvals), so a parent
          * with an unverified number, or a "reason" under twelve characters,
          * sat in the queue while the badge - and rewardStatus - called them
          * unqualified: the two-expressions-that-happen-to-agree fault (29 Sep).
          */
-        and ${MEETS_FOUNDING_REQUIREMENTS}
+        and ${meetsFoundingRequirements(completeCount)}
       group by fc.person_id, fc.founding, fc.verified, fc.has_neighborhood,
                fc.has_children, fc.allowance_ok, fc.qualifying_approved,
                fc.caregiver_approved, fc.profile_depth,
@@ -1331,7 +1423,7 @@ async function foundingQueue(db: Db) {
       /* The two the queue is now filtered on, carried so the card can show what
          it is about to pay for rather than only that it qualified. */
       profile_depth: Number(r.profile_depth ?? 0),
-      approved_contributions: Number(r.approved_contributions ?? 0),
+      approved_contributions: complete.get(String(r.person_id)) ?? 0,
     },
     status: r.founding,
     created_at: r.created_at,

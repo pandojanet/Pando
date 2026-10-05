@@ -26,7 +26,7 @@ import type { Fields, Script, ShareKind } from "./types";
  * here is the structured capture: every answer already arrives as a field.
  */
 
-export const PLACE_TYPES: Option[] = [
+const PLACE_TYPES: Option[] = [
   { id: "park", label: "Park" },
   { id: "playground", label: "Playground" },
   { id: "library", label: "Library" },
@@ -60,6 +60,33 @@ export const PRICE_UNIT: Option[] = [
   { id: "per_month", label: "Month" },
   { id: "per_term", label: "Term" },
   { id: "per_camp_week", label: "Camp week" },
+];
+
+/**
+ * The activity card's three closed answers, exported (5 Oct) for the same reason:
+ * the admin edits a contribution's every field, and offers exactly the choices
+ * the parent was offered rather than a second list of them.
+ */
+export const LAST_THERE: Option[] = [
+  { id: "current", label: "Still going now" },
+  { id: "recent", label: "Within the last year" },
+  { id: "over_year", label: "Over a year ago" },
+  { id: "unsure", label: "Not sure anymore" },
+];
+
+export const RECOMMENDATION_OPTIONS: Option[] = [
+  { id: "yes", label: "Yes" },
+  { id: "yes_with_caveats", label: "Yes, with caveats" },
+  { id: "probably_not", label: "Probably not" },
+  { id: "no", label: "No" },
+];
+
+export const HOW_MUCH: Option[] = [
+  { id: "tried_once", label: "Tried it once" },
+  { id: "few_sessions", label: "A few sessions" },
+  { id: "a_term", label: "A term or season" },
+  { id: "a_year_plus", label: "A year or more" },
+  { id: "weekly_ongoing", label: "Weekly, ongoing" },
 ];
 
 /** R9 — exported for the same reason as the two above. */
@@ -183,8 +210,10 @@ export function buildScripts(
      * nothing was deleted for length; eight steps moved behind one tap.
      *
      * ⚠ **The caveat came back out from behind the fork on 4 Oct** — the
-     * client's P0 round requires it on every activity, with "Nothing to flag"
-     * as an answer — so the short path is seven questions, not six.
+     * client's P0 round requires it on every activity — and since 5 Oct it, the
+     * child's age and "what makes it good" are **required**: no skip, asked
+     * before anything optional. "Nothing to flag" is an answer to type, not a
+     * button. The short path is seven questions, not six.
      *
      * ⚠ **`follow_up_ok` is a permission rather than detail**, and behind a fork
      * most cards will not carry one. That is safe in the only direction that
@@ -205,23 +234,6 @@ export function buildScripts(
           searchCategory: "baby_activities",
           maxLength: 80,
           placeholder: "e.g. Little Maestros",
-        },
-        {
-          /**
-           * Only when the directory did not have it (10 Sep). `PlaceStep` writes
-           * this field from the matched record, so for a known place this step
-           * is already answered and never appears.
-           *
-           * Her wording, and note what it is not: *"ask for the town, never a
-           * street address."*
-           */
-          id: "location",
-          prompt: "Which town is it in?",
-          widget: "chips",
-          options: neighborhoods,
-          optional: true,
-          when: (fields) =>
-            !(Array.isArray(fields.location) && fields.location.length > 0),
         },
         {
           /**
@@ -249,29 +261,18 @@ export function buildScripts(
           prompt: "How old was your child at the time?",
           aside: "Tap every age that applies.",
           widget: "ages",
-          optional: true,
         },
         {
           id: "freshness",
           prompt: "When were you last there — still going?",
           widget: "quick",
-          options: [
-            { id: "current", label: "Still going now" },
-            { id: "recent", label: "Within the last year" },
-            { id: "over_year", label: "Over a year ago" },
-            { id: "unsure", label: "Not sure anymore" },
-          ],
+          options: LAST_THERE,
         },
         {
           id: "recommendation",
           prompt: "Knowing what you know now, would you recommend it?",
           widget: "quick",
-          options: [
-            { id: "yes", label: "Yes" },
-            { id: "yes_with_caveats", label: "Yes, with caveats" },
-            { id: "probably_not", label: "Probably not" },
-            { id: "no", label: "No" },
-          ],
+          options: RECOMMENDATION_OPTIONS,
         },
         {
           id: "what_makes_it_great",
@@ -279,7 +280,6 @@ export function buildScripts(
           aside: "One line is plenty — the thing you'd text a friend.",
           widget: "text",
           maxLength: 400,
-          optional: true,
           placeholder: "e.g. small groups and a very patient teacher",
         },
         {
@@ -295,11 +295,32 @@ export function buildScripts(
            */
           id: "caveat",
           prompt: "What should another parent know before trying it?",
-          aside: "The waitlist, the parking, the one instructor to avoid.",
+          aside:
+            "The waitlist, the parking, the one instructor to avoid. Nothing to flag? Just say so.",
           widget: "text",
           maxLength: 400,
+          placeholder: "e.g. nothing to flag",
+        },
+        {
+          /**
+           * Only when the directory did not have it (10 Sep). `PlaceStep` writes
+           * this field from the matched record, so for a known place this step
+           * is already answered and never appears.
+           *
+           * Her wording, and note what it is not: *"ask for the town, never a
+           * street address."*
+           *
+           * ⚠ After the required questions, not after the name (5 Oct): the
+           * developer's rule is that what must be answered comes first and
+           * unskippable, and what may be skipped follows.
+           */
+          id: "location",
+          prompt: "Which town is it in?",
+          widget: "chips",
+          options: neighborhoods,
           optional: true,
-          skipLabel: "Nothing to flag",
+          when: (fields) =>
+            !(Array.isArray(fields.location) && fields.location.length > 0),
         },
         {
           /**
@@ -334,13 +355,7 @@ export function buildScripts(
           prompt: "How long, or how often, did you go?",
           widget: "quick",
           optional: true,
-          options: [
-            { id: "tried_once", label: "Tried it once" },
-            { id: "few_sessions", label: "A few sessions" },
-            { id: "a_term", label: "A term or season" },
-            { id: "a_year_plus", label: "A year or more" },
-            { id: "weekly_ongoing", label: "Weekly, ongoing" },
-          ],
+          options: HOW_MUCH,
           when: wantsMore,
         },
         {
@@ -539,52 +554,6 @@ export function buildScripts(
           options: PARENT_STRENGTHS,
         },
         {
-          /**
-           * Same ids as the caregiver's own availability (2C, G6), because "she
-           * worked weekday mornings" and "I'm free weekday mornings" is the match
-           * this data exists to make.
-           */
-          id: "schedule_pattern",
-          prompt: "When did they usually work for you?",
-          aside: "Tap all that apply.",
-          widget: "chips",
-          options: CAREGIVER_SCHEDULE,
-          optional: true,
-        },
-        {
-          /* 28 Sep: "Specific days of the week" opens the days themselves.
-             cards.ts folds them into schedule_pattern beside the windows. */
-          id: "schedule_days",
-          prompt: "Which days?",
-          aside: "Tap all that apply.",
-          widget: "chips",
-          options: CAREGIVER_WEEKDAYS,
-          optional: true,
-          when: (fields) => wantsWeekdays(fields.schedule_pattern),
-        },
-        {
-          id: "pay_band",
-          prompt: "Roughly what did you pay?",
-          aside: "Optional. Ranges only, and never shown next to their name.",
-          widget: "quick",
-          optional: true,
-          options: PAY_BANDS,
-        },
-        {
-          /**
-           * Asked **once, and whether or not a pay range was given** (30 Sep, her
-           * rule: "ask weekly hours once, independently of whether a pay range
-           * was given"). It used to appear only after a band, so a parent who
-           * skipped the rate was never asked the size of the job.
-           */
-          id: "hours_per_week",
-          prompt: "Roughly how many hours a week?",
-          aside: "Optional.",
-          widget: "quick",
-          optional: true,
-          options: CAREGIVER_HOURS,
-        },
-        {
           id: "how_long",
           prompt: "And for how long?",
           widget: "quick",
@@ -609,46 +578,6 @@ export function buildScripts(
           ],
         },
         {
-          id: "what_makes_special",
-          prompt: "Anything you'd add in your own words?",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          placeholder: "Calm with a shy kid, and she actually plays…",
-        },
-        {
-          /* Back on the card (30 Sep); it was removed on 28 Sep and the client's
-             table restores it, optional, with her eight options. */
-          id: "good_fit_for",
-          prompt: "Which families are they a great fit for?",
-          widget: "chips",
-          options: CAREGIVER_FIT,
-          optional: true,
-        },
-        {
-          /**
-           * 30 Sep, the developer, reading the client's table: *"Просто робиш
-           * публічним, лишається"* — this note is **public** (after a person has
-           * read the card), and the private "Anything you'd only say privately?"
-           * is gone. It is stored as the nomination's `caveat`; retrieval
-           * offers it to an answer only from a card a human has released, made
-           * on or after the change (`PUBLIC_NOTE_SINCE`), so nothing a parent
-           * wrote believing it was private is ever shown.
-           *
-           * ⚠ It is the one box where a parent can name a person, so the card
-           * is still read by a person before anyone is listed (invariant 8).
-           * What a parent would only say privately now has exactly one place:
-           * the follow-up to the recommendation answer below.
-           */
-          id: "know_first",
-          prompt: "Anything a family should know up front?",
-          aside: "Optional. Families may see this once someone at Pando has read it.",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          placeholder: "Books up early in the summer…",
-        },
-        {
           /**
            * "Would you hire them again?" → "Would you recommend them to another
            * family?" (30 Sep). The step id stays `hire_again` and the values stay
@@ -670,15 +599,6 @@ export function buildScripts(
           ],
         },
         {
-          id: "hesitation_reason",
-          prompt: "What would you want Pando to understand?",
-          aside: "Optional. Your response stays private unless you separately agree to share it.",
-          widget: "text",
-          maxLength: 400,
-          optional: true,
-          when: (fields) => fields.hire_again === "hesitant" || fields.hire_again === "no",
-        },
-        {
           id: "reference_willing",
           prompt: "If another parent asks about them, would you be willing to be a reference?",
           aside: "We'd ask you again each time, and you can always say no.",
@@ -689,6 +609,102 @@ export function buildScripts(
             { id: "maybe", label: "Ask me at the time" },
             { id: "no", label: "Prefer not to" },
           ],
+        },
+        {
+          /**
+           * 30 Sep, the developer, reading the client's table: *"Просто робиш
+           * публічним, лишається"* — this note is **public** (after a person has
+           * read the card), and the private "Anything you'd only say privately?"
+           * is gone. It is stored as the nomination's `caveat`; retrieval
+           * offers it to an answer only from a card a human has released, made
+           * on or after the change (`PUBLIC_NOTE_SINCE`), so nothing a parent
+           * wrote believing it was private is ever shown.
+           *
+           * ⚠ It is the one box where a parent can name a person, so the card
+           * is still read by a person before anyone is listed (invariant 8).
+           * What a parent would only say privately now has exactly one place:
+           * the follow-up to the recommendation answer below.
+           */
+          id: "know_first",
+          prompt: "Anything a family should know up front?",
+          aside:
+            "Nothing to flag? Just say so. Families may see this once someone at Pando has read it.",
+          widget: "text",
+          maxLength: 400,
+          when: (fields) => fields.hire_again !== "no",
+          placeholder: "e.g. books up early in the summer",
+        },
+        {
+          /**
+           * Same ids as the caregiver's own availability (2C, G6), because "she
+           * worked weekday mornings" and "I'm free weekday mornings" is the match
+           * this data exists to make.
+           */
+          id: "schedule_pattern",
+          prompt: "When did they usually work for you?",
+          aside: "Tap all that apply.",
+          widget: "chips",
+          options: CAREGIVER_SCHEDULE,
+          optional: true,
+        },
+        {
+          /* 28 Sep: "Specific days of the week" opens the days themselves.
+             cards.ts folds them into schedule_pattern beside the windows. */
+          id: "schedule_days",
+          prompt: "Which days?",
+          aside: "Tap all that apply.",
+          widget: "chips",
+          options: CAREGIVER_WEEKDAYS,
+          optional: true,
+          when: (fields) => wantsWeekdays(fields.schedule_pattern),
+        },
+        {
+          /**
+           * Asked **once, and whether or not a pay range was given** (30 Sep, her
+           * rule: "ask weekly hours once, independently of whether a pay range
+           * was given"). It used to appear only after a band, so a parent who
+           * skipped the rate was never asked the size of the job.
+           */
+          id: "hours_per_week",
+          prompt: "Roughly how many hours a week?",
+          aside: "Optional.",
+          widget: "quick",
+          optional: true,
+          options: CAREGIVER_HOURS,
+        },
+        {
+          id: "pay_band",
+          prompt: "Roughly what did you pay?",
+          aside: "Optional. Ranges only, and never shown next to their name.",
+          widget: "quick",
+          optional: true,
+          options: PAY_BANDS,
+        },
+        {
+          id: "what_makes_special",
+          prompt: "Anything you'd add in your own words?",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          placeholder: "Calm with a shy kid, and she actually plays…",
+        },
+        {
+          /* Back on the card (30 Sep); it was removed on 28 Sep and the client's
+             table restores it, optional, with her eight options. */
+          id: "good_fit_for",
+          prompt: "Which families are they a great fit for?",
+          widget: "chips",
+          options: CAREGIVER_FIT,
+          optional: true,
+        },
+        {
+          id: "hesitation_reason",
+          prompt: "What would you want Pando to understand?",
+          aside: "Optional. Your response stays private unless you separately agree to share it.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          when: (fields) => fields.hire_again === "hesitant" || fields.hire_again === "no",
         },
         {
           /**
@@ -766,35 +782,6 @@ export function buildScripts(
           options: PLACE_TYPES,
         },
         {
-          id: "location",
-          prompt: "Which area is it in?",
-          widget: "chips",
-          options: neighborhoods,
-          optional: true,
-        },
-        {
-          /**
-           * The child's age at the time, asked only where age matters (4 Oct).
-           * The client requires it "where the experience relates to a child";
-           * the developer: a playground asks it, a café does not. The model
-           * decides right after the kind is tapped, and only a clear "no" skips
-           * it — written into the card as `child_age_scope`, which the server
-           * reads, so "not asked" is never confused with "not answered".
-           *
-           * ⚠ Replaces "Who's it best for?" — two age questions on one card
-           * would be one question asked twice. A skip is "Not child-specific",
-           * which `cards.ts` stores as every band so the place is not dropped
-           * from a question that names an age.
-           */
-          id: "child_age",
-          prompt: "How old was your child when you went?",
-          aside: "Tap every age that applies.",
-          widget: "ages",
-          optional: true,
-          skipLabel: "Not child-specific",
-          when: (fields) => fields.child_age_scope !== "not_child_specific",
-        },
-        {
           id: "what_makes_it_great",
           prompt: "What makes it worth the trip?",
           widget: "text",
@@ -802,12 +789,31 @@ export function buildScripts(
           placeholder: "Shade, clean bathrooms, and a fence…",
         },
         {
+          /* Required, and answered in words (5 Oct): "Nothing to flag" is an
+             answer, a skip button is not. `cards.ts` stores it as asked and
+             answered, never as a caveat another parent is shown. */
           id: "caveat",
           prompt: "Anything to know before going?",
+          aside: "Parking, crowds, the hours. Nothing to flag? Just say so.",
           widget: "text",
           maxLength: 400,
-          optional: true,
           placeholder: "Parking is brutal after 10am…",
+        },
+        {
+          /* After the required questions (5 Oct), and the question as it was
+             before the age check: the child-age model call was taken back out. */
+          id: "location",
+          prompt: "Which area is it in?",
+          widget: "chips",
+          options: neighborhoods,
+          optional: true,
+        },
+        {
+          id: "best_for",
+          prompt: "Who's it best for?",
+          widget: "chips",
+          options: AGE_BANDS,
+          optional: true,
         },
         {
           /**
@@ -853,10 +859,10 @@ export function buildScripts(
       recap: [
         { field: "name", label: "Place" },
         { field: "type", label: "Kind" },
-        { field: "location", label: "Where" },
-        { field: "child_age", label: "Child's age" },
         { field: "what_makes_it_great", label: "Why go" },
         { field: "caveat", label: "Caveat" },
+        { field: "location", label: "Where" },
+        { field: "best_for", label: "Best for" },
         { field: "extra_note", label: "Anything else" },
       ],
     },
@@ -875,11 +881,23 @@ export function buildScripts(
         },
         {
           id: "tip",
-          prompt: "What's the tip?",
+          prompt: "What should another parent do or know?",
           aside: "Say it the way you'd text it.",
           widget: "text",
           maxLength: 400,
           placeholder: "Sign up the week registration opens or you'll be waitlisted…",
+        },
+        {
+          /* The client's tip minimum (5 Oct): *"When is this useful / why did it
+             help you?"* Stored in `what_makes_it_great`, the contribution's
+             "why" column — a tip has no other use for it, and the admin, the
+             extraction pass and the quality rule already read it. */
+          id: "what_makes_it_great",
+          prompt: "When is this useful, or why did it help you?",
+          aside: "A sentence is plenty.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "It saved us a month on the waitlist…",
         },
         {
           id: "best_for",
@@ -932,6 +950,7 @@ export function buildScripts(
       recap: [
         { field: "topic", label: "Topic" },
         { field: "tip", label: "Tip" },
+        { field: "what_makes_it_great", label: "Why it helped" },
         { field: "best_for", label: "Helps most" },
         { field: "extra_note", label: "Anything else" },
       ],
