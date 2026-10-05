@@ -180,6 +180,10 @@ export function FactGrid({
    *
    * ⚠ Omit it and nothing changes: a record whose facts are all one kind gets
    * no heading, which is every other page today.
+   *
+   * A titled group after another one opens with `mt-5` (5 Oct): the heading
+   * otherwise sat 0px under the last value of the group above, so it read as
+   * that group's last fact rather than the start of the next.
    */
   title,
 }: {
@@ -189,7 +193,7 @@ export function FactGrid({
   return (
     <>
       {title && (
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <p className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted first:mt-0">
           {title}
         </p>
       )}
