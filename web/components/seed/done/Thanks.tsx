@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
+import { TextAction } from "@/components/ui/TextAction";
 import { Wordmark } from "@/components/ui/Logo";
 import {
   Screen,
@@ -16,6 +17,8 @@ import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { submissionTitle } from "@/lib/seed-chat/engine";
 import type { Submission } from "@/lib/seed-chat/types";
+import { holdsUntilVerified } from "@/lib/submit";
+import { heldCards, SendHeld } from "./SendHeld";
 import {
   DoneProfileReminder,
   isAnonymous,
@@ -25,20 +28,30 @@ import {
 } from "./shared";
 
 /**
- * Estimate 1.7, screen 1 of 3 — what just happened.
+ * Estimate 1.7 — what just happened, after the chat.
  *
- * This screen only tells. Everything Pando still needs is on /done/ask, and
- * everything that happens later is on /done/next, so the parent reads one thing
- * at a time.
+ * The order since 7 Oct is `/profile` → `/done/ask` → `/share` → here →
+ * `/done/next`, so a parent normally arrives with the follow-up answer already
+ * given. The dock's `/done/ask` branch is for one who did not: a returning parent
+ * landing here from `/signin`, or one who kept an existing profile.
+ *
+ * This screen only tells — with one exception, `SendHeld`, for cards a lapsed
+ * confirmation left on the phone during the chat. It used to be `/done/ask`'s
+ * job, and that screen is no longer after the chat.
  */
 export function Thanks() {
-  const { session, loaded } = useDoneSession();
+  const { session, setSession, loaded } = useDoneSession();
   const viewed = useRef(false);
 
   const shared: Submission[] = session?.chat?.submissions ?? [];
   const count = shared.length;
   const anonymous = isAnonymous(session);
   const completed = Boolean(session?.completed_at);
+  /** Answered on `/done/ask`, held on this phone until a code can be sent. */
+  const waitingForCode =
+    !completed &&
+    typeof session?.follow_up_opt_in === "boolean" &&
+    holdsUntilVerified(session);
 
   useEffect(() => {
     if (!loaded || viewed.current) return;
@@ -101,6 +114,8 @@ export function Thanks() {
             )}
           </p>
 
+          <SendHeld session={session} setSession={setSession} />
+
           {count > 0 && (
             <Panel raised flush className="mt-6">
               <p className="border-b border-bark/70 bg-green-wash px-4 py-2.5 text-[12.5px] font-semibold uppercase tracking-[0.09em] text-green-deep">
@@ -148,12 +163,26 @@ export function Thanks() {
             <ReferralPanel code={session.referral_code} />
           )}
 
+          {/* The way back to the question to Pando and the follow-up permission
+              (7 Oct, the developer). `/done/ask` sits before the chat now, so
+              without this a parent finished with it could only reach it through
+              the chat's Back. Only once answered: before that the dock leads there. */}
+          {completed && (
+            <TextAction href="/done/ask" full className="mt-5">
+              Change my question or follow-ups
+            </TextAction>
+          )}
+
           {loaded && !session && <NoSession />}
         </div>
       </ScreenBody>
 
       <ScreenDock>
-        {completed ? (
+        {/* `waitingForCode`: the follow-up answer was given and is held on this
+            phone because no code could be sent. Sending them back to `/done/ask`
+            would ask a question they have answered, and since 7 Oct that screen
+            leads into the chat again — a loop with no way to `/done/next`. */}
+        {completed || waitingForCode ? (
           <Link href="/done/next" className={buttonClass("primary", true)}>
             What happens next
           </Link>
@@ -170,9 +199,13 @@ export function Thanks() {
             the last required step, and the split added a place to abandon before
             it. */}
         <p className="mt-2 text-center text-[13px] text-muted">
-          {completed
-            ? "You're all set — nothing else is needed."
-            : "One question and one permission left — about 30 seconds."}
+          {waitingForCode
+            ? "Your answers stay on this phone until your number can be confirmed."
+            : !completed
+              ? "One question and one permission left — about 30 seconds."
+              : heldCards(session).length > 0
+                ? "Some of what you shared is still on this phone — see above."
+                : "You're all set — nothing else is needed."}
         </p>
       </ScreenDock>
     </Screen>

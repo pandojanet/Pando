@@ -22,6 +22,7 @@
                        live here, and no key answers `not_configured` rather
                        than an empty result.
 `web/lib/demand.ts` — D1 routing: what Pando says back to which kind of question.
+`web/lib/server/demand-body.ts` — `demandFromBody`: a D1 request body → what may be stored (classified server-side, sensitive ones only with permission). Every route taking a D1 uses it.
 `web/lib/seed-gate.ts` — link-only access: the marker cookie, and which screens
                        need it. `proxy.ts` issues it on `/join` and enforces it
                        on the rest. Not authentication — see [decisions.md](../decisions.md).

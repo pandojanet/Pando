@@ -1229,9 +1229,12 @@ export function ProfileFlow() {
        * No code means no popup and no apology — on the held path (a deployment
        * that cannot send a code, or the anonymous route) nothing has been
        * written yet, so there is no link to give.
+       *
+       * ⚠ Since 7 Oct `/done/ask` comes first (the developer: profile → the
+       * question to Pando and the follow-up permission → contributions), so the
+       * popup still belongs on `/share` — it is one screen later, not lost.
        */
-      // Straight into the part only they can answer.
-      router.push("/share");
+      router.push("/done/ask");
     } catch (err) {
       /* The confirmation ran out mid-flow. The profile is on the phone, the
          session is back to holding, and the end of the flow will ask for a fresh
@@ -1242,7 +1245,7 @@ export function ProfileFlow() {
           phone_verified: false,
           profile_saved_at: new Date().toISOString(),
         }));
-        router.push("/share");
+        router.push("/done/ask");
         return;
       }
       /**

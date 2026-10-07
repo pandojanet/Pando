@@ -54,7 +54,9 @@ const BADGES: Record<PanelKey, string> = {
      was optimistic about the flow after it. */
   profile: "Step 1 · About 2 minutes",
   share: "Step 2 · Share what you know",
-  finish: "Last step",
+  /* "Last step" until 7 Oct, when `/done/ask` moved in front of the chat — the
+     eyebrow on the screen itself says the same words. */
+  finish: "Step 1 · Before you share",
   done: "Founding Contributor",
 };
 
@@ -74,9 +76,11 @@ function panelFor(pathname: string): PanelKey {
 export function BrandPanel() {
   const key = panelFor(usePathname());
   const badge = BADGES[key];
-  /* "finish" is not its own step in the rail — it's the last stretch of "Done", and
-     giving it a fourth dot would tell the parent the flow just got longer. */
-  const railKey = key === "finish" ? "done" : key;
+  /* "finish" is not its own step in the rail — a fourth dot would tell the parent
+     the flow just got longer. ⚠ It was the last stretch of "Done" until 7 Oct;
+     `/done/ask` now comes before the chat, so it closes "Your profile", and
+     lighting "Done" there put the finish line in front of "What you know". */
+  const railKey = key === "finish" ? "profile" : key;
   const activeStep = STEPS.findIndex((s) => s.key === railKey);
 
   return (

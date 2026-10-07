@@ -136,7 +136,17 @@ export type SeedEvent =
      them — the split added two places to leave before the consent is answered, and
      without them a drop-off there is invisible. */
   | "seed_done_continue"
+  /* No longer emitted since 7 Oct: it was `/done/ask` → `/done/next`, and
+     `/done/ask` now leads to the chat. Kept so old dashboards still name it. */
   | "seed_done_next_opened"
+  /** `/done/ask` → `/share`: the step the 7 Oct reorder put before the chat. */
+  | "seed_ask_continued"
+  /** `/done` sent cards a lapsed confirmation had left on the phone (`SendHeld`). */
+  | "seed_held_cards_sent"
+  | "seed_held_cards_failed"
+  /** D1 changed or withdrawn after the completion, sent on its own (7 Oct). */
+  | "seed_demand_edited"
+  | "seed_demand_edit_failed"
   | "seed_demand_captured"
   | "seed_demand_skipped"
   | "seed_follow_up_answered"

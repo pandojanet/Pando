@@ -1813,7 +1813,7 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
   );
 }
 
-console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ===");
+console.log("\n=== 10 Sep: the fork, and the screens behind the ceiling (nine since 7 Oct) ===");
 {
   /**
    * *"The path to the first recommendation must contain no more than 8
@@ -1821,13 +1821,22 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
    *
    * ⚠ **The ceiling is asserted here rather than in a comment**, which is the
    * whole point: `questions.ts` claimed this suite pinned it while nothing did,
-   * and a count nobody checks is the one that drifts back. The eight are named
+   * and a count nobody checks is the one that drifts back. The nine are named
    * so the arithmetic is legible: `/join`, the two required questions, the
-   * fork, the participation level, the review, the code and `/share`. Only the
-   * middle four are screens this file can count; the other four are routes, so
-   * they are stated as a constant and the sum is what is checked.
+   * fork, the participation level, the review, the code, `/done/ask` and
+   * `/share`. Only the middle four are screens this file can count; the other
+   * five are routes, so they are stated as a constant and the sum is checked —
+   * and the hops between the routes are read from the source below, so a sixth
+   * route slipped in after the profile fails here rather than going uncounted.
    */
-  const AROUND_THE_FLOW = 4; // /join · review · the code · /share
+  /* ⚠⚠ **Five since 7 Oct, and the ceiling below is nine.** The developer
+     moved `/done/ask` (D1 and the follow-up permission) in front of the chat,
+     and when asked about this very ceiling chose nine and a recorded change
+     over keeping eight (docs/decisions.md, 7 Oct). It is counted here rather
+     than left out, because leaving it out is how this check would have kept
+     reading eight over a nine-screen path. */
+  const AROUND_THE_FLOW = 5; // /join · review · the code · /done/ask · /share
+  const CEILING = 9;
   const required: ProfileAnswers = {
     ...q.EMPTY_ANSWERS,
     neighborhood: "pasadena",
@@ -1846,9 +1855,24 @@ console.log("\n=== 10 Sep: the fork, and the eight screens behind the ceiling ==
     walked.map((s) => s.id).join(","),
   );
   ok(
-    "so a parent reaches the first recommendation in eight, never nine",
-    walked.length + AROUND_THE_FLOW <= 8,
+    "so a parent reaches the first recommendation in nine, never ten",
+    walked.length + AROUND_THE_FLOW <= CEILING,
     `${walked.length} + ${AROUND_THE_FLOW}`,
+  );
+  /* The two hops the constant above assumes, read from the source: the saved
+     profile goes to `/done/ask` and nowhere else, and `/done/ask` goes to the
+     chat. A route added between them would change one of these lines. */
+  const flowSrc = fs.readFileSync("components/seed/ProfileFlow.tsx", "utf8");
+  const askSrc = fs.readFileSync("components/seed/done/FinishAsks.tsx", "utf8");
+  const pushes = [...flowSrc.matchAll(/router\.push\("([^"]+)"\)/g)].map((m) => m[1]);
+  ok(
+    "the saved profile goes to /done/ask, never straight to the chat",
+    pushes.filter((p) => p === "/done/ask").length === 2 && !pushes.includes("/share"),
+    pushes.join(","),
+  );
+  ok(
+    "and /done/ask goes on to the chat",
+    /href="\/share"/.test(askSrc),
   );
   ok(
     "and the two required questions are the only required ones on it",

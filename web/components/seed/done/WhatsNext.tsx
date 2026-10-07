@@ -17,10 +17,12 @@ import {
 import { track } from "@/lib/analytics";
 import { REWARD_OFFER } from "@/lib/rewards";
 import { WHY_INVITE } from "@/components/seed/ReferralInvite";
+import { heldCards } from "./SendHeld";
 import { DoneProfileReminder, NoSession, Next, useDoneSession } from "./shared";
 
 /**
- * Estimate 1.7, screen 3 of 3 — what happens after they close the tab.
+ * Estimate 1.7 — what happens after they close the tab. The last screen of the
+ * flow (order since 7 Oct: /profile → /done/ask → /share → /done → here).
  *
  * Nothing here asks for anything or writes anything, which is why it can sit
  * behind the completion write rather than in front of it.
@@ -30,6 +32,7 @@ export function WhatsNext() {
 
   const count = session?.chat?.submissions.length ?? 0;
   const completed = Boolean(session?.completed_at);
+  const held = heldCards(session).length;
 
   return (
     <Screen>
@@ -48,11 +51,35 @@ export function WhatsNext() {
           {/* Somebody who navigated here without answering the consent would
               otherwise read a list of things that happen to a submission Pando
               never received. */}
+          {/* Three states, each saying what is actually true (7 Oct): the
+              permission not answered; answered but held on this phone waiting
+              for a code (`/done` lets them through, so this is where the way
+              back to confirming has to be); and completed but with cards a
+              lapsed confirmation left behind. */}
           {loaded && session && !completed && (
             <Panel as="p" tone="warning" size="inset" className="mt-4 leading-relaxed text-gold-ink text-control">
-              One thing is still open — the follow-up permission on the{" "}
-              <InlineAction href="/done/ask">previous step</InlineAction>
-              . Until that&apos;s answered, nothing below has started.
+              {typeof session.follow_up_opt_in === "boolean" ? (
+                <>
+                  Your answers are still on this phone.{" "}
+                  <InlineAction href="/done/ask">Confirm your number</InlineAction>{" "}
+                  to send them — until then, nothing below has started.
+                </>
+              ) : (
+                <>
+                  One thing is still open — the{" "}
+                  <InlineAction href="/done/ask">follow-up permission</InlineAction>
+                  . Until that&apos;s answered, nothing below has started.
+                </>
+              )}
+            </Panel>
+          )}
+          {loaded && completed && held > 0 && (
+            <Panel as="p" tone="warning" size="inset" className="mt-4 leading-relaxed text-gold-ink text-control">
+              {held === 1
+                ? "One recommendation is still on this phone. "
+                : `${held} recommendations are still on this phone. `}
+              <InlineAction href="/done">Send {held === 1 ? "it" : "them"}</InlineAction>
+              {" "}— until then, the steps below have not started for {held === 1 ? "it" : "them"}.
             </Panel>
           )}
 
@@ -119,6 +146,13 @@ export function WhatsNext() {
         <TextAction href="/profile" full className="mt-2">
           Review my answers
         </TextAction>
+        {/* The way back to `/done/ask` (7 Oct): it sits before the chat now, so a
+            finished parent had no route to it from here. */}
+        {completed && (
+          <TextAction href="/done/ask" full>
+            Change my question or follow-ups
+          </TextAction>
+        )}
       </ScreenDock>
     </Screen>
   );

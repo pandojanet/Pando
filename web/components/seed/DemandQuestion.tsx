@@ -117,8 +117,10 @@ export function DemandQuestion({
 
   return (
     <Panel raised className="mt-7">
+      {/* "One last thing — this bit's for you" until 7 Oct, when this screen
+          moved in front of the chat and stopped being the last thing. */}
       <p className="text-[12.5px] font-semibold uppercase tracking-[0.1em] text-green">
-        One last thing — this bit&apos;s for you
+        This bit&apos;s for you
       </p>
       <h2 className="mt-2 font-display text-[1.15rem] font-semibold">
         What&apos;s one parenting question or decision you&apos;d genuinely want to

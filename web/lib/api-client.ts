@@ -247,6 +247,22 @@ export function completeSeed(payload: {
   return postJson<CompleteSeedResult>("/api/seed/complete", payload);
 }
 
+/**
+ * D1 changed after the completion (7 Oct): the same question, edited on the server.
+ * `null` withdraws it. No phone in the body — the route reads it from the
+ * verification, and answers 401 when that has run out.
+ */
+export function updateDemand(payload: {
+  is_test: boolean;
+  demand: {
+    question_text: string;
+    category: string | null;
+    may_save?: boolean;
+  } | null;
+}): Promise<{ ok: true; persisted: boolean; outcome?: string }> {
+  return postJson("/api/seed/demand", payload);
+}
+
 /** One finished capture card from the chat (estimate 1.4). */
 export function saveSubmission(payload: {
   invite_code: string | null;

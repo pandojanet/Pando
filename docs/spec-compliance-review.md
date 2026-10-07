@@ -171,17 +171,27 @@ shared list, D1, the versioned consent wording, the OTP gate, five next-steps, t
 referral card and a come-back note — around 3 000 characters of reading on the last
 screen of the flow.
 
-It is now `/done` (tells) → `/done/ask` (D1 + consent + OTP) → `/done/next` (what
-happens next + D2). Nothing was removed: every element the spec lists is still
-present, in the spec's order.
+It was split into `/done` (tells) → `/done/ask` (D1 + consent + OTP) → `/done/next`
+(what happens next + D2). Nothing was removed: every element the spec lists is still
+present — in the spec's order until 7 Oct (below).
 
-What that costs, so it isn't discovered later:
+**Deviation, 7 Oct (developer's instruction):** `/done/ask` moved in front of the
+chat — profile → `/done/ask` → `/share` → `/done` → `/done/next` — so D1 and the
+follow-up consent are no longer the closing screen, and the client's 10 Sep ceiling
+of eight screens to the first recommendation is now nine. Asked about the ceiling
+directly, the developer chose nine and a recorded change; it has not been put to the
+client. See docs/decisions.md.
+
+What the split cost, so it isn't discovered later:
 
 - **Two extra places to abandon** before the follow-up consent, which is the one
   Phase 1 answer that makes a contributor reachable in Phase 2. Mitigated by naming
   what's left on `/done`'s own button, and by two new funnel events
   (`seed_done_continue`, `seed_done_next_opened`) so a drop-off there is visible
-  rather than invisible.
+  rather than invisible. ⚠ **Superseded on 7 Oct:** the consent now comes straight
+  after the profile, before the chat, so the chat is no longer a place to abandon
+  before it; `seed_done_next_opened` is no longer emitted and `seed_ask_continued`
+  counts the step from `/done/ask` into the chat.
 - **D1 cannot move past the consent.** Its answer travels in the same completion
   write (`demand: session.demand`), so the split had to keep it on or before the
   screen that submits. Worth stating because the obvious "put the optional question
@@ -364,7 +374,7 @@ intent. Everything each of them asks for is below, with where it landed.
 | # | Change | State |
 | --- | --- | --- |
 | 1 | SMS compliance layer (§13, §15, §19.1, §20) | 🟡 **the Phase 1 half is done.** Consent is captured at every phone-capture point, versioned (`lib/consent.ts`), server-stamped, stored per person and **exportable** at `/admin/consents` (A2P §3.3). One send layer exists (`lib/server/sms.ts`) and is the only path to Twilio, always via the Messaging Service. ⬜ The rest — quiet hours enforcement, STOP/HELP precedence, `message_log`, delivery monitoring, `/api/sms/status` — governs sends that do not exist yet; see §5.3. |
-| 2 | Demand capture, one closing question (§3.2, §3.3, §15.1) | ✅ D1 on `/done/ask`, routed rather than banked (`lib/demand.ts`), with the asker's neighborhood read from their profile (§9) and a fourth sensitivity class from the strategy paper (§5.4). |
+| 2 | Demand capture, one closing question (§3.2, §3.3, §15.1) | ✅ D1 on `/done/ask` — **no longer closing since 7 Oct**: it comes straight after the profile, before the chat — routed rather than banked (`lib/demand.ts`), with the asker's neighborhood read from their profile (§9) and a fourth sensitivity class from the strategy paper (§5.4). |
 | 3 | Freshness pings (§11.3, §15.4, §20) | ⬜ Phase 2. The thresholds it needs are already data, not code — `freshness_policy` (kind, ageing_days, stale_days) is seeded per category, so the open question below is a value, not a build. |
 | 4 | First blast free via credits (§9, §9.1) | ⬜ Phase 2. |
 | 5 | Blast responses feed the graph (§9.1, §15.2) | ⬜ Phase 2. |

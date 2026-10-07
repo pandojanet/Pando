@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { CONSENT_TEXT_VERSION, SMS_CONSENT_TEXT_VERSION } from "@/lib/consent";
-import { classifyDemand, needsHumanReview } from "@/lib/demand";
+import { demandFromBody } from "@/lib/server/demand-body";
 import { toE164 } from "@/lib/phone";
-import { cleanE164, cleanId, cleanName, cleanText } from "@/lib/sanitize";
+import { cleanE164, cleanId, cleanName } from "@/lib/sanitize";
 import { validateInviteCode } from "@/lib/server/invite";
 import { submitGate } from "@/lib/server/gate";
 import { withDb } from "@/lib/server/db";
@@ -118,35 +118,10 @@ export async function POST(request: Request) {
       reachable: optedIn && phone !== null,
     },
     /**
-     * D1. Three things the client asked for, none of which the browser is trusted
-     * with: the classification is re-derived here, a peer-support question is only
-     * stored when the parent agreed, and anything not ordinary is flagged for a
-     * person rather than entering the knowledge base.
+     * D1, classified by the server and stored only with permission — the rule is
+     * `demandFromBody`, shared with `/api/seed/demand`, which edits it later.
      */
-    demand: (() => {
-      const d = raw.demand as {
-        question_text?: unknown;
-        category?: unknown;
-        may_save?: unknown;
-      } | null;
-      const text = cleanText(d?.question_text, 300);
-      if (!text) return null;
-
-      const category = cleanId(d?.category);
-      const sensitivity = classifyDemand(text, category);
-
-      // "No — just needed to say it" means exactly that: nothing is stored.
-      if (sensitivity !== "ordinary" && d?.may_save !== true) return null;
-
-      return {
-        question_text: text,
-        category,
-        sensitivity,
-        status: "open" as const,
-        /** Sensitive questions never enter the knowledge base automatically. */
-        requires_human_review: needsHumanReview(sensitivity),
-      };
-    })(),
+    demand: demandFromBody(raw.demand),
     shared,
     shared_total: Object.values(shared).reduce((a, b) => a + b, 0),
     client_profile_saved_at:

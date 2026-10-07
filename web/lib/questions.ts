@@ -958,11 +958,12 @@ export const ALL_SCREENS: Screen[] = [
      * split undoes; nothing was rewritten in either direction, so the only
      * casualty of the round trip is the merged title, which was ours.
      *
-     * ⚠ **The count, which her 10 Sep instruction caps at eight:** `/join` ·
+     * ⚠ **The count, which her 10 Sep instruction capped at eight:** `/join` ·
      * this · the children · the fork · participation · review · the code ·
-     * `/share`. **Eight**, and seven wherever verification cannot send —
-     * which is where it stood before the merge. `test:feedback` asserts the
-     * ceiling rather than leaving it to drift.
+     * `/done/ask` · `/share`. **Nine since 7 Oct**, when the developer moved
+     * `/done/ask` in front of the chat and chose nine over keeping her eight
+     * (docs/decisions.md). `test:feedback` asserts the ceiling rather than
+     * leaving it to drift.
      */
     id: "neighborhood",
     eyebrow: "Where you are",
@@ -1992,8 +1993,9 @@ export const ALL_SCREENS: Screen[] = [
  * had been put in here.
  *
  * **Why behind the fork rather than back on the required path.** The client's
- * *"no more than 8 screens to the first recommendation"* is explicit and
- * recent, and `test:feedback` pins it. Behind the fork the required path stays
+ * *"no more than 8 screens to the first recommendation"* is explicit, and
+ * `test:feedback` pins it (nine since 7 Oct — `/done/ask` now sits before the
+ * chat; see docs/decisions.md). Behind the fork the required path stays
  * four screens, every question is reachable and answerable, and the fork's own
  * screen carries her *"the more detail you give, the more custom your answers
  * will be"* — which is her wording for exactly these questions. The cost is

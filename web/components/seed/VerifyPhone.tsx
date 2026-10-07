@@ -57,7 +57,7 @@ interface Props {
    * attempt ceiling and the "not provisioned yet" honesty are the same mechanism,
    * and forking the component to reword three lines would have duplicated all of it.
    */
-  audience?: "parent" | "caregiver" | "returning";
+  audience?: "parent" | "caregiver" | "returning" | "lapsed";
   /**
    * Request the code on mount, for the one caller whose *previous* screen already
    * said "Text me a code" — `/signin`, where the number is the whole of the
@@ -230,6 +230,16 @@ export function VerifyPhone({
             {"Only you should be able to set up your profile, so we text "}
             <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
             {" a six-digit code. Until you confirm it, nothing you've written is saved."}
+          </>
+        ) : audience === "lapsed" ? (
+          /* 7 Oct: a confirmation that ran out after something was already
+             stored — `/done` sending held cards, or `/done/ask` revisited from
+             the chat. "Nothing you write reaches us" would be false there: the
+             profile and the follow-up answer already have. */
+          <>
+            {"Your confirmation has run out, so we text "}
+            <span className="whitespace-nowrap font-semibold">{maskPhone(phone)}</span>
+            {" a fresh six-digit code. What you already sent is safe — this sends the rest."}
           </>
         ) : audience === "returning" ? (
           /* A returning parent is not writing anything, so the sentence about

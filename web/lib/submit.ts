@@ -127,26 +127,47 @@ export function unansweredRequired(err: unknown): string[] | null {
 }
 
 export interface FlushResult {
+  /** False when the profile was not sent — refused by the caller, or not stored. */
   profile: boolean;
   /** Cards the server confirmed, out of how many were held. */
   cards_persisted: number;
   cards_total: number;
-  completion: CompleteSeedResult;
+  /** The ids behind `cards_persisted`, so the caller can mark exactly those sent. */
+  persisted_ids: string[];
+  /** Null when the caller asked for no completion write. */
+  completion: CompleteSeedResult | null;
 }
 
 /**
  * Sends everything the session has been holding. Throws on the first failure — a
  * half-submitted contributor is worth retrying, and every write is keyed by a
  * client id so a retry upserts rather than duplicates.
+ *
+ * ⚠ **Two writes here are not safe to repeat, and each can be left out** (7 Oct).
+ * The completion screen now sits *before* the chat, so a session that went back to
+ * holding mid-chat is flushed again from `/done`, after both were already written:
+ *
+ *  - `completion: null` skips the completion, which appends a follow-up consent
+ *    row and a demand signal every time — twice would record the D1 question twice;
+ *  - `{ profile: false }` skips the profile, which is **not** an upsert either: it
+ *    appends the `sms`, `sms_recurring` and `listening_ear` consent rows and adds
+ *    one to `pending_options.occurrences` for every "Other" answer, so a second
+ *    send would make one parent count twice towards promoting an option.
+ *
+ * Only the cards are keyed by client id and safe to send again.
  */
 export async function flushSession(
   session: SeedSession,
-  completion: { follow_up_opt_in: boolean },
+  completion: { follow_up_opt_in: boolean } | null,
+  options: { profile?: boolean } = {},
 ): Promise<FlushResult> {
-  const profileResult = await saveProfile(buildProfilePayload(session));
+  const profileResult =
+    options.profile === false
+      ? null
+      : await saveProfile(buildProfilePayload(session));
 
   const cards = session.chat?.submissions ?? [];
-  let cardsPersisted = 0;
+  const persistedIds: string[] = [];
   for (const card of cards) {
     const saved = await saveSubmission({
       invite_code: session.invite_code,
@@ -169,7 +190,7 @@ export async function flushSession(
         created_at: card.created_at,
       },
     });
-    if (saved.persisted) cardsPersisted += 1;
+    if (saved.persisted) persistedIds.push(card.id);
   }
 
   const counts = cards.reduce<Record<string, number>>((acc, card) => {
@@ -177,7 +198,7 @@ export async function flushSession(
     return acc;
   }, {});
 
-  const completionResult = await completeSeed({
+  const completionResult = completion === null ? null : await completeSeed({
     invite_code: session.invite_code,
     source: session.source,
     is_test: session.is_test === true,
@@ -195,9 +216,10 @@ export async function flushSession(
   });
 
   return {
-    profile: profileResult.persisted,
-    cards_persisted: cardsPersisted,
+    profile: profileResult?.persisted ?? false,
+    cards_persisted: persistedIds.length,
     cards_total: cards.length,
+    persisted_ids: persistedIds,
     completion: completionResult,
   };
 }

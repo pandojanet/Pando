@@ -70,6 +70,31 @@ export function DoneProfileReminder({
   return <ProfileReminder depth={profileDepth(session.answers)} />;
 }
 
+/**
+ * The level they chose, as a number of questions a month — or **null** for
+ * the open-ended one, which has no monthly number at all.
+ *
+ * ⚠ This was `Number(session.answers.allowance)`, and `Number("as_relevant")`
+ * is **NaN**. Two things came of it, and the second is what the client
+ * reported: the confirmation read *"At most NaN a month"*, and the same
+ * expression in `flushSession` sent `NaN` — which `JSON.stringify` writes as
+ * `null` — to `/api/seed/complete`, where the fallback turned it into 5 and
+ * the write then violated `allowance_shape`. See `repo/completion.ts`.
+ *
+ * ⚠ The old fallback for an unanswered question was **3**, which has not been
+ * a valid allowance since 18 Aug. It is 5 now, the community minimum, which is
+ * what `derive.ts` falls back to for the same reason — never the open-ended
+ * level, which would claim the parent granted the most permissive answer on
+ * the screen.
+ *
+ * Here rather than in `FinishAsks` since 7 Oct: `/done` asks for a code too now
+ * (`SendHeld`), and the two panels must echo the same number.
+ */
+export function chosenAllowance(session: SeedSession | null): number | null {
+  const chosen = session?.answers.allowance ?? null;
+  return chosen === "as_relevant" ? null : chosen ? Number(chosen) : 5;
+}
+
 /** They chose the labelled path with no Founding status and no follow-ups. */
 export function isAnonymous(session: SeedSession | null): boolean {
   return session?.wants_founding === false;

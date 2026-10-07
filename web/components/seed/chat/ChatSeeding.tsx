@@ -931,10 +931,15 @@ export function ChatSeeding() {
          * session, which is autosaved on every answer, and the transcript is
          * rebuilt from it on return — the same property that makes the flow
          * resumable a day later.
+         *
+         * ⚠ **`/done/ask` since 7 Oct, not the review.** That screen now sits
+         * between the profile and this one, so it is the step back; its own
+         * Back leads on to the review, so the route above still exists — one
+         * tap further.
          */
         left={
           <div className="flex items-center gap-1">
-            <BackButton onClick={() => router.push("/profile")} />
+            <BackButton onClick={() => router.push("/done/ask")} />
             {/* On a phone the header also carries the profile badge and the invite
                 link (21 Sep), and the full lockup overlapped them at 375px — so the
                 mark alone there, and the word from sm up. Wrappers, not classes on

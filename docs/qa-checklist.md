@@ -40,10 +40,13 @@ your own runs need clearing out afterwards.
 
 **Except where no code can be sent.** With Twilio unprovisioned *and* dev codes off, the
 whole visit waits on the phone: each card says "Kept on this phone until you finish",
-and `/done/ask` asks for the code and sends it all in one pass. `persisted: false`
-mid-flow is then correct, not a failure. Same fallback if a confirmation expires
-mid-visit — a confirmed number is good for 12 hours, and the container restarting ends
-it early.
+`/done/ask` says no code can be sent and lets you continue to the chat, and the next
+visit — once a code can be sent — confirms it there and sends it all in one pass.
+`persisted: false` mid-flow is then correct, not a failure. If a confirmation expires
+**during the chat** (a confirmed number is good for 12 hours, and the container
+restarting ends it early), `/done` shows "N recommendations are still on this phone"
+with a code box, and confirming sends them — without recording the follow-up answer or
+your closing question a second time.
 
 **The verification screen is live, and the code is on it.** Twilio still isn't wired —
 no real text is sent — but with `SEED_REQUIRE_VERIFICATION=1` and
@@ -166,17 +169,11 @@ Also try **a place** and **a tip** (short cards), and the "Add another" loop.
 
 ## 1.7 Completion — three screens
 
-`/done` tells, `/done/ask` asks, `/done/next` explains. Walk them in that order.
+Since 7 Oct the order is **profile → `/done/ask` → the chat → `/done` → `/done/next`**:
+the question to Pando and the follow-up permission come before the recommendations.
+Walk them in that order.
 
-**`/done`**
-
-| Try this | Expect |
-| --- | --- |
-| The badge | "Founding contributor · in review" |
-| The list | "What you shared · N" with one row per card, caregivers marked "consent pending" |
-| The button | "Continue", and under it "One question and one permission left" — nothing is asked for on this screen |
-
-**`/done/ask`**
+**`/done/ask`** — straight after the profile
 
 | Try this | Expect |
 | --- | --- |
@@ -186,9 +183,23 @@ Also try **a place** and **a tip** (short cards), and the "Add another" loop.
 | Try "my sitter said something that made me think a kid was being hurt" | **Immediately**: 911, the 988 line, 211, legal aid. Pando does not offer to answer it |
 | Try "our nanny screamed at my toddler and lied about it" | A **quieter** screen: "A person will read this one" — no resource list beyond the one line about 911 and child protection, no offer to answer, and a plain "Don't keep it". A claim about a named person never becomes an answer for anybody else |
 | The follow-up permission | Full consent wording, and your monthly allowance echoed back |
-| Answer it | Confirmation replaces the buttons, and the dock offers "What happens next" |
+| Answer it | The title stays "Two quick things."; the confirmation replaces the buttons, and the dock offers "Continue" to the chat. On a laptop the moss bar reads "Step 1 · Before you share" with "Your profile" lit, not "Done" |
 | Reload `/done/ask` | The confirmation is still there and you are **not** asked to submit again |
-| Before answering, check the dock | Only "Back" — there is no way to skip past the consent |
+| Before answering, check the dock | Only "Back", which goes to the profile review — there is no way to skip past the consent |
+| In the chat, tap the header's back arrow | Back to `/done/ask`, not the profile |
+| Back on `/done/ask` after answering, tap "Change it" on your question and change it | The **same** row in Admin → Demand shows the new text — no second row |
+| Same, but choose "Skip" or "Don't keep it" | The question is gone from Admin → Demand |
+| On `/done` or `/done/next` after answering | "Change my question or follow-ups" leads back to `/done/ask` |
+| Let the confirmation lapse (12 h, or delete the verification row), then change the follow-up answer on `/done/ask` | A code box with "Your confirmation has run out… What you already sent is safe", not "That didn't save" |
+
+**`/done`** — after "That's me for now" in the chat
+
+| Try this | Expect |
+| --- | --- |
+| The badge | "Founding contributor · in review" |
+| The list | "What you shared · N" with one row per card, caregivers marked "consent pending" |
+| The button | "What happens next", and under it "You're all set — nothing else is needed" |
+| Arrive here without having answered `/done/ask` (e.g. log in via `/signin`) | "Continue" to `/done/ask`, and under it "One question and one permission left" |
 
 **`/done/next`**
 

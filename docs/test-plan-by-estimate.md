@@ -297,7 +297,8 @@ are all false, and a private note never appears in a list view.
 
 ## 1.7 · Completion — three screens, not one
 
-**Exercise:** `/done` tells, `/done/ask` asks, `/done/next` explains.
+**Exercise:** `/done` tells, `/done/ask` asks, `/done/next` explains — in the order
+profile → `/done/ask` → the chat → `/done` → `/done/next` since 7 Oct.
 
 - `/done` — thank-you, "Founding contributor · in review", what you shared. On the
   **anonymous** path the founding badge must **not** appear, and the next-steps copy
@@ -407,12 +408,15 @@ fetch had finished, which is what used to wave a parent straight past it).
   no Twilio credentials) so no code can be sent. Entry must **skip** verification
   rather than block it, every card must say "kept on this phone until you finish",
   the database must stay empty, and `/done/ask` must show the honest "we can't
-  confirm your number yet" panel. This is production's state until A2P approval —
+  confirm your number yet" panel **and still offer Continue to the chat** (it comes
+  before the chat since 7 Oct). This is production's state until A2P approval —
   if it breaks, the tool is offline for everyone.
 - **An expired confirmation must not lose anything.** Verify, then restart the dev
   server (that clears the in-memory verification), then save a card. It must be
   *held*, not errored — the session silently goes back to the deferred path, and
-  `/done/ask` asks for a fresh code and sends everything. A confirmed number is
+  `/done` shows "N recommendations are still on this phone", asks for a fresh code
+  and sends them (since 7 Oct; it was `/done/ask` while that screen ended the flow).
+  `demand_signals` and `consents` must not gain a second row. A confirmed number is
   good for 12 hours otherwise.
 - **Limits (spec §19):** 6 digits, 5 minutes, 3 sends, 3 wrong guesses — then the
   **number** is locked for 15 minutes. Enter a wrong code three times: the screen

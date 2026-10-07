@@ -315,6 +315,19 @@ export function needsHumanReview(sensitivity: DemandSensitivity): boolean {
 }
 
 /**
+ * D1 as a write route stores it — classified on the server, never taken from the
+ * browser. Built by `demandFromBody` (`lib/server/demand-body.ts`), which lives
+ * there rather than here because this file is loaded directly by `node` in the
+ * test suites and so imports nothing.
+ */
+export interface StoredDemand {
+  question_text: string;
+  category: string | null;
+  sensitivity: DemandSensitivity;
+  requires_human_review: boolean;
+}
+
+/**
  * Raise a rule-based reading when the model thought the message was sensitive.
  *
  * **One direction only.** `classifyDemand` stays the authority on *which* class

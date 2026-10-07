@@ -40,14 +40,15 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/terms`                 | Text messaging terms.                                                       |
 | `/join?i=<code>&src=qr`  | Invite landing. Validates the shared code server-side; optional name/phone. |
 | `/profile`               | The tap-first profile + review. **20 screens since the 24 Aug feedback round** (was 16): family/work, regular/backup childcare, travel/priorities and local/lived topics each split in two. |
-| `/share`                 | Chat-seeding: share menu, capture cards, add-another loop.                  |
-| `/done`                  | 1.7 screen 1 of 3 — badge, thank-you, what they shared. Tells only.          |
-| `/done/ask`              | 1.7 screen 2 of 3 — D1 and the follow-up consent. Also the fallback OTP gate, for a session that had to be held. |
-| `/done/next`             | 1.7 screen 3 of 3 — what happens next, D2 referral, return links.           |
+| `/done/ask`              | 1.7, **straight after the profile since 7 Oct** — D1 and the follow-up consent, then on to `/share`. Also the fallback OTP gate, for a session that had to be held. |
+| `/share`                 | Chat-seeding: share menu, capture cards, add-another loop. Back → `/done/ask`. |
+| `/done`                  | 1.7 — badge, thank-you, what they shared. Tells only, except cards a lapsed confirmation left on the phone, which it sends after a fresh code (`SendHeld`). |
+| `/done/next`             | 1.7 — what happens next, D2 referral, return links.                         |
 | `POST /api/seed/invite`  | Validates a code. **No caller in the app since 4 Sep** — kept for `test:e2e`. |
 | `POST /api/seed/profile` | Sanitizes, then writes person + children + affinities + relevance + schools + consents (SMS and, since 18 Aug, the listening-ear opt-in) in one transaction. `monthly_contact_allowance` is validated against `(5,10)` — the same values `people.allowance_shape` constrains. Since 3 Sep the `children` rows are **derived here** from `answers.child_ages` and the optional `answers.child_months` (age id → 1–12) rather than read from the body — a month outside 1–12, or one against a child nobody tapped, is dropped instead of aborting the write on a CHECK. |
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
+| `POST /api/seed/demand`  | D1 edited after the completion (7 Oct): `{ demand: { question_text, category, may_save } \| null, is_test }`. Updates the parent's newest **open** demand signal in place (a handled one gets a new row), `null` withdraws it — the open row and the flags on it nobody has touched are deleted; a question an admin is already dealing with is never rewritten or deleted. The person comes from the verification cookie, never the body; 401 without one. |
 | `POST /api/seed/registered` | Does this number already have a profile? A boolean and nothing else. ⚠ The one route that answers about somebody who has proved nothing — read its header and the 8 Sep Decisions row before touching it. |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
@@ -86,7 +87,9 @@ the phone and nowhere else; the profile is written the moment it is confirmed, a
 everything after that is stored as it is finished, so a card that says "saved" is
 saved. Where a code cannot be sent — production until the A2P campaign is approved
 — the step is skipped and the old shape applies instead: the whole session is held
-on the phone and flushed at `/done/ask` once a code is confirmed there.
+on the phone and flushed at `/done/ask` once a code is confirmed there. Since 7 Oct
+`/done/ask` comes before the chat, so cards held *after* it — a confirmation that
+lapsed mid-chat — are sent from `/done` instead, with no second completion write.
 
 **No query parameter changes app behaviour** — `?i=` and `?src=` are the only two
 read, and they are the product's own link. `?test=1` was removed on 4 Aug: a URL
