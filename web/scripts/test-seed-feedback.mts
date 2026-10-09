@@ -3094,6 +3094,15 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
       /!s\.persisted && !s\.error && s\.id !== chat\.confirm_back\?\.submission_id/.test(chat),
     "a confirmed session with an unsent card has no way out",
   );
+  /* 9 Oct: the card answered or skipped at the follow-up was built inside a
+     React state updater and read after it — undefined when React deferred the
+     updater, so the card was never sent. It is built from this render's chat. */
+  ok(
+    "the card a follow-up holds is built before the state update, so it is always sent",
+    /const original = chat\?\.submissions\.find\(\(sub\) => sub\.id === pending\.submission_id\);/.test(chat) &&
+      !/updated = \{\s*\.\.\.sub,/.test(chat),
+    "a card skipped at the follow-up never reached the server",
+  );
   ok(
     "a pending follow-up comes before the card and the thanks, not after them",
     /messages: ask \? c\.messages : \[/.test(chat) &&

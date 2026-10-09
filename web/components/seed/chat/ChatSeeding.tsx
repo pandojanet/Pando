@@ -686,33 +686,47 @@ export function ChatSeeding() {
     if (!pending) return;
     const addition = text.trim();
 
+    /**
+     * ⚠⚠ **Built here, before `patchChat`, never inside its updater** (9 Oct,
+     * the developer: a doctor card "Test" never reached the admin). It used to
+     * be assigned inside the updater and read after `patchChat` returned — but
+     * React runs a state updater when it chooses, often at the next render, so
+     * `updated` was still undefined at the `persist` line and the card was
+     * never sent. It stayed on the phone, unsent and showing no error, until
+     * the chat next opened (the held-card send, 8 Oct, is what rescued the
+     * earlier ones). `chat` is this render's state, which is what the parent
+     * is answering.
+     */
+    const original = chat?.submissions.find((sub) => sub.id === pending.submission_id);
     let updated: Submission | undefined;
+    if (original) {
+      const existing = String(
+        (original.fields as Record<string, unknown>)[pending.field] ?? "",
+      ).trim();
+      const merged =
+        addition === ""
+          ? existing
+          : existing === ""
+            ? addition
+            : `${existing} — ${addition}`;
+      updated = {
+        ...original,
+        fields: {
+          ...original.fields,
+          [pending.field]: merged,
+          /* A string, not a boolean: `FieldValue` is what a card field may
+             hold, and widening it for one internal marker would let every
+             other field hold a boolean too. Stripped before the card is sent
+             — see `persist`. */
+          __confirm_back_asked: "yes",
+        },
+      };
+    }
+
     patchChat((c) => {
-      const submissions = c.submissions.map((sub) => {
-        if (sub.id !== pending.submission_id) return sub;
-        const existing = String(
-          (sub.fields as Record<string, unknown>)[pending.field] ?? "",
-        ).trim();
-        const merged =
-          addition === ""
-            ? existing
-            : existing === ""
-              ? addition
-              : `${existing} — ${addition}`;
-        updated = {
-          ...sub,
-          fields: {
-            ...sub.fields,
-            [pending.field]: merged,
-            /* A string, not a boolean: `FieldValue` is what a card field may
-               hold, and widening it for one internal marker would let every
-               other field hold a boolean too. Stripped before the card is sent
-               — see `persist`. */
-            __confirm_back_asked: "yes",
-          },
-        };
-        return updated;
-      });
+      const submissions = updated
+        ? c.submissions.map((sub) => (sub.id === updated.id ? updated : sub))
+        : c.submissions;
       const progress = updated ? progressLine(updated, submissions) : null;
       return {
         ...c,
