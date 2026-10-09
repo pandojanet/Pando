@@ -242,7 +242,6 @@ export function ChatSeeding() {
    * her sentence means saved. On the anonymous path a card posts as soon as it
    * is finished, so it is true a moment after the first one.
    */
-  const hasSavedRecommendation = (chat?.submissions ?? []).some((s) => s.persisted);
   const draft = chat?.draft ?? null;
   const script = draft ? scripts[draft.kind] : null;
   const step = script && draft ? script.steps[draft.step_index] : null;
@@ -1031,9 +1030,7 @@ export function ChatSeeding() {
          * practice is that the control most parents will use is invisible for
          * the whole of their first visit, on the one screen they sit on.
          *
-         * ⚠ The **popup** keeps the gate — see below. A pill in the corner is
-         * there when somebody looks for it; a modal on arrival is the thing her
-         * sentence was actually protecting against.
+         * ⚠ Since 9 Oct the **popup** no longer waits either — see below.
          *
          * ⚠ `referral_code` is still required and there is no fallback: the
          * code is minted by the server (the profile write, or `/api/seed/me`),
@@ -1062,11 +1059,18 @@ export function ChatSeeding() {
         * reload, cannot come back on a re-save, and needs nothing from the
         * screen that navigated here.
         *
-        * ⚠ It waits for the same first saved recommendation as the pill above,
-        * for the same reason and one degree more so: a modal asking for
-        * referrals is the first thing a parent met on arriving at this screen.
+        * ⚠⚠ **It opens on the first arrival after the profile is saved, not
+        * after the first saved recommendation** (9 Oct, the developer: the
+        * popup "came up after the first contribution instead of after saving
+        * the profile — fix it"). That reverses the client's 10 Sep gate
+        * (*"The Invite button appears only after the first recommendation is
+        * saved"*) for the popup too — the pill lost it on 15 Sep — and it is
+        * hers to reverse back. It is also her 7 Sep instruction as first
+        * written: the link arrives with the profile. The code it needs is
+        * minted by the profile write, so a held profile (no code yet) still
+        * shows nothing until the code exists.
         */}
-      {session?.referral_code && hasSavedRecommendation && !session.referral_shown_at && (
+      {session?.referral_code && !session.referral_shown_at && (
         <ReferralDialog
           code={session.referral_code}
           onClose={() =>

@@ -2618,11 +2618,13 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
    * pill is no longer behind the gate, so a session restoring her original
    * rule has to meet this and read why.
    */
+  /* 9 Oct: the popup no longer waits either — it opens on /share as soon as
+     the profile write has minted a code (the developer). */
   ok(
-    "the referral popup still waits for the first saved recommendation",
-    /hasSavedRecommendation && !session\.referral_shown_at/.test(chat) &&
-      /submissions \?\? \[\]\)\.some\(\(s\) => s\.persisted\)/.test(chat),
-    "a modal asking for referrals before anything has been given is what her rule protected",
+    "the referral popup opens once there is a code, not after the first recommendation",
+    /\{session\?\.referral_code && !session\.referral_shown_at && \(\s*<ReferralDialog/.test(chat) &&
+      !/hasSavedRecommendation/.test(chat),
+    "the popup came up after the first contribution instead of after the profile",
   );
   ok(
     "and the pill itself is not behind it",
