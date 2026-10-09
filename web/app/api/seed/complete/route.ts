@@ -37,7 +37,7 @@ import { rateLimited } from "@/lib/server/rate-limit";
  * it was never the authority on it.
  */
 
-const KINDS = ["activity", "caregiver", "place", "tip"] as const;
+const KINDS = ["activity", "caregiver", "place", "tip", "doctor"] as const;
 type Kind = (typeof KINDS)[number];
 
 export async function POST(request: Request) {

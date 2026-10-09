@@ -63,6 +63,17 @@ import { StepWidget } from "./StepWidget";
  * (spec §16.1, POST /api/seed/chat) it decides the next step and this component
  * keeps rendering exactly the same widgets.
  */
+/**
+ * The line after a finished card. ⚠ It must stay a different sentence from the
+ * card's own last question (`EXTRA_NOTE_PROMPT`) — `test:feedback` holds that;
+ * see the note where it is used in `finishCard`.
+ */
+function thanksLine(kind: ShareKind): string {
+  return kind === "caregiver"
+    ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
+    : "Got it, thank you. Anything else you'd like to share?";
+}
+
 export function ChatSeeding() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
@@ -278,6 +289,39 @@ export function ChatSeeding() {
       saved: savedCount,
     }));
   }, [chat, draft?.kind, step?.id, savedCount]);
+
+  /**
+   * ⚠⚠ **A card held for an unconfirmed number goes up the first time the chat
+   * opens on a session that can send it** (8 Oct, the developer: a doctor card
+   * added through the browser never reached the admin).
+   *
+   * A card finished before the number was confirmed is held on the phone. Every
+   * way of confirming it afterwards missed it: \`/signin\` restores the session
+   * and sends nothing; \`/done/ask\` sends only the cards that exist when it
+   * completes; and \`/done\` offers to send held cards only *while the number is
+   * unconfirmed* — so a confirmed session with an unsent card had no way out at
+   * all, and the card read "Kept on this phone until you finish" forever.
+   *
+   * Once per mount, on the session as it was loaded: a card finished during this
+   * visit is sent by \`finishCard\` itself, and one waiting on its follow-up is
+   * sent when that is answered. A failed send keeps its own "Try again". Every
+   * write is keyed by the card's id, so a card that did reach the server and is
+   * sent again is updated in place, not duplicated.
+   */
+  const heldSent = useRef(false);
+  useEffect(() => {
+    if (heldSent.current || !session || !chat) return;
+    heldSent.current = true;
+    if (holdsUntilVerified(session)) return;
+    const unsent = chat.submissions.filter(
+      (s) => !s.persisted && !s.error && s.id !== chat.confirm_back?.submission_id,
+    );
+    if (unsent.length === 0) return;
+    track("seed_held_cards_sent", { count: unsent.length });
+    for (const s of unsent) void persist(s);
+    // Once, on the session as loaded — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, chat]);
 
   /* ── Turn taking ──────────────────────────────────────────────── */
 
@@ -550,12 +594,21 @@ export function ChatSeeding() {
     const ask = confirmBackFor(submission);
     const progress = ask ? null : progressLine(submission, chat?.submissions ?? []);
 
+    /**
+     * ⚠ **With a follow-up pending, the card and the thanks wait for it** (8 Oct,
+     * the developer, on a screenshot). The recap used to land first — with
+     * *"Received. Not in the network yet"* under it — then *"Got it, thank you.
+     * Anything else you'd like to share?"*, and only then the follow-up: three
+     * messages saying the card was done, above a question about it, while
+     * nothing had been sent. `answerConfirmBack` posts all three once the
+     * parent has answered or skipped, which is when they become true.
+     */
     patchChat((c) => ({
       ...c,
       mode: "menu",
       draft: null,
       submissions: [...c.submissions, submission],
-      messages: [
+      messages: ask ? c.messages : [
         ...c.messages,
         { id: uid(), role: "pando", card: submission },
         {
@@ -577,10 +630,7 @@ export function ChatSeeding() {
            * that rather than trusting it — they were the same words in two
            * places for a day, which is how this was reported.
            */
-          text:
-            kind === "caregiver"
-              ? "Thank you — that's the hardest kind to get right. Nothing about them is stored until they set up their own profile and say yes."
-              : "Got it, thank you. Anything else you'd like to share?",
+          text: thanksLine(kind),
         },
         /* The way to Founding, after the card (5 Oct) — in the chat, where the
            parent is, rather than in a banner they have to notice. */
@@ -673,8 +723,11 @@ export function ChatSeeding() {
           ...(addition
             ? [{ id: uid(), role: "parent" as const, text: addition }]
             : []),
-          /* Re-render the recap so the parent sees what the card now says. */
+          /* The recap, now that it says what will be sent — the first time it
+             is shown for this card (8 Oct). */
           ...(updated ? [{ id: uid(), role: "pando" as const, card: updated }] : []),
+          /* The thanks it was waiting to give. */
+          ...(updated ? [{ id: uid(), role: "pando" as const, text: thanksLine(updated.kind) }] : []),
           /* And the progress line the card was waiting to give (5 Oct). */
           ...(progress ? [{ id: uid(), role: "pando" as const, text: progress }] : []),
         ],

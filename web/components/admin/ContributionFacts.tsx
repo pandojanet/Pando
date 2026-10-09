@@ -1,12 +1,28 @@
 "use client";
 
-import { Badge, ConfidenceBadge, optionLabel, slugLabel, when } from "@/components/admin/ui";
+import { Badge, ConfidenceBadge, optionLabel, slugLabel, TextLink, when } from "@/components/admin/ui";
 import { Fact, FactGrid, Quote, RecordNotes } from "@/components/admin/Record";
 import type { ContributionRow } from "@/lib/admin/types";
-import { FRESHNESS, QUALITY_STATUS, RECOMMENDATION, sentence } from "@/lib/admin/labels";
+import {
+  FRESHNESS,
+  PROVIDER_CHECK,
+  QUALITY_STATUS,
+  RECOMMENDATION,
+  sentence,
+} from "@/lib/admin/labels";
 import { countsTowardFounding, qualityOf } from "@/lib/admin/quality";
 import { missingLine } from "@/lib/contribution-quality";
-import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
+import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
+import {
+  APPOINTMENT_EASE,
+  DOCTOR_LAST_SEEN,
+  DOCTOR_PRICE_BAND,
+  PRICE_BAND,
+  PRICE_UNIT,
+  VISIT_REASON,
+  VISIT_UNIT,
+  WORTH_IT,
+} from "@/lib/seed-chat/scripts";
 
 /**
  * Everything one parent said about one recommendation — the facts and their
@@ -20,9 +36,49 @@ import { PRICE_BAND, PRICE_UNIT, WORTH_IT } from "@/lib/seed-chat/scripts";
  */
 export function ContributionFacts({ row }: { row: ContributionRow }) {
   const quality = qualityOf(row);
+  /* A doctor card (8 Oct) asks its own questions; the shared facts read in its words. */
+  const isDoctor = row.kind === "doctor";
+  const notRecommended = row.recommendation === "probably_not" || row.recommendation === "no";
   return (
     <>
       <FactGrid>
+        {isDoctor && (
+          <Fact label="Provider check" hint={row.share.provider_checked_at ? `Checked ${when(row.share.provider_checked_at)}` : undefined}>
+            <ProviderCheckBadge row={row} />
+            {row.share.provider_check_url && hostOf(row.share.provider_check_url) && (
+              <span className="mt-1.5 block">
+                <TextLink external href={row.share.provider_check_url} subject={row.share.name}>
+                  {row.share.provider_check === "npi" ? "Open NPI record" : "See the page it matched"}
+                </TextLink>
+                {/* The host, so a page somebody steered the search to is
+                    visible before it is opened (review, 8 Oct). Not on an NPI
+                    record: that address is built here from NPPES's own, so
+                    there is nothing to warn about — and on its own line, since
+                    "link · host" wrapped with the dot left hanging (9 Oct). */}
+                {row.share.provider_check !== "npi" && (
+                  <span className="block text-muted">{hostOf(row.share.provider_check_url)}</span>
+                )}
+              </span>
+            )}
+          </Fact>
+        )}
+        {/* The parent's own answer, which the record's freshness below does
+            not show — "Over a year ago" matters on a doctor. */}
+        {isDoctor && (
+          <Fact label="Still seeing them">
+            {row.last_there ? optionLabel(DOCTOR_LAST_SEEN, row.last_there) : null}
+          </Fact>
+        )}
+        {isDoctor && (
+          <Fact label="Seen for">
+            {row.visit_reason ? optionLabel(VISIT_REASON, row.visit_reason) : null}
+          </Fact>
+        )}
+        {isDoctor && (
+          <Fact label="Appointments">
+            {row.appointment_ease ? optionLabel(APPOINTMENT_EASE, row.appointment_ease) : null}
+          </Fact>
+        )}
         <Fact label="Where">
           {row.share.neighborhoods.length === 0
             ? null
@@ -49,11 +105,11 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         >
           {row.price_band ? (
             <>
-              {optionLabel(PRICE_BAND, row.price_band)}
+              {optionLabel(isDoctor ? DOCTOR_PRICE_BAND : PRICE_BAND, row.price_band)}
               {row.price_unit && (
                 <span className="text-muted">
                   {" / "}
-                  {optionLabel(PRICE_UNIT, row.price_unit).toLowerCase()}
+                  {optionLabel([...PRICE_UNIT, VISIT_UNIT], row.price_unit).toLowerCase()}
                 </span>
               )}
             </>
@@ -76,13 +132,16 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         {/* R11 — a permission, so it belongs with the recommendation
             it applies to rather than in the badge row, where it was
             a fourth pill competing with the review status. */}
-        <Fact
-          label="Follow-up"
-        >
-          {row.follow_up_ok
-            ? "Happy to be asked more about this one"
-            : "Not offered"}
-        </Fact>
+        {/* Not asked on a doctor card, so "Not offered" would be a claim. */}
+        {!isDoctor && (
+          <Fact
+            label="Follow-up"
+          >
+            {row.follow_up_ok
+              ? "Happy to be asked more about this one"
+              : "Not offered"}
+          </Fact>
+        )}
         {/**
             * ⚠⚠ **One status and the exact gap, and "added to Pando" is a
             * different fact from "counts toward Founding"** (5 Oct). The queue
@@ -125,7 +184,7 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         (row.status === "needs_detail" && row.needs_detail_note)) && (
         <RecordNotes>
           {row.what_makes_it_great && (
-            <Quote label="What they liked">
+            <Quote label={isDoctor && notRecommended ? "What didn't work" : "What they liked"}>
               {row.what_makes_it_great}
             </Quote>
           )}
@@ -147,7 +206,7 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             <p className="text-[13px] leading-relaxed text-ink-soft">
               {row.who_for && (
                 <>
-                  <span className="font-semibold">Perfect for</span>{" "}
+                  <span className="font-semibold">{isDoctor ? "Good for" : "Perfect for"}</span>{" "}
                   {row.who_for}.{" "}
                 </>
               )}
@@ -167,6 +226,26 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         </RecordNotes>
       )}
     </>
+  );
+}
+
+/** An http(s) URL's host, or null — the only links the admin renders. */
+function hostOf(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.hostname : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Doctor records (8 Oct): whether the provider could be found. Null reads as not checked. */
+export function ProviderCheckBadge({ row }: { row: ContributionRow }) {
+  const meta = row.share.provider_check ? PROVIDER_CHECK[row.share.provider_check] : null;
+  return meta ? (
+    <Badge tone={meta.tone}>{meta.label}</Badge>
+  ) : (
+    <Badge tone="neutral">{PROVIDER_CHECK_PAUSED ? "Check paused" : "Not checked yet"}</Badge>
   );
 }
 

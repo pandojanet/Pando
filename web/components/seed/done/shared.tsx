@@ -22,6 +22,7 @@ export const KIND_LABEL: Record<ShareKind, string> = {
   activity: "Activity",
   caregiver: "Caregiver",
   place: "Place",
+  doctor: "Doctor",
   tip: "Tip",
 };
 

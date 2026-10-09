@@ -113,12 +113,15 @@ export type SeedEvent =
   | "seed_signin_completed"
   | "seed_signin_no_profile"
   /**
-   * The code step was reached, and then passed, at the end of the profile. Its own
+   * The code step was reached, and then passed — on `/join` (`at: "entry"`) since
+   * 8 Oct; the end-of-profile step (`at: "profile_end"`) is gone. Its own
    * pair because this is the flow's biggest single gate: everything after it is
    * saved as it happens, and everyone who drops between the two leaves nothing
    * behind at all. The gap between them is the number to watch.
    */
   | "seed_verify_reached"
+  /** `/join` could not learn whether a code can be sent, so it did not go on (8 Oct). */
+  | "seed_verify_status_failed"
   | "seed_verified"
   /** A confirmed number that already had a profile, and which way they went. */
   | "seed_profile_exists_shown"
@@ -141,7 +144,8 @@ export type SeedEvent =
   | "seed_done_next_opened"
   /** `/done/ask` → `/share`: the step the 7 Oct reorder put before the chat. */
   | "seed_ask_continued"
-  /** `/done` sent cards a lapsed confirmation had left on the phone (`SendHeld`). */
+  /** Cards left on the phone were sent: by `/done` (`SendHeld`), or by the chat
+      on opening a session that can now send them (8 Oct). */
   | "seed_held_cards_sent"
   | "seed_held_cards_failed"
   /** D1 changed or withdrawn after the completion, sent on its own (7 Oct). */

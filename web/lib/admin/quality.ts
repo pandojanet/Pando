@@ -18,6 +18,7 @@ export function qualityOf(row: ContributionRow): Quality {
     what_makes_it_great: row.what_makes_it_great,
     caveat_answered: row.caveat_answered,
     tip_text: row.tip_text,
+    visit_reason: row.visit_reason,
   });
 }
 

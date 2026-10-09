@@ -23,6 +23,29 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Re-run a doctor record's provider check (8 Oct) — `POST /api/admin/provider-check`.
+ * A deployment with no search key says so rather than looking like "not found".
+ */
+export async function recheckProvider(shareId: string): Promise<string> {
+  const result = await post<{
+    ok: boolean;
+    configured?: boolean;
+    reason?: string;
+    status?: string;
+  }>("/api/admin/provider-check", { share_id: shareId });
+  if (result.configured === false) {
+    throw new Error(
+      result.reason === "no_database"
+        ? "There is no database here, so nothing can be checked"
+        : result.reason === "paused"
+          ? "The check is paused for now"
+          : "The check is not switched on here — it needs the search key",
+    );
+  }
+  return result.status ?? "";
+}
+
 interface QueryResponse<T> {
   configured: boolean;
   rows: T;

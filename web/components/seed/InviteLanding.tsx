@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/Screen";
 import { Wordmark } from "@/components/ui/Logo";
 import { Panel } from "@/components/ui/Panel";
+import { Note } from "@/components/ui/Note";
 import { Field } from "@/components/ui/Field";
 import { Consent } from "@/components/ui/Consent";
 import { InlineAction, TextAction } from "@/components/ui/TextAction";
@@ -133,6 +134,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    * be left staring at a wall that no longer applies to what is in the field.
    */
   const [checking, setChecking] = useState(false);
+  /** The code could not be asked for because the status never came back (8 Oct). */
+  const [startError, setStartError] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
 
   /**
@@ -216,6 +219,29 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
    */
   async function begin(mode: "new" | "resume") {
     const e164 = toE164(phone);
+    setStartError(null);
+
+    /**
+     * ⚠⚠ **The code is asked here and nowhere else on the way in** (8 Oct, the
+     * developer: *"прибери модель підтвердження sms з кінця, нехай буде лише на
+     * початку"*). Until then a status that had not come back yet (null) sent the
+     * parent onward and the end of the profile asked instead; that end step is
+     * gone, so a null status is no longer a shrug — it is awaited, and a status
+     * that cannot be fetched stops here with a line that says so, rather than
+     * letting the parent answer every question with nothing able to confirm them.
+     */
+    let status = gate;
+    if (!status) {
+      setChecking(true);
+      status = await verifyStatus().catch(() => null);
+      setChecking(false);
+      if (!status) {
+        setStartError("We couldn't reach Pando to send your code. Check your connection and try again.");
+        track("seed_verify_status_failed", { at: "entry" });
+        return;
+      }
+      setGate(status);
+    }
 
     /**
      * Is this number already in Pando? Asked **here**, on the client's
@@ -317,7 +343,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
      * answers live on this phone until then. What moves is only *when* Pando
      * asks — before the questions rather than after them.
      */
-    if (gate?.required && gate.sendable) {
+    if (status.required && status.sendable) {
       setSession(saved);
       setStep("verify");
       track("seed_verify_reached", { at: "entry" });
@@ -858,15 +884,15 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             {SMS_CONSENT_AGREEMENT}
           </Consent>
 
-          {/* ⚠ Both lines describe *when* the code comes, so both had to move
-              with it (15 Sep). The second is still the old sentence, because on
-              a deployment that cannot send one the old shape is exactly what
-              happens — the questions first, and the code at the end. */}
-          <p className="mt-3 text-[13px] leading-relaxed text-muted">
-            {gate?.required && gate.sendable
-              ? "We'll text a 6-digit code to confirm the number, then the questions."
-              : "We'll send a 6-digit code to confirm the number when you finish."}
-          </p>
+          {/* Said only where a code can be sent. The second sentence this
+              replaced — "…when you finish" — described the code at the end of
+              the profile, which is gone (8 Oct): where no code can be sent, no
+              code is promised. */}
+          {gate?.required && gate.sendable && (
+            <p className="mt-3 text-[13px] leading-relaxed text-muted">
+              We&apos;ll text a 6-digit code to confirm the number, then the questions.
+            </p>
+          )}
 
           {/**
             * ⚠ **The way in moved to the dock on 14 Sep.** It stood here as a
@@ -878,6 +904,10 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
             * which is the same fault her §4 caught between two Privacy links.
             */}
           </Panel>
+
+        {startError && (
+          <Note className="mt-6">{startError}</Note>
+        )}
 
         {registered && (
           /**

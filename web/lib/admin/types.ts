@@ -1,3 +1,4 @@
+import type { ProviderCheck } from "@/lib/provider-check";
 /**
  * Shapes the admin pages read and write. These are the contract for the two
  * endpoints (`/api/admin/query` and `/api/admin/action`) — one switch on
@@ -243,7 +244,7 @@ export type FoundingStatus =
 
 export interface Overview {
   contributors: { total: number; completed: number; with_two_plus: number };
-  submissions: { activities: number; caregivers: number; places: number; tips: number };
+  submissions: { activities: number; caregivers: number; places: number; tips: number; doctors: number };
   consent: { follow_up_opt_in: number; reference_willing: number };
   /** The ladder, not a contact funnel — Pando never contacts a nominee. */
   caregivers: {
@@ -431,7 +432,7 @@ export interface ContributorDetail extends ContributorRow {
   }>;
   cards: Array<{
     id: string;
-    kind: "activity" | "caregiver" | "place" | "tip";
+    kind: "activity" | "caregiver" | "place" | "tip" | "doctor";
     title: string;
     status: ReviewStatus;
     /** Secondhand cards are welcome and labelled, but never qualifying. */
@@ -476,7 +477,7 @@ export interface ContributorDetail extends ContributorRow {
  */
 export interface ContributionRow {
   id: string;
-  kind: "activity" | "place" | "tip";
+  kind: "activity" | "place" | "tip" | "doctor";
   /** The subject. Five parents recommending one class is five rows, one place. */
   share: {
     id: string;
@@ -492,6 +493,14 @@ export interface ContributionRow {
      * no Blast behind it. Only ever true on an approved place (DB CHECK).
      */
     answer_ready: boolean;
+    /**
+     * Doctor records only (8 Oct): could the provider be found — DCA licence,
+     * the open web, or neither. Null = not checked yet. Informs; gates nothing.
+     */
+    provider_check: ProviderCheck | null;
+    provider_checked_at: string | null;
+    /** The page the check matched on. */
+    provider_check_url: string | null;
   };
   /** R2 — decides the label, and whether this can ever count toward Founding. */
   firsthand: boolean;
@@ -520,6 +529,9 @@ export interface ContributionRow {
    * decision to revisit rather than a gap — see CLAUDE.md.
    */
   extra_note: string | null;
+  /** Doctor cards (8 Oct): what the family saw them for, and how easy appointments are. */
+  visit_reason: string | null;
+  appointment_ease: string | null;
   status: ReviewStatus;
   /** 0–1, from the review pass. Null until it has run, and after an edit. */
   confidence: number | null;
@@ -913,7 +925,7 @@ export interface FoundingRow {
   invited_by: string | null;
   /** The invite code they arrived on, or the bare `source` when there was none. */
   arrived_via: string | null;
-  submissions: { activities: number; caregivers: number; places: number; tips: number };
+  submissions: { activities: number; caregivers: number; places: number; tips: number; doctors: number };
   /** The client's rule, as facts rather than a verdict. */
   checklist: {
     verified: boolean;

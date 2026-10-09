@@ -308,13 +308,15 @@ export default function AdminOverviewPage() {
             />
           </div>
 
-          {/* What has come in — one line rather than four tiles, because these
-              four numbers are only ever read against each other. */}
+          {/* What has come in — one line rather than tiles, because these
+              numbers are only ever read against each other. Five since the
+              doctor card (8 Oct). */}
           <Card title="What parents have shared">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-[14px] sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3.5 text-[14px] sm:grid-cols-5">
               <Count label="Activities & camps" n={o.submissions.activities} />
               <Count label="Caregivers" n={o.submissions.caregivers} />
               <Count label="Places" n={o.submissions.places} />
+              <Count label="Doctors" n={o.submissions.doctors} />
               <Count label="Tips" n={o.submissions.tips} />
             </dl>
             <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] text-muted">

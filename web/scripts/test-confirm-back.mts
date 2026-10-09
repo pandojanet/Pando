@@ -92,4 +92,23 @@ for (const word of ["None", "nope", "n/a", "Nothing."]) {
 assert.ok(confirmBackFor(card("activity", { caveat: "parking" })));
 ok("'none' typed into the caveat is the declined answer, not a thin one (4 Oct)");
 
+// ── a doctor card (8 Oct) ─────────────────────────────────────────────────
+const docLike = confirmBackFor(card("doctor", { name: "Dr. Lee", what_makes_it_great: "she's great" }));
+assert.ok(docLike);
+assert.equal(docLike.field, "what_makes_it_great");
+assert.ok(!/teacher|the room/i.test(docLike.question), docLike.question);
+assert.ok(/doctor/i.test(docLike.question), docLike.question);
+ok("a thin answer on a doctor card is asked about in a doctor's words, not a class's");
+
+const docNo = confirmBackFor(card("doctor", { name: "Dr. Lee", recommendation: "no", what_didnt_work: "bad" }));
+assert.ok(docNo);
+assert.equal(docNo.field, "what_didnt_work");
+ok("and a thin 'what didn't work' gets its own follow-up");
+
+assert.equal(
+  confirmBackFor(card("doctor", { name: "Dr. Lee", what_makes_it_great: "She explains every result and never rushes a visit" })),
+  null,
+);
+ok("a real answer about a doctor is left alone");
+
 console.log(`\n${pass} checks passed.`);

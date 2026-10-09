@@ -153,7 +153,7 @@ export async function extractAndFlag(
       : [];
 
   const result = await extractCard({
-    kind: row.kind as "activity" | "place" | "tip",
+    kind: row.kind as "activity" | "place" | "tip" | "doctor",
     place_name: (row.place_name as string) ?? "",
     what_makes_it_great: (row.what_makes_it_great as string | null) ?? null,
     caveat: (row.caveat as string | null) ?? null,

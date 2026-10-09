@@ -152,6 +152,31 @@ export const CARD_KIND: Record<string, string> = {
   caregiver: "Caregiver",
   place: "Place",
   tip: "Tip",
+  doctor: "Doctor or medical provider",
+};
+
+/**
+ * Could a doctor a parent named be found (8 Oct) — `shares.provider_check`.
+ *
+ * Green only for a licence on DCA's own search, the client's "valid". Found on
+ * the open web is a fact, not a verdict, so it is neutral. Not found is gold —
+ * pending a person's look — and never red: the client's own reason for sending
+ * every doctor to the admin is that the check can miss.
+ */
+export const PROVIDER_CHECK: Record<
+  string,
+  { label: string; tone: "green" | "gold" | "neutral" }
+> = {
+  /* "Page found", not "verified" (review, 8 Oct): on DCA the match rests on the
+     model's reading of a generically titled page, so the admin opens it. US
+     spelling, and the state rather than the agency's initials. */
+  license: { label: "CA license page found", tone: "green" },
+  /* NPPES (9 Oct): "Validated", the developer's word — short, and the client's
+     own ("if they are there, they are valid"). Admin-only, so not a label a
+     parent reads. It means an NPI record names them, nothing more. */
+  npi: { label: "Validated", tone: "green" },
+  web: { label: "Found online", tone: "neutral" },
+  not_found: { label: "Not found — check by hand", tone: "gold" },
 };
 
 /**

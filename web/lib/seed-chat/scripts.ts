@@ -26,17 +26,6 @@ import type { Fields, Script, ShareKind } from "./types";
  * here is the structured capture: every answer already arrives as a field.
  */
 
-const PLACE_TYPES: Option[] = [
-  { id: "park", label: "Park" },
-  { id: "playground", label: "Playground" },
-  { id: "library", label: "Library" },
-  { id: "museum", label: "Museum" },
-  { id: "indoor_play", label: "Indoor play" },
-  { id: "pool", label: "Pool / splash pad" },
-  { id: "trail", label: "Trail / hike" },
-  { id: "cafe", label: "Kid-friendly café" },
-];
-
 /**
  * R8's price band, exported (not just used inline below) so admin display can
  * render the real label instead of guessing one from the id. `50_100`'s
@@ -53,14 +42,33 @@ export const PRICE_BAND: Option[] = [
   { id: "prefer_not_to_say", label: "Prefer not to say" },
 ];
 
-/** R8's unit for the band above — exported for the same reason. */
+/**
+ * R8's unit for the band above — exported for the same reason.
+ *
+ * Every unit a stored row can carry, because the admin reads and edits old rows
+ * as well as new ones. Which of them a card *offers* is its own list: the
+ * activity card offers the last three (`ACTIVITY_PRICE_UNIT`, 8 Oct).
+ */
 export const PRICE_UNIT: Option[] = [
   { id: "per_class", label: "Class" },
   { id: "per_session", label: "Session" },
   { id: "per_month", label: "Month" },
   { id: "per_term", label: "Term" },
   { id: "per_camp_week", label: "Camp week" },
+  { id: "per_day", label: "Day" },
+  { id: "per_week", label: "Week" },
+  { id: "per_season", label: "Season" },
 ];
+
+/**
+ * "Roughly what did you pay, and per day, week or season?" — the activity
+ * card's whole unit list (8 Oct, the client). The older five stay in
+ * `PRICE_UNIT`: a card saved before today carries one of them, and the admin
+ * has to read it.
+ */
+export const ACTIVITY_PRICE_UNIT: Option[] = PRICE_UNIT.filter((o) =>
+  ["per_day", "per_week", "per_season"].includes(o.id),
+);
 
 /**
  * The activity card's three closed answers, exported (5 Oct) for the same reason:
@@ -68,10 +76,25 @@ export const PRICE_UNIT: Option[] = [
  * the parent was offered rather than a second list of them.
  */
 export const LAST_THERE: Option[] = [
-  { id: "current", label: "Still going now" },
+  { id: "current", label: "Still doing it" },
   { id: "recent", label: "Within the last year" },
   { id: "over_year", label: "Over a year ago" },
   { id: "unsure", label: "Not sure anymore" },
+];
+
+/**
+ * "When did you last go?" on a **place** (8 Oct, the client): the activity
+ * list's ids with her own first answer, which a place needs and a class does
+ * not — a park is not something a child is still "doing". `within_6m` is a new
+ * id and nothing reads `last_there` by value except the stale-at-capture flag,
+ * which looks only for `over_year`, so it needs no migration and no CHECK
+ * (there is none on that column).
+ */
+export const PLACE_LAST_GONE: Option[] = [
+  { id: "within_6m", label: "Within the last 6 months" },
+  { id: "recent", label: "Within the last year" },
+  { id: "over_year", label: "Over a year ago" },
+  { id: "unsure", label: "Not sure" },
 ];
 
 export const RECOMMENDATION_OPTIONS: Option[] = [
@@ -88,6 +111,54 @@ export const HOW_MUCH: Option[] = [
   { id: "a_year_plus", label: "A year or more" },
   { id: "weekly_ongoing", label: "Weekly, ongoing" },
 ];
+
+/* ── The doctor card's closed answers (8 Oct, the client's list) ───────────────── */
+
+/** "What did you see them for?" — `share_contributions.visit_reason`. */
+export const VISIT_REASON: Option[] = [
+  { id: "routine", label: "Routine care" },
+  { id: "illness", label: "Illness" },
+  { id: "ongoing", label: "Ongoing issue" },
+  { id: "specialist", label: "Specialist concern" },
+  { id: "other", label: "Other" },
+];
+
+/**
+ * "Are you still seeing them?" — the activity card's `last_there` ids under a
+ * doctor's words, so the column, the freshness reading and the quality rule
+ * need nothing new. The activity list's fourth answer, "Not sure anymore", is
+ * not on her list and is not offered.
+ */
+export const DOCTOR_LAST_SEEN: Option[] = [
+  { id: "current", label: "Still seeing them" },
+  { id: "recent", label: "Within the last year" },
+  { id: "over_year", label: "Over a year ago" },
+];
+
+/** "How easy is it to get an appointment?" — `share_contributions.appointment_ease`. */
+export const APPOINTMENT_EASE: Option[] = [
+  { id: "easy", label: "Easy" },
+  { id: "manageable", label: "Usually manageable" },
+  { id: "difficult", label: "Difficult" },
+  { id: "not_sure", label: "Not sure" },
+];
+
+/**
+ * "Roughly what did you pay per visit, out of pocket?" — `PRICE_BAND`'s ids, so
+ * the column and the admin's labels are shared, with her wording for `free`.
+ * The unit is always a visit, so it is not asked: `cards.ts` stores
+ * `VISIT_UNIT` beside the band, which the `price_shape` CHECK requires.
+ */
+export const DOCTOR_PRICE_BAND: Option[] = PRICE_BAND.map((o) =>
+  o.id === "free" ? { ...o, label: "Free, covered" } : o,
+);
+
+/** The doctor card's one price unit — kept out of `PRICE_UNIT`, which the activity card offers. */
+export const VISIT_UNIT: Option = { id: "per_visit", label: "Visit" };
+
+/** A negative answer turns "what do you like" into "what didn't work" (her item 7). */
+const doesNotRecommend = (fields: Fields): boolean =>
+  fields.recommendation === "probably_not" || fields.recommendation === "no";
 
 /** R9 — exported for the same reason as the two above. */
 export const WORTH_IT: Option[] = [
@@ -127,7 +198,10 @@ const TIP_TOPICS: Option[] = [
   { id: "rainy_days", label: "Rainy days" },
   { id: "food", label: "Eating out with kids" },
   { id: "new_to_area", label: "Being new here" },
-  { id: "health", label: "Doctors & health" },
+  /* The client's list ends "Being new here, other" (8 Oct), and "Doctors &
+     health" is not on it — a doctor has its own card now. A tip saved with the
+     old `health` topic still reads: nothing looks the id up in this list. */
+  { id: "other", label: "Other" },
 ];
 
 /**
@@ -242,13 +316,15 @@ export function buildScripts(
            * Founding, so the parent is told that here rather than discovering it.
            */
           id: "firsthand",
-          prompt: "Did your own kid actually do it?",
+          /* 8 Oct, her wording: "Did your kid do it?" / "Yes, ours did" / "No,
+             this is based on a friend's experience". */
+          prompt: "Did your kid do it?",
           widget: "quick",
           options: [
             { id: "yes", label: "Yes, ours did" },
             {
               id: "secondhand",
-              label: "No — a friend's experience",
+              label: "No, this is based on a friend's experience",
               hint: "Welcome, labelled secondhand",
               wide: true,
             },
@@ -264,7 +340,7 @@ export function buildScripts(
         },
         {
           id: "freshness",
-          prompt: "When were you last there — still going?",
+          prompt: "When did they last do it?",
           widget: "quick",
           options: LAST_THERE,
         },
@@ -275,12 +351,35 @@ export function buildScripts(
           options: RECOMMENDATION_OPTIONS,
         },
         {
+          /**
+           * Two questions on one answer (8 Oct, the client): *"What did you or
+           * your child especially like about it?"* after a Yes, and *"What
+           * didn't work for you or your child?"* after a Probably not or a No.
+           * "What makes it good?" is struck from her list.
+           *
+           * ⚠ **One column, chosen by the recommendation** — the doctor card's
+           * rule (`doctorWhy`), applied here too. A parent who edits Yes to No
+           * from the recap still holds the praise, and the stored "why" must
+           * follow the recommendation rather than whichever field is filled.
+           * Retrieval then quotes it **only** for a positive recommendation, or
+           * a No's reason would reach another parent as praise.
+           */
           id: "what_makes_it_great",
-          prompt: "What makes it good?",
+          prompt: "What did you or your child especially like about it?",
           aside: "One line is plenty — the thing you'd text a friend.",
           widget: "text",
           maxLength: 400,
           placeholder: "e.g. small groups and a very patient teacher",
+          when: (fields) => !doesNotRecommend(fields),
+        },
+        {
+          id: "what_didnt_work",
+          prompt: "What didn't work for you or your child?",
+          aside: "One line is plenty.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. too big a group for a shy child",
+          when: doesNotRecommend,
         },
         {
           /**
@@ -294,7 +393,8 @@ export function buildScripts(
            * lands as `caveat_answered` in `cards.ts`.
            */
           id: "caveat",
-          prompt: "What should another parent know before trying it?",
+          /* 8 Oct, her wording: "before signing up". */
+          prompt: "What should another parent know before signing up?",
           aside:
             "The waitlist, the parking, the one instructor to avoid. Nothing to flag? Just say so.",
           widget: "text",
@@ -350,14 +450,10 @@ export function buildScripts(
             { id: "yes", label: "Add more detail", wide: true },
           ],
         },
-        {
-          id: "how_much",
-          prompt: "How long, or how often, did you go?",
-          widget: "quick",
-          optional: true,
-          options: HOW_MUCH,
-          when: wantsMore,
-        },
+        /* "How long, or how often, did you go?" and "And who might it not
+           suit?" are not on the client's list (8 Oct) and are gone from the
+           card. Their columns stay, so a card saved before today still reads —
+           and the admin can still edit them. */
         {
           id: "who_for",
           prompt: "Who is it perfect for?",
@@ -365,15 +461,6 @@ export function buildScripts(
           maxLength: 200,
           optional: true,
           placeholder: "e.g. a cautious toddler who warms up slowly",
-          when: wantsMore,
-        },
-        {
-          id: "who_not_for",
-          prompt: "And who might it not suit?",
-          widget: "text",
-          maxLength: 200,
-          optional: true,
-          placeholder: "e.g. a child who needs a lot of running around",
           when: wantsMore,
         },
         {
@@ -386,7 +473,7 @@ export function buildScripts(
         },
         {
           id: "price_unit",
-          prompt: "And that was per…?",
+          prompt: "And was that per day, week or season?",
           widget: "quick",
           when: (fields) =>
             wantsMore(fields) &&
@@ -394,7 +481,7 @@ export function buildScripts(
             fields.price_band !== "" &&
             fields.price_band !== "free" &&
             fields.price_band !== "prefer_not_to_say",
-          options: PRICE_UNIT,
+          options: ACTIVITY_PRICE_UNIT,
         },
         {
           id: "worth_it",
@@ -464,10 +551,9 @@ export function buildScripts(
         { field: "freshness", label: "Last there" },
         { field: "recommendation", label: "Recommend" },
         { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
         { field: "caveat", label: "Know first" },
-        { field: "how_much", label: "How much" },
         { field: "who_for", label: "Perfect for" },
-        { field: "who_not_for", label: "Not for" },
         { field: "price_band", label: "Paid" },
         { field: "price_unit", label: "Per" },
         { field: "worth_it", label: "Worth it" },
@@ -766,7 +852,7 @@ export function buildScripts(
       kind: "place",
       label: "A place",
       hint: "Park, library, indoor play, café",
-      intro: "Places are easy — three or four taps.",
+      intro: "Places are easy — a few taps and a sentence.",
       steps: [
         {
           id: "name",
@@ -776,17 +862,51 @@ export function buildScripts(
           placeholder: "e.g. Victory Park playground",
         },
         {
-          id: "type",
-          prompt: "What kind of place is it?",
+          /* 8 Oct, the client's list: whose experience it is, and a friend's is
+             welcome, labelled, and does not count toward Founding — the same
+             rule and the same column as an activity. */
+          id: "firsthand",
+          prompt: "Did you go there with your child?",
           widget: "quick",
-          options: PLACE_TYPES,
+          options: [
+            { id: "yes", label: "Yes" },
+            {
+              id: "secondhand",
+              label: "No, this is based on a friend's experience",
+              hint: "Welcome, labelled secondhand",
+              wide: true,
+            },
+          ],
         },
         {
+          id: "child_age",
+          prompt: "How old was your child when you went?",
+          aside: "Tap every age that applies.",
+          widget: "ages",
+        },
+        {
+          id: "freshness",
+          prompt: "When did you last go?",
+          widget: "quick",
+          options: PLACE_LAST_GONE,
+        },
+        {
+          id: "recommendation",
+          prompt: "Would you recommend it?",
+          widget: "quick",
+          options: RECOMMENDATION_OPTIONS,
+        },
+        {
+          /* One question for both, her wording (8 Oct): *"What did you like — or
+             dislike — about it?"*. "What makes it worth the trip?" is struck
+             from her list, and there is no second question after a No — which is
+             why the stored text may be either, and retrieval quotes it only for
+             a positive recommendation. */
           id: "what_makes_it_great",
-          prompt: "What makes it worth the trip?",
+          prompt: "What did you like — or dislike — about it?",
           widget: "text",
           maxLength: 400,
-          placeholder: "Shade, clean bathrooms, and a fence…",
+          placeholder: "Shade and a fence — but the parking is brutal…",
         },
         {
           /* Required, and answered in words (5 Oct): "Nothing to flag" is an
@@ -800,19 +920,19 @@ export function buildScripts(
           placeholder: "Parking is brutal after 10am…",
         },
         {
-          /* After the required questions (5 Oct), and the question as it was
-             before the age check: the child-age model call was taken back out. */
-          id: "location",
-          prompt: "Which area is it in?",
-          widget: "chips",
-          options: neighborhoods,
-          optional: true,
-        },
-        {
           id: "best_for",
           prompt: "Who's it best for?",
           widget: "chips",
           options: AGE_BANDS,
+          optional: true,
+        },
+        {
+          /* After the required questions (5 Oct), and in her order (8 Oct):
+             item 9, then item 10 "Which area is it in?" — optional. */
+          id: "location",
+          prompt: "Which area is it in?",
+          widget: "chips",
+          options: neighborhoods,
           optional: true,
         },
         {
@@ -858,11 +978,195 @@ export function buildScripts(
       ],
       recap: [
         { field: "name", label: "Place" },
-        { field: "type", label: "Kind" },
-        { field: "what_makes_it_great", label: "Why go" },
-        { field: "caveat", label: "Caveat" },
-        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age when you went" },
+        { field: "freshness", label: "Last went" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "Liked or disliked" },
+        { field: "caveat", label: "Know first" },
         { field: "best_for", label: "Best for" },
+        { field: "location", label: "Where" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    /**
+     * ## Doctors & medical providers (8 Oct)
+     *
+     * The client's list, in her order and her words. Eight required questions,
+     * then the fork, then three optional ones and the card's shared last step.
+     * Her item 8, "What do you value about them?", is struck out of her own list
+     * and is not asked.
+     *
+     * ⚠ **The name is typed, not searched.** There is no doctors directory in
+     * `market_options`, so the town step's `when` is true for every doctor card
+     * today — it is written the activity card's way so that it becomes "only if
+     * needed" the day a directory exists. Whether the provider is real is
+     * checked after saving (`lib/server/provider-check.ts`) and shown to the
+     * admin; it never blocks the card.
+     *
+     * ⚠ **Item 7 is two steps, not one with two wordings.** A step's prompt is a
+     * plain string everywhere it is read, so "What didn't work for you?" is its
+     * own step behind `doesNotRecommend` and `cards.ts` stores either one in
+     * `what_makes_it_great`, the contribution's "why" column.
+     *
+     * ⚠ Secondhand (a friend's doctor) is welcome and labelled, and does not
+     * count toward Founding — the same rule and the same column as an activity.
+     */
+    doctor: {
+      kind: "doctor",
+      label: "A doctor or medical provider",
+      hint: "Pediatrician, dentist, specialist",
+      intro: "Great — one doctor or practice at a time.",
+      steps: [
+        {
+          id: "name",
+          prompt: "Which practice or doctor?",
+          widget: "text",
+          maxLength: 80,
+          placeholder: "Name",
+        },
+        {
+          id: "firsthand",
+          prompt: "Is it your child's doctor?",
+          widget: "quick",
+          options: [
+            { id: "yes", label: "Yes" },
+            {
+              id: "secondhand",
+              label: "No, this is based on a friend's experience",
+              hint: "Welcome, labelled secondhand",
+              wide: true,
+            },
+          ],
+        },
+        {
+          id: "child_age",
+          prompt: "How old was your child at the time?",
+          aside: "Tap every age that applies.",
+          widget: "ages",
+        },
+        {
+          id: "visit_reason",
+          prompt: "What did you see them for?",
+          widget: "quick",
+          options: VISIT_REASON,
+        },
+        {
+          id: "freshness",
+          prompt: "Are you still seeing them?",
+          widget: "quick",
+          options: DOCTOR_LAST_SEEN,
+        },
+        {
+          id: "recommendation",
+          prompt: "Would you recommend them?",
+          widget: "quick",
+          options: RECOMMENDATION_OPTIONS,
+        },
+        {
+          id: "what_makes_it_great",
+          prompt: "What do you especially like about them?",
+          aside: "One line is plenty — the thing you'd text a friend.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. she listens and never rushes us",
+          when: (fields) => !doesNotRecommend(fields),
+        },
+        {
+          id: "what_didnt_work",
+          prompt: "What didn't work for you?",
+          aside: "One line is plenty.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. hard to reach after hours",
+          when: doesNotRecommend,
+        },
+        {
+          /* Required, answered in words, as on every other card: "Nothing to
+             flag" is an answer and `cards.ts` stores it as asked-and-answered. */
+          id: "caveat",
+          prompt: "What should another parent know?",
+          aside: "The wait times, the front desk, insurance. Nothing to flag? Just say so.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. book well-child visits months ahead",
+        },
+        {
+          id: "location",
+          prompt: "Which town is it in?",
+          widget: "chips",
+          options: neighborhoods,
+          optional: true,
+          when: (fields) =>
+            !(Array.isArray(fields.location) && fields.location.length > 0),
+        },
+        {
+          /* The activity card's fork, word for word, so the two cannot read
+             differently (the fork's wording is pinned in test:feedback). */
+          id: "more_detail",
+          prompt: "That's everything Pando needs. Add a few more details, or save it as it is?",
+          aside:
+            "The more detail you give, the more targeted the answers Pando can give another parent.",
+          widget: "quick",
+          options: [
+            { id: "no", label: "That's it", wide: true },
+            { id: "yes", label: "Add more detail", wide: true },
+          ],
+        },
+        {
+          id: "who_for",
+          prompt: "Who are they especially good for?",
+          widget: "text",
+          maxLength: 200,
+          optional: true,
+          placeholder: "e.g. anxious kids, or families new to the area",
+          when: wantsMore,
+        },
+        {
+          id: "appointment_ease",
+          prompt: "How easy is it to get an appointment?",
+          widget: "quick",
+          optional: true,
+          options: APPOINTMENT_EASE,
+          when: wantsMore,
+        },
+        {
+          id: "price_band",
+          prompt: "Roughly what did you pay per visit, out of pocket?",
+          widget: "quick",
+          optional: true,
+          options: DOCTOR_PRICE_BAND,
+          when: wantsMore,
+        },
+        {
+          /* The card's shared last step — see the activity card's for why it is
+             not behind the fork. */
+          id: "extra_note",
+          prompt: EXTRA_NOTE_PROMPT,
+          aside:
+            "Your own comment on this one — whatever did not fit the questions above. Optional.",
+          widget: "text",
+          maxLength: 400,
+          optional: true,
+          skipLabel: "Nothing else",
+          placeholder: "Anything you would tell a friend about them…",
+        },
+      ],
+      recap: [
+        { field: "name", label: "Doctor" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Your child's doctor" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "visit_reason", label: "Seen for" },
+        { field: "freshness", label: "Seeing them" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Good for" },
+        { field: "appointment_ease", label: "Appointments" },
+        { field: "price_band", label: "Per visit" },
         { field: "extra_note", label: "Anything else" },
       ],
     },
@@ -958,4 +1262,5 @@ export function buildScripts(
   };
 }
 
-export const SHARE_ORDER: ShareKind[] = ["activity", "caregiver", "place", "tip"];
+/* The doctor card (8 Oct) before the tip, so "Something else?" stays last. */
+export const SHARE_ORDER: ShareKind[] = ["activity", "caregiver", "place", "doctor", "tip"];

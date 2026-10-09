@@ -1029,19 +1029,21 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
 
     /* 4–5 Oct — the client's P0 round. */
     const built = buildScripts("pasadena");
-    ok("a place asks who it is best for again — the child-age model call is gone",
-      built.place.steps.some((x) => x.id === "best_for" && x.widget === "chips" && x.optional === true) &&
-        !built.place.steps.some((x) => x.id === "child_age"));
+    /* 5 Oct: the child-age *model call* is gone and stays gone. 8 Oct: the
+       client's own list asks the age outright (item 3), so the question is
+       back as a plain tap — a different thing from what 5 Oct removed. */
+    ok("a place still asks who it is best for, as an optional chip question",
+      built.place.steps.some((x) => x.id === "best_for" && x.widget === "chips" && x.optional === true));
     /* The developer, 5 Oct: what must be answered comes first and cannot be
        skipped; what may be skipped follows. Asserted on the built scripts, per
        kind, because *first* is a property of the array. */
-    const requiredFirst = (kind: "activity" | "place" | "tip" | "caregiver") => {
+    const requiredFirst = (kind: "activity" | "place" | "tip" | "caregiver" | "doctor") => {
       const steps = built[kind].steps;
       const firstOptional = steps.findIndex((x) => x.optional === true);
       /* The fork is a choice about the rest of the card, not a question about the recommendation. */
       return steps.slice(firstOptional).filter((x) => !x.optional && !x.when && x.id !== "more_detail").length === 0;
     };
-    for (const kind of ["activity", "place", "tip", "caregiver"] as const)
+    for (const kind of ["activity", "place", "tip", "caregiver", "doctor"] as const)
       ok(`${kind}: every always-asked question without a skip comes before the first that has one`, requiredFirst(kind));
     const actSteps = built.activity.steps;
     const byId = (steps: typeof actSteps, id: string) => steps.find((x) => x.id === id);
@@ -1058,12 +1060,84 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       ["tip", "what_makes_it_great"].every((id) => byId(built.tip.steps, id) && !byId(built.tip.steps, id)?.optional) &&
         /do or know/i.test(byId(built.tip.steps, "tip")?.prompt ?? "") &&
         /useful|help/i.test(byId(built.tip.steps, "what_makes_it_great")?.prompt ?? ""));
-    ok("no new category was added for it",
-      Object.keys(built).sort().join(",") === "activity,caregiver,place,tip");
+    /* 5 Oct: the P0 round added no category. 8 Oct: the doctor card is the one
+       the client then asked for — and nothing else came with it. */
+    ok("the categories are the four, plus the doctor card (8 Oct) and nothing else",
+      Object.keys(built).sort().join(",") === "activity,caregiver,doctor,place,tip");
     ok("a caregiver's public note is required unless she would not be recommended",
       !byId(built.caregiver.steps, "know_first")?.optional &&
         byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "no" }) === false &&
         byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "yes" }) === true);
+
+    /* 8 Oct — Doctors & Medical Providers, the client's list in her order. */
+    const docSteps = built.doctor.steps;
+    const docPrompt = (id: string) => byId(docSteps, id)?.prompt ?? "";
+    ok("the doctor card asks her questions in her words, in her order",
+      [
+        ["name", "Which practice or doctor?"],
+        ["firsthand", "Is it your child's doctor?"],
+        ["child_age", "How old was your child at the time?"],
+        ["visit_reason", "What did you see them for?"],
+        ["freshness", "Are you still seeing them?"],
+        ["recommendation", "Would you recommend them?"],
+        ["what_makes_it_great", "What do you especially like about them?"],
+        ["what_didnt_work", "What didn't work for you?"],
+        ["caveat", "What should another parent know?"],
+        ["location", "Which town is it in?"],
+      ].every(([id, prompt], i, all) =>
+        docPrompt(id) === prompt &&
+        (i === 0 || docSteps.findIndex((x) => x.id === id) > docSteps.findIndex((x) => x.id === all[i - 1][0]))));
+    ok("its name field is typed, with 'Name' in it",
+      byId(docSteps, "name")?.widget === "text" && byId(docSteps, "name")?.placeholder === "Name");
+    ok("a friend's experience is offered in her words and stored as secondhand",
+      byId(docSteps, "firsthand")?.options?.some(
+        (o) => o.id === "secondhand" && o.label === "No, this is based on a friend's experience") === true);
+    ok("what they saw them for offers her five answers",
+      byId(docSteps, "visit_reason")?.options?.map((o) => o.label).join("|") ===
+        "Routine care|Illness|Ongoing issue|Specialist concern|Other");
+    ok("'still seeing them' offers her three, on the activity card's ids",
+      byId(docSteps, "freshness")?.options?.map((o) => `${o.id}:${o.label}`).join("|") ===
+        "current:Still seeing them|recent:Within the last year|over_year:Over a year ago");
+    ok("'Would you recommend them?' offers her four answers",
+      byId(docSteps, "recommendation")?.options?.map((o) => o.label).join("|") ===
+        "Yes|Yes, with caveats|Probably not|No");
+    const likeWhen = byId(docSteps, "what_makes_it_great")?.when;
+    const didntWhen = byId(docSteps, "what_didnt_work")?.when;
+    ok("after Yes or Yes-with-caveats it asks what they like, never what didn't work",
+      ["yes", "yes_with_caveats"].every((r) => likeWhen?.({ recommendation: r }) === true && didntWhen?.({ recommendation: r }) === false));
+    ok("after Probably not or No it asks what didn't work instead",
+      ["probably_not", "no"].every((r) => likeWhen?.({ recommendation: r }) === false && didntWhen?.({ recommendation: r }) === true));
+    ok("her struck-out 'What do you value about them?' is not asked",
+      !docSteps.some((x) => /value about them/i.test(x.prompt)));
+    ok("the eight before the fork are required, the town is only asked when it is not known",
+      ["name", "firsthand", "child_age", "visit_reason", "freshness", "recommendation", "what_makes_it_great", "what_didnt_work", "caveat"]
+        .every((id) => byId(docSteps, id) && !byId(docSteps, id)?.optional) &&
+        byId(docSteps, "location")?.optional === true &&
+        byId(docSteps, "location")?.when?.({ location: ["altadena"] }) === false);
+    ok("the fork is the activity card's, word for word",
+      docPrompt("more_detail") === byId(actSteps, "more_detail")?.prompt &&
+        byId(docSteps, "more_detail")?.options?.map((o) => o.label).join("|") === "That's it|Add more detail");
+    ok("behind the fork: who they are good for, appointments and price per visit — all optional",
+      [
+        ["who_for", "Who are they especially good for?"],
+        ["appointment_ease", "How easy is it to get an appointment?"],
+        ["price_band", "Roughly what did you pay per visit, out of pocket?"],
+      ].every(([id, prompt]) =>
+        docPrompt(id) === prompt && byId(docSteps, id)?.optional === true &&
+          byId(docSteps, id)?.when?.({ more_detail: "yes" }) === true &&
+          byId(docSteps, id)?.when?.({ more_detail: "no" }) === false));
+    ok("appointments offer her four answers, and the price says 'Free, covered'",
+      byId(docSteps, "appointment_ease")?.options?.map((o) => o.label).join("|") ===
+        "Easy|Usually manageable|Difficult|Not sure" &&
+        byId(docSteps, "price_band")?.options?.[0]?.label === "Free, covered" &&
+        byId(docSteps, "price_band")?.options?.map((o) => o.label).slice(1).join("|") ===
+          "Under $25|$25–50|$50–100|$100–200|Over $200|Prefer not to say");
+    ok("and the price's unit is not asked — a doctor is paid per visit",
+      !byId(docSteps, "price_unit"));
+    const order = (await import(`../lib/seed-chat/scripts.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/scripts.ts")).SHARE_ORDER;
+    ok("the menu offers the doctor card, and 'Something else?' stays last",
+      order.includes("doctor") && order[order.length - 1] === "tip", order.join(","));
+
     const engine = await import(`../lib/seed-chat/engine.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/engine.ts");
     ok("a tip is titled from its own words, never 'Untitled'",
       engine.tipTitle("  Book the  park shelters early ") === "Book the park shelters early" &&
@@ -1084,6 +1158,137 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       actRecap.find((r) => r.field === "name")?.empty !== true && actRecap.find((r) => r.field === "name")?.value === "Little Maestros");
     ok("the plain recap, as before, lists only what was answered",
       engine.recapRows(built.activity, { name: "Little Maestros" }).length === 1);
+    /* Review, 8 Oct: a doctor card edited from Yes to No still holds the praise. */
+    const docRecap = engine.recapRows(
+      built.doctor,
+      { name: "Dr. Lee", recommendation: "no", what_makes_it_great: "she listens" },
+      { all: true },
+    );
+    ok("a doctor edited to No does not show the old praise, and asks for what didn't work",
+      !docRecap.some((r) => r.field === "what_makes_it_great") &&
+        docRecap.some((r) => r.field === "what_didnt_work" && r.empty === true));
+    /* 8 Oct — Activities, Places and Tips, the client's list. Classes were put
+       aside by the developer the same day, so there is no class card. */
+    const actPrompt = (id: string) => byId(actSteps, id)?.prompt ?? "";
+    ok("the activity card asks her questions in her words, in her order",
+      [
+        ["name", "What's it called?"],
+        ["firsthand", "Did your kid do it?"],
+        ["child_age", "How old was your child at the time?"],
+        ["freshness", "When did they last do it?"],
+        ["recommendation", "Knowing what you know now, would you recommend it?"],
+        ["what_makes_it_great", "What did you or your child especially like about it?"],
+        ["what_didnt_work", "What didn't work for you or your child?"],
+        ["caveat", "What should another parent know before signing up?"],
+      ].every(([id, text]) => actPrompt(id) === text) &&
+        actSteps.findIndex((x) => x.id === "freshness") < actSteps.findIndex((x) => x.id === "recommendation") &&
+        actSteps.findIndex((x) => x.id === "what_didnt_work") < actSteps.findIndex((x) => x.id === "caveat"));
+    ok("an activity's friend's-experience answer is her sentence",
+      byId(actSteps, "firsthand")?.options?.map((o) => o.label).join(" | ") ===
+        "Yes, ours did | No, this is based on a friend's experience");
+    ok("an activity's last-time answers are hers, with 'Still doing it' first",
+      byId(actSteps, "freshness")?.options?.map((o) => o.label).join(" | ") ===
+        "Still doing it | Within the last year | Over a year ago | Not sure anymore");
+    ok("a Yes is asked what they liked, a No what did not work — never both",
+      byId(actSteps, "what_makes_it_great")?.when?.({ recommendation: "yes" }) === true &&
+        byId(actSteps, "what_makes_it_great")?.when?.({ recommendation: "yes_with_caveats" }) === true &&
+        byId(actSteps, "what_makes_it_great")?.when?.({ recommendation: "no" }) === false &&
+        byId(actSteps, "what_didnt_work")?.when?.({ recommendation: "no" }) === true &&
+        byId(actSteps, "what_didnt_work")?.when?.({ recommendation: "probably_not" }) === true &&
+        byId(actSteps, "what_didnt_work")?.when?.({ recommendation: "yes" }) === false);
+    ok("'What makes it good?' is struck from the activity card",
+      !actSteps.some((x) => x.prompt === "What makes it good?"));
+    ok("'How long did you go' and 'who might it not suit' are not on her list, so not asked",
+      !actSteps.some((x) => x.id === "how_much" || x.id === "who_not_for"));
+    ok("the optional questions are who it is perfect for, the price and whether it was worth it",
+      ["who_for", "price_band", "price_unit", "worth_it"].every((id) => byId(actSteps, id)?.when) &&
+        actPrompt("who_for") === "Who is it perfect for?" &&
+        byId(actSteps, "worth_it")?.options?.map((o) => o.label).join(" | ") ===
+          "Great value | Fair | Pricey but worth it | Pricey, not worth it | It's free");
+    ok("an activity's price is per day, week or season",
+      byId(actSteps, "price_unit")?.options?.map((o) => o.id).join(",") === "per_day,per_week,per_season" &&
+        byId(actSteps, "price_unit")?.options?.map((o) => o.label).join(" | ") === "Day | Week | Season");
+    const scriptsMod = await import(`../lib/seed-chat/scripts.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/scripts.ts");
+    ok("the older price units stay readable: a card saved before today carries one",
+      ["per_class", "per_session", "per_month", "per_term", "per_camp_week"].every(
+        (id) => scriptsMod.PRICE_UNIT.some((o) => o.id === id)));
+
+    const placeSteps = built.place.steps;
+    const placePrompt = (id: string) => byId(placeSteps, id)?.prompt ?? "";
+    ok("the place card asks her questions in her words, in her order",
+      placeSteps.map((x) => x.id).join(",") ===
+        "name,firsthand,child_age,freshness,recommendation,what_makes_it_great,caveat,best_for,location,extra_note" &&
+        [
+          ["name", "What's the place?"],
+          ["firsthand", "Did you go there with your child?"],
+          ["child_age", "How old was your child when you went?"],
+          ["freshness", "When did you last go?"],
+          ["recommendation", "Would you recommend it?"],
+          ["what_makes_it_great", "What did you like — or dislike — about it?"],
+          ["caveat", "Anything to know before going?"],
+          ["best_for", "Who's it best for?"],
+          ["location", "Which area is it in?"],
+        ].every(([id, text]) => placePrompt(id) === text));
+    ok("a place's friend's-experience answer and last-visit answers are hers",
+      byId(placeSteps, "firsthand")?.options?.map((o) => o.label).join(" | ") ===
+        "Yes | No, this is based on a friend's experience" &&
+        byId(placeSteps, "freshness")?.options?.map((o) => o.label).join(" | ") ===
+          "Within the last 6 months | Within the last year | Over a year ago | Not sure");
+    ok("'What kind of place is it?' and 'What makes it worth the trip?' are struck from the place card",
+      !placeSteps.some((x) => x.id === "type") &&
+        !placeSteps.some((x) => /worth the trip/.test(x.prompt)));
+    ok("a place's recommendation asks the same four answers as an activity's",
+      byId(placeSteps, "recommendation")?.options === byId(actSteps, "recommendation")?.options);
+    ok("a place has one question for the why, so no second one after a No",
+      !placeSteps.some((x) => x.id === "what_didnt_work") &&
+        !byId(placeSteps, "what_makes_it_great")?.when);
+
+    const topicOptions = byId(built.tip.steps, "topic")?.options ?? [];
+    ok("a tip's topics are hers: the seven, then Other — Doctors & health is gone",
+      topicOptions.map((o) => o.label).join(" | ") ===
+        "Schedules & timing | Costs & deals | Finding caregivers | Birthdays & parties | Rainy days | Eating out with kids | Being new here | Other");
+    ok("a tip asks its three questions in her order",
+      built.tip.steps.slice(0, 4).map((x) => x.id).join(",") === "topic,tip,what_makes_it_great,best_for" &&
+        byId(built.tip.steps, "topic")?.prompt === "What's it about?" &&
+        byId(built.tip.steps, "tip")?.prompt === "What should another parent do or know?" &&
+        byId(built.tip.steps, "what_makes_it_great")?.prompt === "When is this useful, or why did it help you?" &&
+        byId(built.tip.steps, "best_for")?.prompt === "Who does this help most?");
+
+    const quality = await import(`../lib/contribution-quality.ts?v=${Date.now()}`) as typeof import("../lib/contribution-quality.ts");
+    ok("an activity and a doctor choose their why by the recommendation; a place and a tip do not",
+      quality.choosesWhyByRecommendation("activity") && quality.choosesWhyByRecommendation("doctor") &&
+        !quality.choosesWhyByRecommendation("place") && !quality.choosesWhyByRecommendation("tip"));
+    ok("an activity edited from No to Yes still counts the praise, and a Yes to No counts what did not work",
+      quality.doctorWhy({ recommendation: "yes", what_makes_it_great: "praise", what_didnt_work: "complaint" }) === "praise" &&
+        quality.doctorWhy({ recommendation: "no", what_makes_it_great: "praise", what_didnt_work: "complaint" }) === "complaint");
+    const placeSecond = quality.assessChatCard("place", {
+      name: "Victory Park", firsthand: "secondhand", what_makes_it_great: "Shade, a fence and a splash pad",
+      caveat: "Parking is hard after ten",
+    });
+    ok("a friend's place is stored but does not qualify",
+      placeSecond.status === "needs_follow_up" && /friend's/.test(placeSecond.missing.join(" ")));
+    const placeOwn = quality.assessChatCard("place", {
+      name: "Victory Park", firsthand: "yes", what_makes_it_great: "Shade, a fence and a splash pad",
+      caveat: "Parking is hard after ten",
+    });
+    ok("a place the parent went to with their child still qualifies on the rules it had",
+      placeOwn.status === "qualifies");
+
+    const retrievalSrc = fs.readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");
+    const noteBlock = retrievalSrc.slice(retrievalSrc.indexOf("as note_great") - 900, retrievalSrc.indexOf("as note_great"));
+    ok("a quote is taken only for a positive or a missing recommendation, so a No's reason is never praise",
+      /sc\.recommendation is null\s+or sc\.recommendation in \('yes','yes_with_caveats'\)/.test(noteBlock));
+    ok("and the name is chosen by the same test, so the name and the quote share a contribution",
+      /order by \(nullif\(btrim\(case\s+when sc\.recommendation is null\s+or sc\.recommendation in \('yes','yes_with_caveats'\)\s+then sc\.what_makes_it_great end\), ''\) is null\)/.test(retrievalSrc));
+
+    const edit = await import(`../lib/admin/contribution-edit.ts?v=${Date.now()}`) as typeof import("../lib/admin/contribution-edit.ts");
+    const within6 = edit.cleanContributionPatch({ last_there: "within_6m" }, "place");
+    ok("the admin may record a place's 'within the last 6 months'",
+      within6.ok === true && within6.ok && within6.patch.last_there === "within_6m");
+    const dayUnit = edit.cleanContributionPatch({ price_band: "50_100", price_unit: "per_week" }, "activity");
+    ok("and an activity's price per week",
+      dayUnit.ok === true && dayUnit.ok && dayUnit.patch.price_unit === "per_week");
+
     ok("a caregiver's recap never offers the 18+ or firsthand gate to be re-asked",
       !engine.recapRows(built.caregiver, {}, { all: true }).some((r) => r.field === "worked_for_you" || r.field === "age_gate"));
     const inviteMod = await import(`../lib/caregiver-invite.ts?v=${Date.now()}`) as typeof import("../lib/caregiver-invite.ts");
@@ -1682,8 +1887,7 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
   ok(
     "and every screen that asks for a number uses that one field",
     ["../components/seed/InviteLanding.tsx", "../components/seed/SignIn.tsx",
-     "../components/caregiver/CaregiverFlow.tsx", "../components/seed/chat/StepWidget.tsx",
-     "../components/seed/ProfileFlow.tsx"].every((f) => /<PhoneField/.test(read(f)) && !/country=/.test(read(f).replace(/\/\*[\s\S]*?\*\//g, ""))),
+     "../components/caregiver/CaregiverFlow.tsx", "../components/seed/chat/StepWidget.tsx"].every((f) => /<PhoneField/.test(read(f)) && !/country=/.test(read(f).replace(/\/\*[\s\S]*?\*\//g, ""))),
     "the country choice cannot come back on one screen alone",
   );
   ok(
@@ -1972,13 +2176,26 @@ console.log("\n=== 10 Sep: the fork, and the screens behind the ceiling (nine si
      * **conditional on the number being confirmed**, which is the property that
      * was missing rather than any particular markup.
      */
+    /* 8 Oct, the developer: *"прибери модель підтвердження sms з кінця, нехай
+       буде лише на початку"*. The end-of-profile code step — and with it the
+       15 Sep bug above, which lived inside it — is gone: the profile asks for no
+       code and no number, and `/join` is where a number is confirmed. */
+    const joinSrc = fs.readFileSync(
+      new URL("../components/seed/InviteLanding.tsx", import.meta.url),
+      "utf8",
+    );
     ok(
-      "a confirmed number is never shown the code box again",
-      flowSrc.includes(") : confirmed ? (") &&
-        flowSrc.includes("session.phone_verified === true && !existing"),
-      flowSrc.includes(") : confirmed ? (")
-        ? "the branch is there but nothing computes confirmed"
-        : "the code box renders unconditionally",
+      "the profile has no code step of its own — the number is confirmed on /join only",
+      !/<VerifyPhone/.test(flowSrc) && !/<PhoneField/.test(flowSrc) &&
+        !/stage === "verify"/.test(flowSrc) && !/"profile_end"/.test(flowSrc) &&
+        /<VerifyPhone/.test(joinSrc),
+      "a code box came back at the end of the profile",
+    );
+    ok(
+      "and /join does not walk past the code on a status it never received",
+      /let status = gate;/.test(joinSrc) &&
+        /seed_verify_status_failed/.test(joinSrc),
+      "a null status would send the parent on with nothing left to confirm them",
     );
     /* And the refusal that is recoverable navigates rather than apologising:
        the route has named the missing fields since 27 Aug and nothing read
@@ -2453,9 +2670,11 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
 
   /* Two screens' worth of her replacements. */
   ok("Step 2 is named for what it does", /Step 2 · Share what you know/.test(bar));
+  /* Her 10 Sep line lived on the end-of-profile code screen, which is gone
+     (8 Oct); the code is asked on /join, under its own heading. */
   ok(
-    "the code screen says what it is for",
-    /Verify your number to save your profile/.test(flow) &&
+    "the code is asked for on /join, and the evasive line is not back",
+    /Confirm your number, then the questions./.test(src("../components/seed/InviteLanding.tsx")) &&
       !/Nothing has left this phone yet/.test(flow),
   );
 
@@ -2780,7 +2999,7 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   )) as typeof import("../lib/seed-chat/scripts.ts");
   const scripts = buildScripts("pasadena");
 
-  for (const kind of ["activity", "place", "tip"] as const) {
+  for (const kind of ["activity", "place", "tip", "doctor"] as const) {
     const steps = scripts[kind].steps;
     const last = steps[steps.length - 1];
     ok(`${kind} ends on the open question`, last?.id === "extra_note", String(last?.id));
@@ -2859,6 +3078,27 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     "and the two sentences are not the same words",
     !chat.includes(String(scripts.activity.steps.at(-1)?.prompt)),
     String(scripts.activity.steps.at(-1)?.prompt),
+  );
+  /* 8 Oct, the developer on a screenshot: the recap ("Received…") and the
+     thanks landed above the follow-up, while nothing had been sent. With a
+     follow-up pending, finishCard adds nothing; answerConfirmBack posts the
+     card and the thanks once the parent has answered or skipped. Source-pinned
+     for the same reason as above — it is a branch inside the component. */
+  /* 8 Oct: a card held for an unconfirmed number was stranded once the number
+     was confirmed — /signin sends nothing, /done/ask only what exists then, and
+     /done only offers while unconfirmed. The chat now sends it on opening. */
+  ok(
+    "a held card is sent when the chat opens on a session that can send it",
+    /const heldSent = useRef\(false\)/.test(chat) &&
+      /if \(holdsUntilVerified\(session\)\) return;\s*const unsent = chat\.submissions\.filter\(/.test(chat) &&
+      /!s\.persisted && !s\.error && s\.id !== chat\.confirm_back\?\.submission_id/.test(chat),
+    "a confirmed session with an unsent card has no way out",
+  );
+  ok(
+    "a pending follow-up comes before the card and the thanks, not after them",
+    /messages: ask \? c\.messages : \[/.test(chat) &&
+      /text: thanksLine\(updated\.kind\)/.test(chat),
+    "the card read as received above a question about it",
   );
 }
 

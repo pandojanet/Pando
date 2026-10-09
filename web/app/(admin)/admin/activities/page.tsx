@@ -23,14 +23,16 @@ import { SegmentedFilter } from "@/components/admin/kit";
 import { RecordCard, RecordDrawer, RecordList } from "@/components/admin/Record";
 import {
   ContributionFacts,
+  ProviderCheckBadge,
   QualityBadge,
 } from "@/components/admin/ContributionFacts";
 import { ContributionEditor } from "@/components/admin/ContributionEditor";
 import { qualityOf } from "@/lib/admin/quality";
-import { adminAction, useAdminRows } from "@/lib/admin/client";
+import { adminAction, recheckProvider, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributionRow } from "@/lib/admin/types";
 import { REVIEW_STATUS } from "@/lib/admin/labels";
+import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
 
 /**
  * Estimate 2.4 — contribution review.
@@ -264,6 +266,9 @@ export default function ContributionsPage() {
                         <Badge tone="gold">Heard from a friend</Badge>
                       )}
                       <ProvenanceBadge provenance={row.provenance} />
+                      {/* The client's "is it a valid doctor" (8 Oct), where
+                          the decision is made rather than inside the drawer. */}
+                      {row.kind === "doctor" && <ProviderCheckBadge row={row} />}
                       {row.share.answer_ready && (
                         <Badge tone="green">Ready to answer with</Badge>
                       )}
@@ -321,8 +326,12 @@ export default function ContributionsPage() {
                        * Golden answers (§17.1). Only offered on an approved
                        * record, because that is the only state the flag can be
                        * true in — the database says so too.
+                       *
+                       * ⚠ Not on a doctor (8 Oct): doctors are not in SMS
+                       * answers yet, so the mark would promise something
+                       * nothing reads.
                        */}
-                      {row.status === "approved" && (
+                      {row.status === "approved" && row.kind !== "doctor" && (
                         <Button
                           tone="secondary"
                           disabled={busy === row.id}
@@ -345,6 +354,23 @@ export default function ContributionsPage() {
                           {row.share.answer_ready
                             ? "Not ready after all"
                             : "Ready to answer with"}
+                        </Button>
+                      )}
+                      {/* "Maybe our system failed" (the client, 8 Oct): the
+                          check runs by itself after saving; this re-runs it. */}
+                      {row.kind === "doctor" && !PROVIDER_CHECK_PAUSED && (
+                        <Button
+                          tone="secondary"
+                          disabled={busy === row.id}
+                          subject={row.share.name}
+                          onClick={() =>
+                            void run(row.id, "Checked — the result is on the card.", async () => {
+                              await recheckProvider(row.share.id);
+                              return { persisted: true };
+                            })
+                          }
+                        >
+                          {row.share.provider_check ? "Check again" : "Check now"}
                         </Button>
                       )}
                       {row.status !== "rejected" && (

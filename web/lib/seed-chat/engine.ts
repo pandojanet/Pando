@@ -155,6 +155,11 @@ export function recapRows(
       rows.push({ field, label, value: "", empty: true });
       continue;
     }
+    /* An answer whose own question no longer applies is not shown (review,
+       8 Oct): a doctor card edited from Yes to No still holds "what they like",
+       and listing it under a No reads as the reason for the No. The server
+       picks the "why" by the recommendation (`doctorWhy`) for the same reason. */
+    if (step.when && !step.when(asIfDetailWanted)) continue;
     rows.push({ field, label, value: formatAnswer(step, value as FieldValue) });
   }
   return rows;

@@ -64,8 +64,8 @@ interface Props {
    * first step. Without it that parent taps the same words twice and the first
    * tap visibly did nothing.
    *
-   * Off everywhere else on purpose: at the end of the profile and in the
-   * caregiver flow the dock says something else, so this panel's own button is
+   * Off everywhere else on purpose: on `/join`, on the completion screens and in
+   * the caregiver flow the dock says something else, so this panel's own button is
    * the first request and firing on mount would send a code to a parent who has
    * only scrolled onto the screen.
    */

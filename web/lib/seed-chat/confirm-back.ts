@@ -54,6 +54,8 @@ import type { Submission } from "./types";
  */
 const TEXT_FIELDS = [
   "what_makes_it_great",
+  /* The doctor card's "why" after a No (8 Oct). */
+  "what_didnt_work",
   "tip",
   "caveat",
   "who_for",
@@ -79,10 +81,28 @@ const QUESTIONS: Record<string, string> = {
     "Can you say a bit more? The tips parents act on are the specific ones — a name, a time, a number.",
   what_makes_it_great:
     "One more thing and this becomes really useful — what would you tell a friend who was deciding? The teacher, the room, the price, the thing you didn't expect.",
+  /* An activity's reason after a No (8 Oct); a place has one question for both
+     and keeps `what_makes_it_great`. */
+  what_didnt_work:
+    "Can you say a bit more about what didn't work? The teacher, the group size, the time, the thing you didn't expect.",
   caveat:
     "Anything worth knowing before someone else tries it? Parking, the age it stops working, a cost that isn't obvious.",
   who_for: "Who would you send there? An age, a temperament, a situation.",
   who_not_for: "And who would you steer away from it?",
+};
+
+/**
+ * A doctor card's follow-ups (8 Oct). The activity wording asks about "the
+ * teacher, the room" — the right nouns for a class and the wrong ones here.
+ */
+const DOCTOR_QUESTIONS: Record<string, string> = {
+  what_makes_it_great:
+    "One more thing and this becomes really useful — what would you tell a friend who was choosing a doctor? How they explain things, how they are with kids, the wait.",
+  what_didnt_work:
+    "Can you say a bit more about what didn't work? The wait, how they explained things, how they were with your child.",
+  caveat:
+    "Anything worth knowing before someone else books? The wait for appointments, insurance, after-hours care.",
+  who_for: "Who would you send to them? An age, a worry, a situation.",
 };
 
 /**
@@ -118,8 +138,10 @@ export function confirmBackFor(submission: Submission): ConfirmBack | null {
        name and the praise are taken out (5 Oct): "The Family Room is excellent"
        is 29 characters and says nothing. */
     const own = typeof fields.name === "string" ? fields.name : null;
-    if (isThinAnswer(value, { name: own, content: field === "what_makes_it_great" })) {
-      return { field, question: QUESTIONS[field] ?? QUESTIONS.what_makes_it_great };
+    const why = field === "what_makes_it_great" || field === "what_didnt_work";
+    if (isThinAnswer(value, { name: own, content: why })) {
+      const asked = submission.kind === "doctor" ? DOCTOR_QUESTIONS : QUESTIONS;
+      return { field, question: asked[field] ?? asked.what_makes_it_great };
     }
   }
 

@@ -33,7 +33,7 @@ const now = "2026-07-30T10:00:00.000Z";
 
 export const sampleOverview: Overview = {
   contributors: { total: 42, completed: 31, with_two_plus: 19 },
-  submissions: { activities: 58, caregivers: 11, places: 22, tips: 14 },
+  submissions: { activities: 58, caregivers: 11, places: 22, tips: 14, doctors: 6 },
   consent: { follow_up_opt_in: 27, reference_willing: 8 },
   caregivers: { mentioned: 6, invited: 3, consented: 2, declined: 0 },
   quality: {
@@ -369,6 +369,9 @@ export const sampleContributions: ContributionRow[] = [
       last_confirmed_at: now,
       validated_count: 3,
       answer_ready: true,
+      provider_check: null,
+      provider_checked_at: null,
+      provider_check_url: null,
     },
     firsthand: true,
     child_age_at_time: [2],
@@ -387,6 +390,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: null,
 
     extra_note: "The teacher remembers every parent by name, which sounds small and is not.",
+    visit_reason: null,
+    appointment_ease: null,
     status: "pending_review",
     confidence: 0.91,
     confidence_note:
@@ -410,6 +415,9 @@ export const sampleContributions: ContributionRow[] = [
       last_confirmed_at: "2026-01-12T10:00:00.000Z",
       validated_count: 1,
       answer_ready: false,
+      provider_check: null,
+      provider_checked_at: null,
+      provider_check_url: null,
     },
     /** Secondhand: welcome, labelled, and never counted toward Founding. */
     firsthand: false,
@@ -429,6 +437,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: null,
 
     extra_note: null,
+    visit_reason: null,
+    appointment_ease: null,
     status: "pending_review",
     confidence: 0.44,
     confidence_note:
@@ -452,6 +462,9 @@ export const sampleContributions: ContributionRow[] = [
       last_confirmed_at: now,
       validated_count: 0,
       answer_ready: false,
+      provider_check: null,
+      provider_checked_at: null,
+      provider_check_url: null,
     },
     firsthand: true,
     child_age_at_time: [],
@@ -470,6 +483,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: null,
 
     extra_note: null,
+    visit_reason: null,
+    appointment_ease: null,
     /** Held, not rejected — the missing child age is worth asking about. */
     status: "needs_detail",
     confidence: 0.68,
@@ -494,6 +509,9 @@ export const sampleContributions: ContributionRow[] = [
       last_confirmed_at: now,
       validated_count: 0,
       answer_ready: false,
+      provider_check: null,
+      provider_checked_at: null,
+      provider_check_url: null,
     },
     firsthand: true,
     child_age_at_time: [6],
@@ -513,6 +531,8 @@ export const sampleContributions: ContributionRow[] = [
     tip_text: "Sign up the week registration opens or you'll be waitlisted.",
 
     extra_note: null,
+    visit_reason: null,
+    appointment_ease: null,
     status: "approved",
     confidence: null,
     confidence_note: null,
@@ -990,7 +1010,7 @@ export const sampleFounding: FoundingRow[] = [
     school: "Field Elementary",
     invited_by: null,
     arrived_via: "school-pta",
-    submissions: { activities: 2, caregivers: 0, places: 0, tips: 0 },
+    submissions: { activities: 2, caregivers: 0, places: 0, tips: 0, doctors: 0 },
     checklist: {
       verified: true,
       has_neighborhood: true,
@@ -1014,7 +1034,7 @@ export const sampleFounding: FoundingRow[] = [
     school: "Sierra Madre Elementary",
     invited_by: null,
     arrived_via: "pasadena-moms-fb",
-    submissions: { activities: 3, caregivers: 1, places: 1, tips: 0 },
+    submissions: { activities: 3, caregivers: 1, places: 1, tips: 0, doctors: 1 },
     checklist: {
       verified: true,
       has_neighborhood: true,

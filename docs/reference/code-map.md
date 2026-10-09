@@ -110,6 +110,16 @@
                        load it; every branch drops rather than repairs.
                        `npm run probe:web-search` is the live matrix behind it
                        — ten questions across contexts, through the real pipeline.
+`web/lib/provider-check.ts` · `web/lib/server/provider-check.ts` — is the doctor a
+                       parent named real (8 Oct): the NPPES NPI Registry API since
+                       9 Oct (`npiQuery` / `readNpiResults`; DCA before), then
+                       the web.
+                       The pure half refuses any claimed match whose URL the
+                       search did not return, or whose name does not carry the
+                       typed one's words (`test:provider-check`). A failed search
+                       writes nothing — "could not check" is never "not found".
+`web/components/site/ShareQr.tsx` — the QR code that opens https://pando.is, as one
+                       SVG path (no QR library); how to regenerate it is in its header.
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
                        thresholds, and measured against all 588 real records.
 `web/lib/seed-chat/scripts.ts` — the capture conversations.

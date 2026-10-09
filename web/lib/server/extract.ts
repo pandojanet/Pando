@@ -45,7 +45,7 @@ import Anthropic from "@anthropic-ai/sdk";
 const MODEL = "claude-haiku-4-5";
 
 export interface ExtractionInput {
-  kind: "activity" | "place" | "tip";
+  kind: "activity" | "place" | "tip" | "doctor";
   place_name: string;
   /** Free text the parent typed. Never restricted-note content. */
   what_makes_it_great: string | null;

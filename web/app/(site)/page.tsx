@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PhoneMock } from "@/components/site/PhoneMock";
+import { ShareQr } from "@/components/site/ShareQr";
 import {
   Eyebrow,
   LeafIcon,
@@ -340,6 +341,20 @@ export default function HomePage() {
                 <br />
                 Forward this page — that’s exactly who we’re looking for.
               </p>
+              {/* 8 Oct, the developer: a QR so a parent can share the site from
+                  their own screen — at the school gate, not only in a chat. Under
+                  the line that already asks them to pass it on, so it is the
+                  second half of one invitation rather than a new section. The
+                  white tile is the code's quiet zone: on moss alone it would not
+                  scan reliably. */}
+              <figure className="mt-5">
+                <div className="mx-auto w-fit rounded-2xl bg-card p-4 shadow-card">
+                  <ShareQr className="block h-[8.5rem] w-[8.5rem] text-ink" />
+                </div>
+                <figcaption className="mt-2.5 text-[0.85rem] text-paper-soft">
+                  Or let them scan this — it opens pando.is
+                </figcaption>
+              </figure>
             </div>
           </Wrap>
         </Section>

@@ -39,7 +39,8 @@ export async function completeCounts(
 
   const shareRows = (await db.execute(sql`
     select sc.person_id, pl.kind, pl.name, sc.firsthand, sc.child_age_at_time,
-           sc.last_there, sc.what_makes_it_great, sc.caveat_answered, sc.tip_text
+           sc.last_there, sc.what_makes_it_great, sc.caveat_answered, sc.tip_text,
+           sc.visit_reason
       from share_contributions sc
       join shares pl on pl.id = sc.share_id
      where sc.status = 'approved' and not sc.is_test and sc.person_id is not null

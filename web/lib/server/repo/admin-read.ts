@@ -29,6 +29,7 @@ import type {
   PlaceDemand,
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE, type CaregiverClaimRow, type CaregiverRow } from "@/lib/admin/types";
+import type { ProviderCheck } from "@/lib/provider-check";
 import {
   FOUNDING_MIN_APPROVED,
   FOUNDING_MIN_PROFILE_DEPTH,
@@ -245,6 +246,7 @@ async function overview(db: Db) {
         (select count(*) from submissions where kind = 'caregiver' and not is_test) as caregivers,
         (select count(*) from submissions where kind = 'place' and not is_test)    as places,
         (select count(*) from submissions where kind = 'tip' and not is_test)      as tips,
+        (select count(*) from submissions where kind::text = 'doctor' and not is_test) as doctors,
         (select count(distinct person_id) from consents
            where scope = 'follow_up' and status = 'opted_in')                      as follow_up_opt_in,
         (select count(*) from caregiver_nominations
@@ -349,6 +351,7 @@ async function overview(db: Db) {
       caregivers: n("caregivers"),
       places: n("places"),
       tips: n("tips"),
+      doctors: n("doctors"),
     },
     consent: {
       follow_up_opt_in: n("follow_up_opt_in"),
@@ -760,6 +763,7 @@ async function contributions(db: Db, personId: string | null = null) {
       select pc.*, pl.name, pl.venue, pl.neighborhoods, pl.age_bands,
              pl.freshness_state, pl.last_confirmed_at, pl.validated_count,
              pl.answer_ready,
+             pl.provider_check, pl.provider_checked_at, pl.provider_check_url,
              pl.id as share_id, pl.kind, pl.provenance,
              p.id as contributor_id, p.first_name, p.last_name
       from share_contributions pc
@@ -787,6 +791,9 @@ async function contributions(db: Db, personId: string | null = null) {
       last_confirmed_at: r.last_confirmed_at,
       validated_count: Number(r.validated_count ?? 0),
       answer_ready: r.answer_ready === true,
+      provider_check: (r.provider_check ?? null) as ProviderCheck | null,
+      provider_checked_at: (r.provider_checked_at as string | null) ?? null,
+      provider_check_url: (r.provider_check_url as string | null) ?? null,
     },
     firsthand: r.firsthand,
     child_age_at_time: r.child_age_at_time ?? [],
@@ -804,6 +811,8 @@ async function contributions(db: Db, personId: string | null = null) {
     follow_up_ok: r.follow_up_ok,
     tip_text: r.tip_text,
     extra_note: r.extra_note,
+    visit_reason: (r.visit_reason as string | null) ?? null,
+    appointment_ease: (r.appointment_ease as string | null) ?? null,
     status: r.status,
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,
@@ -1364,7 +1373,9 @@ async function foundingQueue(db: Db) {
              (select count(*) from submissions s
                 where s.person_id = p.id and s.kind = 'place')                    as places,
              (select count(*) from submissions s
-                where s.person_id = p.id and s.kind = 'tip')                      as tips
+                where s.person_id = p.id and s.kind = 'tip')                      as tips,
+             (select count(*) from submissions s
+                where s.person_id = p.id and s.kind::text = 'doctor')             as doctors
       from founding_checklist fc
       join people p on p.id = fc.person_id
       left join children c on c.person_id = p.id
@@ -1412,6 +1423,7 @@ async function foundingQueue(db: Db) {
       caregivers: Number(r.caregivers ?? 0),
       places: Number(r.places ?? 0),
       tips: Number(r.tips ?? 0),
+      doctors: Number(r.doctors ?? 0),
     },
     checklist: {
       verified: r.verified,

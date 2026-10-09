@@ -22,7 +22,7 @@ export function ShareMenu({
   savedCount: number;
   /**
    * The call to action after the first completed contribution (5 Oct): "Add
-   * one more contribution". Over the same four choices rather than a fifth
+   * one more contribution". Over the same choices rather than one more
    * button, so the way to do it is the menu the parent already knows.
    */
   heading?: string;
@@ -32,13 +32,20 @@ export function ShareMenu({
       {heading && (
         <p className="mb-2 text-center text-[14px] font-semibold text-green-deep">{heading}</p>
       )}
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        {SHARE_ORDER.map((kind) => (
+      {/* Five choices since the doctor card (8 Oct): three across and two wider
+          ones below on a phone, one row of five from md. Two columns made three
+          rows, and the dock took 57% of a 360×640 screen against the under-half
+          rule (measured); this keeps it to two rows, and the longest label —
+          the doctor's — lands in a wide tile. */}
+      <div className="grid grid-cols-6 gap-2 md:grid-cols-5">
+        {SHARE_ORDER.map((kind, i) => (
           <button
             key={kind}
             type="button"
             onClick={() => onPick(kind)}
-            className="flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-bark bg-card p-3 text-center transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.97]"
+            className={`flex min-h-[72px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-bark bg-card p-3 text-center transition-[transform,border-color] duration-150 hover:border-green/60 active:scale-[0.97] md:col-span-1 ${
+              i < 3 ? "col-span-2" : "col-span-3"
+            }`}
           >
             <span className="text-green">{ICONS[kind]}</span>
             <span className="text-[14px] font-semibold leading-tight">
@@ -88,6 +95,12 @@ const ICONS: Record<ShareKind, React.ReactNode> = {
         strokeLinejoin="round"
       />
       <circle cx="11" cy="9.6" r="2.2" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  doctor: (
+    <svg viewBox="0 0 22 22" className="h-[22px] w-[22px]" fill="none" aria-hidden="true">
+      <rect x="3.2" y="3.2" width="15.6" height="15.6" rx="4.4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M11 7.4v7.2M7.4 11h7.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
   tip: (

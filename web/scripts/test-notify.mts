@@ -42,7 +42,7 @@ ok("and links straight to that parent in the admin", parent.includes(`<${BASE}/a
 ok("a parent with no neighborhood still reads cleanly",
   !/undefined|null|—\s*$/m.test(n.notifyText({ kind: "parent", person_id: personId, neighborhood: null }, BASE)));
 
-for (const kind of ["activity", "place", "tip"] as const) {
+for (const kind of ["activity", "place", "tip", "doctor"] as const) {
   const t = n.notifyText({ kind }, BASE);
   ok(`a new ${kind} names its kind and links to the review queue`,
     /recommendation/.test(t) && t.includes(`<${BASE}/admin/activities|`), t);

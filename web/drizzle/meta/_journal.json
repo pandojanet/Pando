@@ -372,6 +372,27 @@
       "when": 1790424000000,
       "tag": "0052_reward_paid",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791446400000,
+      "tag": "0053_share_kind_doctor",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791450000000,
+      "tag": "0054_doctor_card",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791453600000,
+      "tag": "0055_provider_check_npi",
+      "breakpoints": true
     }
   ]
 }

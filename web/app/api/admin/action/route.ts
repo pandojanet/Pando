@@ -112,10 +112,14 @@ const CONSENT_TARGETS = new Set([
 const DEMAND_STATES = new Set(["open", "matched", "answered", "closed"]);
 
 /**
- * The four members of `share_kind`, and the list is the enum rather than a
+ * Members of `share_kind`, and the list is the enum rather than a
  * guess: a camp is a first-class *taxonomy* category (§8.4/§15.3) and has never
  * been a share kind, which is the trap `lib/capture.ts` already paid for once —
  * it would fail on the enum at runtime with a clean typecheck.
+ *
+ * ⚠ `doctor` (8 Oct) is in the enum and deliberately not here: a blast reply
+ * approved as a doctor would skip the provider check every doctor card gets,
+ * and doctors are not in answers yet. Add it with that check, not alone.
  */
 const SHARE_KINDS = new Set(["activity", "caregiver", "place", "tip"]);
 

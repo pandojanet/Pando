@@ -249,7 +249,15 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
        * again here (`lib/admin/contribution-edit.ts`), so a caller that skipped
        * the route still cannot store a value no question offered.
        */
-      const cleaned = cleanContributionPatch(b.patch);
+      /* The card's kind, so the patch is checked against that card's own
+         questions rather than every card's (8 Oct). */
+      const [owner] = target
+        ? ((await tx.execute(
+            sql`select s.kind::text as kind from share_contributions sc
+                  join shares s on s.id = sc.share_id where sc.id = ${target}::uuid`,
+          )) as unknown as Array<{ kind: string }>)
+        : [];
+      const cleaned = cleanContributionPatch(b.patch, owner?.kind);
       if (!cleaned.ok) return { applied: false, reason: "not_implemented" };
       const patch = cleaned.patch;
       const sets = [];
@@ -270,6 +278,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         col("price_unit", patch.price_unit ?? null);
       }
       if ("worth_it" in patch) col("worth_it", patch.worth_it ?? null);
+      /* The doctor card's two (8 Oct, `drizzle/0054`). */
+      if ("visit_reason" in patch) col("visit_reason", patch.visit_reason ?? null);
+      if ("appointment_ease" in patch) col("appointment_ease", patch.appointment_ease ?? null);
       if ("follow_up_ok" in patch) col("follow_up_ok", patch.follow_up_ok === true);
       if (patch.child_age_at_time !== undefined) {
         /* An array literal, not a parameter: `sql` expands a JS array into a
@@ -394,8 +405,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         )) as unknown as unknown[];
         if (clash.length > 0) return { applied: false, reason: "share_name_taken" };
       }
+      /* A doctor's provider check was about the old name (8 Oct): "Dr Lee"
+         renamed "Dr Patel" must not keep Dr Lee's licence. Cleared, so the card
+         reads "Not checked yet" and the admin's "Check now" runs it again. */
+      const isDoctor = current.kind === "doctor";
       const renamed = (await tx.execute(
-        sql`update shares set name = ${name}, updated_at = now()
+        sql`update shares set name = ${name}, updated_at = now()${
+          isDoctor
+            ? sql`, provider_check = null, provider_checked_at = null,
+                  provider_check_url = null, provider_check_started_at = null`
+            : sql``
+        }
              where id = ${target}::uuid
              returning id, market_id`,
       )) as unknown as Array<{ id: string; market_id: string }>;
@@ -404,12 +424,15 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
          rename of the wrong record must be reversible from it. */
       b.previous_name = current.name;
       /* A new name is a new chance to be a person's name (11.4), so it is read
-         again the way a new record's is. */
-      await flagNamedPersonRecord(tx, {
-        shareId: target,
-        name,
-        marketId: renamed[0].market_id,
-      });
+         again the way a new record's is — except on a doctor, whose name is a
+         person's by design (`cards.ts` skips it for the same reason). */
+      if (!isDoctor) {
+        await flagNamedPersonRecord(tx, {
+          shareId: target,
+          name,
+          marketId: renamed[0].market_id,
+        });
+      }
       return { applied: true, resource: "share", resource_id: target };
     }
 

@@ -620,6 +620,7 @@ export function TextLink({
   tone = "green",
   className,
   subject,
+  external = false,
 }: {
   href?: string;
   onClick?: () => void;
@@ -633,6 +634,12 @@ export function TextLink({
    * visible text untouched.
    */
   subject?: string;
+  /**
+   * A page outside the admin (8 Oct: the page a doctor check matched on). Opens
+   * in a new tab, carries no referrer, and only ever an http(s) address — the
+   * URL came from a web search, so anything else renders as plain text.
+   */
+  external?: boolean;
 }) {
   const ariaLabel = subject
     ? `${plainText(children).replace(/\s+/g, " ").trim()} — ${subject}`
@@ -644,6 +651,15 @@ export function TextLink({
       : "text-muted hover:text-alert",
     className,
   );
+  if (external) {
+    /* Nothing rather than text that looks like a link and goes nowhere. */
+    if (!href || !/^https?:\/\//i.test(href)) return null;
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={box} aria-label={ariaLabel}>
+        {children}
+      </a>
+    );
+  }
   if (href !== undefined) {
     return (
       <Link href={href} className={box} aria-label={ariaLabel}>

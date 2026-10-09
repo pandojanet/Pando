@@ -28,8 +28,8 @@
 export type NotifyEvent =
   /** A parent finished their profile for the first time. */
   | { kind: "parent"; person_id: string; neighborhood: string | null }
-  /** A new activity, place or tip card (not a correction of one). */
-  | { kind: "activity" | "place" | "tip" }
+  /** A new activity, place, tip or doctor card (not a correction of one). */
+  | { kind: "activity" | "place" | "tip" | "doctor" }
   /** A parent nominated a caregiver. */
   | { kind: "caregiver" }
   /** A caregiver set up her own profile and is waiting to be matched. */
@@ -56,6 +56,7 @@ export function notifyText(event: NotifyEvent, base: string): string {
     case "activity":
     case "place":
     case "tip":
+    case "doctor":
       return [
         `:sparkles: *New ${event.kind === "activity" ? "activity or class" : event.kind} recommendation*`,
         link(base, "/admin/activities", "Review it"),

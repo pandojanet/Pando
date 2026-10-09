@@ -6,11 +6,17 @@ import { Select } from "@/components/admin/kit";
 import type { ContributionRow } from "@/lib/admin/types";
 import type { CleanPatch } from "@/lib/admin/contribution-edit";
 import {
+  APPOINTMENT_EASE,
+  DOCTOR_LAST_SEEN,
+  DOCTOR_PRICE_BAND,
   HOW_MUCH,
   LAST_THERE,
+  PLACE_LAST_GONE,
   PRICE_BAND,
   PRICE_UNIT,
   RECOMMENDATION_OPTIONS,
+  VISIT_REASON,
+  VISIT_UNIT,
   WORTH_IT,
 } from "@/lib/seed-chat/scripts";
 
@@ -70,19 +76,26 @@ export function ContributionEditor({
     price_unit: row.price_unit ?? "",
     worth_it: row.worth_it ?? "",
     follow_up: row.follow_up_ok,
+    visit_reason: row.visit_reason ?? "",
+    appointment_ease: row.appointment_ease ?? "",
   };
   const [v, setV] = useState(start);
   const set = <K extends keyof typeof start>(key: K, value: (typeof start)[K]) =>
     setV((cur) => ({ ...cur, [key]: value }));
 
   const isActivity = row.kind === "activity";
+  /* A place asks the child's age, the last visit and a recommendation since the
+     client's list of 8 Oct, so the admin can complete them like an activity's. */
+  const isPlace = row.kind === "place";
   const isTip = row.kind === "tip";
+  /* A doctor card (8 Oct): its own questions, and a price that is always per visit. */
+  const isDoctor = row.kind === "doctor";
   const ages = parseAges(v.ages);
   const paid = v.price_band !== "" && v.price_band !== "free" && v.price_band !== "prefer_not_to_say";
   const problem =
     ages === null
       ? "Ages are whole numbers from 0 to 25, like 3, 6"
-      : paid && v.price_unit === ""
+      : !isDoctor && paid && v.price_unit === ""
         ? "A price needs what it is per"
         : null;
 
@@ -105,6 +118,21 @@ export function ContributionEditor({
     }
     if (v.follow_up !== start.follow_up) patch.follow_up_ok = v.follow_up;
   }
+  if (isPlace) {
+    if (v.last_there !== start.last_there) patch.last_there = v.last_there;
+    if (v.recommendation !== start.recommendation) patch.recommendation = v.recommendation;
+  }
+  if (isDoctor) {
+    if (v.who_for !== start.who_for) patch.who_for = v.who_for;
+    if (v.last_there !== start.last_there) patch.last_there = v.last_there;
+    if (v.recommendation !== start.recommendation) patch.recommendation = v.recommendation;
+    if (v.visit_reason !== start.visit_reason) patch.visit_reason = v.visit_reason;
+    if (v.appointment_ease !== start.appointment_ease) patch.appointment_ease = v.appointment_ease;
+    if (v.price_band !== start.price_band) {
+      patch.price_band = v.price_band;
+      patch.price_unit = paid ? VISIT_UNIT.id : "";
+    }
+  }
   if (!isTip && ages !== null && v.ages !== start.ages) patch.child_age_at_time = ages;
   const changed = Object.keys(patch).length > 0;
 
@@ -121,6 +149,28 @@ export function ContributionEditor({
             />
           </Field>
         )}
+        {isDoctor && (
+          <Field label="Still seeing them">
+            <Select
+              label="Still seeing them"
+              value={v.last_there}
+              onChange={(x) => set("last_there", x)}
+              options={withNone(DOCTOR_LAST_SEEN)}
+              className="w-full"
+            />
+          </Field>
+        )}
+        {isDoctor && (
+          <Field label="Seen for">
+            <Select
+              label="Seen for"
+              value={v.visit_reason}
+              onChange={(x) => set("visit_reason", x)}
+              options={withNone(VISIT_REASON)}
+              className="w-full"
+            />
+          </Field>
+        )}
         {isActivity && (
           <Field label="Last there">
             <Select
@@ -132,7 +182,18 @@ export function ContributionEditor({
             />
           </Field>
         )}
-        {isActivity && (
+        {isPlace && (
+          <Field label="Last went">
+            <Select
+              label="Last went"
+              value={v.last_there}
+              onChange={(x) => set("last_there", x)}
+              options={withNone(PLACE_LAST_GONE)}
+              className="w-full"
+            />
+          </Field>
+        )}
+        {(isActivity || isDoctor || isPlace) && (
           <Field label="Would recommend">
             <Select
               label="Would recommend"
@@ -164,7 +225,17 @@ export function ContributionEditor({
             />
           </Field>
         )}
-        <Field label={isTip ? "Why it helped" : "What makes it good"}>
+        <Field
+          label={
+            isTip
+              ? "Why it helped"
+              : isDoctor || isActivity
+                ? "What they like, or what didn't work"
+                : isPlace
+                  ? "What they liked or disliked"
+                  : "What makes it good"
+          }
+        >
           <textarea
             className={inputClass}
             rows={2}
@@ -189,6 +260,37 @@ export function ContributionEditor({
               />
               They were asked, and had nothing to flag
             </label>
+          </Field>
+        )}
+        {isDoctor && (
+          <Field label="Good for">
+            <input
+              className={inputClass}
+              value={v.who_for}
+              onChange={(e) => set("who_for", e.target.value)}
+            />
+          </Field>
+        )}
+        {isDoctor && (
+          <Field label="Getting an appointment">
+            <Select
+              label="Getting an appointment"
+              value={v.appointment_ease}
+              onChange={(x) => set("appointment_ease", x)}
+              options={withNone(APPOINTMENT_EASE)}
+              className="w-full"
+            />
+          </Field>
+        )}
+        {isDoctor && (
+          <Field label="Paid per visit">
+            <Select
+              label="Paid per visit"
+              value={v.price_band}
+              onChange={(x) => set("price_band", x)}
+              options={withNone(DOCTOR_PRICE_BAND)}
+              className="w-full"
+            />
           </Field>
         )}
         {isActivity && (

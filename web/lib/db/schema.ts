@@ -72,6 +72,8 @@ export const shareKind = pgEnum("share_kind", [
   "caregiver",
   "place",
   "tip",
+  /** Doctors & medical providers (8 Oct), `drizzle/0053`. */
+  "doctor",
 ]);
 
 /* ── 0. Invites (estimate 1.1) ────────────────────────────────────────────── */
@@ -734,6 +736,22 @@ export const shares = pgTable(
      * does not own. See `drizzle/0032`.
      */
     focus: text("focus"),
+    /**
+     * Doctor records only (8 Oct, `drizzle/0054`): whether the provider could be
+     * found, checked after the card is saved (`lib/server/provider-check.ts`).
+     *
+     * `npi` = an NPPES record names them, one or several (since 9 Oct,
+     * `drizzle/0055`) · `web` = found on the open web ·
+     * `not_found` = neither · `license` = the DCA step's result before 9 Oct. Null = not checked yet (no key,
+     * or the check has not run). It informs the admin and gates nothing: a
+     * `not_found` record is still approvable, because the check can miss.
+     */
+    providerCheck: text("provider_check"),
+    providerCheckedAt: timestamp("provider_checked_at", { withTimezone: true }),
+    /** The page the check matched on — the admin's way to see it for themselves. */
+    providerCheckUrl: text("provider_check_url"),
+    /** The claim a running check holds, so one doctor is never searched twice at once. */
+    providerCheckStartedAt: timestamp("provider_check_started_at", { withTimezone: true }),
     status: reviewStatus("status").notNull().default("pending_review"),
     provenance: provenance("provenance").notNull().default("parent_submitted"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
@@ -776,6 +794,10 @@ export const shares = pgTable(
     check(
       "shares_freshness_state_check",
       sql`${t.freshnessState} in ('fresh','ageing','stale')`,
+    ),
+    check(
+      "shares_provider_check_check",
+      sql`${t.providerCheck} is null or ${t.providerCheck} in ('license','npi','web','not_found')`,
     ),
     index("shares_market_idx")
       .on(t.marketId, t.kind, t.status)
@@ -843,6 +865,13 @@ export const shareContributions = pgTable(
      * inferring from this one without saying so here first.
      */
     extraNote: text("extra_note"),
+    /**
+     * Doctor cards only (8 Oct, `drizzle/0054`). `visit_reason`: routine |
+     * illness | ongoing | specialist | other — what the family saw them for.
+     * `appointment_ease`: easy | manageable | difficult | not_sure (optional).
+     */
+    visitReason: text("visit_reason"),
+    appointmentEase: text("appointment_ease"),
 
     /**
      * May this one recommendation carry the contributor's first name?

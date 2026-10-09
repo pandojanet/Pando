@@ -76,6 +76,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/sms/inbound` | Every inbound text (13.2). Proves the request is Twilio's, works out the number, and hands to `lib/server/inbound.ts` — STOP/START/HELP are handled there before anything else reads the message. |
 | `POST /api/admin/password` | A signed-in admin changes their **own** password. Needs the current one; re-issues the cookie, because rotating a hash retires the old session. |
 | `POST /api/admin/extract` | The 1.8 catch-up sweep: scores contributions the inline pass missed. |
+| `POST /api/admin/provider-check` | `{ share_id }` → `{ ok, status }`: re-runs a doctor record's provider check (DCA licence pages, then the web). `{ ok: false, configured: false }` without a search key; 502 when the search did not finish (nothing written). |
 | `GET /api/market/options` | The tap lists, from `market_options` (§16.2). Anonymous, cached 60s, cleared by any `option.*` admin write. Unconfigured ⇒ `configured: false` and the client keeps its built-in lists. **Since 24 Aug it serves only the curated starters** for schools, activities, clubs and faith — those four are directories of hundreds now, not chip lists. |
 | `GET /api/market/search` | The other half of "tap first, search second": alias- and typo-tolerant search across one category. Home area ranks, never filters. A closed record stays findable, because a former pupil's affiliation is real. |
 

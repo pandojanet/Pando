@@ -221,6 +221,15 @@ list and each contributor's page read the column through the row, so they show
 every reward as unpaid rather than failing — but ticking *Reward paid* answers with
 an error until it is applied. It is additive and safe to run ahead of the code.
 
+⚠⚠ **`0053` + `0054` (the doctor card, 8 Oct) must run *before* the image that
+carries them deploys — not with it.** drizzle's `insert` names every column in
+`schema.ts`, so the new code's insert into `shares` and `share_contributions`
+fails on a database without the new columns: **every activity, place and tip card
+stops saving**, not only doctors, and `/admin`, `/admin/founding` and the
+contributors pages fail on the Founding count. Both files are additive and safe
+ahead of the code. Order: `npm run migrate` → confirm the "N migration(s) applied"
+line equals the journal's entry count → push the image.
+
 **Slack heads-up (optional, 30 Sep).** To be told in a channel when a new parent,
 activity, place, tip or caregiver arrives, create an Incoming Webhook (Slack app →
 *Incoming Webhooks* → *Add New Webhook to Workspace* → a channel), then add to

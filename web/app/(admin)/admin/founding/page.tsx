@@ -131,7 +131,8 @@ export default function FoundingQueuePage() {
                     row.submissions.activities +
                     row.submissions.caregivers +
                     row.submissions.places +
-                    row.submissions.tips;
+                    row.submissions.tips +
+                    row.submissions.doctors;
                   return (
                     <li key={row.id} className="px-4 py-3.5">
                       <div className="flex flex-wrap items-start justify-between gap-3">

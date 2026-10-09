@@ -29,7 +29,29 @@
  * partial comment can stay — and only a qualifying one counts toward Founding.
  */
 
-export type ContributionKind = "activity" | "place" | "tip" | "caregiver";
+/**
+ * A doctor card's "why", chosen by its recommendation — the one rule for the
+ * chat's quality line, the stored column and the admin's label (review, 8 Oct).
+ * Either answer can still be on the card after the recommendation is edited
+ * from the recap; only the one its own question asks counts.
+ */
+export function doctorWhy(fields: Record<string, unknown>): unknown {
+  const no = fields.recommendation === "probably_not" || fields.recommendation === "no";
+  return no ? fields.what_didnt_work : fields.what_makes_it_great;
+}
+
+/**
+ * The kinds whose "why" is two questions, one after a Yes and one after a No
+ * (a doctor since 8 Oct; an activity since the client's list of the same day).
+ * One list, so the chat's quality line, the stored column and the admin's label
+ * cannot disagree about which kinds choose their "why" by the recommendation.
+ * A place asks one question for both and a tip has no recommendation.
+ */
+export function choosesWhyByRecommendation(kind: string): boolean {
+  return kind === "doctor" || kind === "activity";
+}
+
+export type ContributionKind = "activity" | "place" | "tip" | "caregiver" | "doctor";
 
 export type QualityStatus = "qualifies" | "needs_follow_up" | "too_thin";
 
@@ -51,8 +73,10 @@ export interface QualityInput {
   name: string | null;
   /** At least one child age answered. */
   has_child_age: boolean;
-  /** When they were last there — an activity only. */
+  /** When they were last there — an activity or a doctor. */
   last_there: boolean;
+  /** What the family saw them for — a doctor only (8 Oct). */
+  visit_reason?: boolean;
   /** "What makes it good" — and, on a tip, "why it helped". */
   why: string | null;
   /** The "what should another parent know" question was asked and answered. */
@@ -174,10 +198,16 @@ export function assessContribution(input: QualityInput): Quality {
     if (!has(input.tip_text)) missing.push("the tip itself");
   }
 
-  if (input.kind === "activity") {
+  /* A doctor card (8 Oct) asks the activity card's two, worded for a doctor,
+     and what the family saw them for. */
+  if (input.kind === "activity" || input.kind === "doctor") {
     if (!input.has_child_age) missing.push("how old their child was");
-    if (!input.last_there) missing.push("when they were last there");
+    if (!input.last_there)
+      missing.push(
+        input.kind === "doctor" ? "whether they still see them" : "when they were last there",
+      );
   }
+  if (input.kind === "doctor" && !input.visit_reason) missing.push("what they saw them for");
 
   const hasWhy = has(input.why);
   const thinWhy = hasWhy && isThinAnswer(input.why, { name: input.name, content: true });
@@ -253,7 +283,7 @@ export function assessCaregiver(input: CaregiverQualityInput): Quality {
 
 /** A contribution as the database holds it — the columns the rule reads. */
 export interface ContributionColumns {
-  kind: "activity" | "place" | "tip";
+  kind: "activity" | "place" | "tip" | "doctor";
   firsthand: boolean;
   /** The record's name (`shares.name`). */
   name: string | null;
@@ -262,6 +292,13 @@ export interface ContributionColumns {
   what_makes_it_great: string | null;
   caveat_answered: boolean;
   tip_text: string | null;
+  /**
+   * A doctor's "What did you see them for?" (`drizzle/0054`). Required, null on
+   * every other kind: optional, a reader that forgot to select it would compile
+   * and every doctor card would silently read as incomplete — which is how the
+   * admin's `qualityOf` first shipped in this change.
+   */
+  visit_reason: string | null;
 }
 
 /**
@@ -276,6 +313,7 @@ export function assessColumns(c: ContributionColumns): Quality {
     name: c.name,
     has_child_age: (c.child_age_at_time ?? []).length > 0,
     last_there: has(c.last_there),
+    visit_reason: has(c.visit_reason),
     why: c.what_makes_it_great,
     caveat_answered: c.caveat_answered,
     tip_text: c.tip_text,
@@ -372,11 +410,18 @@ export function assessChatCard(
   }
   return assessContribution({
     kind,
-    firsthand: kind !== "activity" || fields.firsthand !== "secondhand",
+    /* The kinds that ask it — a doctor since 8 Oct, a place from the client's
+       list of the same day; a friend's never counts. A tip has no such question. */
+    firsthand: kind === "tip" || fields.firsthand !== "secondhand",
     name: str(fields.name) ?? str(fields.place_name),
     has_child_age: nonEmptyArray(fields.child_age),
     last_there: has(str(fields.freshness)),
-    why: str(fields.what_makes_it_great),
+    visit_reason: has(str(fields.visit_reason)),
+    /* A doctor or an activity asks "what didn't work" instead after a No
+       (8 Oct), and which one counts follows the recommendation — `doctorWhy`. */
+    why: choosesWhyByRecommendation(kind)
+      ? str(doctorWhy(fields))
+      : str(fields.what_makes_it_great),
     caveat_answered: typeof fields.caveat === "string",
     tip_text: str(fields.tip),
   });

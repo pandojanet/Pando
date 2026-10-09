@@ -463,6 +463,10 @@ async function freshness_ping(): Promise<JobResult> {
           from shares
          where status = 'approved'
            and not is_test
+           -- Not a doctor (8 Oct): doctors are not in SMS answers, so asking
+           -- whether one is still worth recommending refreshes nothing a
+           -- parent is shown, and spends a contributor's monthly ping on it.
+           and kind::text <> 'doctor'
            and last_confirmed_at is not null
            and last_confirmed_at < now() - interval '90 days'
       ),

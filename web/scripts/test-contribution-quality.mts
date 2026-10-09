@@ -9,6 +9,7 @@
 import {
   assessCaregiver,
   assessChatCard,
+  assessColumns,
   assessContribution,
   countCompletePerPerson,
   isNothingToFlag,
@@ -237,9 +238,10 @@ const share = (person_id: string, patch: Record<string, unknown> = {}) => ({
   what_makes_it_great: "Small groups and a very patient teacher",
   caveat_answered: true,
   tip_text: null,
+  visit_reason: null,
   ...patch,
 });
-const nomination = (person_id: string, patch: Record<string, unknown> = {}) => ({
+const nomination =(person_id: string, patch: Record<string, unknown> = {}) => ({
   person_id,
   first_name: "Maria",
   care_type: "nanny",
@@ -266,6 +268,80 @@ ok("a thin reason, and a caregiver the family would not recommend, do not count"
 ok("a friend's experience, and a caregiver with no reference answer, count for nothing", !counted.has("c"));
 ok("an approved card that does not qualify stays out of the count, so it cannot earn Founding",
   countCompletePerPerson({ shares: [share("d", { caveat_answered: false }), share("d", { last_there: null })], nominations: [] }).get("d") === undefined);
+
+console.log("\n=== a doctor card (8 Oct) ===");
+const doctor = (person_id: string, patch: Record<string, unknown> = {}) =>
+  share(person_id, {
+    kind: "doctor" as const,
+    name: "Dr. Maya Lee",
+    last_there: "current",
+    visit_reason: "routine",
+    what_makes_it_great: "She listens and never rushes us",
+    ...patch,
+  });
+const doctors = countCompletePerPerson({
+  shares: [
+    doctor("e"),
+    doctor("f", { firsthand: false }),
+    doctor("g", { visit_reason: null }),
+    doctor("h", { last_there: null }),
+    doctor("i", { child_age_at_time: [] }),
+  ],
+  nominations: [],
+});
+ok("a complete doctor card counts toward Founding", doctors.get("e") === 1, String(doctors.get("e")));
+ok("a friend's doctor (secondhand) never counts", !doctors.has("f"));
+ok("a doctor card without what they saw them for does not count", !doctors.has("g"));
+ok("a doctor card without whether they still see them does not count", !doctors.has("h"));
+ok("a doctor card without the child's age does not count", !doctors.has("i"));
+const doctorGap = assessColumns(doctor("x", { visit_reason: null, last_there: null }));
+ok(
+  "the admin's line names the doctor's gaps in the doctor's words",
+  doctorGap.missing.includes("what they saw them for") &&
+    doctorGap.missing.includes("whether they still see them"),
+  doctorGap.missing.join(" | "),
+);
+const doctorChat = (patch: Record<string, unknown> = {}) =>
+  assessChatCard("doctor", {
+    name: "Dr. Maya Lee",
+    firsthand: "yes",
+    child_age: [3],
+    visit_reason: "illness",
+    freshness: "recent",
+    recommendation: "yes",
+    what_makes_it_great: "She listens and never rushes us",
+    caveat: "Book well-child visits months ahead",
+    ...patch,
+  });
+ok("a doctor card in the chat qualifies when every required step is answered", doctorChat().status === "qualifies", doctorChat().missing.join(" | "));
+ok("in the chat, a friend's doctor needs follow-up rather than qualifying", doctorChat({ firsthand: "secondhand" }).status === "needs_follow_up");
+ok(
+  "after a No, \"what didn't work\" is the card's why — it qualifies on that answer",
+  doctorChat({
+    recommendation: "no",
+    what_makes_it_great: undefined,
+    what_didnt_work: "We waited weeks for every appointment",
+  }).status === "qualifies",
+);
+ok(
+  "edited from Yes to No, the old praise is not the reason for the No — it needs what didn't work",
+  doctorChat({ recommendation: "no", what_makes_it_great: "She listens and never rushes us" }).status === "needs_follow_up",
+);
+ok(
+  "and edited from No to Yes, the old complaint is not what they like",
+  doctorChat({ recommendation: "yes", what_makes_it_great: undefined, what_didnt_work: "We waited weeks for every appointment" })
+    .status === "needs_follow_up",
+);
+ok("an admin edit cannot put a doctor's questions on another card",
+  !cleanContributionPatch({ visit_reason: "routine" }, "activity").ok &&
+    !cleanContributionPatch({ appointment_ease: "easy" }, "place").ok);
+ok("a doctor's price is per visit, and only per visit",
+  cleanContributionPatch({ price_band: "25_50", price_unit: "per_visit" }, "doctor").ok &&
+    !cleanContributionPatch({ price_band: "25_50", price_unit: "per_class" }, "doctor").ok &&
+    !cleanContributionPatch({ price_band: "25_50", price_unit: "per_visit" }, "activity").ok);
+ok("a doctor card was never offered 'Not sure anymore'",
+  !cleanContributionPatch({ last_there: "unsure" }, "doctor").ok &&
+    cleanContributionPatch({ last_there: "over_year" }, "doctor").ok);
 
 console.log("\n=== the admin may edit every field of a contribution ===");
 const clean = (patch: unknown) => cleanContributionPatch(patch);

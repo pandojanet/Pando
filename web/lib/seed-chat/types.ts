@@ -10,7 +10,7 @@ import type { Option } from "../types";
  * by turn (spec §16.1, POST /api/seed/chat) without the UI changing.
  */
 
-export type ShareKind = "activity" | "caregiver" | "place" | "tip";
+export type ShareKind = "activity" | "caregiver" | "place" | "tip" | "doctor";
 
 export type WidgetKind =
   | "quick" // one tap, advances immediately

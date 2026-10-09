@@ -1,12 +1,26 @@
 import {
+  APPOINTMENT_EASE,
   HOW_MUCH,
   LAST_THERE,
+  PLACE_LAST_GONE,
   PRICE_BAND,
   PRICE_UNIT,
   RECOMMENDATION_OPTIONS,
+  VISIT_REASON,
+  VISIT_UNIT,
   WORTH_IT,
 } from "@/lib/seed-chat/scripts";
 import { isNothingToFlag } from "@/lib/contribution-quality";
+
+/**
+ * Every "when were you last there" id a stored row can carry: the activity
+ * list's four plus a place's `within_6m` (8 Oct). Which of them a card offers
+ * is its own list; what the admin may write is this union.
+ */
+const ANY_LAST_THERE = [
+  ...PLACE_LAST_GONE.filter((o) => !LAST_THERE.some((l) => l.id === o.id)),
+  ...LAST_THERE,
+];
 
 /**
  * What an admin may change on a contribution, and how a patch is cleaned.
@@ -49,6 +63,9 @@ export interface CleanPatch {
   price_unit?: string | null;
   worth_it?: string | null;
   follow_up_ok?: boolean;
+  /** Doctor cards (8 Oct). */
+  visit_reason?: string | null;
+  appointment_ease?: string | null;
 }
 
 export type PatchResult = { ok: true; patch: CleanPatch } | { ok: false; error: string };
@@ -83,11 +100,26 @@ function choice(
   return { error: `${label} is not one of the choices parents were offered (${key})` };
 }
 
-export function cleanContributionPatch(raw: unknown): PatchResult {
+/**
+ * `kind` is the record's kind when the caller knows it (the write path reads it
+ * from the row). With it, a doctor's own questions are refused on any other
+ * card, and an activity's "Not sure anymore" and its price units on a doctor —
+ * "a value no question offered" is per card, not per product (review, 8 Oct).
+ */
+export function cleanContributionPatch(raw: unknown, kind?: string): PatchResult {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return { ok: false, error: "Nothing to change" };
   }
   const input = raw as Record<string, unknown>;
+  if (kind !== undefined) {
+    const doctorOnly = ["visit_reason", "appointment_ease"].filter((k) => k in input);
+    if (kind !== "doctor" && doctorOnly.length > 0) {
+      return { ok: false, error: `Only a doctor card asks that (${doctorOnly.join(", ")})` };
+    }
+    if (kind === "doctor" && input.last_there === "unsure") {
+      return { ok: false, error: "A doctor card does not offer “Not sure anymore” (last_there)" };
+    }
+  }
   const out: CleanPatch = {};
 
   for (const key of TEXT_COLUMNS) {
@@ -120,10 +152,12 @@ export function cleanContributionPatch(raw: unknown): PatchResult {
   }
 
   const enums: Array<[keyof CleanPatch, ReadonlyArray<{ id: string }>, string]> = [
-    ["last_there", LAST_THERE, "When they were last there"],
+    ["last_there", ANY_LAST_THERE, "When they were last there"],
     ["how_much", HOW_MUCH, "How long or how often"],
     ["recommendation", RECOMMENDATION_OPTIONS, "Whether they would recommend it"],
     ["worth_it", WORTH_IT, "Whether it was worth the money"],
+    ["visit_reason", VISIT_REASON, "What they saw the doctor for"],
+    ["appointment_ease", APPOINTMENT_EASE, "How easy appointments are"],
   ];
   for (const [key, options, label] of enums) {
     if (!(key in input)) continue;
@@ -137,7 +171,9 @@ export function cleanContributionPatch(raw: unknown): PatchResult {
   if ("price_band" in input || "price_unit" in input) {
     const band = choice("price_band", input.price_band ?? null, PRICE_BAND, "The price");
     if ("error" in band) return { ok: false, error: band.error };
-    const unit = choice("price_unit", input.price_unit ?? null, PRICE_UNIT, "What it is per");
+    /* A doctor's price is per visit (8 Oct) — the one unit the activity card does not offer. */
+    const units = kind === undefined ? [...PRICE_UNIT, VISIT_UNIT] : kind === "doctor" ? [VISIT_UNIT] : PRICE_UNIT;
+    const unit = choice("price_unit", input.price_unit ?? null, units, "What it is per");
     if ("error" in unit) return { ok: false, error: unit.error };
     if (band.value !== null && PAID(band.value) && unit.value === null) {
       return { ok: false, error: "A price needs what it is per — a class, a session, a month" };

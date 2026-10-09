@@ -11,7 +11,7 @@ import { Panel } from "@/components/ui/Panel";
 import { Consent } from "@/components/ui/Consent";
 import {
 } from "@/lib/consent";
-import { InlineAction, TextAction } from "@/components/ui/TextAction";
+import { TextAction } from "@/components/ui/TextAction";
 import { Note } from "@/components/ui/Note";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import { SearchableChipGroup } from "@/components/ui/SearchableChipGroup";
@@ -24,8 +24,6 @@ import {
 } from "@/components/seed/ProfileDepth";
 import { OptionPicker } from "@/components/ui/OptionPicker";
 import { PlanFooter, PlanGroup } from "@/components/ui/PlanGroup";
-import { PhoneField } from "@/components/ui/PhoneField";
-import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import { Progress } from "@/components/ui/Progress";
 import {
   BackButton,
@@ -35,13 +33,10 @@ import {
   ScreenDock,
   ScreenHeader,
 } from "@/components/ui/Screen";
-import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
 import {
   fetchMe,
   saveProfile,
-  verifyStatus,
-  type VerifyStatus,
 } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
 import {
@@ -162,20 +157,9 @@ export function ProfileFlow() {
   const [reminderMounted, reminderClosed] = useReminderClosed();
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
-  const [stage, setStage] = useState<"questions" | "review" | "verify">(
+  const [stage, setStage] = useState<"questions" | "review">(
     "questions",
   );
-  /** Configuration, not a person: whether a code can be asked for at all. */
-  const [gate, setGate] = useState<VerifyStatus | null>(null);
-  /**
-   * Set once a confirmed number turns out to already have a profile — see
-   * `afterVerified`. Null means "not asked yet, or nothing there", and the
-   * question is never asked before the code is confirmed.
-   */
-  const [existing, setExisting] = useState<{
-    first_name: string | null;
-    referral_code: string | null;
-  } | null>(null);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -188,8 +172,6 @@ export function ProfileFlow() {
    * advance, so it cannot follow them through the flow.
    */
   const [missingNote, setMissingNote] = useState<string | null>(null);
-  /** Non-null while the parent is correcting the number the code goes to. */
-  const [editingPhone, setEditingPhone] = useState<string | null>(null);
 
   // A parent can deep-link straight here from a forwarded URL; don't block them.
   useEffect(() => {
@@ -293,7 +275,10 @@ export function ProfileFlow() {
    * counter read from the same expression, so they cannot disagree"* — and this
    * flow never got it.
    *
-   * **The code screen counts as the last step rather than an extra one**, and
+   * (Until 8 Oct the code screen sat here as the last step; it is on `/join`
+   * now, and review is the last step on its own.)
+   *
+   * **The code screen counted as the last step rather than an extra one**, and
    * that is deliberate: whether it appears at all depends on
    * `/verify/status`, which is fetched lazily at the end (13 Aug) and is
    * unknown while the questions are being answered. A denominator that grew by
@@ -1101,95 +1086,20 @@ export function ProfileFlow() {
   }
 
   /**
-   * The number is confirmed **here** — after the questions, before anything is
-   * sent (13 Aug). It sat on the entry screen for a day and was wrong there: a
-   * parent was asked to prove a number before they had seen what the tool even
-   * does, which is the friction the client asked us to keep off the front door.
+   * Saving the profile, with no code step of its own (8 Oct, the developer:
+   * *"прибери модель підтвердження sms з кінця, нехай буде лише на початку"*).
    *
-   * Two rules this placement has to keep, and the entry version broke the first:
-   *
-   *  - **it never skips silently.** The status is awaited rather than read from
-   *    whatever a background fetch happened to have finished. Previously a slow
-   *    or failed `/verify/status` left the gate null and the parent walked
-   *    straight past the code — verification looked "missing" and nothing said so.
-   *  - **it never becomes a dead end.** If the status cannot be fetched, or a
-   *    code cannot be sent on this deployment, the session falls back to holding
-   *    everything on the phone and the completion screen asks — the shape that
-   *    has always existed for exactly this.
+   * The number is confirmed on `/join`, before the first question — the only
+   * place on the way in that a code is asked for. A confirmed session is
+   * written now; one that is not (the anonymous path, a deployment that cannot
+   * send a code, or a confirmation that lapsed) stays on this phone as it
+   * always has, and nothing about a named parent is stored (invariant 11).
+   * "This number already has a profile" moved with the code: `/join` asks it
+   * straight after the code is confirmed.
    */
-  async function gateNow(): Promise<VerifyStatus | null> {
-    if (gate) return gate;
-    try {
-      const fresh = await verifyStatus();
-      setGate(fresh);
-      return fresh;
-    } catch {
-      return null;
-    }
-  }
-
   async function save() {
     if (!session) return;
-
-    if (holdsUntilVerified(session)) {
-      setSaving(true);
-      const status = await gateNow();
-      setSaving(false);
-      if (status?.required && status.sendable) {
-        track("seed_verify_reached", { at: "profile_end" });
-        setStage("verify");
-        return;
-      }
-    }
-
     await persist(session);
-  }
-
-  /**
-   * Between confirming the number and writing the profile: does one already
-   * exist on it?
-   *
-   * ## Why this is here and not on `/join`
-   *
-   * The client's report is that a number already in the database can register
-   * again and nothing says so — and it is worse than a missing message: the
-   * write is `onConflictDoUpdate` on `people.phone` (invariant 10), and every
-   * derived set is **replaced rather than merged**, deliberately, so a parent
-   * filling the form again from a second device silently overwrites the richer
-   * profile they gave the first time.
-   *
-   * ⚠ **The obvious place to say it is the number field, and that place is
-   * wrong.** `/join` takes a phone with nothing proving it belongs to whoever
-   * typed it, so an answer there is an oracle: anybody could work through a
-   * list of numbers and learn which of their neighbours is in the network. The
-   * network *is* the asset, and who is in it is exactly what Pando does not
-   * publish. So the question is only answered once the code has been confirmed,
-   * which is the same proof `submitGate` requires before anything is stored —
-   * and `GET /api/seed/me` reads the phone from that record rather than from
-   * the request, so this cannot be asked about somebody else's number.
-   *
-   * It **asks rather than refuses**. Updating your own profile is legitimate
-   * and is what the upsert is for; what was missing is the parent knowing that
-   * is what will happen.
-   *
-   * A failed check falls through to saving. The parent has answered eighteen
-   * screens and holds a confirmed code; blocking that on a read that did not
-   * come back would turn a warning into an outage.
-   */
-  async function afterVerified(current: SeedSession) {
-    const me = await fetchMe();
-    if (me.ok && me.found && me.profile_saved) {
-      setExisting({
-        first_name: me.first_name ?? null,
-        referral_code: me.referral_code ?? null,
-      });
-      track("seed_profile_exists_shown");
-      return;
-    }
-    /* Every other outcome falls through to saving — see above: a warning that
-       could not be fetched must not become a wall. `fetchMe` reports a failure
-       as a state rather than throwing, so there is nothing to catch. */
-    await persist(current);
   }
 
   async function persist(current: SeedSession) {
@@ -1277,183 +1187,6 @@ export function ProfileFlow() {
     } finally {
       setSaving(false);
     }
-  }
-
-  /* ── The code, once the questions are answered ───────────────── */
-
-  if (stage === "verify" && session.phone) {
-    /* Confirmed, and not one of the two panels that take the screen over for
-       their own reasons — an existing profile to decide about, or the number
-       being corrected. */
-    const confirmed =
-      session.phone_verified === true && !existing && editingPhone === null;
-    return (
-      <Screen>
-        <ScreenHeader
-          left={<BackButton onClick={() => setStage("review")} />}
-          below={
-            <div className="mt-1">
-              <Progress total={totalSteps} current={screens.length} />
-            </div>
-          }
-        />
-        <ScreenBody className="pt-2">
-          <div className="animate-step-in">
-            <Eyebrow>Last step</Eyebrow>
-            <h1 ref={headingRef} tabIndex={-1} className="mt-2.5 font-display text-[1.7rem] font-bold">
-              {confirmed
-                ? "Number confirmed."
-                : "Confirm your number and this is saved."}
-            </h1>
-            {/**
-              * Her line, 10 Sep: *"One quick check" / "Nothing has left this
-              * phone yet." → "Verify your number to save your profile."*
-              *
-              * The two it replaces said what the screen was not doing; hers
-              * says what it is for, which is the only question a parent has
-              * with a code box in front of them. The eyebrow moved with it:
-              * "One quick check" was the other half of the same evasion.
-              */}
-            <p className="mt-2.5 text-[15px] leading-relaxed text-ink-soft">
-              {/* One sentence in both states: what failed, or what is taking a
-                  moment, is said once below — by the status line or by the
-                  note, never by this as well. */}
-              {confirmed
-                ? "Nothing more to confirm — this is the saving step."
-                : "Verify your number to save your profile."}
-            </p>
-          </div>
-
-          {existing ? (
-            <ExistingProfile
-              firstName={existing.first_name}
-              busy={saving}
-              onReplace={() => {
-                setExisting(null);
-                void persist({ ...session, phone_verified: true });
-              }}
-              onKeep={() => {
-                /* Nothing is written. The session is marked finished so `/done`
-                   treats them as the returning parent they are, and carries the
-                   link `/api/seed/me` just handed back. */
-                update((s) => ({
-                  ...s,
-                  /* The stored name, not the one they just typed: they chose to
-                     keep the profile, so "Thank you, Alice Probe" on the next
-                     screen would greet them as the version they discarded. */
-                  name: existing.first_name ?? s.name,
-                  first_name: existing.first_name ?? s.first_name,
-                  last_name: existing.first_name ? null : s.last_name,
-                  profile_saved_at: s.profile_saved_at ?? new Date().toISOString(),
-                  referral_code: existing.referral_code ?? s.referral_code,
-                  referral_shown_at: s.referral_shown_at ?? new Date().toISOString(),
-                }));
-                track("seed_profile_exists_kept");
-                router.push("/done");
-              }}
-            />
-          ) : editingPhone !== null ? (
-            /**
-             * 9 Sep — correcting the number the code goes to.
-             *
-             * Her second UX note, and until now this flow had no answer to it
-             * at all: the number was typed on `/join`, eighteen screens back,
-             * and a parent who mistyped a digit reached this screen, sent a code
-             * to a phone they do not hold, and had nowhere to go. Back leads to
-             * the review, not to `/join`.
-             *
-             * ⚠ **The duplicate check on `/join` is not re-run here**, and it
-             * does not need to be: `afterVerified` reads `/api/seed/me` after a
-             * confirmed code and shows the "you already have a profile" panel
-             * (8 Sep), which is the same check one step later and the one that
-             * cannot be walked around.
-             */
-            <ChangeNumber
-              initial={session.phone}
-              onCancel={() => setEditingPhone(null)}
-              onSave={(e164) => {
-                update((s) => ({ ...s, phone: e164, phone_verified: false }));
-                setEditingPhone(null);
-                track("seed_verify_number_changed");
-              }}
-            />
-          ) : confirmed ? (
-            /**
-             * ⚠⚠ **A confirmed number is never asked for a code again** (15 Sep),
-             * and this is the developer's report: *"I confirmed my number and it
-             * still asks me to confirm it"*.
-             *
-             * `stage` stays `verify` while the write that follows the code runs,
-             * which is right — it is the same step — and the branch below it
-             * rendered `VerifyPhone` on every pass. So a write that failed for
-             * any reason left the parent looking at a code box, an apology, and
-             * a Confirm button, with the number confirmed the whole time. Every
-             * control on that screen was the wrong one: entering the code again
-             * cannot fix a refused write, and *Send a new code* spends one of
-             * the three §19 allows on a step that is finished.
-             *
-             * What replaces it is the true state and the only action that can
-             * help. The missing-answer case never reaches here at all — it
-             * navigates (see `goToQuestion`) — so this is what is left: a
-             * refusal nothing on this phone can name, where retrying the
-             * **save** is exactly the right thing to try.
-             *
-             * ⚠ `Send a new code` is gone with it rather than disabled. A
-             * control that would work and is pointless is worse than one that
-             * is absent: it spends a send, restarts the five-minute window, and
-             * leaves the parent with a second code for a number already
-             * confirmed.
-             */
-            /* Nothing: the heading says the number is confirmed, the line
-               below says what the screen is doing, and the failure and its one
-               useful control are rendered together at the foot. A panel here
-               was a third saying of one sentence — the `RecordGroup` rule,
-               which is about admin cards and is really about screens. */
-            null
-          ) : (
-            <VerifyPhone
-              /* Remounted when the number changes, or a code already sent to
-                 the old one leaves the box waiting for something that will
-                 never arrive. */
-              key={session.phone}
-              phone={session.phone}
-              onChangeNumber={() => setEditingPhone(session.phone)}
-              onVerified={() => {
-                const verified: SeedSession = { ...session, phone_verified: true };
-                saveSession(verified);
-                setSession(verified);
-                track("seed_verified", { at: "profile_end" });
-                void afterVerified(verified);
-              }}
-            />
-          )}
-
-          {saving && (
-            <p role="status" className="mt-4 text-[13.5px] text-muted">
-              Saving your answers…
-            </p>
-          )}
-          {saveError && <Note className="mt-4">{saveError}</Note>}
-          {/**
-            * ⚠ **The control the sentence above had been promising** (15 Sep).
-            * *"Try again"* was written on this screen from the day it was
-            * built, and until now the only buttons under it were Confirm and
-            * Send a new code — neither of which retries a save. This one does,
-            * through `afterVerified` rather than `persist`, so the
-            * already-registered check still runs on the retry.
-            *
-            * Only once the number is confirmed: before that the code box is
-            * the retry, and a second button beside it would be two answers to
-            * one question.
-            */}
-          {confirmed && saveError && !saving && (
-            <Button full className="mt-4" onClick={() => void afterVerified(session)}>
-              Try again
-            </Button>
-          )}
-        </ScreenBody>
-      </Screen>
-    );
   }
 
   /* ── Review ──────────────────────────────────────────────────── */
@@ -2724,103 +2457,3 @@ export function ProfileFlow() {
 }
 
 
-/**
- * Correcting the number before the code goes out (9 Sep, her second UX note).
- *
- * A panel rather than a route back to `/join`: that screen is the whole
- * name-and-consent card and re-entering it mid-flow would ask a parent who has
- * answered eighteen questions to agree to everything again. What is being
- * changed is one field, so one field is what is on screen.
- *
- * Three rules worth keeping. It seeds from the **stored** number, formatted
- * nationally, so nobody retypes what is already right. It refuses to save an
- * incomplete number rather than storing a half one — `phone_verified` is
- * cleared by the caller on save, so a half number would leave the flow unable
- * to finish at the one step that finishes it. And Cancel leaves the stored
- * number exactly as it was, which is what makes opening this to *check* the
- * number costless.
- */
-function ChangeNumber({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: string;
-  onSave: (e164: string) => void;
-  onCancel: () => void;
-}) {
-  const [value, setValue] = useState(() => formatPhone(initial));
-  const e164 = toE164(value);
-  const ready = isPhoneComplete(value) && e164 !== null && e164 !== initial;
-
-  return (
-    <Panel className="mt-7" tone="card" raised>
-      <h2 className="font-display text-card-title font-semibold">
-        Which number should the code go to?
-      </h2>
-      {/* `PhoneField` renders its own label — wrapping it in `Field` would give
-          the input two, and its accessible name would be both concatenated. */}
-      <div className="mt-3">
-        <PhoneField label="Mobile number" value={value} onChange={setValue} />
-      </div>
-      <p className="mt-2 text-muted text-help">
-        Your answers stay on this phone either way.
-      </p>
-      <Button className="mt-4" full disabled={!ready} onClick={() => onSave(e164!)}>
-        Send the code here
-      </Button>
-      <TextAction full className="mt-2" tone="quiet" onClick={onCancel}>
-        Keep the number I gave
-      </TextAction>
-    </Panel>
-  );
-}
-
-/**
- * "This number already has a profile" — the choice, not a refusal.
- *
- * The parent has just proved the number is theirs, so re-filling the form is a
- * legitimate thing to be doing and the upsert is what invariant 10 asks for.
- * What was missing is that the write **replaces** every derived set, on purpose
- * (a parent who removes a school must stop matching on it) — so a second pass
- * with fewer answers quietly loses the richer profile, and nothing said so.
- *
- * ⚠ Both options are safe and neither is destructive by accident: keeping
- * writes nothing at all, and replacing is the behaviour that already existed,
- * now chosen rather than stumbled into. `Replace` is the primary because it is
- * what somebody who has just answered eighteen screens almost certainly wants.
- *
- * ⚠ The wording is new user-facing copy and is on the list for the client.
- */
-function ExistingProfile({
-  firstName,
-  busy,
-  onReplace,
-  onKeep,
-}: {
-  firstName: string | null;
-  busy: boolean;
-  onReplace: () => void;
-  onKeep: () => void;
-}) {
-  return (
-    <Panel tone="warning" className="mt-7">
-      <h2 className="font-display text-card-title font-semibold text-gold-ink">
-        {firstName
-          ? `You already have a profile, ${firstName}.`
-          : "You already have a profile."}
-      </h2>
-      <p className="mt-2 text-control leading-relaxed text-ink-soft">
-        This number is already in Pando. Saving now replaces what is on it with
-        the answers you have just given — including anything you skipped this
-        time.
-      </p>
-      <Button className="mt-4" full disabled={busy} onClick={onReplace}>
-        {busy ? "Saving…" : "Replace it with these answers"}
-      </Button>
-      <TextAction full className="mt-2" tone="quiet" disabled={busy} onClick={onKeep}>
-        Keep what I had
-      </TextAction>
-    </Panel>
-  );
-}

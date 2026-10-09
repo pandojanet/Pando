@@ -274,6 +274,15 @@ export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
 export async function retrieveFor(question: QuestionContext): Promise<Retrieved> {
   const marketId = question.marketId ?? "pasadena";
   const limit = Math.min(25, Math.max(1, question.limit ?? 10));
+  /**
+   * ⚠⚠ **`doctor` is out on purpose (8 Oct), and adding it is not one word.**
+   * Three things first: (1) a doctor's `what_makes_it_great` holds "what didn't
+   * work" when the parent would not recommend them, and `note_great` below
+   * quotes that column as praise; (2) doctor records never get the
+   * `possible_named_person` flag that suppresses notes here, because a doctor's
+   * name is a person's by design; (3) no `freshness_policy` row exists for it.
+   * See docs/decisions.md, 8 Oct.
+   */
   const kinds = question.kinds && question.kinds.length > 0
     ? question.kinds
     : ["activity", "camp", "place", "tip"];
@@ -354,7 +363,15 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
                   and f.status in ('open', 'escalated')
              ) then null
              else (array_remove(array_agg(
-                     case when sc.firsthand then nullif(btrim(sc.what_makes_it_great), '') end
+                     -- Only the reason for a recommendation is quoted (8 Oct):
+                     -- after a No the column holds what did not work, and
+                     -- quoting that as the parents words would read as praise.
+                     -- A null recommendation is a card from before the question
+                     -- existed on that kind, and keeps its quote.
+                     case when sc.firsthand
+                                and (sc.recommendation is null
+                                     or sc.recommendation in ('yes','yes_with_caveats'))
+                          then nullif(btrim(sc.what_makes_it_great), '') end
                      order by sc.confidence desc nulls last, sc.created_at desc), null))[1]
         end)                                                            as note_great,
         (case when exists (
@@ -423,7 +440,12 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
              else (array_agg(
                      coalesce(case when sc.show_first_name
                                    then nullif(btrim(p.first_name), '') end, '')
-                     order by (nullif(btrim(sc.what_makes_it_great), '') is null),
+                     -- The same test as note_great above, so the name and the
+                     -- quote still come from one contribution (10 Sep).
+                     order by (nullif(btrim(case
+                                 when sc.recommendation is null
+                                      or sc.recommendation in ('yes','yes_with_caveats')
+                                 then sc.what_makes_it_great end), '') is null),
                               sc.confidence desc nulls last, sc.created_at desc)
                      filter (where sc.firsthand))[1]
         end)                                                            as named_by,

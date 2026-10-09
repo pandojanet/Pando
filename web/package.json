@@ -60,6 +60,7 @@
     "test:payments-live": "node --env-file=.env.local scripts/test-payments-live.mjs",
     "test:security": "node --experimental-strip-types --no-warnings scripts/test-security.mts",
     "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts",
+    "test:provider-check": "node --experimental-strip-types --no-warnings scripts/test-provider-check.mts",
     "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
     "test:hooks": "node ../.claude/hooks/protect-files.test.mjs && node ../.claude/hooks/context-guard.test.mjs",

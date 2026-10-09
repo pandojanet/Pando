@@ -7,6 +7,7 @@ import { submitGate } from "@/lib/server/gate";
 import { getDb, withDb } from "@/lib/server/db";
 import { saveCard, type CardKind } from "@/lib/server/repo/cards";
 import { scheduleExtraction } from "@/lib/server/repo/flags";
+import { scheduleProviderCheck } from "@/lib/server/provider-check";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { notifyAdmins } from "@/lib/server/notify";
@@ -25,12 +26,14 @@ import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
  *    (spec §19).
  */
 
-const KINDS = new Set(["activity", "caregiver", "place", "tip"]);
+const KINDS = new Set(["activity", "caregiver", "place", "tip", "doctor"]);
 const MAX_TEXT = 500;
 const TEXT_FIELDS = new Set([
   "name",
   "tip",
   "what_makes_it_great",
+  /* The doctor card asks it instead after a No (8 Oct). */
+  "what_didnt_work",
   "what_makes_special",
   "caveat",
   "private_note",
@@ -355,6 +358,9 @@ export async function POST(request: Request) {
   if (kind !== "caregiver") {
     const db = getDb();
     if (db) scheduleExtraction(db, result.data.record_id);
+    /* A doctor card (8 Oct): is the provider findable — DCA, then the web.
+       After the response for the same reason, and it never blocks the card. */
+    if (db && kind === "doctor") scheduleProviderCheck(db, result.data.record_id);
   }
 
   /* A new card, told to the team after the response (30 Sep). `updated` is a
@@ -363,7 +369,7 @@ export async function POST(request: Request) {
   if (!result.data.updated) {
     after(() =>
       notifyAdmins(
-        { kind: kind as "activity" | "place" | "tip" | "caregiver" },
+        { kind: kind as "activity" | "place" | "tip" | "doctor" | "caregiver" },
         { is_test: raw.is_test === true },
       ),
     );

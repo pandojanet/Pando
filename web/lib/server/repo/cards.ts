@@ -5,8 +5,13 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { CAREGIVER_AGE_BANDS, CAREGIVER_WEEKDAYS } from "@/lib/caregiver-options";
 import { bandsForAge } from "@/lib/matching";
-import { isNothingToFlag } from "@/lib/contribution-quality";
+import {
+  choosesWhyByRecommendation,
+  doctorWhy,
+  isNothingToFlag,
+} from "@/lib/contribution-quality";
 import { tipTitle } from "@/lib/seed-chat/engine";
+import { APPOINTMENT_EASE, VISIT_REASON, VISIT_UNIT } from "@/lib/seed-chat/scripts";
 import {
   caregiverNominations,
   caregivers,
@@ -35,7 +40,7 @@ import {
  *    second contribution (unique on share_id + submission_id backs this up).
  */
 
-export type CardKind = "activity" | "caregiver" | "place" | "tip";
+export type CardKind = "activity" | "caregiver" | "place" | "tip" | "doctor";
 
 export interface CardInput {
   kind: CardKind;
@@ -286,13 +291,22 @@ async function writeShareCard(
      * caregiver card asks the 18+ question and the firsthand-employment gate,
      * and the activity card asks neither. Same treatment as the near-duplicate
      * flag beside it: raised at capture, decided at approval.
+     *
+     * ⚠ **Not for a doctor (8 Oct).** A doctor card names a person by design —
+     * "Dr. Lee" is the answer to "Which practice or doctor?" — and this flag's
+     * instruction to the admin (move it to the caregiver flow) would be wrong
+     * for every one of them. What a doctor record gets instead is the provider
+     * check (`provider-check.ts`), and it still waits for an admin's approval
+     * like every other record, so invariant 8's human review is unchanged.
      */
-    await flagNamedPersonRecord(tx, {
-      shareId,
-      name,
-      marketId: input.market_id,
-      personId: input.person_id ?? null,
-    });
+    if (input.kind !== "doctor") {
+      await flagNamedPersonRecord(tx, {
+        shareId,
+        name,
+        marketId: input.market_id,
+        personId: input.person_id ?? null,
+      });
+    }
   }
 
   /* A second parent's toddler widens what the record is for; it never narrows
@@ -315,10 +329,20 @@ async function writeShareCard(
    * arrived without one is dropped rather than allowed to abort the card.
    */
   const priceBand = str(f.price_band);
-  const priceUnit = str(f.price_unit);
+  /* A doctor is always paid per visit, so the card does not ask the unit
+     (8 Oct) and the CHECK's unit is supplied here. */
+  const priceUnit = input.kind === "doctor" ? VISIT_UNIT.id : str(f.price_unit);
   const bandNeedsUnit =
     priceBand !== null && priceBand !== "free" && priceBand !== "prefer_not_to_say";
   const safeBand = bandNeedsUnit && priceUnit === null ? null : priceBand;
+  /* A unit only on a paid band: "Free, covered / visit" says nothing (review,
+     8 Oct), and the admin editor already clears it there. */
+  const safeUnit = safeBand === null || !bandNeedsUnit ? null : priceUnit;
+  const isDoctor = input.kind === "doctor";
+  const offered = (options: ReadonlyArray<{ id: string }>, v: unknown) => {
+    const id = str(v);
+    return id !== null && options.some((o) => o.id === id) ? id : null;
+  };
 
   const values = {
     shareId,
@@ -330,14 +354,22 @@ async function writeShareCard(
     lastThere: str(f.freshness ?? f.last_there),
     howMuch: str(f.how_much),
     recommendation: str(f.recommendation),
-    whatMakesItGreat: str(f.what_makes_it_great ?? f.what_makes_special),
+    /* A doctor card asks "What didn't work for you?" instead after a No (8 Oct);
+       it is the same "why" column, read with the recommendation beside it. */
+    /* ⚠ On a doctor the "why" is chosen **by the recommendation**, never by
+       which field happens to be filled (review, 8 Oct): a parent who answers
+       Yes, then edits it to No from the recap, still holds the praise, and a
+       first-filled-wins rule stored it under a No. */
+    whatMakesItGreat: choosesWhyByRecommendation(input.kind)
+      ? str(doctorWhy(f))
+      : str(f.what_makes_it_great ?? f.what_makes_special),
     caveat: caveatText(f.caveat),
     /** R7 — "nothing comes to mind" is an answer, and Founding counts it. */
     caveatAnswered: f.caveat !== undefined,
     whoFor: str(f.who_for),
     whoNotFor: str(f.who_not_for),
     priceBand: safeBand,
-    priceUnit: safeBand === null ? null : priceUnit,
+    priceUnit: safeUnit,
     worthIt: str(f.worth_it),
     followUpOk: bool(f.follow_up_ok),
     tipText,
@@ -349,6 +381,9 @@ async function writeShareCard(
      * cleared, which is the same reason `showFirstName` is here.
      */
     extraNote: str(f.extra_note),
+    /* The doctor card's two (8 Oct, `drizzle/0054`); null on every other kind. */
+    visitReason: isDoctor ? offered(VISIT_REASON, f.visit_reason) : null,
+    appointmentEase: isDoctor ? offered(APPOINTMENT_EASE, f.appointment_ease) : null,
     /**
      * The client's per-recommendation name toggle (10 Sep), `drizzle/0038`.
      *
