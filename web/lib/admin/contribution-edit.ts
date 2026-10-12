@@ -1,6 +1,9 @@
 import {
   APPOINTMENT_EASE,
+  CAMP_LAST,
+  EVENT_UNIT,
   HOW_MUCH,
+  ITEM_UNIT,
   LAST_THERE,
   PLACE_LAST_GONE,
   PRICE_BAND,
@@ -10,6 +13,7 @@ import {
   VISIT_UNIT,
   WORTH_IT,
 } from "@/lib/seed-chat/scripts";
+import { isSubcategory, subcategoryFor } from "@/lib/seed-chat/subcategories";
 import { isNothingToFlag } from "@/lib/contribution-quality";
 
 /**
@@ -20,6 +24,8 @@ import { isNothingToFlag } from "@/lib/contribution-quality";
 const ANY_LAST_THERE = [
   ...PLACE_LAST_GONE.filter((o) => !LAST_THERE.some((l) => l.id === o.id)),
   ...LAST_THERE,
+  /* A camp's "This year / Last year" (9 Oct); its "Longer ago" is `over_year`. */
+  ...CAMP_LAST.filter((o) => !LAST_THERE.some((l) => l.id === o.id)),
 ];
 
 /**
@@ -66,6 +72,15 @@ export interface CleanPatch {
   /** Doctor cards (8 Oct). */
   visit_reason?: string | null;
   appointment_ease?: string | null;
+  /* The sub-categories' unified columns (9 Oct, `drizzle/0056`). */
+  used_for?: string | null;
+  timing_note?: string | null;
+  detail_note?: string | null;
+  /**
+   * The record's sub-category (`shares.subcategory`), so an admin can correct
+   * the classifier. Checked against the card's own button; null = general.
+   */
+  subcategory?: string | null;
 }
 
 export type PatchResult = { ok: true; patch: CleanPatch } | { ok: false; error: string };
@@ -78,6 +93,9 @@ export const TEXT_COLUMNS = [
   "who_not_for",
   "tip_text",
   "extra_note",
+  "used_for",
+  "timing_note",
+  "detail_note",
 ] as const;
 
 const MAX_TEXT = 400;
@@ -172,7 +190,15 @@ export function cleanContributionPatch(raw: unknown, kind?: string): PatchResult
     const band = choice("price_band", input.price_band ?? null, PRICE_BAND, "The price");
     if ("error" in band) return { ok: false, error: band.error };
     /* A doctor's price is per visit (8 Oct) — the one unit the activity card does not offer. */
-    const units = kind === undefined ? [...PRICE_UNIT, VISIT_UNIT] : kind === "doctor" ? [VISIT_UNIT] : PRICE_UNIT;
+    /* 9 Oct: a party vendor is per event, a product per item — what `cards.ts` stores. */
+    const units =
+      kind === undefined
+        ? [...PRICE_UNIT, VISIT_UNIT, EVENT_UNIT, ITEM_UNIT]
+        : kind === "doctor"
+          ? [VISIT_UNIT, EVENT_UNIT]
+          : kind === "tip"
+            ? [...PRICE_UNIT, ITEM_UNIT]
+            : PRICE_UNIT;
     const unit = choice("price_unit", input.price_unit ?? null, units, "What it is per");
     if ("error" in unit) return { ok: false, error: unit.error };
     if (band.value !== null && PAID(band.value) && unit.value === null) {
@@ -183,6 +209,16 @@ export function cleanContributionPatch(raw: unknown, kind?: string): PatchResult
   }
 
   if ("follow_up_ok" in input) out.follow_up_ok = input.follow_up_ok === true;
+
+  /* 9 Oct: correcting the classifier. Only a sub-category of the card's own
+     button, or none — moving a card to another button is a different card. */
+  if ("subcategory" in input) {
+    const v = input.subcategory;
+    if (v === null || v === "") out.subcategory = null;
+    else if (kind !== undefined && subcategoryFor(kind, v)) out.subcategory = v as string;
+    else if (kind === undefined && isSubcategory(v)) out.subcategory = v;
+    else return { ok: false, error: "That sub-category is not one of this card's (subcategory)" };
+  }
 
   return Object.keys(out).length === 0
     ? { ok: false, error: "Nothing to change" }

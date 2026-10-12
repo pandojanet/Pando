@@ -502,3 +502,19 @@ P0 (§19.1's seven requirements plus six acceptance checks), freshness pings and
 their weekly job, first-blast-free credits, blast-response graph write-back, the
 forwardable share line, delivery monitoring with alerts on 30034/30007/21610.
 4. **The v3.2 re-estimate** (§23.1 item 1) — a commercial answer, not an engineering one.
+
+## 9 Oct 2026 — *Categories Questions* (the client, added 10/7 JW)
+
+Reconciled on branch `subcategories`. **Matches:** all 11 sub-categories, in her
+order and words, under the five existing buttons (the developer's layout; the
+Doctor button renamed Services); her struck items (Activities 7, Classes 7,
+Places 7, Schools 7, Doctors 8) are not asked; "secondhand never counts toward
+Founding" holds for every sub-category; "only if needed" town questions use the
+directory match. **Deviations:** the first 3–4 questions of each button are
+context questions worded to fit every sub-category under it, so a sub-category's
+own wording of those (e.g. "Did your kid take it?") appears in its recap and
+edits rather than being asked; questions are reworded per parent by a model
+(the developer's choice), with her wording as the fallback. **Open:** whether
+Services beyond doctors, and Products, should appear in SMS answers (today:
+no); her restaurant note ("a proper category, not just Eating out with kids
+under Tips") is followed — the tip topic stays for general advice.

@@ -11,6 +11,7 @@ import type { ContributionRow } from "./types";
 export function qualityOf(row: ContributionRow): Quality {
   return assessColumns({
     kind: row.kind,
+    subcategory: row.subcategory ?? row.share.subcategory ?? null,
     firsthand: row.firsthand,
     name: row.share.name,
     child_age_at_time: row.child_age_at_time,

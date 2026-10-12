@@ -101,10 +101,15 @@ filling in a form:
   input inside a bubble — the answer control lives in one fixed place at the
   bottom, whether that's four menu tiles, chips, or a textarea. Answered widgets
   collapse into the parent's own bubble.
-- **Scripted, not generative.** Each share type is a list of steps with a field
-  and a widget (`lib/seed-chat/scripts.ts`). No extraction pass, no way for a
-  model to invent a question. A backend can later decide the next step; the
-  widgets stay the same.
+- **Scripted structure, model wording** (since 9 Oct). Each share type and
+  sub-category is a list of steps with a field and a widget
+  (`lib/seed-chat/scripts.ts`). A model may **choose the sub-category** and
+  **reword a question** for the parent (`/api/seed/assist`) — never invent a
+  question, change a step id, a widget, an option or the column an answer lands
+  in. Every reworded line is checked (`acceptPrompt`) and falls back to the
+  canonical wording; the client's fixed sentences are never reworded.
+  **The parent's name never goes to the model** (12 Oct): it writes `{name}`
+  and the device fills it (`fillName`), once a card (`nameThisTurn`).
 - **One typing beat between turns** (~430ms, 0 under reduced motion). It reads as
   a person, and it stops double-taps landing on the next question.
 - **Hide the widget while "typing".** The dock shows an empty placeholder — the

@@ -11,7 +11,7 @@ import {
   wantsWeekdays,
 } from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
-import type { Fields, Script, ShareKind } from "./types";
+import type { Fields, Script, ShareKind, Step, Subcategory } from "./types";
 
 /**
  * The capture conversations.
@@ -58,6 +58,8 @@ export const PRICE_UNIT: Option[] = [
   { id: "per_day", label: "Day" },
   { id: "per_week", label: "Week" },
   { id: "per_season", label: "Season" },
+  /* 9 Oct — a school's tuition. */
+  { id: "per_year", label: "Year" },
 ];
 
 /**
@@ -156,6 +158,93 @@ export const DOCTOR_PRICE_BAND: Option[] = PRICE_BAND.map((o) =>
 /** The doctor card's one price unit — kept out of `PRICE_UNIT`, which the activity card offers. */
 export const VISIT_UNIT: Option = { id: "per_visit", label: "Visit" };
 
+/* ── The sub-categories' closed answers (9 Oct, the client's 10/7 list) ───────
+   Each "when did they last…" list reuses `last_there`'s ids where the meaning
+   is the same, so the stale-at-capture flag (`over_year`) and the quality rule
+   need nothing new; there is no CHECK on that column. */
+
+/** Classes — "Are they still taking it?" */
+export const CLASS_STILL: Option[] = [
+  { id: "current", label: "Still going" },
+  { id: "recent", label: "Stopped within the last year" },
+  { id: "over_year", label: "Over a year ago" },
+  { id: "unsure", label: "Not sure anymore" },
+];
+
+/** Classes — "per class, month or term". */
+export const CLASS_PRICE_UNIT: Option[] = PRICE_UNIT.filter((o) =>
+  ["per_class", "per_month", "per_term"].includes(o.id),
+);
+
+/** Camps — "When did they last attend?" */
+export const CAMP_LAST: Option[] = [
+  { id: "this_year", label: "This year" },
+  { id: "last_year", label: "Last year" },
+  { id: "over_year", label: "Longer ago" },
+];
+
+/** Camps — "per day/week". */
+export const CAMP_PRICE_UNIT: Option[] = PRICE_UNIT.filter((o) =>
+  ["per_day", "per_week"].includes(o.id),
+);
+
+/** Schools — "Are they still there?" */
+export const SCHOOL_STILL: Option[] = [
+  { id: "current", label: "Still there" },
+  { id: "recent", label: "Left within the last year" },
+  { id: "over_year", label: "Left over a year ago" },
+];
+
+/** Schools — tuition "per month or year". Kept for rows saved before 9 Oct's change below. */
+export const SCHOOL_PRICE_UNIT: Option[] = [
+  { id: "per_month", label: "Month" },
+  { id: "per_year", label: "Year" },
+];
+
+/**
+ * A school's tuition, **per month** (9 Oct, the developer: the class bands —
+ * up to "Over $200" — put every private school in the top band). One question
+ * instead of band-then-unit: a band's size depends on its unit, and monthly is
+ * how most families think of it. `cards.ts` stores the unit, `per_month`, as
+ * it stores a doctor's `per_visit`. `free` and `prefer_not_to_say` are the
+ * shared ids, so the `price_shape` CHECK needs no unit for them.
+ */
+export const SCHOOL_TUITION_BAND: Option[] = [
+  { id: "free", label: "Free — public or charter" },
+  { id: "tuition_under_500", label: "Under $500" },
+  { id: "tuition_500_1000", label: "$500–1,000" },
+  { id: "tuition_1000_2000", label: "$1,000–2,000" },
+  { id: "tuition_2000_3000", label: "$2,000–3,000" },
+  { id: "tuition_over_3000", label: "Over $3,000" },
+  { id: "prefer_not_to_say", label: "Prefer not to say" },
+];
+
+/** Specialists — "Are you still using them?" */
+export const SPECIALIST_STILL: Option[] = [
+  { id: "current", label: "Yes" },
+  { id: "recent", label: "Within the last year" },
+  { id: "over_year", label: "Longer ago" },
+];
+
+/** Restaurants — "Anything practical to know?" → `share_contributions.amenities`. */
+export const RESTAURANT_AMENITIES: Option[] = [
+  { id: "highchairs", label: "Highchairs" },
+  { id: "changing_table", label: "Changing table" },
+  { id: "outdoor_space", label: "Outdoor space" },
+  { id: "stroller_room", label: "Room for a stroller" },
+  { id: "kids_menu", label: "Kids' menu" },
+  { id: "easy_parking", label: "Easy parking" },
+  { id: "noisy_enough", label: "Noisy enough for kids" },
+];
+
+/**
+ * The one unit a card that does not ask for one is stored with — the
+ * `price_shape` CHECK needs a unit beside a paid band. A doctor or specialist
+ * is per visit (`VISIT_UNIT`); a party vendor per event; a product per item.
+ */
+export const EVENT_UNIT: Option = { id: "per_event", label: "Event" };
+export const ITEM_UNIT: Option = { id: "per_item", label: "Item" };
+
 /** A negative answer turns "what do you like" into "what didn't work" (her item 7). */
 const doesNotRecommend = (fields: Fields): boolean =>
   fields.recommendation === "probably_not" || fields.recommendation === "no";
@@ -225,6 +314,53 @@ const TIP_AUDIENCE: Option[] = [
  */
 export const EXTRA_NOTE_PROMPT = "Is there anything you think other parents should know?";
 
+/**
+ * The follow-ups (9 Oct): asked once, straight after a required or descriptive
+ * answer that came back empty or too thin. Canonical wording — the model may
+ * rephrase it for the parent in front of it (`/api/seed/assist`). Moved here
+ * from `confirm-back.ts`, which asked one of these once per card, at the end.
+ */
+export const FOLLOW_UP = {
+  activityWhy:
+    "One more thing and this becomes really useful — what would you tell a friend who was deciding? The teacher, the room, the price, the thing you didn't expect.",
+  activityDidnt:
+    "Can you say a bit more about what didn't work? The teacher, the group size, the time, the thing you didn't expect.",
+  caveat:
+    "Anything worth knowing before someone else tries it? Parking, the age it stops working, a cost that isn't obvious.",
+  whoFor: "Who would you send there? An age, a temperament, a situation.",
+  tip: "Can you say a bit more? The tips parents act on are the specific ones — a name, a time, a number.",
+  tipWhy: "When would another parent use this — or what did it change for you?",
+  placeWhy:
+    "One more thing and this becomes really useful — what would you tell a friend who was deciding? The shade, the crowds, what your child loved or hated.",
+  placeCaveat: "Anything worth knowing before going? Parking, crowds, the hours, the toilets.",
+  doctorWhy:
+    "One more thing and this becomes really useful — what would you tell a friend who was choosing a doctor? How they explain things, how they are with kids, the wait.",
+  doctorDidnt:
+    "Can you say a bit more about what didn't work? The wait, how they explained things, how they were with your child.",
+  doctorCaveat:
+    "Anything worth knowing before someone else books? The wait for appointments, insurance, after-hours care.",
+  doctorWhoFor: "Who would you send to them? An age, a worry, a situation.",
+  usedFor:
+    "Can you say a bit more about what they helped with? It's how Pando matches them to the next family.",
+} as const;
+
+/** The step id that carries a follow-up marker once one has been asked. */
+export function followUpMark(stepId: string): string {
+  return `__fu_${stepId}`;
+}
+
+function neighborhoodOptions(market: MarketId, ownPlaces: readonly string[]): Option[] {
+  const curated: Option[] = marketOptions(market, "neighborhoods");
+  const known = new Set(curated.map((o) => o.label.trim().toLowerCase()));
+  return [
+    ...curated,
+    ...ownPlaces
+      .map((p) => p.trim())
+      .filter((p) => p !== "" && !known.has(p.toLowerCase()))
+      .map((p) => ({ id: p, label: p })),
+  ];
+}
+
 export function buildScripts(
   market: MarketId,
   ownPlaces: readonly string[] = [],
@@ -241,15 +377,7 @@ export function buildScripts(
    * place nobody approved. It is appended after the curated towns, and only
    * when no curated option already carries that name.
    */
-  const curated: Option[] = marketOptions(market, "neighborhoods");
-  const known = new Set(curated.map((o) => o.label.trim().toLowerCase()));
-  const neighborhoods: Option[] = [
-    ...curated,
-    ...ownPlaces
-      .map((p) => p.trim())
-      .filter((p) => p !== "" && !known.has(p.toLowerCase()))
-      .map((p) => ({ id: p, label: p })),
-  ];
+  const neighborhoods = neighborhoodOptions(market, ownPlaces);
 
   return {
     /**
@@ -296,6 +424,9 @@ export function buildScripts(
      */
     activity: {
       kind: "activity",
+      /* 9 Oct: the button covers the client's Activities, Classes and Camps —
+         the classifier picks which — but keeps its label and size: the
+         developer asked for the button to stay as it was. */
       label: "An activity or class",
       hint: "Music, swim, dance, sports, camp",
       intro: "Great — let's do one activity or class at a time.",
@@ -308,6 +439,26 @@ export function buildScripts(
           searchCategory: "baby_activities",
           maxLength: 80,
           placeholder: "e.g. Little Maestros",
+        },
+        {
+          /**
+           * The context question (9 Oct), straight after the name: the parent's
+           * own description is what the classifier and the adaptive interview
+           * read — everything after it is chosen and worded from what it says
+           * (`/api/seed/assist`), and a closed answer it already gives (whose
+           * experience, the age, how recent) is not asked again.
+           */
+          id: "what_is_it",
+          /* 9 Oct: "what is it", not "how did it go" — the developer's walk wrote a
+             review here and was then asked what they liked. How it went is
+             the "why" question's, later. */
+          prompt: "In a line or two, what is it?",
+          namedPrompt: "In a line or two, what is {thing}?",
+          aside: "Weekly swim lessons, a pottery afternoon, a summer camp… and whether it was your family or a friend's.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. weekly swim lessons our daughter still goes to",
+          classifyAfter: true,
         },
         {
           /**
@@ -335,6 +486,7 @@ export function buildScripts(
              is the answer to a question about three-year-olds, whenever it was. */
           id: "child_age",
           prompt: "How old was your child at the time?",
+          friendPrompt: "How old was your friend's child at the time?",
           aside: "Tap every age that applies.",
           widget: "ages",
         },
@@ -371,6 +523,7 @@ export function buildScripts(
           maxLength: 400,
           placeholder: "e.g. small groups and a very patient teacher",
           when: (fields) => !doesNotRecommend(fields),
+          followUp: { ask: FOLLOW_UP.activityWhy, on: "empty_or_thin" },
         },
         {
           id: "what_didnt_work",
@@ -380,6 +533,7 @@ export function buildScripts(
           maxLength: 400,
           placeholder: "e.g. too big a group for a shy child",
           when: doesNotRecommend,
+          followUp: { ask: FOLLOW_UP.activityDidnt, on: "empty_or_thin" },
         },
         {
           /**
@@ -400,6 +554,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "e.g. nothing to flag",
+          followUp: { ask: FOLLOW_UP.caveat, on: "empty_or_thin" },
         },
         {
           /**
@@ -462,6 +617,7 @@ export function buildScripts(
           optional: true,
           placeholder: "e.g. a cautious toddler who warms up slowly",
           when: wantsMore,
+          followUp: { ask: FOLLOW_UP.whoFor, on: "empty_or_thin" },
         },
         {
           id: "price_band",
@@ -851,7 +1007,8 @@ export function buildScripts(
     place: {
       kind: "place",
       label: "A place",
-      hint: "Park, library, indoor play, café",
+      /* 9 Oct: Places, Restaurants & cafés and Schools sit under this button. */
+      hint: "Park, café, restaurant, school",
       intro: "Places are easy — a few taps and a sentence.",
       steps: [
         {
@@ -860,6 +1017,18 @@ export function buildScripts(
           widget: "text",
           maxLength: 80,
           placeholder: "e.g. Victory Park playground",
+        },
+        {
+          /* The context question (9 Oct), straight after the name — see the
+             activity card's. */
+          id: "what_is_it",
+          prompt: "In a line or two, what kind of place is it?",
+          namedPrompt: "In a line or two, what kind of place is {thing}?",
+          aside: "A park, a café, a school, a museum… and whether you went or a friend did.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. a playground with a splash pad we go to most weekends",
+          classifyAfter: true,
         },
         {
           /* 8 Oct, the client's list: whose experience it is, and a friend's is
@@ -881,12 +1050,14 @@ export function buildScripts(
         {
           id: "child_age",
           prompt: "How old was your child when you went?",
+          friendPrompt: "How old was your friend's child when they went?",
           aside: "Tap every age that applies.",
           widget: "ages",
         },
         {
           id: "freshness",
           prompt: "When did you last go?",
+          friendPrompt: "When did your friend last go?",
           widget: "quick",
           options: PLACE_LAST_GONE,
         },
@@ -907,6 +1078,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "Shade and a fence — but the parking is brutal…",
+          followUp: { ask: FOLLOW_UP.placeWhy, on: "empty_or_thin" },
         },
         {
           /* Required, and answered in words (5 Oct): "Nothing to flag" is an
@@ -918,6 +1090,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "Parking is brutal after 10am…",
+          followUp: { ask: FOLLOW_UP.placeCaveat, on: "empty_or_thin" },
         },
         {
           id: "best_for",
@@ -1015,20 +1188,37 @@ export function buildScripts(
      */
     doctor: {
       kind: "doctor",
-      label: "A doctor or medical provider",
-      hint: "Pediatrician, dentist, specialist",
-      intro: "Great — one doctor or practice at a time.",
+      /* 9 Oct, the developer: the button is **Services** — Doctors,
+         Specialists & family services and Parties / venues / vendors sit under
+         it. The kind stays `doctor`, so nothing stored changes. The first
+         questions are worded for any of the three; the doctor's own follow. */
+      label: "Services",
+      hint: "Doctors, dentists, therapists, tutors, party vendors",
+      intro: "Great — one person or service at a time.",
       steps: [
         {
           id: "name",
-          prompt: "Which practice or doctor?",
+          prompt: "Who or what service did you use?",
           widget: "text",
           maxLength: 80,
-          placeholder: "Name",
+          placeholder: "Name of the doctor, practice or service",
+        },
+        {
+          /* The context question (9 Oct), straight after the name, and the
+             client's Specialists Q3 — stored in `share_contributions.used_for`
+             (`drizzle/0056`). */
+          id: "used_for",
+          prompt: "What did you see or use them for?",
+          aside: "A checkup, speech therapy, a birthday party… A sentence is plenty.",
+          widget: "text",
+          maxLength: 200,
+          placeholder: "e.g. our son's speech delay",
+          classifyAfter: true,
+          followUp: { ask: FOLLOW_UP.usedFor, on: "empty_or_thin" },
         },
         {
           id: "firsthand",
-          prompt: "Is it your child's doctor?",
+          prompt: "Did you use them yourselves?",
           widget: "quick",
           options: [
             { id: "yes", label: "Yes" },
@@ -1043,6 +1233,7 @@ export function buildScripts(
         {
           id: "child_age",
           prompt: "How old was your child at the time?",
+          friendPrompt: "How old was your friend's child at the time?",
           aside: "Tap every age that applies.",
           widget: "ages",
         },
@@ -1055,6 +1246,7 @@ export function buildScripts(
         {
           id: "freshness",
           prompt: "Are you still seeing them?",
+          friendPrompt: "Is your friend still seeing them?",
           widget: "quick",
           options: DOCTOR_LAST_SEEN,
         },
@@ -1072,6 +1264,7 @@ export function buildScripts(
           maxLength: 400,
           placeholder: "e.g. she listens and never rushes us",
           when: (fields) => !doesNotRecommend(fields),
+          followUp: { ask: FOLLOW_UP.doctorWhy, on: "empty_or_thin" },
         },
         {
           id: "what_didnt_work",
@@ -1081,6 +1274,7 @@ export function buildScripts(
           maxLength: 400,
           placeholder: "e.g. hard to reach after hours",
           when: doesNotRecommend,
+          followUp: { ask: FOLLOW_UP.doctorDidnt, on: "empty_or_thin" },
         },
         {
           /* Required, answered in words, as on every other card: "Nothing to
@@ -1091,6 +1285,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "e.g. book well-child visits months ahead",
+          followUp: { ask: FOLLOW_UP.doctorCaveat, on: "empty_or_thin" },
         },
         {
           id: "location",
@@ -1122,6 +1317,7 @@ export function buildScripts(
           optional: true,
           placeholder: "e.g. anxious kids, or families new to the area",
           when: wantsMore,
+          followUp: { ask: FOLLOW_UP.doctorWhoFor, on: "empty_or_thin" },
         },
         {
           id: "appointment_ease",
@@ -1154,10 +1350,11 @@ export function buildScripts(
         },
       ],
       recap: [
-        { field: "name", label: "Doctor" },
+        { field: "name", label: "Who" },
         { field: "location", label: "Where" },
-        { field: "firsthand", label: "Your child's doctor" },
+        { field: "firsthand", label: "Used them yourselves" },
         { field: "child_age", label: "Age at the time" },
+        { field: "used_for", label: "Used them for" },
         { field: "visit_reason", label: "Seen for" },
         { field: "freshness", label: "Seeing them" },
         { field: "recommendation", label: "Recommend" },
@@ -1174,9 +1371,26 @@ export function buildScripts(
     tip: {
       kind: "tip",
       label: "Something else?",
-      hint: "The thing you wish someone had told you",
+      /* 9 Oct: Tips and Products & gear sit under this button. */
+      hint: "A tip, or a product you'd recommend",
       intro: "These are often the most useful things in the whole network.",
       steps: [
+        {
+          /**
+           * The context question (9 Oct). For a tip it **is** the tip: the chat
+           * copies it into `tip` once the classifier says so (or is unsure),
+           * so the tip is never asked twice. For a product it is what the
+           * classifier reads, and the product's own questions follow.
+           */
+          id: "what_is_it",
+          prompt: "In a line, what would you like to pass on?",
+          aside: "A tip you wish someone had told you, or a product you'd recommend.",
+          widget: "text",
+          maxLength: 400,
+          placeholder: "e.g. sign up the week registration opens",
+          classifyAfter: true,
+          followUp: { ask: FOLLOW_UP.tip, on: "empty_or_thin" },
+        },
         {
           id: "topic",
           prompt: "What's it about?",
@@ -1190,6 +1404,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "Sign up the week registration opens or you'll be waitlisted…",
+          followUp: { ask: FOLLOW_UP.tip, on: "empty_or_thin" },
         },
         {
           /* The client's tip minimum (5 Oct): *"When is this useful / why did it
@@ -1202,6 +1417,7 @@ export function buildScripts(
           widget: "text",
           maxLength: 400,
           placeholder: "It saved us a month on the waitlist…",
+          followUp: { ask: FOLLOW_UP.tipWhy, on: "empty_or_thin" },
         },
         {
           id: "best_for",
@@ -1264,3 +1480,663 @@ export function buildScripts(
 
 /* The doctor card (8 Oct) before the tip, so "Something else?" stays last. */
 export const SHARE_ORDER: ShareKind[] = ["activity", "caregiver", "place", "doctor", "tip"];
+
+/* ── Sub-categories (9 Oct) ───────────────────────────────────────────────── */
+
+const SECONDHAND: Option = {
+  id: "secondhand",
+  label: "No, this is based on a friend's experience",
+  hint: "Welcome, labelled secondhand",
+  wide: true,
+};
+
+/** The client's shorter wording on the 10/7 additions. */
+const SECONDHAND_SHORT: Option = { ...SECONDHAND, label: "No, a friend's experience" };
+
+function firsthandStep(prompt: string, yes = "Yes", no: Option = SECONDHAND): Step {
+  return { id: "firsthand", prompt, widget: "quick", options: [{ id: "yes", label: yes }, no] };
+}
+
+function childAgeStep(prompt: string): Step {
+  return {
+    id: "child_age",
+    prompt,
+    friendPrompt: "How old was your friend's child at the time?",
+    aside: "Tap every age that applies.",
+    widget: "ages",
+  };
+}
+
+function recommendStep(prompt: string): Step {
+  return { id: "recommendation", prompt, widget: "quick", options: RECOMMENDATION_OPTIONS };
+}
+
+/**
+ * The card's "why". `didnt` adds the No branch (`what_didnt_work`), which
+ * every activity and Services sub-category carries so the stored "why" follows
+ * the recommendation (`doctorWhy`); without it the one question is asked
+ * whatever the answer, as on a place.
+ */
+function whySteps(input: {
+  prompt: string;
+  placeholder: string;
+  ask: string;
+  didnt?: { prompt: string; placeholder: string; ask: string };
+}): Step[] {
+  const like: Step = {
+    id: "what_makes_it_great",
+    prompt: input.prompt,
+    aside: "One line is plenty — the thing you'd text a friend.",
+    widget: "text",
+    maxLength: 400,
+    placeholder: input.placeholder,
+    followUp: { ask: input.ask, on: "empty_or_thin" },
+    /* 12 Oct: a camp a neighbour's boys went to was asked "What did your child
+       actually enjoy about it?". */
+    friendPrompt: "What did your friend say stood out about it?",
+  };
+  if (!input.didnt) return [like];
+  return [
+    { ...like, when: (fields) => !doesNotRecommend(fields) },
+    {
+      id: "what_didnt_work",
+      prompt: input.didnt.prompt,
+      aside: "One line is plenty.",
+      widget: "text",
+      maxLength: 400,
+      placeholder: input.didnt.placeholder,
+      friendPrompt: "What did your friend say didn't work?",
+      when: doesNotRecommend,
+      followUp: { ask: input.didnt.ask, on: "empty_or_thin" },
+    },
+  ];
+}
+
+function caveatStep(prompt: string, aside: string, placeholder: string, ask: string): Step {
+  return {
+    id: "caveat",
+    prompt,
+    aside,
+    widget: "text",
+    maxLength: 400,
+    placeholder,
+    followUp: { ask, on: "empty_or_thin" },
+  };
+}
+
+/** "— only if needed": a name the directory matched already carries its town. */
+function townStep(prompt: string, options: Option[]): Step {
+  return {
+    id: "location",
+    prompt,
+    widget: "chips",
+    options,
+    optional: true,
+    when: (fields) => !(Array.isArray(fields.location) && fields.location.length > 0),
+  };
+}
+
+const FORK_STEP: Step = {
+  id: "more_detail",
+  prompt: "That's everything Pando needs. Add a few more details, or save it as it is?",
+  aside: "The more detail you give, the more targeted the answers Pando can give another parent.",
+  widget: "quick",
+  options: [
+    { id: "no", label: "That's it", wide: true },
+    { id: "yes", label: "Add more detail", wide: true },
+  ],
+};
+
+function detailText(id: string, prompt: string, placeholder: string, ask: string, maxLength = 200): Step {
+  return {
+    id,
+    prompt,
+    widget: "text",
+    maxLength,
+    optional: true,
+    placeholder,
+    when: wantsMore,
+    followUp: { ask, on: "empty_or_thin" },
+  };
+}
+
+function priceSteps(prompt: string, units?: { prompt: string; options: Option[] }, bands = PRICE_BAND): Step[] {
+  const band: Step = {
+    id: "price_band",
+    prompt,
+    widget: "quick",
+    optional: true,
+    options: bands,
+    when: wantsMore,
+  };
+  if (!units) return [band];
+  return [
+    band,
+    {
+      id: "price_unit",
+      prompt: units.prompt,
+      widget: "quick",
+      options: units.options,
+      when: (fields) =>
+        wantsMore(fields) &&
+        typeof fields.price_band === "string" &&
+        fields.price_band !== "" &&
+        fields.price_band !== "free" &&
+        fields.price_band !== "prefer_not_to_say",
+    },
+  ];
+}
+
+function worthItStep(prompt: string): Step {
+  return { id: "worth_it", prompt, widget: "quick", options: WORTH_IT, optional: true, when: wantsMore };
+}
+
+const EXTRA_NOTE_STEP: Step = {
+  id: "extra_note",
+  prompt: EXTRA_NOTE_PROMPT,
+  aside: "Your own comment on this one — whatever did not fit the questions above. Optional.",
+  widget: "text",
+  maxLength: 400,
+  optional: true,
+  skipLabel: "Nothing else",
+  placeholder: "Anything you would tell a friend about it…",
+};
+
+/** A context step from the button's general script, so ids and widgets match. */
+function contextStep(script: Script, id: string): Step {
+  const step = script.steps.find((x) => x.id === id);
+  if (!step) throw new Error(`no context step ${id} on ${script.kind}`);
+  return step;
+}
+
+/**
+ * Every sub-category's script (9 Oct, the client's *Categories Questions*).
+ *
+ * Her wording, in her order, with her struck items left out: "What makes it
+ * good?" (Activities), "What makes the teaching good?" (Classes), "What makes
+ * it worth the trip?" (Places), "What makes it a good school?" (Schools) and
+ * "What do you value about them?" (Doctors) carry a strike line in her
+ * document and are not asked.
+ *
+ * ⚠ **Each starts with its button's context steps, by id** — they are answered
+ * before the classifier runs, so the chat carries on from the first step not
+ * yet answered (`nextUnanswered`) and none is asked twice. Their wording here
+ * is hers for the sub-category, which is what a recap row or an edit shows.
+ *
+ * Four are the button's own script: Activities, Places, Doctors and Tips are
+ * what those buttons already asked, from her 8 Oct lists.
+ */
+export function buildSubScripts(
+  market: MarketId,
+  ownPlaces: readonly string[] = [],
+): Record<Subcategory, Script> {
+  const base = buildScripts(market, ownPlaces);
+  const neighborhoods = neighborhoodOptions(market, ownPlaces);
+  const activityName = contextStep(base.activity, "name");
+
+  return {
+    activities: { ...base.activity, subcategory: "activities" },
+    places: { ...base.place, subcategory: "places" },
+    /* The Services button asks its first two in words that fit any service;
+       a doctor keeps hers (8 Oct) for its recap and its edits. */
+    doctors: {
+      ...base.doctor,
+      subcategory: "doctors",
+      label: "A doctor or medical provider",
+      steps: base.doctor.steps.map((step) =>
+        step.id === "name"
+          ? { ...step, prompt: "Which practice or doctor?", placeholder: "Name" }
+          : step.id === "firsthand"
+            ? { ...step, prompt: "Is it your child's doctor?" }
+            : step,
+      ),
+      recap: base.doctor.recap.map((row) =>
+        row.field === "name"
+          ? { ...row, label: "Doctor" }
+          : row.field === "firsthand"
+            ? { ...row, label: "Your child's doctor" }
+            : row,
+      ),
+    },
+    tips: { ...base.tip, subcategory: "tips" },
+
+    classes: {
+      kind: "activity",
+      subcategory: "classes",
+      label: "A class",
+      hint: base.activity.hint,
+      intro: base.activity.intro,
+      steps: [
+        { ...activityName, prompt: "What's the class called?" },
+        firsthandStep("Did your kid take it?", "Yes, ours did"),
+        childAgeStep("How old was your child at the time?"),
+        contextStep(base.activity, "what_is_it"),
+        { id: "freshness", prompt: "Are they still taking it?", widget: "quick", options: CLASS_STILL },
+        recommendStep("Knowing what you know now, would you recommend it?"),
+        ...whySteps({
+          prompt: "What stood out about the teaching or class?",
+          placeholder: "e.g. a teacher who learned every child's name",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was deciding? The teacher, the class size, the pace, the thing you didn't expect.",
+          didnt: {
+            prompt: "What didn't work for you or your child?",
+            placeholder: "e.g. too big a class for a shy child",
+            ask: FOLLOW_UP.activityDidnt,
+          },
+        }),
+        caveatStep(
+          "What should another parent know before enrolling?",
+          "The waitlist, the parking, the term dates. Nothing to flag? Just say so.",
+          "e.g. nothing to flag",
+          FOLLOW_UP.caveat,
+        ),
+        townStep("Which town is it in?", neighborhoods),
+        FORK_STEP,
+        detailText("who_for", "Who is it perfect for?", "e.g. a cautious toddler who warms up slowly", FOLLOW_UP.whoFor),
+        ...priceSteps("Roughly what did you pay?", {
+          prompt: "And was that per class, month or term?",
+          options: CLASS_PRICE_UNIT,
+        }),
+        worthItStep("Was it worth the money?"),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Class" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "freshness", label: "Still going" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What stood out" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Perfect for" },
+        { field: "price_band", label: "Paid" },
+        { field: "price_unit", label: "Per" },
+        { field: "worth_it", label: "Worth it" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    camps: {
+      kind: "activity",
+      subcategory: "camps",
+      label: "A camp or holiday program",
+      hint: base.activity.hint,
+      intro: base.activity.intro,
+      steps: [
+        { ...activityName, prompt: "What's the camp or program called?" },
+        firsthandStep("Did your child attend?", "Yes", SECONDHAND_SHORT),
+        childAgeStep("How old were they?"),
+        contextStep(base.activity, "what_is_it"),
+        { id: "freshness", prompt: "When did they last attend?", widget: "quick", options: CAMP_LAST },
+        recommendStep("Would you recommend it?"),
+        ...whySteps({
+          prompt: "What did your child actually enjoy about it?",
+          placeholder: "e.g. the counselors, and building a raft on Friday",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was deciding? What your child talked about afterwards, the counselors, the days.",
+          didnt: {
+            prompt: "What didn't work for you or your child?",
+            placeholder: "e.g. long days for a five-year-old",
+            ask: FOLLOW_UP.activityDidnt,
+          },
+        }),
+        caveatStep(
+          "What should another parent know before booking?",
+          "When it fills up, drop-off, what to pack. Nothing to flag? Just say so.",
+          "e.g. it fills up in February",
+          "Anything worth knowing before someone else books? When it fills up, drop-off, a cost that isn't obvious.",
+        ),
+        townStep("Which town is it in?", neighborhoods),
+        FORK_STEP,
+        detailText(
+          "who_for",
+          "What kind of child is it best for?",
+          "e.g. an outdoorsy kid who likes a busy day",
+          "Who would you send there? An age, a temperament, a situation.",
+        ),
+        detailText(
+          "timing_note",
+          "Is it full-day or part-day, and roughly what hours?",
+          "e.g. part-day, 9 to 1",
+          "Even roughly — full days or mornings only, and what hours?",
+        ),
+        ...priceSteps("Roughly what did it cost?", { prompt: "And was that per day or per week?", options: CAMP_PRICE_UNIT }),
+        worthItStep("Was it worth the money?"),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Camp" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "freshness", label: "Last attended" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What they enjoyed" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Best for" },
+        { field: "timing_note", label: "Hours" },
+        { field: "price_band", label: "Cost" },
+        { field: "price_unit", label: "Per" },
+        { field: "worth_it", label: "Worth it" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    restaurants: {
+      kind: "place",
+      subcategory: "restaurants",
+      label: "A restaurant or café",
+      hint: base.place.hint,
+      intro: base.place.intro,
+      steps: [
+        { ...contextStep(base.place, "name"), prompt: "What's the place called?" },
+        firsthandStep("Have you been there with your child?", "Yes", SECONDHAND_SHORT),
+        childAgeStep("How old was your child?"),
+        contextStep(base.place, "what_is_it"),
+        recommendStep("Would you recommend it with kids?"),
+        ...whySteps({
+          prompt: "What makes it work well with children?",
+          placeholder: "e.g. crayons at the table and a patio they can wander",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was deciding? The kids' menu, the space, how the staff were with children.",
+          /* 12 Oct: after "Probably not" the simulated parent was asked what
+             makes it work well with children. */
+          didnt: {
+            prompt: "What didn't work with the kids?",
+            placeholder: "e.g. nowhere for a stroller and a 40-minute wait",
+            ask: "Can you say a bit more about what didn't work? The wait, the space, how the staff were with children.",
+          },
+        }),
+        caveatStep(
+          "What should another parent know before going?",
+          "The wait, the noise, when it gets busy. Nothing to flag? Just say so.",
+          "e.g. go before 6 or wait an hour",
+          "Anything worth knowing before going? The wait, the noise, when it gets busy.",
+        ),
+        townStep("Which town or neighborhood is it in?", neighborhoods),
+        FORK_STEP,
+        { id: "best_for", prompt: "What ages is it best for?", widget: "chips", options: AGE_BANDS, optional: true, when: wantsMore },
+        detailText(
+          "detail_note",
+          "What makes it good for the adults too?",
+          "e.g. proper coffee and a decent wine list",
+          "Anything for the grown-ups — the coffee, the food, a quiet corner?",
+        ),
+        {
+          id: "amenities",
+          prompt: "Anything practical to know?",
+          widget: "chips",
+          options: RESTAURANT_AMENITIES,
+          optional: true,
+          when: wantsMore,
+        },
+        detailText(
+          "timing_note",
+          "Best time to go with children?",
+          "e.g. weekday lunch, or before 5:30",
+          "When does it work best with kids — a time of day, a day of the week?",
+        ),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Restaurant" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "recommendation", label: "Recommend with kids" },
+        { field: "what_makes_it_great", label: "Works with kids because" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "best_for", label: "Best for" },
+        { field: "detail_note", label: "For the adults" },
+        { field: "amenities", label: "Practical" },
+        { field: "timing_note", label: "Best time" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    schools: {
+      kind: "place",
+      subcategory: "schools",
+      label: "A school",
+      hint: base.place.hint,
+      intro: base.place.intro,
+      steps: [
+        { ...contextStep(base.place, "name"), prompt: "Which school?" },
+        firsthandStep("Does your child go there, or did they?", "Yes, ours does or did"),
+        childAgeStep("What grade or age was your child?"),
+        contextStep(base.place, "what_is_it"),
+        { id: "freshness", prompt: "Are they still there?", widget: "quick", options: SCHOOL_STILL },
+        recommendStep("Would you recommend it?"),
+        ...whySteps({
+          prompt: "What do you especially like about the school?",
+          placeholder: "e.g. teachers who know every family by name",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was choosing a school? The teachers, the community, how your child settled in.",
+          didnt: {
+            prompt: "What didn't work for your family?",
+            placeholder: "e.g. very little communication from the office",
+            ask: "Can you say a bit more about what didn't work? The teachers, the communication, how your child settled in.",
+          },
+        }),
+        caveatStep(
+          "What should another parent know before applying?",
+          "Deadlines, the waitlist, pick-up, the costs nobody mentions. Nothing to flag? Just say so.",
+          "e.g. apply a full year ahead",
+          "Anything worth knowing before someone else applies? Deadlines, the waitlist, a cost that isn't obvious.",
+        ),
+        townStep("Which town is it in?", neighborhoods),
+        FORK_STEP,
+        detailText(
+          "who_for",
+          "What kind of child thrives there?",
+          "e.g. a curious kid who likes structure",
+          "Who would you send there? A temperament, a learning style, a situation.",
+        ),
+        ...priceSteps("Roughly what is the tuition per month?", undefined, SCHOOL_TUITION_BAND),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "School" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Grade or age" },
+        { field: "freshness", label: "Still there" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Thrives there" },
+        { field: "price_band", label: "Tuition per month" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    specialists: {
+      kind: "doctor",
+      subcategory: "specialists",
+      label: "A specialist or family service",
+      hint: base.doctor.hint,
+      intro: base.doctor.intro,
+      steps: [
+        { ...contextStep(base.doctor, "name"), prompt: "Who or what service did you use?" },
+        firsthandStep("Did you use them personally?", "Yes", SECONDHAND_SHORT),
+        childAgeStep("How old was your child, if relevant?"),
+        { ...contextStep(base.doctor, "used_for"), prompt: "What did you use them for?" },
+        {
+          id: "freshness",
+          prompt: "Are you still using them?",
+          friendPrompt: "Is your friend still using them?",
+          widget: "quick",
+          options: SPECIALIST_STILL,
+        },
+        recommendStep("Would you recommend them?"),
+        ...whySteps({
+          prompt: "What made them especially good?",
+          placeholder: "e.g. she made speech practice feel like a game",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was choosing? How they were with your child, how they explained things, the results.",
+          didnt: {
+            prompt: "What didn't work for you?",
+            placeholder: "e.g. hard to book and often late",
+            ask: FOLLOW_UP.doctorDidnt,
+          },
+        }),
+        caveatStep(
+          "What should another parent know before contacting them?",
+          "The wait, insurance, how to book. Nothing to flag? Just say so.",
+          "e.g. the waitlist is about two months",
+          "Anything worth knowing before someone else gets in touch? The wait, insurance, how they book.",
+        ),
+        townStep("Which town are they in?", neighborhoods),
+        FORK_STEP,
+        detailText(
+          "who_for",
+          "Who are they particularly good for?",
+          "e.g. toddlers who are slow to talk",
+          FOLLOW_UP.doctorWhoFor,
+        ),
+        ...priceSteps("Roughly what did you pay?"),
+        {
+          id: "appointment_ease",
+          prompt: "Were they easy to book, or was there a wait?",
+          widget: "quick",
+          optional: true,
+          options: APPOINTMENT_EASE,
+          when: wantsMore,
+        },
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Who" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "used_for", label: "Used them for" },
+        { field: "freshness", label: "Still using them" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Good for" },
+        { field: "price_band", label: "Paid" },
+        { field: "appointment_ease", label: "Booking" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    parties: {
+      kind: "doctor",
+      subcategory: "parties",
+      label: "A party venue, entertainer or vendor",
+      hint: base.doctor.hint,
+      intro: base.doctor.intro,
+      steps: [
+        { ...contextStep(base.doctor, "name"), prompt: "What's the venue, entertainer or vendor called?" },
+        firsthandStep("Did you use them personally?", "Yes", SECONDHAND_SHORT),
+        childAgeStep("How old was your child?"),
+        { ...contextStep(base.doctor, "used_for"), prompt: "What did you use them for?" },
+        recommendStep("Would you recommend them?"),
+        ...whySteps({
+          prompt: "What made them good?",
+          placeholder: "e.g. the magician had every four-year-old in the room hooked",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was planning a party? How the kids reacted, how easy they were to work with.",
+          didnt: {
+            prompt: "What didn't work for you?",
+            placeholder: "e.g. arrived late and left early",
+            ask: "Can you say a bit more about what didn't work? Timing, how they were with the kids, what you were promised.",
+          },
+        }),
+        caveatStep(
+          "What should another parent know before booking?",
+          "How far ahead to book, the deposit, what's included. Nothing to flag? Just say so.",
+          "e.g. book three months ahead for a weekend",
+          "Anything worth knowing before someone else books? How far ahead, the deposit, what's included.",
+        ),
+        townStep("Which town are they in?", neighborhoods),
+        FORK_STEP,
+        { id: "best_for", prompt: "What ages are they best for?", widget: "chips", options: AGE_BANDS, optional: true, when: wantsMore },
+        ...priceSteps("Roughly what did you pay?"),
+        worthItStep("Was it worth it?"),
+        detailText(
+          "detail_note",
+          "Anything particularly easy or difficult about the setup or logistics?",
+          "e.g. they needed a power outlet near the yard",
+          "Anything about setup, timing or clean-up another parent should plan for?",
+        ),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Who" },
+        { field: "location", label: "Where" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age at the time" },
+        { field: "used_for", label: "Used them for" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "best_for", label: "Best for" },
+        { field: "price_band", label: "Paid" },
+        { field: "worth_it", label: "Worth it" },
+        { field: "detail_note", label: "Setup" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+
+    products: {
+      kind: "tip",
+      subcategory: "products",
+      label: "A product or gear",
+      hint: base.tip.hint,
+      intro: base.tip.intro,
+      steps: [
+        contextStep(base.tip, "what_is_it"),
+        { id: "name", prompt: "What's the product?", widget: "text", maxLength: 80, placeholder: "e.g. the brand and model" },
+        firsthandStep("Did you personally use it?", "Yes", SECONDHAND_SHORT),
+        childAgeStep("How old was your child when you used it?"),
+        recommendStep("Would you recommend it?"),
+        ...whySteps({
+          prompt: "What makes it good?",
+          placeholder: "e.g. folds with one hand and fits in a small trunk",
+          ask: "One more thing and this becomes really useful — what would you tell a friend who was buying one? What it does better, how long it lasted.",
+          /* 12 Oct: "Don't buy the Graco 4Ever" was then asked what makes it good. */
+          didnt: {
+            prompt: "What didn't work for you?",
+            placeholder: "e.g. too wide for our back seat",
+            ask: "Can you say a bit more about what didn't work? The size, how it held up, what you'd warn a friend about.",
+          },
+        }),
+        caveatStep(
+          "What should another parent know before buying it?",
+          "The size, the weight, what wears out. Nothing to flag? Just say so.",
+          "e.g. it's heavier than it looks",
+          "Anything worth knowing before someone else buys it? The size, the weight, what wears out.",
+        ),
+        FORK_STEP,
+        detailText("who_for", "Who is it best for?", "e.g. city families who walk everywhere", "Who would you tell to get one? An age, a lifestyle, a situation."),
+        ...priceSteps("What did you pay, roughly?"),
+        worthItStep("Was it worth the money?"),
+        detailText(
+          "detail_note",
+          "What would you buy instead, if anything?",
+          "e.g. nothing — this is the one",
+          "Is there anything you'd pick instead — or is this the one?",
+        ),
+        EXTRA_NOTE_STEP,
+      ],
+      recap: [
+        { field: "name", label: "Product" },
+        { field: "firsthand", label: "Whose experience" },
+        { field: "child_age", label: "Age when used" },
+        { field: "recommendation", label: "Recommend" },
+        { field: "what_makes_it_great", label: "What's good" },
+        { field: "what_didnt_work", label: "Didn't work" },
+        { field: "caveat", label: "Know first" },
+        { field: "who_for", label: "Best for" },
+        { field: "price_band", label: "Paid" },
+        { field: "worth_it", label: "Worth it" },
+        { field: "detail_note", label: "Instead" },
+        { field: "extra_note", label: "Anything else" },
+      ],
+    },
+  };
+}

@@ -476,6 +476,9 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         -- statement is a template literal and a backtick closes it. That has now
         -- cost three separate debugging rounds in one session.
         and s.kind::text = any(${kindList}::text[])
+        -- A product (9 Oct, the tip button's Products & gear) has no tip text
+        -- and no place, so nothing here renders it yet: kept out until it does.
+        and s.subcategory is distinct from 'products'
         -- Reviewed by a human, on both halves. The strategy is explicit that this
         -- holds for the whole pilot, and shares_answerable already says it: an
         -- unreviewed record is not something Pando answers with.

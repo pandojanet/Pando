@@ -11,7 +11,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { saveSubmission } from "@/lib/api-client";
+import { assistTurn, saveSubmission } from "@/lib/api-client";
 import { assessChatCard } from "@/lib/contribution-quality";
 import { FOUNDING_MIN_PROFILE_DEPTH, foundingProgressLine } from "@/lib/rewards";
 import {
@@ -20,15 +20,24 @@ import {
   isEmptyValue,
   newDraft,
   nextIndex,
+  nextUnanswered,
+  promptFor,
+  scriptFor,
 } from "@/lib/seed-chat/engine";
-import { buildScripts } from "@/lib/seed-chat/scripts";
+import { buildScripts, buildSubScripts, followUpMark } from "@/lib/seed-chat/scripts";
+import { NAME_TOKEN, afterClassified, fillName, followedUpIds } from "@/lib/seed-chat/assist";
+import { followUpFor, mergeFollowUp, withoutMarkers } from "@/lib/seed-chat/follow-up";
+import { isClassifiedKind, subcategoryFor } from "@/lib/seed-chat/subcategories";
 import { useMarketOptions } from "@/lib/use-market-options";
 import type {
+  ChatDraft,
   ChatMessage,
   ChatState,
   FieldValue,
   Fields,
+  Script,
   ShareKind,
+  Step,
   Submission,
 } from "@/lib/seed-chat/types";
 import {
@@ -46,7 +55,6 @@ import { handleExpiredVerification, holdsUntilVerified } from "@/lib/submit";
 import type { SeedSession } from "@/lib/types";
 import { Bubble, CardRecap, TypingDots } from "./Bubble";
 import { InviteMessage } from "./InviteMessage";
-import { confirmBackFor } from "@/lib/seed-chat/confirm-back";
 import { ConfirmBackWidget } from "./ConfirmBackWidget";
 import { ShareMenu } from "./ShareMenu";
 import { StepWidget } from "./StepWidget";
@@ -103,6 +111,18 @@ export function ChatSeeding() {
       ),
     [session?.market_id, optionsVersion, ownPlaces],
   );
+  /* The client's sub-categories (9 Oct), built from the same inputs. */
+  const subScripts = useMemo(
+    () =>
+      buildSubScripts(
+        session?.market_id ?? "pasadena",
+        ownPlaces ? ownPlaces.split("|") : [],
+      ),
+    [session?.market_id, optionsVersion, ownPlaces],
+  );
+  /** The script a draft or a saved card is asked from — its sub-category's, or its button's. */
+  const scriptOf = (card: Pick<ChatDraft, "kind" | "subcategory"> & { fields?: Fields }): Script =>
+    scriptFor(scripts, subScripts, card);
 
   useEffect(() => {
     /* Read **and** subscribed. It was read once at mount and never again, so a
@@ -187,7 +207,7 @@ export function ChatSeeding() {
        answers in that draft are lost either way; what matters is not stranding them
        on a dead screen. */
     if (chat.draft) {
-      const steps = scripts[chat.draft.kind]?.steps;
+      const steps = scriptFor(scripts, subScripts, chat.draft)?.steps;
       if (!steps || !steps[chat.draft.step_index]) {
         chat = { ...chat, mode: "menu", draft: null };
       }
@@ -243,7 +263,7 @@ export function ChatSeeding() {
    * is finished, so it is true a moment after the first one.
    */
   const draft = chat?.draft ?? null;
-  const script = draft ? scripts[draft.kind] : null;
+  const script = draft ? scriptOf(draft) : null;
   const step = script && draft ? script.steps[draft.step_index] : null;
   const savedCount = chat?.submissions.length ?? 0;
 
@@ -312,9 +332,7 @@ export function ChatSeeding() {
     if (heldSent.current || !session || !chat) return;
     heldSent.current = true;
     if (holdsUntilVerified(session)) return;
-    const unsent = chat.submissions.filter(
-      (s) => !s.persisted && !s.error && s.id !== chat.confirm_back?.submission_id,
-    );
+    const unsent = chat.submissions.filter((s) => !s.persisted && !s.error);
     if (unsent.length === 0) return;
     track("seed_held_cards_sent", { count: unsent.length });
     for (const s of unsent) void persist(s);
@@ -322,17 +340,38 @@ export function ChatSeeding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, chat]);
 
+  /**
+   * A reload while `/api/seed/assist` was answering (9 Oct): the draft still
+   * sits on the last context question, already answered. Ask again — once, on
+   * the session as loaded — rather than re-asking the parent.
+   */
+  const assistResumed = useRef(false);
+  useEffect(() => {
+    if (assistResumed.current || !chat) return;
+    assistResumed.current = true;
+    if (chat.draft?.assist === "pending" && !chat.draft.editing) {
+      const d = chat.draft;
+      const last = scriptOf(d).steps[d.step_index];
+      if (last) void takeTurn(d, last);
+    }
+    // Once, on the session as loaded — see above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat]);
+
   /* ── Turn taking ──────────────────────────────────────────────── */
 
-  function pushPrompt(kind: ShareKind, fields: Fields, index: number) {
-    const nextStep = scripts[kind].steps[index];
+  /** Ask `next.step_index` of the draft's own script, in the model's words when it gave some. */
+  /** `lead` is a reaction to the last answer, said in the same bubble (12 Oct). */
+  function pushPrompt(next: ChatDraft, lead?: string | null) {
+    const nextStep = scriptOf(next).steps[next.step_index];
+    const question = promptFor(nextStep, next.prompts, next.fields);
     patchChat((c) => ({
       ...c,
       mode: "card",
-      draft: { ...(c.draft ?? newDraft(kind)), kind, fields, step_index: index },
+      draft: { ...next, followup: null },
       messages: [
         ...c.messages,
-        { id: uid(), role: "pando", text: nextStep.prompt, aside: nextStep.aside },
+        { id: uid(), role: "pando", text: lead ? `${lead} ${question}` : question, aside: nextStep.aside },
       ],
     }));
   }
@@ -355,7 +394,7 @@ export function ChatSeeding() {
         ...c,
         messages: [...c.messages, { id: uid(), role: "pando", text: picked.intro }],
       }));
-      withTyping(() => pushPrompt(kind, {}, first), 520);
+      withTyping(() => pushPrompt({ ...newDraft(kind), step_index: first }), 520);
     });
   }
 
@@ -365,7 +404,8 @@ export function ChatSeeding() {
    * alternative was re-doing the whole card.
    */
   function startFieldEdit(submission: Submission, field: string) {
-    const editScript = scripts[submission.kind];
+    const subcategory = subcategoryFor(submission.kind, submission.fields.subcategory);
+    const editScript = scriptOf({ kind: submission.kind, subcategory });
     const stepIndex = editScript.steps.findIndex((s) => s.id === field);
     if (stepIndex < 0) return;
     const editStep = editScript.steps[stepIndex];
@@ -378,6 +418,7 @@ export function ChatSeeding() {
         kind: submission.kind,
         fields: { ...submission.fields },
         step_index: stepIndex,
+        subcategory,
         editing: { submission_id: submission.id, step_id: field },
       },
       messages: [
@@ -514,28 +555,229 @@ export function ChatSeeding() {
       step: step.id,
     });
 
+    const answered: ChatDraft = { ...draft, fields };
     patchChat((c) => ({
       ...c,
-      draft: { ...draft, fields, step_index: draft.step_index },
+      draft: answered,
       messages: [...c.messages, parentMessage],
     }));
 
-    const upcoming = nextIndex(script, fields, draft.step_index + 1);
-    withTyping(() => {
-      if (hold) {
+    if (hold) {
+      withTyping(() => {
         patchChat((c) => ({
           ...c,
           messages: [...c.messages, { id: uid(), role: "pando", text: hold }],
         }));
-        withTyping(() => {
-          if (upcoming < 0) finishCard(draft.kind, draft.id, fields);
-          else pushPrompt(draft.kind, fields, upcoming);
-        }, 520);
-        return;
-      }
-      if (upcoming < 0) finishCard(draft.kind, draft.id, fields);
-      else pushPrompt(draft.kind, fields, upcoming);
+        advance(answered, step, 520);
+      });
+      return;
+    }
+    advance(answered, step);
+  }
+
+  /**
+   * After an answer (and after its follow-up, if it had one).
+   *
+   * Once a card's last context question is answered, every turn is the
+   * adaptive interview's (`takeTurn`): the server decides whether to follow the
+   * answer up, which closed answers the parent's words already gave, and which
+   * open question to ask next, in words for them. Before that — and always on a
+   * caregiver card — the script's own order, with the rule-based follow-ups.
+   */
+  function advance(d: ChatDraft, last: Step, delay?: number) {
+    const adaptive = isClassifiedKind(d.kind) && (d.assist === "done" || last.classifyAfter === true);
+    if (adaptive) {
+      void takeTurn(d, last);
+      return;
+    }
+    if (askRuleFollowUp(d, last)) return;
+    const s = scriptOf(d);
+    const upcoming = nextIndex(s, d.fields, d.step_index + 1);
+    withTyping(() => {
+      if (upcoming < 0) finishCard(d);
+      else pushPrompt({ ...d, step_index: upcoming });
+    }, delay);
+  }
+
+  /**
+   * Ask a follow-up about `last` (9 Oct): once per question — the marker is
+   * written with it, so a reload mid-follow-up cannot ask it a second time.
+   */
+  function askFollowUp(d: ChatDraft, last: Step, question: string) {
+    const asked: ChatDraft = {
+      ...d,
+      fields: { ...d.fields, [followUpMark(last.id)]: "yes" },
+      followup: { step_id: last.id, question, before: (d.fields[last.id] ?? "") as FieldValue },
+    };
+    patchChat((c) => ({ ...c, draft: asked }));
+    track("seed_confirm_back_shown", {
+      kind: d.kind,
+      subcategory: d.subcategory ?? null,
+      field: last.id,
     });
+    withTyping(() =>
+      patchChat((c) => ({
+        ...c,
+        messages: [...c.messages, { id: uid(), role: "pando", text: question }],
+      })),
+    );
+  }
+
+  /** The rule-based follow-up (`followUpFor`), when no model is asked. */
+  function askRuleFollowUp(d: ChatDraft, last: Step): boolean {
+    const ask = followUpFor(d.kind, last, (d.fields[last.id] ?? "") as FieldValue, d.fields);
+    if (!ask) return false;
+    askFollowUp(d, last, ask);
+    return true;
+  }
+
+  /**
+   * The parent answered the follow-up, or skipped it. What they add is appended
+   * to the answer it follows up (`mergeFollowUp`), and the card goes on.
+   */
+  function answerFollowUp(text: string) {
+    if (!draft?.followup) return;
+    const { step_id, before } = draft.followup;
+    const last = scriptOf(draft).steps.find((x) => x.id === step_id);
+    const addition = text.trim();
+    const fields: Fields = { ...draft.fields, [step_id]: mergeFollowUp(before, addition) };
+    const next: ChatDraft = { ...draft, fields, followup: null };
+    patchChat((c) => ({
+      ...c,
+      draft: next,
+      messages: [
+        ...c.messages,
+        addition
+          ? { id: uid(), role: "parent" as const, text: addition }
+          : { id: uid(), role: "parent" as const, text: "Skipped", skipped: true },
+      ],
+    }));
+    track("seed_confirm_back_answered", {
+      kind: draft.kind,
+      subcategory: draft.subcategory ?? null,
+      field: step_id,
+      added: addition.length > 0,
+    });
+    if (last) advance(next, last);
+  }
+
+  /**
+   * One turn of the adaptive interview (9 Oct) — `/api/seed/assist`.
+   *
+   * On the last context question it classifies first. Then, from everything
+   * said so far: a follow-up about `last` (once), the closed answers the
+   * parent's words already gave (each one shown to them as noted, and
+   * editable on the recap like any answer), and the next open question in
+   * words for them. Every failure is the script's own order with the
+   * rule-based follow-ups — `assistTurn` never throws.
+   */
+  async function takeTurn(d: ChatDraft, last: Step) {
+    if (!isClassifiedKind(d.kind)) return;
+    const kind = d.kind;
+    const classify = d.assist !== "done";
+    patchChat((c) => ({ ...c, draft: { ...d, assist: classify ? "pending" : "done" } }));
+    setTyping(true);
+    const followed = followedUpIds(d.fields);
+    /* The parent's first name stays on this device: the server is told only
+       that there is one to use (12 Oct), and the token is filled in here. */
+    const firstName = (session?.first_name ?? session?.name ?? "").trim().split(/\s+/)[0] || null;
+    const raw = await assistTurn({
+      kind,
+      classify,
+      subcategory: d.subcategory ?? null,
+      fields: withoutMarkers(d.fields),
+      last_step: last.id,
+      followed_up: followed,
+      child_ages: session?.answers.child_ages ?? [],
+      may_name: firstName !== null && !d.named,
+    });
+    setTyping(false);
+    const named = [raw.followup, raw.ack, raw.next?.prompt].some((t) => t?.includes(NAME_TOKEN) ?? false);
+    const fill = (t: string | null | undefined) => (t ? fillName(t, firstName) : null);
+    const result = {
+      ...raw,
+      followup: fill(raw.followup),
+      ack: fill(raw.ack),
+      next: raw.next ? { ...raw.next, prompt: fillName(raw.next.prompt, firstName) } : null,
+    };
+
+    const subcategory = classify ? subcategoryFor(kind, result.subcategory) : (d.subcategory ?? null);
+    const base: ChatDraft = {
+      ...d,
+      subcategory,
+      named: d.named || named,
+      assist: "done",
+      fields: classify ? afterClassified(kind, subcategory, d.fields) : d.fields,
+    };
+    if (classify) {
+      track("seed_card_classified", {
+        kind,
+        subcategory: subcategory ?? "general",
+        configured: result.configured,
+      });
+    }
+    const s = scriptOf(base);
+
+    if (!result.configured) {
+      if (askRuleFollowUp(base, last)) return;
+      const upcoming = nextUnanswered(s, base.fields, 0);
+      if (upcoming < 0) finishCard(base);
+      else pushPrompt({ ...base, step_index: upcoming });
+      return;
+    }
+
+    if (result.followup && !followed.includes(last.id)) {
+      askFollowUp(base, last, result.followup);
+      return;
+    }
+
+    /* Closed answers the parent already gave, said back to them so nothing is
+       recorded behind their back. */
+    const fields: Fields = { ...base.fields, ...result.prefill };
+    const noted = Object.entries(result.prefill).flatMap(([id, value]) => {
+      const x = s.steps.find((st) => st.id === id);
+      if (!x) return [];
+      const label = s.recap.find((r) => r.field === id)?.label ?? id;
+      return [`${label}: ${formatAnswer(x, value as FieldValue)}`];
+    });
+    if (noted.length > 0) {
+      patchChat((c) => ({
+        ...c,
+        messages: [...c.messages, { id: uid(), role: "pando", text: `Noted from what you said — ${noted.join(" · ")}.` }],
+      }));
+    }
+    const nextDraft: ChatDraft = { ...base, fields };
+
+    /* A short reaction to what they just typed (iteration 1, 9 Oct) leads into
+       the next question in the same bubble (12 Oct, the developer: questions
+       should look dynamic); said alone only when the card ends here. */
+    const ack = result.ack;
+    const sayAlone = () => {
+      if (ack) patchChat((c) => ({ ...c, messages: [...c.messages, { id: uid(), role: "pando", text: ack }] }));
+    };
+
+    if (!result.next) {
+      sayAlone();
+      finishCard(nextDraft);
+      return;
+    }
+    const index = s.steps.findIndex((x) => x.id === result.next?.id);
+    if (index < 0) {
+      const upcoming = nextUnanswered(s, fields, 0);
+      if (upcoming < 0) {
+        sayAlone();
+        finishCard(nextDraft);
+      } else pushPrompt({ ...nextDraft, step_index: upcoming }, ack);
+      return;
+    }
+    pushPrompt(
+      {
+        ...nextDraft,
+        step_index: index,
+        prompts: { ...(d.prompts ?? {}), [result.next.id]: result.next.prompt },
+      },
+      ack,
+    );
   }
 
   /**
@@ -559,7 +801,11 @@ export function ChatSeeding() {
     return foundingProgressLine({ completed, justCompleted, profileReady });
   }
 
-  function finishCard(kind: ShareKind, draftId: string, fields: Fields) {
+  function finishCard(d: ChatDraft) {
+    const { kind } = d;
+    /* The sub-category rides in the card's fields, where the save route and
+       `submissions.fields` already look for everything the parent answered. */
+    const fields: Fields = d.subcategory ? { ...d.fields, subcategory: d.subcategory } : d.fields;
     /**
      * The standing answer is the **default**, never the decision (10 Sep).
      *
@@ -579,7 +825,7 @@ export function ChatSeeding() {
      * offered on it.
      */
     const submission: Submission = {
-      ...buildSubmission({ id: draftId, kind, fields, step_index: 0 }),
+      ...buildSubmission({ id: d.id, kind, fields, step_index: 0 }),
       /* A caregiver card mints its invite token here, before any round trip,
          so the message below can carry it at once (drizzle/0049). */
       ...(kind === "caregiver"
@@ -587,27 +833,16 @@ export function ChatSeeding() {
         : { show_name: session?.answers.attribution === "first_name" }),
     };
 
-    /* A card with a thin answer is asked about it before it is sent, and the
-       progress line waits for what the parent says: it is judged on the card as
-       it will be saved, not on the one they are about to improve. */
-    const ask = confirmBackFor(submission);
-    const progress = ask ? null : progressLine(submission, chat?.submissions ?? []);
+    /* Follow-ups were asked as the card went (9 Oct), so it is finished and
+       sent as it is — the end-of-card confirm-back is gone. */
+    const progress = progressLine(submission, chat?.submissions ?? []);
 
-    /**
-     * ⚠ **With a follow-up pending, the card and the thanks wait for it** (8 Oct,
-     * the developer, on a screenshot). The recap used to land first — with
-     * *"Received. Not in the network yet"* under it — then *"Got it, thank you.
-     * Anything else you'd like to share?"*, and only then the follow-up: three
-     * messages saying the card was done, above a question about it, while
-     * nothing had been sent. `answerConfirmBack` posts all three once the
-     * parent has answered or skipped, which is when they become true.
-     */
     patchChat((c) => ({
       ...c,
       mode: "menu",
       draft: null,
       submissions: [...c.submissions, submission],
-      messages: ask ? c.messages : [
+      messages: [
         ...c.messages,
         { id: uid(), role: "pando", card: submission },
         {
@@ -637,129 +872,7 @@ export function ChatSeeding() {
       ],
     }));
 
-    /**
-     * Estimate 1.8's confirm-back, asked **before** the card is sent.
-     *
-     * Order matters: asking after the save would mean saving a thin card and then
-     * patching it, so the admin queue would briefly hold a version the parent had
-     * already improved. Asked here, the card is written once, with whatever they
-     * added.
-     *
-     * A card that triggers one is not persisted yet — `answerConfirmBack` and
-     * `skipConfirmBack` are the only two ways out, and both end in `persist`.
-     */
-    if (ask) {
-      patchChat((c) => ({
-        ...c,
-        confirm_back: {
-          submission_id: submission.id,
-          field: ask.field,
-          question: ask.question,
-        },
-        messages: [
-          ...c.messages,
-          { id: uid(), role: "pando" as const, text: ask.question },
-        ],
-      }));
-      track("seed_confirm_back_shown", {
-        kind: submission.kind,
-        field: ask.field,
-      });
-      return;
-    }
-
     void persist(submission);
-  }
-
-  /**
-   * They said more. Merge it into the field and send the card.
-   *
-   * Appended rather than replacing: what they wrote first was still their answer,
-   * and a follow-up usually adds to it ("good" + "the teacher is why") rather than
-   * correcting it. `__confirm_back_asked` is what stops it ever being asked twice
-   * for this card — and it is stripped before the card is sent, because it is a
-   * fact about the conversation and not about the recommendation.
-   */
-  function answerConfirmBack(text: string) {
-    const pending = chat?.confirm_back;
-    if (!pending) return;
-    const addition = text.trim();
-
-    /**
-     * ⚠⚠ **Built here, before `patchChat`, never inside its updater** (9 Oct,
-     * the developer: a doctor card "Test" never reached the admin). It used to
-     * be assigned inside the updater and read after `patchChat` returned — but
-     * React runs a state updater when it chooses, often at the next render, so
-     * `updated` was still undefined at the `persist` line and the card was
-     * never sent. It stayed on the phone, unsent and showing no error, until
-     * the chat next opened (the held-card send, 8 Oct, is what rescued the
-     * earlier ones). `chat` is this render's state, which is what the parent
-     * is answering.
-     */
-    const original = chat?.submissions.find((sub) => sub.id === pending.submission_id);
-    let updated: Submission | undefined;
-    if (original) {
-      const existing = String(
-        (original.fields as Record<string, unknown>)[pending.field] ?? "",
-      ).trim();
-      const merged =
-        addition === ""
-          ? existing
-          : existing === ""
-            ? addition
-            : `${existing} — ${addition}`;
-      updated = {
-        ...original,
-        fields: {
-          ...original.fields,
-          [pending.field]: merged,
-          /* A string, not a boolean: `FieldValue` is what a card field may
-             hold, and widening it for one internal marker would let every
-             other field hold a boolean too. Stripped before the card is sent
-             — see `persist`. */
-          __confirm_back_asked: "yes",
-        },
-      };
-    }
-
-    patchChat((c) => {
-      const submissions = updated
-        ? c.submissions.map((sub) => (sub.id === updated.id ? updated : sub))
-        : c.submissions;
-      const progress = updated ? progressLine(updated, submissions) : null;
-      return {
-        ...c,
-        submissions,
-        confirm_back: null,
-        messages: [
-          ...c.messages,
-          ...(addition
-            ? [{ id: uid(), role: "parent" as const, text: addition }]
-            : []),
-          /* The recap, now that it says what will be sent — the first time it
-             is shown for this card (8 Oct). */
-          ...(updated ? [{ id: uid(), role: "pando" as const, card: updated }] : []),
-          /* The thanks it was waiting to give. */
-          ...(updated ? [{ id: uid(), role: "pando" as const, text: thanksLine(updated.kind) }] : []),
-          /* And the progress line the card was waiting to give (5 Oct). */
-          ...(progress ? [{ id: uid(), role: "pando" as const, text: progress }] : []),
-        ],
-      };
-    });
-
-    track("seed_confirm_back_answered", {
-      field: pending.field,
-      added: addition.length > 0,
-    });
-    if (updated) void persist(updated);
-  }
-
-  /** They would rather not. The card goes as it is — skipping is an answer. */
-  function skipConfirmBack() {
-    const pending = chat?.confirm_back;
-    if (!pending) return;
-    track("seed_confirm_back_answered", { field: pending.field, added: false });
-    answerConfirmBack("");
   }
 
   /**
@@ -833,16 +946,12 @@ export function ChatSeeding() {
           ...(submission.invite_token
             ? { invite_token: submission.invite_token }
             : {}),
-          /* `__confirm_back_asked` is a fact about the conversation, not about
-             the recommendation, and `/api/seed/save` would have no field to put
-             it in. Stripped here rather than never stored, because it has to
-             survive a reload — a parent who refreshes mid-card must not be asked
-             the same follow-up again. */
-          fields: Object.fromEntries(
-            Object.entries(submission.fields as Record<string, unknown>).filter(
-              ([key]) => !key.startsWith("__"),
-            ),
-          ),
+          /* The `__fu_*` follow-up markers are facts about the conversation,
+             not about the recommendation, and `/api/seed/save` would have no
+             field to put them in. Stripped here rather than never stored,
+             because they have to survive a reload — a parent who refreshes
+             mid-card must not be asked the same follow-up again. */
+          fields: withoutMarkers(submission.fields),
           created_at: submission.created_at,
         },
       });
@@ -906,17 +1015,34 @@ export function ChatSeeding() {
     if (!lastParent?.step_id) return;
 
     const cutAt = chat.messages.findIndex((m) => m.id === lastParent.id);
-    const stepIndex = script.steps.findIndex((s) => s.id === lastParent.step_id);
+    /* Undoing one of the context questions undoes the classification too: the
+       card goes back to its button's script and is classified again (9 Oct). */
+    const general = scripts[draft.kind];
+    const contextEnd = general.steps.findIndex((s) => s.classifyAfter);
+    const generalIndex = general.steps.findIndex((s) => s.id === lastParent.step_id);
+    const backToGeneral = contextEnd >= 0 && generalIndex >= 0 && generalIndex <= contextEnd;
+    const target = backToGeneral ? general : script;
+    const stepIndex = target.steps.findIndex((s) => s.id === lastParent.step_id);
     if (cutAt < 0 || stepIndex < 0) return;
 
     const fields: Fields = { ...draft.fields };
     delete fields[lastParent.step_id];
+    delete fields[followUpMark(lastParent.step_id)];
+    if (backToGeneral && draft.kind === "tip") delete fields.tip;
 
     patchChat((c) => ({
       ...c,
       // The prompt for that step sits just above, so it stays on screen.
       messages: c.messages.slice(0, cutAt),
-      draft: { ...draft, fields, step_index: stepIndex },
+      draft: {
+        ...draft,
+        fields,
+        step_index: stepIndex,
+        followup: null,
+        ...(backToGeneral
+          ? { subcategory: undefined, prompts: undefined, followups: undefined, assist: undefined }
+          : {}),
+      },
     }));
     track("seed_card_answer_undone", { kind: draft.kind, step: lastParent.step_id });
   }
@@ -1097,7 +1223,7 @@ export function ChatSeeding() {
               <CardRecap
                 key={message.id}
                 submission={message.card}
-                script={scripts[message.card.kind]}
+                script={scriptOf(message.card)}
                 held={holdsUntilVerified(session)}
                 onRetry={
                   message.card.error
@@ -1157,11 +1283,11 @@ export function ChatSeeding() {
       <ScreenDock>
         {typing ? (
           <div className="min-h-[60px]" />
-        ) : chat.confirm_back ? (
+        ) : chat.mode === "card" && draft?.followup ? (
           /**
-           * The confirm-back turn. A plain text field and two ways out, because
-           * this is a *request* rather than a question the flow depends on — the
-           * card is already complete and will be sent either way.
+           * A follow-up turn (9 Oct). A plain text field and two ways out,
+           * because it is a *request* rather than a question the card depends
+           * on — the answer it follows up is already recorded.
            *
            * "It's fine as it is" is deliberately as easy to reach as the input.
            * A follow-up a parent cannot decline stops being a follow-up and
@@ -1169,14 +1295,16 @@ export function ChatSeeding() {
            * tap-first flow promised them.
            */
           <ConfirmBackWidget
-            key={chat.confirm_back.submission_id + chat.confirm_back.field}
-            onAnswer={answerConfirmBack}
-            onSkip={skipConfirmBack}
+            key={draft.id + draft.followup.step_id}
+            question={draft.followup.question}
+            onAnswer={answerFollowUp}
+            onSkip={() => answerFollowUp("")}
           />
         ) : chat.mode === "card" && draft && script && step ? (
           <StepWidget
             key={`${draft.id}-${step.id}-${draft.editing ? "edit" : "ask"}`}
-            step={step}
+            /* The dock repeats the question — in the words the transcript used. */
+            step={draft.editing ? step : { ...step, prompt: promptFor(step, draft.prompts, draft.fields) }}
             script={script}
             fields={draft.fields}
             stepIndex={draft.step_index}

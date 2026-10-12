@@ -501,6 +501,8 @@ export interface ContributionRow {
     provider_checked_at: string | null;
     /** The page the check matched on. */
     provider_check_url: string | null;
+    /** The client sub-category the chat classified it into (9 Oct); null = general. */
+    subcategory: string | null;
   };
   /** R2 — decides the label, and whether this can ever count toward Founding. */
   firsthand: boolean;
@@ -532,6 +534,17 @@ export interface ContributionRow {
   /** Doctor cards (8 Oct): what the family saw them for, and how easy appointments are. */
   visit_reason: string | null;
   appointment_ease: string | null;
+  /**
+   * What this card was asked as — its own capture's sub-category (9 Oct). The
+   * record's (`share.subcategory`) is what search files it under; the two can
+   * differ when two parents' cards land on one record.
+   */
+  subcategory: string | null;
+  /** The sub-categories’ unified columns (9 Oct, `drizzle/0056`). */
+  used_for: string | null;
+  timing_note: string | null;
+  detail_note: string | null;
+  amenities: string[];
   status: ReviewStatus;
   /** 0–1, from the review pass. Null until it has run, and after an edit. */
   confidence: number | null;

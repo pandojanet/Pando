@@ -1,4 +1,7 @@
 import type { Option } from "../types";
+import type { Subcategory } from "./subcategories";
+
+export type { Subcategory } from "./subcategories";
 
 /**
  * Types for the chat-seeding interface (estimate 1.4).
@@ -75,10 +78,36 @@ export interface Step {
    * travels with the payload without a second channel.
    */
   holdIf?: (value: FieldValue) => string | null;
+  /**
+   * The last of the button's context questions (9 Oct): once it is answered the
+   * chat asks `/api/seed/assist` which sub-category this is, and carries on in
+   * that sub-category's script — or in this one when the answer is "unsure".
+   */
+  classifyAfter?: boolean;
+  /**
+   * Asked once, straight after this step, when the answer is empty or too thin
+   * (9 Oct, the developer: *"required and descriptive questions"*). `ask` is the
+   * canonical wording; the model may rephrase it. See `follow-up.ts`.
+   */
+  followUp?: { ask: string; on: "empty" | "empty_or_thin" };
+  /**
+   * The wording when the card is a friend's experience (9 Oct, the walk: "How
+   * old was your child when you went?" to a parent who never went). Fixed, not
+   * the model's — a question with buttons is never reworded.
+   */
+  friendPrompt?: string;
+  /**
+   * The wording once the card has a name, with `{thing}` where it goes (12 Oct:
+   * "In a line or two, what is Green & Bisque Clayhouse?"). Filled by the
+   * script, not the model — the context question comes before the first call.
+   */
+  namedPrompt?: string;
 }
 
 export interface Script {
   kind: ShareKind;
+  /** Set on a sub-category's script; absent on a button's general one. */
+  subcategory?: Subcategory;
   /** Menu label. */
   label: string;
   /** Menu one-liner. */
@@ -154,6 +183,24 @@ export interface ChatDraft {
    * menu instead of walking the rest of the script again.
    */
   editing?: { submission_id: string; step_id: string };
+  /**
+   * The sub-category the classifier chose (9 Oct). Null = asked as the general
+   * category; absent = not classified yet.
+   */
+  subcategory?: Subcategory | null;
+  /** The model's wording for the steps still to come, by step id. */
+  prompts?: Record<string, string>;
+  /** The model's wording for each step's follow-up, by step id. */
+  followups?: Record<string, string>;
+  /** The parent was addressed by name on this card — once is enough (12 Oct). */
+  named?: boolean;
+  /** "pending" while `/api/seed/assist` is answering; "done" once it has. */
+  assist?: "pending" | "done";
+  /**
+   * A follow-up being asked about `step_id`, with the answer it follows up —
+   * kept so an undo can put it back.
+   */
+  followup?: { step_id: string; question: string; before: FieldValue } | null;
 }
 
 export interface ChatState {
@@ -162,18 +209,10 @@ export interface ChatState {
   submissions: Submission[];
   /** "menu" between cards, "card" mid-card, "closed" once they're done. */
   mode: "menu" | "card" | "closed";
-  /**
-   * Estimate 1.8's confirm-back, when one is being asked.
-   *
-   * Its own state rather than a script step: the trigger is a property of the
-   * *finished* card, and a step would have to exist in every script and be
-   * skipped in most of them. The card is not persisted while this is set — the
-   * whole point is to save it once, with the fuller answer, rather than to save
-   * a thin one and patch it.
+  /*
+   * `confirm_back` (estimate 1.8's end-of-card follow-up) was removed on 9 Oct:
+   * follow-ups are asked straight after each step now (`ChatDraft.followup`). A
+   * session saved with one pending is read without it, and the held card is
+   * sent by the held-card pass on the next open.
    */
-  confirm_back?: {
-    submission_id: string;
-    field: string;
-    question: string;
-  } | null;
 }

@@ -152,7 +152,9 @@ export const CARD_KIND: Record<string, string> = {
   caregiver: "Caregiver",
   place: "Place",
   tip: "Tip",
-  doctor: "Doctor or medical provider",
+  /* 9 Oct: the button became Services (doctors, specialists, party vendors);
+     the sub-category says which (`SUBCATEGORY_LABEL`). */
+  doctor: "Services",
 };
 
 /**

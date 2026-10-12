@@ -752,6 +752,15 @@ export const shares = pgTable(
     providerCheckUrl: text("provider_check_url"),
     /** The claim a running check holds, so one doctor is never searched twice at once. */
     providerCheckStartedAt: timestamp("provider_check_started_at", { withTimezone: true }),
+    /**
+     * The client's sub-category (9 Oct, `drizzle/0056`): which of the
+     * button's sub-categories the chat classified the card into — activities,
+     * classes, camps · places, restaurants, schools · doctors, specialists,
+     * parties · tips, products (`lib/seed-chat/subcategories.ts`). Null = asked
+     * as the general category, or saved before 9 Oct. Text + CHECK, not an enum:
+     * it is a taxonomy, and the client adds to it.
+     */
+    subcategory: text("subcategory"),
     status: reviewStatus("status").notNull().default("pending_review"),
     provenance: provenance("provenance").notNull().default("parent_submitted"),
     confidence: numeric("confidence", { precision: 3, scale: 2 }),
@@ -798,6 +807,10 @@ export const shares = pgTable(
     check(
       "shares_provider_check_check",
       sql`${t.providerCheck} is null or ${t.providerCheck} in ('license','npi','web','not_found')`,
+    ),
+    check(
+      "shares_subcategory_check",
+      sql`${t.subcategory} is null or ${t.subcategory} in ('activities','classes','camps','places','restaurants','schools','doctors','specialists','parties','tips','products')`,
     ),
     index("shares_market_idx")
       .on(t.marketId, t.kind, t.status)
@@ -872,6 +885,22 @@ export const shareContributions = pgTable(
      */
     visitReason: text("visit_reason"),
     appointmentEase: text("appointment_ease"),
+    /**
+     * The sub-categories' own questions (9 Oct, `drizzle/0056`), each on the
+     * unified column that means it, whichever card asked:
+     *
+     *  - `used_for` — "What did you see or use them for?" (Services);
+     *  - `timing_note` — when or how long: a camp's hours, a restaurant's best
+     *    time with children;
+     *  - `detail_note` — the one extra question a sub-category asks: a
+     *    restaurant "good for the adults too", a product "what you'd buy
+     *    instead", a party vendor's setup; the admin labels it by sub-category;
+     *  - `amenities` — a restaurant's practical chips (`RESTAURANT_AMENITIES`).
+     */
+    usedFor: text("used_for"),
+    timingNote: text("timing_note"),
+    detailNote: text("detail_note"),
+    amenities: text("amenities").array(),
 
     /**
      * May this one recommendation carry the contributor's first name?

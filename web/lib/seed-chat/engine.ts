@@ -8,6 +8,7 @@ import type {
   Script,
   ShareKind,
   Step,
+  Subcategory,
   Submission,
 } from "./types";
 
@@ -35,6 +36,54 @@ export function isEmptyValue(value: FieldValue | undefined): boolean {
 /** Steps whose `when` guard passes for the answers so far. */
 export function visibleSteps(script: Script, fields: Fields): Step[] {
   return script.steps.filter((s) => !s.when || s.when(fields));
+}
+
+/**
+ * The script a draft or a saved card is asked from (9 Oct): its sub-category's
+ * when the classifier chose one, otherwise its button's general script.
+ */
+export function scriptFor(
+  scripts: Record<ShareKind, Script>,
+  subScripts: Partial<Record<Subcategory, Script>>,
+  card: { kind: ShareKind; subcategory?: Subcategory | null; fields?: Fields },
+): Script {
+  const sub =
+    card.subcategory ??
+    (typeof card.fields?.subcategory === "string" ? (card.fields.subcategory as Subcategory) : null);
+  const picked = sub ? subScripts[sub] : undefined;
+  return picked && picked.kind === card.kind ? picked : scripts[card.kind];
+}
+
+/** The script's own wording, in a friend's terms when the card is a friend's experience. */
+export function canonicalPrompt(step: Step, fields?: Fields): string {
+  if (fields?.firsthand === "secondhand" && step.friendPrompt) return step.friendPrompt;
+  /* A name that reads as one: a long one would bury the question, and a
+     person's ("what is Ms. Lee?", 12 Oct) is not a thing. */
+  const name = typeof fields?.name === "string" ? fields.name.trim() : "";
+  const person = /^(mr|mrs|ms|miss|mx|dr|coach|teacher)\b\.?/i.test(name);
+  if (step.namedPrompt && !person && name.length >= 2 && name.length <= 40) {
+    return step.namedPrompt.replace("{thing}", name);
+  }
+  return step.prompt;
+}
+
+/** What Pando says for a step: the model's wording when it gave one (9 Oct). */
+export function promptFor(step: Step, prompts?: Record<string, string>, fields?: Fields): string {
+  return prompts?.[step.id] ?? canonicalPrompt(step, fields);
+}
+
+/**
+ * The first step at or after `from` that should be asked **and is not
+ * answered yet** — used once, when a card moves into its sub-category's
+ * script, so the context questions already answered are never asked again.
+ */
+export function nextUnanswered(script: Script, fields: Fields, from: number): number {
+  for (let i = from; i < script.steps.length; i += 1) {
+    const step = script.steps[i];
+    if (step.id in fields) continue;
+    if (!step.when || step.when(fields)) return i;
+  }
+  return -1;
 }
 
 /** First index at or after `from` that should actually be asked. */
@@ -73,9 +122,13 @@ export function progressOf(
   fields: Fields,
   index: number,
 ): { current: number; total: number } {
-  void fields;
+  /* 9 Oct: the adaptive interview asks in any order and skips what the parent
+     already said, so "where we are" is how many are answered, not the step's
+     position — still only ever moving forward. */
+  void index;
+  const answered = script.steps.filter((s) => s.id in fields).length;
   return {
-    current: Math.min(index + 1, script.steps.length),
+    current: Math.min(answered + 1, script.steps.length),
     total: script.steps.length,
   };
 }

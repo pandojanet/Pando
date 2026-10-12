@@ -2,6 +2,7 @@
 
 import type { Option, ProfilePayload } from "./types";
 import type { GeocodedPlace } from "./geo";
+import type { TurnInput, TurnResult } from "./seed-chat/assist";
 
 /**
  * The browser only ever talks to our own route handlers. They do the work
@@ -261,6 +262,19 @@ export function updateDemand(payload: {
   } | null;
 }): Promise<{ ok: true; persisted: boolean; outcome?: string }> {
   return postJson("/api/seed/demand", payload);
+}
+
+/**
+ * One turn of the adaptive interview (9 Oct): the sub-category on the last
+ * context question, then a follow-up, closed answers already given, and the next
+ * question. Never throws — a failed request is the script's own order.
+ */
+export async function assistTurn(input: TurnInput): Promise<TurnResult> {
+  try {
+    return await postJson<TurnResult>("/api/seed/assist", input);
+  } catch {
+    return { configured: false, subcategory: null, followup: null, prefill: {}, next: null };
+  }
 }
 
 /** One finished capture card from the chat (estimate 1.4). */

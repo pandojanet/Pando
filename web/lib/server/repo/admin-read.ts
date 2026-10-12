@@ -30,6 +30,7 @@ import type {
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE, type CaregiverClaimRow, type CaregiverRow } from "@/lib/admin/types";
 import type { ProviderCheck } from "@/lib/provider-check";
+import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import {
   FOUNDING_MIN_APPROVED,
   FOUNDING_MIN_PROFILE_DEPTH,
@@ -764,11 +765,14 @@ async function contributions(db: Db, personId: string | null = null) {
              pl.freshness_state, pl.last_confirmed_at, pl.validated_count,
              pl.answer_ready,
              pl.provider_check, pl.provider_checked_at, pl.provider_check_url,
+             pl.subcategory,
+             sub.fields->>'subcategory' as card_subcategory,
              pl.id as share_id, pl.kind, pl.provenance,
              p.id as contributor_id, p.first_name, p.last_name
       from share_contributions pc
       join shares pl on pl.id = pc.share_id
       left join people p on p.id = pc.person_id
+      left join submissions sub on sub.id = pc.submission_id
       where ${personId}::uuid is null or pc.person_id = ${personId}::uuid
       -- Waiting ones first: the sidebar counts every pending row, and a plain
       -- newest-first cut at 500 would drop the oldest of them once enough
@@ -794,6 +798,7 @@ async function contributions(db: Db, personId: string | null = null) {
       provider_check: (r.provider_check ?? null) as ProviderCheck | null,
       provider_checked_at: (r.provider_checked_at as string | null) ?? null,
       provider_check_url: (r.provider_check_url as string | null) ?? null,
+      subcategory: (r.subcategory as string | null) ?? null,
     },
     firsthand: r.firsthand,
     child_age_at_time: r.child_age_at_time ?? [],
@@ -813,6 +818,15 @@ async function contributions(db: Db, personId: string | null = null) {
     extra_note: r.extra_note,
     visit_reason: (r.visit_reason as string | null) ?? null,
     appointment_ease: (r.appointment_ease as string | null) ?? null,
+    /* What this card was asked as (9 Oct) — read from its own capture, because
+       a record two parents share keeps one sub-category and the cards on it
+       may have been asked differently (the walk: a pottery class on a record a
+       first card had filed as an activity). Checked against the card's kind. */
+    subcategory: subcategoryFor(r.kind as string, r.card_subcategory),
+    used_for: (r.used_for as string | null) ?? null,
+    timing_note: (r.timing_note as string | null) ?? null,
+    detail_note: (r.detail_note as string | null) ?? null,
+    amenities: (r.amenities as string[] | null) ?? [],
     status: r.status,
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,

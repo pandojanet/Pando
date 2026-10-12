@@ -11,14 +11,19 @@ import {
   sentence,
 } from "@/lib/admin/labels";
 import { countsTowardFounding, qualityOf } from "@/lib/admin/quality";
-import { missingLine } from "@/lib/contribution-quality";
+import { choosesWhyByRecommendation, missingLine } from "@/lib/contribution-quality";
+import { SUBCATEGORY_LABEL, isSubcategory } from "@/lib/seed-chat/subcategories";
 import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
 import {
   APPOINTMENT_EASE,
   DOCTOR_LAST_SEEN,
   DOCTOR_PRICE_BAND,
+  EVENT_UNIT,
+  ITEM_UNIT,
   PRICE_BAND,
   PRICE_UNIT,
+  RESTAURANT_AMENITIES,
+  SCHOOL_TUITION_BAND,
   VISIT_REASON,
   VISIT_UNIT,
   WORTH_IT,
@@ -38,11 +43,31 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
   const quality = qualityOf(row);
   /* A doctor card (8 Oct) asks its own questions; the shared facts read in its words. */
   const isDoctor = row.kind === "doctor";
+  /* What this card was asked as; the record it sits on may be filed otherwise. */
+  const sub = isSubcategory(row.subcategory)
+    ? row.subcategory
+    : isSubcategory(row.share.subcategory)
+      ? row.share.subcategory
+      : null;
+  const filed = isSubcategory(row.share.subcategory) ? row.share.subcategory : null;
+  /* 9 Oct: the Services button also carries party vendors, which no medical
+     registry lists — the check is not run for them, so its fact is not shown. */
+  const checksProvider = isDoctor && sub !== "parties";
+  /* "Seen for" is the doctor's own question; a specialist or vendor has "used for". */
+  const isDoctorProper = isDoctor && (sub === null || sub === "doctors");
   const notRecommended = row.recommendation === "probably_not" || row.recommendation === "no";
+  const whyIsDidnt = notRecommended && choosesWhyByRecommendation(row.kind, sub);
   return (
     <>
       <FactGrid>
-        {isDoctor && (
+        {/* The client's sub-category (9 Oct) — what the chat asked it as. */}
+        <Fact label="Asked as">
+          {sub ? SUBCATEGORY_LABEL[sub] : <span className="text-muted">General — not classified</span>}
+          {filed && filed !== sub && (
+            <span className="mt-1 block text-muted">The record is filed as {SUBCATEGORY_LABEL[filed]}</span>
+          )}
+        </Fact>
+        {checksProvider && (
           <Fact label="Provider check" hint={row.share.provider_checked_at ? `Checked ${when(row.share.provider_checked_at)}` : undefined}>
             <ProviderCheckBadge row={row} />
             {row.share.provider_check_url && hostOf(row.share.provider_check_url) && (
@@ -69,12 +94,12 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             {row.last_there ? optionLabel(DOCTOR_LAST_SEEN, row.last_there) : null}
           </Fact>
         )}
-        {isDoctor && (
+        {isDoctorProper && (
           <Fact label="Seen for">
             {row.visit_reason ? optionLabel(VISIT_REASON, row.visit_reason) : null}
           </Fact>
         )}
-        {isDoctor && (
+        {isDoctor && sub !== "parties" && (
           <Fact label="Appointments">
             {row.appointment_ease ? optionLabel(APPOINTMENT_EASE, row.appointment_ease) : null}
           </Fact>
@@ -105,11 +130,11 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         >
           {row.price_band ? (
             <>
-              {optionLabel(isDoctor ? DOCTOR_PRICE_BAND : PRICE_BAND, row.price_band)}
+              {optionLabel(isDoctor ? DOCTOR_PRICE_BAND : sub === "schools" ? [...SCHOOL_TUITION_BAND, ...PRICE_BAND] : PRICE_BAND, row.price_band)}
               {row.price_unit && (
                 <span className="text-muted">
                   {" / "}
-                  {optionLabel([...PRICE_UNIT, VISIT_UNIT], row.price_unit).toLowerCase()}
+                  {optionLabel([...PRICE_UNIT, VISIT_UNIT, EVENT_UNIT, ITEM_UNIT], row.price_unit).toLowerCase()}
                 </span>
               )}
             </>
@@ -172,9 +197,17 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
           />
         </Fact>
         {row.share.venue && <Fact label="Venue">{row.share.venue}</Fact>}
+        {row.amenities.length > 0 && (
+          <Fact label="Practical">
+            {row.amenities.map((a) => optionLabel(RESTAURANT_AMENITIES, a)).join(" · ")}
+          </Fact>
+        )}
       </FactGrid>
 
       {(row.what_makes_it_great ||
+        row.used_for ||
+        row.timing_note ||
+        row.detail_note ||
         row.tip_text ||
         row.caveat ||
         row.caveat_answered ||
@@ -184,10 +217,17 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
         (row.status === "needs_detail" && row.needs_detail_note)) && (
         <RecordNotes>
           {row.what_makes_it_great && (
-            <Quote label={isDoctor && notRecommended ? "What didn't work" : "What they liked"}>
+            <Quote label={whyIsDidnt ? "What didn't work" : "What they liked"}>
               {row.what_makes_it_great}
             </Quote>
           )}
+          {/* The sub-categories' own questions (9 Oct) — parents' sentences,
+              so `Quote` as everywhere else here (invariant 8). */}
+          {row.used_for && <Quote label="Used them for">{row.used_for}</Quote>}
+          {row.timing_note && (
+            <Quote label={sub === "restaurants" ? "Best time with kids" : "Hours"}>{row.timing_note}</Quote>
+          )}
+          {row.detail_note && <Quote label={detailLabel(sub)}>{row.detail_note}</Quote>}
           {row.tip_text && <Quote label="Their tip">{row.tip_text}</Quote>}
           {/* ⚠ `Quote` rather than a `Field`: this is the parent's
               own sentence, and invariant 8 turns on a reviewer
@@ -227,6 +267,14 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
       )}
     </>
   );
+}
+
+/** What `detail_note` is, by the sub-category that asked it (9 Oct). */
+function detailLabel(sub: string | null): string {
+  if (sub === "restaurants") return "For the adults";
+  if (sub === "products") return "Would buy instead";
+  if (sub === "parties") return "Setup and logistics";
+  return "Detail";
 }
 
 /** An http(s) URL's host, or null — the only links the admin renders. */

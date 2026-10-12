@@ -6,8 +6,19 @@ import { Select } from "@/components/admin/kit";
 import type { ContributionRow } from "@/lib/admin/types";
 import type { CleanPatch } from "@/lib/admin/contribution-edit";
 import {
+  SUBCATEGORIES_BY_KIND,
+  SUBCATEGORY_LABEL,
+  isClassifiedKind,
+  isSubcategory,
+} from "@/lib/seed-chat/subcategories";
+import {
   APPOINTMENT_EASE,
+  CAMP_LAST,
+  CLASS_STILL,
   DOCTOR_LAST_SEEN,
+  EVENT_UNIT,
+  SCHOOL_STILL,
+  SPECIALIST_STILL,
   DOCTOR_PRICE_BAND,
   HOW_MUCH,
   LAST_THERE,
@@ -78,6 +89,10 @@ export function ContributionEditor({
     follow_up: row.follow_up_ok,
     visit_reason: row.visit_reason ?? "",
     appointment_ease: row.appointment_ease ?? "",
+    subcategory: row.share.subcategory ?? "",
+    used_for: row.used_for ?? "",
+    timing_note: row.timing_note ?? "",
+    detail_note: row.detail_note ?? "",
   };
   const [v, setV] = useState(start);
   const set = <K extends keyof typeof start>(key: K, value: (typeof start)[K]) =>
@@ -90,6 +105,24 @@ export function ContributionEditor({
   const isTip = row.kind === "tip";
   /* A doctor card (8 Oct): its own questions, and a price that is always per visit. */
   const isDoctor = row.kind === "doctor";
+  /* 9 Oct: the sub-category as it stands in the form, so its own lists show. */
+  const sub = isSubcategory(v.subcategory) ? v.subcategory : null;
+  const lastThereOptions =
+    sub === "camps"
+      ? CAMP_LAST
+      : sub === "classes"
+        ? CLASS_STILL
+        : sub === "schools"
+          ? SCHOOL_STILL
+          : sub === "specialists"
+            ? SPECIALIST_STILL
+            : isDoctor
+              ? DOCTOR_LAST_SEEN
+              : isPlace
+                ? PLACE_LAST_GONE
+                : LAST_THERE;
+  const asksTiming = sub === "camps" || sub === "restaurants";
+  const asksDetail = sub === "restaurants" || sub === "products" || sub === "parties";
   const ages = parseAges(v.ages);
   const paid = v.price_band !== "" && v.price_band !== "free" && v.price_band !== "prefer_not_to_say";
   const problem =
@@ -105,6 +138,10 @@ export function ContributionEditor({
   if (v.nothingToFlag !== start.nothingToFlag && v.caveat === "") patch.caveat_answered = v.nothingToFlag;
   if (isTip && v.tip !== start.tip) patch.tip_text = v.tip;
   if (v.extra !== start.extra) patch.extra_note = v.extra;
+  if (v.subcategory !== start.subcategory) patch.subcategory = v.subcategory || null;
+  if (v.used_for !== start.used_for) patch.used_for = v.used_for;
+  if (v.timing_note !== start.timing_note) patch.timing_note = v.timing_note;
+  if (v.detail_note !== start.detail_note) patch.detail_note = v.detail_note;
   if (isActivity) {
     if (v.who_for !== start.who_for) patch.who_for = v.who_for;
     if (v.who_not_for !== start.who_not_for) patch.who_not_for = v.who_not_for;
@@ -130,7 +167,8 @@ export function ContributionEditor({
     if (v.appointment_ease !== start.appointment_ease) patch.appointment_ease = v.appointment_ease;
     if (v.price_band !== start.price_band) {
       patch.price_band = v.price_band;
-      patch.price_unit = paid ? VISIT_UNIT.id : "";
+      /* A party vendor is per event (9 Oct); everything else here per visit. */
+      patch.price_unit = paid ? (sub === "parties" ? EVENT_UNIT.id : VISIT_UNIT.id) : "";
     }
   }
   if (!isTip && ages !== null && v.ages !== start.ages) patch.child_age_at_time = ages;
@@ -139,6 +177,21 @@ export function ContributionEditor({
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
+        {/* Correcting the classifier (9 Oct): only this button's sub-categories. */}
+        {isClassifiedKind(row.kind) && (
+          <Field label="Asked as">
+            <Select
+              label="Asked as"
+              value={v.subcategory}
+              onChange={(x) => set("subcategory", x)}
+              options={[
+                { id: "", label: "General — not classified" },
+                ...SUBCATEGORIES_BY_KIND[row.kind].map((s) => ({ id: s, label: SUBCATEGORY_LABEL[s] })),
+              ]}
+              className="w-full"
+            />
+          </Field>
+        )}
         {!isTip && (
           <Field label="Child's age at the time">
             <input
@@ -155,7 +208,7 @@ export function ContributionEditor({
               label="Still seeing them"
               value={v.last_there}
               onChange={(x) => set("last_there", x)}
-              options={withNone(DOCTOR_LAST_SEEN)}
+              options={withNone(lastThereOptions)}
               className="w-full"
             />
           </Field>
@@ -177,7 +230,7 @@ export function ContributionEditor({
               label="Last there"
               value={v.last_there}
               onChange={(x) => set("last_there", x)}
-              options={withNone(LAST_THERE)}
+              options={withNone(lastThereOptions)}
               className="w-full"
             />
           </Field>
@@ -188,7 +241,7 @@ export function ContributionEditor({
               label="Last went"
               value={v.last_there}
               onChange={(x) => set("last_there", x)}
-              options={withNone(PLACE_LAST_GONE)}
+              options={withNone(lastThereOptions)}
               className="w-full"
             />
           </Field>
@@ -341,6 +394,41 @@ export function ContributionEditor({
               onChange={(x) => set("worth_it", x)}
               options={withNone(WORTH_IT)}
               className="w-full"
+            />
+          </Field>
+        )}
+        {isDoctor && (
+          <Field label="Used them for">
+            <input
+              className={inputClass}
+              value={v.used_for}
+              onChange={(e) => set("used_for", e.target.value)}
+            />
+          </Field>
+        )}
+        {asksTiming && (
+          <Field label={sub === "restaurants" ? "Best time with kids" : "Hours"}>
+            <input
+              className={inputClass}
+              value={v.timing_note}
+              onChange={(e) => set("timing_note", e.target.value)}
+            />
+          </Field>
+        )}
+        {asksDetail && (
+          <Field
+            label={
+              sub === "restaurants"
+                ? "For the adults"
+                : sub === "products"
+                  ? "Would buy instead"
+                  : "Setup and logistics"
+            }
+          >
+            <input
+              className={inputClass}
+              value={v.detail_note}
+              onChange={(e) => set("detail_note", e.target.value)}
             />
           </Field>
         )}

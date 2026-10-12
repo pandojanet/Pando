@@ -101,6 +101,7 @@ export type RateLimitName =
   | "verify_start"
   | "verify_check"
   | "seed_write"
+  | "seed_assist"
   | "market_read"
   | "geocode"
   | "caregiver_claim"
@@ -156,6 +157,20 @@ export const LIMITS: Record<RateLimitName, RateLimit> = {
     windowSeconds: 300,
     message:
       "That didn't go through — too many saves from here at once. Your answers are safe on this phone; try again in a moment.",
+  },
+
+  /**
+   * `/api/seed/assist` (9 Oct) — a model call per answer, on a public route,
+   * so it is billed per request the way a code send is.
+   * Refused means the chat carries on with the canonical questions, so a limit
+   * hit costs a parent nothing but the rewording.
+   */
+  seed_assist: {
+    /* Since the adaptive interview (9 Oct) a card is a call per answer — about
+       a dozen — so this is ~25 cards in ten minutes from one address. */
+    max: 300,
+    windowSeconds: 600,
+    message: "Too many requests from here just now.",
   },
 
   /**

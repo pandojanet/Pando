@@ -1069,8 +1069,12 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "no" }) === false &&
         byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "yes" }) === true);
 
-    /* 8 Oct — Doctors & Medical Providers, the client's list in her order. */
-    const docSteps = built.doctor.steps;
+    /* 8 Oct — Doctors & Medical Providers, the client's list in her order.
+       Since 9 Oct it is the Doctors sub-category's script: the Services button
+       asks its first two in words that fit any service (below), and a doctor
+       keeps hers for its recap and edits. */
+    const subScripts = (await import(`../lib/seed-chat/scripts.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/scripts.ts")).buildSubScripts("pasadena");
+    const docSteps = subScripts.doctors.steps;
     const docPrompt = (id: string) => byId(docSteps, id)?.prompt ?? "";
     ok("the doctor card asks her questions in her words, in her order",
       [
@@ -1089,6 +1093,13 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         (i === 0 || docSteps.findIndex((x) => x.id === id) > docSteps.findIndex((x) => x.id === all[i - 1][0]))));
     ok("its name field is typed, with 'Name' in it",
       byId(docSteps, "name")?.widget === "text" && byId(docSteps, "name")?.placeholder === "Name");
+    /* 9 Oct: the button is Services, and its context questions fit any of
+       doctors, specialists and party vendors. */
+    ok("the Services button asks who, whose experience, the age and what for — then classifies",
+      built.doctor.label === "Services" &&
+        built.doctor.steps.slice(0, 4).map((x) => x.id).join(",") === "name,used_for,firsthand,child_age" &&
+        byId(built.doctor.steps, "used_for")?.classifyAfter === true &&
+        byId(built.doctor.steps, "name")?.prompt === "Who or what service did you use?");
     ok("a friend's experience is offered in her words and stored as secondhand",
       byId(docSteps, "firsthand")?.options?.some(
         (o) => o.id === "secondhand" && o.label === "No, this is based on a friend's experience") === true);
@@ -1217,7 +1228,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     const placePrompt = (id: string) => byId(placeSteps, id)?.prompt ?? "";
     ok("the place card asks her questions in her words, in her order",
       placeSteps.map((x) => x.id).join(",") ===
-        "name,firsthand,child_age,freshness,recommendation,what_makes_it_great,caveat,best_for,location,extra_note" &&
+        "name,what_is_it,firsthand,child_age,freshness,recommendation,what_makes_it_great,caveat,best_for,location,extra_note" &&
         [
           ["name", "What's the place?"],
           ["firsthand", "Did you go there with your child?"],
@@ -1248,7 +1259,10 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       topicOptions.map((o) => o.label).join(" | ") ===
         "Schedules & timing | Costs & deals | Finding caregivers | Birthdays & parties | Rainy days | Eating out with kids | Being new here | Other");
     ok("a tip asks its three questions in her order",
-      built.tip.steps.slice(0, 4).map((x) => x.id).join(",") === "topic,tip,what_makes_it_great,best_for" &&
+      /* 9 Oct: the context question comes first; on a tip it is the tip itself
+         and the chat copies it into `tip`, so `tip` is not asked twice. */
+      built.tip.steps.slice(0, 5).map((x) => x.id).join(",") === "what_is_it,topic,tip,what_makes_it_great,best_for" &&
+        byId(built.tip.steps, "what_is_it")?.classifyAfter === true &&
         byId(built.tip.steps, "topic")?.prompt === "What's it about?" &&
         byId(built.tip.steps, "tip")?.prompt === "What should another parent do or know?" &&
         byId(built.tip.steps, "what_makes_it_great")?.prompt === "When is this useful, or why did it help you?" &&
@@ -3093,23 +3107,26 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     "a held card is sent when the chat opens on a session that can send it",
     /const heldSent = useRef\(false\)/.test(chat) &&
       /if \(holdsUntilVerified\(session\)\) return;\s*const unsent = chat\.submissions\.filter\(/.test(chat) &&
-      /!s\.persisted && !s\.error && s\.id !== chat\.confirm_back\?\.submission_id/.test(chat),
+      /\.filter\(\(s\) => !s\.persisted && !s\.error\)/.test(chat),
     "a confirmed session with an unsent card has no way out",
   );
-  /* 9 Oct: the card answered or skipped at the follow-up was built inside a
-     React state updater and read after it — undefined when React deferred the
-     updater, so the card was never sent. It is built from this render's chat. */
+  /* 9 Oct: the end-of-card confirm-back is gone. A follow-up is asked straight
+     after the answer it follows up (`followUpFor`, `test:followup`), so the
+     card is finished, shown and sent once, at the end — the two 8–9 Oct fixes
+     to the confirm-back's ordering and its unsent card went with it. */
   ok(
-    "the card a follow-up holds is built before the state update, so it is always sent",
-    /const original = chat\?\.submissions\.find\(\(sub\) => sub\.id === pending\.submission_id\);/.test(chat) &&
-      !/updated = \{\s*\.\.\.sub,/.test(chat),
-    "a card skipped at the follow-up never reached the server",
+    "a follow-up is asked straight after its answer, and the card is sent once at the end",
+    /function askFollowUp\(d: ChatDraft, last: Step, question: string\)/.test(chat) &&
+      /if \(askRuleFollowUp\(d, last\)\) return;/.test(chat) &&
+      !/confirmBackFor|answerConfirmBack|.confirm_back/.test(chat) &&
+      /void persist\(submission\);\s*\}/.test(chat),
+    "the confirm-back is back, or a card can be left unsent",
   );
   ok(
-    "a pending follow-up comes before the card and the thanks, not after them",
-    /messages: ask \? c\.messages : \[/.test(chat) &&
-      /text: thanksLine\(updated\.kind\)/.test(chat),
-    "the card read as received above a question about it",
+    "the context questions classify the card, and a reload mid-classification asks again",
+    /last\.classifyAfter === true/.test(chat) && /void takeTurn\(d, last\)/.test(chat) &&
+      /chat\.draft\?\.assist === "pending"/.test(chat),
+    "a card can be stranded on its last context question",
   );
 }
 

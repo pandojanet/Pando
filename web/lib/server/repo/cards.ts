@@ -11,7 +11,15 @@ import {
   isNothingToFlag,
 } from "@/lib/contribution-quality";
 import { tipTitle } from "@/lib/seed-chat/engine";
-import { APPOINTMENT_EASE, VISIT_REASON, VISIT_UNIT } from "@/lib/seed-chat/scripts";
+import {
+  APPOINTMENT_EASE,
+  EVENT_UNIT,
+  ITEM_UNIT,
+  RESTAURANT_AMENITIES,
+  VISIT_REASON,
+  VISIT_UNIT,
+} from "@/lib/seed-chat/scripts";
+import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import {
   caregiverNominations,
   caregivers,
@@ -166,7 +174,12 @@ async function writeShareCard(
   submissionId: string,
 ): Promise<string> {
   const f = input.fields;
-  const isTip = input.kind === "tip";
+  /* The client's sub-category (9 Oct): believed only when it belongs under the
+     button the card came from, so a forged one is simply not stored. */
+  const subcategory = subcategoryFor(input.kind, f.subcategory);
+  /* A product sits under the tip button but is a named thing, matched by name
+     like any other record; only a tip is its own advice. */
+  const isTip = input.kind === "tip" && subcategory !== "products";
   /**
    * ⚠ A tip is titled from its own words (`tipTitle`), never "Untitled" (4 Oct).
    * Every tip used to be called "Untitled", and the lookup below reuses a record
@@ -268,6 +281,7 @@ async function writeShareCard(
         /* The place card's step is `type` (step id = field key). */
         placeType: str(f.place_type ?? f.type),
         topic: str(f.topic),
+        subcategory,
         isTest: input.is_test,
       })
       .returning({ id: shares.id });
@@ -313,6 +327,16 @@ async function writeShareCard(
      it. The bands are a closed vocabulary (checked above) joined into a
      Postgres array literal, because drizzle expands a JS array into a record,
      which a `text[]` parameter refuses. */
+  /* A record first saved before 9 Oct, or by an unsure classifier, learns its
+     sub-category from the first card that has one — never overwritten after,
+     so an admin's correction stands. */
+  if (found && subcategory) {
+    await tx.execute(sql`
+      update shares set subcategory = ${subcategory}, updated_at = now()
+       where id = ${shareId}::uuid and subcategory is null
+    `);
+  }
+
   if (found && contributionBands.length > 0) {
     await tx.execute(sql`
       update shares
@@ -331,7 +355,18 @@ async function writeShareCard(
   const priceBand = str(f.price_band);
   /* A doctor is always paid per visit, so the card does not ask the unit
      (8 Oct) and the CHECK's unit is supplied here. */
-  const priceUnit = input.kind === "doctor" ? VISIT_UNIT.id : str(f.price_unit);
+  /* 9 Oct: a party vendor is per event and a product per item — neither card
+     asks the unit either. */
+  const priceUnit =
+    subcategory === "parties"
+      ? EVENT_UNIT.id
+      : input.kind === "doctor"
+        ? VISIT_UNIT.id
+        : subcategory === "products"
+          ? ITEM_UNIT.id
+          : subcategory === "schools" && /^tuition_/.test(String(f.price_band ?? ""))
+            ? "per_month"
+            : str(f.price_unit);
   const bandNeedsUnit =
     priceBand !== null && priceBand !== "free" && priceBand !== "prefer_not_to_say";
   const safeBand = bandNeedsUnit && priceUnit === null ? null : priceBand;
@@ -360,7 +395,7 @@ async function writeShareCard(
        which field happens to be filled (review, 8 Oct): a parent who answers
        Yes, then edits it to No from the recap, still holds the praise, and a
        first-filled-wins rule stored it under a No. */
-    whatMakesItGreat: choosesWhyByRecommendation(input.kind)
+    whatMakesItGreat: choosesWhyByRecommendation(input.kind, subcategory)
       ? str(doctorWhy(f))
       : str(f.what_makes_it_great ?? f.what_makes_special),
     caveat: caveatText(f.caveat),
@@ -384,6 +419,12 @@ async function writeShareCard(
     /* The doctor card's two (8 Oct, `drizzle/0054`); null on every other kind. */
     visitReason: isDoctor ? offered(VISIT_REASON, f.visit_reason) : null,
     appointmentEase: isDoctor ? offered(APPOINTMENT_EASE, f.appointment_ease) : null,
+    /* The sub-categories' unified columns (9 Oct, `drizzle/0056`). In `values`
+       like everything else here, so a re-saved card can clear them. */
+    usedFor: str(f.used_for),
+    timingNote: str(f.timing_note),
+    detailNote: str(f.detail_note),
+    amenities: strArray(f.amenities).filter((a) => RESTAURANT_AMENITIES.some((o) => o.id === a)),
     /**
      * The client's per-recommendation name toggle (10 Sep), `drizzle/0038`.
      *

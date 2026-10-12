@@ -15,9 +15,12 @@ import { TextAction } from "@/components/ui/TextAction";
  * is what stops it appearing in the recap or the "change my last answer" rewind.
  */
 export function ConfirmBackWidget({
+  question,
   onAnswer,
   onSkip,
 }: {
+  /** Repeated above the box, as the dock does for every step (9 Oct). */
+  question?: string;
   onAnswer: (text: string) => void;
   onSkip: () => void;
 }) {
@@ -40,6 +43,9 @@ export function ConfirmBackWidget({
 
   return (
     <div>
+      {question && (
+        <p className="mb-2.5 text-[15px] font-semibold leading-snug text-ink">{question}</p>
+      )}
       <Field
         id="confirm-back"
         label="Anything to add"

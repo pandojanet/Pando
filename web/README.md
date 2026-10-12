@@ -49,6 +49,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `POST /api/seed/save`    | Sanitizes, then writes one capture card — a caregiver's nomination and its restricted notes land together or not at all. |
 | `POST /api/seed/complete`| Records completion: follow-up consent + `pending_founding` status.           |
 | `POST /api/seed/demand`  | D1 edited after the completion (7 Oct): `{ demand: { question_text, category, may_save } \| null, is_test }`. Updates the parent's newest **open** demand signal in place (a handled one gets a new row), `null` withdraws it — the open row and the flags on it nobody has touched are deleted; a question an admin is already dealing with is never rewritten or deleted. The person comes from the verification cookie, never the body; 401 without one. |
+| `POST /api/seed/assist` | One turn of the adaptive interview, after each answer from the context question on: `{kind, classify, subcategory, fields, last_step, followed_up, child_ages, may_name}` → `{configured, subcategory, followup, prefill, next: {id, prompt}, ack}` (9 Oct; `may_name` 12 Oct). Texts may carry `{name}` — the chat fills in the parent's first name, which is never sent. Stores nothing; every failure is `configured: false` and the chat goes on in the script's order and words. Own rate bucket `seed_assist`. |
 | `POST /api/seed/registered` | Does this number already have a profile? A boolean and nothing else. ⚠ The one route that answers about somebody who has proved nothing — read its header and the 8 Sep Decisions row before touching it. |
 | `POST /api/seed/verify/start` | Texts a 6-digit code (needs the consent checkbox). `{sent:false, reason:"not_provisioned"}` until A2P approval. |
 | `POST /api/seed/verify/check` | Confirms the code. Until this succeeds, the three routes above answer 401 for any named parent. |
@@ -263,7 +264,8 @@ has the setup walkthrough.
 | `npm run check` | Row counts, extraction coverage, and the invariants the schema cannot enforce. |
 | `npm run test:e2e` | 280 checks against a running dev server and a real database. Cleans up after itself. |
 | `npm run test:auth` | 45 checks on the credential store, sessions, revocation and the timing-equality one. |
-| `npm run test:confirm` | 9 checks on estimate 1.8&apos;s confirm-back trigger — mostly about when *not* to ask. |
+| `npm run test:followup` | The per-question follow-ups (9 Oct, replaced the confirm-back) — mostly about when *not* to ask. |
+| `npm run test:assist` | `/api/seed/assist`'s pure half: off-list or unsure classifications and unsafe rewordings fall back; every sub-category script is well formed and skips her struck questions. |
 | `npm run test:derive` | 21 checks on `lib/places.ts`: a previous place → the coarse tenure signal, including every country/state code collision in both directions. |
 | `npm run test:phone` | 35 checks on `lib/phone.ts`: the US/Ukraine disambiguation, the near-collisions, idempotence and the masks. |
 

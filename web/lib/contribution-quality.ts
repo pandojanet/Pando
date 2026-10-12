@@ -47,8 +47,42 @@ export function doctorWhy(fields: Record<string, unknown>): unknown {
  * cannot disagree about which kinds choose their "why" by the recommendation.
  * A place asks one question for both and a tip has no recommendation.
  */
-export function choosesWhyByRecommendation(kind: string): boolean {
-  return kind === "doctor" || kind === "activity";
+export function choosesWhyByRecommendation(kind: string, subcategory?: string | null): boolean {
+  /* 9 Oct: a school asks the pair too (the client's list), and every activity
+     and Services sub-category carries it. 12 Oct: a restaurant and a product
+     too — after a No they were asked what makes it good. A place (its own
+     question is "like — or dislike") and a tip still ask one. */
+  return (
+    kind === "doctor" ||
+    kind === "activity" ||
+    subcategory === "schools" ||
+    subcategory === "restaurants" ||
+    subcategory === "products"
+  );
+}
+
+/**
+ * What a card must answer besides its name, "why" and caveat, by its kind and
+ * — since 9 Oct — its sub-category. One table, so the chat, the admin and the
+ * Founding count read the same rule.
+ *
+ *  - the child's age: every activity, a school, a doctor (and a general Services
+ *    card); a specialist asks it "if relevant", so it does not gate;
+ *  - when they were last there: the same, plus a specialist — a restaurant, a
+ *    party vendor and a product are not asked it;
+ *  - what they saw them for (`visit_reason`): a doctor only.
+ */
+export function requirements(kind: string, subcategory?: string | null) {
+  const sub = subcategory ?? null;
+  const activity = kind === "activity";
+  const doctor = kind === "doctor" && (sub === null || sub === "doctors");
+  return {
+    childAge: activity || doctor || sub === "schools",
+    lastThere: activity || doctor || sub === "schools" || sub === "specialists",
+    visitReason: doctor,
+    /* A tip is its advice; a product, though under the tip button, is a named thing. */
+    isTip: kind === "tip" && sub !== "products",
+  };
 }
 
 export type ContributionKind = "activity" | "place" | "tip" | "caregiver" | "doctor";
@@ -67,6 +101,8 @@ export interface Quality {
 /** The answers a kind's requirements read, normalised from either source. */
 export interface QualityInput {
   kind: ContributionKind;
+  /** The client's sub-category (9 Oct), null when asked as the general category. */
+  subcategory?: string | null;
   /** Their own experience. A friend's never counts (3 Aug). */
   firsthand: boolean;
   /** The record's name, for the kinds a parent names (not a tip). */
@@ -97,7 +133,7 @@ const EMPTY_PRAISE =
   /^(it'?s |we |they |i )?(really |very |so )?(good|great|nice|fine|ok|okay|lovely|amazing|the best|fun|loved it|liked it|recommend)[.!]?$/i;
 
 const NOTHING_TO_FLAG =
-  /^(none|no|nope|nah|nothing|n\/a|na|not really|nothing( really| much)?( to (flag|add|report|mention|share|say|note))?|nothing comes to mind|no (caveats?|issues?|concerns?))[.!]?$/i;
+  /^(none|no|nope|nah|nothing|n\/a|na|not really|nothing( really| much)?( to (flag|add|report|mention|share|say|note))?|nothing in (general|particular)|nothing comes to mind|no (caveats?|issues?|concerns?))[.!]?$/i;
 
 /**
  * Words that carry no information about *what* was good: articles and fillers,
@@ -190,7 +226,8 @@ export function assessContribution(input: QualityInput): Quality {
   }
 
   const missing: string[] = [];
-  const isTip = input.kind === "tip";
+  const need = requirements(input.kind, input.subcategory);
+  const isTip = need.isTip;
 
   if (!isTip && UNNAMED.test((input.name ?? "").trim())) missing.push("a name");
 
@@ -199,15 +236,14 @@ export function assessContribution(input: QualityInput): Quality {
   }
 
   /* A doctor card (8 Oct) asks the activity card's two, worded for a doctor,
-     and what the family saw them for. */
-  if (input.kind === "activity" || input.kind === "doctor") {
-    if (!input.has_child_age) missing.push("how old their child was");
-    if (!input.last_there)
-      missing.push(
-        input.kind === "doctor" ? "whether they still see them" : "when they were last there",
-      );
-  }
-  if (input.kind === "doctor" && !input.visit_reason) missing.push("what they saw them for");
+     and what the family saw them for; since 9 Oct which a card asks follows its
+     sub-category (`requirements`). */
+  if (need.childAge && !input.has_child_age) missing.push("how old their child was");
+  if (need.lastThere && !input.last_there)
+    missing.push(
+      input.kind === "doctor" ? "whether they still see them" : "when they were last there",
+    );
+  if (need.visitReason && !input.visit_reason) missing.push("what they saw them for");
 
   const hasWhy = has(input.why);
   const thinWhy = hasWhy && isThinAnswer(input.why, { name: input.name, content: true });
@@ -284,6 +320,8 @@ export function assessCaregiver(input: CaregiverQualityInput): Quality {
 /** A contribution as the database holds it — the columns the rule reads. */
 export interface ContributionColumns {
   kind: "activity" | "place" | "tip" | "doctor";
+  /** `shares.subcategory` (9 Oct, `drizzle/0056`). */
+  subcategory: string | null;
   firsthand: boolean;
   /** The record's name (`shares.name`). */
   name: string | null;
@@ -309,6 +347,7 @@ export interface ContributionColumns {
 export function assessColumns(c: ContributionColumns): Quality {
   return assessContribution({
     kind: c.kind,
+    subcategory: c.subcategory,
     firsthand: c.firsthand,
     name: c.name,
     has_child_age: (c.child_age_at_time ?? []).length > 0,
@@ -408,18 +447,21 @@ export function assessChatCard(
       know_first_answered: typeof fields.know_first === "string",
     });
   }
+  const subcategory = typeof fields.subcategory === "string" ? fields.subcategory : null;
   return assessContribution({
     kind,
+    subcategory,
     /* The kinds that ask it — a doctor since 8 Oct, a place from the client's
-       list of the same day; a friend's never counts. A tip has no such question. */
-    firsthand: kind === "tip" || fields.firsthand !== "secondhand",
+       list of the same day; a friend's never counts. A tip has no such question;
+       a product (9 Oct) does. */
+    firsthand: requirements(kind, subcategory).isTip || fields.firsthand !== "secondhand",
     name: str(fields.name) ?? str(fields.place_name),
     has_child_age: nonEmptyArray(fields.child_age),
     last_there: has(str(fields.freshness)),
     visit_reason: has(str(fields.visit_reason)),
     /* A doctor or an activity asks "what didn't work" instead after a No
        (8 Oct), and which one counts follows the recommendation — `doctorWhy`. */
-    why: choosesWhyByRecommendation(kind)
+    why: choosesWhyByRecommendation(kind, subcategory)
       ? str(doctorWhy(fields))
       : str(fields.what_makes_it_great),
     caveat_answered: typeof fields.caveat === "string",

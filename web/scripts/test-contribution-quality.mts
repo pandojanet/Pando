@@ -9,6 +9,7 @@
 import {
   assessCaregiver,
   assessChatCard,
+  choosesWhyByRecommendation,
   assessColumns,
   assessContribution,
   countCompletePerPerson,
@@ -231,6 +232,7 @@ console.log("\n=== Founding counts complete cards, not merely approved ones ==="
 const share = (person_id: string, patch: Record<string, unknown> = {}) => ({
   person_id,
   kind: "activity" as const,
+  subcategory: null,
   firsthand: true,
   name: "Little Maestros",
   child_age_at_time: [3],
@@ -397,6 +399,53 @@ ok("the record's own name is not counted as something said, wherever it appears"
   isThinAnswer("Little Maestros is excellent", { name: "Little Maestros", content: true }));
 ok("the rule is for 'what makes it good' only — a short caveat is still a caveat",
   !isThinAnswer("Parking is brutal", {}));
+
+/* ── 9 Oct: the client's sub-categories ask different things ── */
+{
+  const base = {
+    name: "Somewhere Good",
+    firsthand: "yes",
+    child_age: [4],
+    recommendation: "yes",
+    what_makes_it_great: "Crayons at the table and a patio the kids can wander",
+    caveat: "Go before six or wait an hour",
+  };
+  ok("a restaurant is complete without when they last went — it is not asked",
+    assessChatCard("place", { ...base, subcategory: "restaurants" }).status === "qualifies");
+  ok("a school needs when they were there, like an activity",
+    assessChatCard("place", { ...base, subcategory: "schools" }).missing.some((m) => /last there/.test(m)));
+  ok("a camp needs it too",
+    assessChatCard("activity", { ...base, subcategory: "camps" }).missing.some((m) => /last there/.test(m)) &&
+      assessChatCard("activity", { ...base, subcategory: "camps", freshness: "this_year" }).status === "qualifies");
+  ok("a party vendor is complete without what they were seen for or when",
+    assessChatCard("doctor", { ...base, subcategory: "parties" }).status === "qualifies");
+  ok("a specialist needs whether they still use them, not what they were seen for",
+    assessChatCard("doctor", { ...base, subcategory: "specialists", freshness: "current" }).status === "qualifies" &&
+      assessChatCard("doctor", { ...base, subcategory: "specialists" }).missing.some((m) => /still see/.test(m)));
+  ok("a specialist asks the age “if relevant”, so it does not gate",
+    assessChatCard("doctor", { ...base, subcategory: "specialists", freshness: "current", child_age: [] }).status === "qualifies");
+  ok("a product is a named thing, not a tip: it needs its name and its own experience",
+    assessChatCard("tip", { ...base, subcategory: "products" }).status === "qualifies" &&
+      assessChatCard("tip", { ...base, subcategory: "products", firsthand: "secondhand" }).status === "needs_follow_up" &&
+      assessChatCard("tip", { ...base, subcategory: "products", name: "" }).missing.includes("a name"));
+  /* 12 Oct: a restaurant and a product too — after a No they were asked what
+     makes it good. A place keeps its one "like — or dislike" question. */
+  ok("a school, a restaurant and a product choose their why by the recommendation; a place does not",
+    choosesWhyByRecommendation("place", "schools") &&
+      choosesWhyByRecommendation("place", "restaurants") &&
+      choosesWhyByRecommendation("tip", "products") &&
+      !choosesWhyByRecommendation("place", "places") &&
+      !choosesWhyByRecommendation("tip", "tips"));
+  ok("a school's No reads its “what didn't work”",
+    assessChatCard("place", {
+      ...base,
+      subcategory: "schools",
+      freshness: "current",
+      recommendation: "no",
+      what_didnt_work: "Very little communication from the office",
+      what_makes_it_great: "",
+    }).status === "qualifies");
+}
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

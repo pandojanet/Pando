@@ -38,6 +38,12 @@ const TEXT_FIELDS = new Set([
   "caveat",
   "private_note",
   "hesitation_reason",
+  /* 9 Oct: the context answer, and the sub-categories' descriptive questions —
+     without this they were cut to 80 characters as if they were ids. */
+  "what_is_it",
+  "used_for",
+  "timing_note",
+  "detail_note",
 ]);
 
 type RawFields = Record<string, unknown>;
@@ -358,9 +364,15 @@ export async function POST(request: Request) {
   if (kind !== "caregiver") {
     const db = getDb();
     if (db) scheduleExtraction(db, result.data.record_id);
-    /* A doctor card (8 Oct): is the provider findable — DCA, then the web.
-       After the response for the same reason, and it never blocks the card. */
-    if (db && kind === "doctor") scheduleProviderCheck(db, result.data.record_id);
+    /* A doctor card (8 Oct): is the provider findable — NPPES, then the web.
+       After the response for the same reason, and it never blocks the card.
+       ⚠ Since 9 Oct the Services button also carries party venues and
+       vendors, which no medical registry lists: the check runs for a doctor,
+       a specialist (NPPES lists therapists and dentists too) and a card asked
+       as the general category, never for `parties`. */
+    if (db && kind === "doctor" && fields.subcategory !== "parties") {
+      scheduleProviderCheck(db, result.data.record_id);
+    }
   }
 
   /* A new card, told to the team after the response (30 Sep). `updated` is a

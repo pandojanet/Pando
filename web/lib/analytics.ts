@@ -70,6 +70,10 @@ export type SeedEvent =
    */
   | "seed_confirm_back_shown"
   | "seed_confirm_back_answered"
+  /** Since 9 Oct the pair above counts the per-question follow-ups, which replaced
+      the end-of-card confirm-back; the names stay because 3.1 lists them. This one
+      is the sub-category the classifier chose (or "general"). */
+  | "seed_card_classified"
   | "seed_card_held"
   | "seed_verify_requested"
   | "seed_verify_send_blocked"

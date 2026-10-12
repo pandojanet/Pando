@@ -110,6 +110,14 @@
                        load it; every branch drops rather than repairs.
                        `npm run probe:web-search` is the live matrix behind it
                        — ten questions across contexts, through the real pipeline.
+`web/lib/seed-chat/subcategories.ts` — the client's 11 sub-categories, which button
+                       each sits under, labels and classifier hints (9 Oct).
+`web/lib/seed-chat/assist.ts` — `NAME_TOKEN` / `readName` / `fillName` / `nameThisTurn`: the parent's first name in model text without the model ever seeing it (12 Oct). Reuse for any other model wording that should address the parent.
+`web/lib/seed-chat/assist.ts` · `web/lib/server/assist.ts` — `/api/seed/assist`:
+                       classify a card into its sub-category and reword the rest
+                       (Haiku); the pure half refuses anything off-list or unsafe.
+`web/lib/seed-chat/follow-up.ts` — `followUpFor`: one follow-up per required or
+                       descriptive answer that is empty or thin (replaced confirm-back).
 `web/lib/provider-check.ts` · `web/lib/server/provider-check.ts` — is the doctor a
                        parent named real (8 Oct): the NPPES NPI Registry API since
                        9 Oct (`npiQuery` / `readNpiResults`; DCA before), then

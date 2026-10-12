@@ -281,6 +281,10 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       /* The doctor card's two (8 Oct, `drizzle/0054`). */
       if ("visit_reason" in patch) col("visit_reason", patch.visit_reason ?? null);
       if ("appointment_ease" in patch) col("appointment_ease", patch.appointment_ease ?? null);
+      /* The sub-categories' unified columns (9 Oct, `drizzle/0056`). */
+      if ("used_for" in patch) col("used_for", patch.used_for ?? null);
+      if ("timing_note" in patch) col("timing_note", patch.timing_note ?? null);
+      if ("detail_note" in patch) col("detail_note", patch.detail_note ?? null);
       if ("follow_up_ok" in patch) col("follow_up_ok", patch.follow_up_ok === true);
       if (patch.child_age_at_time !== undefined) {
         /* An array literal, not a parameter: `sql` expands a JS array into a
@@ -302,6 +306,15 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                 textChanged ? sql`, confidence = null, confidence_note = null` : sql``
               }
               where id = ${target}::uuid`,
+        );
+      }
+      /* The classifier corrected (9 Oct) — a fact about the record, so it is
+         set on `shares`, like the record's name. */
+      if ("subcategory" in patch) {
+        await tx.execute(
+          sql`update shares s set subcategory = ${patch.subcategory ?? null}, updated_at = now()
+                from share_contributions sc
+               where sc.id = ${target}::uuid and s.id = sc.share_id`,
         );
       }
       /* The record is what retrieval filters on (`age_bands &&`), so an age

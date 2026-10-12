@@ -268,7 +268,7 @@ export default function ContributionsPage() {
                       <ProvenanceBadge provenance={row.provenance} />
                       {/* The client's "is it a valid doctor" (8 Oct), where
                           the decision is made rather than inside the drawer. */}
-                      {row.kind === "doctor" && <ProviderCheckBadge row={row} />}
+                      {row.kind === "doctor" && row.share.subcategory !== "parties" && <ProviderCheckBadge row={row} />}
                       {row.share.answer_ready && (
                         <Badge tone="green">Ready to answer with</Badge>
                       )}
@@ -358,7 +358,7 @@ export default function ContributionsPage() {
                       )}
                       {/* "Maybe our system failed" (the client, 8 Oct): the
                           check runs by itself after saving; this re-runs it. */}
-                      {row.kind === "doctor" && !PROVIDER_CHECK_PAUSED && (
+                      {row.kind === "doctor" && row.share.subcategory !== "parties" && !PROVIDER_CHECK_PAUSED && (
                         <Button
                           tone="secondary"
                           disabled={busy === row.id}
