@@ -13,7 +13,7 @@ import {
 import { countsTowardFounding, qualityOf } from "@/lib/admin/quality";
 import { choosesWhyByRecommendation, missingLine } from "@/lib/contribution-quality";
 import { SUBCATEGORY_LABEL, isSubcategory } from "@/lib/seed-chat/subcategories";
-import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
+import { PROVIDER_CHECK_PAUSED, checksProvider as runsProviderCheck } from "@/lib/provider-check";
 import {
   APPOINTMENT_EASE,
   DOCTOR_LAST_SEEN,
@@ -50,9 +50,9 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
       ? row.share.subcategory
       : null;
   const filed = isSubcategory(row.share.subcategory) ? row.share.subcategory : null;
-  /* 9 Oct: the Services button also carries party vendors, which no medical
-     registry lists — the check is not run for them, so its fact is not shown. */
-  const checksProvider = isDoctor && sub !== "parties";
+  /* The check runs on the record, so the record's sub-category decides; not
+     for a party vendor or a specialist, so its fact is not shown (`checksProvider`). */
+  const checksProvider = runsProviderCheck(row.kind, filed ?? sub);
   /* "Seen for" is the doctor's own question; a specialist or vendor has "used for". */
   const isDoctorProper = isDoctor && (sub === null || sub === "doctors");
   const notRecommended = row.recommendation === "probably_not" || row.recommendation === "no";

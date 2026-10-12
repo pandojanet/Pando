@@ -43,7 +43,9 @@ import {
  * **It never writes.** It returns a reading; the caller decides.
  */
 
-const MODEL = "claude-haiku-4-5";
+/* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was
+   4.5): one label per message, on the path of every question asked. */
+const MODEL = "claude-haiku-5-5";
 
 const SYSTEM = [
   "You classify a single SMS a parent sent to a local parenting recommendation service.",
@@ -52,9 +54,13 @@ const SYSTEM = [
   "",
   "The intents:",
   "- ask_recommendation: looking for a class, camp, activity, place or general local advice",
-  "- ask_caregiver: specifically about a nanny, sitter, night nurse, au pair or nanny share",
+  "- ask_caregiver: looking for, or asking about finding, a nanny, sitter, night nurse, au pair or",
+  "  nanny share",
   "- answer_blast: replying to a question the service asked them",
-  "- contribute: volunteering something unprompted — a place they liked, a tip",
+  "- contribute: volunteering something unprompted — a place they liked, a tip, or a person of their",
+  "  own they want to recommend or add, including their own nanny or sitter ('I want to add our nanny",
+  "  Marisol', 'our sitter is amazing, can I recommend her?'). Telling about their own caregiver is",
+  "  contribute; looking for one is ask_caregiver.",
   "- settings: changing how often they are contacted, or what the service knows",
   "- chitchat: thanks, a greeting, a wrong number, nothing to act on",
   "- unclear: you cannot tell",
@@ -84,9 +90,12 @@ const SYSTEM = [
  * legitimate outcome, so nothing anywhere looked wrong: `test:intent` exercises
  * the pure fallback and never the request. The same shape as `bands` and
  * `area_slug` — written, reviewed, and silently never executed — and it is worth
- * knowing that the difference it hides is real: the fallback maps **any**
- * caregiver word to `ask_caregiver`, while the model reads "I want to add our
- * nanny Marisol" as `contribute`, which is what it is.
+ * knowing that the difference it hides is real: the fallback mapped **any**
+ * caregiver word to `ask_caregiver`. (12 Oct: measured, neither model read
+ * "I want to add our nanny Marisol" as `contribute` either — 4.5 said
+ * `settings`, 5.5 `ask_caregiver` — until the intents above said that telling
+ * about their own caregiver is a contribution, and the fallback learnt
+ * `OFFER_SHAPE`.)
  *
  * The range is not lost. `applyThreshold` compares against
  * `INTENT_CONFIDENCE_FLOOR` and falls back on anything under it, so a value
@@ -156,6 +165,7 @@ export async function classifyIntent(input: {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await anthropic.messages.create({
       model: MODEL,
+      thinking: { type: "disabled" },
       max_tokens: 256,
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } },

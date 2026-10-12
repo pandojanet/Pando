@@ -63,6 +63,23 @@ ok(
   "the more specific reading wins",
 );
 ok("an ordinary recommendation", guess("any good music classes near Altadena?").intent === "ask_recommendation");
+
+/* 12 Oct: telling about their own caregiver is a contribution, not a search. */
+for (const text of [
+  "I want to add our nanny Marisol",
+  "I'd like to recommend our sitter",
+  "can I recommend our babysitter? she's great",
+  "we want to share our pediatrician",
+  "our nanny Marisol is amazing",
+]) ok(`an offer: "${text}"`, guess(text).intent === "contribute", guess(text).intent);
+for (const text of [
+  "does anyone know a good nanny?",
+  "our nanny is leaving, need a new one",
+  "looking for a sitter like our old one",
+  "can anyone recommend a nanny?",
+  "my nanny recommendations?",
+]) ok(`still a search: "${text}"`, guess(text).intent === "ask_caregiver", guess(text).intent);
+ok("an offer while a reply is awaited is still the reply", guess("I want to add our nanny Marisol", { awaiting_blast_reply: true }).intent === "answer_blast");
 ok('"anyone know" without a question mark', guess("anyone know a swim teacher").intent === "ask_caregiver" || guess("anyone know a swim teacher").intent === "ask_recommendation");
 ok("changing how often", guess("too many texts, can you send fewer").intent === "settings");
 ok("stop asking is a setting, not an opt-out here", guess("please stop asking about camps").intent === "settings",

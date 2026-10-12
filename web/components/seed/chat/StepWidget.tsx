@@ -32,6 +32,7 @@ export function StepWidget({
   onAnswer,
   onSkip,
   onUndo,
+  onStage,
   market,
   area,
 }: {
@@ -53,6 +54,12 @@ export function StepWidget({
   onAnswer: (value: FieldValue, extra?: Fields) => void;
   onSkip: () => void;
   onUndo: () => void;
+  /**
+   * What the parent has typed or picked so far, before they send it (12 Oct):
+   * the chat asks the next turn ahead for it (`ASK_AHEAD_PAUSE_MS`). The value
+   * is the one `onAnswer` would send — trimmed text, sorted ages, chips.
+   */
+  onStage?: (value: FieldValue) => void;
   /** `place` only — the directory to search and the town to rank by. */
   market: MarketId;
   area?: string | null;
@@ -101,6 +108,7 @@ export function StepWidget({
         initialValue={initialValue}
         onAnswer={onAnswer}
         onSkip={onSkip}
+        onStage={onStage}
         market={market}
         area={area}
       />
@@ -113,6 +121,7 @@ function Widget({
   initialValue,
   onAnswer,
   onSkip,
+  onStage,
   market,
   area,
 }: {
@@ -120,6 +129,7 @@ function Widget({
   initialValue?: FieldValue;
   onAnswer: (value: FieldValue, extra?: Fields) => void;
   onSkip: () => void;
+  onStage?: (value: FieldValue) => void;
   market: MarketId;
   area?: string | null;
 }) {
@@ -136,6 +146,7 @@ function Widget({
           initial={initialValue}
           onAnswer={onAnswer}
           onSkip={onSkip}
+          onStage={onStage}
         />
       );
     case "ages":
@@ -145,6 +156,7 @@ function Widget({
           initial={initialValue}
           onAnswer={onAnswer}
           onSkip={onSkip}
+          onStage={onStage}
         />
       );
     case "text":
@@ -154,6 +166,7 @@ function Widget({
           initial={initialValue}
           onAnswer={onAnswer}
           onSkip={onSkip}
+          onStage={onStage}
         />
       );
     case "name":
@@ -208,13 +221,16 @@ function MultiSelect({
   initial,
   onAnswer,
   onSkip,
+  onStage,
 }: {
   step: Step;
   initial?: FieldValue;
   onAnswer: (value: FieldValue) => void;
   onSkip: () => void;
+  onStage?: (value: FieldValue) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(() => initialList(initial));
+  useStaged(selected, onStage);
   return (
     <>
       <Scroller tight>
@@ -241,13 +257,16 @@ function AgePicker({
   initial,
   onAnswer,
   onSkip,
+  onStage,
 }: {
   step: Step;
   initial?: FieldValue;
   onAnswer: (value: FieldValue) => void;
   onSkip: () => void;
+  onStage?: (value: FieldValue) => void;
 }) {
   const [selected, setSelected] = useState<string[]>(() => initialList(initial));
+  useStaged(selected.map(Number).sort((a, b) => a - b), onStage);
   return (
     <>
       <Scroller tight>
@@ -277,15 +296,18 @@ function ShortText({
   initial,
   onAnswer,
   onSkip,
+  onStage,
 }: {
   step: Step;
   initial?: FieldValue;
   onAnswer: (value: FieldValue) => void;
   onSkip: () => void;
+  onStage?: (value: FieldValue) => void;
 }) {
   const [value, setValue] = useState(() => initialText(initial));
   const max = step.maxLength ?? 400;
   const trimmed = value.trim();
+  useStaged(trimmed, onStage);
 
   return (
     <>
@@ -399,6 +421,21 @@ function PhoneEntry({
 }
 
 /* ── Shared bits ──────────────────────────────────────────────────── */
+
+/**
+ * Report the value the widget would send, each time it changes (`onStage`).
+ * Keyed by its JSON, so a new array with the same ages is not a change.
+ */
+function useStaged(value: FieldValue, onStage?: (value: FieldValue) => void) {
+  const key = JSON.stringify(value);
+  const latest = useRef(onStage);
+  useEffect(() => {
+    latest.current = onStage;
+  });
+  useEffect(() => {
+    latest.current?.(JSON.parse(key) as FieldValue);
+  }, [key]);
+}
 
 /**
  * Long option lists scroll inside the dock instead of pushing it off-screen.

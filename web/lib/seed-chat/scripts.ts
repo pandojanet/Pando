@@ -321,27 +321,33 @@ export const EXTRA_NOTE_PROMPT = "Is there anything you think other parents shou
  * from `confirm-back.ts`, which asked one of these once per card, at the end.
  */
 export const FOLLOW_UP = {
+  /* 12 Oct, the developer: a skipped town is worth one more ask — it is what
+     makes a recommendation local, a doctor's most of all. Asked again with the
+     same town buttons (`ChatSeeding.askFollowUp`), and it can be skipped again. */
+  /* 12 Oct: `{thing|it}` is the card's name when it has one (`withThing`). */
+  location: "Even roughly helps — which town or area is {thing|it} in? It's how parents nearby find it.",
   activityWhy:
     "One more thing and this becomes really useful — what would you tell a friend who was deciding? The teacher, the room, the price, the thing you didn't expect.",
   activityDidnt:
     "Can you say a bit more about what didn't work? The teacher, the group size, the time, the thing you didn't expect.",
+  /* 12 Oct: no "Parking" — after "parking is bad" it read as not listening. */
   caveat:
-    "Anything worth knowing before someone else tries it? Parking, the age it stops working, a cost that isn't obvious.",
-  whoFor: "Who would you send there? An age, a temperament, a situation.",
+    "Anything else worth knowing before someone else tries {thing|it}? When it gets busy, the age it stops working, a cost that isn't obvious.",
+  whoFor: "Who is {thing|it} right for — what age, temperament or situation?",
   tip: "Can you say a bit more? The tips parents act on are the specific ones — a name, a time, a number.",
   tipWhy: "When would another parent use this — or what did it change for you?",
   placeWhy:
     "One more thing and this becomes really useful — what would you tell a friend who was deciding? The shade, the crowds, what your child loved or hated.",
-  placeCaveat: "Anything worth knowing before going? Parking, crowds, the hours, the toilets.",
+  placeCaveat: "Anything worth knowing before heading {to thing|there}? Parking, crowds, the hours, the toilets.",
   doctorWhy:
     "One more thing and this becomes really useful — what would you tell a friend who was choosing a doctor? How they explain things, how they are with kids, the wait.",
   doctorDidnt:
     "Can you say a bit more about what didn't work? The wait, how they explained things, how they were with your child.",
   doctorCaveat:
-    "Anything worth knowing before someone else books? The wait for appointments, insurance, after-hours care.",
-  doctorWhoFor: "Who would you send to them? An age, a worry, a situation.",
+    "Anything worth knowing before someone else books {thing|them}? The wait for appointments, insurance, after-hours care.",
+  doctorWhoFor: "Who would you send to {thing|them}? An age, a worry, a situation.",
   usedFor:
-    "Can you say a bit more about what they helped with? It's how Pando matches them to the next family.",
+    "Can you say a bit more about what {thing|they} helped with? It's how Pando matches them to the next family.",
 } as const;
 
 /** The step id that carries a follow-up marker once one has been asked. */
@@ -349,21 +355,33 @@ export function followUpMark(stepId: string): string {
   return `__fu_${stepId}`;
 }
 
-function neighborhoodOptions(market: MarketId, ownPlaces: readonly string[]): Option[] {
+function neighborhoodOptions(market: MarketId, ownPlaces: readonly string[], home?: string | null): Option[] {
   const curated: Option[] = marketOptions(market, "neighborhoods");
   const known = new Set(curated.map((o) => o.label.trim().toLowerCase()));
-  return [
+  const all = [
     ...curated,
     ...ownPlaces
       .map((p) => p.trim())
       .filter((p) => p !== "" && !known.has(p.toLowerCase()))
       .map((p) => ({ id: p, label: p })),
   ];
+  /* Their own area first (12 Oct): the town question offers it as a check
+     ("Is it in Altadena, near you…?"), so a yes is one tap, not a search. */
+  const own = home ? all.find((o) => o.id === home || o.label === home) : undefined;
+  return own ? [own, ...all.filter((o) => o !== own)] : all;
+}
+
+/** The parent's own area, as its label — what `AREA_TOKEN` is filled with. */
+export function homeAreaLabel(market: MarketId, home: string | null | undefined, ownPlaces: readonly string[] = []): string | null {
+  if (!home) return null;
+  return neighborhoodOptions(market, ownPlaces).find((o) => o.id === home || o.label === home)?.label ?? null;
 }
 
 export function buildScripts(
   market: MarketId,
   ownPlaces: readonly string[] = [],
+  /** The parent's own neighbourhood (`answers.neighborhood`), put first among the town chips. */
+  home: string | null = null,
 ): Record<ShareKind, Script> {
   /**
    * The town list for a card, plus the parent's **own** place when it is not on
@@ -377,7 +395,7 @@ export function buildScripts(
    * place nobody approved. It is appended after the curated towns, and only
    * when no curated option already carries that name.
    */
-  const neighborhoods = neighborhoodOptions(market, ownPlaces);
+  const neighborhoods = neighborhoodOptions(market, ownPlaces, home);
 
   return {
     /**
@@ -434,6 +452,7 @@ export function buildScripts(
         {
           id: "name",
           prompt: "What's it called?",
+          variants: ["Ooh, which one? What's it called?", "{parent}, what's it called?", "Which one is it — what's the name?"],
           aside: "Start typing — Pando probably knows it, and then it fills in the rest.",
           widget: "place",
           searchCategory: "baby_activities",
@@ -454,6 +473,12 @@ export function buildScripts(
              the "why" question's, later. */
           prompt: "In a line or two, what is it?",
           namedPrompt: "In a line or two, what is {thing}?",
+          variants: [
+            "In a line or two, what is {thing}?",
+            "Ooh, {thing}. In a line or two, what is it?",
+            "And what is {thing}, in a line or two?",
+            "Tell me a bit about {thing} — what is it, in a line or two?",
+          ],
           aside: "Weekly swim lessons, a pottery afternoon, a summer camp… and whether it was your family or a friend's.",
           widget: "text",
           maxLength: 400,
@@ -492,7 +517,10 @@ export function buildScripts(
         },
         {
           id: "freshness",
-          prompt: "When did they last do it?",
+          /* 12 Oct (the developer allowed light rewording): its first button is
+             "Still doing it", which "When did they last do it?" does not take. */
+          prompt: "Are they still doing it, or when did they last go?",
+          friendPrompt: "Is your friend's child still doing it, or when did they last go?",
           widget: "quick",
           options: LAST_THERE,
         },
@@ -574,6 +602,7 @@ export function buildScripts(
           widget: "chips",
           options: neighborhoods,
           optional: true,
+          followUp: { ask: FOLLOW_UP.location, on: "empty" },
           when: (fields) =>
             !(Array.isArray(fields.location) && fields.location.length > 0),
         },
@@ -1014,6 +1043,7 @@ export function buildScripts(
         {
           id: "name",
           prompt: "What's the place?",
+          variants: ["Which place is it?", "{parent}, which place is it?", "Ooh, where? What's the place called?"],
           widget: "text",
           maxLength: 80,
           placeholder: "e.g. Victory Park playground",
@@ -1024,6 +1054,11 @@ export function buildScripts(
           id: "what_is_it",
           prompt: "In a line or two, what kind of place is it?",
           namedPrompt: "In a line or two, what kind of place is {thing}?",
+          variants: [
+            "In a line or two, what kind of place is {thing}?",
+            "{thing} — what kind of place is it, in a line or two?",
+            "And {thing} is what kind of place? A line or two is plenty.",
+          ],
           aside: "A park, a café, a school, a museum… and whether you went or a friend did.",
           widget: "text",
           maxLength: 400,
@@ -1107,6 +1142,7 @@ export function buildScripts(
           widget: "chips",
           options: neighborhoods,
           optional: true,
+          followUp: { ask: FOLLOW_UP.location, on: "empty" },
         },
         {
           /**
@@ -1190,18 +1226,23 @@ export function buildScripts(
       kind: "doctor",
       /* 9 Oct, the developer: the button is **Services** — Doctors,
          Specialists & family services and Parties / venues / vendors sit under
-         it. The kind stays `doctor`, so nothing stored changes. The first
-         questions are worded for any of the three; the doctor's own follow. */
-      label: "Services",
+         it. 12 Oct, the developer: renamed **Specialists**, then **Specialists &
+         Doctors**. The kind stays
+         `doctor`, so nothing stored changes. The first questions are worded
+         for any of the three; the doctor's own follow. */
+      label: "Specialists & Doctors",
       hint: "Doctors, dentists, therapists, tutors, party vendors",
-      intro: "Great — one person or service at a time.",
+      /* 12 Oct, the developer: "service" was left over from the Services button
+         and could puzzle a parent; the button is Specialists & Doctors. */
+      intro: "Great — one doctor, specialist or vendor at a time.",
       steps: [
         {
           id: "name",
-          prompt: "Who or what service did you use?",
+          prompt: "Who was it — the doctor, specialist or vendor?",
+          variants: ["Who was it — which doctor, specialist or vendor?", "{parent}, who was it?", "Which doctor, specialist or vendor was it?"],
           widget: "text",
           maxLength: 80,
-          placeholder: "Name of the doctor, practice or service",
+          placeholder: "Name of the doctor, practice or vendor",
         },
         {
           /* The context question (9 Oct), straight after the name, and the
@@ -1209,6 +1250,7 @@ export function buildScripts(
              (`drizzle/0056`). */
           id: "used_for",
           prompt: "What did you see or use them for?",
+          variants: ["What did you see {thing} for?", "And what did {thing} help with?", "{thing} — what was it for?"],
           aside: "A checkup, speech therapy, a birthday party… A sentence is plenty.",
           widget: "text",
           maxLength: 200,
@@ -1245,8 +1287,9 @@ export function buildScripts(
         },
         {
           id: "freshness",
-          prompt: "Are you still seeing them?",
-          friendPrompt: "Is your friend still seeing them?",
+          /* 12 Oct: fits a one-off visit (urgent care) as well as a regular doctor. */
+          prompt: "Are you still seeing them, or when was the last visit?",
+          friendPrompt: "Is your friend still seeing them, or when was the last visit?",
           widget: "quick",
           options: DOCTOR_LAST_SEEN,
         },
@@ -1293,6 +1336,7 @@ export function buildScripts(
           widget: "chips",
           options: neighborhoods,
           optional: true,
+          followUp: { ask: FOLLOW_UP.location, on: "empty" },
           when: (fields) =>
             !(Array.isArray(fields.location) && fields.location.length > 0),
         },
@@ -1384,6 +1428,7 @@ export function buildScripts(
            */
           id: "what_is_it",
           prompt: "In a line, what would you like to pass on?",
+          variants: ["What's the tip? A line is plenty.", "{parent}, what would you tell another parent? A line is plenty."],
           aside: "A tip you wish someone had told you, or a product you'd recommend.",
           widget: "text",
           maxLength: 400,
@@ -1393,7 +1438,9 @@ export function buildScripts(
         },
         {
           id: "topic",
-          prompt: "What's it about?",
+          /* 12 Oct: asked right after the tip is told, "What's it about?" read as
+             if Pando had not listened. */
+          prompt: "Which of these is it mostly about?",
           widget: "quick",
           options: TIP_TOPICS,
         },
@@ -1513,7 +1560,7 @@ function recommendStep(prompt: string): Step {
 
 /**
  * The card's "why". `didnt` adds the No branch (`what_didnt_work`), which
- * every activity and Services sub-category carries so the stored "why" follows
+ * every activity and Specialists-button sub-category carries so the stored "why" follows
  * the recommendation (`doctorWhy`); without it the one question is asked
  * whatever the answer, as on a place.
  */
@@ -1572,6 +1619,7 @@ function townStep(prompt: string, options: Option[]): Step {
     widget: "chips",
     options,
     optional: true,
+    followUp: { ask: FOLLOW_UP.location, on: "empty" },
     when: (fields) => !(Array.isArray(fields.location) && fields.location.length > 0),
   };
 }
@@ -1669,15 +1717,16 @@ function contextStep(script: Script, id: string): Step {
 export function buildSubScripts(
   market: MarketId,
   ownPlaces: readonly string[] = [],
+  home: string | null = null,
 ): Record<Subcategory, Script> {
-  const base = buildScripts(market, ownPlaces);
-  const neighborhoods = neighborhoodOptions(market, ownPlaces);
+  const base = buildScripts(market, ownPlaces, home);
+  const neighborhoods = neighborhoodOptions(market, ownPlaces, home);
   const activityName = contextStep(base.activity, "name");
 
   return {
     activities: { ...base.activity, subcategory: "activities" },
     places: { ...base.place, subcategory: "places" },
-    /* The Services button asks its first two in words that fit any service;
+    /* The Specialists button asks its first two in words that fit any service;
        a doctor keeps hers (8 Oct) for its recap and its edits. */
     doctors: {
       ...base.doctor,
@@ -1687,7 +1736,7 @@ export function buildSubScripts(
         step.id === "name"
           ? { ...step, prompt: "Which practice or doctor?", placeholder: "Name" }
           : step.id === "firsthand"
-            ? { ...step, prompt: "Is it your child's doctor?" }
+            ? { ...step, prompt: "Did you take your own child to them?" }
             : step,
       ),
       recap: base.doctor.recap.map((row) =>
@@ -1792,7 +1841,7 @@ export function buildSubScripts(
           "who_for",
           "What kind of child is it best for?",
           "e.g. an outdoorsy kid who likes a busy day",
-          "Who would you send there? An age, a temperament, a situation.",
+          "Who would you send there — what age, temperament or situation?",
         ),
         detailText(
           "timing_note",
@@ -1932,7 +1981,8 @@ export function buildSubScripts(
           "e.g. a curious kid who likes structure",
           "Who would you send there? A temperament, a learning style, a situation.",
         ),
-        ...priceSteps("Roughly what is the tuition per month?", undefined, SCHOOL_TUITION_BAND),
+        .../* "if any" (12 Oct): a public school's answer is Free. */
+        priceSteps("Roughly what is the tuition per month, if any?", undefined, SCHOOL_TUITION_BAND),
         EXTRA_NOTE_STEP,
       ],
       recap: [
@@ -1958,14 +2008,14 @@ export function buildSubScripts(
       hint: base.doctor.hint,
       intro: base.doctor.intro,
       steps: [
-        { ...contextStep(base.doctor, "name"), prompt: "Who or what service did you use?" },
+        { ...contextStep(base.doctor, "name"), prompt: "Which specialist or practice was it?" },
         firsthandStep("Did you use them personally?", "Yes", SECONDHAND_SHORT),
         childAgeStep("How old was your child, if relevant?"),
         { ...contextStep(base.doctor, "used_for"), prompt: "What did you use them for?" },
         {
           id: "freshness",
-          prompt: "Are you still using them?",
-          friendPrompt: "Is your friend still using them?",
+          prompt: "Are you still using them, or was it a while ago?",
+          friendPrompt: "Is your friend still using them, or was it a while ago?",
           widget: "quick",
           options: SPECIALIST_STILL,
         },
@@ -2026,7 +2076,7 @@ export function buildSubScripts(
     parties: {
       kind: "doctor",
       subcategory: "parties",
-      label: "A party venue, entertainer or vendor",
+      label: "A party vendor",
       hint: base.doctor.hint,
       intro: base.doctor.intro,
       steps: [

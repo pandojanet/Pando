@@ -9,7 +9,7 @@
  *
  *     npm run test:provider-check
  */
-const { DCA_HOST, nameWords, namesCarry, npiCities, npiQuery, NPPES_LIMIT, NPPES_VIEW, readNpiResults, readProviderReply, searchableName, verifiedMatch } = (await import(
+const { checksProvider, DCA_HOST, nameWords, namesCarry, npiCities, npiQuery, NPPES_LIMIT, NPPES_VIEW, readNpiResults, readProviderReply, searchableName, verifiedMatch } = (await import(
   `../lib/provider-check.ts?v=${Date.now()}`
 )) as typeof import("../lib/provider-check.ts");
 
@@ -159,6 +159,13 @@ ok("a practice with a number in its name keeps it", searchableName("Kids First 3
   ok("no neighbourhood: Pasadena", JSON.stringify(npiCities(null)) === JSON.stringify(["Pasadena"]));
   ok("Pasadena is never asked twice", JSON.stringify(npiCities("Pasadena")) === JSON.stringify(["Pasadena"]));
 }
+
+/* 12 Oct, the developer: not for specialists — too broad a sub-category for a registry. */
+ok("a doctor card is checked", checksProvider("doctor", "doctors"));
+ok("…and one never classified (the doctor's questions)", checksProvider("doctor", null));
+ok("not a specialist", !checksProvider("doctor", "specialists"));
+ok("not a party vendor", !checksProvider("doctor", "parties"));
+ok("not another kind", !checksProvider("activity", null));
 
 console.log(`\n  ${passed} checks passed${failed ? `, ${failed} FAILED` : ""}.`);
 if (failed) process.exit(1);

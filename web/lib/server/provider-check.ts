@@ -56,7 +56,8 @@ import {
  */
 
 /** The pairing `web-search.ts` measured as working on this account — see its note. */
-const MODEL = "claude-haiku-4-5";
+/* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was 4.5). */
+const MODEL = "claude-haiku-5-5";
 const SEARCH_TOOL = "web_search_20250305" as const;
 /** The web step, with the SDK's retries off: it holds an admin's click for half a minute at most. */
 const TIMEOUT_MS = 30_000;
@@ -128,6 +129,7 @@ async function searchStep(
   const response = await client.messages.create(
     {
       model: MODEL,
+      thinking: { type: "disabled" },
       max_tokens: 600,
       system: SYSTEM,
       tools: [
@@ -280,6 +282,8 @@ export async function runProviderCheck(
        set provider_check_started_at = now()
      where s.id = ${shareId}::uuid
        and s.kind::text = 'doctor'
+       -- checksProvider: a doctor or unclassified, never a specialist or party vendor
+       and (s.subcategory is null or s.subcategory = 'doctors')
        and (s.provider_check_started_at is null
             or s.provider_check_started_at < now() - ${STALE_CLAIM}::interval)
        and ${
@@ -298,6 +302,7 @@ export async function runProviderCheck(
   if (!row) {
     const [exists] = (await db.execute(sql`
       select 1 as one from shares where id = ${shareId}::uuid and kind::text = 'doctor'
+        and (subcategory is null or subcategory = 'doctors')
     `)) as unknown as unknown[];
     return exists ? { kind: "busy" } : { kind: "not_a_doctor" };
   }
@@ -339,6 +344,7 @@ export function scheduleProviderCheck(db: Db, contributionId: string): void {
          and sc.person_id is not null
          and not sc.is_test and not s.is_test
          and s.kind::text = 'doctor' and s.provider_checked_at is null
+         and (s.subcategory is null or s.subcategory = 'doctors')
     `)) as unknown as Array<{ id: string }>;
     if (row) await runProviderCheck(db, row.id);
   })().catch((err) => {

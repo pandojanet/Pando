@@ -889,7 +889,7 @@ export const shareContributions = pgTable(
      * The sub-categories' own questions (9 Oct, `drizzle/0056`), each on the
      * unified column that means it, whichever card asked:
      *
-     *  - `used_for` — "What did you see or use them for?" (Services);
+     *  - `used_for` — "What did you see or use them for?" (Specialists);
      *  - `timing_note` — when or how long: a camp's hours, a restaurant's best
      *    time with children;
      *  - `detail_note` — the one extra question a sub-category asks: a

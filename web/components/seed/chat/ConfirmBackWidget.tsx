@@ -18,15 +18,26 @@ export function ConfirmBackWidget({
   question,
   onAnswer,
   onSkip,
+  onStage,
 }: {
   /** Repeated above the box, as the dock does for every step (9 Oct). */
   question?: string;
   onAnswer: (text: string) => void;
   onSkip: () => void;
+  /** What they have typed so far, trimmed — asked ahead by the chat (12 Oct, as `StepWidget`). */
+  onStage?: (text: string) => void;
 }) {
   const [text, setText] = useState("");
   const ready = text.trim().length > 0;
   const box = useRef<HTMLTextAreaElement>(null);
+  const staged = text.trim();
+  const latest = useRef(onStage);
+  useEffect(() => {
+    latest.current = onStage;
+  });
+  useEffect(() => {
+    latest.current?.(staged);
+  }, [staged]);
 
   /**
    * Focus after paint, not `autoFocus`.

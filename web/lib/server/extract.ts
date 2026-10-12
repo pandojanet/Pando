@@ -34,15 +34,13 @@ import Anthropic from "@anthropic-ai/sdk";
  */
 
 /**
- * Haiku 4.5 — $1/$5 per MTok against Opus 5's $5/$25, for a job that is one
- * bounded classification per card: score 0–1, one boolean, one sentence.
- *
- * Two constraints this model puts on the request below, both currently satisfied:
- * Haiku 4.5 **rejects `output_config.effort`**, and it has no adaptive thinking
- * (the older `{type: "enabled", budget_tokens}` form is all it takes). So neither
- * may be added here without changing the model back.
+ * Haiku 5.5 (12 Oct, the developer: "Haiku 5.5 everywhere"; was 4.5) — $0.10 /
+ * $0.50 per MTok, for a job that is one bounded classification per card: score
+ * 0–1, one boolean, one sentence. **Thinking off**: 5.5 thinks by default, its
+ * thinking tokens count against `max_tokens`, and a classification this small
+ * does not need it — the same behaviour 4.5 had.
  */
-const MODEL = "claude-haiku-4-5";
+const MODEL = "claude-haiku-5-5";
 
 export interface ExtractionInput {
   kind: "activity" | "place" | "tip" | "doctor";
@@ -244,6 +242,7 @@ export async function extractCard(
   try {
     const response = await anthropic.messages.create({
       model: MODEL,
+      thinking: { type: "disabled" },
       max_tokens: 1024,
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } },

@@ -1070,7 +1070,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         byId(built.caregiver.steps, "know_first")?.when?.({ hire_again: "yes" }) === true);
 
     /* 8 Oct — Doctors & Medical Providers, the client's list in her order.
-       Since 9 Oct it is the Doctors sub-category's script: the Services button
+       Since 9 Oct it is the Doctors sub-category's script: the Specialists button
        asks its first two in words that fit any service (below), and a doctor
        keeps hers for its recap and edits. */
     const subScripts = (await import(`../lib/seed-chat/scripts.ts?v=${Date.now()}`) as typeof import("../lib/seed-chat/scripts.ts")).buildSubScripts("pasadena");
@@ -1079,10 +1079,10 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     ok("the doctor card asks her questions in her words, in her order",
       [
         ["name", "Which practice or doctor?"],
-        ["firsthand", "Is it your child's doctor?"],
+        ["firsthand", "Did you take your own child to them?"],
         ["child_age", "How old was your child at the time?"],
         ["visit_reason", "What did you see them for?"],
-        ["freshness", "Are you still seeing them?"],
+        ["freshness", "Are you still seeing them, or when was the last visit?"],
         ["recommendation", "Would you recommend them?"],
         ["what_makes_it_great", "What do you especially like about them?"],
         ["what_didnt_work", "What didn't work for you?"],
@@ -1093,13 +1093,13 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         (i === 0 || docSteps.findIndex((x) => x.id === id) > docSteps.findIndex((x) => x.id === all[i - 1][0]))));
     ok("its name field is typed, with 'Name' in it",
       byId(docSteps, "name")?.widget === "text" && byId(docSteps, "name")?.placeholder === "Name");
-    /* 9 Oct: the button is Services, and its context questions fit any of
+    /* 9 Oct: the button is Services (12 Oct: Specialists), and its context questions fit any of
        doctors, specialists and party vendors. */
-    ok("the Services button asks who, whose experience, the age and what for — then classifies",
-      built.doctor.label === "Services" &&
+    ok("the Specialists button asks who, whose experience, the age and what for — then classifies",
+      built.doctor.label === "Specialists & Doctors" &&
         built.doctor.steps.slice(0, 4).map((x) => x.id).join(",") === "name,used_for,firsthand,child_age" &&
         byId(built.doctor.steps, "used_for")?.classifyAfter === true &&
-        byId(built.doctor.steps, "name")?.prompt === "Who or what service did you use?");
+        byId(built.doctor.steps, "name")?.prompt === "Who was it — the doctor, specialist or vendor?");
     ok("a friend's experience is offered in her words and stored as secondhand",
       byId(docSteps, "firsthand")?.options?.some(
         (o) => o.id === "secondhand" && o.label === "No, this is based on a friend's experience") === true);
@@ -1186,7 +1186,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         ["name", "What's it called?"],
         ["firsthand", "Did your kid do it?"],
         ["child_age", "How old was your child at the time?"],
-        ["freshness", "When did they last do it?"],
+        ["freshness", "Are they still doing it, or when did they last go?"],
         ["recommendation", "Knowing what you know now, would you recommend it?"],
         ["what_makes_it_great", "What did you or your child especially like about it?"],
         ["what_didnt_work", "What didn't work for you or your child?"],
@@ -1263,7 +1263,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
          and the chat copies it into `tip`, so `tip` is not asked twice. */
       built.tip.steps.slice(0, 5).map((x) => x.id).join(",") === "what_is_it,topic,tip,what_makes_it_great,best_for" &&
         byId(built.tip.steps, "what_is_it")?.classifyAfter === true &&
-        byId(built.tip.steps, "topic")?.prompt === "What's it about?" &&
+        byId(built.tip.steps, "topic")?.prompt === "Which of these is it mostly about?" &&
         byId(built.tip.steps, "tip")?.prompt === "What should another parent do or know?" &&
         byId(built.tip.steps, "what_makes_it_great")?.prompt === "When is this useful, or why did it help you?" &&
         byId(built.tip.steps, "best_for")?.prompt === "Who does this help most?");
@@ -3116,7 +3116,8 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
      to the confirm-back's ordering and its unsent card went with it. */
   ok(
     "a follow-up is asked straight after its answer, and the card is sent once at the end",
-    /function askFollowUp\(d: ChatDraft, last: Step, question: string\)/.test(chat) &&
+    /* 12 Oct: `delay` — after a model turn it waits only what is left of the typing pause. */
+    /function askFollowUp\(d: ChatDraft, last: Step, question: string(, delay\?: number)?\)/.test(chat) &&
       /if \(askRuleFollowUp\(d, last\)\) return;/.test(chat) &&
       !/confirmBackFor|answerConfirmBack|.confirm_back/.test(chat) &&
       /void persist\(submission\);\s*\}/.test(chat),

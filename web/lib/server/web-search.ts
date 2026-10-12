@@ -53,7 +53,9 @@ import { readFindings, type PublicFinding } from "@/lib/public-info";
  * shipped — and `WEB_SEARCH_ENABLED=0` is how it is switched off.
  */
 
-const MODEL = "claude-haiku-4-5";
+/* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was
+   4.5). The tool pairing below was re-tested with it the same day. */
+const MODEL = "claude-haiku-5-5";
 
 /**
  * ⚠ **`web_search_20250305`, and not a newer one — this pairing is load-bearing.**
@@ -342,6 +344,7 @@ async function searchOnce(input: SearchInput): Promise<PublicSearchResult> {
     const response = await anthropic.messages.create(
       {
         model: MODEL,
+        thinking: { type: "disabled" },
         max_tokens: 1024,
         system: SYSTEM,
         tools: [

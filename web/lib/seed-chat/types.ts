@@ -102,6 +102,14 @@ export interface Step {
    * script, not the model — the context question comes before the first call.
    */
   namedPrompt?: string;
+  /**
+   * Other ways to say a question asked before the model's first turn (12 Oct,
+   * the developer: *"many questions lack personalisation"* — the opening
+   * questions were the same words on every card). `{thing}` is the card's
+   * name, `{parent}` the parent's first name, both filled on the device; one
+   * is chosen per card (`openerFor`). `prompt` stays the canonical wording.
+   */
+  variants?: string[];
 }
 
 export interface Script {
@@ -192,8 +200,19 @@ export interface ChatDraft {
   prompts?: Record<string, string>;
   /** The model's wording for each step's follow-up, by step id. */
   followups?: Record<string, string>;
+  /** Pando's reactions on the last turns, "" for none — sent back so the next is not the same (12 Oct). */
+  reactions?: string[];
   /** The parent was addressed by name on this card — once is enough (12 Oct). */
   named?: boolean;
+  /**
+   * How many times this card has used their name, and at which turn last (12 Oct,
+   * the developer: *"not enough addressing the parent, sometimes by name"*):
+   * up to `NAMES_PER_CARD`, `NAME_GAP` turns apart.
+   */
+  names_used?: number;
+  named_at_turn?: number;
+  /** Model turns taken on this card — the clock for `NAME_GAP`. */
+  turns?: number;
   /** "pending" while `/api/seed/assist` is answering; "done" once it has. */
   assist?: "pending" | "done";
   /**

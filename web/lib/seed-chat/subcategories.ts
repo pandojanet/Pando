@@ -67,6 +67,18 @@ export function subcategoryFor(kind: string, value: unknown): Subcategory | null
   return isSubcategory(value) && SUBCATEGORY_KIND[value] === kind ? value : null;
 }
 
+/**
+ * Where a card goes when the classifier cannot say (12 Oct, the developer:
+ * "without a classification, ask the specialists' questions"). On the
+ * Specialists & Doctors button that is **specialists**, the broad one — so the
+ * card is asked, filed and checked as one (no provider check). Other buttons
+ * keep their own general questions. Only at classification time: an admin
+ * clearing the sub-category still means general.
+ */
+export function unsureSubcategory(kind: string): Subcategory | null {
+  return kind === "doctor" ? "specialists" : null;
+}
+
 /** What the admin and the recap header call each one. */
 export const SUBCATEGORY_LABEL: Record<Subcategory, string> = {
   activities: "Activity",
@@ -77,7 +89,8 @@ export const SUBCATEGORY_LABEL: Record<Subcategory, string> = {
   schools: "School",
   doctors: "Doctor",
   specialists: "Specialist or family service",
-  parties: "Party, venue or vendor",
+  /* 12 Oct, the developer: "party vendors", not "parties" — the id stays (the CHECK in drizzle/0056). */
+  parties: "Party vendor",
   tips: "Tip",
   products: "Product or gear",
 };
@@ -106,7 +119,7 @@ export const SUBCATEGORY_HINT: Record<Subcategory, string> = {
   doctors:
     "a medical doctor (a physician) or medical practice, of ANY specialty: a pediatrician, family doctor, urgent care, ER or hospital, and every pediatric specialist physician — ENT, dermatologist, allergist, cardiologist, eye doctor, gastroenterologist, orthopedist, neurologist. A physician is always doctors, never specialists",
   specialists:
-    "a specialist or family service who is not a medical doctor: dentist, orthodontist, speech therapist, OT, PT, lactation or sleep consultant, doula, therapist or counselor, tutor, photographer, kids' haircuts",
+    "a specialist or family service who is not a medical doctor: dentist (dental cleanings, or a practice whose name says Dental), orthodontist, speech therapist, OT, PT, lactation or sleep consultant, doula, therapist or counselor, tutor, photographer, kids' haircuts",
   parties:
     "only something for a party or event: a birthday venue, entertainer, magician, face painter, bounce house or rental, a party cake or caterer",
   /* 9 Oct, the bench: "a library card gets you free museum passes" went to

@@ -21,13 +21,31 @@ import {
   newDraft,
   nextIndex,
   nextUnanswered,
+  openerFor,
+  withThing,
   promptFor,
   scriptFor,
 } from "@/lib/seed-chat/engine";
-import { buildScripts, buildSubScripts, followUpMark } from "@/lib/seed-chat/scripts";
-import { NAME_TOKEN, afterClassified, fillName, followedUpIds } from "@/lib/seed-chat/assist";
+import { FOLLOW_UP, buildScripts, buildSubScripts, followUpMark, homeAreaLabel } from "@/lib/seed-chat/scripts";
+
+/** A town follow-up with no area left to fill: the script's own words. */
+const FOLLOW_UP_TOWN = FOLLOW_UP.location;
+import {
+  ASK_AHEAD_PAUSE_MS,
+  NAME_TOKEN,
+  fillArea,
+  PREFETCH_MAX_OPTIONS,
+  afterClassified,
+  conversationOf,
+  fillName,
+  followedUpIds,
+  nameAllowed,
+  worthAskingAhead,
+  type TurnInput,
+  type TurnResult,
+} from "@/lib/seed-chat/assist";
 import { followUpFor, mergeFollowUp, withoutMarkers } from "@/lib/seed-chat/follow-up";
-import { isClassifiedKind, subcategoryFor } from "@/lib/seed-chat/subcategories";
+import { isClassifiedKind, subcategoryFor, unsureSubcategory } from "@/lib/seed-chat/subcategories";
 import { useMarketOptions } from "@/lib/use-market-options";
 import type {
   ChatDraft,
@@ -82,6 +100,9 @@ function thanksLine(kind: ShareKind): string {
     : "Got it, thank you. Anything else you'd like to share?";
 }
 
+/** How long Pando "types" before a line it already has. */
+const TYPING_MS = 430;
+
 export function ChatSeeding() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
@@ -103,13 +124,18 @@ export function ChatSeeding() {
      string for the dependency list: a fresh array each render would rebuild
      every script on every keystroke. */
   const ownPlaces = (session?.answers.other?.neighborhood ?? []).join("|");
+  /* Their own neighbourhood (12 Oct): first among the town chips, and what the
+     town question may offer as a check. It never leaves the device. */
+  const home = session?.answers.neighborhood ?? null;
+  const homeArea = homeAreaLabel(session?.market_id ?? "pasadena", home, ownPlaces ? ownPlaces.split("|") : []);
   const scripts = useMemo(
     () =>
       buildScripts(
         session?.market_id ?? "pasadena",
         ownPlaces ? ownPlaces.split("|") : [],
+        home,
       ),
-    [session?.market_id, optionsVersion, ownPlaces],
+    [session?.market_id, optionsVersion, ownPlaces, home],
   );
   /* The client's sub-categories (9 Oct), built from the same inputs. */
   const subScripts = useMemo(
@@ -117,8 +143,9 @@ export function ChatSeeding() {
       buildSubScripts(
         session?.market_id ?? "pasadena",
         ownPlaces ? ownPlaces.split("|") : [],
+        home,
       ),
-    [session?.market_id, optionsVersion, ownPlaces],
+    [session?.market_id, optionsVersion, ownPlaces, home],
   );
   /** The script a draft or a saved card is asked from — its sub-category's, or its button's. */
   const scriptOf = (card: Pick<ChatDraft, "kind" | "subcategory"> & { fields?: Fields }): Script =>
@@ -240,7 +267,7 @@ export function ChatSeeding() {
     [update],
   );
 
-  const withTyping = useCallback((fn: () => void, ms = 430) => {
+  const withTyping = useCallback((fn: () => void, ms = TYPING_MS) => {
     setTyping(true);
     const t = window.setTimeout(
       () => {
@@ -346,6 +373,16 @@ export function ChatSeeding() {
    * the session as loaded — rather than re-asking the parent.
    */
   const assistResumed = useRef(false);
+
+  /**
+   * Turns asked ahead, by their exact input (12 Oct, the developer: *"reduce
+   * the time, keep the personalisation, no streaming"*). While a question with
+   * a few buttons is on screen, the turn after each button is asked already;
+   * a tap then finds its answer waiting instead of waiting ~1.5 s for it. The
+   * key is the whole `TurnInput`, so a result is used only for exactly the
+   * turn it was asked for — anything else (an undo, an edit) asks afresh.
+   */
+  const prefetched = useRef<Map<string, Promise<TurnResult>>>(new Map());
   useEffect(() => {
     if (assistResumed.current || !chat) return;
     assistResumed.current = true;
@@ -361,9 +398,28 @@ export function ChatSeeding() {
   /* ── Turn taking ──────────────────────────────────────────────── */
 
   /** Ask `next.step_index` of the draft's own script, in the model's words when it gave some. */
-  /** `lead` is a reaction to the last answer, said in the same bubble (12 Oct). */
-  function pushPrompt(next: ChatDraft, lead?: string | null) {
-    const nextStep = scriptOf(next).steps[next.step_index];
+  /**
+   * `lead` is a reaction to the last answer, said in the same bubble; `note`
+   * what was noted from their words, in small print under it (12 Oct).
+   */
+  function pushPrompt(ask: ChatDraft, lead?: string | null, note?: string | null) {
+    const nextStep = scriptOf(ask).steps[ask.step_index];
+    /* The questions before the model's first turn, said one of several ways
+       (12 Oct, `openerFor`): the seed moves with each saved card, so two cards
+       in a row do not open alike. A variant with their name counts as a use. */
+    let next = ask;
+    if (nextStep.variants && !ask.prompts?.[nextStep.id]) {
+      const parent = nameAllowed(ask, firstName !== null) ? firstName : null;
+      const opener = openerFor(nextStep, ask.fields, savedCount + ask.step_index + ask.kind.length, parent);
+      if (opener) {
+        const usedName = !!parent && opener.startsWith(`${parent},`);
+        next = {
+          ...ask,
+          prompts: { ...(ask.prompts ?? {}), [nextStep.id]: opener },
+          ...(usedName ? { names_used: (ask.names_used ?? 0) + 1, named_at_turn: ask.turns ?? 0 } : {}),
+        };
+      }
+    }
     const question = promptFor(nextStep, next.prompts, next.fields);
     patchChat((c) => ({
       ...c,
@@ -371,7 +427,12 @@ export function ChatSeeding() {
       draft: { ...next, followup: null },
       messages: [
         ...c.messages,
-        { id: uid(), role: "pando", text: lead ? `${lead} ${question}` : question, aside: nextStep.aside },
+        {
+          id: uid(),
+          role: "pando",
+          text: lead ? `${lead} ${question}` : question,
+          aside: [note, nextStep.aside].filter(Boolean).join(" ") || undefined,
+        },
       ],
     }));
   }
@@ -568,11 +629,11 @@ export function ChatSeeding() {
           ...c,
           messages: [...c.messages, { id: uid(), role: "pando", text: hold }],
         }));
-        advance(answered, step, 520);
+        advance(answered, step, 520, skipped ? "" : parentMessage.text);
       });
       return;
     }
-    advance(answered, step);
+    advance(answered, step, undefined, skipped ? "" : parentMessage.text);
   }
 
   /**
@@ -584,10 +645,10 @@ export function ChatSeeding() {
    * open question to ask next, in words for them. Before that — and always on a
    * caregiver card — the script's own order, with the rule-based follow-ups.
    */
-  function advance(d: ChatDraft, last: Step, delay?: number) {
+  function advance(d: ChatDraft, last: Step, delay?: number, said?: string) {
     const adaptive = isClassifiedKind(d.kind) && (d.assist === "done" || last.classifyAfter === true);
     if (adaptive) {
-      void takeTurn(d, last);
+      void takeTurn(d, last, said);
       return;
     }
     if (askRuleFollowUp(d, last)) return;
@@ -603,7 +664,30 @@ export function ChatSeeding() {
    * Ask a follow-up about `last` (9 Oct): once per question — the marker is
    * written with it, so a reload mid-follow-up cannot ask it a second time.
    */
-  function askFollowUp(d: ChatDraft, last: Step, question: string) {
+  function askFollowUp(d: ChatDraft, last: Step, question: string, delay?: number) {
+    /* A step with buttons (12 Oct: the town) is asked again with its own
+       buttons — a text box cannot hold a town — once, and skippable again. */
+    if (last.widget !== "text") {
+      const s = scriptOf(d);
+      const index = s.steps.findIndex((x) => x.id === last.id);
+      if (index >= 0) {
+        const fields: Fields = { ...d.fields, [followUpMark(last.id)]: "yes" };
+        delete fields[last.id];
+        track("seed_confirm_back_shown", { kind: d.kind, subcategory: d.subcategory ?? null, field: last.id });
+        withTyping(
+          () =>
+            pushPrompt({
+              ...d,
+              fields,
+              step_index: index,
+              followup: null,
+              prompts: { ...(d.prompts ?? {}), [last.id]: question },
+            }),
+          delay,
+        );
+        return;
+      }
+    }
     const asked: ChatDraft = {
       ...d,
       fields: { ...d.fields, [followUpMark(last.id)]: "yes" },
@@ -615,19 +699,21 @@ export function ChatSeeding() {
       subcategory: d.subcategory ?? null,
       field: last.id,
     });
-    withTyping(() =>
-      patchChat((c) => ({
-        ...c,
-        messages: [...c.messages, { id: uid(), role: "pando", text: question }],
-      })),
+    withTyping(
+      () =>
+        patchChat((c) => ({
+          ...c,
+          messages: [...c.messages, { id: uid(), role: "pando", text: question }],
+        })),
+      delay,
     );
   }
 
   /** The rule-based follow-up (`followUpFor`), when no model is asked. */
-  function askRuleFollowUp(d: ChatDraft, last: Step): boolean {
+  function askRuleFollowUp(d: ChatDraft, last: Step, delay?: number): boolean {
     const ask = followUpFor(d.kind, last, (d.fields[last.id] ?? "") as FieldValue, d.fields);
     if (!ask) return false;
-    askFollowUp(d, last, ask);
+    askFollowUp(d, last, ask, delay);
     return true;
   }
 
@@ -658,7 +744,7 @@ export function ChatSeeding() {
       field: step_id,
       added: addition.length > 0,
     });
-    if (last) advance(next, last);
+    if (last) advance(next, last, undefined, addition);
   }
 
   /**
@@ -671,41 +757,194 @@ export function ChatSeeding() {
    * words for them. Every failure is the script's own order with the
    * rule-based follow-ups — `assistTurn` never throws.
    */
-  async function takeTurn(d: ChatDraft, last: Step) {
-    if (!isClassifiedKind(d.kind)) return;
-    const kind = d.kind;
-    const classify = d.assist !== "done";
-    patchChat((c) => ({ ...c, draft: { ...d, assist: classify ? "pending" : "done" } }));
-    setTyping(true);
-    const followed = followedUpIds(d.fields);
-    /* The parent's first name stays on this device: the server is told only
-       that there is one to use (12 Oct), and the token is filled in here. */
-    const firstName = (session?.first_name ?? session?.name ?? "").trim().split(/\s+/)[0] || null;
-    const raw = await assistTurn({
-      kind,
-      classify,
+  /** `said` is what the parent has just sent — not on screen yet (12 Oct). */
+  /* The parent's first name stays on this device: the server is told only
+     that there is one to use (12 Oct), and the token is filled in here. */
+  const firstName = (session?.first_name ?? session?.name ?? "").trim().split(/\s+/)[0] || null;
+
+  /** One turn's request — built the same way for a turn and for one asked ahead. */
+  function turnInputFor(d: ChatDraft, last: Step, said?: string): TurnInput | null {
+    if (!isClassifiedKind(d.kind)) return null;
+    return {
+      kind: d.kind,
+      classify: d.assist !== "done",
       subcategory: d.subcategory ?? null,
       fields: withoutMarkers(d.fields),
       last_step: last.id,
-      followed_up: followed,
+      followed_up: followedUpIds(d.fields),
       child_ages: session?.answers.child_ages ?? [],
-      may_name: firstName !== null && !d.named,
+      may_name: nameAllowed(d, firstName !== null),
+      has_area: homeArea !== null,
+      recent_reactions: d.reactions ?? [],
+      conversation: conversationOf(chat?.messages ?? [], scripts[d.kind].label, firstName, said, homeArea),
+    };
+  }
+
+  /* Ask ahead for each button of the question on screen (see `prefetched`). */
+  useEffect(() => {
+    if (!draft || !step || typing || draft.editing || draft.followup) return;
+    if (!isClassifiedKind(draft.kind) || draft.assist !== "done") return;
+    if (step.widget !== "quick" || !step.options || step.options.length > PREFETCH_MAX_OPTIONS) return;
+    if (step.stopIf || step.holdIf) return;
+    const asks = step.options.flatMap((o) => {
+      const input = turnInputFor({ ...draft, fields: { ...draft.fields, [step.id]: o.id } }, step, formatAnswer(step, o.id));
+      return input ? [[JSON.stringify(input), input] as const] : [];
     });
+    if (asks.every(([key]) => prefetched.current.has(key))) return;
+    prefetched.current = new Map(asks.map(([key, input]) => [key, assistTurn(input)]));
+    // Asked again only when the question on screen or the chat changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, step, typing, chat?.messages.length]);
+
+  /**
+   * An answer typed or picked but not sent yet, asked ahead (12 Oct, the
+   * developer: *"reduce the time, keep the personalisation, no streaming"*).
+   * The buttons cover a third of the turns; the rest follow something typed or
+   * picked, where the parent spends a moment before Send. Once they stop
+   * typing (`ASK_AHEAD_PAUSE_MS`), the turn for exactly that answer goes into
+   * `prefetched` under the same key `takeTurn` looks up — so Send uses it only
+   * if not a character changed. Bounded: one guess in flight at a time, at
+   * most `ASK_AHEAD_PER_QUESTION` per question (`worthAskingAhead`).
+   */
+  const ahead = useRef<{
+    question: string;
+    asked: number;
+    inFlight: boolean;
+    timer: number | null;
+    next: { key: string; input: TurnInput } | null;
+  }>({ question: "", asked: 0, inFlight: false, timer: null, next: null });
+
+  function askAheadNow() {
+    const a = ahead.current;
+    a.timer = null;
+    const next = a.next;
+    if (!next || a.inFlight || prefetched.current.has(next.key)) return;
+    a.inFlight = true;
+    a.asked += 1;
+    const asked = assistTurn(next.input);
+    prefetched.current.set(next.key, asked);
+    void asked.finally(() => {
+      a.inFlight = false;
+      /* They changed it while this one was out, and have paused since. */
+      if (a.timer === null && a.next && !prefetched.current.has(a.next.key)) askAheadNow();
+    });
+  }
+
+  /** `answered` is the draft exactly as `answer` or `answerFollowUp` would send it; `said`, their words. */
+  function stageAnswer(question: string, answered: ChatDraft, last: Step, value: FieldValue, said: string, pause: number) {
+    const a = ahead.current;
+    if (a.question !== question) Object.assign(a, { question, asked: 0, next: null });
+    if (a.timer !== null) window.clearTimeout(a.timer);
+    a.timer = null;
+    const input = worthAskingAhead(value, a.asked) ? turnInputFor(answered, last, said) : null;
+    a.next = input ? { key: JSON.stringify(input), input } : null;
+    if (a.next && !prefetched.current.has(a.next.key)) a.timer = window.setTimeout(askAheadNow, pause);
+  }
+
+  /** Only a turn `advance` would hand to `takeTurn`, on a step that neither stops nor holds the card. */
+  function asksAhead(d: ChatDraft, last: Step): boolean {
+    return (
+      isClassifiedKind(d.kind) &&
+      (d.assist === "done" || last.classifyAfter === true) &&
+      !last.stopIf &&
+      !last.holdIf
+    );
+  }
+
+  /** The step widget's staged value (`StepWidget.onStage`), built as `answer` builds it. */
+  function stageStep(value: FieldValue) {
+    if (!draft || !step || typing || draft.editing || draft.followup || !asksAhead(draft, step)) return;
+    if (step.widget !== "text" && step.widget !== "ages" && step.widget !== "chips") return;
+    const answered: ChatDraft = { ...draft, fields: { ...draft.fields, [step.id]: value } };
+    const said = isEmptyValue(value) ? "" : formatAnswer(step, value);
+    const pause = step.widget === "text" ? ASK_AHEAD_PAUSE_MS.typed : ASK_AHEAD_PAUSE_MS.picked;
+    stageAnswer(`${draft.id}:${step.id}`, answered, step, value, said, pause);
+  }
+
+  /** The draft after the follow-up is answered with `text`, built as `answerFollowUp` builds it. */
+  function followUpAnswered(d: ChatDraft, text: string): { answered: ChatDraft; last: Step } | null {
+    if (!d.followup) return null;
+    const { step_id, before } = d.followup;
+    const last = scriptOf(d).steps.find((x) => x.id === step_id);
+    if (!last || !asksAhead(d, last)) return null;
+    return {
+      answered: { ...d, fields: { ...d.fields, [step_id]: mergeFollowUp(before, text) }, followup: null },
+      last,
+    };
+  }
+
+  function stageFollowUp(text: string) {
+    if (!draft?.followup || typing) return;
+    const f = followUpAnswered(draft, text);
+    if (f) stageAnswer(`${draft.id}:fu:${draft.followup.step_id}`, f.answered, f.last, text, text, ASK_AHEAD_PAUSE_MS.typed);
+  }
+
+  /* Declining is asked ahead the moment it is on screen, like a button
+     (12 Oct): "It's fine as it is" under a follow-up, and Skip under an
+     optional question that is typed or picked (the town, who it suits) — one
+     tap, and often the answer. A question with buttons has its own above. */
+  useEffect(() => {
+    if (!draft || !step || typing || draft.editing) return;
+    let ask: { answered: ChatDraft; last: Step } | null = null;
+    if (draft.followup) ask = followUpAnswered(draft, "");
+    else if (step.optional && (step.widget === "text" || step.widget === "chips" || step.widget === "ages") && asksAhead(draft, step))
+      ask = { answered: { ...draft, fields: { ...draft.fields, [step.id]: step.widget === "text" ? "" : [] } }, last: step };
+    const input = ask ? turnInputFor(ask.answered, ask.last, "") : null;
+    if (!input) return;
+    const key = JSON.stringify(input);
+    if (!prefetched.current.has(key)) prefetched.current.set(key, assistTurn(input));
+    // Once per question on screen, as the buttons above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, step, typing, chat?.messages.length]);
+
+  async function takeTurn(d: ChatDraft, last: Step, said?: string) {
+    const input = turnInputFor(d, last, said);
+    if (!input) return;
+    const kind = input.kind;
+    const classify = input.classify;
+    patchChat((c) => ({ ...c, draft: { ...d, assist: classify ? "pending" : "done" } }));
+    setTyping(true);
+    const followed = input.followed_up;
+    const ready = prefetched.current.get(JSON.stringify(input));
+    prefetched.current = new Map();
+    if (ahead.current.timer !== null) window.clearTimeout(ahead.current.timer);
+    Object.assign(ahead.current, { timer: null, next: null });
+    const started = Date.now();
+    const raw = await (ready ?? assistTurn(input));
     setTyping(false);
+    /* A follow-up waits out only what is left of the usual typing pause
+       (12 Oct): it used to add the whole pause after the model's own second. */
+    const pause = Math.max(0, TYPING_MS - (Date.now() - started));
     const named = [raw.followup, raw.ack, raw.next?.prompt].some((t) => t?.includes(NAME_TOKEN) ?? false);
     const fill = (t: string | null | undefined) => (t ? fillName(t, firstName) : null);
     const result = {
       ...raw,
-      followup: fill(raw.followup),
+      /* The town asked again may carry their area (12 Oct). */
+      followup: raw.followup ? (fillArea(fillName(raw.followup, firstName), homeArea) ?? withThing(FOLLOW_UP_TOWN, d.fields)) : null,
       ack: fill(raw.ack),
-      next: raw.next ? { ...raw.next, prompt: fillName(raw.next.prompt, firstName) } : null,
+      next: raw.next
+        ? {
+            ...raw.next,
+            /* No area to fill (it was cleared mid-card): the script's own words, never "{area}". */
+            prompt:
+              fillArea(fillName(raw.next.prompt, firstName), homeArea) ??
+              (scriptOf(d).steps.find((x) => x.id === raw.next?.id)?.prompt ?? ""),
+          }
+        : null,
     };
 
-    const subcategory = classify ? subcategoryFor(kind, result.subcategory) : (d.subcategory ?? null);
+    /* Unsure, or no reply at all: the button's fallback (12 Oct — specialists). */
+    const subcategory = classify
+      ? (subcategoryFor(kind, result.subcategory) ?? unsureSubcategory(kind))
+      : (d.subcategory ?? null);
     const base: ChatDraft = {
       ...d,
       subcategory,
       named: d.named || named,
+      names_used: (d.names_used ?? 0) + (named ? 1 : 0),
+      named_at_turn: named ? (d.turns ?? 0) + 1 : d.named_at_turn,
+      turns: (d.turns ?? 0) + 1,
+      reactions: [...(d.reactions ?? []), raw.ack ?? raw.followup ?? ""].slice(-3),
       assist: "done",
       fields: classify ? afterClassified(kind, subcategory, d.fields) : d.fields,
     };
@@ -719,7 +958,7 @@ export function ChatSeeding() {
     const s = scriptOf(base);
 
     if (!result.configured) {
-      if (askRuleFollowUp(base, last)) return;
+      if (askRuleFollowUp(base, last, pause)) return;
       const upcoming = nextUnanswered(s, base.fields, 0);
       if (upcoming < 0) finishCard(base);
       else pushPrompt({ ...base, step_index: upcoming });
@@ -727,7 +966,7 @@ export function ChatSeeding() {
     }
 
     if (result.followup && !followed.includes(last.id)) {
-      askFollowUp(base, last, result.followup);
+      askFollowUp(base, last, result.followup, pause);
       return;
     }
 
@@ -740,12 +979,9 @@ export function ChatSeeding() {
       const label = s.recap.find((r) => r.field === id)?.label ?? id;
       return [`${label}: ${formatAnswer(x, value as FieldValue)}`];
     });
-    if (noted.length > 0) {
-      patchChat((c) => ({
-        ...c,
-        messages: [...c.messages, { id: uid(), role: "pando", text: `Noted from what you said — ${noted.join(" · ")}.` }],
-      }));
-    }
+    /* 12 Oct: a small line under the next question, not a bubble of its own —
+       "Noted from what you said — …" read as a form talking. */
+    const note = noted.length > 0 ? `Noted from what you said: ${noted.join(" · ")}.` : null;
     const nextDraft: ChatDraft = { ...base, fields };
 
     /* A short reaction to what they just typed (iteration 1, 9 Oct) leads into
@@ -753,7 +989,12 @@ export function ChatSeeding() {
        should look dynamic); said alone only when the card ends here. */
     const ack = result.ack;
     const sayAlone = () => {
-      if (ack) patchChat((c) => ({ ...c, messages: [...c.messages, { id: uid(), role: "pando", text: ack }] }));
+      if (ack || note) {
+        patchChat((c) => ({
+          ...c,
+          messages: [...c.messages, { id: uid(), role: "pando", text: ack ?? undefined, aside: note ?? undefined }],
+        }));
+      }
     };
 
     if (!result.next) {
@@ -767,7 +1008,7 @@ export function ChatSeeding() {
       if (upcoming < 0) {
         sayAlone();
         finishCard(nextDraft);
-      } else pushPrompt({ ...nextDraft, step_index: upcoming }, ack);
+      } else pushPrompt({ ...nextDraft, step_index: upcoming }, ack, note);
       return;
     }
     pushPrompt(
@@ -777,6 +1018,7 @@ export function ChatSeeding() {
         prompts: { ...(d.prompts ?? {}), [result.next.id]: result.next.prompt },
       },
       ack,
+      note,
     );
   }
 
@@ -1299,6 +1541,7 @@ export function ChatSeeding() {
             question={draft.followup.question}
             onAnswer={answerFollowUp}
             onSkip={() => answerFollowUp("")}
+            onStage={stageFollowUp}
           />
         ) : chat.mode === "card" && draft && script && step ? (
           <StepWidget
@@ -1315,6 +1558,7 @@ export function ChatSeeding() {
             }
             onAnswer={answer}
             onSkip={() => answer(step.widget === "text" || step.widget === "phone" ? "" : [])}
+            onStage={draft.editing ? undefined : stageStep}
             onUndo={undoLast}
             /* `place` only: which directory to search, and the parent's own
                town to rank by — a hint after relevance, never a filter. */

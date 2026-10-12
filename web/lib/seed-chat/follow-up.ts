@@ -1,5 +1,5 @@
 import { isNothingToFlag, isThinAnswer } from "../contribution-quality";
-import { isEmptyValue } from "./engine";
+import { isEmptyValue, withThing } from "./engine";
 import { followUpMark } from "./scripts";
 import type { FieldValue, Fields, ShareKind, Step } from "./types";
 
@@ -40,7 +40,9 @@ export function followUpFor(
   if (!rule) return null;
   if (followUpMark(step.id) in fields) return null;
 
-  if (isEmptyValue(value)) return rule.ask;
+  /* The card's name in its own follow-up (12 Oct, `withThing`). */
+  const ask = withThing(rule.ask, fields);
+  if (isEmptyValue(value)) return ask;
   if (rule.on !== "empty_or_thin" || typeof value !== "string") return null;
 
   const text = value.trim();
@@ -50,7 +52,7 @@ export function followUpFor(
      praise are taken out (5 Oct): "The Family Room is excellent" says nothing. */
   const why = step.id === "what_makes_it_great" || step.id === "what_didnt_work";
   const own = typeof fields.name === "string" ? fields.name : null;
-  return isThinAnswer(text, { name: own, content: why }) ? rule.ask : null;
+  return isThinAnswer(text, { name: own, content: why }) ? ask : null;
 }
 
 /**

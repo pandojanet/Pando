@@ -57,6 +57,20 @@ export type ProviderCheck = "license" | "npi" | "web" | "not_found";
  */
 export const PROVIDER_CHECK_PAUSED = false;
 
+/**
+ * Which cards the provider check runs on — one rule for the save route, the
+ * admin and the server's own claim. A doctor card asked as a doctor, or with no
+ * sub-category at all (a card from before 9 Oct, or one an admin cleared — the
+ * chat files an unsure card as a specialist since 12 Oct). Not a party vendor
+ * (9 Oct: no medical registry lists one), and **not a specialist** (12 Oct, the
+ * developer: "for specialists the check can be skipped — that sub-category is
+ * too broad": a tutor, a photographer or a haircut is in no registry, so a
+ * "Not found" there says nothing about the provider).
+ */
+export function checksProvider(kind: string, subcategory: string | null | undefined): boolean {
+  return kind === "doctor" && (subcategory == null || subcategory === "doctors");
+}
+
 export const DCA_HOST = "search.dca.ca.gov";
 
 export interface SearchHit {

@@ -397,8 +397,10 @@ for (const t of [
   ok('"' + t + '" is an experience', !isThinAnswer(t, { name: "Little Maestros", content: true }));
 ok("the record's own name is not counted as something said, wherever it appears",
   isThinAnswer("Little Maestros is excellent", { name: "Little Maestros", content: true }));
+/* 12 Oct: the length floor is 20, so the caveat is one past it — the content rule is still not applied. */
 ok("the rule is for 'what makes it good' only — a short caveat is still a caveat",
-  !isThinAnswer("Parking is brutal", {}));
+  !isThinAnswer("Parking is brutal there", {}));
+ok("under 20 characters is thin (12 Oct)", isThinAnswer("patient teachers", {}) && isThinAnswer("parking is bad", {}));
 
 /* ── 9 Oct: the client's sub-categories ask different things ── */
 {

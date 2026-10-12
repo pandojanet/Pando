@@ -60,11 +60,61 @@ export function canonicalPrompt(step: Step, fields?: Fields): string {
   /* A name that reads as one: a long one would bury the question, and a
      person's ("what is Ms. Lee?", 12 Oct) is not a thing. */
   const name = typeof fields?.name === "string" ? fields.name.trim() : "";
-  const person = /^(mr|mrs|ms|miss|mx|dr|coach|teacher)\b\.?/i.test(name);
+  const person = PERSON_TITLE.test(name);
   if (step.namedPrompt && !person && name.length >= 2 && name.length <= 40) {
     return step.namedPrompt.replace("{thing}", name);
   }
-  return step.prompt;
+  return name.length >= 2 && name.length <= 40 ? namedIn(step, step.prompt, name) : step.prompt;
+}
+
+/**
+ * The script's own words with the card's name in them (12 Oct, the developer:
+ * one more round of personalisation — "Who is it perfect for?" is what is said
+ * whenever the model's wording is not kept). Only on questions where the name
+ * reads right in place of "it" / "them": "Who is Splash Academy perfect for?",
+ * "Which town is Ms. Lee in?", "Roughly what did you pay for Kidspace?".
+ */
+const NAMEABLE = new Set(["who_for", "location", "worth_it", "recommendation", "best_for", "caveat", "price_band"]);
+function namedIn(step: Step, prompt: string, name: string): string {
+  if (!NAMEABLE.has(step.id) || prompt.includes(name)) return prompt;
+  if (/\bpay\?$/.test(prompt)) return prompt.replace(/pay\?$/, `pay for ${name}?`);
+  if (/\bare they\b/.test(prompt)) return prompt.replace(/\bare they\b/, `is ${name}`);
+  const m = prompt.match(/\b(it|them|they)\b/);
+  return m && m.index !== undefined ? prompt.slice(0, m.index) + name + prompt.slice(m.index + m[0].length) : prompt;
+}
+
+/**
+ * A follow-up's own words with the card's name (12 Oct): `{thing|it}` is the
+ * name, or the word after the bar when the card has none; `{to thing|there}`
+ * keeps "to" with the name only.
+ */
+export function withThing(text: string, fields?: Fields): string {
+  const name = typeof fields?.name === "string" ? fields.name.trim() : "";
+  const usable = name.length >= 2 && name.length <= 40;
+  return text.replace(/\{(?:([a-z]+) )?thing\|([^}]*)\}/g, (_, prefix: string | undefined, alt: string) =>
+    usable ? `${prefix ? `${prefix} ` : ""}${name}` : alt,
+  );
+}
+
+/** A name that reads as a person ("Ms. Lee"), which "what is {thing}?" does not fit. */
+const PERSON_TITLE = /^(mr|mrs|ms|miss|mx|dr|coach|teacher)\b\.?/i;
+
+/**
+ * One of a step's `variants`, filled — or null to say its `prompt` (12 Oct).
+ * `seed` picks it, so two cards in a row do not open the same way; a variant
+ * needing a name the card or the parent does not have is passed over, as is
+ * "what is {thing}?" for a person.
+ */
+export function openerFor(step: Step, fields: Fields, seed: number, parent: string | null): string | null {
+  if (!step.variants || step.variants.length === 0) return null;
+  const thing = typeof fields.name === "string" ? fields.name.trim() : "";
+  const thingOk = thing.length >= 2 && thing.length <= 40 && !(step.id === "what_is_it" && PERSON_TITLE.test(thing));
+  const fits = (v: string) => (!v.includes("{thing}") || thingOk) && (!v.includes("{parent}") || !!parent);
+  /* The script's own words only when no variant fits (12 Oct: kept in the
+     pool, half the cards still opened word for word). */
+  const usable = step.variants.filter(fits).length > 0 ? step.variants.filter(fits) : [step.prompt];
+  const pick = usable[Math.abs(seed) % usable.length];
+  return pick.replace("{thing}", thing).replace("{parent}", parent ?? "");
 }
 
 /** What Pando says for a step: the model's wording when it gave one (9 Oct). */
@@ -126,10 +176,38 @@ export function progressOf(
      already said, so "where we are" is how many are answered, not the step's
      position — still only ever moving forward. */
   void index;
-  const answered = script.steps.filter((s) => s.id in fields).length;
+  /*
+   * 12 Oct, the developer: "the number of questions is wrong after That's it" —
+   * the raw count kept the whole detail block, so a card ended at "11 of 18".
+   * Now a conditional step counts until it is **settled**: shown, or hidden
+   * with every step before it already answered (its gate is always earlier).
+   * So the total still never grows — a branch not yet decided is counted — and
+   * it shrinks the moment one is decided against ("That's it", a No).
+   */
+  const open = (s: Step) => !s.when || s.when(fields);
+  /* Could answers to earlier, still open steps show `s`? Each one's buttons
+     are tried, or any answer for a typed one — alone and in pairs, since a
+     gate is at most two earlier answers (the unit: "Add more detail" and a
+     price; a caregiver's horizon: still working and would hire again). */
+  const tries = (e: Step): FieldValue[] =>
+    e.options ? e.options.map((o) => o.id) : e.widget === "ages" ? [[5]] : e.widget === "chips" ? [[]] : ["x"];
+  const couldOpen = (s: Step, i: number) => {
+    const pending = script.steps.slice(0, i).filter((e) => !(e.id in fields));
+    return pending.some((a, ai) =>
+      tries(a).some(
+        (va) =>
+          s.when?.({ ...fields, [a.id]: va }) === true ||
+          pending
+            .slice(ai + 1)
+            .some((b) => tries(b).some((vb) => s.when?.({ ...fields, [a.id]: va, [b.id]: vb }) === true)),
+      ),
+    );
+  };
+  const counted = script.steps.filter((s, i) => s.id in fields || open(s) || couldOpen(s, i));
+  const answered = counted.filter((s) => s.id in fields).length;
   return {
-    current: Math.min(answered + 1, script.steps.length),
-    total: script.steps.length,
+    current: Math.min(answered + 1, counted.length),
+    total: counted.length,
   };
 }
 

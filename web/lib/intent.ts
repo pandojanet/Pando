@@ -111,6 +111,22 @@ export interface IntentResult {
 const CAREGIVER_WORDS =
   /\b(nanny|nannies|sitter|babysitter|au ?pair|childminder|night nurse|newborn care|nanny share|childcare|daycare provider)\b/i;
 
+/**
+ * Offering someone or something of their own, not asking (12 Oct): "I want to
+ * add our nanny Marisol" read as `ask_caregiver` here — any caregiver word did —
+ * and as `settings` / `ask_caregiver` from the model. It is a contribution, and
+ * its reply sends them to /share, where a caregiver is added through the
+ * invite the parent sends themselves (invariant 13).
+ */
+const OFFER_SHAPE =
+  /\b(?:i|we)(?:'d| would)?(?:\s+(?:like|want|love)\s+to|\s+wanna|\s+can|\s+could)?\s+(?:add|recommend|nominate|share|vouch for|tell you about)\s+(?:our|my)\b|\bcan i (?:add|recommend|nominate|share)\b/i;
+/** "our nanny Marisol is amazing" — their own caregiver, said without asking for one. */
+const OWN_CAREGIVER =
+  /\b(?:our|my)\s+(?:nanny|sitter|babysitter|au ?pair|childminder|night nurse)\b/i;
+/** …unless they are looking for one after all ("our nanny is leaving, need a new one"). */
+const NEEDS_ONE =
+  /\b(?:need|needs|needed|looking|find|finding|replace|replacement|new|another|backup|leaving|left|quit|quitting|recommendations?)\b/i;
+
 const SETTINGS_WORDS =
   /\b(unsubscribe me|fewer|less often|too many|stop asking|blast settings|settings|preferences|my profile|update my)\b/i;
 
@@ -191,6 +207,19 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
       confidence: 1,
       source: "context",
       reason: "they were asked something and have not answered or passed",
+      sensitive: false,
+    };
+  }
+
+  if (
+    OFFER_SHAPE.test(body) ||
+    (OWN_CAREGIVER.test(body) && !NEEDS_ONE.test(body) && !QUESTION_SHAPE.test(body))
+  ) {
+    return {
+      intent: "contribute",
+      confidence: 0.7,
+      source: "fallback",
+      reason: "offers someone or something of their own",
       sensitive: false,
     };
   }

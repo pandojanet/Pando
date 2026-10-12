@@ -8,6 +8,7 @@ import { getDb, withDb } from "@/lib/server/db";
 import { saveCard, type CardKind } from "@/lib/server/repo/cards";
 import { scheduleExtraction } from "@/lib/server/repo/flags";
 import { scheduleProviderCheck } from "@/lib/server/provider-check";
+import { checksProvider } from "@/lib/provider-check";
 import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { notifyAdmins } from "@/lib/server/notify";
@@ -366,11 +367,9 @@ export async function POST(request: Request) {
     if (db) scheduleExtraction(db, result.data.record_id);
     /* A doctor card (8 Oct): is the provider findable — NPPES, then the web.
        After the response for the same reason, and it never blocks the card.
-       ⚠ Since 9 Oct the Services button also carries party venues and
-       vendors, which no medical registry lists: the check runs for a doctor,
-       a specialist (NPPES lists therapists and dentists too) and a card asked
-       as the general category, never for `parties`. */
-    if (db && kind === "doctor" && fields.subcategory !== "parties") {
+       Only a doctor, or a card asked as the general category — never a
+       party vendor (9 Oct) or a specialist (12 Oct): `checksProvider`. */
+    if (db && checksProvider(kind, typeof fields.subcategory === "string" ? fields.subcategory : null)) {
       scheduleProviderCheck(db, result.data.record_id);
     }
   }

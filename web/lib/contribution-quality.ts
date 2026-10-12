@@ -49,7 +49,7 @@ export function doctorWhy(fields: Record<string, unknown>): unknown {
  */
 export function choosesWhyByRecommendation(kind: string, subcategory?: string | null): boolean {
   /* 9 Oct: a school asks the pair too (the client's list), and every activity
-     and Services sub-category carries it. 12 Oct: a restaurant and a product
+     and Specialists-button sub-category carries it. 12 Oct: a restaurant and a product
      too — after a No they were asked what makes it good. A place (its own
      question is "like — or dislike") and a tip still ask one. */
   return (
@@ -66,7 +66,7 @@ export function choosesWhyByRecommendation(kind: string, subcategory?: string | 
  * — since 9 Oct — its sub-category. One table, so the chat, the admin and the
  * Founding count read the same rule.
  *
- *  - the child's age: every activity, a school, a doctor (and a general Services
+ *  - the child's age: every activity, a school, a doctor (and a general Specialists
  *    card); a specialist asks it "if relevant", so it does not gate;
  *  - when they were last there: the same, plus a specialist — a restaurant, a
  *    party vendor and a product are not asked it;
@@ -126,8 +126,12 @@ export interface QualityInput {
  * The confirm-back's own number (`lib/seed-chat/confirm-back.ts`), kept in one
  * place: the chat asks for more when it is under, and a card still under it
  * afterwards is not complete.
+ *
+ * 12 → 20 (12 Oct, the developer: "a little longer than 12 characters"):
+ * "patient teachers", "parking is bad" or "can be busy" now get one follow-up.
+ * No real card changed status — none of the 32 had a "why" of 12–19 characters.
  */
-const THIN = 12;
+const THIN = 20;
 
 const EMPTY_PRAISE =
   /^(it'?s |we |they |i )?(really |very |so )?(good|great|nice|fine|ok|okay|lovely|amazing|the best|fun|loved it|liked it|recommend)[.!]?$/i;
