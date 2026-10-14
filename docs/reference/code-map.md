@@ -67,6 +67,10 @@
                        the gap and the governor fire, so they can be walked
                        without waiting a month. Asserts nothing: every
                        judgement is left to production code.
+`web/lib/recent-activity.ts` — what one recent recommendation may say about
+                       itself on `/join` (town only past 3 verified parents,
+                       coarse category, time bucket, never a caregiver). Pure;
+                       the query is `lib/server/repo/recent-activity.ts`.
 `web/lib/rate-limits.ts` — M15.4. How often one caller may hit each public
                        endpoint, and **which `X-Forwarded-For` entry is
                        actually theirs**. Pure; imports nothing.

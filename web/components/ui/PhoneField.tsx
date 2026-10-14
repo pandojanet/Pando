@@ -17,6 +17,12 @@ interface Props {
   label: string;
   hint?: string;
   id?: string;
+  /**
+   * `split` is `/join`'s look (14 Oct, the client's join mockup): the `+1` in
+   * its own box beside the input rather than inside one ring, and the larger
+   * type the mockup sets. Same behaviour, same refusals — only the box changes.
+   */
+  look?: "joined" | "split";
 }
 
 /**
@@ -45,7 +51,9 @@ export function PhoneField({
   label,
   hint,
   id = "phone",
+  look = "joined",
 }: Props) {
+  const split = look === "split";
   const country = "US" as const;
 
   /* A value restored from a session saved before the picker went is cleared
@@ -74,7 +82,7 @@ export function PhoneField({
 
   return (
     <div>
-      <label htmlFor={id} className="block text-control font-semibold">
+      <label htmlFor={id} className={cn("block font-semibold", split ? "mb-[5px] text-[0.9rem]" : "text-control")}>
         {label}
       </label>
       {hint && (
@@ -87,23 +95,45 @@ export function PhoneField({
           incomplete state colour one ring around the pair instead of two. */}
       <div
         className={cn(
-          "mt-2.5 flex items-stretch overflow-hidden rounded-2xl border bg-card",
-          "focus-within:border-green",
-          started && !complete ? "border-gold-line" : "border-bark",
+          split
+            ? "flex items-stretch gap-2"
+            : cn(
+                "mt-2.5 flex items-stretch overflow-hidden rounded-2xl border bg-card",
+                "focus-within:border-green",
+                started && !complete ? "border-gold-line" : "border-bark",
+              ),
         )}
       >
         {/* Text, not a disabled `<select>`: there is nothing to choose, and a
             greyed-out control reads as something that ought to work. It is
             `aria-hidden` because the input's own label and its `+1` placeholder
             already say what number is wanted. */}
-        <div className="flex items-center" aria-hidden="true">
-          <span className="min-h-[52px] pl-4 pr-3 text-field leading-[52px] text-ink-soft">
+        {split ? (
+          <div
+            className="flex flex-none items-center rounded-[14px] border-[1.5px] border-bark bg-bark-soft px-4 text-[1.05rem] font-semibold text-ink-soft"
+            aria-hidden="true"
+          >
             {phoneCountryLabel(country)}
-          </span>
-          <span className="h-7 w-px self-center bg-bark" />
-        </div>
+          </div>
+        ) : (
+          <div className="flex items-center" aria-hidden="true">
+            <span className="min-h-[52px] pl-4 pr-3 text-field leading-[52px] text-ink-soft">
+              {phoneCountryLabel(country)}
+            </span>
+            <span className="h-7 w-px self-center bg-bark" />
+          </div>
+        )}
 
-        <div className="relative flex-1">
+        <div
+          className={cn(
+            "relative flex-1",
+            split &&
+              cn(
+                "rounded-[14px] border-[1.5px] bg-card focus-within:border-green",
+                started && !complete ? "border-gold-line" : "border-bark",
+              ),
+          )}
+        >
           <input
             id={id}
             value={value}
@@ -123,7 +153,10 @@ export function PhoneField({
                 .filter(Boolean)
                 .join(" ") || undefined
             }
-            className="min-h-[52px] w-full bg-transparent pl-3.5 pr-11 text-field outline-none placeholder:text-muted/60"
+            className={cn(
+              "w-full bg-transparent pr-11 outline-none placeholder:text-muted/60",
+              split ? "min-h-[56px] rounded-[14px] pl-4 text-[1.1rem]" : "min-h-[52px] pl-3.5 text-field",
+            )}
           />
           {complete && (
             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-green">

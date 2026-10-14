@@ -17,6 +17,7 @@ import { inviterIdFor, validateInviteCode } from "@/lib/server/invite";
 import { invalidateInvites } from "@/lib/server/invite-cache";
 import {
   LISTENING_EAR_CONSENT_TEXT_VERSION,
+  PILOT_LAUNCH_CONSENT_TEXT_VERSION,
   RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
   SMS_CONSENT_TEXT_VERSION,
 } from "@/lib/consent";
@@ -93,6 +94,28 @@ function normaliseSmsConsent(
    how a removed consent comes back through a body nobody meant to accept.
    The field is still tolerated on the payload and dropped — see the call
    site below. */
+
+/**
+ * "Also text me when the pilot opens" (14 Oct). Only an `opted_in` record is
+ * kept — the box is optional and an unticked one is no record at all (see
+ * `PILOT_LAUNCH_CONSENT_TEXT`) — and it is stamped with the wording's version
+ * when the client sent none, the same kindness `normaliseSmsConsent` extends.
+ */
+function normalisePilotLaunchConsent(
+  value: unknown,
+): { status: string; text_version: string; source?: string } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (record.status !== "opted_in") return null;
+  return {
+    status: "opted_in",
+    text_version:
+      typeof record.text_version === "string" && record.text_version !== ""
+        ? record.text_version
+        : PILOT_LAUNCH_CONSENT_TEXT_VERSION,
+    source: typeof record.source === "string" ? record.source : undefined,
+  };
+}
 
 /**
  * The listening-ear opt-in. No legacy shape to accommodate — this consent
@@ -507,6 +530,7 @@ export async function POST(request: Request) {
     phone_verified: gate.verified_at !== null,
     phone_verified_at: gate.verified_at,
     sms_consent: normaliseSmsConsent(raw.sms_consent),
+    pilot_launch_consent: normalisePilotLaunchConsent(raw.pilot_launch_consent),
     listening_ear_consent: normaliseListeningEarConsent(raw.listening_ear_consent),
     /* ⚠ **Read and dropped since 10 Sep**, deliberately rather than removed
        from the payload type: the client folded this consent into the single
@@ -677,6 +701,7 @@ export async function POST(request: Request) {
     has_phone: payload.phone !== null,
     phone_verified: payload.phone_verified,
     sms_consent: payload.sms_consent?.status ?? "none",
+    pilot_launch_consent: payload.pilot_launch_consent?.status ?? "none",
     listening_ear_consent: payload.listening_ear_consent?.status ?? "none",
     wants_founding: payload.wants_founding,
     children: payload.children.length,
@@ -701,6 +726,7 @@ export async function POST(request: Request) {
       phone: payload.phone,
       phone_verified_at: payload.phone_verified_at,
       sms_consent: payload.sms_consent as ProfileConsent,
+      pilot_launch_consent: payload.pilot_launch_consent as ProfileConsent,
       listening_ear_consent: payload.listening_ear_consent as ProfileConsent,
       recurring_messages_consent:
         payload.recurring_messages_consent as ProfileConsent,

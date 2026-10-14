@@ -377,6 +377,9 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     /** False until SMS verification exists — never implied (see lib/consent.ts). */
     phone_verified: session.phone_verified === true,
     sms_consent: session.sms_consent,
+    /* Taken at /join beside `sms_consent` and carried on the session the same way
+       (14 Oct). Null when the optional box was left alone. */
+    pilot_launch_consent: session.pilot_launch_consent ?? null,
     inviter_relationship: session.inviter_relationship ?? null,
     inviter_relationship_other: session.inviter_relationship_other ?? null,
     /**

@@ -226,6 +226,25 @@ export const RECURRING_MESSAGES_CONSENT_TERMS =
   RECURRING_MESSAGES_CONSENT_TEXT.slice(RECURRING_SPLIT_INDEX);
 
 /**
+ * "Also text me when the pilot opens" — the optional second tick on /join
+ * (14 Oct, the client's join mockup, verbatim).
+ *
+ * ⚠ **Optional, and that is the whole of its design.** Joining never depends on
+ * it: the registered `sms` consent above it is what authorises the code and the
+ * flow's messages, and this one asks for something else — one message when the
+ * pilot opens. So it is stored **only when ticked** (`opted_in`); an unticked
+ * box is no record, never a "declined" one, because nothing was asked of a
+ * parent who simply left an optional box alone.
+ *
+ * Captured on the device with the rest of /join and written with the profile,
+ * after the code (invariant 11). Nothing reads it yet: the pilot launch message
+ * is Phase 2, and it goes through `lib/server/sms.ts` like every other send.
+ */
+export const PILOT_LAUNCH_CONSENT_TEXT_VERSION = "seed-pilot-launch-2026-10-14";
+
+export const PILOT_LAUNCH_CONSENT_TEXT = "Also text me when the pilot opens (optional).";
+
+/**
  * 2C — the caregiver's own permissions (G2, G8–G10).
  *
  * Four decisions, asked and stored separately, because they are four different
@@ -333,6 +352,8 @@ export type ConsentScope =
   | "blast"
   /** Willing to be matched to a stranger's sensitive question, anonymously. */
   | "listening_ear"
+  /** One text when the pilot opens — the optional second tick on /join (14 Oct). */
+  | "pilot_launch"
   /** Pando may introduce me to a parent asking about someone I nominated. */
   | "reference"
   /** 2C · G2 — the caregiver agrees Pando may hold their profile at all. */
@@ -369,6 +390,8 @@ export function buildConsentRecord(
           ? RECURRING_MESSAGES_CONSENT_TEXT_VERSION
         : scope === "listening_ear"
           ? LISTENING_EAR_CONSENT_TEXT_VERSION
+        : scope === "pilot_launch"
+          ? PILOT_LAUNCH_CONSENT_TEXT_VERSION
           : scope.startsWith("caregiver_")
             ? CAREGIVER_CONSENT_TEXT_VERSION
             : CONSENT_TEXT_VERSION,

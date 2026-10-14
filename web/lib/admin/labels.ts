@@ -558,6 +558,7 @@ const CONSENT_SCOPE: Record<string, string> = {
   follow_up: "Follow-ups about what they shared",
   blast: "Questions from other parents",
   listening_ear: "Answering a stranger's hard question",
+  pilot_launch: "A text when the pilot opens (taken at /join)",
   reference: "Being a reference for a caregiver",
   caregiver_profile: "Caregiver: Pando may keep my profile",
   caregiver_listing: "Caregiver: may appear in an answer",

@@ -77,6 +77,8 @@ export interface ProfileInput {
   /** A server fact read from the verification cookie, never from the body. */
   phone_verified_at: string | null;
   sms_consent: { status: string; text_version: string; source?: string } | null;
+  /** 14 Oct — "Also text me when the pilot opens", only ever opted in or null. */
+  pilot_launch_consent?: { status: string; text_version: string; source?: string } | null;
   /** 18 Aug — willingness to occasionally answer another parent's hard question. */
   listening_ear_consent: { status: string; text_version: string; source?: string } | null;
   recurring_messages_consent: {
@@ -557,6 +559,21 @@ export async function writeProfile(
         status: "opted_in",
         source: input.recurring_messages_consent.source ?? "seed_tool",
         textVersion: input.recurring_messages_consent.text_version,
+      });
+    }
+
+    /**
+     * "Also text me when the pilot opens" (14 Oct). Gated on `input.phone` like
+     * the two SMS consents above — it is permission to text a number — and
+     * `opted_in` unconditionally: the route keeps nothing else.
+     */
+    if (input.pilot_launch_consent && input.phone) {
+      await tx.insert(consents).values({
+        personId,
+        scope: "pilot_launch",
+        status: "opted_in",
+        source: input.pilot_launch_consent.source ?? "seed_tool",
+        textVersion: input.pilot_launch_consent.text_version,
       });
     }
 

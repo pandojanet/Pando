@@ -1329,7 +1329,8 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
         !!when?.questions.find((x) => x.key === "available_from")?.label.endsWith("?"));
   }
   const landing = fs.readFileSync(new URL("../components/seed/InviteLanding.tsx", import.meta.url), "utf8");
-  ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && landing.includes('placeholder="First name"'));
+  /* 14 Oct: the join mockup's "Your first name" — still nobody's name. */
+  ok("the first-name field names nobody", !/placeholder="Janet"/.test(landing) && /placeholder="(Your first name|First name)"/.test(landing));
   const flowForReview = fs.readFileSync(new URL("../components/seed/ProfileFlow.tsx", import.meta.url), "utf8");
   ok("the review dock no longer says “the part only you can answer”", !flowForReview.includes("the part only you can answer —"));
 
@@ -1923,19 +1924,24 @@ console.log("\n=== 10 Sep: the join page, the phone layout, and the optional scr
   );
 
   /* Terminology, both halves. */
+  /* 14 Oct: the join mockup dropped the header badge — the eyebrow reads
+     "Founding parents" — so this keeps only its half that still applies: one
+     capitalisation, never the lower-case mixture. */
   ok(
-    "the join screen says Founding Contributor",
-    /Founding Contributor/.test(join) && !/Founding contributor/.test(join),
+    "the join screen never says “Founding contributor”",
+    !/Founding contributor/.test(join),
     "one capitalisation, not the current mixture",
   );
-  /* 21 Sep, the developer: the market line above the heading is gone too, so
-     the screen names no town at all — and never one town standing for the
-     market, which is what this check was written against. */
+  /* 21 Sep, the developer: the market line above the heading went. 14 Oct, the
+     join mockup brings one back — "Founding parents · Pasadena & nearby" — and
+     the half of the rule that survives is the one this check was written
+     against: never one town standing for the market on its own. */
   ok(
     "the join screen names no single town as the market",
     !/Founding network · Pasadena/.test(join) &&
-      !/<Eyebrow>Founding Contributor · San Gabriel Valley<\/Eyebrow>/.test(join),
-    "the market eyebrow was removed on 21 Sep",
+      !/<Eyebrow>Founding Contributor · San Gabriel Valley<\/Eyebrow>/.test(join) &&
+      /Founding parents · Pasadena &amp; nearby/.test(join),
+    "Pasadena only ever with “& nearby”",
   );
 
   /* Blast is off every surface a parent reads. */
@@ -2599,10 +2605,12 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
       `${c.SMS_CONSENT_AGREEMENT} ${c.SMS_CONSENT_TERMS}` === c.SMS_CONSENT_TEXT,
     "derived from one string, never two copies",
   );
+  /* 14 Oct: the join mockup has no reassurance line above the tick, and the
+     developer asked for the mockup as drawn — so it is off the join screen,
+     and never back as a field hint either. */
   ok(
-    "the reassurance is on the join screen and out of the field hint",
-    /SMS_CONSENT_REASSURANCE/.test(join) && !/hint=\{SMS_CONSENT_REASSURANCE\}/.test(join),
-    "Keep it and make it more visible",
+    "the reassurance is not a field hint on the join screen",
+    !/hint=\{SMS_CONSENT_REASSURANCE\}/.test(join),
   );
 
   /* One opening bubble, not three. */
@@ -2716,15 +2724,18 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   const rewards = (await import(
     `../lib/rewards.ts?v=${Date.now()}`
   )) as typeof import("../lib/rewards.ts");
+  /* 14 Oct: the join mockup has no offer sentence, and the developer put its
+     conditions on the $10 tile — so Join carries the tile, not the sentence. */
   ok(
-    "the offer is on the join page",
-    join.includes("REWARD_OFFER"),
-    "once, under the inviter line",
+    "the offer sentence is off the join page",
+    !join.includes("{REWARD_OFFER}") && !/import \{[^}]*REWARD_OFFER/.test(join),
   );
   ok(
-    "exactly once",
-    (join.match(/\{REWARD_OFFER\}/g) ?? []).length === 1,
-    `${(join.match(/\{REWARD_OFFER\}/g) ?? []).length} occurrence(s)`,
+    "and its $10 tile says what it is for",
+    /<b className=\{TILE_VALUE\}>\$10<\/b>/.test(src("../components/seed/join/JoinParts.tsx")) &&
+      /aria-expanded=\{open\}/.test(src("../components/seed/join/JoinParts.tsx")) &&
+      /\{REWARD_OFFER\}/.test(src("../components/seed/join/JoinParts.tsx")),
+    "a button that opens REWARD_OFFER — on hover, tap or Enter",
   );
   ok(
     "and in the invite a parent sends",
@@ -2738,13 +2749,14 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   /* Separate from SMS consent: the offer must not sit inside the label, or
      agreeing to messages and accepting an offer become one tap. */
   ok(
-    "and it is outside the consent label",
-    join.indexOf("{REWARD_OFFER}") < join.indexOf("<Consent"),
+    "and the $10 is outside the consent label",
+    join.indexOf("<JoinFacts") > -1 && join.indexOf("<JoinFacts") < join.indexOf("<Consent"),
     "a payment offer inside a consent label is one tap for two decisions",
   );
   ok(
     "the amount and the deadline are stated once, in one module",
-    rewards.REWARD_AMOUNT_USD === 10 && /Oct 31, 2026/.test(rewards.REWARD_OFFER),
+    /* 14 Oct: no deadline any more — the amount is the one number left in it. */
+    rewards.REWARD_AMOUNT_USD === 10 && /\$10 reward/.test(rewards.REWARD_OFFER) && !/Oct 31/.test(rewards.REWARD_OFFER),
     rewards.REWARD_OFFER,
   );
 
@@ -3538,6 +3550,90 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     })
       .map((one) => one.id)
       .join(",") === "neighborhood,home_zip",
+  );
+}
+
+/* ---- The live line on /join (14 Oct): real, recent, de-identified ---- */
+{
+  const ra = (await import(`../lib/recent-activity.ts?v=${Date.now()}`)) as typeof import("../lib/recent-activity.ts");
+  const now = new Date(2026, 9, 14, 15, 0, 0);
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
+  const row = (over: Partial<import("../lib/recent-activity.ts").RecentRow>) => ({
+    created_at: hoursAgo(2),
+    kind: "activity",
+    subcategory: "classes",
+    town: "South Pasadena",
+    town_parents: 5,
+    ...over,
+  });
+  ok(
+    "a recent class in a well-populated town reads as the mockup's line",
+    ra.activityLine(row({}), now) === "A South Pasadena parent just recommended a class · today",
+  );
+  ok(
+    "a town with fewer than three verified parents is not named",
+    ra.activityLine(row({ town: "Bradbury", town_parents: 2 }), now) === "A local parent just recommended a class · today",
+  );
+  ok("no town at all reads as a local parent", ra.activityLine(row({ town: null, town_parents: 0 }), now)?.startsWith("A local parent") === true);
+  ok("“An” before a vowel", ra.activityLine(row({ town: "Altadena" }), now)?.startsWith("An Altadena parent") === true);
+  ok("a caregiver card is never said, even as a category", ra.activityLine(row({ kind: "caregiver", subcategory: null }), now) === null);
+  ok("an unclassified card falls back to its button", ra.categoryPhrase("doctor", null) === "a specialist" && ra.categoryPhrase("place", null) === "a place to go");
+  ok("parties read as party vendors", ra.categoryPhrase("doctor", "parties") === "a party vendor");
+  ok(
+    "“just” only while it is true",
+    ra.activityLine(row({ created_at: hoursAgo(30) }), now) === "A South Pasadena parent recommended a class · yesterday" &&
+      ra.activityLine(row({ created_at: hoursAgo(0.5) }), now)?.endsWith("just recommended a class · in the last hour") === true,
+  );
+  ok(
+    "the time is a bucket, and past the window there is no line",
+    ra.relativeWhen(hoursAgo(24 * 4), now) === "this week" &&
+      ra.relativeWhen(hoursAgo(24 * 20), now) === "this month" &&
+      ra.relativeWhen(hoursAgo(24 * (ra.RECENT_DAYS + 1)), now) === null &&
+      ra.relativeWhen(new Date(now.getTime() + 60_000), now) === null,
+  );
+  const lines = ra.activityLines([row({}), row({}), row({ subcategory: "camps" }), row({ kind: "caregiver" })], now);
+  ok("each line once, caregivers dropped", lines.length === 2 && lines[1].includes("a camp"));
+  ok("at most six lines", ra.activityLines(Array.from({ length: 12 }, (_, i) => row({ created_at: hoursAgo(i * 30) , town: `T${i}` })), now).length === 6);
+  const repo = fs.readFileSync("lib/server/repo/recent-activity.ts", "utf8");
+  ok(
+    "the query keeps to verified, non-test parents and never a caregiver",
+    /phone_verified_at is not null/.test(repo) && /not c\.is_test and not s\.is_test and not p\.is_test/.test(repo) && /<> 'caregiver'/.test(repo),
+  );
+  ok(
+    "the query returns no name, no id and no words",
+    !/\bs\.name\b|\bp\.first_name\b|\bc\.id\b|what_makes_it_great|extra_note/.test(repo.split("select c.created_at")[1]?.split("from share_contributions")[0] ?? "x"),
+  );
+  const join = fs.readFileSync("components/seed/InviteLanding.tsx", "utf8");
+  ok("/join shows the live line", /<RecentLine marketId=\{resolved\.market_id\}/.test(join));
+
+  /* The mockup's second tick (14 Oct): optional, its own scope, stored only when ticked. */
+  const consentMod = (await import(`../lib/consent.ts?v=${Date.now()}`)) as typeof import("../lib/consent.ts");
+  ok(
+    "the second tick is the mockup's words",
+    consentMod.PILOT_LAUNCH_CONSENT_TEXT === "Also text me when the pilot opens (optional)." &&
+      /\{PILOT_LAUNCH_CONSENT_TEXT\}/.test(join),
+  );
+  ok(
+    "and joining never waits on it",
+    !/canBegin\s*=[^;]*pilotLaunch/.test(join),
+  );
+  ok(
+    "a ticked box is a pilot_launch record with its own version, an unticked one is none",
+    consentMod.buildConsentRecord("pilot_launch", true, "x").text_version ===
+      consentMod.PILOT_LAUNCH_CONSENT_TEXT_VERSION &&
+      /pilot_launch_consent: pilotLaunch\s*\?\s*buildConsentRecord\("pilot_launch", true/.test(join),
+  );
+  const profileRoute = fs.readFileSync("app/api/seed/profile/route.ts", "utf8");
+  const profileRepo = fs.readFileSync("lib/server/repo/profile.ts", "utf8");
+  ok(
+    "the route keeps only an opted-in record, and the write needs a number",
+    /if \(record\.status !== "opted_in"\) return null;/.test(profileRoute) &&
+      /if \(input\.pilot_launch_consent && input\.phone\)/.test(profileRepo),
+  );
+  ok(
+    "the schema and the migration both allow the scope",
+    /'listening_ear','pilot_launch'\)/.test(fs.readFileSync("lib/db/schema.ts", "utf8")) &&
+      /'listening_ear','pilot_launch'\)\)/.test(fs.readFileSync("drizzle/0057_pilot_launch_consent.sql", "utf8")),
   );
 }
 

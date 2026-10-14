@@ -50,6 +50,7 @@ export function Consent({
   note,
   disabled,
   on = "paper",
+  plain,
   className,
   id: givenId,
 }: {
@@ -79,6 +80,12 @@ export function Consent({
   disabled?: boolean;
   /** Which surface the box sits **on**, so the box can be the other one. */
   on?: "paper" | "card";
+  /**
+   * No box: the tick and its sentence straight on the surface — `/join`'s look
+   * (14 Oct, the client's join mockup). The label/disclosure split is unchanged;
+   * only the frame goes.
+   */
+  plain?: boolean;
   /** Spacing only. */
   className?: string;
   id?: string;
@@ -90,9 +97,15 @@ export function Consent({
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4",
+        plain
+          ? disabled
+            ? "opacity-60"
+            : ""
+          : "rounded-2xl border p-4",
         // Selected, never appended: `cn()` is a plain join.
-        disabled
+        plain
+          ? ""
+          : disabled
           ? "border-bark bg-paper opacity-60"
           : reflects && checked
             ? "border-green/40 bg-green-wash"

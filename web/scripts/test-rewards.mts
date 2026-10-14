@@ -39,9 +39,18 @@ const qualified = {
 
 console.log("\n=== the offer is one sentence, said the same way twice ===");
 ok("it names the amount", /\$10 reward/.test(r.REWARD_OFFER), r.REWARD_OFFER);
-ok("and the deadline", /Oct 31, 2026/.test(r.REWARD_OFFER));
-ok("and both required questions", /two required questions/.test(r.REWARD_OFFER));
-ok("and that the recommendation needs a reason", /with a reason/.test(r.REWARD_OFFER));
+/* 14 Oct, the developer: there is no deadline now — so the sentence names none. */
+ok("and no deadline", r.REWARD_DEADLINE === null && !/\bby (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|20\d\d/.test(r.REWARD_OFFER), r.REWARD_OFFER);
+/* 14 Oct, the developer: the sentence says what is paid for — a complete
+   profile and two recommendations, approved — not the one it used to name. */
+ok("and the profile", /complete your profile/.test(r.REWARD_OFFER));
+ok(
+  "and as many recommendations as Founding counts",
+  r.FOUNDING_MIN_APPROVED === 2 && /share two real recommendations/.test(r.REWARD_OFFER) && !/one real recommendation/.test(r.REWARD_OFFER),
+  r.REWARD_OFFER,
+);
+ok("and that each needs a reason", /each with a reason/.test(r.REWARD_OFFER));
+ok("and that a person approves them first", /approved/.test(r.REWARD_OFFER));
 /**
  * ⚠ Terms is a **link** on every surface, so it must not be inside the
  * sentence: a promise whose terms are plain text is a promise nobody can read
@@ -59,17 +68,8 @@ ok(
  * `getUTCMonth()` reports November and a reader concludes the label is a day
  * out. It is not; the timezone is.
  */
-const deadlineInPacific = new Date(r.REWARD_DEADLINE).toLocaleDateString("en-US", {
-  timeZone: "America/Los_Angeles",
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-ok(
-  "the deadline label and the date cannot disagree",
-  deadlineInPacific === r.REWARD_DEADLINE_LABEL,
-  `${deadlineInPacific} vs ${r.REWARD_DEADLINE_LABEL}`,
-);
+/* (The Pacific-time label check went with the deadline on 14 Oct. If a
+   deadline comes back, so must a label in the sentence, and this check.) */
 /**
  * The chat's Founding progress (5 Oct), the client's own sentences. Read from
  * FOUNDING_MIN_APPROVED, and none of them promises a payment date: the last
@@ -196,17 +196,15 @@ ok(
   String(r.REASON_MIN_LENGTH),
 );
 
-console.log("\n=== the deadline, and why it is checked last ===");
+console.log("\n=== no deadline (14 Oct) ===");
 ok(
-  "everything done, after Oct 31, reads as missed rather than unfinished",
-  r.rewardStatus({ ...qualified, at: new Date("2026-11-01T09:00:00-07:00") }) ===
-    "missed_deadline",
+  "everything done, after the old Oct 31 deadline, still goes to review",
+  r.rewardStatus({ ...qualified, at: new Date("2026-11-01T09:00:00-07:00") }) === "in_review",
   r.rewardStatus({ ...qualified, at: new Date("2026-11-01T09:00:00-07:00") }),
 );
 ok(
-  "the last minute of Oct 31 Pacific still qualifies",
-  r.rewardStatus({ ...qualified, at: new Date("2026-10-31T23:59:00-07:00") }) ===
-    "in_review",
+  "and a year later too",
+  r.rewardStatus({ ...qualified, at: new Date("2027-11-01T09:00:00-07:00") }) === "in_review",
 );
 /* Unfinished and late is unfinished — the offer closing is not the reason they
    are not being paid, and saying so would be the wrong conversation. */

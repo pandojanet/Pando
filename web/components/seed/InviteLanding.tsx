@@ -11,11 +11,11 @@ import {
   ScreenBody,
   ScreenDock,
   ScreenHeader,
+  SkipLink,
 } from "@/components/ui/Screen";
 import { Wordmark } from "@/components/ui/Logo";
 import { Panel } from "@/components/ui/Panel";
 import { Note } from "@/components/ui/Note";
-import { Field } from "@/components/ui/Field";
 import { Consent } from "@/components/ui/Consent";
 import { InlineAction, TextAction } from "@/components/ui/TextAction";
 import { identifyArrival, track } from "@/lib/analytics";
@@ -26,6 +26,7 @@ import {
   type VerifyStatus,
 } from "@/lib/api-client";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
+import { JOIN_WRAP, JoinFacts, JoinFooter, RecentLine } from "@/components/seed/join/JoinParts";
 import { ChipGroup } from "@/components/ui/ChipGroup";
 import {
   isRelationship,
@@ -37,12 +38,11 @@ import {
 } from "@/lib/inviter-relationship";
 import {
   buildConsentRecord,
+  PILOT_LAUNCH_CONSENT_TEXT,
   SMS_CONSENT_AGREEMENT,
-  SMS_CONSENT_REASSURANCE,
   SMS_CONSENT_TERMS,
 } from "@/lib/consent";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
-import { REWARD_OFFER } from "@/lib/rewards";
 import {
   hasResumableProgress,
   loadSession,
@@ -68,6 +68,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [firstName, setFirstName] = useState("");
   const [phone, setPhone] = useState("");
   const [smsConsent, setSmsConsent] = useState(false);
+  /* The optional second tick (14 Oct, the mockup): one text when the pilot opens. */
+  const [pilotLaunch, setPilotLaunch] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
   /**
@@ -206,6 +208,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
      */
     if (existing?.phone) setPhone(formatPhone(existing.phone));
     if (existing?.sms_consent?.status === "opted_in") setSmsConsent(true);
+    if (existing?.pilot_launch_consent?.status === "opted_in") setPilotLaunch(true);
   }, []);
 
   /**
@@ -315,6 +318,11 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
          is written the moment it's ticked — with the exact wording version shown. */
       sms_consent: smsConsent
         ? buildConsentRecord("sms", true, "seed_entry_phone_field")
+        : null,
+      /* Only when ticked: an optional box left alone is no record, never a
+         "declined" one (`PILOT_LAUNCH_CONSENT_TEXT`). */
+      pilot_launch_consent: pilotLaunch
+        ? buildConsentRecord("pilot_launch", true, "seed_entry_phone_field")
         : null,
       /* Whatever a resumed session claims, this is re-established by the step
          below — the server is the only thing that can say a number is confirmed. */
@@ -629,480 +637,241 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     );
   }
 
+  /**
+   * ## The front screen — the client's join mockup, ported (14 Oct)
+   *
+   * `pando_join_mockup (3).html`, section for section: a moss **hero** (wordmark,
+   * eyebrow, the inviter pill, *"You had me at 'I know someone.'"*, the lede,
+   * the live line), a paper **panel** rising 16px over it with the three facts
+   * and the **form card**, "Already joined? Log in", and the **footer**. One
+   * 460px column (`JOIN_WRAP`) at every width, with the hero band full-bleed —
+   * which is how the mockup itself reads on a desktop; a first port that turned
+   * it into a moss page with a small form card, and a second that put it in
+   * the flow's paper column, were both walked and rejected by the developer.
+   *
+   * **What the form does is unchanged** — same fields, gate, labels, resume and
+   * already-registered branches — and its look is the mockup's: white fields
+   * with a 1.5px border, the `+1` in its own box (`PhoneField look="split"`),
+   * the tick straight on the card (`Consent plain`), a gold pill in the
+   * display face. The footer carries the mockup's words in the
+   * flow's format (`JoinFooter`, styled as `ScreenFooter`).
+   *
+   * Where it does not follow the mockup, on purpose:
+   *
+   *  - **The consent wording is the registered A2P text** (`SMS_CONSENT_TEXT`),
+   *    not the mockup's shorter sentence: changing it is a compliance event
+   *    (re-registration, counsel), never a layout change. The label still wraps
+   *    only the sentence agreed to (`Consent`).
+   *  - **The $10 tile explains itself** (the developer): an info mark, a dotted
+   *    underline, and `REWARD_OFFER` on hover or tap — see `RewardFact`.
+   *
+   * Gone with the mockup: the "Founding Contributor" header badge, the offer
+   * sentence under the facts (10 Sep's "once on Join" — it lives in the $10
+   * tile now) and the "We won't text you anything you didn't ask for" line
+   * above the tick (10 Sep) — the mockup has neither.
+   */
+  const field =
+    "w-full rounded-[14px] border-[1.5px] border-bark bg-card px-4 py-[15px] text-[1.1rem] text-ink placeholder:text-muted/60 focus:border-green";
   return (
-    <Screen>
-      {/**
-       * 1 Sep, items 1 and 16: *"Remove the contradictory Founding parent badge
-       * until Founding Status has actually been earned. Use 'Founding
-       * contributor' before then if a label is needed."*
-       *
-       * The badge said a parent already held a status the very next paragraph
-       * explained they would earn on their second approved contribution — the
-       * screen contradicting itself in two places a thumb apart. "Founding
-       * contributor" is what they are the moment they start, and it is the word
-       * `/done` has used since 6 Aug.
-       */}
-      {/* The badge takes `text-dock` (12.5px) rather than a bracket value: 12px
-          is below the design system's own floor and is not a step on the scale.
-          It was the last hand-written font size on this screen. */}
-      <ScreenHeader
-        left={<Wordmark />}
-        right={
-          /* 10 Sep, the client: *"Use 'Founding Contributor' and 'San Gabriel
-             Valley' everywhere vs the current mixture."* Both halves were a
-             real mixture rather than a preference — this badge said "Founding
-             contributor" while `/done` says "Founding Status", and the eyebrow
-             below said "Pasadena", which is one of seventeen towns on offer and
-             not the market. */
-          <span className="rounded-full border border-bark bg-card px-3 py-1.5 text-dock font-semibold text-muted">
-            Founding Contributor
-          </span>
-        }
-      />
-
-      <ScreenBody className="pt-7">
-        {/**
-         * 3 Sep, her instruction: *"Проміжну сторінку «Join the founding
-         * Network» вирішено видалити. Користувачі повинні потрапляти за
-         * загальним посиланням/QR-кодом безпосередньо на екран введення номера
-         * телефону."*
-         *
-         * ## What was here, and why it going is a real change rather than a trim
-         *
-         * A hero, three promise rows, and a card explaining what joining
-         * enables — four benefits, a green reassurance box and a privacy link.
-         * Most of it was built on **1 Sep from her own suggested page** (items 1
-         * and 16), so this reverses that round deliberately: the newer
-         * instruction wins, which is this file's own rule for her feedback.
-         *
-         * What it costs, stated rather than discovered later: a parent arriving
-         * cold now reads three lines instead of a page before being asked for a
-         * number. The four founding benefits she dictated on 1 Sep ("earn
-         * permanent Founding Status after your second approved contribution",
-         * "a reserved place in the Pasadena pilot") are **no longer anywhere in
-         * the flow** — `/done` still names Founding Status, but only after the
-         * fact. If she wants them back, the place is a tooltip on the badge
-         * rather than a page.
-         *
-         * What survives, and each for a reason she gave earlier:
-         *
-         *  - **"Private by default"** — one line, because it is the promise the
-         *    parent is deciding on (1 Sep item 1: her exact replacement for
-         *    "Your name is never shown", which was false).
-         *  - **"Tap, not type"** — her wording, 24 Aug item 2, and it sets the
-         *    expectation that makes the next screen make sense.
-         *
-         * ⚠ The third survivor of that round — the secondary, no-account route
-         * — is **gone as of 10 Sep**; see the note above the card below. Her 1
-         * Sep rule about how it had to be *worded* went with it.
-         */}
-        <div className="animate-rise">
-          <h1 className="font-display text-[1.7rem] font-extrabold leading-[1.08]">
-            Your number, and you&apos;re in.
-          </h1>
-          {/**
-           * *"If the invite code resolves, show '{first name} invited you';
-           * otherwise show nothing."* (10 Sep.)
-           *
-           * ⚠ **A code that resolves perfectly well can still have nobody
-           * behind it, and that is the common case rather than an edge.** An
-           * invite is per *group* (12 Aug, reaffirmed 27 Aug), and since
-           * `drizzle/0034` it may also point at a school — neither has a person
-           * to name. Only `invites.kind = 'personal'` carries a
-           * `referrer_person_id`, which is why `lib/server/invite.ts` reads the
-           * first name through a `case` on the kind rather than a plain join:
-           * a group link must resolve to attribution and to no name at all.
-           *
-           * So "otherwise show nothing" is honoured by the null, and this line
-           * is deliberately not softened into "you were invited" for the group
-           * case — that says nothing the screen does not already say.
-           */}
-          {resolved.inviter_first_name && (
-            <p className="mt-3 text-[15px] font-semibold leading-snug text-green-deep">
-              {resolved.inviter_first_name} invited you
+    <div className="flex min-h-dvh flex-col bg-paper">
+      <SkipLink />
+      <main id="main" className="flex-1">
+        {/* The hero on moss. */}
+        {/* On a desktop the hero is shorter (14 Oct, the developer: "trim the top
+            so the page does not scroll on desktop"): the heading on one line and
+            tighter spacing. The eyebrow stays above the heading, as drawn — set
+            beside the wordmark it sat alone at the far edge, and the developer
+            sent it back. The phone keeps the mockup's stack. */}
+        <section className="bg-moss pb-7 pt-4 text-paper md:pb-5 md:pt-3.5">
+          <div className={JOIN_WRAP}>
+            <a href="/" aria-label="Pando home" className="inline-flex text-white">
+              <Wordmark tone="light" size="lead" />
+            </a>
+            <p className="mt-4 text-dock font-semibold uppercase tracking-[0.16em] text-gold md:mt-3">
+              Founding parents · Pasadena &amp; nearby
             </p>
-          )}
-          {/**
-            * The launch offer, once, here — the client, 10 Sep §6: *"Use the
-            * exact offer sentence in the invite text and **once** on the Join
-            * page under '{first name} invited you'. Link Terms. Keep it
-            * separate from SMS consent."*
-            *
-            * ⚠ **Separate from the consent, and that is a rule rather than
-            * layout.** A payment offer inside a `<label>` would make agreeing
-            * to messages and accepting an offer one tap, which is the shape a
-            * TCPA complaint reads worst — so it sits here, above the form, and
-            * the consent box below is untouched.
-            *
-            * ⚠ **Once.** Her word, and it is why this is not repeated on the
-            * profile: *"Do not show the reward or add a reward step anywhere in
-            * the profile."* A parent answering questions should not be counting
-            * money while they do it.
-            *
-            * ⚠ It renders for **every** arrival rather than only an invited
-            * one, and the guardrail lives where it can be enforced:
-            * *"invite-code holders only"* is a condition of being **paid**
-            * (`rewardStatus`), and a promise shown only to some arrivals would
-            * be a second, quieter eligibility rule on a screen. Entry has been
-            * open since 7 Sep, so the two are no longer the same population.
-            */}
-          <p className="mt-3 text-[14.5px] leading-relaxed text-ink-soft">
-            {REWARD_OFFER}{" "}
-            <InlineAction href="/terms" external tone="green">
-              Terms
-            </InlineAction>
-          </p>
-          {/* 21 Sep, the developer: the "Pando is a text line for San Gabriel
-              Valley parents…" paragraph is gone — the dock's own "about two
-              minutes" says the one thing in it a parent acts on. */}
-        </div>
-
-        {/**
-         * ⚠ **The no-account route is gone** — the client, 10 Sep: *"Remove the
-         * no-account route."*
-         *
-         * It was hers too (3 Aug), so this is a reversal rather than a tidy-up,
-         * and the newer instruction wins by this file's own rule. What goes with
-         * it, stated rather than left to be found: there is no longer any way to
-         * contribute without a number, so **a parent who will not give one
-         * cannot use the tool at all** — the flow's one path is now the founding
-         * path. A stored session from the old route (`wants_founding: false`)
-         * still loads and is simply treated as founding from here, which is the
-         * only behaviour left that is not a dead end.
-         */}
-        <Panel className="mt-6" tone="card" raised>
-          {/* `on="card"` — these sit inside a raised white `Panel`, and a
-            field is always the opposite surface to the thing it sits on. */}
-          {/* One column, not a grid: with the surname gone there is one field,
-            and `sm:grid-cols-2` around a single child put it in half a card. */}
-          <Field
-          id="first-name"
-          label="First name"
-          on="card"
-          value={firstName}
-          onChange={(e) => setFirstName(e.target.value.slice(0, 40))}
-          autoComplete="given-name"
-          enterKeyHint="next"
-          placeholder="First name"
-          />
-
-          <div className="mt-4">
-          <PhoneField
-            label="Mobile number"
-            value={phone}
-            onChange={(next) => {
-              setPhone(next);
-              /* The refusal belongs to the number that produced it. */
-              setRegistered(false);
-            }}
-          />
+            {/* "{first name} invited you" only when a personal link names somebody (10 Sep). */}
+            {resolved.inviter_first_name && (
+              <p className="mt-3.5 inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/15 px-[13px] py-[7px] text-[0.92rem] font-semibold text-gold-line">
+                <span aria-hidden="true">✦</span>
+                {resolved.inviter_first_name} invited you
+              </p>
+            )}
+            <h1 className="mt-3.5 font-display text-[clamp(2.25rem,10.2vw,2.8rem)] font-extrabold leading-[0.98] tracking-[-0.03em] text-white md:mt-2.5 md:text-[2.5rem]">
+              You had me at <span className="text-gold">“I&nbsp;know someone.”</span>
+            </h1>
+            <p className="mt-3 text-[1.05rem] leading-[1.45] text-paper/90 md:mt-2">
+              Help build Pando by sharing your recommendations.
+            </p>
+            <RecentLine marketId={resolved.market_id} />
           </div>
+        </section>
 
-          {/**
-           * The consent box, and 3 Sep moved two things into it.
-           *
-           * Her instruction: *"Посилання на політику конфіденційності потрібно
-           * підняти вище, ближче до чекбоксу згоди на отримання SMS. Learn
-           * more... перенести в цей бокс."*
-           *
-           * The Privacy Policy and Terms links were already inside this box,
-           * but below a paragraph of carrier disclosure and indented under it
-           * — far enough down that they read as belonging to the disclosure
-           * rather than to the tick. They now sit **directly under the
-           * label**, on their own line, ahead of the disclosure; and "Learn
-           * more about privacy", which used to live at the very bottom of the
-           * screen beside the secondary action, is here too.
-           *
-           * That is the right place for a different reason as well: this is
-           * the one control on the screen that grants something, so the thing
-           * a parent might want to read before granting it belongs beside it
-           * rather than a screen away.
-           *
-           * **The wording split is unchanged and is not cosmetic.** The
-           * `<label>` covers only the sentence being agreed to; the carrier
-           * disclosure sits beside it via `aria-describedby`. When the whole
-           * registered text was inside the label, a tap anywhere in ~230px of
-           * legal copy toggled consent, and an accidental opt-in is the worst
-           * failure this control has.
-           */}
-          {/**
-           * The links sit immediately under the tick, ahead of the disclosure,
-           * and open in a new tab on purpose: nothing is saved until Start, so
-           * navigating away here used to lose a typed name and number.
-           *
-           * **"Learn more about privacy" was this link.** Her two instructions
-           * name it twice — raise the Privacy Policy link to the checkbox, and
-           * move "Learn more…" into this box — and both were the same
-           * `/privacy` page under two names. A row with two links to one page
-           * is a reader deciding which of them is the real one, so it says it
-           * once. **"Privacy Policy" is the name that survives**, and that is
-           * not a style call: it is the document a consent box has to point at
-           * by its own name, and it is the phrase the registered A2P opt-in
-           * language pairs with Terms.
-           */}
-          {/**
-            * ⚠ **Promoted out of the phone field, 10 Sep**: *"Keep 'We won’t
-            * text you anything you didn’t ask for.' and make it more
-            * visible."*
-            *
-            * It was the field’s `hint` — 12.5px muted, under the input, and
-            * sharing that slot with the format error, so on the one screen
-            * where a parent decides whether to hand over a number it was the
-            * quietest thing on it. Here it is body type directly above the box
-            * it is about.
-            *
-            * ⚠ It is deliberately **outside** the `<label>`: it is reassurance
-            * rather than a term being agreed to, and a label that swallowed it
-            * would turn the sentence into a control that toggles consent —
-            * which is the split `Consent` exists to make structural.
-            */}
-          <p className="mt-4 text-control font-medium text-ink">
-            {SMS_CONSENT_REASSURANCE}
-          </p>
-          <Consent
-            id="sms-consent"
-            className="mt-2"
-            on="card"
-            checked={smsConsent}
-            onChange={setSmsConsent}
-            detail={SMS_CONSENT_TERMS}
-            links={
-              <>
-                {/* `TextAction`, not `InlineAction`: these are their own row
-                    now rather than a clause in a sentence, so the 2.5.8
-                    exemption that let them be 31px no longer applies to them.
-                    See `Consent`. */}
-                <TextAction href="/privacy" external>
-                  Privacy Policy
-                </TextAction>
-                <TextAction href="/terms" external>
-                  Terms
-                </TextAction>
-              </>
-            }
-          >
-            {SMS_CONSENT_AGREEMENT}
-          </Consent>
+        {/* The form on paper, rising over the band. */}
+        <section className="-mt-4 rounded-t-3xl bg-paper pb-8 pt-[18px] md:pb-4">
+          <div className={JOIN_WRAP}>
+            <JoinFacts />
 
-          {/* Said only where a code can be sent. The second sentence this
-              replaced — "…when you finish" — described the code at the end of
-              the profile, which is gone (8 Oct): where no code can be sent, no
-              code is promised. */}
-          {gate?.required && gate.sendable && (
-            <p className="mt-3 text-[13px] leading-relaxed text-muted">
-              We&apos;ll text a 6-digit code to confirm the number, then the questions.
-            </p>
-          )}
+            <div className="rounded-[20px] border border-bark bg-card px-4 pb-3.5 pt-4 shadow-[0_24px_48px_-32px_color-mix(in_oklab,var(--color-ink)_35%,transparent)]">
+              <div className="mb-3">
+                <label htmlFor="first-name" className="mb-[5px] block text-[0.9rem] font-semibold">
+                  First name
+                </label>
+                <input
+                  id="first-name"
+                  type="text"
+                  className={field}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value.slice(0, 40))}
+                  autoComplete="given-name"
+                  enterKeyHint="next"
+                  placeholder="Your first name"
+                />
+              </div>
+              <div className="mb-3">
+                <PhoneField
+                  look="split"
+                  label="Mobile number"
+                  value={phone}
+                  onChange={(next) => {
+                    setPhone(next);
+                    /* The refusal belongs to the number that produced it. */
+                    setRegistered(false);
+                  }}
+                />
+              </div>
 
-          {/**
-            * ⚠ **The way in moved to the dock on 14 Sep.** It stood here as a
-            * quiet line under the consent text, which is a footnote's slot —
-            * and her §1 asks for something else outright: *"It should be sign
-            * up or login."* Two doors, not one door and a remark about the
-            * other. Moved rather than duplicated: two links to `/signin` on
-            * one 375px screen is a parent deciding which is the real one,
-            * which is the same fault her §4 caught between two Privacy links.
-            */}
-          </Panel>
+              {/* The registered wording, split so only the sentence agreed to
+                  toggles the tick (`Consent`). */}
+              <Consent
+                id="sms-consent"
+                plain
+                className="mb-3.5 mt-0.5"
+                checked={smsConsent}
+                onChange={setSmsConsent}
+                detail={SMS_CONSENT_TERMS}
+                links={
+                  <>
+                    <InlineAction href="/terms" external tone="green">
+                      Terms
+                    </InlineAction>
+                    <InlineAction href="/privacy" external tone="green">
+                      Privacy
+                    </InlineAction>
+                  </>
+                }
+              >
+                {SMS_CONSENT_AGREEMENT}
+              </Consent>
 
-        {startError && (
-          <Note className="mt-6">{startError}</Note>
-        )}
+              {/* The mockup's second tick, optional and muted: joining never waits
+                  on it, and `canBegin` does not read it. */}
+              <Consent
+                id="pilot-launch"
+                plain
+                className="-mt-1 mb-3.5"
+                checked={pilotLaunch}
+                onChange={setPilotLaunch}
+              >
+                <span className="text-muted">{PILOT_LAUNCH_CONSENT_TEXT}</span>
+              </Consent>
 
-        {registered && (
-          /**
-           * Gold, not red: this is not an error and they have done nothing
-           * wrong — `warning` is *pending or needs care* in this design system,
-           * and `alert` is reserved for what is owed a person today (and never
-           * appears in the parent flow at all).
-           *
-           * It says **what would have happened**, because "this number is
-           * already registered" on its own reads as a refusal to let them in
-           * rather than as a protection of their own answers — and the whole
-           * reason the client asked for this screen is the overwrite.
-           *
-           * ⚠ New user-facing copy, on the list for the client.
-           */
-          <Panel className="mt-6" tone="warning">
-            <p className="text-[14.5px] leading-relaxed">
-              This number already has a Pando profile. Filling the questions in
-              again would replace what is there, so sign in instead — you can
-              change any answer once you&apos;re in.
-            </p>
-            <div className="mt-3">
-              <TextAction href="/signin">
-                Sign in with this number
-              </TextAction>
-            </div>
-          </Panel>
-        )}
-
-        {/**
-          * ⚠⚠ **"Start a fresh one" is gone, and it was a dead end she walked
-          * into** — the client, 10 Sep: *"I clicked 'Your profile is already
-          * saved on this phone. Start a fresh one'. It just took me back to
-          * where I was."*
-          *
-          * It was doing exactly what it said and the product refuses the
-          * result. `startOver` clears the device — and the number is still
-          * registered, so the 8 Sep check on the button below then refuses the
-          * same number and points at `/signin`, which restores the profile they
-          * had just asked to be rid of. A control that clears local state and
-          * is then overruled by server state one tap later is worse than no
-          * control: it looks like it worked.
-          *
-          * What she actually wanted is in the same paragraph — *"I wanted to
-          * change one of my answers"* — so the offer is now editing, which is
-          * a thing this product can do: `/profile` opens on the review for a
-          * saved profile (7 Sep) and every row there has its own Edit.
-          *
-          * ⚠ **Only the saved case changed.** Unsaved progress has no server
-          * state to contradict it, so "Start over instead" still means what it
-          * says and still works.
-          *
-          * ⚠ What is still missing, and is hers to weigh: **there is no way for
-          * a parent to delete their profile** ("how do people delete their
-          * profile if they want to?"). A caregiver can text DELETE (11.3); a
-          * contributing parent cannot, from any surface. That is a product
-          * decision about what deletion means for their contributions, not a
-          * missing button.
-          */}
-        {(canResume || alreadySaved) && (
-          <Panel className="mt-6" tone="positive">
-            <p className="text-[14.5px] leading-relaxed text-green-deep">
               {alreadySaved ? (
-                <>
-                  Your profile is already saved on this phone.{" "}
-                  <InlineAction onClick={() => router.push("/profile")}>
-                    Review or edit your answers
-                  </InlineAction>
-                  .
-                </>
+                <button type="button" className={JOIN_BUTTON} onClick={() => router.push("/done")}>
+                  See what happens next
+                </button>
               ) : (
-                <>
-                  You have answers saved on this phone from earlier.{" "}
-                  <InlineAction onClick={startOver}>Start over instead</InlineAction>
-                  .
-                </>
+                <button
+                  type="button"
+                  className={JOIN_BUTTON}
+                  /* Disabled while checking, so a second tap cannot run the
+                     check twice; `registered` keeps it disabled after, and
+                     editing the number clears both. */
+                  disabled={!canBegin || checking || registered}
+                  onClick={() => void begin(canResume ? "resume" : "new")}
+                >
+                  {/* Her "Text me a code" only where a code can be sent (15 Sep);
+                      elsewhere the tap starts the questions and says so. */}
+                  {checking
+                    ? "Checking…"
+                    : gate?.required && gate.sendable
+                      ? "Text me a code"
+                      : canResume
+                        ? "Continue where you left off"
+                        : "Start"}
+                </button>
               )}
-            </p>
-          </Panel>
-        )}
-      </ScreenBody>
+              {/* Promised only where a code is sent (8 Oct): no code, no promise. */}
+              {!alreadySaved && gate?.required && gate.sendable && (
+                <p className="mt-3 text-center text-[0.88rem] leading-[1.45] text-ink-soft">
+                  Enter your code, then share your recommendations.
+                </p>
+              )}
+              {!alreadySaved && !canBegin && (
+                <p className="mt-1.5 text-center text-dock text-muted">
+                  Add your name and number, and tick the box, to join.
+                </p>
+              )}
+            </div>
 
+            {startError && <Note className="mt-4">{startError}</Note>}
 
-      {/**
-       * Not `stickyOnDesktop`, and the reason is this screen's own shape rather
-       * than a preference about docks.
-       *
-       * The button is disabled until the consent box is ticked, and that box is
-       * *below* the dock in the flow — so a dock pinned on a laptop paints a
-       * permanently dead button over the one control that would enable it, with
-       * a hint underneath naming a checkbox it is covering. Measured at
-       * 1440x720: the box sits at y=656 against a dock top of y=596, i.e.
-       * covered on first paint (it is reachable — scrolling to the bottom puts
-       * it at y=253 — but the parent has to scroll past a disabled CTA to find
-       * out why it is disabled).
-       *
-       * Pinning bought nothing here: nobody can press Start before scrolling to
-       * the box anyway. In the flow the action sits after the content, which is
-       * what every other screen in this flow already does.
-       */}
-      <ScreenDock>
-        {alreadySaved ? (
-          <Button full onClick={() => router.push("/done")}>
-            See what happens next
-            <ArrowRight />
-          </Button>
-        ) : (
-          <Button
-            full
-            /* Disabled *while* checking rather than only afterwards: the check
-               is a round trip, and a second tap would run it twice and race
-               its own `setChecking`. `registered` keeps it disabled after, so
-               the refusal cannot be tapped past — editing the number clears
-               both. */
-            disabled={!canBegin || checking || registered}
-            onClick={() => void begin(canResume ? "resume" : "new")}
-          >
-            {/**
-             * ⚠⚠ **Her own label, and it is only honest now** (15 Sep).
-             *
-             * Her list twice asked for *"Text me a code."* here. A button
-             * saying that has to send one, which meant moving the OTP to the
-             * front door — so on 10 Sep she was asked directly and answered
-             * *"Ні, код надсилаємо в кінці"*, and the label stayed the one that
-             * described what the tap really did.
-             *
-             * The developer has now moved the code to the front door anyway
-             * (see the note on `step`), so the tap **does** send one and her
-             * wording is what this button should say. ⚠ Both halves of that are
-             * hers to confirm together: the label is what she asked for twice,
-             * the placement is what she declined once, and they are one
-             * decision rather than two.
-             *
-             * ⚠ It reads her words only where a code can actually be sent.
-             * Where it cannot, the tap still just starts the questions, and a
-             * button promising a text that will never arrive is the worse
-             * failure — which is the same rule that decides the sentence above
-             * the dock.
-             */}
-            {checking
-              ? "Checking…"
-              : gate?.required && gate.sendable
-                ? "Text me a code"
-                : canResume
-                ? "Continue where you left off"
-                : "Start — about two minutes"}
-            {!checking && <ArrowRight />}
-          </Button>
-        )}
-        {/**
-          * The second door — her §1: *"It should be sign up or login."*
-          *
-          * In the dock rather than in the card, in the slot the 10 Sep round
-          * created for Skip: directly under the primary, one fixed position,
-          * so a returning parent meets it where they are already looking
-          * instead of finding it as a line beneath the legal text.
-          *
-          * ⚠ **Not a second `Button`.** The design system's rule is one primary
-          * action per screen and the dock carries it; two filled buttons would
-          * make the choice look symmetrical, and it is not — most arrivals are
-          * new, and the invite they followed was an invitation to join.
-          * `TextAction` is the documented 44px quiet action beside the loud
-          * one, which is exactly this relationship.
-          *
-          * ⚠ Hidden once a profile is saved on this device: the dock then reads
-          * "See what happens next" and the panel above offers review, so a log
-          * in would be a third route to a parent Pando has already recognised.
-          *
-          * The wording is hers, from the 9 Sep copy list, and is unchanged —
-          * only where it sits.
-          */}
-        {!alreadySaved && (
-          <TextAction href="/signin" full className="mt-2">
-            Already have an account? Log in
-          </TextAction>
-        )}
-        {/**
-         * *"The footer must not create a third competing action."*
-         *
-         * It never was one — it is a line of text — but it did read as a third
-         * offer when the card above already held two, so it says only what the
-         * button needs.
-         *
-         * **And nothing at all once the button is ready** (2 Sep, client): "No
-         * app. No account. No password." was a reassurance about *signing up*,
-         * printed under a button that by then says "Continue where you left
-         * off" — so it was answering a worry the parent had already moved past,
-         * in the one slot where the screen should be quiet.
-         */}
-        {!canBegin && (
-          <p className="py-3 text-center text-[12.5px] text-muted">
-            Add your name and number, and tick the box, to join.
-          </p>
-        )}
-      </ScreenDock>
-    </Screen>
+            {registered && (
+              /* Gold, not red: nothing they did is wrong, and it says what
+                 would have happened — the overwrite she asked to prevent (8 Sep). */
+              <Panel className="mt-4" tone="warning">
+                <p className="text-[14.5px] leading-relaxed">
+                  This number already has a Pando profile. Filling the questions in
+                  again would replace what is there, so sign in instead — you can
+                  change any answer once you&apos;re in.
+                </p>
+                <div className="mt-3">
+                  <TextAction href="/signin">Sign in with this number</TextAction>
+                </div>
+              </Panel>
+            )}
+
+            {/* Editing, not "start a fresh one", for a saved profile (10 Sep);
+                unsaved progress can still be started over. */}
+            {(canResume || alreadySaved) && (
+              <Panel className="mt-4" tone="positive">
+                <p className="text-[14.5px] leading-relaxed text-green-deep">
+                  {alreadySaved ? (
+                    <>
+                      Your profile is already saved on this phone.{" "}
+                      <InlineAction onClick={() => router.push("/profile")}>
+                        Review or edit your answers
+                      </InlineAction>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      You have answers saved on this phone from earlier.{" "}
+                      <InlineAction onClick={startOver}>Start over instead</InlineAction>.
+                    </>
+                  )}
+                </p>
+              </Panel>
+            )}
+
+            {/* The second door (14 Sep, her "sign up or login"), quiet beside the loud one. */}
+            {!alreadySaved && (
+              <p className="mt-[18px] text-center text-[0.92rem] text-muted">
+                Already joined?{" "}
+                <InlineAction href="/signin" tone="green">
+                  <span className="font-semibold">Log in</span>
+                </InlineAction>
+              </p>
+            )}
+          </div>
+        </section>
+      </main>
+      {/* The mockup's footer in the flow's format (14 Oct, the developer). */}
+      <JoinFooter />
+    </div>
   );
 }
+
+/** The mockup's `.btn`: the gold pill in the display face, no arrow. */
+const JOIN_BUTTON =
+  "block w-full cursor-pointer rounded-full bg-gold p-[18px] font-display text-[1.2rem] font-extrabold tracking-[-0.01em] text-ink transition hover:-translate-y-px hover:bg-gold-deep active:scale-[0.985] disabled:cursor-not-allowed disabled:bg-bark disabled:text-muted disabled:hover:translate-y-0";

@@ -352,10 +352,11 @@ export const consents = pgTable(
      * by 0012 for the listening-ear opt-in (18 Aug), and by 0028 for the
      * recurring-messages opt-in (2 Sep) — this line was missed then, so a
      * `drizzle-kit generate` would have proposed dropping `sms_recurring`.
+     * And by 0057 for `pilot_launch`, the optional second tick on /join (14 Oct).
      */
     check(
       "consents_scope_check",
-      sql`${t.scope} in ('sms','sms_recurring','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear')`,
+      sql`${t.scope} in ('sms','sms_recurring','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear','pilot_launch')`,
     ),
     check(
       "consents_status_check",

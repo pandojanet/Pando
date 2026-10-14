@@ -375,6 +375,7 @@ export function loadSession(): SeedSession | null {
       wants_founding: parsed.wants_founding !== false,
       phone_verified: parsed.phone_verified === true,
       sms_consent: parsed.sms_consent ?? null,
+      pilot_launch_consent: parsed.pilot_launch_consent ?? null,
       follow_up_opt_in: parsed.follow_up_opt_in ?? null,
       consent: parsed.consent ?? null,
       demand: parsed.demand ?? null,

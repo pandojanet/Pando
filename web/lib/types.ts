@@ -744,6 +744,12 @@ export interface SeedSession {
   phone_verified: boolean;
   /** The SMS consent record: exact text version, timestamp, status. */
   sms_consent: import("./consent").ConsentRecord | null;
+  /**
+   * "Also text me when the pilot opens" (14 Oct) — only ever an `opted_in`
+   * record or null; see `PILOT_LAUNCH_CONSENT_TEXT`. Optional on the type so a
+   * session saved by an older build still reads.
+   */
+  pilot_launch_consent?: import("./consent").ConsentRecord | null;
   /** E.164, optional at entry. Identity proper arrives with OTP in Phase 2. */
   phone: string | null;
   answers: ProfileAnswers;
@@ -843,6 +849,8 @@ export interface ProfilePayload {
    * (2 Sep). Null when the parent was never shown it — see `ProfileAnswers`.
    */
   recurring_messages_consent: import("./consent").ConsentRecord | null;
+  /** The optional "text me when the pilot opens" tick from /join (14 Oct). */
+  pilot_launch_consent: import("./consent").ConsentRecord | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
   wants_founding: boolean;
   neighborhood: string | null;

@@ -22,19 +22,24 @@
 export const REWARD_AMOUNT_USD = 10;
 
 /**
- * The hard deadline, from her own sentence.
+ * The deadline — **none since 14 Oct** (the developer: *"remove 'by Oct 31,
+ * 2026' — there is no deadline for this now"*).
  *
- * ⚠ **An ISO date rather than the words**, with the display form derived — the
- * offer text and the eligibility check must not be able to disagree about which
- * day it is, and they would the first time somebody edited one string.
+ * It was her 10 Sep hard deadline, `2026-10-31T23:59:59-07:00`, said in the
+ * offer and enforced by `rewardStatus` as `missed_deadline`. Both halves went
+ * together, deliberately: a sentence with no date over a check that still
+ * refused a parent on 1 November would be a promise the code breaks.
+ *
+ * ⚠ Null rather than deleted, so bringing a deadline back is one value — and
+ * then the sentence must name it again (`test:rewards` pins the pair).
  */
-export const REWARD_DEADLINE = "2026-10-31T23:59:59-07:00";
-
-/** "Oct 31, 2026" — the way her sentence writes it. */
-export const REWARD_DEADLINE_LABEL = "Oct 31, 2026";
+export const REWARD_DEADLINE: string | null = null;
 
 /**
- * **Her exact sentence**, used verbatim in both places she named.
+ * **Her sentence**, used verbatim in both places she named — with its
+ * conditions brought in line with what is paid for on 14 Oct (the developer:
+ * *two contributions and a completed profile*, so it says what the reward is
+ * for). The two places and the Terms link are still hers.
  *
  * ⚠ *"Use this exact sentence in both places and link Terms to the page."* So
  * the trailing "Terms." is **not** in this string: it is a link, and a link
@@ -46,7 +51,7 @@ export const REWARD_DEADLINE_LABEL = "Oct 31, 2026";
  * types into a message themselves, and the client owns its wording.
  */
 export const REWARD_OFFER =
-  `Verify your number, answer the two required questions and share one real recommendation with a reason by ${REWARD_DEADLINE_LABEL}, and we’ll send a $${REWARD_AMOUNT_USD} reward.`;
+  `Verify your number, complete your profile and share two real recommendations, each with a reason. Once they’re approved, we’ll send a $${REWARD_AMOUNT_USD} reward.`;
 
 /**
  * What the chat says after a contribution, about the way to Founding.
@@ -183,11 +188,12 @@ export const FOUNDING_MIN_APPROVED = 2;
  * напряму приєднуються"* is what removes it. ⚠ It is hers to restore, and
  * restoring it means closing entry again: the two are one decision.
  *
- * ⚠⚠ **And her offer sentence now promises less than this asks.**
- * `REWARD_OFFER` is on `/join` and in every invite a parent sends, and it names
- * *one* recommendation and the two required questions. It has to be re-approved
- * against these requirements, or the product is making a promise it will not
- * keep — the 20 Aug rule with the sentence missing rather than the write.
+ * ⚠⚠ **Her offer sentence promised less than this asks, until 14 Oct.**
+ * `REWARD_OFFER` named *one* recommendation and the two required questions;
+ * the developer had it say what is checked here — a complete profile and
+ * *two* recommendations with a reason, approved — so `/join` and every invite
+ * promise exactly what is paid for. `test:rewards` pins the sentence to
+ * `FOUNDING_MIN_APPROVED`.
  *
  * ⚠ **Nonsense is still not detectable here and this does not pretend to be.**
  * The length floor catches "good" and "ok" and cannot catch "asdfgh" — much
@@ -271,9 +277,12 @@ export function rewardStatus(input: RewardInput): RewardStatus {
   /* The deadline is checked **last**, so a parent who did everything and did it
      late reads as `missed_deadline` rather than as `not_met` — the two are
      different conversations, and only one of them is about the offer having
-     closed. */
+     closed. With no deadline (14 Oct) it never fires; the status stays in the
+     type because the admin pages still render it. */
   const at = input.at ?? new Date();
-  if (at.getTime() > new Date(REWARD_DEADLINE).getTime()) return "missed_deadline";
+  if (REWARD_DEADLINE && at.getTime() > new Date(REWARD_DEADLINE).getTime()) {
+    return "missed_deadline";
+  }
 
   return "in_review";
 }
