@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   BadgeCheck,
-  CreditCard,
   Megaphone,
   ClipboardList,
   Flag,
@@ -218,22 +217,8 @@ const NAV: NavSection[] = [
         label: "Network answers",
         count: (o) => o.answers?.replies ?? 0,
       },
-      {
-        /**
-         * 14.5. Mostly a ledger you consult — but with a **red** count for
-         * refunds owed, which is the one thing here that is somebody's
-         * outstanding task and involves money. Gold would be wrong: this is not
-         * "pending", it is owed.
-         *
-         * It sat under "Records" until 7 Sep, which put the only red badge in
-         * the admin inside the group that is now the one you can fold away.
-         */
-        href: "/admin/payments",
-        icon: CreditCard,
-        label: "Payments",
-        count: (o) => o.blasts?.refunds_owed ?? 0,
-        urgent: (o) => o.blasts?.refunds_owed ?? 0,
-      },
+      /* "Payments" (14.5, /admin/payments) is not in the nav while every Ask is
+         free (22 Oct). The page and its logic stay for when payments return. */
     ],
   },
   {

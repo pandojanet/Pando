@@ -337,8 +337,8 @@ export default function BlastsPage() {
           onChange={setFilter}
           options={[
             { id: "open", label: "Still open", count: counts.open },
-            { id: "owed", label: "Owes a refund or credit", count: counts.owed },
-            { id: "paid", label: "Paid", count: counts.paid },
+            /* The "owed" and "paid" views are kept in code for when payments
+               return, and not offered while every Ask is free (22 Oct). */
             { id: "all", label: "Everything", count: counts.all },
           ]}
         />
