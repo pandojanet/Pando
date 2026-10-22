@@ -63,12 +63,9 @@ const ACTIONS = new Set([
   "blast.send",
   /* M7's exit — the approved replies, back to the parent who asked (8 Sep). */
   "blast.deliver",
-  /* 14.3 / 13.5–13.7 — the blast manager's three verbs and the money. */
-  "blast.checkout",
+  /* 14.3 — the blast manager's verbs. */
   "blast.release",
   "blast.fulfil",
-  "blast.refund_due",
-  "blast.refund",
   "blast_response.rate",
   "blast_response.approve",
   "blast_response.reject",
@@ -550,29 +547,6 @@ export async function POST(request: Request) {
   }
 
   /**
-   * 13.7 — a refund carries a reason, and so does marking one due.
-   *
-   * The same rule as `claim.decline` and `share.retire`: the audit row is the
-   * only record of why money moved, and 13.7 is explicitly a *manual* flow for
-   * the pilot's first sixty days, so the judgement is the artefact. Refused here
-   * rather than in `admin-write.ts` so the admin gets a sentence instead of a
-   * generic "not implemented".
-   */
-  if (action === "blast.refund" || action === "blast.refund_due") {
-    if (!cleanText(body?.reason, 300)) {
-      return NextResponse.json(
-        {
-          error:
-            action === "blast.refund"
-              ? "Say why this is being refunded — it is the only record of the decision."
-              : "Say why a refund is owed, so whoever makes it knows what they are agreeing to.",
-        },
-        { status: 422 },
-      );
-    }
-  }
-
-  /**
    * 14.3 — fulfilment is a judgement, so it carries the judgement.
    *
    * 7.7's guarantee is about whether an answer was *useful*, which is why this
@@ -740,7 +714,7 @@ export async function POST(request: Request) {
      *
      * `not_found` is the second, and it is far commoner than the cap: nearly
      * every write here is a **conditional** UPDATE (11 Aug), so a row that has
-     * moved since the screen was drawn — a blast since refunded, a record since
+     * moved since the screen was drawn — a blast since answered, a record since
      * retired, a contributor since removed — comes back this way. Telling an
      * admin that a button they have used all week is "not implemented" sends
      * them to report a bug about an ordinary race. 409, because that is what it
@@ -751,7 +725,7 @@ export async function POST(request: Request) {
      *
      * 409 rather than 501 for the same reason `not_found` is: these are states
      * the row is in, not features that are missing. An admin who reads "this
-     * Ask has not been paid for" knows to open a checkout; one who reads "not
+     * Ask is waiting for a person" knows what to do; one who reads "not
      * implemented" files a bug.
      */
     const SEND_REFUSALS: Record<string, string> = {
@@ -759,8 +733,6 @@ export async function POST(request: Request) {
       links_not_migrated: "Connections need database migration 0061 first — nothing was saved.",
       link_test_mixed: "A test profile can't be connected to a real parent.",
       link_exists: "These two parents are already connected.",
-      blast_unpaid:
-        "This Ask has not been paid for yet — open a checkout and send the link to the parent first.",
       blast_needs_review:
         "This Ask is waiting for a person. Preview the pool: a short one means the network could not fill the tier. Releasing it is a decision, and it asks for a reason.",
       /* The window is checked by its **date**, not by the status: nothing moves
@@ -775,10 +747,8 @@ export async function POST(request: Request) {
          their working day and would otherwise read this as a broken send. */
       blast_nobody_reachable:
         "Nothing went out. It is outside 8am-9pm Pacific, or every parent in the pool was refused — opted out, inside their 48-hour gap, over their monthly limit — or no messaging provider is configured here. The Ask is marked for review.",
-      blast_contacts_nobody:
-        "A passive entry is a question on the demand map — it contacts nobody by design.",
       blast_not_ready:
-        "This Ask is not in a state that can be sent — it may have been fulfilled, expired or refunded.",
+        "This Ask is not in a state that can be sent — it may have been fulfilled or expired.",
       /* M7's exit (8 Sep). Each of these is a different next step, which is the
          whole reason they are four sentences and not one: approve a reply, find
          the asker a number, or try the send again. */
@@ -809,27 +779,6 @@ export async function POST(request: Request) {
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
-      /* 13 Oct — the money. Each of these read "that has changed since the
-         page was loaded", including the one no reload can fix. */
-      payment_not_provisioned:
-        "Payments are not switched on here — this deployment has no Stripe key, so no payment link can be made and no refund sent.",
-      payment_nothing_to_pay:
-        "There is nothing to pay on this Ask — the tier is free, or an earned credit already covered it.",
-      payment_already_paid:
-        "This Ask has already been paid for. Another link would charge the parent twice.",
-      payment_provider_error:
-        "Stripe did not make the link. Nothing was charged and nothing changed — try again in a minute.",
-      refund_nothing_paid:
-        "Nothing has been paid on this Ask, so there is nothing to send back.",
-      refund_already_refunded: "This Ask has already been refunded.",
-      refund_no_reference:
-        "Pando has no Stripe payment recorded against this Ask, so it cannot send the refund itself. Refund it in the Stripe dashboard.",
-      refund_provider_error:
-        "Stripe did not accept the refund. Nothing changed — the Ask still reads as paid. Try again.",
-      /* The money has moved and the row has not: said as that, never as a
-         failure to retry blind. */
-      refund_not_recorded:
-        "Stripe accepted the refund, but Pando could not record it. The money has gone back. Press Refund again today to record it — Stripe will not refund twice.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {
@@ -874,10 +823,9 @@ export async function POST(request: Request) {
   if (action.startsWith("invite.")) invalidateInvites();
 
   /**
-   * `detail` is whatever the action needs to hand back that is not part of the
-   * record — today only `blast.checkout`, whose output is a one-time Stripe
-   * payment link. It is deliberately absent from the audit row: that is read by
-   * every admin and kept forever, and this is useful for thirty seconds.
+   * `detail` is whatever an action needs to hand back that is not part of the
+   * record. It is deliberately absent from the audit row, which is read by every
+   * admin and kept forever.
    */
   return NextResponse.json({
     ok: true,

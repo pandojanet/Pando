@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import { JOBS, isDue, outcomeFor, type JobName, type JobResult } from "@/lib/jobs";
-import { TIERS, automaticCredit } from "@/lib/blast-tiers";
 import { deliveryHealth } from "@/lib/delivery";
 import { withDb, type Db } from "@/lib/server/db";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
@@ -286,29 +285,19 @@ async function impact_sync(): Promise<JobResult> {
 }
 
 /**
- * 7.7 — close what ran out of time, and credit the paid ones.
+ * 7.7 — close what ran out of time.
  *
- * "No useful answer inside the promised window, automatic credit" (§8), and the
- * test is an **approved** answer rather than a reply: a contributor writing back
- * is not the promise being kept, only the admin's approval says one arrived.
- *
- * A credit is granted in the same statement that expires the blast, so a blast
- * cannot be marked expired without the credit that owes the parent. The kind of
- * the credit that was actually spent is given back (`credits.kind`, joined
- * below) — since 21 Oct only old credit-funded rows can be owed one.
+ * The test is an **approved** answer rather than a reply: a contributor writing
+ * back is not the promise being kept, only the admin's approval says one
+ * arrived. Nothing is credited or refunded — every Network Ask is free (22 Oct).
  */
 async function expire_blasts(): Promise<JobResult> {
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
       const due = (await tx.execute(sql`
-        select b.id, b.tier, b.asker_id, b.payment_status,
-               b.credit_id is not null as credit_funded,
-               c.kind as credit_kind
+        select b.id
           from blasts b
-          left join credits c on c.id = b.credit_id
-         -- draft too (25 Sep): an Ask nobody sent is still a promise with a
-         -- clock. Left out, a credit-funded draft whose window passed kept the
-         -- parent's credit for ever and stayed a draft (walked over the relay).
+         -- draft too (25 Sep): an Ask nobody sent is still a promise with a clock.
          where b.status in ('draft', 'active', 'pending_review')
            and b.expires_at is not null
            and b.expires_at < now()
@@ -318,65 +307,24 @@ async function expire_blasts(): Promise<JobResult> {
          for update of b skip locked
       `)) as unknown as Array<Record<string, unknown>>;
 
-      let credited = 0;
       for (const row of due) {
         await tx.execute(sql`
           update blasts set status = 'expired' where id = ${String(row.id)}::uuid
         `);
-        /**
-         * Who is owed a credit, decided by `automaticCredit` rather than here.
-         *
-         * The old rule was "any priced tier", and it was wrong in two
-         * directions at once — measured on the live database, where a single
-         * run credited three of four expired Asks: it paid a **second**
-         * compensation on a card-paid Ask the payments page was already
-         * reporting as owed a refund, and it **minted a free credit** for a
-         * Board Ask whose checkout was never completed, which is repeatable
-         * by anybody willing to create an Ask and not pay for it.
-         */
-        const owed = automaticCredit({
-          tier: String(row.tier) as keyof typeof TIERS,
-          payment_status: String(row.payment_status ?? ""),
-          credit_funded: row.credit_funded === true,
-          credit_kind: row.credit_kind ? String(row.credit_kind) : null,
-        });
-        if (owed.grant && owed.kind && row.asker_id) {
-          await tx.execute(sql`
-            insert into credits (person_id, kind, reason)
-            values (${String(row.asker_id)}::uuid, ${owed.kind},
-                    'blast_expired_unanswered')
-          `);
-          /**
-           * Stamped on the Ask, in the same transaction as the credit it
-           * records — `credits` holds no reference back to the blast, so
-           * without this the grant is invisible to every reader.
-           *
-           * What it fixes: `refundOwed` could only say "a credit is owed",
-           * so the blast manager painted that in alert red for ever on a
-           * promise this job had already kept, and the obvious response to
-           * it is to grant a second credit by hand.
-           */
-          await tx.execute(sql`
-            update blasts set credit_granted_at = now()
-             where id = ${String(row.id)}::uuid
-          `);
-          credited += 1;
-        }
       }
-      return { expired: due.length, credited };
+      return { expired: due.length };
     }),
   );
 
   if (!result.persisted || !result.data) {
     return { outcome: "error", processed: 0, skipped: 0, failed: 1 };
   }
-  const { expired, credited } = result.data;
+  const { expired } = result.data;
   return {
     outcome: outcomeFor({ processed: expired, skipped: 0, failed: 0 }),
     processed: expired,
     skipped: 0,
     failed: 0,
-    note: `${credited} credited`,
   };
 }
 

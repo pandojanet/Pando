@@ -204,7 +204,6 @@ const NAV: NavSection[] = [
         icon: Megaphone,
         label: "Network Checks",
         count: (o) => o.blasts?.open ?? 0,
-        urgent: (o) => o.blasts?.refunds_owed ?? 0,
       },
       {
         /**
@@ -217,8 +216,6 @@ const NAV: NavSection[] = [
         label: "Network answers",
         count: (o) => o.answers?.replies ?? 0,
       },
-      /* "Payments" (14.5, /admin/payments) is not in the nav while every Ask is
-         free (22 Oct). The page and its logic stay for when payments return. */
     ],
   },
   {

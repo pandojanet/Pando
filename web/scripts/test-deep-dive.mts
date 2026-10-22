@@ -56,13 +56,13 @@ for (const t of ["DEEP", "deep dive", "Yes deep", "deep please", "Deep."]) ok(`"
 for (const t of ["yes", "deep end", "no", "what's a deep dive?"]) ok(`"${t}" is not the DEEP word`, !d.acceptsDeepDive(t));
 for (const t of ["yes", "Sure!", "ok", "yes please"]) ok(`"${t}" is a plain yes`, d.plainYes(t));
 ok("'yes but later' is not", !d.plainYes("yes but later"));
-ok("the offer says free now and paid later, before anyone agrees", /Free now, paid later/.test(d.DEEP_DIVE_OFFER));
+ok("the offer says nothing about money (22 Oct)", !/free|paid|pay|price|cost|[$]/i.test(d.DEEP_DIVE_OFFER));
 ok("and says what to reply", /Reply DEEP\.$/.test(d.DEEP_DIVE_OFFER));
 const started = d.deepDiveStarted("preschools near us");
 ok("the start says it is on its way", started.includes("Your deep dive is on its way"));
 ok("the offer is one segment", d.DEEP_DIVE_OFFER.length <= 160, String(d.DEEP_DIVE_OFFER.length));
 ok("and so is the start", started.length <= 160, String(started.length));
-ok("and repeats the terms", /free in the pilot and will be paid later/.test(started));
+ok("nor does the start", !/free|paid|pay|price|cost|[$]/i.test(started));
 ok("a topic with an emoji cannot break GSM-7", !/[^\x20-\x7E]/.test(d.deepDiveStarted("camps \u{1F600} for July")));
 for (const [name, copy] of Object.entries({ OFFER: d.DEEP_DIVE_OFFER, STARTED: started, ASK: d.DEEP_DIVE_ASK_TOPIC, FAILED: d.DEEP_DIVE_FAILED, UNSUPPORTED: d.DEEP_DIVE_UNSUPPORTED })) {
   ok(`${name} is plain GSM-7`, !/[^\x20-\x7E]/.test(copy));

@@ -76,7 +76,7 @@ export default function DeepDivesPage() {
     <>
       <PageHead
         title="Deep dives"
-        intro="Offers, requests and the reports that went out. Free during the pilot; every offer says it will be paid later, so the yes rate is the number to watch."
+        intro="Offers, requests and the reports that went out. How many people say yes to an offer is the number to watch."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}

@@ -809,13 +809,13 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
       body: JSON.stringify(body),
     });
 
-  /* 7.1 — the entry. `last_minute` is free, so no checkout stands between the
-     Ask and the rest of the walk; the paid path is `test:payments-live`. */
+  /* 7.1 — the entry. every Ask is free, so nothing stands between the Ask and
+     the rest of the walk. */
   const created = await act({
     action: "blast.create",
     asker_id: String(asker.id),
     question_text: QUESTION,
-    tier: "last_minute",
+    tier: "targeted",
   });
   ok("an Ask can be created", created.status === 200, `status ${created.status}`);
   const [blast] = await sql`
@@ -830,10 +830,12 @@ console.log("\n=== M7: a question, a reply, and the answer back to the asker ===
   );
 
   /**
-   * Last-Minute Care always carries `human_review` (7.2), so this is also the
-   * check that the send refuses on it — the one thing standing between a
-   * mis-scored pool and five strangers' phones.
+   * A short pool or stacked requirements put an Ask in review (7.2); set it
+   * directly, because this check is that the send refuses on it — the one thing
+   * standing between a mis-scored pool and five strangers' phones.
    */
+  await sql`update blasts set status = 'pending_review', human_review = true
+             where id = ${blast.id}::uuid`;
   const early = await act({ action: "blast.send", id: String(blast.id) });
   ok(
     "sending is refused while it waits for a person, in words",

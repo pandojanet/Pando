@@ -30,7 +30,6 @@ export type AdminResource =
   | "blast_responses"
   | "blasts"
   | "blast_pool"
-  | "payments"
   | "answers"
   | "delivery"
   | "conversations"
@@ -313,15 +312,11 @@ export interface Overview {
     named_allegation: number;
   };
   /**
-   * 14.3 / 14.5 — the two numbers the nav needs about Network Asks.
-   *
-   * `open` is Asks a parent is still waiting on, which is what makes the blast
-   * manager a queue rather than a ledger. `refunds_owed` is the subset that
-   * involves money and is somebody's outstanding task — the only count in this
-   * payload that is deliberately shown in red on two different links, because
-   * it is one fact and both pages clear it.
+   * 14.3 — the number the nav needs about Network Asks: `open`, the Asks a
+   * parent is still waiting on, which is what makes the blast manager a queue
+   * rather than a ledger.
    */
-  blasts: { open: number; refunds_owed: number };
+  blasts: { open: number };
   /**
    * 14.2 / 14.8 — what is waiting in the two answer queues.
    *
@@ -1104,8 +1099,8 @@ export type AdminAction =
    * no caller at all, so a Network Ask could be managed and never begun.
    *
    * The manual path on purpose, like everything else in the pilot. It records
-   * the question and redeems a credit if one covers the tier; it does not send
-   * (`blast.send`), does not charge (`blast.checkout`) and does not choose the
+   * the question; it does not send
+   * (`blast.send`) and does not choose the
    * pool (7.3, previewed by `blast_pool`).
    */
   | {
@@ -1125,16 +1120,6 @@ export type AdminAction =
    */
   | { action: "blast.deliver"; id: string }
   /**
-   * 14.3 / 13.5 — open a Stripe checkout for a paid Ask.
-   *
-   * An admin action rather than something the parent's own flow does, for the
-   * pilot's duration: there is no consumer web channel for a Network Ask yet
-   * (that is M5's SMS path), so today a paid Ask is set up by a person who then
-   * sends the link on. The action returns the URL rather than redirecting,
-   * because the admin is not the one paying.
-   */
-  | { action: "blast.checkout"; id: string }
-  /**
    * 14.3 — mark an Ask fulfilled, which is a judgement rather than a count.
    *
    * 7.7's guarantee turns on whether an answer was *useful*, and no query can
@@ -1144,17 +1129,6 @@ export type AdminAction =
    */
   | { action: "blast.release"; id: string; note: string }
   | { action: "blast.fulfil"; id: string; note: string }
-  /**
-   * 14.5 / 13.7 — the two halves of a refund, kept apart on purpose.
-   *
-   * `refund_due` is "somebody should refund this"; `refund` is "I have". They
-   * happen at different times and often by different people — whoever works the
-   * blast queue can see the window closed with nothing approved, and whoever
-   * handles money does the rest. One button would mean the person noticing has
-   * to also be the person authorised.
-   */
-  | { action: "blast.refund_due"; id: string; reason: string }
-  | { action: "blast.refund"; id: string; reason: string }
   | { action: "answer.approve"; id: string }
   | { action: "answer.send"; id: string }
   | { action: "answer.reject"; id: string; reason: string }
@@ -1600,9 +1574,9 @@ export interface BlastRow {
   question_text: string;
   category: string | null;
   neighborhood: string | null;
-  /** `passive` | `board` | `targeted` | `last_minute` — the 8.18 four. */
+  /** The stored kind (`targeted`). */
   tier: string;
-  /** The state of the *question*. See `payment_status` for the money. */
+  /** The state of the question. */
   status: string;
   /** Set at creation for Last-Minute Care, and by `needsHumanReview`. */
   human_review: boolean;
@@ -1617,21 +1591,6 @@ export interface BlastRow {
   answers_sent_at: string | null;
   created_at: string;
   asker: { id: string; name: string | null; phone: string | null } | null;
-  /**
-   * The state of the money, deliberately separate from `status`: a blast can be
-   * `fulfilled` and `refund_due` at once, because the guarantee is about whether
-   * an answer was *useful* rather than whether one arrived.
-   */
-  payment_status: string;
-  /** What was actually charged, frozen at checkout (`drizzle/0029`). */
-  price_cents: number;
-  paid_at: string | null;
-  refunded_at: string | null;
-  refund_reason: string | null;
-  /** Whether a credit paid for it. The guarantee is then a credit, not money. */
-  credit_funded: boolean;
-  /** When 7.7's automatic credit was granted, if it has been. Null means owed. */
-  credit_granted_at: string | null;
   /** How many were asked, how many answered, and how many answers were kept. */
   recipients: number;
   responded: number;
@@ -1676,64 +1635,6 @@ export interface BlastPoolResult {
   cold: boolean;
   /** Set when the pool is short or the requirements are stacked (7.3). */
   human_review: { required: boolean; reason: string | null };
-}
-
-/**
- * 14.5 — "paid blasts, credit-funded blasts, status, and refund needs."
- *
- * Its own page rather than a column on 14.3, because it answers a different
- * question: 14.3 asks "how is this Ask going", and this asks "what does Pando
- * owe, and to whom". The rows overlap; the reading does not.
- *
- * `owed` is computed by `refundOwed` in `lib/payments.ts` rather than here, so
- * the page and the action cannot disagree about whether a refund is due.
- */
-export interface PaymentRow {
-  blast_id: string;
-  question_text: string;
-  tier: string;
-  status: string;
-  payment_status: string;
-  price_cents: number;
-  paid_at: string | null;
-  refunded_at: string | null;
-  refund_reason: string | null;
-  credit_funded: boolean;
-  /** When 7.7's automatic credit was granted, if it has been. Null means owed. */
-  credit_granted_at: string | null;
-  asker: { id: string; name: string | null } | null;
-  approved_responses: number;
-  expires_at: string | null;
-  /** Days since payment, for the ~60-day manual window (13.7). */
-  age_days: number | null;
-  /**
-   * Money owed back, by `refundOwed` — the rule `/admin/blasts` already
-   * reads — **or** flagged by hand. Never `payment_status` alone: that is
-   * written by `expire_blasts` or the Flag button, and the job has never run,
-   * so a paid Ask whose window shut with no approved answer read "Paid" here
-   * while the Asks page said in red that a refund was owed.
-   */
-  refund_owed: boolean;
-  is_test: boolean;
-}
-
-export interface PaymentsResult {
-  rows: PaymentRow[];
-  /**
-   * Whether Stripe is switched on at all, and in which mode.
-   *
-   * Booleans and an enum only — never a key or a prefix, which is the sort of
-   * thing that ends up in a screenshot. The page needs it to avoid offering a
-   * refund button that could only ever fail.
-   */
-  stripe: {
-    provisioned: boolean;
-    webhook_configured: boolean;
-    mode: "live" | "test" | null;
-    prices: Array<{ tier: string; label: string; price: string }>;
-  };
-  /** Cents, over the rows shown. Reported rather than recomputed per page. */
-  totals: { paid_cents: number; refunded_cents: number; refund_due_cents: number };
 }
 
 /**

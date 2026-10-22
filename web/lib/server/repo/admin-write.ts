@@ -7,7 +7,6 @@ import {
   sendBlast,
 } from "@/lib/server/repo/blast";
 import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
-import { openCheckout, refundBlast } from "@/lib/server/repo/payments";
 
 import { sql } from "drizzle-orm";
 import { cleanText } from "@/lib/sanitize";
@@ -50,10 +49,8 @@ export type ActionOutcome =
       /**
        * Something the caller needs that is **not** part of the record.
        *
-       * Added for `blast.checkout`, whose whole output is a one-time Stripe
-       * payment link: the admin needs it in the response, and it must not go
-       * into `audit_log.after`, which every admin can read and which is kept
-       * forever. Anything durable about the decision belongs in the audit row
+       * For anything the admin needs in the response that must not go into
+       * `audit_log.after`, which every admin can read and which is kept forever. Anything durable about the decision belongs in the audit row
        * instead — this is for what is useful for the next thirty seconds.
        */
       detail?: Record<string, unknown>;
@@ -81,11 +78,9 @@ export type ActionOutcome =
         | "link_exists"
         | "link_test_mixed"
         | "not_found"
-        | "blast_unpaid"
         | "blast_needs_review"
         | "blast_already_sent"
         | "blast_not_ready"
-        | "blast_contacts_nobody"
         | "blast_nobody_reachable"
         | "blast_expired"
         | "blast_reply_decided"
@@ -109,19 +104,7 @@ export type ActionOutcome =
         | "hold_locked"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
         | "share_name_taken"
-        /* 13 Oct — the money. Every refusal from `openCheckout` and
-           `refundBlast` used to be `not_found`, so "Stripe is not set up
-           here" reached the admin as "that has changed since the page was
-           loaded", which no reload could fix. */
-        | "payment_not_provisioned"
-        | "payment_nothing_to_pay"
-        | "payment_already_paid"
-        | "payment_provider_error"
-        | "refund_nothing_paid"
-        | "refund_already_refunded"
-        | "refund_no_reference"
-        | "refund_provider_error"
-        | "refund_not_recorded";
+        ;
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -516,10 +499,6 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           reason:
             outcome.reason === "nobody_reachable"
               ? "blast_nobody_reachable"
-              : outcome.reason === "contacts_nobody"
-                ? "blast_contacts_nobody"
-              : outcome.reason === "unpaid"
-                ? "blast_unpaid"
               : outcome.reason === "needs_human_review"
                 ? "blast_needs_review"
               : outcome.reason === "expired"
@@ -581,57 +560,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "blast", resource_id: target };
     }
 
-    /* ── 14.3 / 13.5–13.7 The blast manager, and the money ───────────────── */
-
-    /**
-     * Open a Stripe checkout for a paid Ask.
-     *
-     * The URL comes back in `detail` rather than being followed, because the
-     * admin is not the one paying: during the pilot a paid Ask is set up by a
-     * person who then passes the link on. When M5's SMS path takes over, the
-     * same `openCheckout` is what it will call.
-     *
-     * **The URL is deliberately not in the audit row.** `audit_log.after` is
-     * read by every admin and kept forever, and this is a live payment link;
-     * what belongs in the record is that a checkout was opened, by whom, for
-     * which blast.
-     *
-     * Like `blast.send` and `answer.send`, this holds the transaction open
-     * across one HTTP call. Acceptable at pilot volume and noted for the same
-     * reason it is noted there: the audit row must not be lost because a
-     * third-party API was slow, and `openCheckout` never throws.
-     */
-    case "blast.checkout": {
-      const target = id(b.id);
-      if (!target) return { applied: false, reason: "not_implemented" };
-
-      const outcome = await openCheckout(target);
-      if (!outcome.ok) {
-        /* `nothing_to_pay` is a legitimate answer — a free tier, or one a credit
-           already covered — so this is a refusal with a name rather than an
-           error. */
-        console.info("[blast] checkout refused", { reason: outcome.reason });
-        return {
-          applied: false,
-          reason:
-            outcome.reason === "not_provisioned"
-              ? "payment_not_provisioned"
-              : outcome.reason === "nothing_to_pay"
-                ? "payment_nothing_to_pay"
-                : outcome.reason === "already_paid"
-                  ? "payment_already_paid"
-                  : outcome.reason === "stripe_error"
-                    ? "payment_provider_error"
-                    : "not_found",
-        };
-      }
-      return {
-        applied: true,
-        resource: "blast",
-        resource_id: target,
-        detail: { url: outcome.url },
-      };
-    }
+    /* ── 14.3 The blast manager ─────────────────────────────────────────── */
 
     /**
      * Mark an Ask fulfilled — a judgement, which is why it is a button.
@@ -671,15 +600,10 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      * recorded there: this is the one path that reaches five strangers'
      * phones, and creating a question is not deciding to ask it.
      *
-     * **It does not charge.** `blast.checkout` is separate too, and a paid
-     * tier that has not been paid is refused by `sendBlast`.
-     *
      * **It does not choose the pool.** A blast exists the moment the question
      * does; who to bother with it is 7.3, and may need a human first.
      *
-     * A credit **is** redeemed here, inside this transaction — that is 7.1's
-     * own behaviour, and it is why the insert is `createBlastIn` rather than a
-     * second copy of the statement.
+     * The insert is `createBlastIn` rather than a second copy of the statement.
      */
     case "blast.create": {
       const askerId = id(b.asker_id);
@@ -762,75 +686,6 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
          blast that has since been refunded is a no-op with a name rather than a
          transaction rolled back over an audit row. */
       if (rows.length === 0) return { applied: false, reason: "not_found" };
-      return { applied: true, resource: "blast", resource_id: target };
-    }
-
-    /**
-     * 13.7, first half — flag that a refund is owed, without making it.
-     *
-     * The middle state 14.5's page is named for ("status, and **refund needs**").
-     * The two halves happen at different times and often by different people:
-     * whoever works the blast queue can see the window closed with nothing
-     * approved, and whoever handles money does the rest. One button would mean
-     * the person noticing has to also be the person authorised.
-     */
-    case "blast.refund_due": {
-      const target = id(b.id);
-      const reason = text(b.reason);
-      if (!target || !reason) return { applied: false, reason: "not_implemented" };
-
-      const rows = (await tx.execute(sql`
-        update blasts
-           set payment_status = 'refund_due', refund_reason = ${reason}
-         where id = ${target}::uuid
-           and payment_status = 'paid'
-        returning id
-      `)) as unknown as Array<Record<string, unknown>>;
-      if (rows.length === 0) return { applied: false, reason: "not_found" };
-      return { applied: true, resource: "blast", resource_id: target };
-    }
-
-    /**
-     * 13.7, second half — the refund itself.
-     *
-     * **Stripe first, then the row**, which is the opposite of the order that
-     * looks safer. Marking the row refunded and then failing to reach Stripe
-     * leaves a record saying the money went back when it did not — and the
-     * parent, who can see their card statement, then knows more about Pando's
-     * finances than Pando does. A Stripe failure leaves the row untouched and
-     * the admin sees an error they can retry; the idempotency key (the blast id)
-     * is what makes that retry safe.
-     *
-     * The reason is required for the same reason it is on `claim.decline` and
-     * `share.retire`: this is a manual decision for the pilot's first sixty
-     * days, so the note is the only record of the judgement.
-     */
-    case "blast.refund": {
-      const target = id(b.id);
-      const reason = text(b.reason);
-      if (!target || !reason) return { applied: false, reason: "not_implemented" };
-
-      const outcome = await refundBlast({ blastId: target, reason });
-      if (!outcome.ok) {
-        console.error("[blast] refund failed", { reason: outcome.reason });
-        return {
-          applied: false,
-          reason:
-            outcome.reason === "nothing_paid"
-              ? "refund_nothing_paid"
-              : outcome.reason === "already_refunded"
-                ? "refund_already_refunded"
-                : outcome.reason === "no_payment_reference"
-                  ? "refund_no_reference"
-                  : outcome.reason === "refunded_not_recorded"
-                    ? "refund_not_recorded"
-                    : outcome.reason === "stripe_error"
-                      ? outcome.detail === "not_provisioned"
-                        ? "payment_not_provisioned"
-                        : "refund_provider_error"
-                      : "not_found",
-        };
-      }
       return { applied: true, resource: "blast", resource_id: target };
     }
 

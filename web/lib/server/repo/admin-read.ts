@@ -3,7 +3,6 @@ import "server-only";
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
-import { refundOwed } from "@/lib/payments";
 import { completeCounts, completeCountSql } from "@/lib/server/repo/founding-count";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
@@ -16,8 +15,6 @@ import type {
   BlastPoolResult,
   BlastResponseRow,
   BlastRow,
-  PaymentRow,
-  PaymentsResult,
   ConversationDetail,
   ConversationsResult,
   FreshnessOutcomeRow,
@@ -113,8 +110,6 @@ export async function readResource(
       return blastRows(db);
     case "blast_pool":
       return blastPool(db, params);
-    case "payments":
-      return paymentRows(db);
     case "delivery":
       return deliveryHealthRow(params);
     case "flags":
@@ -314,9 +309,7 @@ async function overview(db: Db) {
         -- §17.1. Not a queue: this one counts *up* as the golden-answer pass
         -- progresses, which is why it is not one of the quality numbers.
         (select count(*) from shares where answer_ready and not is_test)           as answer_ready,
-        -- 14.3 / 14.5. Two numbers about Network Asks, and the second is the one
-        -- painted red in two places: a refund an admin flagged and nobody has
-        -- made yet is money owed to a parent.
+        -- 14.3. The Network Asks still open.
         -- (Note: no backticks in here — one inside a sql template closes it,
         --  and tsc then reports the syntax error thirty lines away.)
         -- And not past its window. expire_blasts is what writes the expired
@@ -329,8 +322,6 @@ async function overview(db: Db) {
           where not is_test
             and status in ('draft', 'pending_review', 'active')
             and (expires_at is null or expires_at > now()))                    as blasts_open,
-        (select count(*) from blasts
-          where not is_test and payment_status = 'refund_due')                    as refunds_owed,
         -- Estimate 2.2's funnel. Four counts, each a real row rather than an
         -- event: opens come from the invite counter, the rest from what landed.
         (select coalesce(sum(opens), 0) from invites)                              as funnel_opens,
@@ -394,7 +385,7 @@ async function overview(db: Db) {
       high_stakes: n("demand_high"),
       named_allegation: n("demand_allegation"),
     },
-    blasts: { open: n("blasts_open"), refunds_owed: n("refunds_owed") },
+    blasts: { open: n("blasts_open") },
     answers: { waiting: n("answers_waiting"), replies: n("replies_waiting") },
     answer_ready: n("answer_ready"),
     /**
@@ -2551,13 +2542,6 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
            b.fulfilled_at                                    as fulfilled_at,
            b.answers_sent_at                                 as answers_sent_at,
            b.created_at                                      as created_at,
-           b.payment_status                                  as payment_status,
-           b.price_cents                                     as price_cents,
-           b.paid_at                                         as paid_at,
-           b.refunded_at                                     as refunded_at,
-           b.refund_reason                                   as refund_reason,
-           b.credit_id is not null                           as credit_funded,
-           b.credit_granted_at,
            b.is_test                                         as is_test,
            p.id::text                                        as asker_id,
            p.first_name                                      as asker_first,
@@ -2598,13 +2582,6 @@ async function blastRows(db: Db): Promise<BlastRow[]> {
           phone: adminPhone(r.asker_phone as string | null),
         }
       : null,
-    payment_status: String(r.payment_status ?? "not_required"),
-    price_cents: Number(r.price_cents ?? 0),
-    paid_at: (r.paid_at as string | null) ?? null,
-    refunded_at: (r.refunded_at as string | null) ?? null,
-    refund_reason: (r.refund_reason as string | null) ?? null,
-    credit_funded: r.credit_funded === true,
-    credit_granted_at: (r.credit_granted_at as string | null) ?? null,
     recipients: Number(r.recipients ?? 0),
     responded: Number(r.responded ?? 0),
     passed: Number(r.passed ?? 0),
@@ -2696,122 +2673,6 @@ async function blastPool(
     human_review: {
       required: pool.human_review.required && !blast.released_at,
       reason: blast.released_at ? null : (pool.human_review.reason ?? null),
-    },
-  };
-}
-
-/**
- * 14.5 — paid Asks, credit-funded Asks, status, and refund needs.
- *
- * Only rows that involve money at all: a free tier has nothing to say here, and
- * including them would bury the handful that matter under every passive
- * question ever logged. The partial index in `drizzle/0029` matches this WHERE
- * clause exactly.
- *
- * The totals are computed here rather than on the page for the reason the demand
- * counter taught: **a number and the list it describes come from one
- * expression.** A page summing its own rows and a query filtering them will
- * disagree the first time one of them changes.
- */
-async function paymentRows(db: Db): Promise<PaymentsResult> {
-  const { stripeStatus } = await import("@/lib/server/stripe");
-
-  const rows = (await db.execute(sql`
-    select b.id::text                                    as blast_id,
-           b.question_text                               as question_text,
-           b.tier                                        as tier,
-           b.status                                      as status,
-           b.payment_status                              as payment_status,
-           b.price_cents                                 as price_cents,
-           b.paid_at                                     as paid_at,
-           b.refunded_at                                 as refunded_at,
-           b.refund_reason                               as refund_reason,
-           b.credit_id is not null                       as credit_funded,
-           b.credit_granted_at,
-           b.expires_at                                  as expires_at,
-           b.is_test                                     as is_test,
-           p.id::text                                    as asker_id,
-           p.first_name                                  as asker_first,
-           p.last_name                                   as asker_last,
-           case when b.paid_at is null then null
-                else (extract(epoch from (now() - b.paid_at)) / 86400)::int
-           end                                           as age_days,
-           (select count(*)::int from blast_recipients r
-             where r.blast_id = b.id
-               and r.review_status = 'approved')          as approved_responses
-      from blasts b
-      left join people p on p.id = b.asker_id
-     where b.payment_status <> 'not_required' or b.credit_id is not null
-     order by b.created_at desc
-     limit 200
-  `)) as unknown as Array<Record<string, unknown>>;
-
-  const mapped: PaymentRow[] = rows.map((r) => ({
-    blast_id: String(r.blast_id),
-    question_text: String(r.question_text ?? ""),
-    tier: String(r.tier),
-    status: String(r.status),
-    payment_status: String(r.payment_status ?? "not_required"),
-    price_cents: Number(r.price_cents ?? 0),
-    paid_at: (r.paid_at as string | null) ?? null,
-    refunded_at: (r.refunded_at as string | null) ?? null,
-    refund_reason: (r.refund_reason as string | null) ?? null,
-    credit_funded: r.credit_funded === true,
-    credit_granted_at: (r.credit_granted_at as string | null) ?? null,
-    asker: r.asker_id
-      ? { id: String(r.asker_id), name: fullName(r.asker_first, r.asker_last) }
-      : null,
-    approved_responses: Number(r.approved_responses ?? 0),
-    expires_at: (r.expires_at as string | null) ?? null,
-    age_days: r.age_days === null ? null : Number(r.age_days),
-    refund_owed: false,
-    is_test: r.is_test === true,
-  }));
-
-  /**
-   * ⚠ What is owed, by the guarantee's own rule rather than by the stored flag.
-   *
-   * This page's whole question is what Pando owes and to whom, and it answered
-   * it from `payment_status = 'refund_due'` — a value only `expire_blasts` or
-   * an admin's Flag button writes. The job has never run on any deployment, so
-   * a paid Ask whose window closed with no approved answer sat under **Paid**
-   * here, owing nothing, while `/admin/blasts` (which reads `refundOwed` and
-   * the date) said in red that Pando owed that parent a refund. One fact, two
-   * pages, two answers — the 3 Sep clock bug arriving one page late.
-   *
-   * A manual flag still counts on its own, because an admin can owe a refund
-   * for a reason the guarantee does not cover.
-   */
-  for (const row of mapped) {
-    const rule = refundOwed({
-      status: row.status,
-      payment_status: row.payment_status as never,
-      credit_id: row.credit_funded ? "credit" : null,
-      approved_responses: row.approved_responses,
-      expires_at: row.expires_at,
-      credit_granted_at: row.credit_granted_at,
-    });
-    row.refund_owed =
-      row.payment_status === "refund_due" ||
-      (rule.owed && rule.as === "money");
-  }
-
-  const real = mapped.filter((r) => !r.is_test);
-  return {
-    rows: mapped,
-    stripe: stripeStatus(),
-    totals: {
-      paid_cents: real
-        .filter((r) => r.payment_status === "paid" || r.payment_status === "refund_due")
-        .reduce((sum, r) => sum + r.price_cents, 0),
-      refunded_cents: real
-        .filter((r) => r.payment_status === "refunded")
-        .reduce((sum, r) => sum + r.price_cents, 0),
-      /* The same field the Refunds-owed tab filters on, so the figure and
-         the list under it cannot disagree (the 2 Sep rule). */
-      refund_due_cents: real
-        .filter((r) => r.refund_owed)
-        .reduce((sum, r) => sum + r.price_cents, 0),
     },
   };
 }

@@ -15,9 +15,9 @@
  *    has grown into a deep one, and the parent replies DEEP (or yes);
  *  - **explicit** — the parent writes "deep dive".
  *
- * Free during the pilot, and **Pando says upfront that it will be paid later**
- * — the client's goal is to measure how many people say yes, so every offer is
- * a row (`drizzle/0058`).
+ * Nothing about it is priced and a parent is told nothing about payment (22 Oct).
+ * Every offer is a row (`drizzle/0058`), so how many people say yes is still
+ * countable.
  *
  * ## What the developer decided (21 Oct)
  *
@@ -128,17 +128,16 @@ export const DEEP_DIVE_OFFER_VERSION = "offer-2026-10-21b";
 
 /*
  * Conversational copy, not registered A2P samples (`sms-templates.ts`), so it
- * can be reworded as the pilot learns. On the list for the client: the offer
- * and the start both say it is free now and paid later. GSM-7 throughout.
+ * can be reworded as the pilot learns. GSM-7 throughout.
  */
 /* One segment (150 chars) on top of an answer that may already use five (review, 21 Oct). */
 export const DEEP_DIVE_OFFER =
-  "Want a deep dive? I'll rank these for your family with what local parents said, what's online and rough drive times. Free now, paid later. Reply DEEP.";
+  "Want a deep dive? I'll rank these for your family with what local parents said, what's online and rough drive times. Reply DEEP.";
 
 export function deepDiveStarted(topic: string): string {
   /* The topic is not repeated: a whole question made this two segments and read badly mid-sentence. */
   void topic;
-  return "On it! Your deep dive is on its way, give me a few minutes. Deep dives are free in the pilot and will be paid later.";
+  return "On it! Your deep dive is on its way, give me a few minutes.";
 }
 
 export const DEEP_DIVE_ASK_TOPIC =
@@ -1333,7 +1332,7 @@ function rankedAll(options: DeepOption[], modelOrder: string[]): DeepOption[] {
  *   Also worth a look (Public/general information): A (Pasadena), B.
  *   My take: <the writer, checked>
  *   Want to hear from a parent who's been? Reply INTRO and the name, like INTRO <name>.
- *   Drive times are rough estimates. Deep dives are free during the pilot.
+ *   Drive times are rough estimates.
  *
  * ⚠ **"Public/general information" is said once, in the header, not on every
  * option** (22 Oct). It opened every public option and the page's half of
@@ -1416,7 +1415,7 @@ export function renderBlocks(input: RenderInput): { header: string; options: str
   if (firstParent) {
     footer.push(`Want to hear from a parent who's been? Reply INTRO and the name, like INTRO ${firstParent.name}.`);
   }
-  footer.push(`${anyDistance ? "Drive times are rough estimates. " : ""}Deep dives are free during the pilot.`);
+  if (anyDistance) footer.push("Drive times are rough estimates.");
   if (input.offerAsk) footer.push("Want me to ask nearby parents about these? Reply YES.");
   return { header: header.join("\n"), options: blocks, footer: footer.join("\n") };
 }

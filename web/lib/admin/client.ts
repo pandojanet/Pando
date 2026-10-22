@@ -133,9 +133,8 @@ export async function adminAction(
   persisted: boolean;
   actor: string;
   /**
-   * Whatever the action needed to hand back that is not part of the record —
-   * today only `blast.checkout`, whose output is a one-time Stripe payment
-   * link. Absent for every other action, and never written to the audit row.
+   * Whatever an action needs to hand back that is not part of the record.
+   * Absent for every action today, and never written to the audit row.
    */
   detail?: Record<string, unknown>;
 }> {

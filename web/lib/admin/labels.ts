@@ -456,11 +456,8 @@ export const AUDIT_ACTION: Record<string, string> = {
   "blast.create": "Recorded a Network Ask",
   "blast.send": "Sent a Network Ask to parents",
   "blast.deliver": "Texted the approved replies to the parent who asked",
-  "blast.checkout": "Opened a payment link for a Network Ask",
   "blast.release": "Released a Network Ask a person had to check",
   "blast.fulfil": "Marked a Network Ask answered",
-  "blast.refund_due": "Flagged a refund on a Network Ask",
-  "blast.refund": "Refunded a Network Ask",
   "blast_response.rate": "Rated a reply to a Network Ask",
   "blast_response.approve": "Approved a reply to a Network Ask",
   "blast_response.reject": "Set aside a reply to a Network Ask",
@@ -662,15 +659,16 @@ export function holdReasonLabel(reason: string): string {
  * 14.3 — the kind of Network Ask, as an admin reads it. One kind since 21 Oct,
  * stored as `targeted`; the three older ids only describe old rows. The words
  * are here rather than imported because this module is importable from
- * anywhere; `npm run test:payments` asserts the current one matches
+ * anywhere; `npm run test:blast` asserts the current one matches
  * `TIERS[GENERAL_TIER].label`.
  */
 export const BLAST_TIER: Record<string, string> = {
-  /* One kind, free (21 Oct). The stored id is still "targeted" — lib/blast-tiers.ts. */
-  targeted: "Network Ask — free",
-  passive: "Passive (old) — contacted nobody",
-  board: "Board Ask (old) — now free",
-  last_minute: "Last-Minute Care (old) — free",
+  /* One kind (22 Oct). The stored id is still "targeted" — lib/blast-tiers.ts. */
+  targeted: "Network Ask",
+  /* Old rows only. */
+  passive: "Network Ask",
+  board: "Network Ask",
+  last_minute: "Network Ask",
 };
 
 /**
@@ -722,7 +720,7 @@ export const LAST_THERE: Record<string, string> = {
   unsure: "not sure when",
 };
 
-/** The state of the *question*. See `PAYMENT_STATUS` for the money. */
+/** The state of the question. */
 export const BLAST_STATUS: Record<
   string,
   { label: string; tone: "green" | "gold" | "red" | "neutral" | "muted" }
@@ -732,29 +730,9 @@ export const BLAST_STATUS: Record<
   active: { label: "Out with parents", tone: "green" },
   fulfilled: { label: "Answered", tone: "green" },
   expired: { label: "Window closed", tone: "red" },
-  refunded: { label: "Refunded", tone: "muted" },
+  /* Old rows only. */
+  refunded: { label: "Answered", tone: "muted" },
   cancelled: { label: "Cancelled", tone: "muted" },
-};
-
-/**
- * The state of the *money*, and the two vocabularies are deliberately separate:
- * a blast can be answered and still owe a refund, because 7.7's guarantee is
- * about whether an answer was *useful*.
- *
- * `refund_due` is the one worth reading carefully — it means a person decided
- * one is owed and nobody has made it yet, which is the only row on the payments
- * page that is somebody's outstanding task.
- */
-export const PAYMENT_STATUS: Record<
-  string,
-  { label: string; tone: "green" | "gold" | "red" | "neutral" | "muted" }
-> = {
-  not_required: { label: "Nothing to pay", tone: "muted" },
-  pending: { label: "Checkout open", tone: "gold" },
-  paid: { label: "Paid", tone: "green" },
-  refund_due: { label: "Refund owed", tone: "red" },
-  refunded: { label: "Refunded", tone: "neutral" },
-  failed: { label: "Payment did not go through", tone: "gold" },
 };
 
 /**

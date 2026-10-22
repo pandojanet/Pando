@@ -2,7 +2,7 @@
  * M9.5 — the scheduled jobs, as data.
  *
  * Three things in Phase 2 need a clock and had none: freshness pings (10.3), the
- * daily delivery-rate check (12.5), and blast expiry with its automatic credit
+ * daily delivery-rate check (12.5), and blast expiry
  * (7.7). Each was written and then never called.
  *
  * ## Why the schedule is a list here rather than a crontab
@@ -48,16 +48,15 @@ export const JOBS: Record<JobName, JobSpec> = {
   /**
    * 7.7 — the guarantee's clock.
    *
-   * Hourly, because the shortest window is Last-Minute Care's four hours (old rows only since 21 Oct; a Network Ask's is 24) and a
+   * Hourly, because a Network Ask's window is 24 hours and a
    * guarantee that expires late is a parent still waiting past the promise. Reads
-   * and writes rows; sends nothing — the credit is a row, and telling the parent
-   * is a queued answer like any other.
+   * and writes rows; sends nothing.
    */
   expire_blasts: {
     name: "expire_blasts",
     min_interval_minutes: 55,
     sends: false,
-    what: "Close blasts past their window, and credit the paid ones that got no answer.",
+    what: "Close blasts past their window that got no approved answer.",
   },
 
   /**

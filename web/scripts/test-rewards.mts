@@ -1,7 +1,7 @@
 /**
  * The launch incentive (client, 10 Sep §6) — one guaranteed $10 payment.
  *
- * Its own suite for the reason `test:payments` has one: this decides whether a
+ * Its own suite, because this decides whether a
  * real person is owed real money, and the rule has **six** conditions where the
  * one it replaced had one. Every condition is exercised on its own, because a
  * rule that ANDs six things passes every test that only ever fails one.

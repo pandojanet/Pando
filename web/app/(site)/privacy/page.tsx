@@ -54,11 +54,6 @@ export default function PrivacyPage() {
           <strong>Recommendations and nominations</strong> you contribute, including
           caveats and whether you’re willing to serve as a reference.
         </li>
-        <li>
-          <strong>Payment information</strong> if you purchase a paid service,
-          processed by our payment provider (Stripe). Pando does not store card
-          numbers.
-        </li>
       </ul>
 
       <h2 id="use">How we use it</h2>
@@ -111,7 +106,7 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Service providers:</strong> vendors that help us run Pando
-          (messaging, hosting, payments, and AI language processing), bound to use
+          (messaging, hosting, and AI language processing), bound to use
           information only to provide their service to us. Our AI providers process
           messages to generate responses and are contractually prohibited from using
           your information to train their models.

@@ -33,18 +33,6 @@ const EMPTY: Record<AdminResource, unknown> = {
     cold: false,
     human_review: { required: false, reason: null },
   },
-  /* 14.5. `provisioned: false` rather than an empty success: a page that cannot
-     reach Stripe must not imply payments are working. */
-  payments: {
-    rows: [],
-    stripe: {
-      provisioned: false,
-      webhook_configured: false,
-      mode: null,
-      prices: [],
-    },
-    totals: { paid_cents: 0, refunded_cents: 0, refund_due_cents: 0 },
-  },
 
   overview: null,
   contributors: [],
@@ -115,16 +103,6 @@ const SAMPLE: Record<AdminResource, unknown> = {
     held: [],
     cold: false,
     human_review: { required: false, reason: null },
-  },
-  payments: {
-    rows: [],
-    stripe: {
-      provisioned: false,
-      webhook_configured: false,
-      mode: null,
-      prices: [],
-    },
-    totals: { paid_cents: 0, refunded_cents: 0, refund_due_cents: 0 },
   },
 
   blast_responses: [],

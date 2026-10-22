@@ -50,9 +50,8 @@ export const sampleOverview: Overview = {
   /** The three add up to `contributors.total`, as they do against a real database. */
   reward: { approved: 19, in_review: 4, not_met: 19 },
   demand: { ordinary: 14, peer_support: 3, high_stakes: 1, named_allegation: 0 },
-  /* 14.3 / 14.5 — zeroed rather than invented. Sample money is the one kind
-     of fabrication that answers "has anybody actually paid?" with a yes. */
-  blasts: { open: 0, refunds_owed: 0 },
+  /* 14.3 — zeroed rather than invented. */
+  blasts: { open: 0 },
   /* Zeroed for the same reason as the line above: the answers page serves a
      deliberately empty sample, so a badge promising rows it cannot show would
      send a reader to an empty queue. */

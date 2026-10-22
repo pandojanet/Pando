@@ -48,7 +48,6 @@ that decide what Phase 2 does at all.
 | `SLACK_SIGNING_SECRET` | the events door verifies | it **refuses everything** — fail-closed, like the Twilio signature |
 | the three `TWILIO_*` | real texts | `not_provisioned`, and the UI says so |
 | `JOBS_SECRET` | `/api/jobs/run` works | every job is refused |
-| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | a paid Ask can be bought | `/admin/payments` paints the state red, and no blast can be paid for |
 
 ⚠ **`SLACK_API_BASE` and `TWILIO_API_BASE` must never be set in production.**
 They exist so the posting path can be exercised against a local stub.
@@ -854,7 +853,6 @@ if a number below does not match, the table is out of date and not the suite.
 | `test:inbound` | 49 | the keyword order, mostly forged requests |
 | `test:capture` | 66 | the five-question script, and which words a step accepts |
 | `test:caregiver` | 68 | the four consent scopes, the 18+ gate, the named-person detector |
-| `test:payments` | 109 | segmentation, that nothing is charged, the Stripe signature, the retry policy |
 | `test:jobs` · `test:tiers` · `test:thanks` · `test:vouch` | 33 · 32 · 41 · 32 | the lock; the ladder; the two thank-you loops; refresh vs vouch |
 | `test:feedback` | 117 | every client feedback item, pinned by her own number |
 | `test:security` | 67 | every route is guarded, the limits are sane, invariant 7 by shape |
@@ -867,7 +865,6 @@ if a number below does not match, the table is out of date and not the suite.
 | `test:relay-live` | 65 | `npm run build` first. A **real server** against a stubbed Slack: the question → answer loop, and the whole blast chain including the exit |
 | `test:e2e` | 285 | a **dev server** (not a build) and a live database. Walks all of Phase 1 |
 | `test:compliance` | 26 | the five acceptance checks, against the live database |
-| `test:payments-live` | 18 | `drizzle/0029`'s constraints against the real schema |
 | `test:referral-live` | 21 | the referral chain and the identity endpoint's refusals |
 | `probe:web-search` | 10 cases | ⚠ **spends real API calls and searches the live web.** Ten questions through the real pipeline, printing what a parent would receive. It **reports rather than gates** — a model plus a live web is not deterministic |
 

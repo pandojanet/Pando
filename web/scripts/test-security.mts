@@ -290,7 +290,6 @@ console.log("\n=== 15.4: no public route is unguarded ===");
   const WEBHOOKS = [
     "sms/inbound",
     "sms/status",
-    "stripe/webhook",
     "slack/events",
   ];
   for (const hook of WEBHOOKS) {

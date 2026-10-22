@@ -90,8 +90,6 @@ for (const file of screens) {
 const NO_SCREEN: Record<string, string> = {
   "option.retire":
     "needs a screen listing the live tap-list options, which the admin does not have yet",
-  "blast.checkout":
-    "every Network Ask is free since 21 Oct, so the blasts page has no 'Take payment' button; the action stays allowlisted and refuses a free Ask (payment_nothing_to_pay), so prices coming back is a decision, not a rewire",
 };
 
 const uncalled = [...allowed].filter((a) => !called.has(a));
@@ -140,16 +138,6 @@ console.log("\n=== every named refusal is said in words ===");
     const at = write.indexOf(`case "${name}": {`);
     return at === -1 ? "" : write.slice(at, at + 1400);
   };
-  ok(
-    "a checkout Stripe cannot make is not reported as a stale page",
-    /payment_not_provisioned/.test(section("blast.checkout")) &&
-      /payment_nothing_to_pay/.test(section("blast.checkout")),
-  );
-  ok(
-    "a refund Stripe took and Pando could not record says the money has moved",
-    /refund_not_recorded/.test(section("blast.refund")) &&
-      /The money has gone back/.test(map),
-  );
 }
 
 /* ── 3. a blast reply can be approved from its page ─────────────────────────── */
@@ -191,40 +179,6 @@ console.log("\n=== /admin/responses sends what the route asks for ===");
   ok(
     "and a caregiver or a doctor is never created from a reply",
     !offered.includes("caregiver") && !offered.includes("doctor"),
-  );
-}
-
-/* ── 4. the money ───────────────────────────────────────────────────────────── */
-
-console.log("\n=== Stripe returns a parent to a page that exists, and one link at a time ===");
-{
-  const stripe = readFileSync("lib/server/stripe.ts", "utf8");
-  const payments = readFileSync("lib/server/repo/payments.ts", "utf8");
-  const returns = [...stripe.matchAll(/_url: `\$\{site\}(\/[a-z/]+)\?/g)].map((m) => m[1]);
-  ok("both return URLs were read", returns.length === 2, returns.join(", "));
-  for (const path of returns) {
-    ok(
-      `${path} is a page`,
-      existsSync(join("app", "(site)", ...path.split("/").filter(Boolean), "page.tsx")),
-    );
-  }
-  ok(
-    "the idempotency key and the expiry move together, so a second press is the same request",
-    /blast-checkout-\$\{input\.blastId\}-\$\{step\}/.test(stripe) &&
-      /expires_at: String\(\(step \+ 1\) \* STEP \+ 1800\)/.test(stripe),
-  );
-  const open = payments.slice(
-    payments.indexOf("export async function openCheckout"),
-    payments.indexOf("export type ConfirmOutcome"),
-  );
-  ok(
-    "the link already out is asked about before another is made",
-    open.indexOf("checkoutState(") !== -1 &&
-      open.indexOf("checkoutState(") < open.indexOf("createCheckout("),
-  );
-  ok(
-    "a paid session waiting on its webhook is never given a second link",
-    /state\.status === "complete"\) return \{ ok: false, reason: "already_paid" \}/.test(open),
   );
 }
 

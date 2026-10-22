@@ -40,7 +40,7 @@ link here:
   first: `create table backup_<date>_<table> as table <table>`.
 
 **SMS, outreach and money.** `test:outreach` and `test:compliance` pin invariant 5's
-numbers; `test:payments` and `test:relay` cover the guarantee and the relay.
+numbers; `test:blast` and `test:relay` cover the Ask and the relay.
 [phase-2-test-plan](../phase-2-test-plan.md) is the walk through the Slack relay.
 
 **Hooks and guards** (`.claude/hooks`, `.githooks`). `test:hooks` and `test:githooks`
@@ -69,7 +69,7 @@ reads the files and applies the same rules. The rules it must satisfy here:
 |---|---|---|---|
 | Auth & access | `web/proxy.ts`, `web/lib/seed-gate.ts`, `web/lib/admin/`, `web/lib/server/{admin-auth,gate,verify,rate-limit}.ts`, `web/app/api/admin` | Auth & access · Tests | Invariant 11: the phone comes from the verification, never the request. The seed gate is a marker, not authentication. |
 | Data & API | `web/app/api/`, `web/lib/server/`, `web/lib/*.ts` | Data access & API contract · Tests | Invariants 1, 3, 4, 7, 12 at the query, not the screen. `lib/server/db.ts` is the only file with a connection string; unset `DATABASE_URL` answers `persisted: false`. |
-| SMS & payments | `web/lib/server/{sms,inbound,slack,stripe}.ts`, `web/app/api/{sms,slack,stripe,jobs}`, `web/lib/{outreach-policy,payments,sms-*}.ts` | Data access & API contract · Tests | Invariant 6's order; no raw Twilio call. Stripe's webhook is the only evidence of payment. |
+| SMS & payments | `web/lib/server/{sms,inbound,slack}.ts`, `web/app/api/{sms,slack,jobs}`, `web/lib/{outreach-policy,sms-*}.ts` | Data access & API contract · Tests | Invariant 6's order; no raw Twilio call. |
 | Database | `web/drizzle/`, `web/lib/db/`, `web/scripts/` (seeds, backfills), `supabase/` | Database & migrations · Scripts & data fixes | The `db-migration` skill. A committed migration is never edited. |
 | UI | `web/app/(seed)`, `(caregiver)`, `(admin)`, `(site)`, `web/components/` | UI · Tests | `pando-design-system`, `mobile-first-ui`; flows per `tap-first-flow`. |
 | CI, deploy & agent tooling | `.github/`, `web/Dockerfile`, `deploy/`, `.claude/`, `.githooks/`, `web/package.json` | CI & workflows · Containers · Tests | The `deploy-ops` skill: impact, rollback, operator actions. |

@@ -35,14 +35,12 @@ import {
   BLAST_STATUS,
   BLAST_TIER,
   DEMAND_CATEGORY,
-  PAYMENT_STATUS,
   matchReason,
   matchReasonValue,
   poolHeldReason,
   sentence,
 } from "@/lib/admin/labels";
-import { formatCents, refundOwed, windowClosed } from "@/lib/payments";
-import { GENERAL_TIER } from "@/lib/blast-tiers";
+import { GENERAL_TIER, windowClosed } from "@/lib/blast-tiers";
 import type {
   BlastPoolResult,
   BlastRow,
@@ -54,8 +52,7 @@ import type {
  * Estimate 14.3 — the blast manager.
  *
  * The fullest row in M14: "preview the selected recipient pool, read the
- * responses, rate their quality, pick the best, and manage fulfillment and
- * refund flags."
+ * responses, rate their quality, pick the best, and manage fulfillment."
  *
  * ## What was already built, and what was actually missing
  *
@@ -63,8 +60,7 @@ import type {
  * whether it enters the graph are `/admin/responses` — built under 7.6/7.9 on
  * 27 Aug, and 14.8 under its own number. What had **no** home was the blast
  * itself: there was no list of Network Asks anywhere in the admin, no way to see
- * a pool before it went out, and no way to say "this one was answered" or "this
- * one owes a refund". So this page is the blast, and it links to the replies
+ * a pool before it went out, and no way to say "this one was answered". So this page is the blast, and it links to the replies
  * rather than duplicating them — the same rule that keeps the consent file on
  * `/admin/contributors` instead of giving it a second nav item.
  *
@@ -82,14 +78,11 @@ import type {
  * it is four contributors inside their 48-hour gap, and an admin who cannot see
  * that reads a three-person pool as a broken matcher.
  *
- * ## Three verbs, and each is a judgement
+ * ## Two verbs, and each is a judgement
  *
- * **Open a checkout** hands back a Stripe link; the admin passes it on, because
- * during the pilot there is no consumer web channel for an Ask. **Mark
- * fulfilled** is a person saying the parent got what they paid for — no query
- * can decide that, since three replies of "no idea, sorry" leave the guarantee
- * owed. **Flag a refund** is the first half of 13.7, kept separate from making
- * one so that noticing and authorising can be different people.
+ * **Mark answered** is a person saying the parent got what they asked for — no
+ * query can decide that, since three replies of "no idea, sorry" are not an
+ * answer. **Release** lets a short pool go out after a person has looked.
  */
 /**
  * Is Pando allowed to text anybody right now?
@@ -151,7 +144,7 @@ function QuietHoursNote({ relay }: { relay: boolean }) {
 }
 
 /** The tabs, and what the query parameter may say. */
-const FILTERS = ["open", "owed", "paid", "all"] as const;
+const FILTERS = ["open", "all"] as const;
 
 /** `busy` for the create form, which is the one action here with no row. */
 const CREATING = "new-ask";
@@ -164,7 +157,7 @@ export default function BlastsPage() {
   const [openPool, setOpenPool] = useState<string | null>(null);
   const [noteFor, setNoteFor] = useState<{
     id: string;
-    kind: "fulfil" | "refund_due" | "release";
+    kind: "fulfil" | "release";
   } | null>(
     null,
   );
@@ -189,47 +182,14 @@ export default function BlastsPage() {
   const all = rows ?? [];
   const real = useMemo(() => all.filter((r) => !r.is_test), [all]);
 
-  /**
-   * Whether the guarantee is owed, from `lib/payments.ts` rather than from a
-   * predicate written here. The page and the action have to agree about it, and
-   * two places deriving "is a refund owed" is how they stop agreeing — the
-   * lesson the demand queue's tab counter already paid for.
-   */
-  const owedBy = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof refundOwed>>();
-    for (const row of real) {
-      map.set(
-        row.id,
-        refundOwed({
-          status: row.status,
-          payment_status: row.payment_status as never,
-          credit_id: row.credit_funded ? "credit" : null,
-          approved_responses: row.approved_responses,
-          /* 7.7's clock. Without it this said "Pando owes a refund" about an
-             Ask that was still live — see the note in `refundOwed`. */
-          expires_at: row.expires_at,
-          /* And the other end of it: the credit half of the guarantee is
-             granted by `expire_blasts`, so without this the row reported it
-             as still owed on a promise the job had already kept. */
-          credit_granted_at: row.credit_granted_at,
-        }),
-      );
-    }
-    return map;
-  }, [real]);
-
   const visible = useMemo(() => {
     if (filter === "open") return real.filter(stillOpen);
-    if (filter === "owed") return real.filter((r) => owesSomething(r, owedBy));
-    if (filter === "paid") return real.filter((r) => r.payment_status === "paid");
     return real;
-  }, [real, filter, owedBy]);
+  }, [real, filter]);
 
   /* Counts from the same expressions as the tabs — see the demand-queue rule. */
   const counts = {
     open: real.filter(stillOpen).length,
-    owed: real.filter((r) => owesSomething(r, owedBy)).length,
-    paid: real.filter((r) => r.payment_status === "paid").length,
     all: real.length,
   };
 
@@ -242,14 +202,7 @@ export default function BlastsPage() {
     setMessage(null);
     try {
       const result = await fn();
-      const url = typeof result.detail?.url === "string" ? result.detail.url : null;
-      setMessage(
-        !result.persisted
-          ? `${label} — but nothing was saved.`
-          : url
-            ? `${label} Send this to the parent: ${url}`
-            : label,
-      );
+      setMessage(!result.persisted ? `${label} — but nothing was saved.` : label);
       setNoteFor(null);
       setNote("");
       await reload();
@@ -282,7 +235,7 @@ export default function BlastsPage() {
         * question reaches a person, and a person records it.
         *
         * ⚠ It creates and stops. Sending is its own button on the row (that is
-        * the path to five strangers' phones), paying is another, and choosing
+        * the path to five strangers' phones), and choosing
         * who to ask is the pool preview. Creating a question is not deciding to
         * ask it.
         */}
@@ -337,8 +290,6 @@ export default function BlastsPage() {
           onChange={setFilter}
           options={[
             { id: "open", label: "Still open", count: counts.open },
-            /* The "owed" and "paid" views are kept in code for when payments
-               return, and not offered while every Ask is free (22 Oct). */
             { id: "all", label: "Everything", count: counts.all },
           ]}
         />
@@ -356,13 +307,10 @@ export default function BlastsPage() {
               noSample
             />
         ) : visible.length === 0 ? (
-          <Empty
-            title={filter === "owed" ? "Nothing is owed" : "Nothing in this view"}
-          />
+          <Empty title="Nothing in this view" />
         ) : (
           <RecordList>
             {shown.map((row) => {
-              const owed = owedBy.get(row.id);
               /**
                * ⚠ The window, read from the date rather than from the status.
                *
@@ -381,21 +329,11 @@ export default function BlastsPage() {
               const status = closed
                 ? BLAST_STATUS.expired
                 : BLAST_STATUS[row.status];
-              const payment = PAYMENT_STATUS[row.payment_status];
               const drawer = noteFor?.id === row.id ? noteFor.kind : null;
               return (
                 <RecordCard
                   key={row.id}
-                  /* Only an outstanding refund gets a wash: it is the one row on
-                     this page that is somebody's unfinished task. A tint on
-                     every paid Ask would be a tint on the ordinary case. */
-                  tone={
-                    row.payment_status === "refund_due"
-                      ? "urgent"
-                      : row.human_review && row.status === "pending_review"
-                        ? "pending"
-                        : "plain"
-                  }
+                  tone={row.human_review && row.status === "pending_review" ? "pending" : "plain"}
                   title={<span className="font-normal leading-relaxed">“{row.question_text}”</span>}
                   aside={
                     <>
@@ -408,18 +346,6 @@ export default function BlastsPage() {
                       <Badge tone={status?.tone ?? "neutral"}>
                         {status?.label ?? sentence(row.status)}
                       </Badge>
-                      {/* Money only where some actually moved (paid, refund due,
-                          refunded): an old unpaid row read "Checkout open ·
-                          $15.00" for an Ask that is free now (review, 21 Oct). */}
-                      {!["not_required", "pending", "failed"].includes(row.payment_status) && (
-                        <Badge tone={payment?.tone ?? "neutral"}>
-                          {payment?.label ?? sentence(row.payment_status)}
-                          {row.price_cents > 0 ? ` · ${formatCents(row.price_cents)}` : ""}
-                        </Badge>
-                      )}
-                      {row.credit_funded && (
-                        <Badge tone="green">Paid with an earned credit</Badge>
-                      )}
                       {row.human_review && (
                         <Badge tone="gold">A person reads this before it goes</Badge>
                       )}
@@ -427,9 +353,6 @@ export default function BlastsPage() {
                   }
                   actions={
                     <>
-                      {/* No "Take payment": every Network Ask is free since 21 Oct, and
-                          `openCheckout` refuses a free Ask anyway. */}
-
                       {/**
                         * ⚠ **7.8 had no button anywhere in the admin until
                         * 8 Sep.** `blast.send` was implemented, allowlisted, and
@@ -439,11 +362,10 @@ export default function BlastsPage() {
                         * written-and-never-called fault, on the middle of the
                         * chain.
                         *
-                        * Hidden only where it could **only** fail: a passive
-                        * entry contacts nobody by design (`pool_target === 0`),
-                        * and an Ask that has already gone out has recipients.
+                        * Hidden only where it could **only** fail: an Ask
+                        * that has already gone out has recipients.
                         * Everything else shows and lets the refusal do the
-                        * explaining — unpaid, waiting for a person, outside
+                        * explaining — waiting for a person, outside
                         * quiet hours — because those sentences say what to do
                         * next and a hidden button says nothing at all.
                         */}
@@ -540,24 +462,11 @@ export default function BlastsPage() {
                         </Button>
                       )}
 
-                      {row.payment_status === "paid" && (
-                        <Button
-                          subject={row.question_text}
-                          tone="danger"
-                          disabled={busy === row.id}
-                          onClick={() => {
-                            setNoteFor({ id: row.id, kind: "refund_due" });
-                            setNote(owed?.why ?? "");
-                          }}
-                        >
-                          Flag a refund
-                        </Button>
-                      )}
                     </>
                   }
                 >
                   <FactGrid>
-                    <Fact label="Tier">{BLAST_TIER[row.tier] ?? sentence(row.tier)}</Fact>
+                    <Fact label="Kind">{BLAST_TIER[row.tier] ?? sentence(row.tier)}</Fact>
                     <Fact label="About">
                       {row.category
                         ? (DEMAND_CATEGORY[row.category] ?? sentence(row.category))
@@ -592,7 +501,7 @@ export default function BlastsPage() {
                           an answered or expired one read "Closes Sep 5" on
                           the 25th when the wording keyed on it. */}
                       {!row.expires_at
-                        ? "No window — nobody is contacted"
+                        ? "No window"
                         : new Date(row.expires_at).getTime() < Date.now()
                           ? `Closed ${when(row.expires_at)}`
                           : `Closes ${when(row.expires_at)}`}
@@ -618,43 +527,12 @@ export default function BlastsPage() {
                     * sendable. A control that is simply absent reads as a page
                     * with something missing; the refusal it replaces
                     * (`expired`, 14 Sep) said this only *after* the press.
-                    *
-                    * Suppressed when a refund is owed, because that note names
-                    * the closed window in its own first sentence.
                     */}
-                  {closed && !owed?.owed && row.pool_target > 0 && (
+                  {closed && row.pool_target > 0 && (
                     <p className="mt-3.5 rounded-lg border border-bark bg-paper px-3 py-2 text-[12.5px] leading-relaxed text-muted">
                       The window closed on {when(row.expires_at!)}, so this Ask can
                       no longer be sent.
                     </p>
-                  )}
-
-                  {/* 7.7's guarantee, said in words on the row it applies to
-                      rather than left for a reader to work out from two badges. */}
-                  {owed?.owed && (
-                    <p className="mt-3.5 rounded-lg border border-alert-line bg-alert-wash px-3 py-2 text-[12.5px] leading-relaxed text-alert">
-                      {owed.why}{" "}
-                      {owed.as === "credit"
-                        ? "Pando owes a fresh credit, not money."
-                        : "Pando owes this parent a refund."}
-                    </p>
-                  )}
-
-                  {/* Settled, and said rather than left silent: "the guarantee
-                      was owed and has been met" is a different answer from
-                      "nothing was ever owed", and only one of them tells an
-                      admin why this Ask cost the parent nothing. Neutral, not
-                      alert — there is nothing to do. */}
-                  {owed && !owed.owed && owed.as === "credit" && (
-                    <p className="mt-3.5 rounded-lg border border-bark bg-paper px-3 py-2 text-[12.5px] leading-relaxed text-muted">
-                      {owed.why}
-                    </p>
-                  )}
-
-                  {row.refund_reason && (
-                    <div className="mt-3.5">
-                      <Quote label="Why a refund was flagged">{row.refund_reason}</Quote>
-                    </div>
                   )}
 
                   {drawer && (
@@ -662,9 +540,7 @@ export default function BlastsPage() {
                       title={
                         drawer === "fulfil"
                           ? "What did the parent actually get?"
-                          : drawer === "release"
-                            ? "Why is this safe to send?"
-                            : "Why is a refund owed?"
+                          : "Why is this safe to send?"
                       }
                     >
                       <Field
@@ -680,16 +556,14 @@ export default function BlastsPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           subject={row.question_text}
-                          tone={drawer === "refund_due" ? "danger" : "primary"}
+                          tone="primary"
                           disabled={busy === row.id || note.trim().length < 3}
                           onClick={() =>
                             void run(
                               row.id,
                               drawer === "fulfil"
                                 ? "Marked answered."
-                                : drawer === "release"
-                                  ? "Released. It still has to be sent."
-                                  : "Refund flagged.",
+                                : "Released. It still has to be sent.",
                               async () =>
                                 drawer === "fulfil"
                                   ? adminAction({
@@ -697,25 +571,17 @@ export default function BlastsPage() {
                                       id: row.id,
                                       note: note.trim(),
                                     })
-                                  : drawer === "release"
-                                    ? adminAction({
-                                        action: "blast.release",
-                                        id: row.id,
-                                        note: note.trim(),
-                                      })
-                                    : adminAction({
-                                        action: "blast.refund_due",
-                                        id: row.id,
-                                        reason: note.trim(),
-                                      }),
+                                  : adminAction({
+                                      action: "blast.release",
+                                      id: row.id,
+                                      note: note.trim(),
+                                    }),
                             )
                           }
                         >
                           {drawer === "fulfil"
                             ? "Mark answered"
-                            : drawer === "release"
-                              ? "Release it"
-                              : "Flag the refund"}
+                            : "Release it"}
                         </Button>
                         <Button
                           tone="secondary"
@@ -849,12 +715,6 @@ function PoolPreview({ blastId }: { blastId: string }) {
   );
 }
 
-/**
- * The "owed" tab: the guarantee's own verdict, **or** a refund an admin
- * flagged by hand (25 Sep). The sidebar's red badge counts `refund_due`, and a
- * hand-flagged refund on an Ask still live or already answered was in neither
- * this tab nor Paid — red in the nav and findable only under Everything.
- */
 /** Live: not settled, and its window has not run out (`windowClosed`). */
 function stillOpen(row: { status: string; expires_at: string | null }): boolean {
   return (
@@ -865,9 +725,3 @@ function stillOpen(row: { status: string; expires_at: string | null }): boolean 
   );
 }
 
-function owesSomething(
-  row: { id: string; payment_status: string },
-  owedBy: Map<string, { owed: boolean }>,
-): boolean {
-  return owedBy.get(row.id)?.owed === true || row.payment_status === "refund_due";
-}

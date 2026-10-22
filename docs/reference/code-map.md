@@ -80,28 +80,11 @@
 `web/lib/sms-segments.ts` — M13.3. What a message actually costs to send, and
                        where it breaks. One character outside GSM-7 halves the
                        budget; this measures and never rewrites registered copy.
-`web/lib/payments.ts` — M13.5–13.7. Whether a refund is coherent and whether the
-                       guarantee is owed. Imports **nothing** — `paymentFor`
-                       lives in `blast-tiers.ts`, for that reason. Since 21 Oct
-                       nothing is charged (one free kind); this, Stripe and the
-                       payments repo stay for old paid rows (see decisions.md).
-`web/lib/stripe-signature.ts` — M13.6. Verifying a payment webhook, including
-                       the replay tolerance the Twilio verifier has no
-                       equivalent of.
-`web/lib/server/stripe.ts` — the **only** place Pando talks to Stripe: a
-                       checkout session and a refund, over `fetch`, inert until
-                       `STRIPE_SECRET_KEY` is set.
-`web/lib/server/repo/payments.ts` — the writes behind a paid Ask. Idempotent by
-                       `where` clause, because Stripe is not.
 `web/lib/server/repo/retry.ts` — M13.4. Which failed messages are worth sending
                        again, and rebuilding the three that can be.
-`web/app/api/stripe/webhook/route.ts` — the only evidence of payment this app
-                       accepts. A success page cannot activate a blast.
 `web/app/(admin)/admin/blasts/page.tsx` — M14.3. The Ask, its pool before it
-                       goes out, and the two verbs nobody could reach: mark it
-                       answered, flag a refund. Cannot send.
-`web/app/(admin)/admin/payments/page.tsx` — M14.5. What was paid and what is
-                       owed. Leads with whether Stripe is switched on at all.
+                       goes out, and the verbs nobody could reach: release it, mark
+                       it answered. Nothing on it is priced.
 `web/lib/pending-question.ts` — what Pando says when it cannot read a
                        message, how much of the exchange it remembers, and when
                        to stop asking and fetch a person. Pure.
