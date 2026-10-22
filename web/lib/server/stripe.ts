@@ -112,6 +112,47 @@ async function stripePost(
   }
 }
 
+/**
+ * What Stripe says about a checkout session already made.
+ *
+ * The one read in this module, and it exists for `openCheckout`: before making
+ * a second payment link for an Ask it has to know whether the first is still
+ * open (hand that one back), already paid (make nothing — the webhook is on its
+ * way) or expired (make a new one). `null` when Stripe could not be asked, and
+ * the caller must then make nothing rather than guess.
+ */
+export async function checkoutState(
+  sessionId: string,
+): Promise<{ status: "open" | "complete" | "expired"; url: string | null } | null> {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(
+      `${STRIPE_API}/checkout/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${key}:`).toString("base64")}`,
+          "Stripe-Version": STRIPE_API_VERSION,
+        },
+        signal: AbortSignal.timeout(15_000),
+      },
+    );
+    const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!res.ok || !data) {
+      console.error("[stripe] session read rejected", { status: res.status });
+      return null;
+    }
+    const status = data.status;
+    if (status !== "open" && status !== "complete" && status !== "expired") return null;
+    return { status, url: typeof data.url === "string" ? data.url : null };
+  } catch (err) {
+    console.error("[stripe] unreachable", {
+      kind: err instanceof Error ? err.name : "unknown",
+    });
+    return null;
+  }
+}
+
 export interface CheckoutResult {
   ok: boolean;
   /** Where to send the parent. Absent on failure. */
@@ -148,6 +189,21 @@ export async function createCheckout(input: {
   if (!isStripeProvisioned()) return { ok: false, reason: "not_provisioned" };
 
   const site = baseUrl();
+  /**
+   * ⚠ **The expiry is rounded to a five-minute step, and that is for the
+   * idempotency key rather than for tidiness** (13 Oct).
+   *
+   * Stripe refuses a repeated key whose parameters differ from the first
+   * request. This sent `now + 1800` to the second under a key that was only
+   * the blast id — so a second press produced different parameters under the
+   * same key and was refused, for the 24 hours Stripe remembers a key. The
+   * first link lasts 30 minutes, so *New payment link* could not work for the
+   * rest of that day. Two presses inside one step now send identical requests
+   * and get the one session back; the step ends 30-35 minutes out, which
+   * clears the 30-minute minimum Stripe sets on an expiry.
+   */
+  const STEP = 300;
+  const step = Math.floor(Date.now() / 1000 / STEP);
   const result = await stripePost(
     "/checkout/sessions",
     {
@@ -180,10 +236,12 @@ export async function createCheckout(input: {
        * and a checkout they finish tomorrow would activate a blast whose window
        * has already started ticking.
        */
-      expires_at: String(Math.floor(Date.now() / 1000) + 1800),
+      expires_at: String((step + 1) * STEP + 1800),
     },
-    /* Keyed to the blast: a parent who double-taps "pay" gets one session. */
-    `blast-checkout-${input.blastId}`,
+    /* Keyed to the blast **and to the step**: a double press is one session,
+       and a new link after the last one expired is a new key rather than a
+       replay of the dead one. */
+    `blast-checkout-${input.blastId}-${step}`,
   );
 
   if (!result.ok) return { ok: false, reason: "stripe_error", error: result.error };

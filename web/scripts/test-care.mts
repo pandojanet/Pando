@@ -143,7 +143,7 @@ ok("an opening never replaces the public guard", a.composeAnswer({
   candidates: [{ name: "City parks", kind: "x", firsthand_count: 0, trust: { labels: [t.TRUST_LABEL.PUBLIC], freshness: "fresh", public_only: true } }],
   has_question: true,
   opening: "A few more that may fit:",
-}).text.includes("general information, not from a parent"));
+}).text.startsWith(`Here's what I found. ${t.TRUST_LABEL.PUBLIC}:`));
 
 console.log("\n=== a follow-up is stored apart from the answer it follows ===");
 ok("the suffix round-trips", m.baseQuestion(m.withMoreSuffix("any good nanny?")) === "any good nanny?");
@@ -151,8 +151,9 @@ ok("it is never added twice", m.withMoreSuffix(m.withMoreSuffix("q")) === m.with
 const { readFileSync } = await import("node:fs");
 const inbound = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
 ok("the queue stores a follow-up under the suffixed text", /question:\s*input\.more\s*\?\s*withMoreSuffix\(body\)\s*:\s*body/.test(inbound));
-ok("the follow-up branch runs before the classifier is called", inbound.indexOf("asksForMore(body)") > 0 && inbound.indexOf("asksForMore(body)") < inbound.indexOf("await classifyIntent("));
-ok("a follow-up is only for a message no open question has claimed", /pending === null && !attached\.attached && asksForMore\(body\)/.test(inbound));
+/* The message's own classification; the deep-dive step (21 Oct) reads its topic earlier, separately. */
+ok("the follow-up branch runs before the classifier is called", inbound.indexOf("asksForMore(body)") > 0 && inbound.indexOf("asksForMore(body)") < inbound.indexOf("const reading = await classifyIntent("));
+ok("a follow-up is only for a message no open question has claimed", /pending === null && !attached\.attached && !answeredSomething && !clarified && asksForMore\(body\)/.test(inbound));
 ok("a follow-up that names an age, a place or another topic is a new question", /bandsInQuestion\(body\)\.length > 0/.test(inbound) && /placePhraseIn\(body\) !== null/.test(inbound));
 const retrieval = readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");
 const careSql = retrieval.slice(retrieval.indexOf("const caregiverRows"), retrieval.indexOf("return { policies, shareRows, caregiverRows }"));

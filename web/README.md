@@ -59,7 +59,7 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/login`           | One scrypt credential per person, from `admin_users` — the actor is proved, not picked. |
 | `/admin`                 | Overview: completion, two-or-more rate, drop-off, quality queues.            |
 | `/admin/founding`        | Founding approval queue — cards, bulk-approve per link.                     |
-| `/admin/contributors`    | Two tabs on the same people: what they shared, and the consent file (unmasked numbers, wording versions, downloadable). Detail per person. |
+| `/admin/contributors`    | Two tabs on the same people: what they shared, and the consent file (unmasked numbers, wording versions, downloadable). Detail per person — including **Connections** (22 Oct): `person.link` `{ id, other_id, note? }` adds a parent ↔ parent connection, `person.unlink` `{ id }` removes an admin's one. |
 | `/admin/activities`      | Review with confidence filter, edit, approve/reject.                        |
 | `/admin/caregivers`      | Consent state machine with evidence + duplicate candidates.                 |
 | `/admin/caregivers?view=signups` | 2C — match a caregiver's claim to a nomination, or decline it with a reason (the Sign-ups tab; `/admin/claims` is gone). |
@@ -68,8 +68,10 @@ invite-only tool and carries `noindex, nofollow` for the whole group.
 | `/admin/options`         | Promote "other" answers into the tap lists.                                 |
 | `/admin/demand`          | D1 queue: high-stakes and named-allegation questions first.                 |
 | `/admin/flags`           | Escalations first, then review queue.                                       |
-| `/admin/blasts`          | 14.3 — every Network Ask, its pool before it goes out, and the two verbs nobody could reach: mark it answered, flag a refund. Previewing calls the same `selectPool` a live send calls, and **sends nothing**. |
-| `/admin/payments`        | 14.5 — what was paid, what is owed, and the refund itself (13.7). Leads with whether Stripe is switched on at all; test mode is called out as loudly as unconfigured. |
+| `/admin/deep-dives`      | Deep Dive (21 Oct) — every offer, yes and report: the yes-rate the client asked to measure, and what each report was built from. Read-only. |
+| `/admin/introductions`   | Introductions (21 Oct) — parent ↔ parent requests and their statuses: approve / reject (reason), contacted (which parent), connected / declined. Actions `intro.approve` `{ id }`, `intro.reject` `{ id, reason }`, `intro.contacted` `{ id, parent_id, note? }`, `intro.connected` / `intro.declined` `{ id, note? }`. Candidates are parents who agreed to be asked (`follow_up_ok`). |
+| `/admin/blasts`          | 14.3 — every Network Ask (one kind, free since 21 Oct), its pool before it goes out, and the two verbs nobody could reach: mark it answered, flag a refund. Previewing calls the same `selectPool` a live send calls, and **sends nothing**. |
+| `/admin/payments`        | 14.5 (old rows only since 21 Oct: every Network Ask is free) — what was paid, what is owed, and the refund itself (13.7). Leads with whether Stripe is switched on at all; test mode is called out as loudly as unconfigured. |
 | `/admin/audit`           | Who changed what, with a before → after diff.                               |
 | `POST /api/admin/query`  | One read endpoint for every admin page → `lib/server/repo/admin-read.ts`.    |
 | `POST /api/admin/action` | One write endpoint → `admin-write.ts`; the audit row is written in the same transaction as the change. |

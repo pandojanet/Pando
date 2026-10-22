@@ -2,12 +2,14 @@ import { sql } from "drizzle-orm";
 import { INBOUND_CONSENT_VERSION } from "@/lib/consent";
 import {
   clarifyTemplate,
-  parseAge,
+  parseAges,
+  parseFirstName,
   parseNeighborhood,
   questionFromTemplate,
   type ClarifyingQuestion,
   type KnownProfile,
 } from "@/lib/onboarding";
+import { parseAllowanceChoice } from "@/lib/outreach-policy";
 import { withDb, type Db } from "@/lib/server/db";
 
 /**
@@ -25,9 +27,12 @@ import { withDb, type Db } from "@/lib/server/db";
  *
  * Two things keep this honest rather than a loophole:
  *
- *  - **No name is stored.** The row has a phone and nothing that identifies a
- *    person, which is why the `verified_if_named` CHECK permits it at all. A name
- *    still requires the ordinary flow.
+ *  - **No name is stored at creation.** The row starts as a phone and nothing
+ *    else. Since 21 Oct the parent may give a first name later, in answer to
+ *    Pando's own question — by then the number has been proven by the carrier,
+ *    which is what invariant 11 asks before anything about a named parent is
+ *    stored (`verified_if_named` checks exactly that: a phone implies a
+ *    verification).
  *  - **The consent records what actually happened.** `INBOUND_CONSENT_VERSION`,
  *    not the seed wording's version, because they were never shown that text.
  *
@@ -98,7 +103,10 @@ export async function ensureInboundPerson(input: {
 
       const hood = (await tx.execute(sql`
         select neighborhood,
-               raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place
+               raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place,
+               nullif(btrim(first_name), '')                    as first_name,
+               (allowance_mode = 'as_relevant'
+                 or monthly_contact_allowance is not null)      as allowance_chosen
           from people where id = ${personId}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
 
@@ -109,6 +117,9 @@ export async function ensureInboundPerson(input: {
           child_birth_years: (kids[0]?.years as number[] | null) ?? [],
           neighborhood: (hood[0]?.neighborhood as string | null) ?? null,
           pending_place: (hood[0]?.pending_place as string | null) ?? null,
+          /* Both read so the SMS can ask them (21 Oct) — see `nextQuestion`. */
+          first_name: (hood[0]?.first_name as string | null) ?? null,
+          allowance_chosen: hood[0]?.allowance_chosen === true,
         },
       };
     }),
@@ -167,15 +178,40 @@ export async function saveClarification(input: {
   /** The market's neighborhood options, for `parseNeighborhood`. */
   areas?: Array<{ id: string; label: string }>;
 }): Promise<boolean> {
+  if (input.question === "first_name") {
+    const name = parseFirstName(input.text);
+    if (!name) return false;
+    /* Only into an empty column: a name given on `/join` is never replaced by
+       what a text happened to look like. Never logged (invariant 7). */
+    const result = await withDb(async (db: Db) => {
+      await db.execute(sql`
+        update people set first_name = ${name}
+         where id = ${input.personId}::uuid
+           and (first_name is null or btrim(first_name) = '')
+      `);
+      return true;
+    });
+    return result.persisted === true;
+  }
+
+  if (input.question === "participation") {
+    /* The SETTINGS menu's own reader and write, so P14 over SMS and the menu
+       can never disagree about what "2" means. */
+    const choice = parseAllowanceChoice(input.text);
+    if (!choice) return false;
+    return setAllowance({ personId: input.personId, allowance: choice.allowance, mode: choice.mode });
+  }
+
   if (input.question === "child_age") {
-    const age = parseAge(input.text);
-    if (age === null) return false;
+    /* Every child in the reply (21 Oct) — "3 and 7" is two rows. */
+    const ages = parseAges(input.text);
+    if (ages.length === 0) return false;
     const result = await withDb(async (db: Db) => {
       /* Birth year, not age — the same conversion the seed flow makes, and for
          the same reason: an age stops being true in a year, a birth year does
          not. `expecting` (-1) becomes this year, which is what the questionnaire
          already assumes. */
-      const birthYear = new Date().getFullYear() - Math.max(0, age);
+      const thisYear = new Date().getFullYear();
       /**
        * ⚠⚠ **`on conflict do nothing` stood here and guarded nothing** (21 Sep).
        *
@@ -191,10 +227,14 @@ export async function saveClarification(input: {
        * second line of defence and is not is worse than no clause, so it is
        * gone rather than left reassuring the next reader.
        */
-      await db.execute(sql`
-        insert into children (person_id, birth_year)
-        values (${input.personId}::uuid, ${birthYear})
-      `);
+      await db.transaction(async (tx) => {
+        for (const age of ages) {
+          await tx.execute(sql`
+            insert into children (person_id, birth_year)
+            values (${input.personId}::uuid, ${thisYear - Math.max(0, age)})
+          `);
+        }
+      });
       return true;
     });
     return result.persisted === true;
@@ -277,7 +317,11 @@ export async function awaitingSettingsChoice(personId: string): Promise<boolean>
          -- stayed open for a day: walked over the relay, a bare "5" sent after a
          -- confirmed "3" was read as a second settings choice and moved the
          -- allowance again, when it could as well be a child's age.
-         and template in (${SETTINGS_TEMPLATE}, 'settings_confirmed', 'clarify_child_age', 'clarify_neighborhood')
+         -- Any clarifying question closes the menu too, the two added on
+         -- 21 Oct included: a "2" after "how many could Pando send you?" is
+         -- that question's answer, not a second settings choice.
+         and (template in (${SETTINGS_TEMPLATE}, 'settings_confirmed')
+              or template like 'clarify_%')
          and sent_at > now() - interval '1 day'
        order by sent_at desc
        limit 1

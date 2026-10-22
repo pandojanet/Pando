@@ -33,7 +33,9 @@ export type NotifyEvent =
   /** A parent nominated a caregiver. */
   | { kind: "caregiver" }
   /** A caregiver set up her own profile and is waiting to be matched. */
-  | { kind: "caregiver_signup" };
+  | { kind: "caregiver_signup" }
+  /** A parent asked to be introduced to a parent who has been somewhere (21 Oct). */
+  | { kind: "introduction" };
 
 function slugLabel(value: string): string {
   return value.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -70,6 +72,11 @@ export function notifyText(event: NotifyEvent, base: string): string {
       return [
         ":raising_hand: *A caregiver set up her own profile* — it needs matching to a nomination",
         link(base, "/admin/caregivers?view=signups", "Match it"),
+      ].join("\n");
+    case "introduction":
+      return [
+        ":handshake: *A parent asked for an introduction* to a parent who has been there",
+        link(base, "/admin/introductions", "Open it"),
       ].join("\n");
   }
 }

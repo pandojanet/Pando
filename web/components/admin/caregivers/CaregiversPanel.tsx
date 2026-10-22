@@ -266,7 +266,28 @@ export function CaregiversPanel() {
                  * same order, so a new item that forgets this line shows up as
                  * an item that does not open.
                  */
+                /**
+                 * The family’s recommendation can be decided at last
+                 * (13 Oct). `nomination.approve` and `nomination.reject`
+                 * were implemented, allowlisted and labelled, and **no screen
+                 * called either** — so the *Nomination* line above could only
+                 * ever read *Received* or *Held*, and a caregiver card could
+                 * never count toward a parent’s Founding, which reads
+                 * `status = 'approved'` (`founding-count.ts`).
+                 *
+                 * Approving is refused while a hold stands — releasing that is
+                 * its own noted decision — so the button is not offered then.
+                 * Only where a family nominated her: a caregiver who signed up
+                 * on her own has no recommendation to decide.
+                 */
+                const canApproveNomination =
+                  row.nominations > 0 &&
+                  row.nomination_status !== "approved" &&
+                  !row.review_hold;
+                const canRejectNomination =
+                  row.nominations > 0 && row.nomination_status !== "rejected";
                 const menu = [
+                  ...(canRejectNomination ? ["reject_nomination"] : []),
                   ...NEXT_STATES[row.consent_status].filter((to) => to !== "consented"),
                   ...(row.consent_status === "consented" ? ["switch"] : []),
                   ...(row.consent_status === "consented" && row.active
@@ -366,6 +387,21 @@ export function CaregiversPanel() {
                           * reported: nothing tells a reader whether the next
                           * thing along is a button or a list of them.
                           */}
+                        {canApproveNomination && (
+                          <Button
+                            tone="secondary"
+                            disabled={busy === row.id}
+                            subject={row.first_name}
+                            onClick={() =>
+                              void run(row.id, "Nomination approved.", async () =>
+                                adminAction({ action: "nomination.approve", id: row.id }),
+                              )
+                            }
+                          >
+                            Approve nomination
+                          </Button>
+                        )}
+
                         {row.review_hold && (
                           <Button
                             tone="danger"
@@ -396,6 +432,25 @@ export function CaregiversPanel() {
                           */}
                         {menu.length > 0 && (
                         <Menu label={`More for ${row.first_name}`}>
+                          {canRejectNomination && (
+                            <MenuItem
+                              disabled={busy === row.id}
+                              onSelect={() =>
+                                void run(
+                                  row.id,
+                                  "Nomination set aside — it is no longer used.",
+                                  async () =>
+                                    adminAction({
+                                      action: "nomination.reject",
+                                      id: row.id,
+                                      reason: "set_aside",
+                                    }),
+                                )
+                              }
+                            >
+                              Don’t use this nomination
+                            </MenuItem>
+                          )}
                           {NEXT_STATES[row.consent_status]
                             .filter((to) => to !== "consented")
                             .map((to) => (

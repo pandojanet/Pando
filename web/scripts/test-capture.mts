@@ -304,6 +304,19 @@ console.log("\n=== segments ===");
   const templates = (await import(`../lib/sms-templates.ts?v=${Date.now()}`)) as typeof import("../lib/sms-templates.ts");
   const ping = templates.freshnessPingSms({ name: "Little Maestros" });
   ok("the freshness ping stays in GSM-7", segments(ping).gsm, ping);
+  /* 22 Oct: the one proactive send with no "Pando:" and no way out written on it. */
+  ok(
+    "the freshness ping says who it is from and how to stop, like every other proactive send",
+    ping.startsWith("Pando:") && /Reply STOP to opt out, HELP for help\.$/.test(ping),
+    ping,
+  );
+  const ping20 = templates.freshnessPingSms({ name: "Little Maestros Acad" });
+  ok("and is one segment for a twenty-character name", segments(ping20).segs === 1, `${ping20.length} chars`);
+  ok(
+    "and offers exactly the replies the reader and the keywords accept",
+    /\bYES\b/.test(ping) && /\bNO\b/.test(ping) && /\bPASS\b/.test(ping),
+    ping,
+  );
 }
 
 

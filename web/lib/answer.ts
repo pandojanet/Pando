@@ -59,6 +59,8 @@ export interface AnswerCandidate {
    * the second through.
    */
   kind: string;
+  /** What to call it in a sentence when the sub-category says more than the kind ("specialist", 21 Oct). */
+  kind_word?: string | null;
   /**
    * Where it is, in the market's own vocabulary — one neighborhood slug.
    *
@@ -350,10 +352,32 @@ export interface ComposedAnswer {
  * frequently nothing.
  *
  * Five segments (153 × 5), kept a whole number of them because a budget that
- * ends mid-segment wastes one. ⚠ **Roughly 67% more per answer than three
+ * ends mid-segment wastes one. ⚠ The budget is the *answer's*: a deep-dive or
+ * intro offer, or a clarifying question, is appended after it is checked, so a
+ * message can reach six segments (22 Oct audit). ⚠ **Roughly 67% more per answer than three
  * segments**, and "наразі" is her own word for how long that stands.
+ *
+ * ## 918 since 22 Oct — six segments
+ *
+ * The developer chose it when the answers were reported *"short and not
+ * substantive"*: three parents' places each with their own words, the web's
+ * findings and a warm opening line do not fit in five segments together
+ * (measured: a rich draft took 761 of 765, and every warm rewrite was then
+ * refused as too long). Six holds all of it. One segment more per answer,
+ * about $0.008 at US rates; an offer or a clarifying question appended after
+ * the check can make a message seven. ⚠ The client's number — tell her.
  */
-export const SMS_BUDGET = 765;
+export const SMS_BUDGET = 918;
+
+/**
+ * Room the composer leaves when the warm rewrite will run (22 Oct). Once the
+ * second and third places carried a parent's sentence each, the draft filled
+ * the budget (761 of 765 measured) and every rewrite was refused as too long:
+ * there was no room left for the one line that reacts to the question. Ninety
+ * characters is that line. If the rewrite is then refused, the template goes
+ * out ninety characters short of the ceiling — a sentence, never a place.
+ */
+export const VOICE_HEADROOM = 90;
 
 /**
  * The blank line plus "Public/general information:" that opens that block.
@@ -466,7 +490,52 @@ const KIND_WORD: Record<string, string> = {
   place: "place",
   tip: "tip",
   caregiver: "caregiver",
+  doctor: "doctor",
+  product: "product",
 };
+
+/**
+ * What a record is, from the client's sub-category where it says more than the
+ * kind (21 Oct, when doctors and products joined answers): a "Specialists &
+ * Doctors" card is a doctor, a specialist or a party service, and a tip card
+ * may be a product. Null leaves the kind's own word.
+ */
+export function subcategoryWord(subcategory: string | null | undefined): string | null {
+  switch (subcategory) {
+    case "doctors":
+      return "doctor";
+    case "specialists":
+      return "specialist";
+    case "parties":
+      return "party service";
+    case "products":
+      return "product";
+    case "restaurants":
+      return "restaurant";
+    case "schools":
+      return "school";
+    case "camps":
+      return "camp";
+    default:
+      return null;
+  }
+}
+
+/**
+ * A doctors-card record named as a business is a practice, not a doctor (22 Oct
+ * review: *"Brightside Kids Dental, a doctor in South Pasadena"*). The 21 Oct
+ * row keeps "a doctor" for the sub-category, and it stays for a record named
+ * after a person ("Dr. Kim"), which is what a doctor's record usually is; only
+ * a name that reads as an office takes "practice". Decided at render time, so
+ * `subcategoryWord` and its callers are unchanged.
+ */
+const PRACTICE_NAME =
+  /\b(dental|dentistry|orthodontic\w*|pediatrics?|paediatrics?|clinic|medical|medicine|health|group|associates|cent(?:er|re)|practice|partners|smiles?|vision|optometry|therapy|kids|children's|family|office)\b/i;
+
+function kindWordOf(candidate: AnswerCandidate): string {
+  const word = candidate.kind_word ?? KIND_WORD[candidate.kind] ?? candidate.kind;
+  return word === "doctor" && PRACTICE_NAME.test(candidate.name) ? "practice" : word;
+}
 
 /** `south-pasadena` as somebody would say it. */
 function areaWords(slug: string): string {
@@ -606,9 +675,7 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
  * "activity".
  */
 function placeOf(candidate: AnswerCandidate): string {
-  const what = candidate.care
-    ? careKindWords(candidate.care)
-    : (KIND_WORD[candidate.kind] ?? candidate.kind);
+  const what = candidate.care ? careKindWords(candidate.care) : kindWordOf(candidate);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   if (!what) return where;
   /**
@@ -700,9 +767,12 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
      between two classes is deciding whether it fits their child, and that
      question comes first. */
   const whoFor = clean(candidate.notes?.who_for);
-  if (whoFor) parts.push(`Best for: ${lowerFirst(whoFor)}.`);
+  /* A parent's own full stop is not doubled ("…cold.." in the 21 Oct demo). */
+  if (whoFor) parts.push(`Best for: ${lowerFirst(whoFor).replace(/[.!]+$/, "")}.`);
 
-  if (great) parts.push(`${named ?? "One"} said: "${great}"`);
+  /* "One parent near you has used X. One said:" read as a second parent (22 Oct
+     review): with one parent behind it the quote is theirs, so "They said". */
+  if (great) parts.push(`${named ?? (candidate.firsthand_count <= 1 ? "They" : "One")} said: "${great}"`);
 
   const caveat = clean(candidate.notes?.caveat);
   if (caveat) parts.push(`Heads up: ${caveat}`);
@@ -733,7 +803,15 @@ function leadBlock(candidate: AnswerCandidate, extras: readonly string[]): strin
     const money = [price, worth].filter(Boolean).join(", ");
     parts.push(hedged ? `${money}.` : `About ${money}.`);
   } else if (worth) {
-    parts.push(`Value for money: ${lowerFirst(worth)}.`);
+    /* "Value for money: great value." said value twice (22 Oct review). A label
+       that names the value itself stands as its own sentence ("Great value.",
+       "Pricey but worth it.", "It's free."); a bare "fair" keeps the frame,
+       which is what says what it is fair about. */
+    parts.push(
+      /\b(value|worth|free|pricey)\b/i.test(worth)
+        ? `${worth.charAt(0).toUpperCase()}${worth.slice(1)}.`
+        : `Value for money: ${lowerFirst(worth)}.`,
+    );
   }
 
   if (extras.length > 0) parts.push(`${extras.join(". ")}.`);
@@ -793,6 +871,102 @@ function freshnessNote(candidate: AnswerCandidate): string {
  * client's instruction was that a short second option keeps the comparison the
  * 4 Sep budget decision was made for.
  */
+/**
+ * A second or third place with something said about it (22 Oct). The
+ * developer, on the answers: *"short and not substantive enough — there used
+ * to be at least three places, now only one."* The 9 Sep shape gave the lead
+ * every note and the others a directory line — "Waterworks Aquatics, a class
+ * in Pasadena, 2 parents, $120 a month" — so a parent comparing had nothing to
+ * compare. Now each of them is a short block: the same evidence sentence the
+ * lead opens with, **one** parent sentence (their words, the quote first, else
+ * who it suits, else the heads-up, else the tip), the price, and any age or
+ * withdrawal warning. When that does not fit, the record falls back to the
+ * bare evidence, then to the directory line — it is never dropped for being
+ * described.
+ */
+function secondBlock(candidate: AnswerCandidate, extras: readonly string[], question?: string): string {
+  const n = candidate.notes;
+  const order: NoteKey[] = ["great", "who_for", "caveat", "tip"];
+  const [pick] = pickNotes(n, order, 1, question);
+  return leadBlock({ ...candidate, notes: pick ? { [pick]: n?.[pick] } : undefined }, extras);
+}
+
+type NoteKey = "great" | "caveat" | "who_for" | "tip";
+
+/**
+ * Which of a record's notes go out when not all of them fit (22 Oct review).
+ *
+ * The order was fixed, so a parent asking for a gentle preschool for a shy
+ * child lost *"Best for: quieter kids who need time to warm up"* and a parent
+ * who works full time lost *"The extended care to 6pm has to be booked
+ * separately"* — the one sentence each of them was asking about. Now the notes
+ * that share something with the question come first, the most in common first,
+ * and the rest of the slots follow the old order. A note is kept whole or not
+ * at all; nothing here edits one.
+ */
+function pickNotes(
+  notes: AnswerCandidate["notes"],
+  order: readonly NoteKey[],
+  slots: number,
+  question?: string,
+): NoteKey[] {
+  const present = order.filter((k) => typeof notes?.[k] === "string" && notes[k]!.trim() !== "");
+  if (!question) return present.slice(0, slots);
+  const scored = present
+    .map((k, i) => ({ k, i, score: relevance(notes![k]!, question) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.k);
+  return [...new Set([...scored, ...present])].slice(0, slots);
+}
+
+/** Words that say nothing about which note answers the question. */
+const NOTE_STOP = new Set(
+  "a about after all also an and any anyone are around as at be best but by can could do does for from get go good got great had has have he her here his how i if in into is it its just kid kids child children son daughter like looking look me my near need needs of on one or our place places class classes lesson lessons camp camps school schools program programs some somewhere something anything idea ideas option options suggestion suggestions recommend recommendation she so that the their them there they this to up very want was we what when where which who why will with would year years old month months day days time you your".split(
+    " ",
+  ),
+);
+
+/**
+ * What a parent's question is about, in families of words a parent and a note
+ * use for the same thing ("shy" and "warm up", "work full time" and "6pm").
+ * Small and literal on purpose: it reorders notes, it never drops a record.
+ */
+const CONCERNS: readonly RegExp[] = [
+  /\b(shy|quiet\w*|timid|cautious|nervous|anxious|sensitive|introvert\w*|warms? up|warming up|slow to warm|gentle|calm\w*|overwhelm\w*)\b/i,
+  /\b(work\w*|full[\s-]?time|jobs?|commut\w*|extended (?:care|day|hours)|after[\s-]?care|before[\s-]?care|pick[\s-]?ups?|drop[\s-]?offs?|\d{1,2} ?pm)\b/i,
+  /\b(budget|cheap\w*|afford\w*|costs?|price\w*|pricey|expensive|value|money|free)\b/i,
+  /\b(energ\w*|active|sporty|athletic|run around|burn off|wiggl\w*|climb\w*)\b/i,
+  /\b(special needs|autis\w*|adhd|sensory|speech|delay\w*|therap\w*|neurodiverg\w*)\b/i,
+  /\b(allerg\w*|nut[\s-]?free|gluten|dairy|snacks?|lunch\w*)\b/i,
+  /\b(weekends?|saturdays?|sundays?)\b/i,
+];
+
+function stemOf(word: string): string {
+  const w = word.replace(/'s$/, "");
+  if (w.endsWith("ies") && w.length > 4) return `${w.slice(0, -3)}y`;
+  if (/(ss|ch|sh|x)es$/.test(w)) return w.slice(0, -2);
+  if (w.endsWith("s") && !w.endsWith("ss") && w.length > 3) return w.slice(0, -1);
+  return w;
+}
+
+function contentWords(text: string): Set<string> {
+  return new Set(
+    (text.toLowerCase().match(/[a-z][a-z'-]*/g) ?? [])
+      .filter((w) => w.length > 2 && !NOTE_STOP.has(w))
+      .map(stemOf)
+      .filter((w) => !NOTE_STOP.has(w)),
+  );
+}
+
+function relevance(note: string, question: string): number {
+  const q = contentWords(question);
+  let score = 0;
+  for (const w of contentWords(note)) if (q.has(w)) score++;
+  for (const c of CONCERNS) if (c.test(note) && c.test(question)) score++;
+  return score;
+}
+
 function alsoLine(candidate: AnswerCandidate): string {
   if (candidate.trust.public_only) return line(candidate, candidate.trust.labels);
   /* Only ever used for the cost estimate below; the printed line is built from
@@ -879,13 +1053,35 @@ const TIP_LIMIT = 1;
  */
 const ALSO_LIMIT = 2;
 
+/**
+ * A public finding's name as it can be printed: one the search cut inside a
+ * parenthesis loses the parenthesis whole (22 Oct review: *"British Swim School
+ * of East Pasadena (LA Fitness - Hastings - toddler…"*), the rule
+ * `readDeepFindings` already applies. Only ever on general information — a
+ * parent record's name is the record's own.
+ */
+function shownName(candidate: AnswerCandidate): string {
+  if (!candidate.trust.public_only) return candidate.name;
+  const cut = candidate.name.replace(/\s*\([^)]*$/, "").trim();
+  return cut || candidate.name;
+}
+
+/** "a, b and c" — a page's facts read as a sentence, not a spec sheet. */
+function listOf(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
 function line(candidate: AnswerCandidate, labels: readonly string[]): string {
-  const what = candidate.care
-    ? careKindWords(candidate.care)
-    : (KIND_WORD[candidate.kind] ?? candidate.kind);
+  const what = candidate.care ? careKindWords(candidate.care) : kindWordOf(candidate);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   const venue = candidate.venue ? `, ${candidate.venue}` : "";
-  const describes = what ? ` - ${what}${where}${venue}` : `${where}${venue}`;
+  /* "Name, what in Area: facts." (22 Oct review). It was "Name - what - facts",
+     and with a name that carries its own dash ("Waterworks - Parent & Me") the
+     line read as three stacked dashes. */
+  /* A record's own kind is a countable word ("a class"); a page's `what` is
+     already a phrase ("parent and toddler swim classes") and takes none. */
+  const kind = what && !candidate.trust.public_only && !candidate.care ? `${article(what)}${what}` : what;
+  const describes = kind ? `, ${kind}${where}${venue}` : `${where}${venue}`;
   /* The one fact a parent choosing between two classes actually needs, and the
      answer never carried it. Omitted rather than guessed when the parents who
      reported it did not agree — see `ShareCandidate.price_band`. */
@@ -893,11 +1089,18 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
   /* A public finding carries a fact the page stated instead of a price band —
      the ages it takes, when it runs, what it publishes as its price. It is what
      turns a bare name into something a parent can act on, and it is honest only
-     because the heading above it says where it came from. */
-  const extra = [money, candidate.detail].filter(Boolean).join(". ");
-  /* A detail the page wrote as a sentence already ends in a full stop, and the
-     line then read "…progression system.." (walked over the relay, 25 Sep). */
-  const cost = extra ? ` ${extra.replace(/[.!?]+$/, "")}.` : "";
+     because the heading above it says where it came from. The facts arrive
+     separated by "; " and go out as a list ("a, b and c"); each is whole. */
+  const facts = [
+    ...(money ? [money] : []),
+    ...(candidate.detail ?? "")
+      .split(/\s*;\s*/)
+      /* A detail the page wrote as a sentence already ends in a full stop, and
+         the line then read "…progression system.." (relay walk, 25 Sep). */
+      .map((f) => f.trim().replace(/[.!?]+$/, ""))
+      .filter(Boolean),
+  ];
+  const extra = listOf(facts);
 
   const claims = labels.join(". ");
   const age = (candidate.withdrawn ?? 0) > 0
@@ -909,9 +1112,8 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
         : " This one is old, so treat it as a starting point.";
   /* Every label may have been hoisted, in which case the record is its own
      sentence and the full stop after the price already closed it. */
-  return claims === ""
-    ? `${candidate.name}${describes}.${cost}${age}`.trimEnd()
-    : `${candidate.name}${describes}.${cost} ${claims}.${age}`;
+  const body = `${shownName(candidate)}${describes}${extra ? `: ${extra}` : ""}.`;
+  return claims === "" ? `${body}${age}`.trimEnd() : `${body} ${claims}.${age}`;
 }
 
 /**
@@ -989,12 +1191,21 @@ export interface ComposeInput {
    * there `head` is the guard that says so, and nothing may stand in for it.
    */
   opening?: string;
+  /** Characters to leave free for the warm rewrite (`VOICE_HEADROOM`), when it will run. */
+  headroom?: number;
   /**
    * The parent asked for more and there is none left that they have not read.
    * Says so, rather than "I don't have anything from local parents on this
    * yet" - which is false, they were just sent some.
    */
   nothing_left?: boolean;
+  /**
+   * What the parent asked, in their words (22 Oct). Read only to choose which
+   * of a record's notes go out when not all fit — the ones the question is
+   * about first (`pickNotes`). Never rendered, never logged. Absent keeps the
+   * fixed order.
+   */
+  question?: string;
 }
 
 /**
@@ -1090,13 +1301,69 @@ function composeCareChoice(
   return null;
 }
 
+/**
+ * A page's facts, cut to whole facts (22 Oct). The search returns up to three,
+ * separated by "; ", and two lines of them took ~380 of the answer's 828 —
+ * enough to push the parents' second place back to a directory line. With
+ * several parents' places to show, a public line keeps as many whole facts as
+ * fit in `max`; never a fact cut in half. With few, it keeps them all.
+ */
+export function wholeFacts(detail: string | null | undefined, max: number): string | null {
+  if (!detail) return detail ?? null;
+  if (detail.length <= max) return detail;
+  const facts = detail.split(/\s*;\s*/);
+  let out = "";
+  for (const f of facts) {
+    const next = out ? `${out}; ${f}` : f;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || null;
+}
+/** Characters of a page's facts per public line when parents' places are waiting. */
+const PUBLIC_FACTS_SHARED = 90;
+
 export function composeAnswer(input: ComposeInput): ComposedAnswer {
-  const ranked = rankForAnswer(input.candidates);
+  const parentPlaces = input.candidates.filter((c) => !c.trust.public_only && c.kind !== "tip").length;
+  const cut = (cs: AnswerCandidate[]) =>
+    cs.map((c) => (c.trust.public_only ? { ...c, detail: wholeFacts(c.detail, PUBLIC_FACTS_SHARED) } : c));
+  let candidates = parentPlaces >= 2 ? cut(input.candidates) : input.candidates;
+  let out = composeRanked(input, candidates);
+  /**
+   * ⚠ **A parent's words never give way to the web's facts** (22 Oct review).
+   * With one parent place the public lines kept all three facts (the 22 Oct
+   * row: "with fewer it keeps all three"), and when they filled the budget the
+   * lead went bare — a birthday answer dropped Priya's own sentence for a
+   * pizza chain's package prices. That still holds whenever it fits; when it
+   * does not, the facts are cut whole first, then the last public line goes,
+   * one at a time, down to one — the both-halves rule (9 Sep) keeps that one.
+   */
+  if (out.leadShort && parentPlaces < 2) {
+    candidates = cut(candidates);
+    out = composeRanked(input, candidates);
+  }
+  while (out.leadShort) {
+    const publics = rankForAnswer(candidates).filter((c) => c.trust.public_only);
+    if (publics.length <= 1) break;
+    const last = publics[publics.length - 1];
+    candidates = candidates.filter((c) => c !== last);
+    out = composeRanked(input, candidates);
+  }
+  return out.answer;
+}
+
+function composeRanked(
+  input: ComposeInput,
+  candidates: AnswerCandidate[],
+): { answer: ComposedAnswer; leadShort: boolean } {
+  const done = (answer: ComposedAnswer) => ({ answer, leadShort: false });
+  const ranked = rankForAnswer(candidates);
+  const budget = SMS_BUDGET - Math.max(0, input.headroom ?? 0);
 
   /* They asked for more and have already been sent everything (29 Sep). */
   if (ranked.length === 0 && input.nothing_left) {
     const offer = input.can_offer_blast !== false;
-    return {
+    return done({
       text: offer
         ? "That's everything I have on this so far. Want me to ask a few nearby parents for more?"
         : "That's everything I have on this so far.",
@@ -1106,13 +1373,13 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       parent_used: 0,
       used_ids: [],
       labels: [],
-    };
+    });
   }
 
   /* Nothing at all. Three different nothings, and they get different offers. */
   if (ranked.length === 0 && input.nobody_near) {
     const where = input.nobody_near.place?.split(",")[0]?.trim();
-    return {
+    return done({
       text: `I don't have anything from parents near ${where ? where : "you"} on this yet, and there aren't enough parents there for me to ask.`,
       next_step: "none",
       public_only: false,
@@ -1120,10 +1387,10 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       parent_used: 0,
       used_ids: [],
       labels: [],
-    };
+    });
   }
   if (ranked.length === 0) {
-    return {
+    return done({
       text: input.can_offer_blast === false
         ? "I don't have anything from local parents on this yet. I'll come back to you when I do."
         : "I don't have anything from local parents on this yet. Want me to ask a few nearby who might?",
@@ -1133,12 +1400,12 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       parent_used: 0,
       used_ids: [],
       labels: [],
-    };
+    });
   }
 
   /* Two caregivers to choose between, when there are two (29 Sep). */
   const careChoice = composeCareChoice(ranked, input);
-  if (careChoice) return careChoice;
+  if (careChoice) return done(careChoice);
 
   const parentBacked = ranked.filter((c) => !c.trust.public_only);
   const publicOnly = parentBacked.length === 0;
@@ -1190,10 +1457,23 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
      there yet, then the general information — still under the guard that it is
      not from a parent, which is the line invariant 4 needs. */
   const nobodyWhere = input.nobody_near?.place?.split(",")[0]?.trim() || "you";
+  /**
+   * A web-only answer says its label once, in the head (22 Oct review). It
+   * said it twice — "This is general information, not from a parent:" and then
+   * "Public/general information." after every line. The head now carries the
+   * labels every line shares, **verbatim** from the records (invariant 3), as
+   * the heading of a mixed answer does (9 Sep), and the lines carry none.
+   * The nobody-near head is the 24 Sep guard wording and is left as it was.
+   */
+  const headLabels = publicOnly && !input.nobody_near
+    ? ranked[0].trust.labels.filter((l) => ranked.every((c) => c.trust.labels.includes(l)))
+    : [];
   const head = publicOnly
     ? input.nobody_near
       ? `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
-      : "Here's what I can tell you. This is general information, not from a parent:"
+      : headLabels.length > 0
+        ? `Here's what I found. ${headLabels.join(". ")}:`
+        : "Here's what I can tell you. This is general information, not from a parent:"
     : (input.opening ?? "");
 
   /**
@@ -1207,11 +1487,9 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   /* Filtered through `extrasOf` as well, or the footer prints the very claim
      the evidence sentence just made: "All of these: Validated by multiple
      parents" under "2 parents near you have used it" (9 Sep). */
-  const hoisted = extrasOf(sharedLabels(ranked));
+  const hoisted = extrasOf(sharedLabels(ranked)).filter((l) => !headLabels.includes(l));
   const perLine = (c: AnswerCandidate) =>
-    hoisted.length === 0
-      ? c.trust.labels
-      : c.trust.labels.filter((l) => !hoisted.includes(l));
+    c.trust.labels.filter((l) => !hoisted.includes(l) && !headLabels.includes(l));
   const footer = hoisted.length > 0 ? `All of these: ${hoisted.join(". ")}.` : "";
 
   const lines: string[] = [];
@@ -1282,12 +1560,36 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
   let publicOpened = publicOnly;
   /* Collected during the loop and joined into one line after it. */
   const alsoParts: string[] = [];
+  /* Places after the lead that got a block of their own (22 Oct). */
+  let secondBlocks = 0;
   const tipLines: string[] = [];
+
+  /**
+   * ⚠ **The lead shares the room when others are waiting** (22 Oct). With every
+   * note it took ~260 of the 765 characters, and the place after it was left
+   * with its evidence alone and the one after that with nothing (live: a swim
+   * answer with four parents' places showed one). With another parent-backed
+   * place to come it carries two of its notes — what a parent said and the
+   * heads-up, else who it suits — and the others get theirs (`secondBlock`).
+   * Alone, it keeps them all.
+   */
+  const othersWaiting = ranked.filter((c) => !c.trust.public_only && c.kind !== "tip").length > 1;
+  const leadNotes = (c: AnswerCandidate): AnswerCandidate => {
+    if (!othersWaiting || !c.notes) return c;
+    const n = c.notes;
+    const first: NoteKey[] = n.great ? ["great"] : n.who_for ? ["who_for"] : [];
+    const second: NoteKey[] = n.caveat ? ["caveat"] : n.great && n.who_for ? ["who_for"] : n.tip ? ["tip"] : [];
+    const today = [...first, ...second];
+    /* What the question is about first, then the old two (22 Oct review) — see `pickNotes`. */
+    const order = [...today, ...(["great", "caveat", "who_for", "tip"] as NoteKey[]).filter((k) => !today.includes(k))];
+    const keys = input.question ? pickNotes(n, order, 2, input.question) : today;
+    return { ...c, notes: Object.fromEntries(keys.map((k) => [k, n[k]])) };
+  };
 
   for (const candidate of ranked) {
     const isLead = candidate === leadOf && !leadRendered;
     let rendered = isLead
-      ? leadBlock(candidate, extrasOf(perLine(candidate)))
+      ? leadBlock(leadNotes(candidate), extrasOf(perLine(candidate)))
       : candidate.trust.public_only
         ? /* No label on the line: the heading above it carries the only one it
              has, and repeating it under its own heading is noise. */
@@ -1296,7 +1598,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     let cost = rendered.length + 1;
     /* The reserve applies to everything ahead of the public line and is released
        for the line it was held for. */
-    const ceiling = candidate.trust.public_only ? SMS_BUDGET : SMS_BUDGET - reserved;
+    const ceiling = candidate.trust.public_only ? budget : budget - reserved;
     if (isLead && length + cost + tail.length > ceiling) {
       /* The record the answer leads on does not vanish because a parent wrote a
          long note: without the notes it is one evidence sentence, the price and
@@ -1350,7 +1652,23 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
         chosen.push(candidate);
         continue;
       }
-      if (alsoParts.length >= ALSO_LIMIT) continue;
+      if (alsoParts.length + secondBlocks >= ALSO_LIMIT) continue;
+      /* A block of its own when it fits — with one parent sentence, else bare —
+         and only then the directory line (see `secondBlock`). Blocks go before
+         any directory line, so the places a parent can compare stay together. */
+      if (alsoParts.length === 0) {
+        const extras = extrasOf(perLine(candidate));
+        const full = secondBlock(candidate, extras, input.question);
+        const bare = leadBlock({ ...candidate, notes: undefined }, extras);
+        const block = [full, bare].find((b) => length + b.length + 1 + tail.length <= ceiling);
+        if (block) {
+          lines.push(block);
+          length += block.length + 1;
+          chosen.push(candidate);
+          secondBlocks++;
+          continue;
+        }
+      }
       const part = alsoPart(candidate);
       if (part === null) continue;
       alsoParts.push(part);
@@ -1391,21 +1709,21 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     lines.push(
       chosen[0] === leadOf
         ? leadBlock(
-            leadBare ? { ...chosen[0], notes: undefined } : chosen[0],
+            leadBare ? { ...chosen[0], notes: undefined } : leadNotes(chosen[0]),
             extrasOf(chosen[0].trust.labels),
           )
-        : line(chosen[0], chosen[0].trust.labels),
+        : line(chosen[0], chosen[0].trust.labels.filter((l) => !headLabels.includes(l))),
     );
   }
 
   /* Everything was too long to fit even once. Send the best one alone rather than
      an opening sentence with nothing under it. */
   if (lines.length === 0) {
-    const room = SMS_BUDGET - head.length - tail.length - 2;
+    const room = budget - head.length - tail.length - 2;
     let only =
       ranked[0] === leadOf
         ? leadBlock(ranked[0], extrasOf(ranked[0].trust.labels))
-        : line(ranked[0], ranked[0].trust.labels);
+        : line(ranked[0], ranked[0].trust.labels.filter((l) => !headLabels.includes(l)));
     /* Notes dropped whole before any cut is made — a cut takes the age or
        withdrawal warning, which sits at the end, before it takes anything else. */
     if (only.length > room && ranked[0] === leadOf) {
@@ -1440,7 +1758,12 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
       ? "\nWant me to ask a few nearby parents for more?"
       : "";
 
-  return {
+  /* The lead lost its parents' words, or was not shown at all: `composeAnswer`
+     then makes room by cutting the web's half, never the parents'. */
+  const leadHasNotes = !!leadOf && Object.values(leadOf.notes ?? {}).some((v) => typeof v === "string" && v.trim() !== "");
+  const leadShort = leadHasNotes && (leadBare || !leadRendered);
+
+  return { leadShort, answer: {
     /* The footer sits under the records and above anything offered, because it
        describes them and not the offer. Dropped when a single record collapsed
        back to carrying its own labels. */
@@ -1453,7 +1776,7 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
     parent_used: parentUsed,
     used_ids: chosen.map((c) => c.id).filter((id): id is string => typeof id === "string" && id !== ""),
     labels: [...new Set(chosen.flatMap((c) => c.trust.labels))],
-  };
+  } };
 }
 
 /**

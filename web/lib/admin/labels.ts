@@ -160,26 +160,49 @@ export const CARD_KIND: Record<string, string> = {
 /**
  * Could a doctor a parent named be found (8 Oct) — `shares.provider_check`.
  *
- * Green only for a licence on DCA's own search, the client's "valid". Found on
- * the open web is a fact, not a verdict, so it is neutral. Not found is gold —
- * pending a person's look — and never red: the client's own reason for sending
- * every doctor to the admin is that the check can miss.
+ * **Three statuses, the client's own (21 Oct):** *Verified* — found in a
+ * registry; *Found* — no registry record, but the open web names them (her
+ * "B-tier"); *Not found* — neither. Both registry outcomes read Verified: the
+ * NPPES NPI Registry, which is the live first step since 9 Oct, and the DCA
+ * licence page that older records still carry. Several NPPES records naming the
+ * doctor count as Verified too — the developer's call, kept on 21 Oct.
+ *
+ * Found is neutral, a fact rather than a verdict. Not found is gold — pending a
+ * person's look — and never red: the client's own reason for sending every
+ * doctor to the admin is that the check can miss. Admin-only: no parent reads
+ * these.
  */
 export const PROVIDER_CHECK: Record<
   string,
   { label: string; tone: "green" | "gold" | "neutral" }
 > = {
-  /* "Page found", not "verified" (review, 8 Oct): on DCA the match rests on the
-     model's reading of a generically titled page, so the admin opens it. US
-     spelling, and the state rather than the agency's initials. */
-  license: { label: "CA license page found", tone: "green" },
-  /* NPPES (9 Oct): "Validated", the developer's word — short, and the client's
-     own ("if they are there, they are valid"). Admin-only, so not a label a
-     parent reads. It means an NPI record names them, nothing more. */
-  npi: { label: "Validated", tone: "green" },
-  web: { label: "Found online", tone: "neutral" },
-  not_found: { label: "Not found — check by hand", tone: "gold" },
+  license: { label: "Verified", tone: "green" },
+  npi: { label: "Verified", tone: "green" },
+  web: { label: "Found", tone: "neutral" },
+  not_found: { label: "Not found", tone: "gold" },
 };
+
+/**
+ * How many requests a parent agreed to receive (P14, or SETTINGS / the SMS
+ * question) — `people.monthly_contact_allowance` + `allowance_mode`.
+ *
+ * What they *chose*, not what the send layer currently applies: the governor
+ * (8.4) can lower it, and that lowered number is on the "What they have earned"
+ * tab. Null with `fixed` is the column default — a parent who has never been
+ * asked, which is not the same as five and must not read as it.
+ *
+ * "3 a week" is `OPEN_WEEKLY_LIMIT`, written out because this file has no
+ * runtime imports (test suites load it under plain Node); `test:onboarding`
+ * pins the two together.
+ */
+export function allowanceLabel(a: {
+  monthly_contact_allowance: number | null;
+  allowance_mode: "fixed" | "as_relevant";
+}): string {
+  if (a.allowance_mode === "as_relevant") return "Up to 3 a week";
+  if (a.monthly_contact_allowance === null) return "Not chosen";
+  return `Up to ${a.monthly_contact_allowance} a month`;
+}
 
 /**
  * Where a caregiver's **self-registration** has got to — `caregiver_claims.status`.
@@ -366,6 +389,15 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   consents: "the consent file",
   admin_user: "who can sign in",
   referral: "a referral",
+  /* Every resource admin-write records (22 Oct audit); `test:wiring` pins the set. */
+  blast: "a Network Ask",
+  blast_response: "a reply to a Network Ask",
+  pending_option: "a parent's own answer",
+  affinity_weight: "a matching weight",
+  matching_setting: "a matching setting",
+  contributor_note: "a note on a contributor",
+  person_relationship: "a connection between two parents",
+  introduction: "an introduction",
 };
 
 /**
@@ -399,6 +431,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   /* The stored action keeps its name (an enum with a CHECK behind it); what
      an admin reads is what the decision now means. */
   "founding.request_invite": "Decided a parent is not Founding",
+  "founding.reopen": "Put a parent back in the Founding queue",
   "contributor.note": "Left a note on a contributor",
   "referral.link": "Credited a referral",
   "referral.void": "Removed a referral",
@@ -412,6 +445,35 @@ export const AUDIT_ACTION: Record<string, string> = {
   "option.promote": "Added a parent's own answer to the tap lists",
   "option.reject": "Declined a parent's own answer",
   "option.retire": "Retired a tap-list option",
+  /* Every allowlisted action has its sentence (22 Oct audit: these 29 read as
+     raw ids); `test:wiring` pins that the set stays complete. */
+  "share.retire": "Took a record out of answers",
+  "share.keep": "Kept a record in answers",
+  "answer.approve": "Approved an answer to send",
+  "answer.send": "Sent an answer",
+  "answer.reject": "Decided not to send an answer",
+  "answer.edit": "Edited an answer before it went",
+  "blast.create": "Recorded a Network Ask",
+  "blast.send": "Sent a Network Ask to parents",
+  "blast.deliver": "Texted the approved replies to the parent who asked",
+  "blast.checkout": "Opened a payment link for a Network Ask",
+  "blast.release": "Released a Network Ask a person had to check",
+  "blast.fulfil": "Marked a Network Ask answered",
+  "blast.refund_due": "Flagged a refund on a Network Ask",
+  "blast.refund": "Refunded a Network Ask",
+  "blast_response.rate": "Rated a reply to a Network Ask",
+  "blast_response.approve": "Approved a reply to a Network Ask",
+  "blast_response.reject": "Set aside a reply to a Network Ask",
+  "matching.weight": "Changed a matching weight",
+  "matching.relevance_step": "Changed how much context counts in matching",
+  "contributor.reward_paid": "Recorded a thank-you as paid",
+  "person.link": "Connected two parents",
+  "person.unlink": "Removed a connection between two parents",
+  "intro.approve": "Approved an introduction",
+  "intro.reject": "Did not take an introduction forward",
+  "intro.contacted": "Contacted a parent about an introduction",
+  "intro.connected": "Recorded an introduction as connected",
+  "intro.declined": "Recorded that the other parent said no",
   /**
    * Not a write. `/api/admin/query` logs this for the two reads that are events
    * in themselves: opening a restricted note, and exporting the consent file.
@@ -597,19 +659,67 @@ export function holdReasonLabel(reason: string): string {
 }
 
 /**
- * 14.3 — the four tiers, in the words the strategy uses.
- *
- * The stored value is a tier id (`board`, `last_minute`), and on screen it has
- * to read as the thing a parent bought. Taken from `blast-tiers.ts`'s own
- * `label` where possible — but that file is a *runtime* module and this one is
- * deliberately importable from anywhere, so the words are here and
- * `npm run test:payments` asserts they match.
+ * 14.3 — the kind of Network Ask, as an admin reads it. One kind since 21 Oct,
+ * stored as `targeted`; the three older ids only describe old rows. The words
+ * are here rather than imported because this module is importable from
+ * anywhere; `npm run test:payments` asserts the current one matches
+ * `TIERS[GENERAL_TIER].label`.
  */
 export const BLAST_TIER: Record<string, string> = {
-  passive: "Passive — free, contacts nobody",
-  board: "Board Ask — $5",
-  targeted: "Targeted Ask — $15",
-  last_minute: "Last-Minute Care — free in the pilot",
+  /* One kind, free (21 Oct). The stored id is still "targeted" — lib/blast-tiers.ts. */
+  targeted: "Network Ask — free",
+  passive: "Passive (old) — contacted nobody",
+  board: "Board Ask (old) — now free",
+  last_minute: "Last-Minute Care (old) — free",
+};
+
+/**
+ * How two parents are connected (`person_relationships.relationship`). The
+ * invite answer's words (`lib/inviter-relationship.ts`), and `connected` —
+ * the one general kind an admin records (22 Oct).
+ */
+export const RELATIONSHIP: Record<string, string> = {
+  connected: "Connected",
+  family: "Family",
+  close_friend: "Close friend",
+  friend: "Friend",
+  neighbor: "Neighbor",
+  colleague: "Colleague",
+  parent_group: "Parent group",
+  school_parent: "Kids at the same school or daycare",
+  other: "Something else",
+};
+
+/**
+ * Deep dives and introductions, as an admin reads them (22 Oct): the words and
+ * the badge tone in one place, as every other stored id on this surface.
+ */
+export const DEEP_DIVE_STATUS: Record<string, { label: string; tone: "green" | "gold" | "neutral" | "muted" }> = {
+  offered: { label: "Offered", tone: "neutral" },
+  awaiting_topic: { label: "Asked what about", tone: "gold" },
+  generating: { label: "Being built", tone: "gold" },
+  sent: { label: "Sent", tone: "green" },
+  failed: { label: "Not built", tone: "muted" },
+  unsupported: { label: "Not covered", tone: "muted" },
+};
+
+/** The words are `lib/introductions.ts` INTRO_STATUS_LABEL's; `test:intro` pins that they match. */
+export const INTRO_STATUS: Record<string, { label: string; tone: "green" | "gold" | "neutral" | "muted" }> = {
+  offered: { label: "Offered, no reply", tone: "muted" },
+  requested: { label: "Asked for an introduction", tone: "gold" },
+  approved: { label: "Approved: contact a parent", tone: "gold" },
+  contacted: { label: "Waiting on the other parent", tone: "neutral" },
+  connected: { label: "Connected", tone: "green" },
+  declined: { label: "The other parent said no", tone: "muted" },
+  rejected: { label: "Not taken forward", tone: "muted" },
+};
+
+/** When a parent last went — R6's answer, as a short clause beside their name. */
+export const LAST_THERE: Record<string, string> = {
+  current: "goes there now",
+  recent: "went recently",
+  over_year: "over a year ago",
+  unsure: "not sure when",
 };
 
 /** The state of the *question*. See `PAYMENT_STATUS` for the money. */

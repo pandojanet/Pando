@@ -91,6 +91,8 @@ const ACTIONS = new Set([
   "matching.relevance_step",
   "founding.approve",
   "founding.request_invite",
+  /* 13 Oct — the way back from "Not Founding", which had none. */
+  "founding.reopen",
   "contributor.note",
   "contributor.reward_paid",
   "claim.link",
@@ -98,6 +100,14 @@ const ACTIONS = new Set([
   "claim.delete",
   "referral.link",
   "referral.void",
+  "person.link",
+  "person.unlink",
+  /* Introductions — parent to parent (21 Oct). */
+  "intro.approve",
+  "intro.reject",
+  "intro.contacted",
+  "intro.connected",
+  "intro.declined",
 ]);
 
 /** The ladder, as the only transitions this endpoint will forward. */
@@ -338,6 +348,49 @@ export async function POST(request: Request) {
     }
   }
 
+  /** A connection is between two different parents, with a short note at most. */
+  if (action === "person.link") {
+    const a = typeof body?.id === "string" ? body.id : "";
+    const other = typeof body?.other_id === "string" ? body.other_id : "";
+    if (!a || !other) {
+      return NextResponse.json({ error: "Choose the other parent" }, { status: 422 });
+    }
+    if (a === other) {
+      return NextResponse.json({ error: "A parent cannot be connected to themselves" }, { status: 422 });
+    }
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuid.test(a) || !uuid.test(other)) {
+      return NextResponse.json({ error: "That isn't a parent Pando knows" }, { status: 422 });
+    }
+    if (typeof body?.note === "string" && body.note.trim().length > 120) {
+      return NextResponse.json({ error: "Keep the note to 120 characters" }, { status: 422 });
+    }
+  }
+  if (action === "person.unlink" && typeof body?.id !== "string") {
+    return NextResponse.json({ error: "Which connection?" }, { status: 422 });
+  }
+
+  /** Not taking a parent's request forward is a decision, so it carries a reason. */
+  if (action === "intro.reject") {
+    if (!cleanText(body?.reason, 500)) {
+      return NextResponse.json(
+        { error: "Say why — a parent asked for this introduction" },
+        { status: 422 },
+      );
+    }
+  }
+
+  /** "Contacted" names which parent the admin reached out to. */
+  if (action === "intro.contacted") {
+    const parent = typeof body?.parent_id === "string" ? body.parent_id : "";
+    if (!/^[0-9a-f-]{36}$/i.test(parent)) {
+      return NextResponse.json(
+        { error: "Pick the parent you contacted" },
+        { status: 422 },
+      );
+    }
+  }
+
   /** Declining somebody's registration is a decision, so it carries a reason. */
   if (action === "claim.decline") {
     const reason = cleanText(body?.reason, 300);
@@ -446,14 +499,12 @@ export async function POST(request: Request) {
   }
 
   /**
-   * An Ask needs somebody to ask for, a question, and a tier that exists.
+   * An Ask needs somebody to ask for, a question, and the one kind there is.
    *
-   * The tier is checked **here** and not only in the write, because it decides
-   * the price, the pool size, the window and whether a person has to look
-   * before anything goes out (`always_human_review`). A value outside the four
-   * would fall through `TIERS[tier]` as undefined and take those four
-   * decisions with it — so it is refused by name rather than defaulted to the
-   * cheapest thing.
+   * Since 21 Oct there is one kind of Network Ask, free (`lib/blast-tiers.ts`);
+   * the kind is still checked here because it decides the pool size, the
+   * window and whether a person has to look first, and an old id must not be
+   * creatable again through the API.
    *
    * The question is capped at the same 500 the form shows, so the two numbers
    * cannot drift apart.
@@ -473,7 +524,7 @@ export async function POST(request: Request) {
     }
     if (!TIER_IDS.includes(String(body?.tier) as (typeof TIER_IDS)[number])) {
       return NextResponse.json(
-        { error: `Choose a tier: ${TIER_IDS.join(", ")}` },
+        { error: "There is one kind of Network Ask now; this one cannot be created" },
         { status: 422 },
       );
     }
@@ -552,23 +603,21 @@ export async function POST(request: Request) {
    *
    * 7.9's whole point is that merging is offered *beside* creating, because two
    * parents on one record is "Validated by multiple parents" while two records
-   * with one parent each is nothing. Neither given means the action does not
-   * know what it is doing — and `admin-write.ts` would default the kind to
-   * `activity` and create a record named after nothing.
+   * with one parent each is nothing.
+   *
+   * ⚠ **Neither given is a third answer, not a mistake** (13 Oct). The page has
+   * always had a button for it — *Useful, nothing to add* — and `admin-write.ts`
+   * has always handled it: the reply is marked read, the responder's impact is
+   * recorded, and nothing enters the graph. This check refused it with a 422
+   * all the same, and it also demanded a `share_kind` the page never sent, so
+   * both of the page's "approve" buttons failed on every press and only a merge
+   * worked. What is still refused is the one shape that would write a guess: a
+   * name with no kind, which `admin-write.ts` would file as an activity.
    */
   if (action === "blast_response.approve") {
     const merge = typeof body?.merge_into === "string" && body.merge_into !== "";
     const name = cleanText(body?.share_name, 200);
-    if (!merge && !name) {
-      return NextResponse.json(
-        {
-          error:
-            "Name the record this reply is about, or pick the existing one to merge it into",
-        },
-        { status: 422 },
-      );
-    }
-    if (!merge && !SHARE_KINDS.has(String(body?.share_kind))) {
+    if (!merge && name && !SHARE_KINDS.has(String(body?.share_kind))) {
       return NextResponse.json(
         { error: "Say what kind of record this is" },
         { status: 422 },
@@ -706,6 +755,10 @@ export async function POST(request: Request) {
      * implemented" files a bug.
      */
     const SEND_REFUSALS: Record<string, string> = {
+      /* Parent ↔ parent connections (22 Oct). */
+      links_not_migrated: "Connections need database migration 0061 first — nothing was saved.",
+      link_test_mixed: "A test profile can't be connected to a real parent.",
+      link_exists: "These two parents are already connected.",
       blast_unpaid:
         "This Ask has not been paid for yet — open a checkout and send the link to the parent first.",
       blast_needs_review:
@@ -756,6 +809,27 @@ export async function POST(request: Request) {
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
+      /* 13 Oct — the money. Each of these read "that has changed since the
+         page was loaded", including the one no reload can fix. */
+      payment_not_provisioned:
+        "Payments are not switched on here — this deployment has no Stripe key, so no payment link can be made and no refund sent.",
+      payment_nothing_to_pay:
+        "There is nothing to pay on this Ask — the tier is free, or an earned credit already covered it.",
+      payment_already_paid:
+        "This Ask has already been paid for. Another link would charge the parent twice.",
+      payment_provider_error:
+        "Stripe did not make the link. Nothing was charged and nothing changed — try again in a minute.",
+      refund_nothing_paid:
+        "Nothing has been paid on this Ask, so there is nothing to send back.",
+      refund_already_refunded: "This Ask has already been refunded.",
+      refund_no_reference:
+        "Pando has no Stripe payment recorded against this Ask, so it cannot send the refund itself. Refund it in the Stripe dashboard.",
+      refund_provider_error:
+        "Stripe did not accept the refund. Nothing changed — the Ask still reads as paid. Try again.",
+      /* The money has moved and the row has not: said as that, never as a
+         failure to retry blind. */
+      refund_not_recorded:
+        "Stripe accepted the refund, but Pando could not record it. The money has gone back. Press Refund again today to record it — Stripe will not refund twice.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

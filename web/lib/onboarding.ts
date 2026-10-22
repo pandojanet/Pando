@@ -25,9 +25,28 @@
  *
  * Age first, because it changes what an answer should even contain — a toddler
  * question and a teenager question are different questions about the same class.
+ *
+ * ## The profile is built over SMS, not on the web (21 Oct)
+ *
+ * The client: a person texts Pando, the bot asks their name, the children's
+ * ages and so on, and the profile exists without a trip to the website —
+ * *"no one will do that"*. So two more questions follow the two that make
+ * matching possible: their **first name**, then **how many requests** they are
+ * willing to receive (P14 over SMS). The order stays answer-first and one at a
+ * time, in her words: *"mind if I ask one more thing so I can give you a better
+ * answer?"*. The first question rides on an answer; each reply to one is
+ * thanked and the next is asked in the same message, so a parent who keeps
+ * answering has a profile four texts later, and one who stops has still given
+ * what they gave.
  */
 
-export type ClarifyingQuestion = "child_age" | "neighborhood";
+/* No runtime imports: this module is loaded directly by `test:onboarding` and
+   `test:intent` under plain Node, which cannot resolve an extensionless
+   specifier. The participation level's reader and confirmation live in
+   `outreach-policy.ts` and are applied by the server (`inbound.ts`,
+   `repo/onboarding.ts`); the weekly number below is pinned to it by the suite. */
+
+export type ClarifyingQuestion = "child_age" | "neighborhood" | "first_name" | "participation";
 
 /** What Pando knows about somebody so far. */
 export interface KnownProfile {
@@ -41,6 +60,17 @@ export interface KnownProfile {
    * live after they told us is the question Pando must not repeat.
    */
   pending_place?: string | null;
+  /**
+   * `people.first_name`; null asks for it. **Absent (undefined) means "not
+   * known to the caller" and is never asked** — a caller that did not read the
+   * column must not make Pando ask a parent who gave their name on `/join`.
+   */
+  first_name?: string | null;
+  /**
+   * Whether they have chosen how many requests to receive (P14 or SETTINGS).
+   * False asks; absent never asks, for the same reason as `first_name`.
+   */
+  allowance_chosen?: boolean;
 }
 
 /**
@@ -54,7 +84,26 @@ export interface KnownProfile {
 export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
   if (profile.child_birth_years.length === 0) return "child_age";
   if (!profile.neighborhood && !profile.pending_place) return "neighborhood";
+  if (profile.first_name === null) return "first_name";
+  if (profile.allowance_chosen === false) return "participation";
   return null;
+}
+
+/** The profile as it stands once `question` has been answered — for asking the next one. */
+export function withAnswer(profile: KnownProfile, question: ClarifyingQuestion, text: string): KnownProfile {
+  switch (question) {
+    case "child_age": {
+      const year = new Date().getFullYear();
+      return { ...profile, child_birth_years: parseAges(text).map((a) => year - Math.max(0, a)) };
+    }
+    case "neighborhood":
+      /* The parsed id is the repo's to compute; any non-empty value closes it. */
+      return { ...profile, neighborhood: profile.neighborhood ?? "answered" };
+    case "first_name":
+      return { ...profile, first_name: parseFirstName(text) };
+    case "participation":
+      return { ...profile, allowance_chosen: true };
+  }
 }
 
 /**
@@ -82,11 +131,55 @@ export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
  * carrier sample re-registered instead.
  */
 export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
+  /* The client's own opening, on the two questions that do change an answer.
+     Every child at once since 21 Oct — "3 and 7" is two children. */
   child_age:
-    "One thing that'll make my answers much better, how old is your child? (Just the age is fine.)",
+    "Mind if I ask one more thing so I can give you a better answer? How old are your kids? (Just the ages is fine, like 3 and 7.)",
   neighborhood:
-    "And roughly where are you? I'll look for parents nearby rather than across town.",
+    "Mind if I ask one more thing so I can give you a better answer? Roughly where do you live? I'll look for parents nearby rather than across town.",
+  first_name: "Mind if I ask one more thing? What's your first name, so I know who I'm talking to?",
+  /* P14 over SMS: the same three levels and the same digits as the SETTINGS
+     menu, so one reader (`parseAllowanceChoice`) serves both. */
+  /* "3 a week" is `OPEN_WEEKLY_LIMIT`, pinned by `test:onboarding`. Kept to the
+     length of the others: riding on a full 765-character answer, the longer
+     first draft was a seventh segment. The 48-hour promise is in the
+     confirmation that answers it. */
+  participation:
+    "Last thing: how many questions from nearby parents could Pando send you? Reply 1 for up to 5 a month, 2 for up to 10, or 3 for up to 3 a week.",
 };
+
+/**
+ * What Pando says when a clarifying answer lands, and the next question with it.
+ *
+ * The reply to an answer is a thank-you and, while the profile still misses
+ * something, the next question — one outbound for one inbound, and still one
+ * question at a time: the outbound's template names the question it carries,
+ * so the next reply is read against it exactly as before. The last answer gets
+ * `CLARIFY_THANKS`, which asks nothing — or, for the participation level,
+ * `confirmed`: the SETTINGS menu's own confirmation, which the caller computes,
+ * followed by a closing (22 Oct). The confirmation alone ended the SMS
+ * onboarding on *"Done: up to 5 a month…"*, which is the last thing the parent
+ * hears and told them neither how to change it nor that they can now just ask.
+ */
+export function clarifyReply(input: {
+  question: ClarifyingQuestion;
+  text: string;
+  next: ClarifyingQuestion | null;
+  confirmed?: string;
+}): string {
+  if (input.question === "participation") {
+    return input.confirmed ? `${input.confirmed} ${SETTINGS_CLOSING}` : CLARIFY_THANKS;
+  }
+  const name = input.question === "first_name" ? parseFirstName(input.text) : null;
+  if (!input.next) return name ? `Nice to meet you, ${name}! ${ANYTIME}` : CLARIFY_THANKS;
+  const thanks = name ? `Nice to meet you, ${name}!` : "Got it, thanks!";
+  return `${thanks} ${CLARIFYING_COPY[input.next]}`;
+}
+
+const ANYTIME = "Text me any question, anytime.";
+
+/** After the last onboarding answer: how to change it, and that they can ask now. */
+const SETTINGS_CLOSING = `Text SETTINGS to change it. ${ANYTIME}`;
 
 /**
  * What Pando says when that answer lands.
@@ -115,7 +208,9 @@ export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
  * would double the cost of every one of them.
  */
 export const CLARIFY_THANKS =
-  "Got it, thanks. I'll use that to find parents closer to you next time you ask.";
+  /* "find parents closer to you" until 22 Oct, which was true of an area and
+     not of an age — and an age is the answer this most often thanks. */
+  "Got it, thanks. I'll use that to give you better answers next time you ask.";
 
 /**
  * Is this message a reply to what Pando asked, or a fresh question?
@@ -190,6 +285,94 @@ export function parseAge(text: string): number | null {
   }
 
   return null;
+}
+
+/**
+ * Every child's age in one reply (21 Oct) — "3 and 7", "4, 9 and 18 months",
+ * "a 6 year old and one on the way".
+ *
+ * The same narrow reading as `parseAge`, applied to each number in order: months
+ * first and removed from the text (so "18 months" is one child aged 1, not two),
+ * then whole numbers 0–25 that do not continue into more digits (a year or a
+ * phone number offers nothing), then "expecting" as -1. Two equal ages are two
+ * children — twins are a supported answer (10 Sep). Nothing readable is `[]`,
+ * which stores nothing.
+ */
+export function parseAges(text: string): number[] {
+  let body = text.trim().toLowerCase();
+  const ages: Array<{ at: number; age: number }> = [];
+
+  for (const m of body.matchAll(/\b(\d{1,2})\s*(?:months?|mos?|mo)\b/g)) {
+    const n = Number(m[1]);
+    if (n >= 0 && n <= 36) ages.push({ at: m.index ?? 0, age: Math.floor(n / 12) });
+  }
+  body = body.replace(/\b(\d{1,2})\s*(?:months?|mos?|mo)\b/g, (s) => " ".repeat(s.length));
+
+  for (const m of body.matchAll(/\b(\d{1,2})(?!\d)(?:\s*(?:years?|yrs?|yo|y\/o))?/g)) {
+    const n = Number(m[1]);
+    if (n >= 0 && n <= 25) ages.push({ at: m.index ?? 0, age: n });
+  }
+
+  const expecting = body.match(/\b(expecting|pregnant|due in|on the way|not born yet)\b/);
+  if (expecting) ages.push({ at: expecting.index ?? 0, age: -1 });
+
+  return ages.sort((a, b) => a.at - b.at).slice(0, 8).map((a) => a.age);
+}
+
+/**
+ * A first name out of a reply (21 Oct) — "Anna", "I'm Anna", "sure, it's anna".
+ *
+ * Narrow like the other readers: one name-shaped word after the usual openers,
+ * letters with an inner hyphen or apostrophe, at most 30 characters, and the
+ * reply no longer than four words once the opener is gone — anything longer is
+ * a sentence, not a name. A refusal ("rather not", "skip") or a bare "sure"
+ * comes back null, which stores nothing and is not asked again. Lowercase input
+ * is capitalised; anything else is kept as typed.
+ */
+export function parseFirstName(text: string): string | null {
+  let body = text.trim().replace(/[’]/g, "'").replace(/[.!?]+$/, "").trim();
+  if (/^(no|nope|nah|pass|skip|rather not|prefer not|why|n\/a|none|stop|later)\b/i.test(body)) {
+    return null;
+  }
+  body = body
+    .replace(/^(sure|yes|yeah|yep|ok|okay|of course|no problem)\b[,!.\s-]*/i, "")
+    .replace(/^(hi|hey|hello)\b[,!.\s-]*/i, "")
+    .replace(/^(i'm|im|i am|it's|its|this is|my name is|my name's|name is|name's|call me)\s+/i, "")
+    .trim();
+  const words = body.split(/\s+/).filter(Boolean);
+  /* A first name, or a first and last: two words at most once the opener is
+     gone (review, 21 Oct — "ballet for my 5yo" became *Ballet*). */
+  if (words.length === 0 || words.length > 2) return null;
+  const first = words[0].replace(/[,.;:]+$/, "");
+  if (!/^\p{L}(?:[\p{L}'-]{0,28}\p{L})?$/u.test(first)) return null;
+  /* Two words where the second is what a question is about ("swim lessons",
+     "camps near") are a question, not a first and last name. */
+  if (
+    words.length === 2 &&
+    /^(lessons?|classes|class|camps?|near|for|in|please|stuff|ideas?|options?|places?|spots?|programs?|activities|tutors?|doctors?|dentists?|sitters?|nannies|daycare|preschools?|schools?)$/i.test(
+      words[1].replace(/[,.;:?!]+$/, ""),
+    )
+  ) {
+    return null;
+  }
+  /* An acknowledgement or a reaction is not a name: "cool" became *Cool*. */
+  if (
+    /^(cool|awesome|great|nice|good|fine|perfect|sounds|got|lol|haha|hmm|wow|yay|thx|ty|k|kk|alright|right|any|more|other|others|else|also|and|but|so|well|maybe|idk|dunno|nothing|nevermind|nvm|done|deal)$/i.test(
+      first,
+    )
+  ) {
+    return null;
+  }
+  /* Words that open a sentence rather than name a person — "what's this for",
+     "why do you ask" — so a reply that is really a question stores nothing. */
+  if (
+    /^(thanks|thank|sure|yes|ok|okay|hi|hey|hello|me|my|the|a|an|what|what's|whats|who|who's|why|how|when|where|which|can|could|do|does|is|are|will|would|please|just|not|i|we|our|it|that|this)$/i.test(
+      first,
+    )
+  ) {
+    return null;
+  }
+  return first === first.toLowerCase() ? first[0].toUpperCase() + first.slice(1) : first;
 }
 
 /**
@@ -282,5 +465,7 @@ export function clarifyTemplate(question: ClarifyingQuestion): string {
 export function questionFromTemplate(template: string | null): ClarifyingQuestion | null {
   if (template === "clarify_child_age") return "child_age";
   if (template === "clarify_neighborhood") return "neighborhood";
+  if (template === "clarify_first_name") return "first_name";
+  if (template === "clarify_participation") return "participation";
   return null;
 }

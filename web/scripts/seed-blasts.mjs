@@ -51,6 +51,9 @@ try {
     process.exit(1);
   }
 
+  /* One kind of Network Ask, free, since 21 Oct (lib/blast-tiers.ts). The one
+     priced row left is an *old* paid Ask, kept so the refund flow an old
+     payment still needs can be walked. */
   const rows = [
     {
       question_text: "DEMO Anyone know a Saturday swim class that takes a nervous 4-year-old?",
@@ -58,12 +61,12 @@ try {
       tier: "targeted",
       status: "active",
       pool_target: 5,
-      payment_status: "paid",
-      price_cents: 1500,
-      note: "paid, out with parents",
+      payment_status: "not_required",
+      price_cents: 0,
+      note: "free, out with parents",
     },
     {
-      /* The row 14.5 exists for: paid, the window closed, nothing approved. */
+      /* An old paid Ask (before 21 Oct): the window closed, nothing approved. */
       question_text: "DEMO Is there a nanny share in Altadena with a space in September?",
       category: "childcare",
       tier: "targeted",
@@ -72,28 +75,17 @@ try {
       payment_status: "refund_due",
       price_cents: 1500,
       refund_reason: "The window closed with no approved answer.",
-      note: "paid, expired, refund flagged",
+      note: "old paid Ask, expired, refund flagged",
     },
     {
       question_text: "DEMO Which preschools near Monrovia still have 2027 spots?",
       category: "schools",
-      tier: "board",
-      status: "active",
-      pool_target: 1,
-      payment_status: "pending",
-      price_cents: 500,
-      note: "checkout open, not paid",
-    },
-    {
-      /* Free tier: contacts nobody, owes nothing, and the CHECK enforces both. */
-      question_text: "DEMO Any tips for a first birthday party somewhere with shade?",
-      category: "outings",
-      tier: "passive",
-      status: "active",
-      pool_target: 0,
+      tier: "targeted",
+      status: "draft",
+      pool_target: 5,
       payment_status: "not_required",
       price_cents: 0,
-      note: "free, contacts nobody",
+      note: "free, waiting for an admin to send",
     },
   ];
 

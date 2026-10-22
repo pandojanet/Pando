@@ -11,7 +11,9 @@ import {
   Flag,
   ChevronRight,
   Gauge,
+  Handshake,
   Heart,
+  Layers,
   Link2,
   ListChecks,
   MessageSquareReply,
@@ -293,6 +295,19 @@ const NAV: NavSection[] = [
         href: "/admin/impact",
         icon: Heart,
         label: "Thanks and impact",
+      },
+      {
+        /* 21 Oct. No count: nothing here waits for a person. */
+        href: "/admin/deep-dives",
+        icon: Layers,
+        label: "Deep dives",
+      },
+      {
+        /* 21 Oct. A count: every request waits for a person to move it. */
+        href: "/admin/introductions",
+        icon: Handshake,
+        label: "Introductions",
+        count: (o) => o.introductions?.open ?? 0,
       },
       {
         href: "/admin/audit",

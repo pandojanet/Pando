@@ -241,8 +241,8 @@ export function parseAllowanceChoice(
 export function settingsPrompt(current: Allowance): string {
   const now =
     current.allowance_mode === "as_relevant"
-      ? `up to ${OPEN_WEEKLY_LIMIT} a week`
-      : `up to ${current.monthly_contact_allowance ?? ALLOWANCE_FLOOR} a month`;
+      ? `up to ${OPEN_WEEKLY_LIMIT} questions a week`
+      : `up to ${current.monthly_contact_allowance ?? ALLOWANCE_FLOOR} questions a month`;
   return [
     `Right now Pando may ask you ${now}.`,
     `Reply 1 for up to 5 a month, 2 for up to 10, or 3 for up to ${OPEN_WEEKLY_LIMIT} a week.`,
@@ -255,9 +255,11 @@ export function settingsConfirmation(choice: {
   allowance: number | null;
   mode: "fixed" | "as_relevant";
 }): string {
+  /* A colon, not an em dash: one character outside GSM-7 sends the whole
+     message as UCS-2 at triple the segments (21 Oct, found in the demo). */
   return choice.mode === "as_relevant"
-    ? `Done — up to ${OPEN_WEEKLY_LIMIT} a week, and never twice within 48 hours.`
-    : `Done — up to ${choice.allowance} a month, and never twice within 48 hours.`;
+    ? `Done: up to ${OPEN_WEEKLY_LIMIT} a week, and never twice within 48 hours.`
+    : `Done: up to ${choice.allowance} a month, and never twice within 48 hours.`;
 }
 
 /** What a contributor agreed to. Straight from `people`. */

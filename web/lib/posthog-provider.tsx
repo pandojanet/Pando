@@ -204,7 +204,12 @@ function PageviewTracker() {
 
   useEffect(() => {
     if (!posthog.__loaded) return;
-    const query = searchParams.toString();
+    /* The invite code never rides along in the URL (22 Oct audit): a personal
+       one is built from the inviter's first name — invariant 7. */
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("i");
+    params.delete("invite");
+    const query = params.toString();
     posthog.capture("$pageview", {
       $current_url: query ? `${pathname}?${query}` : pathname,
     });

@@ -2545,7 +2545,7 @@ console.log("\n=== 10 Sep: the name is private until this one card says otherwis
   );
   ok(
     "the composer names the parent on their own sentence",
-    /\$\{named \?\? "One"\} said:/.test(composer),
+    /named \?\? \(candidate\.firsthand_count <= 1 \? "They" : "One"\)\} said:/.test(composer),
     "the name and the quote come from one contribution or there is no name",
   );
   ok(

@@ -19,7 +19,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { SegmentedFilter, Select } from "@/components/admin/kit";
+import { SegmentedFilter } from "@/components/admin/kit";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import {
   Fact,
@@ -42,7 +42,7 @@ import {
   sentence,
 } from "@/lib/admin/labels";
 import { formatCents, refundOwed, windowClosed } from "@/lib/payments";
-import { TIERS, TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
+import { GENERAL_TIER } from "@/lib/blast-tiers";
 import type {
   BlastPoolResult,
   BlastRow,
@@ -183,7 +183,8 @@ export default function BlastsPage() {
   const { rows: delivery } = useAdminRows<DeliveryHealthRow>("delivery");
   const [asker, setAsker] = useState("");
   const [question, setQuestion] = useState("");
-  const [tier, setTier] = useState<BlastTier>("targeted");
+  /* One kind of Network Ask, free (21 Oct): there is nothing to choose. */
+  const tier = GENERAL_TIER;
 
   const all = rows ?? [];
   const real = useMemo(() => all.filter((r) => !r.is_test), [all]);
@@ -294,20 +295,6 @@ export default function BlastsPage() {
             onChange={setAsker}
             emptyLabel="No contributors in the database yet."
           />
-          <Field label="Tier">
-            <Select
-              label="Which tier this Ask is"
-              value={tier}
-              onChange={setTier}
-              options={TIER_IDS.map((id) => ({
-                id,
-                label:
-                  TIERS[id].price_cents > 0
-                    ? `${TIERS[id].label} — ${formatCents(TIERS[id].price_cents)}`
-                    : `${TIERS[id].label} — free`,
-              }))}
-            />
-          </Field>
           <Field
             label="The question"
           >
@@ -421,7 +408,10 @@ export default function BlastsPage() {
                       <Badge tone={status?.tone ?? "neutral"}>
                         {status?.label ?? sentence(row.status)}
                       </Badge>
-                      {row.payment_status !== "not_required" && (
+                      {/* Money only where some actually moved (paid, refund due,
+                          refunded): an old unpaid row read "Checkout open ·
+                          $15.00" for an Ask that is free now (review, 21 Oct). */}
+                      {!["not_required", "pending", "failed"].includes(row.payment_status) && (
                         <Badge tone={payment?.tone ?? "neutral"}>
                           {payment?.label ?? sentence(row.payment_status)}
                           {row.price_cents > 0 ? ` · ${formatCents(row.price_cents)}` : ""}
@@ -437,33 +427,8 @@ export default function BlastsPage() {
                   }
                   actions={
                     <>
-                      {/* Only when there is genuinely something to pay: a free
-                          tier and a credit-funded Ask are refused by
-                          `openCheckout`, so offering it would be a button that
-                          can only fail. */}
-                      {/* Not on a closed window either: paying for an Ask that
-                          can no longer be sent takes money for nothing. */}
-                      {!closed &&
-                      (row.payment_status === "pending" ||
-                      row.payment_status === "failed" ||
-                      (row.payment_status === "not_required" &&
-                        !row.credit_funded &&
-                        (row.tier === "board" || row.tier === "targeted"))) ? (
-                        <Button
-                          subject={row.question_text}
-                          tone="primary"
-                          disabled={busy === row.id}
-                          onClick={() =>
-                            void run(row.id, "Checkout opened.", async () =>
-                              adminAction({ action: "blast.checkout", id: row.id }),
-                            )
-                          }
-                        >
-                          {row.payment_status === "pending"
-                            ? "New payment link"
-                            : "Take payment"}
-                        </Button>
-                      ) : null}
+                      {/* No "Take payment": every Network Ask is free since 21 Oct, and
+                          `openCheckout` refuses a free Ask anyway. */}
 
                       {/**
                         * ⚠ **7.8 had no button anywhere in the admin until

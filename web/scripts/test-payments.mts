@@ -1,3 +1,4 @@
+import fs from "node:fs";
 /**
  * M13 — the pure halves: segmentation, payment rules, the Stripe signature, and
  * the retry policy.
@@ -149,68 +150,39 @@ console.log("\n=== 13.3: splitting numbers the pieces and never breaks a word ==
 
 /* ── 13.5 payment rules ────────────────────────────────────────────────────── */
 
-console.log("\n=== 13.5: what a tier owes, and the credit that skips it ===");
+console.log("\n=== 13.5: every Network Ask is free (21 Oct) ===");
 {
-  const free = tiers.paymentFor({ tier: "passive", creditRedeemed: false });
-  ok("passive is free", !free.charge && free.cents === 0 && free.reason === "free_tier");
-  const lastMinute = tiers.paymentFor({ tier: "last_minute", creditRedeemed: false });
-  ok("last-minute care is free in the pilot", !lastMinute.charge);
-
-  const board = tiers.paymentFor({ tier: "board", creditRedeemed: false });
-  ok("the board ask charges $5", board.charge && board.cents === 500, String(board.cents));
-  const targeted = tiers.paymentFor({ tier: "targeted", creditRedeemed: false });
-  ok(
-    "the targeted ask charges $15 — the 8.18 strategy's number",
-    targeted.charge && targeted.cents === 1500,
-    String(targeted.cents),
-  );
-
   /**
-   * The estimate asks for "$5 / $12 / $20 / $35". Those are its own older
-   * five-tier numbers, unchanged between the 26 Aug and 3 Sep workbooks, and
-   * CLAUDE.md's rule is that the newer client document wins — the 8.18 strategy
-   * names four tiers and different money. Asserted so a future session cannot
-   * "fix" the prices back without meeting this test.
+   * The developer, 21 Oct: one kind of blast, free. Before that the 8.18
+   * strategy's prices stood ($5 Board, $15 Targeted) and this block pinned them;
+   * it now pins the opposite, so prices cannot come back without a decision
+   * that meets this test.
    */
-  const charged = Object.values(tiers.TIERS)
-    .map((t) => t.price_cents)
-    .filter((c) => c > 0)
-    .sort((a, b) => a - b);
-  ok(
-    "only $5 and $15 are chargeable anywhere in the app",
-    JSON.stringify(charged) === JSON.stringify([500, 1500]),
-    JSON.stringify(charged),
-  );
-
-  /* 13.5's own words: "skipped entirely when a free credit covers it". */
+  for (const tier of ["targeted", "passive", "board", "last_minute"] as const) {
+    const d = tiers.paymentFor({ tier, creditRedeemed: false });
+    ok(`${tier} charges nothing`, !d.charge && d.cents === 0 && d.status === "not_required" && d.reason === "free_tier");
+  }
+  const charged = Object.values(tiers.TIERS).filter((t) => t.price_cents > 0);
+  ok("nothing is chargeable anywhere in the app", charged.length === 0, JSON.stringify(charged.map((t) => t.id)));
   const credited = tiers.paymentFor({ tier: "targeted", creditRedeemed: true });
-  ok(
-    "a redeemed credit means nothing to charge",
-    !credited.charge && credited.cents === 0 && credited.reason === "credit_redeemed",
-  );
+  ok("a redeemed credit still means nothing to charge", !credited.charge && credited.cents === 0);
   ok("and it is not_required rather than paid", credited.status === "not_required");
-
-  /**
-   * The pilot switch, pinned from both sides.
-   *
-   * It is off right now (14 Sep) so the Network Check chain can be walked end to
-   * end without the economics in the way. What these check is that turning it
-   * off changed **only** enforcement: the prices, the decision and the status a
-   * new Ask is created with are all exactly as they were, so restoring the flag
-   * restores the behaviour and nothing else has quietly drifted meanwhile.
-   */
+  ok("enforcement stays off: there is nothing left to enforce", tiers.PAYMENTS_ENFORCED === false);
+  const labelsMod = (await import(`../lib/admin/labels.ts?v=${Date.now()}`)) as typeof import("../lib/admin/labels");
   ok(
-    "payment enforcement is off for the pilot walk",
-    tiers.PAYMENTS_ENFORCED === false,
-    String(tiers.PAYMENTS_ENFORCED),
+    "the admin's word for the one kind is the kind's own label",
+    labelsMod.BLAST_TIER[tiers.GENERAL_TIER].startsWith(tiers.TIERS[tiers.GENERAL_TIER].label),
+    labelsMod.BLAST_TIER[tiers.GENERAL_TIER],
   );
+  const page = fs.readFileSync(new URL("../app/(admin)/admin/blasts/page.tsx", import.meta.url), "utf8");
   ok(
-    "and it changed nothing about what a paid tier costs or is created as",
-    targeted.charge &&
-      targeted.cents === 1500 &&
-      targeted.status === "pending" &&
-      targeted.reason === "checkout_required",
+    "an old unpaid row shows no price on the blasts page (review, 21 Oct)",
+    page.includes('!["not_required", "pending", "failed"].includes(row.payment_status)'),
   );
+  const cancelled = fs.readFileSync(new URL("../app/(site)/ask/cancelled/page.tsx", import.meta.url), "utf8");
+  ok("the cancelled page no longer offers a new payment link", !/new one|payment link/i.test(cancelled.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")));
+  const seed = fs.readFileSync(new URL("./seed-blasts.mjs", import.meta.url), "utf8");
+  ok("the demo seed creates no priced Ask except one labelled old", (seed.match(/price_cents: 1500/g) ?? []).length === 1 && !/tier: "(board|passive|last_minute)"/.test(seed));
 }
 
 console.log("\n=== 13.7: whether a refund is even coherent ===");

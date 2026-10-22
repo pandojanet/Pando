@@ -15,19 +15,19 @@ members, and "answer one board question and the week's Digest opens fully"). The
 strategy calls it "primarily a retention engine … likely the strongest habit
 mechanism we have", so it is not a nice-to-have that fell off a list. (b) *The
 grove* (§13) — a private per-contributor ledger where a leaf converts at posted
-rates (5 = a free Targeted Ask · 15 = a month of Pando+ · 40 = a year), with
+rates (5 = a free Targeted Ask — every Ask is free since 21 Oct · 15 = a month of Pando+ · 40 = a year), with
 impact receipts and earned statuses, and **no leaderboard ever**. M9 covers the
 thanks loop, impact tracking and tiers, which is adjacent but is not a ledger with
 a published exchange rate. Both need quoting before they are built.
 
 **The open board is a surface, not a feature of Blast.** §3 and §8 describe a
 once-a-day digest of anonymous questions that opted-in parents browse and answer,
-priced as the $5 Board Ask, with a rule attached that shapes the whole allowance
+priced as the $5 Board Ask (no prices since 21 Oct), with a rule attached that shapes the whole allowance
 model: **answering on the board never spends the monthly allowance, and still
 counts as giving** (§7). M7 is written around a targeted blast; nothing in it is
 this.
 
-**The tiers are named and priced.** Passive (free) · Board Ask $5 · Targeted Ask
+**⚠ Superseded 21 Oct: there is one kind of Network Ask and it is free** (the developer; see Decisions). What follows is what the strategy said. **The tiers are named and priced.** Passive (free) · Board Ask $5 · Targeted Ask
 $15 · Last-Minute Care (free during the pilot, strongest neighborhoods only), and
 every paid Ask is guaranteed — no useful answer in the window, automatic credit.
 The first Targeted Ask is free, deliberately: the pilot's real question is whether

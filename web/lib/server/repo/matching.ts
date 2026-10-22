@@ -164,7 +164,8 @@ export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
            and exists (
              select 1 from children mine
               where mine.person_id = ${query.askerId}::uuid
-                and abs(mine.birth_year - c.birth_year) <= 4
+                -- A baby on the way counts by its due year, as asker_kids does (audit).
+                and abs(coalesce(mine.birth_year, mine.due_year) - coalesce(c.birth_year, c.due_year)) <= 4
            )
       ),
       eligible as (

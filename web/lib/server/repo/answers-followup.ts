@@ -38,12 +38,18 @@ export interface PriorAnswers {
   texts: string[];
   /** The `shares` rows those answers were built from. */
   shareIds: string[];
+  /**
+   * Why the first answer was held, if it was (`answers.hold_reason`): a
+   * follow-up to a sensitive or care question must be held the same way
+   * (22 Oct audit — it went out as ordinary, voiced and unreviewed).
+   */
+  holdReason: string | null;
 }
 
 export async function priorAnswersFor(phone: string): Promise<PriorAnswers | null> {
   const result = await withDb(async (db: Db) => {
     const latest = (await db.execute(sql`
-      select question_text
+      select question_text, hold_reason
         from answers
        where phone = ${phone}
          and status = 'sent'
@@ -85,7 +91,8 @@ export async function priorAnswersFor(phone: string): Promise<PriorAnswers | nul
           : [];
       for (const id of list) ids.add(String(id));
     }
-    return { question, texts, shareIds: [...ids] } satisfies PriorAnswers;
+    const holdReason = typeof latest[0]?.hold_reason === "string" ? latest[0].hold_reason : null;
+    return { question, texts, shareIds: [...ids], holdReason } satisfies PriorAnswers;
   });
   return result.persisted ? (result.data ?? null) : null;
 }

@@ -518,3 +518,30 @@ edits rather than being asked; questions are reworded per parent by a model
 Services beyond doctors, and Products, should appear in SMS answers (today:
 no); her restaurant note ("a proper category, not just Eating out with kids
 under Tips") is followed — the tip topic stays for general advice.
+
+## 22 Oct 2026 — *Pilot Experience & Product Brief* and *QC Scope Map* (both 14 Oct), *Company Overview* (Oct)
+
+Received in Downloads on 19 Oct; reconciled 22 Oct against the code as it stands. The brief and the scope map **control** (their own words); the overview is background, its prices hypotheses. The `.docx` copies of 13 Oct are earlier versions of the same two documents.
+
+**Matches what is built (or built this week):**
+- R1 / scope map E7: ordinary questions, Network Checks and parent ↔ parent introductions **free**; no checkout, credits or paid tiers in active paths — one free Network Ask since 21 Oct, Stripe dormant with history kept ("disable superseded commercial paths without destroying history").
+- R5: retrieve permitted evidence first, public facts labelled, one clarification, a check of 3–5 contributors (pool 5), honest public-only answers.
+- R3: one canonical entity, many contributor-owned experiences — `shares` + `share_contributions` already are this shape.
+- R3 / N1: a relationship is distinct from a shared school; an invite answer is a claim, not trust — `person_relationships` (invite claims, and since 22 Oct admin-confirmed connections), never read by the matcher.
+- B108: Google resolves identity, not licensure — the provider check reads *Verified* only from NPI/DCA, *Found* from the web.
+- R7 (partly): admin-mediated introductions, contact shared only after the other parent agrees, nothing texted to them by Pando.
+
+**Deviations to settle 🟡 (this week's work against the brief):**
+- **Deep Dive (R9, N8).** The brief: *10–20 free Deep Dives run to completion* — agree a decision and deliverable, research, retrieve, **fill specific gaps**, return a sourced comparison **with next steps**; record labour, the action taken and willingness to pay; *"not a larger Network Check"*, a manual pilot test, the founder selects cases. Built: an automatic SMS report offered to anyone at most weekly, no admin, no gap-filling step beyond the YES offer, no next steps, no labour / action / willingness-to-pay record, no cap on how many.
+- **Introductions (R7, N5).** Missing: the exact **disclosure permission** recorded per case (name / quote / contact), the **outcome** (visit, hire, enrolment, satisfaction), **references** (an unattributed permitted summary by default), and intro requests **counting against the contributor's allowance**. Caregiver introductions are not on the same process.
+- **Participation (R6).** Brief: 5 or 10 per **rolling 30 days** plus **Pause**, **no preselected option**, one shared allowance across *all* proactive requests (checks, references, nomination prompts, reconfirmation, feedback). Built: 5 / 10 / *whenever relevant* (3 a week), default 5, counted partly by calendar month; freshness pings and "did it help?" already count in the 30-day total and the 48-hour gap (pings also capped at one a month), only thanks are outside; intro requests are not counted at all; no Pause.
+- **Reward (R2).** Brief: $10 once after **two qualifying experiences**, positive, mixed or negative; **no 80% profile threshold**; 0/2 · 1/2 · 2/2 with pending shown separately. Built: `FOUNDING_MIN_PROFILE_DEPTH = 80` still gates eligibility and `REWARD_OFFER` says *complete your profile and share two real recommendations*. The live terms and the end-October deadline (B59) need the founder before they change.
+
+**Not built ⬜ (new in the brief):**
+- R4 / N2 / N4: per-experience **audience** and reuse permission, quotation / attribution / contact permissions kept distinct, **withdrawal** removing future use (retrieval, cached answers, queued messages, counts); three question **scopes** (network · community · community_boosted) with explicit community access grants.
+- R3 / N1: **households** and family membership; affiliation records with child link, current / former / alumni role, **verification level** (self-reported · confirmed · organisation-verified) and date; claimed vs confirmed relationship state.
+- R3 / N6: **status / availability** (openings, waitlists) separate from experience, with source and expiry; outcomes linked to the case.
+- N3: internal query / write interfaces taking actor + scope + community and returning permitted evidence with provenance and freshness.
+- R8 / R9: acquisition-source and **school-cluster** attribution and weekly exports (no dashboard).
+
+**For the founder (open):** target institutions and incentive budget; live reward terms and earlier promises; the displayed frequency choices and Pause; contact-method preference and sensitive-reference policy; who selects the Deep Dive cases and their time budget.

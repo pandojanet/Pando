@@ -160,6 +160,20 @@ export async function deleteParentByPhone(
        */
       if (caregiver) await deleteCaregiverClaim(tx, { personId: id });
 
+      /**
+       * ⚠ **Their questions go too** (22 Oct audit). `answers.person_id` is
+       * SET NULL on delete, so the rows — with their phone number and their
+       * question in their own words — outlived the person who was told
+       * everything was gone. Deleted by phone, which also covers questions
+       * asked before a profile existed. Deep dives and introductions point at
+       * them with SET NULL, so nothing else breaks.
+       */
+      await tx.execute(sql`delete from answers where phone = ${phone}`);
+      /* An introduction where *they* were the parent contacted keeps its row
+         for the requester's history, but not the admin's note, which may name
+         them. */
+      await tx.execute(sql`update introductions set note = null where other_parent_id = ${id}::uuid`);
+
       await tx.execute(sql`delete from people where id = ${id}::uuid`);
 
       return { status: "deleted" as const, contributions, caregiver, profile };

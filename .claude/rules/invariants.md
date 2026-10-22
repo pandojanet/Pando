@@ -55,12 +55,12 @@ path-scoped rule loads only when a matching file is opened with Read. -->
    `npm run test:outreach` and `test:compliance` both pin it, so a session
    reading only the 8.18 strategy cannot halve the request rate again.
 
-   **Phase 2**: nothing sends yet, so
-   nothing enforces them yet. What exists today is where they go —
-   `lib/server/sms.ts` runs opt-out → quiet hours → *frequency* → provider, and
-   `monthly_contact_allowance` is captured from the parent (P14) and stored. The
-   invariant is that the first code that sends a blast implements the middle step;
-   it is listed here so that code cannot be written without meeting it.
+   **Phase 2: enforced in code today.** Blasts, the "did it help?" prompt,
+   thanks and freshness pings all send, and every one goes through
+   `lib/server/sms.ts` (opt-out → quiet hours → *frequency* → provider) with
+   `decideOutreach` / `selectPool` applying the gap, the cap and the governor;
+   `monthly_contact_allowance` is captured from the parent (P14). Any new
+   proactive sender goes through the same step — that is the invariant.
 6. All outbound SMS goes through one compliant send layer (`lib/server/sms.ts`):
    opt-out → quiet hours 8:00–21:00 PT → frequency → throttle → provider, in that
    order. No raw Twilio calls anywhere, and always via the Messaging

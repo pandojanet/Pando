@@ -15,7 +15,7 @@ import { relayTargetFor } from "@/lib/server/repo/relay";
  *
  * Every text Pando ever sends goes through `sendSms`. Nothing else in the app may
  * call Twilio directly, because the order of the checks below *is* the compliance
- * story: opt-out, then quiet hours, then frequency, then the send.
+ * story: opt-out, then quiet hours, then frequency, then the throttle, then the send.
  *
  * The A2P 10DLC campaign was **approved on 27 Aug**. Until the three `TWILIO_*`
  * values are set on the server this still reports `not_provisioned` rather than
@@ -260,10 +260,24 @@ async function sendViaSlack(input: SendInput): Promise<SendResult> {
       templateVersion: input.templateVersion ?? null,
       providerMessageId: result.ts ?? null,
       respondedTo: input.inReplyTo ?? null,
+      /* A relayed retry is a retry, as on the Twilio path (22 Oct audit). */
+      retryOf: input.retryOf ?? null,
+      retryCount: input.retryCount ?? 0,
     });
   }
 
   return { sent: true, message_id: result.ts };
+}
+
+/** At most four sends a second from this process (invariant 6's throttle). */
+export const THROTTLE_MS = 250;
+let nextSlot = 0;
+
+async function throttle(): Promise<void> {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + THROTTLE_MS;
+  if (at > now) await new Promise((resolve) => setTimeout(resolve, at - now));
 }
 
 export async function sendSms(input: SendInput): Promise<SendResult> {
@@ -352,6 +366,16 @@ export async function sendSms(input: SendInput): Promise<SendResult> {
       return { sent: false, reason: "frequency_cap", policy_reason: verdict.reason };
     }
   }
+
+  /**
+   * 3b. Throttle — invariant 6's fourth step, which did not exist until the
+   * 22 Oct audit. Sends are spaced at least `THROTTLE_MS` apart in this
+   * process, so a blast to five parents or a four-part deep dive leaves as a
+   * steady trickle rather than a burst the carrier may filter; Twilio's
+   * Messaging Service queues behind this too. After every check, so a refused
+   * send never waits.
+   */
+  await throttle();
 
   /**
    * 4. Provider — or the relay standing in for it.

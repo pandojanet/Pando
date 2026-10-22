@@ -29,16 +29,19 @@ const ok = (label: string, cond: boolean, detail = "") => {
 
 const NOW = new Date("2026-08-27T12:00:00Z");
 
-console.log("\n=== the four tiers are the strategy's four ===");
-ok("there are exactly four", t.TIER_IDS.length === 4, t.TIER_IDS.join(", "));
+console.log("\n=== one kind of Network Ask, and it is free (21 Oct) ===");
+ok("only one kind can be created", t.TIER_IDS.length === 1 && t.TIER_IDS[0] === t.GENERAL_TIER, t.TIER_IDS.join(", "));
+ok("its stored id is still 'targeted' - no migration (blasts_tier_check)", t.GENERAL_TIER === "targeted");
+ok("it is called a Network Ask", t.TIERS[t.GENERAL_TIER].label === "Network Ask");
+ok("nothing anywhere costs money", Object.values(t.TIERS).every((s) => s.price_cents === 0));
+ok("the old ids are marked old, so old rows still read", ["passive", "board", "last_minute"].every((id) => t.TIERS[id as BlastTier].legacy === true));
 ok(
   "and Precision is not among them",
   !t.TIER_IDS.includes("precision" as BlastTier),
   '§8: human review of an unusual match "absorbed what we once called Precision"',
 );
 ok("passive is free", t.TIERS.passive.price_cents === 0);
-ok("a Board Ask is $5", t.TIERS.board.price_cents === 500);
-ok("a Targeted Ask is $15", t.TIERS.targeted.price_cents === 1500);
+
 ok(
   "Last-Minute Care is free during the pilot",
   t.TIERS.last_minute.price_cents === 0,
@@ -119,7 +122,7 @@ const refund = (tier: BlastTier, approved: number, expired: boolean) =>
     now: NOW,
   });
 
-ok("a paid Ask with no answer, past its window, is owed a credit", refund("targeted", 0, true));
+ok("a free Ask with no answer is owed nothing - nothing was taken (21 Oct)", !refund("targeted", 0, true));
 ok("inside the window it is not — not yet", !refund("targeted", 0, false));
 ok("with an approved answer it is not", !refund("targeted", 1, true));
 ok(
@@ -127,11 +130,7 @@ ok(
   !refund("passive", 0, true) && !refund("last_minute", 0, true),
   "nothing was taken",
 );
-ok(
-  "the test is an APPROVED answer, not a reply",
-  refund("targeted", 0, true),
-  'a "no idea, sorry" must not discharge the guarantee — only the admin says an answer arrived',
-);
+
 
 console.log("\n=== the credit that pays for a tier ===");
 /**
@@ -144,10 +143,8 @@ console.log("\n=== the credit that pays for a tier ===");
  * have thrown: "no unspent credit found" is a legitimate answer.
  */
 ok(
-  "a paid tier names a credit kind the CHECK actually allows",
-  Object.values(t.TIERS)
-    .filter((s) => s.price_cents > 0)
-    .every((s) => s.credit_kind === "network_ask" || s.credit_kind === "targeted_network_ask"),
+  "no kind names a credit any more - nothing is charged, so nothing is redeemed",
+  Object.values(t.TIERS).every((s) => s.credit_kind === null),
   Object.values(t.TIERS).map((s) => `${s.id}=${s.credit_kind}`).join(" "),
 );
 ok(
@@ -158,11 +155,7 @@ ok(
   "a free tier has none — there is nothing to redeem",
   t.TIERS.passive.credit_kind === null && t.TIERS.last_minute.credit_kind === null,
 );
-ok(
-  "a Targeted Ask redeems the targeted credit, not the generic one",
-  t.TIERS.targeted.credit_kind === "targeted_network_ask",
-  "the first Ask free, a referral and the grove all grant this one specifically",
-);
+ok("the Network Ask redeems no credit - it is free", t.TIERS[t.GENERAL_TIER].credit_kind === null);
 
 console.log("\n=== 7.8  the text a Network Ask actually sends ===");
 const ask = t2.blastRequestSms({
@@ -228,15 +221,20 @@ console.log("\n=== 7.7's automatic credit is not a second compensation ===");
    already reporting as owed a refund, and it credited a Board Ask whose
    checkout had never completed. */
 ok(
-  "a credit-funded Ask that timed out gets a fresh credit",
-  t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: true })
-    .grant,
+  "an OLD Ask paid with a credit still gets that credit back when it times out (review, 21 Oct)",
+  t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: true, credit_kind: "targeted_network_ask" }).grant,
 );
 ok(
-  "and it is the tier's credit kind, never the tier id",
-  t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: true })
-    .kind === t.TIERS.targeted.credit_kind,
-  "credits_kind_check does not admit tier ids",
+  "and it is the kind that was actually spent",
+  t.automaticCredit({ tier: "board", payment_status: "not_required", credit_funded: true, credit_kind: "network_ask" }).kind === "network_ask",
+);
+ok(
+  "a free Ask nobody paid for mints nothing",
+  !t.automaticCredit({ tier: "targeted", payment_status: "not_required", credit_funded: false }).grant,
+);
+ok(
+  "an old card-paid Ask is still owed its guarantee, from what it was charged",
+  t.owedRefund({ tier: "targeted", approved_answers: 0, expires_at: new Date(NOW.getTime() - 1000), now: NOW, price_cents: 1500 }),
 );
 ok(
   "a card-paid Ask is owed money, so it is NOT also credited",

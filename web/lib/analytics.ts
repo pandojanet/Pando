@@ -216,9 +216,11 @@ export function track(event: SeedEvent, props?: Props): void {
  * whole point: the drop-off worth measuring happens three screens after the
  * link was opened.
  *
- * **Safe under invariant 7.** An invite code is one per *group*, never per
- * parent (12 Aug) — `mops-altadena`, not a person — so this is an enum, not an
- * identifier. Nothing here carries a name, a number or free text.
+ * **Safe under invariant 7 — for group links only.** A group code names a
+ * group (`mops-altadena`), but a parent's personal referral code is built
+ * from their first name (`jenny-3fa2c1`), so it is sent as the word
+ * `personal` instead (22 Oct audit). Nothing here carries a name, a number or
+ * free text.
  *
  * Overwritten rather than merged when a parent arrives on a second link: the
  * most recent arrival is the one whose funnel they are in.
@@ -227,10 +229,12 @@ export function identifyArrival(props: {
   invite_code: string | null;
   invite_group: string | null;
   source: string | null;
+  /** A personal (referral) link: its code carries a first name. */
+  personal?: boolean;
 }): void {
   if (typeof window === "undefined") return;
   window.posthog?.register?.({
-    invite_code: props.invite_code,
+    invite_code: props.personal ? "personal" : props.invite_code,
     invite_group: props.invite_group,
     arrival_source: props.source,
   });

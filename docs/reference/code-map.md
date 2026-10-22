@@ -70,7 +70,7 @@
 `web/lib/recent-activity.ts` — what one recent recommendation may say about
                        itself on `/join` (town only past 3 verified parents,
                        coarse category, time bucket, never a caregiver). Pure;
-                       the query is `lib/server/repo/recent-activity.ts`.
+                       the query is `lib/server/repo/recent-activity.ts`.
 `web/lib/rate-limits.ts` — M15.4. How often one caller may hit each public
                        endpoint, and **which `X-Forwarded-For` entry is
                        actually theirs**. Pure; imports nothing.
@@ -82,8 +82,9 @@
                        budget; this measures and never rewrites registered copy.
 `web/lib/payments.ts` — M13.5–13.7. Whether a refund is coherent and whether the
                        guarantee is owed. Imports **nothing** — `paymentFor`
-                       lives in `blast-tiers.ts` beside the prices, for that
-                       reason (see [decisions.md](../decisions.md)).
+                       lives in `blast-tiers.ts`, for that reason. Since 21 Oct
+                       nothing is charged (one free kind); this, Stripe and the
+                       payments repo stay for old paid rows (see decisions.md).
 `web/lib/stripe-signature.ts` — M13.6. Verifying a payment webhook, including
                        the replay tolerance the Twilio verifier has no
                        equivalent of.
@@ -135,6 +136,23 @@
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
                        thresholds, and measured against all 588 real records.
 `web/lib/seed-chat/scripts.ts` — the capture conversations.
+`web/lib/onboarding.ts` — M5.4/5.9. What the SMS asks next (age → area →
+                       first name → participation) and the narrow readers for
+                       each answer: `parseAges` (every child), `parseFirstName`,
+                       `parseNeighborhood`. Pure, no runtime imports.
+`web/lib/deep-dive.ts` — Deep Dive: triggers, copy, distance estimate,
+                       `checkProse` (every model sentence), the report layout and
+                       its SMS parts. Pure. Server half: `lib/server/deep-dive.ts`;
+                       rows: `lib/server/repo/deep-dives.ts`.
+`web/lib/introductions.ts` — Introductions (parent ↔ parent): triggers, the
+                       offer's words, statuses and the moves an admin may make
+                       (`INTRO_MOVES`). Pure. Server: `lib/server/introductions.ts`;
+                       rows: `lib/server/repo/introductions.ts`.
+`web/lib/answer-voice.ts` `acceptVoice` — refuses a warm rewrite of an answer
+                       unless every fact survives it. Server half:
+                       `lib/server/answer-voice.ts`.
+`web/lib/admin/labels.ts` `allowanceLabel` — how many asks a parent agreed to,
+                       in the admin's words ("Not chosen" is never five).
 `web/lib/trust-labels.ts` — M5.6. The approved wording, verbatim, plus the
                        freshness ladder and the guard that public information
                        never wears a parent label. Pure.

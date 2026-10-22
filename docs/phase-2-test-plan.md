@@ -372,14 +372,14 @@ no button at all, which is the kind of gap only a walk finds.
 
 0. **Create one.** `/admin/blasts` → *Record a question* (`blast.create`). This
    is the pilot's manual entry; there is deliberately no automatic one, because
-   a parent's "yes" to Pando's own offer would have to be priced first.
+   a parent's "yes" to Pando's own offer would have to be priced first. ⚠ *21 Oct: one kind of Network Ask, free — see Decisions.* (The SMS yes now creates a free draft.)
 1. **The pool preview** → *Who would be asked*. It calls the same `selectPool` a
    live send calls, and shows the **held** list as prominently as the chosen one.
    A short pool is usually contributors inside their 48-hour gap rather than a
    thin network, and only that list can tell you which.
 2. **Send the Ask.** ⚠ Offered only where it could work — a passive entry
    contacts nobody by design, and an Ask already sent has recipients. Everything
-   else shows the button and lets the refusal explain: *unpaid*, *waiting for a
+   else shows the button and lets the refusal explain: *unpaid* (old rows only since 21 Oct), *waiting for a
    person*, *already sent*, *nothing went out*. **Pass:** each of those is a
    different sentence naming a different next step, never "that has changed".
    Each recipient gets their own thread.
@@ -404,7 +404,7 @@ enthusiasm is how a network stops hearing from polite people.
    flips to *Answered*; and pressing it again is **refused** rather than texting
    them twice.
 
-**What must not happen:** a blast marked `human_review` sending at all; a paid
+**What must not happen:** a blast marked `human_review` sending at all; (until 21 Oct) a paid
 Ask sending before its checkout completed; an *unapproved* reply reaching the
 asker; or the card reading as finished while the asker has heard nothing.
 
@@ -794,9 +794,9 @@ yes and the contributors behind it were never thanked.
 mode as loudly as unconfigured — a screen of plausible payments that all happened
 in a sandbox is the most misleading state this surface has.
 
-- Only **$5** (Board Ask) and **$15** (Targeted Ask) are chargeable anywhere. The
-  estimate's $12/$20/$35 are charged by nothing; that is the 8.18 strategy
-  winning, not an omission.
+- **Nothing is chargeable since 21 Oct** — one kind of Network Ask, free. Before
+  that only $5 (Board Ask) and $15 (Targeted Ask) were; Stripe, this page and the
+  webhook stay for the history of old paid rows and their refunds.
 - **The success page cannot activate a blast.** Only the signed webhook can. Test
   by completing a checkout and watching `payment_status` move.
 - **A refund goes to Stripe before the row.** A record saying the money went back
@@ -849,12 +849,12 @@ if a number below does not match, the table is out of date and not the suite.
 | `test:trust` | 47 | the labels — most of them asserting one does **not** appear |
 | `test:matching` | 53 | the two-layer scorer, the age ladder, the topic reader |
 | `test:starters` · `test:derive` | 27 · 21 | which taps a screen offers; a place → the tenure signal |
-| `test:blast` | 64 | tiers, the guarantee, and what the asker is finally told |
+| `test:blast` | 68 | the one free kind (old ids still read), the guarantee for old credit-funded rows, and what the asker is finally told |
 | `test:outreach` | 62 | the gap, the ceiling, the governor, quiet hours, and that the two copies of the counter agree about retries |
 | `test:inbound` | 49 | the keyword order, mostly forged requests |
 | `test:capture` | 66 | the five-question script, and which words a step accepts |
 | `test:caregiver` | 68 | the four consent scopes, the 18+ gate, the named-person detector |
-| `test:payments` | 90 | segmentation, prices, the Stripe signature, the retry policy |
+| `test:payments` | 109 | segmentation, that nothing is charged, the Stripe signature, the retry policy |
 | `test:jobs` · `test:tiers` · `test:thanks` · `test:vouch` | 33 · 32 · 41 · 32 | the lock; the ladder; the two thank-you loops; refresh vs vouch |
 | `test:feedback` | 117 | every client feedback item, pinned by her own number |
 | `test:security` | 67 | every route is guarded, the limits are sane, invariant 7 by shape |
@@ -891,7 +891,7 @@ Reporting these as failures wastes a round.
 | **The automatic entry to a Network Ask** | a thin answer offers *"want me to ask a few nearby parents?"* and nothing reads the yes. Wiring it means saying what that reply costs — a decision, not missing code |
 | **The Pando Digest** (§10) | in the strategy, in **no estimate row**, unquoted |
 | **The grove** (§13) | same — a ledger with published exchange rates, and M9 is not it |
-| **The open board** ($5 Board Ask) | a surface, not a feature of Blast; answering there must not spend the allowance |
+| **The open board** (was the $5 Board Ask; no kinds since 21 Oct) | a surface, not a feature of Blast; answering there must not spend the allowance |
 | **Re-blast from `/admin/freshness`** | a Network Ask has an asker and a price; a freshness question asked by an admin has neither |
 | **11.5** | asks Pando to text a nominated caregiver — reversed by the client on 3 Aug, and forbidden by invariant 13 |
 | **RCS buttons** | Twilio needs Content API templates; `Body` alone stays plain text on RCS |

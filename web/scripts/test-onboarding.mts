@@ -176,7 +176,12 @@ console.log("\n=== answering it is not met with silence ===");
   );
   ok(
     "a saved clarification replies rather than returning quietly",
-    inbound.includes("body: CLARIFY_THANKS"),
+    /body: clarifyReply\(\{\s*question: pending,\s*text: body,\s*next,/.test(inbound),
+  );
+  ok(
+    "and the next question it carries is remembered by its template",
+    inbound.includes('template: next ? clarifyTemplate(next) : "clarification_saved"'),
+    "without it the next reply could not be read as that question's answer",
   );
   /* ⚠⚠ The close. Without it `pendingClarification` stayed open for seven days
      and re-read every short message as an answer — three `children` rows, all
@@ -194,6 +199,197 @@ console.log("\n=== answering it is not met with silence ===");
     "the inert on-conflict guard is gone rather than left reassuring",
     !/insert into children[\s\S]{0,160}on conflict/.test(repo),
     "children has no unique key: twins are a supported answer",
+  );
+}
+
+/**
+ * 21 Oct — the profile is built over SMS: the client's *"the bot asks for their
+ * name, children's ages, etc."*, answer-first and one at a time.
+ */
+console.log("\n=== the whole profile over SMS, one question at a time ===");
+{
+  const full = { child_birth_years: [2021], neighborhood: "altadena" };
+  ok(
+    "after the area, the first name",
+    o.nextQuestion({ ...full, first_name: null, allowance_chosen: false }) === "first_name",
+  );
+  ok(
+    "then how many requests they will take",
+    o.nextQuestion({ ...full, first_name: "Anna", allowance_chosen: false }) === "participation",
+  );
+  ok(
+    "and nothing once both are known",
+    o.nextQuestion({ ...full, first_name: "Anna", allowance_chosen: true }) === null,
+  );
+  ok(
+    "a caller that did not read them never asks them",
+    o.nextQuestion(full) === null,
+    "a parent who gave their name on /join must not be asked it",
+  );
+  ok(
+    "the age still comes first for a stranger",
+    o.nextQuestion({ child_birth_years: [], neighborhood: null, first_name: null, allowance_chosen: false }) === "child_age",
+  );
+  ok(
+    "the two questions that change an answer open with the client's words",
+    o.CLARIFYING_COPY.child_age.startsWith("Mind if I ask one more thing so I can give you a better answer?") &&
+      o.CLARIFYING_COPY.neighborhood.startsWith("Mind if I ask one more thing so I can give you a better answer?"),
+  );
+
+  console.log("\n=== every child in one reply ===");
+  const ages: Array<[string, number[]]> = [
+    ["3 and 7", [3, 7]],
+    ["4, 9 and 18 months", [4, 9, 1]],
+    ["18 months", [1]],
+    ["he's 3", [3]],
+    ["twins, 4 and 4", [4, 4]],
+    ["a 6 year old and one on the way", [6, -1]],
+    ["11yo and 2yo", [11, 2]],
+    ["born 2021", []],
+    ["6265550143", []],
+    ["not sure", []],
+  ];
+  for (const [text, want] of ages) {
+    const got = o.parseAges(text);
+    ok(`"${text}" -> [${want.join(", ")}]`, JSON.stringify(got) === JSON.stringify(want), `got [${got.join(", ")}]`);
+  }
+  ok(
+    "the answered profile closes the age question",
+    o.nextQuestion(o.withAnswer({ child_birth_years: [], neighborhood: "altadena" }, "child_age", "3 and 7")) === null,
+  );
+
+  console.log("\n=== a first name, and refusing to invent one ===");
+  const names: Array<[string, string | null]> = [
+    ["Anna", "Anna"],
+    ["anna", "Anna"],
+    ["I'm Anna", "Anna"],
+    ["sure, it's maria-josé", "Maria-josé"],
+    ["My name is Anna Lee.", "Anna"],
+    ["Hi! This is O'Neil", "O'Neil"],
+    ["rather not", null],
+    ["sure", null],
+    ["skip", null],
+    ["what's this for", null],
+    ["Anna 3", "Anna"],
+    ["we just moved here from the valley last year", null],
+    /* The 21 Oct routing review: each of these was saved as a first name. */
+    ["cool", null],
+    ["awesome", null],
+    ["great, thanks", null],
+    ["sounds good", null],
+    ["got it", null],
+    ["lol", null],
+    ["swim lessons", null],
+    ["camps near Altadena", null],
+    ["ballet for my 5yo", null],
+    ["any others", null],
+    ["more please", null],
+  ];
+  for (const [text, want] of names) {
+    const got = o.parseFirstName(text);
+    ok(`"${text}" -> ${want}`, got === want, `got ${got}`);
+  }
+
+  console.log("\n=== the reply that closes one question and asks the next ===");
+  const seg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+  const chained = o.clarifyReply({ question: "child_age", text: "3 and 7", next: "neighborhood" });
+  ok(
+    "it thanks and asks the next question in the same message",
+    chained.startsWith("Got it, thanks!") && chained.endsWith(o.CLARIFYING_COPY.neighborhood),
+  );
+  const named = o.clarifyReply({ question: "first_name", text: "i'm anna", next: "participation" });
+  ok("a name is answered by name", named.startsWith("Nice to meet you, Anna!"), named);
+  ok(
+    "the last answer asks nothing",
+    !o.clarifyReply({ question: "first_name", text: "Anna", next: null }).includes("?"),
+  );
+  const closing = o.clarifyReply({ question: "participation", text: "2", next: null, confirmed: "CONFIRMED" });
+  ok(
+    "the participation answer is confirmed with the SETTINGS confirmation it is handed",
+    closing.startsWith("CONFIRMED "),
+    closing,
+  );
+  /* 22 Oct: the onboarding ended on "Done: up to 5 a month..." and nothing else. */
+  ok(
+    "and closes the onboarding: how to change it, and that they can ask anything now",
+    /\bText SETTINGS\b/.test(closing) && /any question/i.test(closing) && !closing.includes("?"),
+    closing,
+  );
+  for (const choice of [
+    { allowance: 5, mode: "fixed" as const },
+    { allowance: 10, mode: "fixed" as const },
+    { allowance: null, mode: "as_relevant" as const },
+  ]) {
+    const policyMod = (await import(`../lib/outreach-policy.ts?v=${Date.now()}`)) as typeof import("../lib/outreach-policy.ts");
+    const last = o.clarifyReply({ question: "participation", text: "1", next: null, confirmed: policyMod.settingsConfirmation(choice) });
+    const plan = seg.planSegments(last);
+    ok(`the closing after ${choice.mode} ${choice.allowance ?? ""} is one GSM-7 segment`, plan.encoding === "gsm7" && plan.segments === 1, `${last.length} chars`);
+  }
+  const policy = (await import(`../lib/outreach-policy.ts?v=${Date.now()}`)) as typeof import("../lib/outreach-policy.ts");
+  ok(
+    "the weekly number in the question is the send layer's",
+    o.CLARIFYING_COPY.participation.includes(`3 for up to ${policy.OPEN_WEEKLY_LIMIT} a week`),
+  );
+  ok(
+    "and every digit it offers means what SETTINGS means by it",
+    policy.parseAllowanceChoice("1")?.allowance === 5 &&
+      policy.parseAllowanceChoice("2")?.allowance === 10 &&
+      policy.parseAllowanceChoice("3")?.mode === "as_relevant",
+  );
+  const labels = (await import(`../lib/admin/labels.ts?v=${Date.now()}`)) as typeof import("../lib/admin/labels.ts");
+  ok(
+    "the admin names the weekly level with the send layer's number",
+    labels.allowanceLabel({ monthly_contact_allowance: null, allowance_mode: "as_relevant" }) ===
+      `Up to ${policy.OPEN_WEEKLY_LIMIT} a week`,
+  );
+  ok(
+    "and a parent who never chose reads as not chosen, not as five",
+    labels.allowanceLabel({ monthly_contact_allowance: null, allowance_mode: "fixed" }) === "Not chosen" &&
+      labels.allowanceLabel({ monthly_contact_allowance: 10, allowance_mode: "fixed" }) === "Up to 10 a month",
+  );
+  const inboundSrc = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok(
+    "and the server hands it that confirmation",
+    inboundSrc.includes("confirmed: choice ? settingsConfirmation(choice) : undefined"),
+  );
+  for (const q of Object.keys(o.CLARIFYING_COPY) as Array<keyof typeof o.CLARIFYING_COPY>) {
+    const longest = `Nice to meet you, Maria-Jose! ${o.CLARIFYING_COPY[q]}`;
+    const plan = seg.planSegments(longest);
+    ok(
+      `"${q}" stays GSM-7 and within two segments, even chained`,
+      plan.encoding === "gsm7" && plan.segments <= 2,
+      `${plan.segments} segment(s), ${plan.encoding}`,
+    );
+  }
+  for (const q of Object.keys(o.CLARIFYING_COPY) as Array<keyof typeof o.CLARIFYING_COPY>) {
+    /* Riding on an answer at the composer's full budget, no question may add
+       more than one segment (the budget is six since 22 Oct, so seven). */
+    const plan = seg.planSegments(`${"x".repeat(918)}\n\n${o.CLARIFYING_COPY[q]}`);
+    ok(`"${q}" on a full answer adds at most one segment`, plan.segments <= 7, `${plan.segments}`);
+  }
+  ok(
+    "the participation question offers the SETTINGS menu's digits",
+    /Reply 1 for up to 5 a month, 2 for up to 10, or 3 for up to \d+ a week/.test(o.CLARIFYING_COPY.participation),
+  );
+  ok(
+    "an answered participation question closes the exchange",
+    o.nextQuestion(
+      o.withAnswer({ child_birth_years: [2021], neighborhood: "x", first_name: "A", allowance_chosen: false }, "participation", "2"),
+    ) === null,
+  );
+
+  const repo = fs.readFileSync(new URL("../lib/server/repo/onboarding.ts", import.meta.url), "utf8");
+  ok(
+    "a name from a text never overwrites one given on /join",
+    /update people set first_name[\s\S]{0,160}first_name is null/.test(repo),
+  );
+  ok(
+    "the participation answer is written by the SETTINGS write",
+    repo.includes("parseAllowanceChoice(input.text)") && repo.includes("return setAllowance("),
+  );
+  ok(
+    "a later clarifying question closes an open SETTINGS menu",
+    repo.includes("or template like 'clarify_%'"),
   );
 }
 

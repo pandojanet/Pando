@@ -1620,6 +1620,9 @@ export type Share = typeof shares.$inferSelect;
  * How two people know each other (16 Sep, drizzle/0044) — the first edges of an
  * internal relationship graph, written from the invite question. Cascades from
  * both ends; never shown to another parent and not read by the matcher.
+ *
+ * 22 Oct (drizzle/0061): an admin records connections too — `source = 'admin'`,
+ * one general kind `connected` with an optional note. Admin-only, view-only.
  */
 export const personRelationships = pgTable(
   "person_relationships",
@@ -1643,9 +1646,9 @@ export const personRelationships = pgTable(
     check("person_relationships_not_self", sql`${t.personId} <> ${t.relatedPersonId}`),
     check(
       "person_relationships_relationship_check",
-      sql`${t.relationship} in ('family','close_friend','friend','neighbor','colleague','parent_group','school_parent','other')`,
+      sql`${t.relationship} in ('family','close_friend','friend','neighbor','colleague','parent_group','school_parent','other','connected')`,
     ),
-    check("person_relationships_source_check", sql`${t.source} in ('invite')`),
+    check("person_relationships_source_check", sql`${t.source} in ('invite','admin')`),
     index("person_relationships_related_idx").on(t.relatedPersonId),
   ],
 );

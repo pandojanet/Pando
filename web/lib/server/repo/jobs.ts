@@ -293,17 +293,19 @@ async function impact_sync(): Promise<JobResult> {
  * is not the promise being kept, only the admin's approval says one arrived.
  *
  * A credit is granted in the same statement that expires the blast, so a blast
- * cannot be marked expired without the credit that owes the parent. The tier's
- * own credit kind is used, which is why the mapping lives on `TierSpec` — the
- * `credits_kind_check` vocabulary is not the tier ids.
+ * cannot be marked expired without the credit that owes the parent. The kind of
+ * the credit that was actually spent is given back (`credits.kind`, joined
+ * below) — since 21 Oct only old credit-funded rows can be owed one.
  */
 async function expire_blasts(): Promise<JobResult> {
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
       const due = (await tx.execute(sql`
         select b.id, b.tier, b.asker_id, b.payment_status,
-               b.credit_id is not null as credit_funded
+               b.credit_id is not null as credit_funded,
+               c.kind as credit_kind
           from blasts b
+          left join credits c on c.id = b.credit_id
          -- draft too (25 Sep): an Ask nobody sent is still a promise with a
          -- clock. Left out, a credit-funded draft whose window passed kept the
          -- parent's credit for ever and stayed a draft (walked over the relay).
@@ -313,7 +315,7 @@ async function expire_blasts(): Promise<JobResult> {
            and not exists (
              select 1 from blast_recipients r
               where r.blast_id = b.id and r.review_status = 'approved')
-         for update skip locked
+         for update of b skip locked
       `)) as unknown as Array<Record<string, unknown>>;
 
       let credited = 0;
@@ -336,6 +338,7 @@ async function expire_blasts(): Promise<JobResult> {
           tier: String(row.tier) as keyof typeof TIERS,
           payment_status: String(row.payment_status ?? ""),
           credit_funded: row.credit_funded === true,
+          credit_kind: row.credit_kind ? String(row.credit_kind) : null,
         });
         if (owed.grant && owed.kind && row.asker_id) {
           await tx.execute(sql`
@@ -459,22 +462,29 @@ async function freshness_ping(): Promise<JobResult> {
      */
     const rows = (await db.execute(sql`
       with stale as (
-        select id, name, kind, last_confirmed_at
+        select shares.id, shares.name, shares.kind, shares.last_confirmed_at
           from shares
-         where status = 'approved'
-           and not is_test
-           -- Not a doctor (8 Oct): doctors are not in SMS answers, so asking
-           -- whether one is still worth recommending refreshes nothing a
-           -- parent is shown, and spends a contributor's monthly ping on it.
-           and kind::text <> 'doctor'
-           and last_confirmed_at is not null
-           and last_confirmed_at < now() - interval '90 days'
+          -- Each kind's own threshold (22 Oct audit): a doctor stays "fresh"
+          -- to 180 days, so asking at 90 contradicted the label parents see.
+          left join freshness_policy fp on fp.kind = shares.kind
+         where shares.status = 'approved'
+           and not shares.is_test
+           -- Doctors included since 21 Oct: they are in SMS answers now, so
+           -- whether one is still worth recommending is a date a parent is
+           -- shown (the 8 Oct exclusion rested on their not being shown).
+           and shares.last_confirmed_at is not null
+           and shares.last_confirmed_at < now() - make_interval(days => coalesce(fp.ageing_days, 90))
       ),
       candidates as (
         select sc.person_id, s.id as share_id, s.name, s.kind, s.last_confirmed_at
           from share_contributions sc
           join stale s on s.id = sc.share_id
          where sc.status = 'approved'
+           -- Not asked about this record again within 90 days: an unanswered
+           -- ping or a PASS was re-sent every month (22 Oct audit).
+           and not exists (select 1 from freshness_pings fp
+                            where fp.person_id = sc.person_id and fp.share_id = s.id
+                              and fp.asked_at > now() - interval '90 days')
         union
         select a.person_id, s.id as share_id, s.name, s.kind, s.last_confirmed_at
           from answers a
@@ -485,6 +495,9 @@ async function freshness_ping(): Promise<JobResult> {
              select 1 from share_contributions sc
               where sc.share_id = s.id and sc.person_id = a.person_id
            )
+           and not exists (select 1 from freshness_pings fp
+                            where fp.person_id = a.person_id and fp.share_id = s.id
+                              and fp.asked_at > now() - interval '90 days')
       )
       -- Who is worth asking, chosen so the cap below cannot be spent on people
       -- sendSms is certain to refuse (26 Sep). Two exclusions, both restating a
@@ -537,6 +550,7 @@ async function freshness_ping(): Promise<JobResult> {
       personId: String(row.person_id),
       outreachKind: "ping",
       template: "freshness_ping",
+      templateVersion: SMS_TEMPLATE_VERSION,
     });
     if (result.sent) {
       /**

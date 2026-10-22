@@ -212,6 +212,12 @@ for (const [label, body] of [
     plan.offenders.join(" ") || body,
   );
 }
+/* 22 Oct: it was 161 characters, one over a single segment. */
+ok(
+  "the nothing-to-delete reply is a single segment",
+  seg.planSegments(none).segments === 1,
+  `${none.length} chars`,
+);
 
 /* ── 11.4  the named-person policy ─────────────────────────────────────────── */
 

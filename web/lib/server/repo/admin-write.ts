@@ -77,6 +77,9 @@ export type ActionOutcome =
       reason:
         | "not_implemented"
         | "referral_cap_reached"
+        | "links_not_migrated"
+        | "link_exists"
+        | "link_test_mixed"
         | "not_found"
         | "blast_unpaid"
         | "blast_needs_review"
@@ -105,7 +108,20 @@ export type ActionOutcome =
         /* 29 Sep — a hold the schema will not let go of (see release_hold). */
         | "hold_locked"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
-        | "share_name_taken";
+        | "share_name_taken"
+        /* 13 Oct — the money. Every refusal from `openCheckout` and
+           `refundBlast` used to be `not_found`, so "Stripe is not set up
+           here" reached the admin as "that has changed since the page was
+           loaded", which no reload could fix. */
+        | "payment_not_provisioned"
+        | "payment_nothing_to_pay"
+        | "payment_already_paid"
+        | "payment_provider_error"
+        | "refund_nothing_paid"
+        | "refund_already_refunded"
+        | "refund_no_reference"
+        | "refund_provider_error"
+        | "refund_not_recorded";
     };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -595,7 +611,19 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
            already covered — so this is a refusal with a name rather than an
            error. */
         console.info("[blast] checkout refused", { reason: outcome.reason });
-        return { applied: false, reason: "not_found" };
+        return {
+          applied: false,
+          reason:
+            outcome.reason === "not_provisioned"
+              ? "payment_not_provisioned"
+              : outcome.reason === "nothing_to_pay"
+                ? "payment_nothing_to_pay"
+                : outcome.reason === "already_paid"
+                  ? "payment_already_paid"
+                  : outcome.reason === "stripe_error"
+                    ? "payment_provider_error"
+                    : "not_found",
+        };
       }
       return {
         applied: true,
@@ -785,7 +813,23 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const outcome = await refundBlast({ blastId: target, reason });
       if (!outcome.ok) {
         console.error("[blast] refund failed", { reason: outcome.reason });
-        return { applied: false, reason: "not_found" };
+        return {
+          applied: false,
+          reason:
+            outcome.reason === "nothing_paid"
+              ? "refund_nothing_paid"
+              : outcome.reason === "already_refunded"
+                ? "refund_already_refunded"
+                : outcome.reason === "no_payment_reference"
+                  ? "refund_no_reference"
+                  : outcome.reason === "refunded_not_recorded"
+                    ? "refund_not_recorded"
+                    : outcome.reason === "stripe_error"
+                      ? outcome.detail === "not_provisioned"
+                        ? "payment_not_provisioned"
+                        : "refund_provider_error"
+                      : "not_found",
+        };
       }
       return { applied: true, resource: "blast", resource_id: target };
     }
@@ -1747,6 +1791,31 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "person", resource_id: targets.join(",") };
     }
 
+    /**
+     * The way back from "Not Founding" (13 Oct).
+     *
+     * `founding.request_invite` had no opposite: the queue lists only people
+     * still awaiting a decision, so a parent marked by a slip of the hand left
+     * every screen that could change it, and the decision withholds a reward.
+     *
+     * ⚠ **Back to the queue, never straight to Founding.** The queue is what
+     * shows the profile and the complete cards the decision rests on, and it
+     * lists a person only while they meet the requirements — so this cannot be
+     * used to grant Founding to somebody who never qualified. Only a
+     * `request_invite` row moves: an approved parent is not demoted by it.
+     */
+    case "founding.reopen": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const rows = (await tx.execute(
+        sql`update people set founding = 'pending_founding'
+            where id = ${target}::uuid and founding = 'request_invite'
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "person", resource_id: target };
+    }
+
     /* ── 2.3 Contributors ────────────────────────────────────────────────── */
 
     case "contributor.note": {
@@ -1987,6 +2056,56 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "referral", resource_id: referred };
     }
 
+    /**
+     * Parent ↔ parent connection (22 Oct). One general kind, `connected`, with
+     * the admin's optional note. One edge per pair **either way round**: an
+     * invite answer already joining the two is the connection, so nothing is
+     * added. Never between a test person and a real one. Both parents must exist
+     * — a connection is about two people Pando already holds (invariant 11:
+     * nothing about a named parent before their phone is verified).
+     */
+    case "person.link": {
+      const a = id(b.id);
+      const other = id(b.other_id);
+      if (!a || !other || a === other) return { applied: false, reason: "not_implemented" };
+      /* Before 0061 the CHECKs refuse an admin's edge: say so instead of a 500. */
+      const [check] = (await tx.execute(sql`
+        select pg_get_constraintdef(oid) as def from pg_constraint
+         where conname = 'person_relationships_source_check'
+      `)) as unknown as Array<{ def: string }>;
+      if (!check || !check.def.includes("admin")) return { applied: false, reason: "links_not_migrated" };
+      const note = text(b.note);
+      const people = (await tx.execute(sql`
+        select id, is_test from people where id in (${a}::uuid, ${other}::uuid)
+      `)) as unknown as Array<{ id: string; is_test: boolean }>;
+      if (people.length !== 2) return { applied: false, reason: "not_found" };
+      if (people[0].is_test !== people[1].is_test) return { applied: false, reason: "link_test_mixed" };
+      const made = (await tx.execute(sql`
+        insert into person_relationships (person_id, related_person_id, relationship, note, source)
+        select ${a}::uuid, ${other}::uuid, 'connected', ${note ? note.slice(0, 120) : null}, 'admin'
+         where not exists (
+           select 1 from person_relationships pr
+            where (pr.person_id = ${a}::uuid and pr.related_person_id = ${other}::uuid)
+               or (pr.person_id = ${other}::uuid and pr.related_person_id = ${a}::uuid))
+        on conflict do nothing
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      /* Nothing written, nothing audited (audit, 22 Oct): already connected. */
+      if (made.length === 0) return { applied: false, reason: "link_exists" };
+      return { applied: true, resource: "person_relationship", resource_id: a };
+    }
+
+    /** Only an admin's own connection is removed; an invite answer is the parent's. */
+    case "person.unlink": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const gone = (await tx.execute(sql`
+        delete from person_relationships where id = ${target}::uuid and source = 'admin' returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (gone.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "person_relationship", resource_id: target };
+    }
+
     case "referral.void": {
       const target = id(b.id);
       if (!target) return { applied: false, reason: "not_implemented" };
@@ -1995,6 +2114,89 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         sql`update referrals set status = 'void' where id = ${target}::uuid`,
       );
       return { applied: true, resource: "referral", resource_id: target };
+    }
+
+    /* ── Introductions — parent to parent (21 Oct) ───────────────────────────
+       Each move is a conditional UPDATE on the status it may come from
+       (`INTRO_MOVES`): a stale screen is a no-op ("reload"), never a skipped
+       step. The chat itself happens outside Pando; these only record how far
+       a request has got. */
+
+    case "intro.approve": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const moved = (await tx.execute(sql`
+        update introductions set status = 'approved', decided_at = now(), decided_by = ${ctx.actor}
+         where id = ${target}::uuid and status = 'requested'
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "introduction", resource_id: target };
+    }
+
+    case "intro.reject": {
+      const target = id(b.id);
+      const reason = text(b.reason);
+      if (!target || !reason) return { applied: false, reason: "not_implemented" };
+      const moved = (await tx.execute(sql`
+        update introductions
+           set status = 'rejected', note = ${reason.slice(0, 500)}, decided_at = now(),
+               decided_by = ${ctx.actor}, closed_at = now()
+         where id = ${target}::uuid and status in ('requested', 'approved')
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "introduction", resource_id: target };
+    }
+
+    /**
+     * The admin reached out to a parent who has been there. Only a parent the
+     * request could have offered — an approved, firsthand contributor on its
+     * record, not the requester — so a chat is never set up with somebody who
+     * has never been.
+     */
+    case "intro.contacted": {
+      const target = id(b.id);
+      const parent = id(b.parent_id);
+      if (!target || !parent) return { applied: false, reason: "not_implemented" };
+      const note = text(b.note);
+      const moved = (await tx.execute(sql`
+        update introductions i
+           set status = 'contacted', other_parent_id = ${parent}::uuid, contacted_at = now(),
+               note = coalesce(${note ? note.slice(0, 500) : null}, i.note)
+         where i.id = ${target}::uuid and i.status = 'approved'
+           and ${parent}::uuid <> i.requester_id
+           and exists (select 1 from share_contributions sc
+                        join people p on p.id = sc.person_id
+                        where sc.share_id = i.share_id and sc.person_id = ${parent}::uuid
+                          and sc.status = 'approved' and sc.firsthand and sc.follow_up_ok
+                          -- Test with test, real with real: never a test requester and a real parent (21 Oct, 22 Oct audit).
+                          and p.is_test = i.is_test
+                          -- Never somebody who texted STOP (audit, 22 Oct).
+                          and not exists (select 1 from sms_opt_outs o
+                                           where o.phone = p.phone
+                                             and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)))
+        returning i.id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "introduction", resource_id: target };
+    }
+
+    case "intro.connected":
+    case "intro.declined": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const note = text(b.note);
+      const to = ctx.action === "intro.connected" ? "connected" : "declined";
+      const moved = (await tx.execute(sql`
+        update introductions
+           set status = ${to}, closed_at = now(),
+               note = coalesce(${note ? note.slice(0, 500) : null}, note)
+         where id = ${target}::uuid and status = 'contacted'
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "introduction", resource_id: target };
     }
 
     default:

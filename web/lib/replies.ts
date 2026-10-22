@@ -37,12 +37,19 @@
  * it; a stray sentence carries none of them, so accepting it here would build a
  * record every trust label then has to be silent about.
  *
- * ⚠ **`/share`, never `/caregiver`** — the latter is where a caregiver signs
- * *themselves* up, and sending a nominating parent there is the wrong flow
- * entirely. The same trap `capture.ts` documents.
+ * ⚠ **The SMS capture, not a link** (22 Oct). It pointed at `pando.is/share`,
+ * and `/share` is behind the seed gate (`lib/seed-gate.ts`): a parent who only
+ * ever texted holds no invite cookie and was bounced to the home page. Text ADD
+ * starts `capture.ts`'s five questions on this same thread (`isCaptureStart`,
+ * read before any intent in `inbound.ts`), which is the flow that can take the
+ * offer properly without a browser. ⚠ Never `/caregiver` either — that is where
+ * a caregiver signs *themselves* up. A caregiver offered with an offer verb is
+ * refused before this line (`offeringCaregiver`), and one named once the
+ * capture is open is refused there (`mentionsCaregiver`), so ADD cannot
+ * become a caregiver record.
  */
 export const SHARE_INVITE =
-  "Pando: thanks! A few taps captures it properly - ages, cost, whether you'd recommend it: pando.is/share Reply STOP to opt out, HELP for help.";
+  "Pando: thanks! To add it properly, text ADD and I'll ask a few quick questions, like whether you'd recommend it. Reply STOP to opt out, HELP for help.";
 
 /**
  * To small talk from somebody who has not asked anything yet.
@@ -84,18 +91,28 @@ export const OPENER_REPLY =
  * reaches have 48-hour gaps and monthly ceilings of their own, and nobody can
  * keep a deadline made on their behalf.
  *
- * **It does not mention money.** The tier is $15 and payment enforcement is off
- * for the pilot, so today this costs the parent nothing — and naming a price
- * that is not being taken would be worse than saying nothing. The day the
- * automatic entry has to charge, this sentence is where the checkout link goes,
- * and it changes then rather than pre-announcing a charge that does not happen.
+ * **It does not mention money**, and since 21 Oct there is none to mention:
+ * there is one kind of Network Ask and it is free (`lib/blast-tiers.ts`).
+ *
+ * **Nor does it promise a reply** (22 Oct). It said *"and text you what they
+ * say"*, but an Ask nobody answers expires in silence (`expire_blasts` in
+ * `repo/jobs.ts` texts nobody) and a person reads every reply before it is
+ * passed on, so "what they say" was a promise the code could not keep.
  *
  * ⚠ New user-facing copy, on the list for the client. Not in `sms-templates.ts`
  * — that is registered A2P sample text where a reword is a compliance event —
  * and written in GSM-7 so it costs one segment.
  */
 export const ASK_STARTED =
-  "Pando: on it. I'll ask a few nearby parents who'd know, and text you what they say. Reply STOP to opt out, HELP for help.";
+  "Pando: on it. I'll ask a few nearby parents who'd know, and text you if they share anything useful. Reply STOP to opt out, HELP for help.";
+
+/**
+ * The yes was taken but the Ask could not be created (22 Oct audit: it was
+ * silence). "Pando:" first and the compliance line last, like `ASK_STARTED`
+ * and every other reply in this file (22 Oct). GSM-7, one segment.
+ */
+export const ASK_NOT_STARTED =
+  "Pando: sorry, I couldn't ask other parents just now. Text me your question again in a few minutes and I'll try again. Reply STOP to opt out, HELP for help.";
 
 /**
  * The answers to Pando's own yes/no questions — acknowledged (23 Sep).
@@ -129,7 +146,7 @@ export const ASK_STARTED =
  * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment.
  */
 export const BLAST_REPLY_THANKS =
-  "Pando: thank you! A person at Pando reads each reply before it's passed on. Reply STOP to opt out, HELP for help.";
+  "Pando: thank you! Someone at Pando reads each reply before it's passed on. Reply STOP to opt out, HELP for help.";
 
 export const PING_STILL_GOOD =
   "Pando: thanks - noted that it's still worth recommending. Reply STOP to opt out, HELP for help.";
@@ -138,4 +155,4 @@ export const PING_NO_LONGER =
 export const HELPED_YES =
   "Pando: glad it helped - thanks for letting us know. Reply STOP to opt out, HELP for help.";
 export const HELPED_NO =
-  "Pando: thanks for telling us - that helps Pando get better answers. Reply STOP to opt out, HELP for help.";
+  "Pando: thanks for telling us - that helps us find better answers. Reply STOP to opt out, HELP for help.";

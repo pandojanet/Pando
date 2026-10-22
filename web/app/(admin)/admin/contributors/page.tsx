@@ -29,6 +29,7 @@ import { RewardPaid } from "@/components/admin/RewardPaid";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributorRow } from "@/lib/admin/types";
+import { allowanceLabel } from "@/lib/admin/labels";
 
 /**
  * Everyone who came through, in two views of the same people: what they shared,
@@ -251,6 +252,9 @@ export default function ContributorsPage() {
                 <Th>
                   Open to questions
                 </Th>
+                {/* What they chose (21 Oct). A governor-lowered limit is on
+                    the "What they have earned" tab, which reads the send layer. */}
+                <Th>Asks a month</Th>
                 <Th>Joined</Th>
               </tr>
             </thead>
@@ -368,6 +372,15 @@ export default function ContributorsPage() {
                     ) : (
                       <Badge tone="muted">—</Badge>
                     )}
+                  </Td>
+                  <Td
+                    className={
+                      row.allowance_mode === "fixed" && row.monthly_contact_allowance === null
+                        ? "whitespace-nowrap text-muted"
+                        : "whitespace-nowrap"
+                    }
+                  >
+                    {allowanceLabel(row)}
                   </Td>
                   <Td className="text-muted">{when(row.created_at)}</Td>
                 </tr>

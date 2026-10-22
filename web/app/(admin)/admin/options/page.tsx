@@ -154,8 +154,16 @@ export default function PendingOptionsPage() {
                               action: "option.promote",
                               id: row.id,
                               /* The slug is what matching keys on, so it is created
-                                 here rather than guessed at by a workflow. */
-                              option_value: slugify(row.submitted_value),
+                                 here rather than guessed at by a workflow.
+                                 ⚠ A name with no Latin letter or digit in it
+                                 slugs to nothing, and the route then refused
+                                 it on every press with nowhere to type another
+                                 (13 Oct). The row's own id stands in: unique,
+                                 already in the slug's alphabet, and never
+                                 shown — the label is what a parent reads. */
+                              option_value:
+                                slugify(row.submitted_value) ||
+                                `option-${row.id.slice(0, 8)}`,
                               label: row.submitted_value,
                             }),
                           )

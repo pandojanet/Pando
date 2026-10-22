@@ -331,12 +331,22 @@ export async function writeProfile(
     /* Never an edge to themselves: a parent opening their own link would
        otherwise abort the whole profile write on the not-self CHECK. */
     if (input.invited_by && input.inviter_relationship && input.invited_by !== personId) {
+      /* One connection per pair either way round (22 Oct): an admin's link the
+         other way is replaced by the parent's own answer, never kept beside it. */
+      await tx.execute(sql`
+        delete from person_relationships
+         where person_id = ${input.invited_by}::uuid and related_person_id = ${personId}::uuid
+           and source = 'admin'`);
+      /* The parent's own answer wins over an admin's link the same way, and the
+         row becomes theirs (source 'invite'), so an admin's "remove" can never
+         delete it (audit). */
       await tx.execute(sql`
         insert into person_relationships (person_id, related_person_id, relationship, note, source)
         values (${personId}::uuid, ${input.invited_by}::uuid, ${input.inviter_relationship},
                 ${input.inviter_relationship_note ?? null}, 'invite')
         on conflict (person_id, related_person_id)
-        do update set relationship = excluded.relationship, note = excluded.note, updated_at = now()`);
+        do update set relationship = excluded.relationship, note = excluded.note,
+                      source = 'invite', updated_at = now()`);
     }
 
     /**

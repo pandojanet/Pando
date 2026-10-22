@@ -222,6 +222,7 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     ["the small-talk reply", r.SMALL_TALK],
     ["the opener reply", r.OPENER_REPLY],
     ["the Ask acknowledgement", r.ASK_STARTED],
+    ["the Ask failure reply", r.ASK_NOT_STARTED],
     ["the still-good acknowledgement", r.PING_STILL_GOOD],
     ["the withdrawal acknowledgement", r.PING_NO_LONGER],
     ["the helped-yes acknowledgement", r.HELPED_YES],
@@ -244,10 +245,25 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
       /Reply STOP to opt out, HELP for help\.$/.test(text),
     );
   }
+  /* 22 Oct: it pointed at pando.is/share, which the seed gate bounces to the
+     home page for a parent who never held an invite link — so it now names the
+     SMS capture's own start word, checked against the reader that accepts it. */
+  const cap = (await import(`../lib/capture.ts?v=${Date.now()}`)) as typeof import("../lib/capture.ts");
+  const startWord = /\btext ([A-Z]+)\b/.exec(r.SHARE_INVITE)?.[1] ?? "";
   ok(
-    "the share invite points at /share, never /caregiver",
-    r.SHARE_INVITE.includes("pando.is/share") && !r.SHARE_INVITE.includes("/caregiver"),
+    "the share invite names a word that really starts the SMS capture",
+    startWord !== "" && cap.isCaptureStart(startWord),
+    r.SHARE_INVITE,
+  );
+  ok(
+    "and sends a texting parent to no gated page, and never to /caregiver",
+    !/pando\.is\/(share|profile|done)\b/.test(r.SHARE_INVITE) && !r.SHARE_INVITE.includes("/caregiver"),
     "sending a nominating parent to the caregiver's own sign-up is the wrong flow",
+  );
+  ok(
+    "the Ask acknowledgement does not promise to pass on what parents say",
+    !/what they say/i.test(r.ASK_STARTED),
+    "an Ask nobody answers expires without a text, and a person reads every reply first",
   );
   /**
    * M7's automatic entry, wired 14 Sep. The reply a parent gets for saying yes
@@ -316,7 +332,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   );
   ok(
     "and asks no clarifying question under one",
-    /const clarifier = asking && !urgent/.test(src),
+    /const clarifier =\s+asking && !urgent/.test(src),
   );
   /* The second recording: the model read an allegation as an offer, and the
      parent was asked for "ages, cost, whether you'd recommend it". */

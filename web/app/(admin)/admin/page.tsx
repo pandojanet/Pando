@@ -138,6 +138,14 @@ export default function AdminOverviewPage() {
           href: "/admin/options",
           urgent: false,
         },
+        /* 22 Oct — the sidebar counted these and this list did not; the same
+           number, from the same read (`openIntroductions`). */
+        {
+          label: "introductions to move along",
+          n: o.introductions?.open ?? 0,
+          href: "/admin/introductions?view=open",
+          urgent: false,
+        },
       ]
         .filter((t) => t.n > 0)
         /* Urgent first, and **stable** within each half, so the order below is

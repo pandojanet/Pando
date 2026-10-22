@@ -54,6 +54,8 @@ export const FRESHNESS_FALLBACK: FreshnessPolicy[] = [
   { kind: "caregiver", stale_days: 180, ageing_days: 120 },
   { kind: "place", stale_days: 365, ageing_days: 180 },
   { kind: "tip", stale_days: 365, ageing_days: 180 },
+  /* 21 Oct, with doctors in answers — the same numbers as drizzle/0060 seeds. */
+  { kind: "doctor", stale_days: 365, ageing_days: 180 },
 ];
 
 /**

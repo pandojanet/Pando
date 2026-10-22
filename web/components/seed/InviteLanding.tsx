@@ -168,6 +168,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       invite_code: inviteCode,
       invite_group: invite.group_option_value ?? null,
       source,
+      personal: invite.has_inviter === true,
     });
     track("seed_link_opened", { source });
     /* Reaching this component means one of two things: a valid code, or the

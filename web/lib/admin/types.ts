@@ -38,6 +38,8 @@ export type AdminResource =
   | "freshness"
   | "standing"
   | "impact"
+  | "deep_dives"
+  | "introductions"
   | "audit";
 
 /**
@@ -329,6 +331,8 @@ export interface Overview {
    * counts for a fortnight and the payload had never contained either.
    */
   answers: { waiting: number; replies: number };
+  /** Introduction requests a person still has to move (21 Oct). */
+  introductions: { open: number };
   /** §17.1 — records an admin has marked good enough to answer with. */
   answer_ready: number;
   drop_off: Array<{ step: string; reached: number }>;
@@ -373,6 +377,13 @@ export interface ContributorRow {
   follow_up_opt_in: boolean | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
   wants_founding: boolean;
+  /**
+   * P14 — how many requests they agreed to (21 Oct: on the list, the client
+   * wants the 5-versus-10 split visible). Null with mode `as_relevant` is the
+   * weekly level; null with `fixed` is "never chosen". See `allowanceLabel`.
+   */
+  monthly_contact_allowance: number | null;
+  allowance_mode: "fixed" | "as_relevant";
   is_test: boolean;
   created_at: string;
 }
@@ -399,9 +410,7 @@ export interface ContributorDetail extends ContributorRow {
   attribution: "anonymous_verified" | "first_name_safe" | null;
   /** Anonymous group mentions. Disclosed rather than asked, so it starts true. */
   aggregate_display: boolean;
-  /** P14. Null with mode `as_relevant` — the send layer must not invent a number. */
-  monthly_contact_allowance: number | null;
-  allowance_mode: "fixed" | "as_relevant";
+  /* P14's allowance is on `ContributorRow` since 21 Oct. */
   /** P12, both clusters. The lived-experience half is the sensitive one. */
   topic_preferences: string[];
   topics_lived_experience: string[];
@@ -459,6 +468,12 @@ export interface ContributorDetail extends ContributorRow {
    * If the client ever flips to unique links, this becomes automatic and the
    * shape does not change.
    */
+  /**
+   * Parent ↔ parent connections (22 Oct): every edge this parent is on, either
+   * way round — the invite answer ("how do you know Jenny?") and the ones an
+   * admin recorded. Admin-only; nothing else reads them.
+   */
+  connections: PersonConnection[];
   referral: {
     referred_by: { id: string; name: string | null } | null;
     referred: Array<{
@@ -468,6 +483,23 @@ export interface ContributorDetail extends ContributorRow {
       status: "pending" | "profile_complete" | "credited" | "void";
     }>;
   };
+}
+
+/** One edge of the parents' graph, seen from the parent whose page it is. */
+export interface PersonConnection {
+  id: string;
+  /** The other parent. */
+  person_id: string;
+  name: string | null;
+  neighborhood: string | null;
+  /** `connected` for an admin's link; the invite answer's id otherwise. */
+  relationship: string;
+  note: string | null;
+  /** `invite` — the parent's own answer, read-only; `admin` — removable. */
+  source: "invite" | "admin";
+  /** For an invite edge: true when this parent answered about the other. */
+  outgoing: boolean;
+  created_at: string;
 }
 
 /**
@@ -1180,6 +1212,8 @@ export type AdminAction =
   /* Founding — 2.2 */
   | { action: "founding.approve"; ids: string[]; override_reason?: string }
   | { action: "founding.request_invite"; ids: string[] }
+  /** Undoes "Not Founding": the parent is decided again in the queue. */
+  | { action: "founding.reopen"; id: string }
   /* Contributors — 2.3 */
   | { action: "contributor.note"; id: string; body: string }
   /** Ticks or unticks "reward paid". Only a Founding-approved person can be ticked. */
@@ -1199,7 +1233,16 @@ export type AdminAction =
   /** Records that `referrer` brought `referred` in. Admin judgement, not a URL. */
   | { action: "referral.link"; referrer: string; referred: string }
   /** Withdraws a link that turned out to be wrong. The row stays, marked void. */
-  | { action: "referral.void"; id: string };
+  | { action: "referral.void"; id: string }
+  /** 22 Oct: a connection between two parents, recorded by an admin. */
+  | { action: "person.link"; id: string; other_id: string; note?: string }
+  | { action: "person.unlink"; id: string }
+  /* Introductions — parent to parent (21 Oct) */
+  | { action: "intro.approve"; id: string }
+  | { action: "intro.reject"; id: string; reason: string }
+  | { action: "intro.contacted"; id: string; parent_id: string; note?: string }
+  | { action: "intro.connected"; id: string; note?: string }
+  | { action: "intro.declined"; id: string; note?: string };
 
 /**
  * One invite — a **group**, never a person (see `lib/server/invite.ts`).
@@ -1456,6 +1499,73 @@ export interface ImpactEventRow {
     last_thanked_at: string | null;
   }>;
   is_test: boolean;
+}
+
+/** A parent who has been there and could be asked (approved, firsthand). */
+export interface IntroCandidate {
+  person_id: string;
+  name: string | null;
+  phone: string | null;
+  /** Texted STOP: contact them another way, or not at all. */
+  opted_out: boolean;
+  /** current | recent | over_year | unsure — when they were last there. */
+  last_there: string | null;
+}
+
+/** One introduction request (21 Oct), and everything the admin needs to move it. */
+export interface IntroductionRow {
+  id: string;
+  status: "offered" | "requested" | "approved" | "contacted" | "connected" | "declined" | "rejected";
+  trigger: "proactive" | "explicit";
+  requester: { id: string; name: string | null; phone: string | null; neighborhood: string | null };
+  record: { id: string | null; name: string | null };
+  /** The question the answer that led here was about. */
+  question: string | null;
+  other_parent: { id: string; name: string | null; phone: string | null } | null;
+  candidates: IntroCandidate[];
+  note: string | null;
+  created_at: string;
+  requested_at: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  contacted_at: string | null;
+  closed_at: string | null;
+  is_test: boolean;
+}
+
+export interface IntroductionsResult {
+  /** False until `drizzle/0059` is applied. */
+  configured: boolean;
+  rows: IntroductionRow[];
+}
+
+/** One deep dive (21 Oct): an offer, a request, a report. */
+export interface DeepDiveRow {
+  id: string;
+  question: string | null;
+  asker: string | null;
+  trigger: "proactive" | "explicit";
+  status: "offered" | "awaiting_topic" | "generating" | "sent" | "failed" | "unsupported";
+  created_at: string;
+  accepted_at: string | null;
+  sent_at: string | null;
+  parts: number | null;
+  drafted: boolean | null;
+  reasons_kept: number | null;
+  parent_options: number | null;
+  public_options: number | null;
+  offer_version: string | null;
+  is_test: boolean;
+}
+
+/**
+ * The client's measure: how many parents say yes to a deep dive. Offers lapse
+ * by age, so "no reply" is an offer older than its window that nobody took.
+ */
+export interface DeepDivesResult {
+  /** False until `drizzle/0058` is applied. */
+  configured: boolean;
+  rows: DeepDiveRow[];
 }
 
 export interface ImpactResult {

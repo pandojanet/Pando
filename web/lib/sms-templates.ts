@@ -189,10 +189,15 @@ export function thanksSms(what: string): string {
  * told about is not one.
  */
 export function freshnessPingSms(input: { name: string }): string {
-  /* A colon, not an em dash (25 Sep): the dash put every ping in UCS-2. This
-     is not one of the three registered samples, so the change is copy for the
-     client to confirm rather than a re-registration. */
-  return `Quick one: is ${input.name} still worth recommending? Reply yes, no, or PASS to skip.`;
+  /* No em dash (25 Sep): the dash put every ping in UCS-2. This is not one of
+     the three registered samples, so a change is copy for the client to
+     confirm rather than a re-registration.
+     ⚠ "Pando:" first and STOP/HELP last (22 Oct): it is proactive outreach,
+     sent unprompted by `freshness_ping`, and it was the only proactive send
+     without either — a stranger-looking text with no way out written on it.
+     YES and NO are what `readPingReply` (lib/vouch.ts) reads, PASS is
+     `keywordOf`'s; one GSM-7 segment for a name up to ~25 characters. */
+  return `Pando: quick one - is ${input.name} still worth recommending to other parents? Reply YES, NO, or PASS to skip. Reply STOP to opt out, HELP for help.`;
 }
 
 export function profileDeletedSms(input: {
@@ -262,7 +267,9 @@ export function deleteFailedSms(): string {
  * rather than offering a second thing to try.
  */
 export function nothingToDeleteSms(): string {
-  return "Pando: there is nothing on this number to delete. If you think that is wrong, email hello@pando.is and a person will check. Reply STOP to opt out, HELP for help.";
+  /* 161 characters until 22 Oct, one over a single segment; the same meaning
+     in fewer words. Not a registered sample (see `profileDeletedSms`). */
+  return "Pando: there is nothing on this number to delete. If that seems wrong, email hello@pando.is and someone will check. Reply STOP to opt out, HELP for help.";
 }
 
 export const VERIFICATION_CODE_LENGTH = 6;

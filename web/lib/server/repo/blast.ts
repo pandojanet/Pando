@@ -525,7 +525,27 @@ export interface SendBlastResult {
  * them — deliberate belt and braces, because this is the one code path that
  * reaches a stranger's phone unprompted.
  */
+/**
+ * ⚠ One send per Ask at a time (22 Oct audit). The checks below read
+ * `already` without a lock, and the Twilio path records each send
+ * fire-and-forget, so two presses (two tabs, a retried request) could both pass
+ * and text the same parents twice. The app runs as one container
+ * (`deploy/docker-compose.yml`), so an in-process guard closes it; a second
+ * instance would need a database claim instead.
+ */
+const SENDING = new Set<string>();
+
 export async function sendBlast(blastId: string): Promise<SendBlastResult> {
+  if (SENDING.has(blastId)) return { ok: false, sent: 0, skipped: 0, reason: "already_sent" };
+  SENDING.add(blastId);
+  try {
+    return await sendBlastOnce(blastId);
+  } finally {
+    SENDING.delete(blastId);
+  }
+}
+
+async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
   const loaded = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select b.id, b.tier, b.status, b.human_review, b.question_text,

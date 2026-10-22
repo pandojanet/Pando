@@ -7,6 +7,10 @@
  * to be readable on their own and testable exhaustively.
  * `npm run test:payments` is that test.
  *
+ * ⚠ **21 Oct: there is no price list any more** — one kind of Network Ask, and it
+ * is free (`blast-tiers.ts`). What follows is history; the refund and
+ * guarantee logic here still serves rows that were really paid.
+ *
  * ## The price list, and a conflict that is recorded rather than guessed at
  *
  * Estimate 13.5 asks for "payment links using the configured tier prices

@@ -407,6 +407,34 @@
       "when": 1791460800000,
       "tag": "0057_pilot_launch_consent",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791464400000,
+      "tag": "0058_deep_dives",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791468000000,
+      "tag": "0059_introductions",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1791471600000,
+      "tag": "0060_doctor_freshness",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1791475200000,
+      "tag": "0061_person_links",
+      "breakpoints": true
     }
   ]
 }

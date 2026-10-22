@@ -63,6 +63,8 @@ const EMPTY: Record<AdminResource, unknown> = {
   freshness: [],
   standing: [],
   impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
+  deep_dives: { configured: false, rows: [] },
+  introductions: { configured: false, rows: [] },
   founding: [],
   invites: [],
   consents: [],
@@ -146,6 +148,9 @@ const SAMPLE: Record<AdminResource, unknown> = {
   freshness: [],
   standing: [],
   impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
+  /* No sample rows: a made-up yes-rate is the number this page exists to get right. */
+  deep_dives: { configured: false, rows: [] },
+  introductions: { configured: false, rows: [] },
   founding: sample.sampleFounding,
   invites: sample.sampleInvites,
   consents: sample.sampleConsents,

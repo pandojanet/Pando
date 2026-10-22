@@ -25,10 +25,13 @@ import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { RewardPaid } from "@/components/admin/RewardPaid";
 import {
   AFFILIATION_KIND,
+  allowanceLabel,
   CARD_KIND,
+  RELATIONSHIP,
   REVIEW_STATUS,
   sentence,
 } from "@/lib/admin/labels";
+import { PersonPicker } from "@/components/admin/PersonPicker";
 import { profileValueLabel } from "@/lib/questions";
 import type {
   ContributionRow,
@@ -87,9 +90,42 @@ export default function ContributorDetailPage({
    * every contributor page, for a control that is only used once per parent.
    */
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { rows: everyone, loading: everyoneLoading } = useAdminRows<
+  /* The connection picker (22 Oct) reads the same list, on its own click. */
+  const [linkOpen, setLinkOpen] = useState(false);
+  const { rows: everyone, loading: everyoneLoading, error: everyoneError } = useAdminRows<
     ContributorRow[]
-  >("contributors", undefined, pickerOpen);
+  >("contributors", undefined, pickerOpen || linkOpen);
+  const [linkTo, setLinkTo] = useState("");
+  const [linkNote, setLinkNote] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkMessage, setLinkMessage] = useState<string | null>(null);
+
+  async function runLink(action: "link" | "unlink", target: string) {
+    setLinkBusy(true);
+    setLinkMessage(null);
+    try {
+      const result = await adminAction(
+        action === "link"
+          ? { action: "person.link", id, other_id: target, note: linkNote.trim() || undefined }
+          : { action: "person.unlink", id: target },
+      );
+      setLinkTo("");
+      setLinkNote("");
+      if (action === "link") setLinkOpen(false);
+      setLinkMessage(
+        result.persisted
+          ? action === "link"
+            ? "Connection saved."
+            : "Connection removed."
+          : "Not stored — no database connected.",
+      );
+      await reload();
+    } catch (err) {
+      setLinkMessage(err instanceof Error ? err.message : "That didn't go through");
+    } finally {
+      setLinkBusy(false);
+    }
+  }
   const [referrer, setReferrer] = useState("");
   const [refBusy, setRefBusy] = useState(false);
   const [refMessage, setRefMessage] = useState<string | null>(null);
@@ -113,6 +149,32 @@ export default function ContributorDetailPage({
       setMessage(err instanceof Error ? err.message : "That didn't go through");
     } finally {
       setSaving(false);
+    }
+  }
+
+  /**
+   * The way back from "Not Founding" (13 Oct). It returns the parent to the
+   * queue rather than confirming them here: that is the screen with the
+   * checklist the decision rests on, and it lists only people who qualify.
+   */
+  const [foundingBusy, setFoundingBusy] = useState(false);
+  const [foundingMessage, setFoundingMessage] = useState<string | null>(null);
+
+  async function reopenFounding() {
+    setFoundingBusy(true);
+    setFoundingMessage(null);
+    try {
+      const result = await adminAction({ action: "founding.reopen", id });
+      setFoundingMessage(
+        result.persisted
+          ? "Back in the Founding queue, to be decided again."
+          : "Not stored — no database connected.",
+      );
+      await reload();
+    } catch (err) {
+      setFoundingMessage(err instanceof Error ? err.message : "That didn't go through");
+    } finally {
+      setFoundingBusy(false);
     }
   }
 
@@ -155,7 +217,17 @@ export default function ContributorDetailPage({
               {c.founding_status === "founding" ? (
                 <Badge tone="green">Founding</Badge>
               ) : c.founding_status === "request_invite" ? (
-                <Badge tone="muted">Not Founding</Badge>
+                <>
+                  <Badge tone="muted">Not Founding</Badge>
+                  <Button
+                    tone="secondary"
+                    disabled={foundingBusy}
+                    subject={c.name ?? "this contributor"}
+                    onClick={() => void reopenFounding()}
+                  >
+                    Decide again
+                  </Button>
+                </>
               ) : (
                 <Badge tone="gold">Founding pending</Badge>
               )}
@@ -198,6 +270,7 @@ export default function ContributorDetailPage({
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
+      {foundingMessage && <ResultNote>{foundingMessage}</ResultNote>}
 
       {loading && !c ? (
         <Card>
@@ -254,6 +327,9 @@ export default function ContributorDetailPage({
                         : "Not answered"
                   }
                 />
+                {/* What they agreed to (21 Oct); a governor-lowered limit is on
+                    the contributors list's "What they have earned" tab. */}
+                <Pair label="Asks a month" value={allowanceLabel(c)} />
                 <Pair label="Joined" value={when(c.created_at)} />
               </dl>
             </Card>
@@ -553,6 +629,95 @@ export default function ContributorDetailPage({
                 {refMessage && (
                   <p className="mt-2 text-[12.5px] text-muted">{refMessage}</p>
                 )}
+              </div>
+            </Card>
+
+            {/*
+              Parent ↔ parent connections (22 Oct): who knows whom, family and
+              otherwise — the invite answer, and links an admin records. Seen
+              here only; nothing else reads them.
+            */}
+            <Card title={`Connections (${c.connections.length})`}>
+              <div className="px-4 py-3">
+                {c.connections.length === 0 ? (
+                  <p className="text-[13px] text-muted">None recorded.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {c.connections.map((k) => (
+                      <li key={k.id} className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <Link
+                            href={`/admin/contributors/${k.person_id}`}
+                            className="text-[13.5px] font-semibold text-green-deep underline underline-offset-2"
+                          >
+                            {k.name ?? "Unknown"}
+                          </Link>
+                          <p className="text-[12.5px] text-muted">
+                            {RELATIONSHIP[k.relationship] ?? sentence(k.relationship)}
+                            {k.note ? ` · ${k.note}` : ""}
+                            {k.source === "invite" ? " · from the invite" : ""}
+                          </p>
+                        </div>
+                        {k.source === "admin" && (
+                          <TextLink
+                            className="shrink-0 text-[12px]"
+                            onClick={() => {
+                              if (!linkBusy) void runLink("unlink", k.id);
+                            }}
+                          >
+                            remove
+                          </TextLink>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {!linkOpen ? (
+                  <TextLink className="mt-2 inline-block text-[12.5px]" onClick={() => setLinkOpen(true)}>
+                    Add a connection
+                  </TextLink>
+                ) : (
+                  <div className="mt-3 space-y-2.5">
+                    <PersonPicker
+                      label="Connected to"
+                      people={(everyone ?? [])
+                        .filter(
+                          (p) =>
+                            p.id !== id &&
+                            p.is_test === c.is_test &&
+                            !c.connections.some((k) => k.person_id === p.id),
+                        )
+                        .map((p) => ({ person_id: p.id, name: p.name, neighborhood: p.neighborhood }))}
+                      value={linkTo}
+                      onChange={setLinkTo}
+                      emptyLabel={
+                        everyoneLoading
+                          ? "Loading contributors…"
+                          : everyoneError
+                            ? "Couldn't load the parents — reload and try again"
+                            : "Nobody else to connect"
+                      }
+                    />
+                    <Field label="Note (optional)">
+                      <input
+                        className={`${inputClass} mt-1.5`}
+                        value={linkNote}
+                        maxLength={120}
+                        placeholder="Sisters, neighbors on Lake Ave…"
+                        onChange={(e) => setLinkNote(e.target.value)}
+                      />
+                    </Field>
+                    <Button
+                      tone="primary"
+                      className="w-full"
+                      disabled={linkBusy || linkTo === ""}
+                      onClick={() => void runLink("link", linkTo)}
+                    >
+                      {linkBusy ? "Saving…" : "Save connection"}
+                    </Button>
+                  </div>
+                )}
+                {linkMessage && <p className="mt-2 text-[12.5px] text-muted">{linkMessage}</p>}
               </div>
             </Card>
 

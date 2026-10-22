@@ -135,6 +135,10 @@ export async function readResource(
       return contributorStanding(db);
     case "impact":
       return impactRows(db);
+    case "deep_dives":
+      return deepDiveRows(db);
+    case "introductions":
+      return introductionRows(db);
     case "conversations":
       return conversationRows(db);
     case "conversation":
@@ -340,8 +344,12 @@ async function overview(db: Db) {
   );
 
   const n = (key: string) => Number(r?.[key] ?? 0);
+  /* Its own statement: the table may not exist yet, and one missing relation
+     must not take the whole overview down with it. */
+  const introductionsOpen = await openIntroductions(db);
 
   return {
+    introductions: { open: introductionsOpen },
     contributors: {
       total: n("contributors_total"),
       completed: n("contributors_completed"),
@@ -434,6 +442,7 @@ async function contributors(db: Db) {
     sql`
       select p.id, p.first_name, p.last_name, p.phone, p.neighborhood,
              p.founding, p.wants_founding, p.is_test, p.created_at,
+             p.monthly_contact_allowance, p.allowance_mode::text as allowance_mode,
              -- Read through the row rather than by name, so this page keeps
              -- working in the window between a deploy and npm run migrate
              -- (0052): a missing key is null here, where a missing column is an
@@ -519,6 +528,9 @@ async function contributors(db: Db) {
       founding_status: r.founding,
       follow_up_opt_in: r.follow_up === null ? null : r.follow_up === "opted_in",
       wants_founding: r.wants_founding,
+      monthly_contact_allowance:
+        r.monthly_contact_allowance === null ? null : Number(r.monthly_contact_allowance),
+      allowance_mode: r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
       is_test: r.is_test,
       created_at: r.created_at,
     };
@@ -618,7 +630,19 @@ async function contributorDetail(db: Db, id: string) {
                   'first_name', p2.first_name, 'last_name', p2.last_name)
                   order by r.created_at desc), '[]'::json)
            from referrals r join people p2 on p2.id = r.referred_id
-           where r.referrer_id = p.id)                                  as referred
+           where r.referrer_id = p.id)                                  as referred,
+        -- Parent ↔ parent connections (22 Oct), either way round.
+        (select coalesce(json_agg(json_build_object(
+                  'id', pr.id, 'other_id', o.id, 'first_name', o.first_name,
+                  'last_name', o.last_name, 'neighborhood', o.neighborhood,
+                  'relationship', pr.relationship, 'note', pr.note,
+                  'source', pr.source, 'outgoing', pr.person_id = p.id,
+                  'created_at', pr.created_at)
+                  order by pr.created_at desc), '[]'::json)
+           from person_relationships pr
+           join people o on o.id = case when pr.person_id = p.id
+                                        then pr.related_person_id else pr.person_id end
+           where pr.person_id = p.id or pr.related_person_id = p.id)    as connections
       from people p
       where p.id = ${id}::uuid
       limit 1
@@ -640,6 +664,7 @@ async function contributorDetail(db: Db, id: string) {
   const completeForPerson = (await completeCounts(db, id)).get(String(p.id)) ?? 0;
   const referredBy = p.referred_by ? [p.referred_by as Row] : [];
   const referred = list<Row>(p.referred);
+  const connections = list<Row>(p.connections);
 
   return {
     id: p.id,
@@ -732,6 +757,17 @@ async function contributorDetail(db: Db, id: string) {
       author: n.actor,
       body: (n.after as { body?: string } | null)?.body ?? "",
       at: n.at,
+    })),
+    connections: connections.map((r) => ({
+      id: String(r.id),
+      person_id: String(r.other_id),
+      name: fullName(r.first_name, r.last_name),
+      neighborhood: (r.neighborhood as string | null) ?? null,
+      relationship: String(r.relationship),
+      note: (r.note as string | null) ?? null,
+      source: r.source === "admin" ? "admin" : "invite",
+      outgoing: r.outgoing === true,
+      created_at: String(r.created_at),
     })),
     referral: {
       referred_by: referredBy[0]
@@ -2283,6 +2319,141 @@ async function contributorStanding(db: Db) {
  * answer knew what it said and never which records it said it from, so there was
  * no path from "we booked it" back to the person who earned the thanks.
  */
+/**
+ * Introductions (21 Oct), newest first, with the parents who could be asked.
+ * Reads nothing until `drizzle/0059` is applied.
+ *
+ * Candidates are the record's approved, firsthand contributors other than the
+ * requester — the same set the offer counted — with whether they texted STOP,
+ * so nobody is contacted by SMS who said not to be.
+ */
+async function introductionRows(db: Db) {
+  const exists = await rows(db, sql`select to_regclass('public.introductions') is not null as ok`);
+  if (exists[0]?.ok !== true) return { configured: false, rows: [] };
+  const list = await rows(
+    db,
+    sql`
+      select i.id, i.status, i.trigger, i.share_id, i.share_name, i.note, i.created_at,
+             i.requested_at, i.decided_at, i.decided_by, i.contacted_at, i.closed_at, i.is_test,
+             rq.id as rq_id, rq.first_name as rq_first, rq.last_name as rq_last,
+             rq.phone as rq_phone, rq.neighborhood as rq_hood,
+             a.question_text,
+             op.id as op_id, op.first_name as op_first, op.last_name as op_last, op.phone as op_phone,
+             coalesce((
+               select json_agg(c) from (
+                 select p.id::text as person_id, p.first_name, p.last_name, p.phone,
+                        exists (select 1 from sms_opt_outs o
+                                 where o.phone = p.phone
+                                   and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)) as opted_out,
+                        (array_agg(sc.last_there))[1] as last_there
+                   from share_contributions sc
+                   join people p on p.id = sc.person_id
+                  where sc.share_id = i.share_id and sc.status = 'approved' and sc.firsthand and sc.follow_up_ok
+                    -- A test request lists test parents, a real one real parents (audit).
+                    and p.id <> i.requester_id and p.is_test = i.is_test
+                    -- Texted STOP: not a candidate at all, not merely badged (audit, 22 Oct).
+                    and not exists (select 1 from sms_opt_outs o2
+                                     where o2.phone = p.phone
+                                       and (o2.opted_in_at is null or o2.opted_in_at < o2.opted_out_at))
+                  group by p.id
+               ) c), '[]'::json) as candidates
+        from introductions i
+        join people rq on rq.id = i.requester_id
+        left join answers a on a.id = i.answer_id
+        left join people op on op.id = i.other_parent_id
+       order by coalesce(i.requested_at, i.created_at) desc
+       limit 500
+    `,
+  );
+  return {
+    configured: true,
+    rows: list.map((r) => ({
+      id: String(r.id),
+      status: String(r.status),
+      trigger: r.trigger === "explicit" ? "explicit" : "proactive",
+      requester: {
+        id: String(r.rq_id),
+        name: fullName(r.rq_first, r.rq_last),
+        phone: adminPhone(r.rq_phone as string | null),
+        neighborhood: (r.rq_hood as string | null) ?? null,
+      },
+      record: { id: r.share_id ? String(r.share_id) : null, name: (r.share_name as string | null) ?? null },
+      question: (r.question_text as string | null) ?? null,
+      other_parent: r.op_id
+        ? { id: String(r.op_id), name: fullName(r.op_first, r.op_last), phone: adminPhone(r.op_phone as string | null) }
+        : null,
+      candidates: ((r.candidates as Array<Record<string, unknown>>) ?? []).map((c) => ({
+        person_id: String(c.person_id),
+        name: fullName(c.first_name, c.last_name),
+        phone: adminPhone((c.phone as string | null) ?? null),
+        opted_out: c.opted_out === true,
+        last_there: (c.last_there as string | null) ?? null,
+      })),
+      note: (r.note as string | null) ?? null,
+      created_at: String(r.created_at),
+      requested_at: r.requested_at ? String(r.requested_at) : null,
+      decided_at: r.decided_at ? String(r.decided_at) : null,
+      decided_by: (r.decided_by as string | null) ?? null,
+      contacted_at: r.contacted_at ? String(r.contacted_at) : null,
+      closed_at: r.closed_at ? String(r.closed_at) : null,
+      is_test: r.is_test === true,
+    })),
+  };
+}
+
+/** Requests a person still has to move, for the nav badge. Zero until `drizzle/0059` exists. */
+async function openIntroductions(db: Db): Promise<number> {
+  const exists = await rows(db, sql`select to_regclass('public.introductions') is not null as ok`);
+  if (exists[0]?.ok !== true) return 0;
+  const out = await rows(
+    db,
+    sql`select count(*) as n from introductions where status in ('requested', 'approved', 'contacted') and not is_test`,
+  );
+  return Number(out[0]?.n ?? 0);
+}
+
+/**
+ * Deep dives (21 Oct), newest first. Reads nothing until `drizzle/0058` is
+ * applied — `configured: false` rather than an error, so the page says the
+ * table is missing instead of failing.
+ */
+async function deepDiveRows(db: Db) {
+  const exists = await rows(db, sql`select to_regclass('public.deep_dives') is not null as ok`);
+  if (exists[0]?.ok !== true) return { configured: false, rows: [] };
+  const list = await rows(
+    db,
+    sql`
+      select d.id, d.question, d.trigger, d.status, d.created_at, d.accepted_at, d.sent_at,
+             d.parts, d.drafted, d.reasons_kept, d.parent_options, d.public_options,
+             d.offer_version, d.is_test, p.first_name as asker
+        from deep_dives d
+        left join people p on p.id = d.person_id
+       order by d.created_at desc
+       limit 500
+    `,
+  );
+  return {
+    configured: true,
+    rows: list.map((r) => ({
+      id: String(r.id),
+      question: r.question === null ? null : String(r.question),
+      asker: r.asker === null ? null : String(r.asker),
+      trigger: r.trigger === "explicit" ? "explicit" : "proactive",
+      status: String(r.status),
+      created_at: String(r.created_at),
+      accepted_at: r.accepted_at ? String(r.accepted_at) : null,
+      sent_at: r.sent_at ? String(r.sent_at) : null,
+      parts: r.parts === null ? null : Number(r.parts),
+      drafted: r.drafted === null ? null : r.drafted === true,
+      reasons_kept: r.reasons_kept === null ? null : Number(r.reasons_kept),
+      parent_options: r.parent_options === null ? null : Number(r.parent_options),
+      public_options: r.public_options === null ? null : Number(r.public_options),
+      offer_version: r.offer_version === null ? null : String(r.offer_version),
+      is_test: r.is_test === true,
+    })),
+  };
+}
+
 async function impactRows(db: Db) {
   const list = await rows(
     db,

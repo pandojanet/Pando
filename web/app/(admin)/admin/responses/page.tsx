@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Card,
+  controlClass,
   Disclosure,
   Empty,
   ErrorNote,
@@ -54,6 +55,21 @@ import type { BlastResponseRow } from "@/lib/admin/types";
 const key = (r: BlastResponseRow) => `${r.blast_id}:${r.person_id}`;
 
 /**
+ * What a new record can be filed as from a reply (13 Oct).
+ *
+ * The route has always required a kind for a new record and this page never
+ * sent one, so *Add to Pando* answered 422 on every press. Three and not five:
+ * a caregiver is never created from a reply (she needs a nomination, an 18+
+ * answer and her own consent), and a doctor would skip the provider check every
+ * doctor card gets — the route refuses that one for the same reason.
+ */
+const NEW_RECORD_KINDS = [
+  { id: "activity", label: "Activity or class" },
+  { id: "place", label: "Place" },
+  { id: "tip", label: "Tip" },
+] as const;
+
+/**
  * One blast reply, **at module level** — the same correctness fix as
  * `AnswerCard` on /admin/answers, and it was the same defect.
  *
@@ -81,6 +97,9 @@ function ResponseCard({
 }) {
   const k = key(row);
   const decided = row.review_status !== "pending_review";
+  /* On the card, in sight, and the admin’s to change: a kind chosen where
+     nobody can see it is the guess the route refuses. */
+  const [kind, setKind] = useState<string>(NEW_RECORD_KINDS[0].id);
 
   return (
     <li className="px-4 py-4">
@@ -255,6 +274,20 @@ function ResponseCard({
               }
             placeholder="What they recommended, as it should be listed"
           />
+          {typed.trim() && (
+            <select
+              aria-label={`What kind of record ${typed.trim()} is`}
+              className={controlClass}
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              {NEW_RECORD_KINDS.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
           <Button
             tone="primary"
             disabled={busy}
@@ -269,7 +302,9 @@ function ResponseCard({
                     action: "blast_response.approve",
                     blast_id: row.blast_id,
                     person_id: row.person_id,
-                    ...(typed.trim() ? { share_name: typed.trim() } : {}),
+                    ...(typed.trim()
+                      ? { share_name: typed.trim(), share_kind: kind }
+                      : {}),
                   }),
               )
             }

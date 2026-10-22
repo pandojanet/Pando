@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { TIERS, paymentFor, type BlastTier } from "@/lib/blast-tiers";
 import { type PaymentStatus } from "@/lib/payments";
-import { createCheckout, refundPayment } from "@/lib/server/stripe";
+import { checkoutState, createCheckout, refundPayment } from "@/lib/server/stripe";
 
 /**
  * M13.5–13.7 — the writes behind a paid Network Ask.
@@ -34,11 +34,8 @@ export type CheckoutOutcome =
         | "not_found"
         | "nothing_to_pay"
         | "already_paid"
-        | "already_open"
         | "not_provisioned"
         | "stripe_error";
-      /** An existing session's URL, when one is already open. */
-      url?: string;
       detail?: string;
     };
 
@@ -96,6 +93,36 @@ export async function openCheckout(blastId: string): Promise<CheckoutOutcome> {
     blast.payment_status === "refunded"
   ) {
     return { ok: false, reason: "already_paid" };
+  }
+
+  /**
+   * ⚠ **The paragraph above was the design and not the code until 13 Oct.**
+   * Every call made a new session and wrote its id over the last one, so an
+   * earlier link stayed payable at Stripe with nothing on the row pointing at
+   * it: paid, it reached the webhook as `unknown_session` — a parent charged
+   * and an Ask still unpaid. So the link already out is asked about first.
+   *
+   * Stripe could not be asked ⇒ nothing is made. A second link beside one whose
+   * state is unknown is exactly the double charge this is here to prevent.
+   */
+  const previous =
+    blast.payment_status === "pending" && blast.stripe_session_id
+      ? String(blast.stripe_session_id)
+      : null;
+  if (previous) {
+    const state = await checkoutState(previous);
+    if (!state) {
+      return {
+        ok: false,
+        reason: process.env.STRIPE_SECRET_KEY ? "stripe_error" : "not_provisioned",
+        detail: "session_unreadable",
+      };
+    }
+    /* Paid, and the webhook has not landed yet. */
+    if (state.status === "complete") return { ok: false, reason: "already_paid" };
+    if (state.status === "open" && state.url) {
+      return { ok: true, url: state.url, session_id: previous };
+    }
   }
 
   const session = await createCheckout({
@@ -266,7 +293,11 @@ export type RefundOutcome =
         | "nothing_paid"
         | "already_refunded"
         | "no_payment_reference"
-        | "stripe_error";
+        | "stripe_error"
+        /* The one failure where the money has moved: Stripe took the refund
+           and the row could not be written. It must never read as "nothing
+           happened", which is what `unconfigured` said until 13 Oct. */
+        | "refunded_not_recorded";
       detail?: string;
     };
 
@@ -344,7 +375,7 @@ export async function refundBlast(input: {
    * somebody reconciles it, rather than as a success because the important half
    * worked. Stripe's idempotency key makes the retry safe.
    */
-  if (!written.persisted) return { ok: false, reason: "unconfigured" };
+  if (!written.persisted) return { ok: false, reason: "refunded_not_recorded" };
   return { ok: true, refunded: true, credit_granted: false };
 }
 

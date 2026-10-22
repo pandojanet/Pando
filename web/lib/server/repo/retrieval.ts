@@ -94,6 +94,8 @@ export interface QuestionContext {
 export interface ShareCandidate {
   share_id: string;
   kind: string;
+  /** The client's sub-category (9 Oct): doctors, specialists, parties, products… or null. */
+  subcategory: string | null;
   name: string;
   venue: string | null;
   neighborhoods: string[];
@@ -275,17 +277,21 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
   const marketId = question.marketId ?? "pasadena";
   const limit = Math.min(25, Math.max(1, question.limit ?? 10));
   /**
-   * ⚠⚠ **`doctor` is out on purpose (8 Oct), and adding it is not one word.**
-   * Three things first: (1) a doctor's `what_makes_it_great` holds "what didn't
-   * work" when the parent would not recommend them, and `note_great` below
-   * quotes that column as praise; (2) doctor records never get the
-   * `possible_named_person` flag that suppresses notes here, because a doctor's
-   * name is a person's by design; (3) no `freshness_policy` row exists for it.
-   * See docs/decisions.md, 8 Oct.
+   * **Doctors are in answers since 21 Oct** (the developer: every kind Pando
+   * collects belongs in an answer). The three reasons they were out on 8 Oct,
+   * and where each now stands: (1) after a No the doctor's
+   * `what_makes_it_great` holds what did not work — `note_great` below quotes
+   * only a Yes / Yes-with-caveats contribution, so it is never read as praise;
+   * (2) a doctor's name is a person's by design and never gets the
+   * `possible_named_person` flag — every record and every contribution here is
+   * approved by an admin first (both statuses below), which is the review
+   * invariant 8 asks for; (3) `drizzle/0060` seeds the doctor's
+   * `freshness_policy` row. Sub-categories travel with the record so an answer
+   * can say "a specialist" or "a party service" rather than "a doctor".
    */
   const kinds = question.kinds && question.kinds.length > 0
     ? question.kinds
-    : ["activity", "camp", "place", "tip"];
+    : ["activity", "place", "tip", "doctor"];
   const area = question.area ?? "";
   /**
    * The area **and every neighborhood that means the same place** (8 Sep).
@@ -325,7 +331,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
 
     const shareRows = !wantShares ? [] : (await db.execute(sql`
       select
-        s.id, s.kind, s.name, s.venue, s.neighborhoods, s.age_bands,
+        s.id, s.kind, s.subcategory, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
         (s.freshness_state = 'stale') as marked_stale,
         (select count(*) from freshness_pings fp
@@ -476,9 +482,8 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         -- statement is a template literal and a backtick closes it. That has now
         -- cost three separate debugging rounds in one session.
         and s.kind::text = any(${kindList}::text[])
-        -- A product (9 Oct, the tip button's Products & gear) has no tip text
-        -- and no place, so nothing here renders it yet: kept out until it does.
-        and s.subcategory is distinct from 'products'
+        -- Products (9 Oct, the tip button's Products and gear) answer too since
+        -- 21 Oct: the answer names them "a product" and quotes what parents said.
         -- Reviewed by a human, on both halves. The strategy is explicit that this
         -- holds for the whole pilot, and shares_answerable already says it: an
         -- unreviewed record is not something Pando answers with.
@@ -548,11 +553,21 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
                      and not n.review_hold
                      and n.created_at >= ${PUBLIC_NOTE_SINCE}::timestamptz))[1]
                                                                         as up_front,
-        count(n.id) filter (where n.worked_for_family)                  as firsthand,
-        bool_or(n.reference_willing = 'yes')                            as reference
+        -- Only a family an admin approved and did not hold counts behind her
+        -- (22 Oct audit): a held nomination is a hesitant or "would not hire
+        -- again" one, and an unreviewed one is nobody's word yet — counted,
+        -- either could make "Validated by multiple parents" (invariant 3/4).
+        count(n.id) filter (where n.worked_for_family and n.status = 'approved'
+                              and not n.review_hold)                    as firsthand,
+        bool_or(n.reference_willing = 'yes' and n.status = 'approved'
+                and not n.review_hold)                                   as reference
       from caregivers c
       left join caregiver_profiles cp on cp.caregiver_id = c.id
+      -- A nomination an admin set aside is not used (13 Oct): its family is
+      -- not counted behind her and its note is not read out. She still
+      -- appears, because that turns on her own consent and not on theirs.
       left join caregiver_nominations n on n.caregiver_id = c.id and not n.is_test
+                                       and n.status <> 'rejected'
       where c.market_id = ${marketId}
         and not c.is_test
         and c.consent_status = 'consented'
@@ -594,6 +609,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
     shares.push({
       share_id: String(r.id),
       kind: candidate.kind,
+      subcategory: r.subcategory ? String(r.subcategory) : null,
       name: String(r.name),
       venue: r.venue ? String(r.venue) : null,
       neighborhoods: (r.neighborhoods as string[] | null) ?? [],

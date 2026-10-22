@@ -48,7 +48,7 @@ export const JOBS: Record<JobName, JobSpec> = {
   /**
    * 7.7 — the guarantee's clock.
    *
-   * Hourly, because the shortest window is Last-Minute Care's four hours and a
+   * Hourly, because the shortest window is Last-Minute Care's four hours (old rows only since 21 Oct; a Network Ask's is 24) and a
    * guarantee that expires late is a parent still waiting past the promise. Reads
    * and writes rows; sends nothing — the credit is a row, and telling the parent
    * is a queued answer like any other.
