@@ -94,7 +94,7 @@ const FAQ = [
   },
   {
     q: "What if I’m not in the San Gabriel Valley?",
-    a: "Join the waitlist anyway. Questions from outside our launch area do two things: you’ll always get an honestly labeled answer from public information, and your question tells us exactly where to grow next. When enough parents in your area have joined, we’ll open it — and the earliest parents in every new area become its Founding Parents, with the same recognition our first Pasadena families received.",
+    a: "Join the waitlist anyway. Questions from outside our launch area do two things: you’ll always get an honestly labeled answer from public information, and your question tells us exactly where to grow next. When enough parents in your area have joined, we’ll open it — and the earliest parents in every new area become its Founding Parents, with the same recognition and free network asks our first Pasadena families received.",
   },
   {
     q: "Is this just AI answering?",
@@ -103,6 +103,10 @@ const FAQ = [
   {
     q: "How do caregiver recommendations work?",
     a: "Carefully. A caregiver only ever appears in an answer if a local parent genuinely recommended them AND the caregiver separately consented to be listed. The vouching comes from that parent — not from Pando. Pando doesn’t employ, screen, or guarantee caregivers; it organizes real parent trust signals, and where the recommending parent has opted in, can ask whether they’re willing to provide a reference introduction. Always do your own interviews, references, and background checks.",
+  },
+  {
+    q: "What does it cost?",
+    a: "Answers from knowledge Pando already has are free — that’s the give-to-get: everyone who opts in to occasionally help another parent (at most five relevant community questions a month, always skippable) gets access to what the network already knows. Asking Pando is always free. A Network Check is different: Pando goes out and asks around — a small, carefully matched group of real local parents, on your behalf. That’s a paid request, your first one is on us — and if the network can’t get you a useful answer, you’re not charged. You’re paying for the right parents, the right fit, and a fresh answer — not for access to the community’s knowledge, and not for a bigger audience.",
   },
   {
     q: "Will I get spammed if I join as a contributor?",
