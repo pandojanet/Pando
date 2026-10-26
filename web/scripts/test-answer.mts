@@ -677,6 +677,15 @@ ok(
 const oneFinding = (row: Record<string, unknown>) =>
   pi.readFindings(JSON.stringify({ findings: [row] }), (n) => np.looksLikePerson(n))[0];
 
+/* 26 Oct, the SMS lab: an aside in the middle of the area leaked an address. */
+ok(
+  "an area ends where the model's aside begins, wherever it is",
+  oneFinding({ name: "British Swim School", what: "toddler swim classes", area: "Pasadena (Hastings Ranch), 355 N Rosemead Blvd" })?.area === "Pasadena" &&
+    oneFinding({ name: "Camp Galileo", what: "STEAM day camp", area: "Pasadena (New Horizon School), also Altadena" })?.area === "Pasadena" &&
+    oneFinding({ name: "Little Gym", what: "gym classes", area: "South Pasadena, CA" })?.area === "South Pasadena" &&
+    oneFinding({ name: "Little Gym", what: "gym classes", area: "Altadena" })?.area === "Altadena",
+  JSON.stringify(oneFinding({ name: "British Swim School", what: "toddler swim classes", area: "Pasadena (Hastings Ranch), 355 N Rosemead Blvd" })),
+);
 ok(
   "a name that already carries the town does not repeat it",
   oneFinding({ name: "Encore Music South Pasadena", what: "music classes", area: "South Pasadena" })
@@ -916,11 +925,11 @@ console.log("\n=== the M5/M6 relay walk (25 Sep) ===");
 
   /* 22 Oct: "a bit too little from the public web search" — up to three facts a place, cut whole. */
   ok("a page's facts are cut to whole facts, never mid-fact", a.wholeFacts("Ages 2 to 4; Mon-Fri 7am-6pm; small classes", 30) === "Ages 2 to 4; Mon-Fri 7am-6pm" && a.wholeFacts("Ages 2 to 4; Mon-Fri 7am-6pm", 200) === "Ages 2 to 4; Mon-Fri 7am-6pm" && a.wholeFacts("A very long single fact that does not fit", 10) === null);
-  const pubRich = publicRecord({ name: "Firehouse School", detail: "Ages 2 to 4; Monday to Friday 7am to 6pm; $1,200 a month; small class sizes and an outdoor yard" });
+  const pubRich = publicRecord({ name: "Firehouse School", detail: "Ages 2 to 4; Monday to Friday 7am to 6pm; $1,200 a month; small class sizes and an outdoor yard; a garden, a library corner and weekly music with a visiting teacher" });
   const many = compose([note("Rose Bowl Aquatics", 0, { great: "Warm." }, 3), note("Waterworks", 1, { great: "Tiny classes." }), pubRich]).text;
-  ok("with several parents' places, a public line keeps the facts that fit", many.includes("Ages 2 to 4, Monday to Friday 7am to 6pm and $1,200 a month.") && !many.includes("outdoor yard"), many);
+  ok("with several parents' places, a public line keeps the facts that fit", many.includes("Ages 2 to 4, Monday to Friday 7am to 6pm, $1,200 a month and small class sizes and an outdoor yard.") && !many.includes("library corner"), many);
   const few = compose([note("Rose Bowl Aquatics", 0, { great: "Warm." }, 3), pubRich]).text;
-  ok("with one, it keeps them all", few.includes("$1,200 a month and small class sizes and an outdoor yard."), few);
+  ok("with one, it keeps them all", few.includes("small class sizes and an outdoor yard and a garden, a library corner and weekly music with a visiting teacher."), few);
   const fresh = compose([lead, parent({ name: "AYSO soccer", rank: 1 })]).text;
   ok("a fresh one carries no age at all", !/out of date|questioned/.test(fresh), fresh);
 
@@ -967,18 +976,23 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   ok("voice: one record's price moved onto another is refused, by its keep-item", v.acceptVoice(movedPrice, input(true)) === null);
   ok("voice: and by the span rule alone, without the keep-item", v.acceptVoice(movedPrice, input(false)) === null);
   ok("voice: a dropped 'last confirmed' date is refused", v.acceptVoice(good.replace(", last confirmed Sep 2026", ""), input(true)) === null);
+  /* 26 Oct, the SMS lab: "a gentle start ... with a little one" for a question that said neither. */
+  ok("voice: the child described in words nobody said is refused", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "A gentle start for your little one around Altadena - here you go."), input(true)) === null);
+  ok("voice: the child described in the question's or draft's own words is fine", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "Classes for toddlers around Altadena - here you go."), input(true)) !== null);
 
   /* (3) With one parent place, the parent's words never give way to the web's facts. */
   const priya = parent({ name: "Jump Junction Party Barn", kind: "place", kind_word: "party service", area: "san-marino", firsthand_count: 1, named_by: "Priya", price: "Over $200", worth: "pricey but worth it", notes: { great: "They ran the whole thing, I did not lift a finger." }, trust: { labels: [t.TRUST_LABEL.SHARED], freshness: "stale", public_only: false } });
-  const long = "Package from $99.99 covers 6 kids, $19.99 per additional kid; no guest cap at all on weekends; aimed at ages 3 to 8 years old";
+  const long = "Package from $99.99 covers 6 kids, $19.99 per additional kid; no guest cap at all on weekends; aimed at ages 3 to 8 years old; party host, invitations and a goody bag for every child are included in the price";
   const party = compose([
     priya,
     web("Chuck E. Cheese Pasadena birthday parties", "arcade birthday party package", long),
     web("Kidspace Children's Museum birthday parties", "museum birthday party space", "Space reserved for two hours; all-day admission included for 20, 50, or 100 guests; parties offered Fridays, Saturdays, and Sundays"),
-    web("Lucky Strike Pasadena kids parties", "bowling kids party package", "Kids parties for ages 5 and up; 1.5 hours of bowling, cheese pizza, and soft drinks for kids 12 and under; online booking for 1-25 guests"),
+    web("Lucky Strike Pasadena kids parties", "bowling kids party package", "Kids parties for ages 5 and up; 1.5 hours of bowling, cheese pizza, and soft drinks for kids 12 and under; online booking for 1-25 guests; shoe rental included and a private lane host"),
+    /* A fourth line since 26 Oct: four web lines at eight segments still crowd her sentence. */
+    web("Pump It Up Arcadia birthday parties", "inflatable party arena", "Private arena for two hours; ages 2 to 12; up to 30 kids; pizza and juice packages; a dedicated party host and a party room for cake and presents afterwards"),
   ], { headroom: a.VOICE_HEADROOM }).text;
   ok("one parent place: her own sentence stays when the web's facts would push it out", party.includes('Priya said: "They ran the whole thing, I did not lift a finger."'), party);
-  ok("by cutting the web's facts whole first", party.includes("Package from $99.99 covers 6 kids, $19.99 per additional kid.") && !party.includes("aimed at ages"), party);
+  ok("by cutting the web's facts whole first", party.includes("aimed at ages 3 to 8 years old") && !party.includes("goody bag"), party);
   ok("and the web keeps at least one line beside it", party.includes(t.TRUST_LABEL.PUBLIC) && party.includes("Chuck E. Cheese"), party);
 
   /* (4) Which note goes out follows the question. */
@@ -1012,6 +1026,79 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   ok("worth alone that names the value is its own sentence", compose([parent({ worth: "great value" })]).text.includes("\nGreat value.") && !compose([parent({ worth: "great value" })]).text.includes("Value for money: great value"));
   ok("a doctors-card record named as an office is a practice", compose([parent({ name: "Brightside Kids Dental", kind: "place", kind_word: "doctor", area: "south-pasadena" })]).text.includes("Brightside Kids Dental, a practice in South Pasadena"));
   ok("and one named after a person is still a doctor (21 Oct row)", compose([parent({ name: "Dr. Sarah Kim", kind: "place", kind_word: "doctor", area: "pasadena" })]).text.includes("Dr. Sarah Kim, a doctor in Pasadena"));
+}
+
+console.log("\n=== 26 Oct review: the rewrite check and the composer's room ===");
+{
+  const v = (await import(`../lib/answer-voice.ts?v=${Date.now()}`)) as typeof import("../lib/answer-voice.ts");
+  /* The server passes these (`voiceInputFor`); the same strings, from the one file that holds them. */
+  const labels = [...Object.values(t.TRUST_LABEL), "Recommended by a local parent"].filter((l) => l !== t.TRUST_LABEL.PUBLIC);
+  const pubT = { labels: [t.TRUST_LABEL.PUBLIC], freshness: "fresh" as const, public_only: true };
+  const q = "toddler classes?";
+  const read = (draft: string, candidates: AnswerCandidate[]) => v.readVoiceInput({ draft, question: q, candidates, max: a.SMS_BUDGET, labels });
+  const bodyOf = (text: string) => text.replace(/\nWant me to ask a few nearby parents for more\?$/, "");
+
+  /* (1) A record parents only shared secondhand (count 0) is a parent record. */
+  const tiny = parent({ name: "Tiny Tots Gym", area: "altadena", rank: 0, notes: { caveat: "Saturday classes fill fast" }, trust: { labels: [t.TRUST_LABEL.VALIDATED, t.TRUST_LABEL.REFERENCE_AVAILABLE], freshness: "fresh", public_only: false } });
+  const water = parent({ name: "Waterworks", area: "pasadena", firsthand_count: 0, rank: 1, notes: { caveat: "The pool is cold in winter" }, trust: { labels: [t.TRUST_LABEL.SHARED], freshness: "fresh", public_only: false } });
+  const otters = parent({ name: "Little Otters", area: "pasadena", firsthand_count: 1, rank: 2, trust: { labels: [t.TRUST_LABEL.SHARED], freshness: "fresh", public_only: false } });
+  const kidspace: AnswerCandidate = { name: "Kidspace Museum", kind: "children's museum", area: "pasadena", detail: "Ages 1 to 10", trust: pubT, firsthand_count: 0 };
+  const cands = [tiny, water, otters, kidspace];
+  const draft = bodyOf(compose(cands, { headroom: a.VOICE_HEADROOM, question: q }).text);
+  const input = read(draft, cands);
+  ok("voice 26 Oct: a count-0 parent record is a parent record, with its own evidence and notes", input.parents.some((r) => r.name === "Waterworks" && r.evidence === "A local parent has shared" && r.keep.includes("The pool is cold in winter")) && !input.publicNames.includes("Waterworks"), JSON.stringify(input.parents));
+  ok("voice 26 Oct: the unchanged draft is accepted", v.acceptVoice(draft, input) !== null, draft);
+  const warm = draft
+    .replace("2 parents near you have used Tiny Tots Gym, a class in Altadena.\nHeads up: Saturday classes fill fast", "Toddler classes, here you go.\n2 parents near you have used Tiny Tots Gym in Altadena, but Saturday classes fill fast, so book early.")
+    .replace("A local parent has shared Waterworks, a class in Pasadena.\nHeads up: The pool is cold in winter", "A local parent has shared Waterworks in Pasadena - just know the pool is cold in winter.");
+  ok("voice 26 Oct: a warm rewrite that keeps each fact home is accepted", v.acceptVoice(warm, input) !== null, warm);
+  const swapped = warm.replace("Saturday classes fill fast, so", "the pool is cold in winter, so").replace("the pool is cold in winter.", "Saturday classes fill fast.");
+  ok("voice 26 Oct: two places' heads-ups swapped are refused", v.acceptVoice(swapped, input) === null, swapped);
+  ok("voice 26 Oct: a count-0 place's heads-up reworded is refused", v.acceptVoice(warm.replace("the pool is cold in winter", "the water runs chilly in winter"), input) === null);
+  ok("voice 26 Oct: its evidence dropped ('And Waterworks…') is refused", v.acceptVoice(warm.replace("A local parent has shared Waterworks", "And Waterworks"), input) === null);
+
+  /* (3) The evidence keeps its verb; a label line stays under its own place. */
+  ok("voice 26 Oct: the evidence clause is a keep-item, verb included", input.parents[0].evidence === "2 parents near you have used", String(input.parents[0].evidence));
+  for (const verb of ["skipped", "stopped going to", "asked about"]) {
+    ok(`voice 26 Oct: '2 parents near you ${verb} Tiny Tots Gym' is refused`, v.acceptVoice(warm.replace("2 parents near you have used Tiny Tots Gym", `2 parents near you ${verb} Tiny Tots Gym`), input) === null);
+  }
+  ok("voice 26 Oct: '…have used it' after the name is still the clause", v.acceptVoice(warm.replace("2 parents near you have used Tiny Tots Gym in Altadena,", "Tiny Tots Gym in Altadena - 2 parents near you have used it,"), input) !== null);
+  ok("voice 26 Oct: the clause then another verb is refused", v.acceptVoice(warm.replace("2 parents near you have used Tiny Tots Gym", "2 parents near you have used and quit Tiny Tots Gym"), input) === null);
+  ok("voice 26 Oct: a trust label line is that record's keep-item", input.parents[0].keep.includes("Reference available.") && !input.parents[1].keep.includes("Reference available."), JSON.stringify(input.parents.map((r) => r.keep)));
+  const movedLabel = warm.replace("\nReference available.", "").replace("cold in winter.", "cold in winter.\nReference available.");
+  ok("voice 26 Oct: a label moved from Tiny Tots Gym to Waterworks is refused (invariants 3, 4)", v.acceptVoice(movedLabel, input) === null, movedLabel);
+
+  /* An "Also nearby" count may be followed only by punctuation or having been there. */
+  const alsoDraft = "2 parents near you have used Tiny Tots Gym, a class in Altadena.\nAlso nearby: My Gym Pasadena, a class in Pasadena, 1 parent.";
+  const myGym = parent({ name: "My Gym Pasadena", area: "pasadena", firsthand_count: 1, rank: 1 });
+  const alsoIn = read(alsoDraft, [parent({ name: "Tiny Tots Gym", rank: 0 }), myGym]);
+  const alsoWarm = "Toddler classes, here you go.\n2 parents near you have used Tiny Tots Gym in Altadena.\nAlso nearby: My Gym Pasadena in Pasadena - 1 parent has used it.";
+  ok("voice 26 Oct: 'Also nearby … 1 parent has used it' is accepted", alsoIn.parents[1]?.evidence === "1 parent" && v.acceptVoice(alsoWarm, alsoIn) !== null, JSON.stringify(alsoIn.parents));
+  ok("voice 26 Oct: '1 parent skipped it' is refused", v.acceptVoice(alsoWarm.replace("1 parent has used it", "1 parent skipped it"), alsoIn) === null);
+
+  /* (2) A parent's place never gives way to a web line beyond the first. */
+  const longWeb = (i: number, len: number): AnswerCandidate => ({ name: `Swim Spot ${i}`, kind: "swim school", area: "pasadena", firsthand_count: 0, detail: `Ages 1 to 5 with small groups; ${"x".repeat(len)}`.slice(0, len), trust: pubT });
+  const bareLead = parent({ name: "Tiny Tots Gym", area: "altadena", rank: 0 });
+  const aOut = compose([bareLead, longWeb(1, 220), longWeb(2, 220), longWeb(3, 220), longWeb(4, 220)]);
+  ok("26 Oct (a): a lead with no notes is not pushed out by four long web lines", aOut.parent_used === 1 && aOut.text.startsWith("2 parents near you have used Tiny Tots Gym") && aOut.text.includes(t.TRUST_LABEL.PUBLIC), aOut.text);
+  const quoted = (name: string, rank: number, great: string) => parent({ name, area: "altadena", rank, notes: { great } });
+  const bOut = compose([
+    quoted("Alpha Gym", 0, "The coaches are patient and the room is calm, my son loved the warm-up songs every week."),
+    quoted("Beta Swim", 1, "Small classes with the same teacher every week, so the kids settle in quickly."),
+    quoted("Gamma Art", 2, "They let toddlers make a real mess and the cleanup is part of the fun for everyone."),
+    ...[1, 2, 3, 4, 5].map((i): AnswerCandidate => ({ ...longWeb(i, 10), detail: "Ages 1 to 5 with small groups; heated indoor pool open all year; parent and child classes on weekends; a free trial lesson for new families" })),
+  ], { headroom: 90 });
+  const webLines = bOut.text.slice(bOut.text.indexOf(t.TRUST_LABEL.PUBLIC)).split("\n").filter((l) => l.startsWith("Swim Spot")).length;
+  ok("26 Oct (b): three parents' places all appear, web lines cut first", bOut.parent_used === 3 && ["Alpha Gym", "Beta Swim", "Gamma Art"].every((n) => bOut.text.includes(n)) && webLines >= 1 && webLines < 5, bOut.text);
+  ok("26 Oct (b): within the budget", bOut.text.length <= a.SMS_BUDGET - 90, String(bOut.text.length));
+
+  /* (4) The fallback cuts whole words and prints no "All of these" over one record. */
+  const ref = (name: string, rank: number) => parent({ name, rank, notes: { great: "A parent sentence that is long enough to matter here." }, trust: { labels: [t.TRUST_LABEL.VALIDATED, t.TRUST_LABEL.REFERENCE_AVAILABLE], freshness: "fresh", public_only: false } });
+  const tight = compose([ref("Alpha Gym With A Rather Long Name", 0), ref("Beta Swim With Another Long Name", 1)], { headroom: a.SMS_BUDGET - 68 }).text; /* 850 of 918 until the 26 Oct budget */
+  const first = tight.split("\n")[0];
+  ok("26 Oct (4): nothing fits - the one record is cut at a word, never inside one", first.endsWith("...") && !/\s\.\.\.$/.test(first) && "2 parents near you have used Alpha Gym With A Rather Long Name, a class".startsWith(first.replace(/\.\.\.$/, "")), JSON.stringify(tight));
+  ok("26 Oct (4): and no parent's sentence is cut", !tight.includes("A parent sentence") || tight.includes('"A parent sentence that is long enough to matter here."'));
+  ok("26 Oct (4): no 'All of these' over the single record shown", !tight.includes("All of these"), JSON.stringify(tight));
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

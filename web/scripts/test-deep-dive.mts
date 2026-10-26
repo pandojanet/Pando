@@ -26,12 +26,23 @@ const ok = (label: string, cond: boolean, detail = "") => {
   }
 };
 
-console.log("\n=== the explicit trigger: only 'deep dive' ===");
+console.log("\n=== the fast path: 'deep dive' by name; every other way is the classifier's deep_dive (26 Oct) ===");
 for (const t of ["I want a deep dive", "deep dive on preschools near us", "Can you do a deep-dive into summer camps?"]) {
   ok(`"${t}" asks for one`, d.asksForDeepDive(t));
 }
-for (const t of ["any good swim classes for a 3 year old?", "is the deep end heated?", "can you give me a full breakdown of costs", "what's a deep dive?"]) {
-  ok(`"${t}" does not`, !d.asksForDeepDive(t));
+/* The lab walk, 26 Oct: these are requests, and they are read by the model
+   (test:intent pins the deep_dive reading) — not by a growing phrase list. */
+for (const t of [
+  "any good swim classes for a 3 year old?",
+  "is the deep end heated?",
+  "how deep is the pool?",
+  "can you give me a full breakdown of costs",
+  "what's a deep dive?",
+  "I want to make a deep research against these top 5 schools",
+  "I want to make comparison for these top 3 swim schools for my child",
+  "DEEP",
+]) {
+  ok(`"${t}" is not the fast path`, !d.asksForDeepDive(t));
 }
 const topics: Array<[string, string | null]> = [
   ["I want a deep dive on preschools near us", "preschools near us"],
@@ -40,6 +51,9 @@ const topics: Array<[string, string | null]> = [
   ["Can you do a deep dive into summer camps?", "summer camps"],
   ["deep dive on camps", "camps"],
   ["deep-dive on preschools", "preschools"],
+  /* Pointing back at what was just sent: the last question is the subject. */
+  ["deep dive on these top 5", null],
+  ["can you do a deep dive comparing them", null],
 ];
 for (const [t, want] of topics) {
   const got = d.deepDiveTopic(t);
@@ -90,7 +104,7 @@ ok("and never say 'best', which the checker refuses", !prefs.join(" ").includes(
 
 console.log("\n=== every sentence the writer writes is checked, one at a time (22 Oct) ===");
 const allowed = {
-  text: "Sunny Days Preschool a school in Altadena Oak Grove Montessori 4 year old within 20 min mornings only Small groups Parent & Me",
+  text: "Sunny Days Preschool a school in Altadena Oak Grove Montessori 4 year old within 20 min mornings only Small groups Parent & Me community pool edible garden",
   numbers: "a 4 year old 15 20 2 to 5",
   minutes: [15, 20],
 };
@@ -267,6 +281,11 @@ ok("pi.readDeepFindings keeps fields and a bare domain", (() => {
   return got.length === 1 && got[0].site === "oakgrove.org" && got[0].ages === "2 to 6" && got[0].schedule === null;
 })());
 ok("and never a person", pi.readDeepFindings('{"findings":[{"name":"Jane Smith","what":"tutor"}]}', () => ({ person: true, strong: true })).length === 0);
+/* 26 Oct, the SMS lab: "iD Tech Camps at Caltech (Pasadena (Caltech))". */
+ok(
+  "a deep finding's area is the place's name, without the model's aside",
+  pi.readDeepFindings('{"findings":[{"name":"iD Tech Camps at Caltech","what":"tech camp","area":"Pasadena (Caltech)"}]}', () => ({ person: false }))[0]?.area === "Pasadena",
+);
 
 console.log("\n=== the friendlier voice: advice passes, experience does not ===");
 ok("'I'd start with' is advice and passes", passes("I'd start with the closest one and tour it first."));
@@ -494,7 +513,8 @@ console.log("\n=== the 21 Oct reviews, pinned ===");
   ok("22 Oct live: a trust label line is kept verbatim - a rewrite without it is refused", v.acceptVoice(live1, labelled) === null);
   ok("and a rewrite that keeps it is not refused for the label's own parent words", v.acceptVoice(live1 + "\nRecommended by a local parent.", labelled) !== null);
   const voiceSrc = fs.readFileSync(new URL("../lib/server/answer-voice.ts", import.meta.url), "utf8");
-  ok("voiceInputFor puts every trust-label line of the draft into mustKeep", /\.\.\.lines\.slice\(0, heading >= 0[^\n]*\.filter\(isLabelLine\)/.test(voiceSrc) && voiceSrc.includes("Object.values(TRUST_LABEL)"));
+  /* 26 Oct: the reader moved into `lib/answer-voice.ts` (`readVoiceInput`), where `test:answer` runs it on real drafts. */
+  ok("voiceInputFor puts every trust-label line of the draft into mustKeep", voiceSrc.includes("readVoiceInput({ ...input, labels: LABELS })") && voiceSrc.includes("Object.values(TRUST_LABEL)") && v.readVoiceInput({ draft: "2 parents near you have used X, a class.\nReference available.", question: "q", candidates: [{ name: "X", kind: "activity", firsthand_count: 2, trust: { labels: [], freshness: "fresh", public_only: false } }], max: 900, labels: ["Reference available"] }).mustKeep.includes("Reference available."));
 }
 
 console.log("\n=== the third round of reviews, pinned ===");
@@ -509,7 +529,9 @@ console.log("\n=== the third round of reviews, pinned ===");
   ok("M1: praise that reads as parent trust is dropped", hl3(praise).length === 0, JSON.stringify(hl3(praise)));
   ok("but plain facts stay", hl3(["outdoor classroom", "teacher ratio 1:6", "run by the city parks department"]).length === 3, JSON.stringify(hl3(["outdoor classroom", "teacher ratio 1:6", "run by the city parks department"])));
   const area = pi3.readDeepFindings(JSON.stringify({ findings: [{ name: "Oak Grove Montessori", what: "preschool", area: "Pasadena - voted best by parents" }] }), (n) => np3.looksLikePerson(n))[0];
-  ok("an area that is a claim is not printed", area?.area === null);
+  /* Since 26 Oct the area ends where the aside begins, so the claim after the
+     dash is cut away and the town alone is printed. */
+  ok("an area that is a claim is not printed", area?.area === "Pasadena", String(area?.area));
 
   /* M4: strict merge */
   const rec = (name: string, area: string | null) => ({ name, area });
@@ -528,7 +550,7 @@ console.log("\n=== the third round of reviews, pinned ===");
   ok("M3: the stated price passes", ok3("At $1,150 a month it fits a value budget.", priced));
 
   /* M7: ordinary sentences that were refused */
-  const plain = { text: "Oak Tree Montessori preschool June August mornings", numbers: "" };
+  const plain = { text: "Oak Tree Montessori preschool June August mornings in small groups", numbers: "" };
   ok("M7: months name nobody", ok3("It runs June to August, mornings only.", plain));
   ok("M7: 'kids like yours' is not hearsay", ok3("Good for kids like yours who need a slow start.", plain));
   ok("M7: 'the most convenient' is not a count", ok3("It is the most convenient of these for mornings.", plain));
@@ -842,6 +864,26 @@ console.log("\n=== the length review (22 Oct): the shape is decided in code and 
   const single = d.shapeOrder({ order: ["w1", "w2", "w3", "p1"], also: [] }, [o("p1", "Rose Bowl Aquatics Center"), ...many12.slice(0, 3)], d.deepDiveShape("is Rose Bowl Aquatics any good?", { towns }), ["p1"]);
   ok("single: the named place first, then at most two alternatives", JSON.stringify(single.order) === JSON.stringify(["p1", "w1", "w2"]), JSON.stringify(single));
 
+  /* 26 Oct, the SMS lab: every report had parent_options 0 — the writer ranked pages only. */
+  const top5 = d.deepDiveShape("what are the top 5 summer camps for a 7 year old near Pasadena?", { towns });
+  const camps = [...many12.slice(0, 7), o("p1", "Tom Sawyer Camps", { quote: "Outdoors, low-tech." }), o("p2", "Kidspace summer camp", { quote: "Hands-on science." })];
+  const webOnly = d.shapeOrder({ order: ["w1", "w2", "w3", "w4", "w5", "w6"], also: [] }, camps, top5, []);
+  ok(
+    "top N with no parents' place in the writer's order: two are added at the end, the writer's order kept",
+    JSON.stringify(webOnly.order) === JSON.stringify(["w1", "w2", "w3", "p1", "p2"]) && webOnly.also.includes("w4"),
+    JSON.stringify(webOnly),
+  );
+  ok("and never first", webOnly.order[0] === "w1");
+  const kept = d.shapeOrder({ order: ["w1", "p2", "w2", "w3", "w4"], also: [] }, camps, top5, []);
+  ok("a writer's order that already has one is left alone", JSON.stringify(kept.order) === JSON.stringify(["w1", "p2", "w2", "w3", "w4"]), JSON.stringify(kept));
+  const cautioned = [...many12.slice(0, 7), o("p1", "Tom Sawyer Camps", { withdrawn: 1 }), o("p2", "Old Camp", { stale: true })];
+  ok(
+    "a withdrawn or old parents' record is never added",
+    JSON.stringify(d.shapeOrder({ order: ["w1", "w2", "w3", "w4", "w5"], also: [] }, cautioned, top5, []).order) === JSON.stringify(["w1", "w2", "w3", "w4", "w5"]),
+  );
+  const small = d.shapeOrder({ order: ["w1", "w2"], also: [] }, camps, { ...open, detailed: 3 }, []);
+  ok("three or fewer blocks: one is added, in the free slot", JSON.stringify(small.order) === JSON.stringify(["w1", "w2", "p1"]), JSON.stringify(small));
+
   /* The parents' tie-break: one place up, past a thin public one, never into first place. */
   const tb = [o("w1", "A", { web: { ...answered } }), o("w2", "B", { web: { ...answered, answers: [] } }), o("p1", "C"), o("w3", "D", { web: { ...answered } }), o("p2", "E")];
   ok("tie-break: a clean parents' option moves above a public one with nothing on the question, ranked right above it", d.parentTieBreak(["w1", "w2", "p1"], tb).join() === "w1,p1,w2");
@@ -914,6 +956,101 @@ console.log("\n=== the length review (22 Oct): the shape is decided in code and 
   const longOpts = Array.from({ length: 5 }, (_, i) => ({ ...base, id: `w${i + 1}`, name: `Place ${i + 1}`, what: "a camp", area: "Pasadena", source: "public" as const, firsthand: 0, web: { what: "camp", ages: "5 to 12", schedule: null, price: null, highlights: [], summary: "s".repeat(1000), site: null } }));
   const fit2 = d.fitDeepDive({ question: "x", family, options: longOpts, draft: { order: longOpts.map((x) => x.id), also: [], text: {}, watch: {}, bottom_line: null, max_parts: 2 }, offerAsk: false });
   ok("fitDeepDive holds to the shape's most parts", fit2.parts.length <= 2, String(fit2.parts.length));
+}
+
+console.log("\n=== numbers in words, and what a place has (adversarial review, 26 Oct) ===");
+{
+  /* The review's own cases: each was kept while "$50" was refused. */
+  const kid = { names: d.optionAliases("Kidspace Children's Museum", []), prices: "Kidspace Children's Museum camp $595 a week ages 5 to 8", numbers: "Kidspace Children's Museum camp $595 a week ages 5 to 8" };
+  const gal = { names: d.optionAliases("Camp Galileo Pasadena", []), prices: "Camp Galileo $450 to $540 a week, 9am-3pm, two campuses", numbers: "Camp Galileo $450 to $540 a week, 9am-3pm, two campuses", facts: "Camp Galileo STEAM day camp, nut-free snack breaks, before and after care, two campuses" };
+  const a = { text: "Kidspace Children's Museum Camp Galileo Pasadena camp a 7 year old", numbers: "a 7 year old 595 450 540 15 20", minutes: [15, 20], byOption: [kid, gal], common: "a 7 year old 15 20 2026", names: ["Kidspace Children's Museum", "Camp Galileo Pasadena"] };
+  const says = (t: string, x: Parameters<typeof d.reportSentence>[1] = a) => "text" in d.reportSentence(t, x);
+  const why = (t: string, x: Parameters<typeof d.reportSentence>[1] = a) => JSON.stringify(d.reportSentence(t, x));
+  ok("refused: 'fifty dollars a visit' — a price in words no page holds", !says("Kidspace costs fifty dollars a visit."), why("Kidspace costs fifty dollars a visit."));
+  ok("refused: 'twelve minutes away' — a drive time in words", !says("Kidspace is twelve minutes away."), why("Kidspace is twelve minutes away."));
+  ok("refused: 'twenty-five kids', 'a dozen campers', 'fifteen hundred dollars'", !says("Kidspace takes twenty-five kids a week.") && !says("Kidspace groups a dozen campers.") && !says("Galileo costs fifteen hundred dollars."));
+  ok("refused: 'four campuses' when its page says two; a measure two words on still counts", !says("Galileo runs on four campuses.") && !says("Kidspace has two Olympic-size pools."));
+  ok("refused: 'one week' is a number when a measure follows", !says("Kidspace sells one week at a time."), why("Kidspace sells one week at a time."));
+  ok("refused: another place's price in words", !says("Kidspace costs four hundred and fifty dollars a week."));
+  ok("kept: its own price in words ('five hundred and ninety-five dollars')", says("Kidspace costs five hundred and ninety-five dollars a week."), why("Kidspace costs five hundred and ninety-five dollars a week."));
+  ok("kept: the drive estimate in words", says("Kidspace is fifteen minutes away."), why("Kidspace is fifteen minutes away."));
+  ok("kept: the page's own number written the other way ('two campuses' backs '2 campuses')", says("Galileo runs on 2 campuses.") && says("Galileo runs on two campuses."));
+  ok("kept: the child's age in words", says("Kidspace takes ages 5 to 8, so your seven-year-old fits."), why("Kidspace takes ages 5 to 8, so your seven-year-old fits."));
+  for (const t of [
+    "Kidspace is the only one with hours listed.",
+    "One of them is Kidspace.",
+    "You asked for eight, and I found eight that fit.",
+    "Nine places fit your area, not ten.",
+    "Ask the same three questions everywhere.",
+    "Of the two, Galileo runs later.",
+  ]) ok(`kept: a count or a pronoun is not a fact: ${t}`, says(t), why(t));
+  ok("a name with a number word stays a name", says("Two Bit Circus runs weekend camps.", { ...a, text: a.text + " Two Bit Circus weekend", names: ["Two Bit Circus"] }));
+  ok("spelledToDigits: compounds, 'and a half', two numbers side by side", d.spelledToDigits("fifteen hundred, one hundred and fifty, twenty-five, two and a half hours, between two and three hours", { every: true }) === "1500, 150, 25, 2.5 hours, between 2 and 3 hours", d.spelledToDigits("fifteen hundred, one hundred and fifty, twenty-five, two and a half hours, between two and three hours", { every: true }));
+  ok("spelledToDigits: 'fifty dollars' and '50 bucks' are prices", d.spelledToDigits("fifty dollars or 50 bucks") === "$50 or $50");
+
+  /* What a place has: the review's "heated pool and a free trial class". */
+  const self0 = { ...a, self: 0 };
+  ok("refused: a heated pool and a free trial no page holds", !says("It has a heated pool and a free trial class.", self0), why("It has a heated pool and a free trial class.", self0));
+  ok("refused: lunch moved onto the place that has none", !says("Kidspace includes lunch and snacks."));
+  ok("refused: another place's feature ('snack breaks' are Galileo's)", !says("Kidspace has nut-free snack breaks."));
+  ok("kept: the feature beside its own place", says("Galileo has nut-free snack breaks.") && says("Unlike Kidspace, Galileo has nut-free snack breaks."));
+  ok("kept: what a page does not say ('no lunch listed', 'nothing about parking', 'whether it has a pool')", says("Kidspace lists no lunch.") && says("Its pages say nothing about parking.", self0) && says("I can't tell whether it has a pool.", self0));
+  ok("refused: a 'no' before a turn does not cover what follows", !says("It has no parking, but a heated pool.", self0));
+  ok("kept: a sentence about no place says what to look for", says("What matters most is a small group and a heated pool."));
+  ok("kept: a watch names a thing to check, not a thing it has", d.keepSentences("whether it has a heated pool", { ...self0, verify: true, max: 160 }).text !== null);
+  ok("kept: 'one-on-one' for a page's private lessons", says("Its lessons are one-on-one.", { ...a, byOption: [{ ...kid, facts: "private swim lessons at your home" }, gal], self: 0 }));
+  ok("kept: 'wait list' and 'waitlist' are one thing", says("Kidspace has a waitlist.", { ...a, byOption: [{ ...kid, facts: "July weeks are wait list only" }, gal] }));
+  ok("the retry is told why", d.refusalHint("feature").includes("own facts do not mention") && d.refusalHint("number").includes("in words"));
+}
+
+console.log("\n=== readDraft and the merge of two attempts, run (26 Oct) ===");
+{
+  /* lib/server/deep-dive.ts carries `server-only`; Next's own empty stub stands in for it, as Next does on the server. */
+  /* Node 24 has `registerHooks`; the installed @types/node predates it. */
+  type Resolve = (spec: string, ctx: unknown, next: (spec: string, ctx: unknown) => unknown) => unknown;
+  const { registerHooks } = (await import("node:module")) as unknown as { registerHooks: (hooks: { resolve: Resolve }) => void };
+  const stub = new URL("../node_modules/next/dist/compiled/server-only/empty.js", import.meta.url).href;
+  registerHooks({ resolve: (spec, ctx, next) => (spec === "server-only" ? { url: stub, format: "commonjs", shortCircuit: true } : next(spec, ctx)) });
+  const dd = (await import(`../lib/server/deep-dive.ts?v=${Date.now()}`)) as typeof import("../lib/server/deep-dive");
+  const blank = {
+    named_by: null, last_confirmed: null, stale: false, quote: null, caveat: null, who_for: null, tip: null,
+    price: null, worth: null, detail: null, warning: null, withdrawn: 0, answer_ready: false,
+  };
+  const page = (summary: string, price: string | null) => ({ what: "day camp", ages: "5 to 8", schedule: "9am-3pm", price, highlights: [], summary, answers: [], site: null });
+  const options = [
+    { ...blank, id: "w1", name: "Kidspace Children's Museum", what: "museum day camp", area: "Pasadena", source: "public" as const, firsthand: 0, km: 5.2, web: page("Weekly camps on the museum campus.", "$595 a week") },
+    { ...blank, id: "w2", name: "Camp Galileo Pasadena", what: "STEAM day camp", area: "Pasadena", source: "public" as const, firsthand: 0, km: 5.2, web: page("Weekly STEAM camps with nut-free snack breaks.", "$450 to $540 a week") },
+  ];
+  const fam = { children: "a 7 year old", home: "Altadena", travel_time: "under_20_min", budget: null, logistics: [] };
+  const raw = {
+    opening: "I'd start with Kidspace for its museum campus. Galileo costs fifty dollars less.",
+    order: ["w1", "w2"],
+    also: [],
+    comparison: "",
+    options: [
+      { id: "w1", text: "Kidspace runs weekly camps on the museum campus for ages 5 to 8, at $595 a week. It has a heated pool and a free trial day. Parents rave about it.", watch: "whether it has a wait list" },
+      { id: "w2", text: "Galileo runs weekly STEAM camps with nut-free snack breaks. It is twelve minutes away.", watch: "" },
+    ],
+    bottom_line: "I'd start with Kidspace.",
+  };
+  const r = dd.readDraft(raw, { question: "summer camps for my 7 year old in Pasadena", family: fam, options, now: new Date("2026-10-26T12:00:00Z") });
+  ok("readDraft: the page's facts are kept", r?.checked.text.w1 === "Kidspace runs weekly camps on the museum campus for ages 5 to 8, at $595 a week." && r?.checked.text.w2 === "Galileo runs weekly STEAM camps with nut-free snack breaks.", JSON.stringify(r?.checked.text));
+  const reasons = (r?.removed ?? []).map((x) => `${x.id}:${x.reason}`).sort().join(",");
+  ok("readDraft: a feature, a vouch, a drive time and a price in words are each removed and named", reasons === "opening:number,w1:claim,w1:feature,w2:number", reasons);
+  ok("readDraft: the opening keeps the sentence that passed", r?.checked.opening === "I'd start with Kidspace for its museum campus.", String(r?.checked.opening));
+  ok("readDraft: a watch about a wait list is kept", r?.checked.watch.w1 === "whether it has a wait list", JSON.stringify(r?.checked.watch));
+  ok("readDraft: the order is held", r?.checked.order.join() === "w1,w2");
+
+  /* The merge: an opening goes with the ranking it was written for. */
+  const attempt = (order: string[], opening: string | null, words: number) => ({
+    opening, order, also: [], comparison: opening ? `${order[0]} decides it.` : null, text: Object.fromEntries(order.map((id) => [id, "x".repeat(words)])), watch: {}, bottom_line: opening ? `Start with ${order[0]}.` : null, shape: "open" as const, max_parts: 4,
+  });
+  const m1 = dd.mergeDrafts(attempt(["w1", "w2"], "Kidspace first.", 50), attempt(["w2", "w1"], null, 80));
+  ok("merge: the retry's order wins, and the first attempt's opening, written for the other order, is not used", m1.order.join() === "w2,w1" && m1.opening === null && m1.bottom_line === null && m1.comparison === null, JSON.stringify(m1));
+  const m2 = dd.mergeDrafts(attempt(["w1", "w2"], "Kidspace first.", 50), attempt(["w1", "w2"], null, 80));
+  ok("merge: with the same order the other attempt's opening stands in", m2.opening === "Kidspace first." && m2.bottom_line === "Start with w1." && m2.comparison === "w1 decides it.", JSON.stringify(m2));
+  const m3 = dd.mergeDrafts(attempt(["w1", "w2"], "Kidspace first.", 90), attempt(["w2", "w1"], "Galileo first.", 50));
+  ok("merge: the attempt that kept more text gives the order and its own opening", m3.order.join() === "w1,w2" && m3.opening === "Kidspace first.");
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

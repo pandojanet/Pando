@@ -366,8 +366,20 @@ export interface ComposedAnswer {
  * refused as too long). Six holds all of it. One segment more per answer,
  * about $0.008 at US rates; an offer or a clarifying question appended after
  * the check can make a message seven. ⚠ The client's number — tell her.
+ *
+ * ## 1224 since 26 Oct — eight segments
+ *
+ * The developer, after walking the SMS lab: *"recommendations need more public
+ * information."* At six segments the web half was two lines with their facts
+ * cut to ninety characters whenever two parents' places stood above them —
+ * the parents' half kept its room and the web got the rest, which is the
+ * 9 Sep trade made a third time. Eight segments give the web up to four lines
+ * with their facts mostly whole beside three parents' places. Two segments
+ * more than six, about $0.016 an answer at US rates; an offer or a clarifying
+ * question appended after the check can make a message nine. ⚠ The client's
+ * number — tell her.
  */
-export const SMS_BUDGET = 918;
+export const SMS_BUDGET = 1224;
 
 /**
  * Room the composer leaves when the warm rewrite will run (22 Oct). Once the
@@ -1320,8 +1332,27 @@ export function wholeFacts(detail: string | null | undefined, max: number): stri
   }
   return out || null;
 }
+/**
+ * The fallback's text, cut to whole lines and never inside a word (26 Oct
+ * review: `slice(0, room)` sent "…Long Name, a "). Only Pando's own lines reach
+ * it — a lead's notes are dropped whole before it is called — and a first line
+ * that is itself too long loses whole words from its end, never part of one.
+ */
+function fitWhole(text: string, room: number): string {
+  if (text.length <= room) return text;
+  const kept: string[] = [];
+  for (const l of text.split("\n")) {
+    if ([...kept, l].join("\n").length > room) break;
+    kept.push(l);
+  }
+  if (kept.length > 0) return kept.join("\n");
+  const words = text.split("\n")[0].split(" ");
+  while (words.length > 1 && `${words.join(" ")}...`.length > room) words.pop();
+  return `${words.join(" ").replace(/[,;:]$/, "")}...`;
+}
+
 /** Characters of a page's facts per public line when parents' places are waiting. */
-const PUBLIC_FACTS_SHARED = 90;
+const PUBLIC_FACTS_SHARED = 140; /* 90 until 26 Oct — "more public information" */
 
 export function composeAnswer(input: ComposeInput): ComposedAnswer {
   const parentPlaces = input.candidates.filter((c) => !c.trust.public_only && c.kind !== "tip").length;
@@ -1338,11 +1369,19 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
    * does not, the facts are cut whole first, then the last public line goes,
    * one at a time, down to one — the both-halves rule (9 Sep) keeps that one.
    */
-  if (out.leadShort && parentPlaces < 2) {
+  /* ⚠ And **a parent's place never gives way to a web line beyond the first**
+     (26 Oct review). Measured: one parent's place with no notes beside four
+     long web findings went out as the web block alone, opening on a blank
+     line, and three parents' places beside five findings lost the second and
+     third entirely while four web lines stayed. `rankForAnswer` puts a parent
+     record above general information "whatever else is true of either", so a
+     place that ranked in and was left out — not only a lead that lost its
+     notes — cuts the web's half first, by the same steps. */
+  if (out.short && parentPlaces < 2) {
     candidates = cut(candidates);
     out = composeRanked(input, candidates);
   }
-  while (out.leadShort) {
+  while (out.short) {
     const publics = rankForAnswer(candidates).filter((c) => c.trust.public_only);
     if (publics.length <= 1) break;
     const last = publics[publics.length - 1];
@@ -1355,8 +1394,8 @@ export function composeAnswer(input: ComposeInput): ComposedAnswer {
 function composeRanked(
   input: ComposeInput,
   candidates: AnswerCandidate[],
-): { answer: ComposedAnswer; leadShort: boolean } {
-  const done = (answer: ComposedAnswer) => ({ answer, leadShort: false });
+): { answer: ComposedAnswer; short: boolean } {
+  const done = (answer: ComposedAnswer) => ({ answer, short: false });
   const ranked = rankForAnswer(candidates);
   const budget = SMS_BUDGET - Math.max(0, input.headroom ?? 0);
 
@@ -1703,6 +1742,14 @@ function composeRanked(
     else lines.splice(at, 0, ...trailing);
   }
 
+  /* Read before the fallback below, which shows one record whatever happens:
+     the question here is whether the loop left a parent's place out. */
+  const wanted = [
+    ...(leadOf ? [leadOf] : []),
+    ...ranked.filter((c) => c !== leadOf && !c.trust.public_only && c.kind !== "tip").slice(0, ALSO_LIMIT),
+  ];
+  const placeMissing = wanted.some((c) => !chosen.includes(c));
+
   const collapse = chosen.length === 1 && footer !== "";
   if (collapse) {
     lines.length = 0;
@@ -1718,6 +1765,7 @@ function composeRanked(
 
   /* Everything was too long to fit even once. Send the best one alone rather than
      an opening sentence with nothing under it. */
+  let alone = false;
   if (lines.length === 0) {
     const room = budget - head.length - tail.length - 2;
     let only =
@@ -1729,8 +1777,9 @@ function composeRanked(
     if (only.length > room && ranked[0] === leadOf) {
       only = leadBlock({ ...ranked[0], notes: undefined }, extrasOf(ranked[0].trust.labels));
     }
-    lines.push(only.slice(0, room));
+    lines.push(fitWhole(only, room));
     chosen.push(ranked[0]);
+    alone = true;
   }
 
   const used = chosen.length;
@@ -1758,17 +1807,23 @@ function composeRanked(
       ? "\nWant me to ask a few nearby parents for more?"
       : "";
 
-  /* The lead lost its parents' words, or was not shown at all: `composeAnswer`
-     then makes room by cutting the web's half, never the parents'. */
+  /* The lead lost its parents' words, or a parent's place that ranked in —
+     the lead, with notes or without, or one of the `ALSO_LIMIT` after it — was
+     not shown at all: `composeAnswer` then makes room by cutting the web's
+     half, never the parents'. A lead with no notes is still the lead (26 Oct
+     review: it counted as "short" only when it had notes to lose, so a bare
+     one was dropped for four web lines). */
   const leadHasNotes = !!leadOf && Object.values(leadOf.notes ?? {}).some((v) => typeof v === "string" && v.trim() !== "");
-  const leadShort = leadHasNotes && (leadBare || !leadRendered);
+  const short = placeMissing || (leadHasNotes && leadBare);
 
-  return { leadShort, answer: {
+  return { short, answer: {
     /* The footer sits under the records and above anything offered, because it
        describes them and not the offer. Dropped when a single record collapsed
        back to carrying its own labels. */
     text: `${head ? `${head}\n` : ""}${lines.join("\n")}${
-      footer && !collapse ? `\n${footer}` : ""
+      /* Nor over the one record the fallback shows alone (26 Oct review:
+         "All of these:" was printed under a single record). */
+      footer && !collapse && !alone ? `\n${footer}` : ""
     }${offer}${tail}`,
     next_step,
     public_only: publicOnly,

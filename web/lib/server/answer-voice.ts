@@ -2,7 +2,7 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { SHARE_LINE, type AnswerCandidate } from "@/lib/answer";
-import { acceptVoice, PUBLIC_HEADING, type VoiceInput, type VoiceRecord } from "@/lib/answer-voice";
+import { acceptVoice, readVoiceInput, type VoiceInput } from "@/lib/answer-voice";
 import { TRUST_LABEL } from "@/lib/trust-labels";
 
 /**
@@ -14,10 +14,6 @@ import { TRUST_LABEL } from "@/lib/trust-labels";
  * answer, Haiku 3 of 4 — every one of the three without the label).
  */
 const LABELS = [...Object.values(TRUST_LABEL), "Recommended by a local parent"].filter((l) => l !== TRUST_LABEL.PUBLIC);
-const isLabelLine = (line: string) => {
-  const t = line.trim();
-  return t.length > 0 && LABELS.some((l) => t.startsWith(l));
-};
 
 /**
  * The warm rewrite of an ordinary answer (21 Oct). The rules it must pass, and
@@ -42,8 +38,11 @@ const SYSTEM = [
   "",
   "Hard rules - break one and your rewrite is thrown away and the draft is sent instead:",
   "- Keep EVERY place name exactly as written, capitals included. Each place gets its own line,",
-  "  and its count phrase ('2 parents near you', 'One parent near you', '{n1} has', '2 parents')",
-  "  stays on that same line. Don't name a place in your opening line.",
+  "  and its evidence stays on that same line word for word: the whole phrase before the name",
+  "  ('2 parents near you have used', 'One parent near you has used', '{n1} has used', 'A local",
+  "  parent has shared'), followed by the place name or 'it' - never another verb. In 'Also",
+  "  nearby' the count ('2 parents', '1 parent') stays with its own place. Don't name a place in",
+  "  your opening line.",
   "- Never invent a parent or what one said: no 'another parent said it's worth a look', no",
   "  'another parent said it suits...'. You don't know whether the notes come from one parent or",
   "  several, so never say 'another parent'. Say 'one said' or 'they said' only right before a",
@@ -72,7 +71,8 @@ const SYSTEM = [
   "- Copy everything from the line 'Public/general information:' to the end EXACTLY as it is.",
   "  If the draft has no such line, never add one.",
   "- Keep any line starting 'All of these:' exactly, and any label line the draft has exactly, on",
-  "  its own line. Never add a label line the draft does not have.",
+  "  its own line, under the same place as in the draft. Never add a label line the draft does",
+  "  not have.",
   "- Add no fact: no number, price, date, age, place, name or opinion that is not in the draft.",
   "  Never say parents, families, locals or recommend except 'another parent said'.",
   "  No praise words (great, amazing, best, love) unless the draft already uses them - not even",
@@ -157,98 +157,14 @@ export function splitTail(text: string): { body: string; tail: string } {
   return { body, tail };
 }
 
-/**
- * The evidence the draft actually prints for a record — read from its own line,
- * never recomputed, because the composer words it three ways: the lead ("2
- * parents near you have used…", "{n1} has used…"), an "Also nearby" entry ("…, 2
- * parents, fair") and nothing at all.
- */
-function evidenceIn(line: string, name: string): string | null {
-  const segment = line.startsWith("Also nearby:")
-    ? (line.split(";").find((s) => s.includes(name)) ?? "")
-    : line;
-  const lead = segment.match(/\b(\d+ parents near you|one parent near you|\{n\d+\} has)\b/i);
-  if (lead) return lead[1];
-  const also = segment.match(/\b(\d+ parents?)\b/i);
-  return also ? also[1] : null;
-}
-
-/** Pando's own cautions, which must survive a rewrite. */
-/* The withdrawal sentence whole, "One parent recently said…" included: kept only
-   from "may no longer", the opening was left as the model's own words and the
-   unchanged draft was refused for a parent claim (review, 21 Oct). */
-const CAUTION = /((?:one parent|\d+ parents) recently said it may no longer be worth it[^.]*\.|may no longer be worth it[^.]*\.|this one is old[^.]*\.|worth checking it hasn't changed\.|may be out of date[^.]*\.)/gi;
-
-const PRICE = /\$[\d,.]+(?:\s*-\s*\$?[\d,.]+)?/g;
-const CONFIRMED = /last confirmed [A-Z][a-z]{2} \d{4}/g;
-
-/** What `acceptVoice` checks the rewrite against, read from the draft itself. */
+/** What `acceptVoice` checks the rewrite against, read from the draft itself (`readVoiceInput`). */
 export function voiceInputFor(input: {
   draft: string;
   question: string;
   candidates: AnswerCandidate[];
   max: number;
 }): VoiceInput {
-  const lines = input.draft.split("\n");
-  const heading = input.draft.indexOf(PUBLIC_HEADING);
-  const lower = input.draft.toLowerCase();
-  const parents: Array<VoiceRecord & { at: number }> = [];
-  const publicNames: string[] = [];
-  for (const c of input.candidates) {
-    const at = input.draft.indexOf(c.name);
-    if (at < 0) continue;
-    if (c.trust.public_only || c.firsthand_count === 0) {
-      if (heading >= 0 && at > heading) publicNames.push(c.name);
-      continue;
-    }
-    const line = lines.find((l) => l.includes(c.name)) ?? "";
-    /* A note the composer lower-cased or gave a full stop is still the
-       parent's words: found case-insensitively, kept as the draft prints it. */
-    const notes = [c.notes?.great, c.notes?.caveat, c.notes?.who_for, c.notes?.tip]
-      .filter((n): n is string => typeof n === "string" && n.trim().length > 0)
-      .map((n) => {
-        const core = n.trim().replace(/[.!]+$/, "");
-        const i = lower.indexOf(core.toLowerCase());
-        return i >= 0 ? input.draft.slice(i, i + core.length) : null;
-      })
-      .filter((n): n is string => n !== null);
-    parents.push({
-      name: c.name,
-      evidence: evidenceIn(line, c.name),
-      keep: notes,
-      tokens: c.named_by && /^\{n\d+\}$/.test(c.named_by) ? [c.named_by] : [],
-      at,
-    });
-  }
-  /* A caution belongs to the record it follows. */
-  parents.sort((a, b) => a.at - b.at);
-  const parentsEnd = heading >= 0 ? heading : input.draft.length;
-  for (const m of input.draft.slice(0, parentsEnd).matchAll(CAUTION)) {
-    const owner = [...parents].reverse().find((p) => p.at <= (m.index ?? 0));
-    if (owner) owner.keep.push(m[1]);
-  }
-  /* A record's price and its "last confirmed" date belong to it: kept inside
-     its own span, not merely somewhere (22 Oct safety review: Tiny Tots Gym's
-     "$100-200 a term" moved onto Waterworks Aquatics and was accepted). */
-  for (let i = 0; i < parents.length; i++) {
-    const end = i + 1 < parents.length ? parents[i + 1].at : parentsEnd;
-    const span = input.draft.slice(parents[i].at, end);
-    parents[i].keep.push(...(span.match(PRICE) ?? []), ...(span.match(CONFIRMED) ?? []));
-  }
-  const mustContain = [...(input.draft.match(PRICE) ?? []), ...(input.draft.match(CONFIRMED) ?? [])];
-  return {
-    draft: input.draft,
-    question: input.question,
-    parents: parents.map(({ at: _at, ...r }) => r),
-    publicNames,
-    mustKeep: [
-      ...lines.filter((l) => l.startsWith("All of these:")),
-      ...lines.slice(0, heading >= 0 ? lines.findIndex((l) => l.includes(PUBLIC_HEADING)) : lines.length).filter(isLabelLine),
-      ...(heading >= 0 ? input.draft.slice(heading).split("\n").filter((l) => l.trim()) : []),
-    ],
-    mustContain,
-    max: input.max,
-  };
+  return readVoiceInput({ ...input, labels: LABELS });
 }
 
 /**
@@ -312,7 +228,12 @@ export async function voiceAnswer(input: {
               /* The exact strings the check will look for, so the model knows which
                  words are frozen (22 Oct: most refusals were a "so" put inside a
                  parent's heads-up). Read from the draft; nothing new. */
-              keep_word_for_word: [...check.parents.flatMap((r) => r.keep), ...check.mustKeep],
+              keep_word_for_word: [
+                ...new Set([
+                  ...check.parents.flatMap((r) => [...(r.evidence ? [r.evidence] : []), ...r.keep]),
+                  ...check.mustKeep,
+                ]),
+              ],
             }),
           },
         ],

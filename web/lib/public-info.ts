@@ -24,7 +24,7 @@
  * round — so this is a ceiling on what the search may offer rather than a
  * promise about how much gets sent.
  */
-export const MAX_PUBLIC_FINDINGS = 5;
+export const MAX_PUBLIC_FINDINGS = 6; /* 5 until 26 Oct: four lines are shown and a few drop to the filters */
 
 export interface PublicFinding {
   /** The place, class or programme. Never a person. */
@@ -542,7 +542,14 @@ function isPlaceRun(run: string): boolean {
 
 /** A trailing parenthesis, closed or not, taken off a short field. */
 function withoutAside(value: unknown): unknown {
-  return typeof value === "string" ? value.replace(/\s*\([^)]*\)?\s*$/, "") : value;
+  if (typeof value !== "string") return value;
+  /* An area is a place's name, so it ends where the model's aside begins — a
+     parenthesis, a comma, a semicolon or a dash — wherever that is (26 Oct,
+     the SMS lab: "in Pasadena (Hastings Ranch), 355 N" and "in Pasadena (New
+     Horizon School), also:" went out; only an aside at the very end was
+     removed, and the 40-character cut then landed inside an address). */
+  const head = value.split(/\s*[(,;]|\s+[-–—]\s+/)[0].trim();
+  return head.length > 0 ? head : null;
 }
 
 /** A professional credential or title in a place's name: a person's practice. */
@@ -622,7 +629,9 @@ export function readDeepFindings(
       name,
       what,
       /* The area prints in titles too: "Pasadena - voted best by parents" is not an area. */
-      area: deepFact(clean(r.area, 40), 40, isPerson),
+      /* The place's name only, as in the ordinary half (26 Oct, the SMS lab:
+         "iD Tech Camps at Caltech (Pasadena (Caltech))"). */
+      area: deepFact(clean(withoutAside(r.area), 40), 40, isPerson),
       ages: deepFact(r.ages, 40, isPerson),
       schedule: deepFact(r.schedule, 70, isPerson),
       price: deepFact(r.price, 60, isPerson),

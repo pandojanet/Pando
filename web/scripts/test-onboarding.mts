@@ -176,7 +176,8 @@ console.log("\n=== answering it is not met with silence ===");
   );
   ok(
     "a saved clarification replies rather than returning quietly",
-    /body: clarifyReply\(\{\s*question: pending,\s*text: body,\s*next,/.test(inbound),
+    /* `question` since 26 Oct: the one asked, or the fact said unasked. */
+    /body: clarifyReply\(\{\s*question,\s*text: body,\s*next,/.test(inbound),
   );
   ok(
     "and the next question it carries is remembered by its template",
@@ -248,6 +249,46 @@ console.log("\n=== the whole profile over SMS, one question at a time ===");
     ["born 2021", []],
     ["6265550143", []],
     ["not sure", []],
+    /* 26 Oct, adversarial review: a count of children is not an age, and each
+       of these used to invent a child. */
+    ["I have 2 kids, 3 and 7", [3, 7]],
+    ["we have 3 kids: 2, 5 and 9", [2, 5, 9]],
+    ["2 kids ages 3 and 5", [3, 5]],
+    ["3 kids ages 3, 5 and 8", [3, 5, 8]],
+    ["1 kid, age 4", [4]],
+    ["2 kids", []],
+    ["3 kids", []],
+    ["three children", []],
+    ["2 boys", []],
+    ["2 little ones", []],
+    ["2 under 5", []],
+    ["in 3rd grade", []],
+    ["grade 2", []],
+    ["born 3/15/2020", []],
+    ["2 1/2", [2]],
+    ["2.5 and 5", [2, 5]],
+    ["pick up at 3pm", []],
+    /* What parents actually send. */
+    ["3 and 7", [3, 7]],
+    ["my son is 4", [4]],
+    ["8, 5, 2", [8, 5, 2]],
+    ["boys 4 and 6", [4, 6]],
+    ["4yo and 18 months", [4, 1]],
+    ["10 and 12, plus a 3 month old", [10, 12, 0]],
+    ["6 months", [0]],
+    ["6 weeks", [0]],
+    ["10 days old", [0]],
+    ["twins, both 2", [2, 2]],
+    ["4 year old twins", [4, 4]],
+    ["6 month old twins", [0, 0]],
+    ["twin girls aged 3", [3, 3]],
+    ["2 boys, both 6", [6, 6]],
+    ["twins and a 5 year old", [5]],
+    ["triplets, 1", [1, 1, 1]],
+    ["expecting in March", [-1]],
+    ["expecting twins", [-1, -1]],
+    ["none yet", []],
+    ["no kids yet", []],
   ];
   for (const [text, want] of ages) {
     const got = o.parseAges(text);
@@ -284,10 +325,69 @@ console.log("\n=== the whole profile over SMS, one question at a time ===");
     ["ballet for my 5yo", null],
     ["any others", null],
     ["more please", null],
+    /* 26 Oct, adversarial review: a place, an activity and a "where" were
+       each saved as a first name and greeted by it. */
+    ["I am in Pasadena", null],
+    ["I'm from Altadena", null],
+    ["in Pasadena", null],
+    ["Pasadena", null],
+    ["pasadena.", null],
+    ["Pasadena, CA", null],
+    ["South Pasadena", null],
+    ["it's South Pas", null],
+    ["Temple City", null],
+    ["La Cañada", null],
+    ["dance", null],
+    ["soccer", null],
+    ["swimming", null],
+    ["I'm Maya's mom", null],
+    ["Maya mom", null],
+    ["hey there", null],
+    ["yup", null],
+    ["Y", null],
+    ["n", null],
+    ["yes", null],
+    ["no", null],
+    ["hi", null],
+    ["I'm new", null],
+    /* And the real names still come through. */
+    ["Maya", "Maya"],
+    ["it's Maya", "Maya"],
+    ["I'm Maya", "Maya"],
+    ["maya here", "Maya"],
+    ["Mary Ann", "Mary"],
+    ["José", "José"],
+    ["josé", "José"],
+    ["Vincent", "Vincent"],
+    ["Art", "Art"],
+    ["Madison", "Madison"],
+    ["Linda", "Linda"],
+    ["Jo", "Jo"],
   ];
   for (const [text, want] of names) {
     const got = o.parseFirstName(text);
     ok(`"${text}" -> ${want}`, got === want, `got ${got}`);
+  }
+  {
+    /* The place list in onboarding.ts is a copy (the module may not import);
+       every place the market knows must be refused, so one added there and
+       not here fails here. Vincent is the one exception, named in the code. */
+    const hp = (await import(`../lib/home-places.ts?v=${Date.now()}`)) as typeof import("../lib/home-places.ts");
+    const mo = (await import(`../lib/market-options.ts?v=${Date.now()}`)) as typeof import("../lib/market-options.ts");
+    const labels = [
+      ...hp.PLACES.map((p) => p.name),
+      ...mo.marketOptions("pasadena", "neighborhoods").map((n) => n.label),
+    ].filter((label) => label !== "Vincent");
+    const taken = labels.filter((label) => o.parseFirstName(label) !== null);
+    ok(
+      `no place the market knows is a first name (${labels.length} checked)`,
+      taken.length === 0,
+      taken.join(", "),
+    );
+    ok(
+      "and a place is never thanked by name",
+      o.clarifyReply({ question: "first_name", text: "Pasadena", next: null }) === o.CLARIFY_THANKS,
+    );
   }
 
   console.log("\n=== the reply that closes one question and asks the next ===");
@@ -363,9 +463,9 @@ console.log("\n=== the whole profile over SMS, one question at a time ===");
   }
   for (const q of Object.keys(o.CLARIFYING_COPY) as Array<keyof typeof o.CLARIFYING_COPY>) {
     /* Riding on an answer at the composer's full budget, no question may add
-       more than one segment (the budget is six since 22 Oct, so seven). */
-    const plan = seg.planSegments(`${"x".repeat(918)}\n\n${o.CLARIFYING_COPY[q]}`);
-    ok(`"${q}" on a full answer adds at most one segment`, plan.segments <= 7, `${plan.segments}`);
+       more than one segment (the budget is eight since 26 Oct, so nine). */
+    const plan = seg.planSegments(`${"x".repeat(1224)}\n\n${o.CLARIFYING_COPY[q]}`);
+    ok(`"${q}" on a full answer adds at most one segment`, plan.segments <= 9, `${plan.segments}`);
   }
   ok(
     "the participation question offers the SETTINGS menu's digits",

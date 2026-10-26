@@ -13,9 +13,13 @@
  * The model rewrites the composed draft; `acceptVoice` then reads the rewrite
  * against the draft and refuses it unless:
  *
- *  - every parent record keeps its name, sits on **its own line** with its
- *    evidence ("2 parents near you", "One parent near you", "{n1} has", "1
- *    parent") on that same line and no other parent record beside it, and
+ *  - every parent record — any record that is not general information, a
+ *    count-0 one included — keeps its name, sits on **its own line** with its
+ *    evidence on that same line (a block's whole clause, verb included: "2
+ *    parents near you have used", "A local parent has shared", "{n1} has
+ *    used", then the name or "it"; an "Also nearby" count, "1 parent", with
+ *    nothing but punctuation or having-been-there after it) and no other
+ *    parent record beside it, its trust-label lines inside its own span, and
  *    every one of its parent sentences — quote, heads-up, who it is for, tip,
  *    its caution — sits **after its name and before the next record's**, word
  *    for word (8 Sep: never reworded);
@@ -32,14 +36,22 @@
  *
  * A refused rewrite costs nothing: the composed draft goes out as it always has.
  *
- * No runtime imports — loaded by `test:deep-dive` directly.
+ * No runtime imports — loaded by `test:deep-dive` and `test:answer` directly.
  */
+
+import type { AnswerCandidate } from "./answer";
 
 export const PUBLIC_HEADING = "Public/general information";
 
 export interface VoiceRecord {
   name: string;
-  /** The evidence phrase the draft uses for it ("2 parents near you", "1 parent"), when it has one. */
+  /**
+   * The evidence the draft prints for it, when it has one: the whole clause
+   * before its name in a block ("2 parents near you have used", "A local parent
+   * has shared", "{n1} has used"), which must be followed by the name or "it";
+   * or the bare count of an "Also nearby" entry ("2 parents", "1 parent"),
+   * which may be followed only by punctuation or a verb of having been there.
+   */
   evidence: string | null;
   /** Parent sentences and Pando's cautions the draft carries for it — kept verbatim, in its span. */
   keep: string[];
@@ -78,6 +90,8 @@ const ATTRIBUTION = /\b(one|a|another|the other|that)\s+parent\s+(said|says|ment
 const SOURCE_LINE =
   /\b(here's |here is |so here's )?what (other |local |a few |some )?(local )?(parents?|a parent|a local parent|another parent)( near (you|[A-Z][a-z]+(?: [A-Z][a-z]+)?))? (said|say|have said|passed along|have passed along|passed on|have passed on|shared|have shared|found|have found|told (me|pando|us))\b/gi;
 const QUALITY = /\b(love|loved|loves|amazing|best|perfect|favou?rite|wonderful|fantastic|great|awesome|excellent|beloved|popular|highly|must[\s-]try|gem)\b/gi;
+/** Who the child is — age and temperament — which only the parent may say (26 Oct). */
+const CHILD_WORDS = /\b(little ones?|kiddos?|toddlers?|bab(?:y|ies)|infants?|newborns?|preschoolers?|tweens?|teens?|teenagers?|sons?|daughters?|boys?|girls?|twins|shy|gentle|cautious|nervous|anxious|timid|sensitive|energetic|sporty|creative|curious)\b/gi;
 const NUMBER_WORDS =
   /\b(one|two|three|four|five|six|seven|eight|nine|ten|dozens?|several|many|most|few|couple|all|every|hundreds?|multiple|lots|plenty|numerous|tons|bunch)\b/gi;
 const STARTERS = new Set(
@@ -245,6 +259,185 @@ function factsStayHome(text: string, draft: string, input: VoiceInput, starts: n
   return true;
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The evidence the draft actually prints for a record — read from its own line,
+ * never recomputed, because the composer words it three ways: a block's clause
+ * right before the name ("2 parents near you have used X", "{n1} has used X",
+ * "A local parent has shared X"), an "Also nearby" entry ("…, 2 parents, fair")
+ * and nothing at all.
+ *
+ * ⚠ **The clause whole, verb included** (26 Oct review): with only "2 parents
+ * near you" held, "2 parents near you skipped Tiny Tots Gym" and "…asked about…"
+ * were accepted.
+ */
+function evidenceIn(line: string, name: string): string | null {
+  const also = line.startsWith("Also nearby:");
+  const segment = also ? (line.split(";").find((s) => s.includes(name)) ?? "") : line;
+  if (!also) {
+    const clause = segment.match(
+      new RegExp(
+        `\\b(\\d+ parents near you have \\w+|one parent near you has \\w+|\\{n\\d+\\} has \\w+|a local parent has shared) ${escapeRe(name)}`,
+        "i",
+      ),
+    );
+    if (clause) return clause[1];
+  }
+  const lead = segment.match(/\b(\d+ parents near you|one parent near you|\{n\d+\} has)\b/i);
+  if (lead) return lead[1];
+  const bare = segment.match(/\b(\d+ parents?)\b/i);
+  return bare ? bare[1] : null;
+}
+
+/** Pando's own cautions, which must survive a rewrite. */
+/* The withdrawal sentence whole, "One parent recently said…" included: kept only
+   from "may no longer", the opening was left as the model's own words and the
+   unchanged draft was refused for a parent claim (review, 21 Oct). */
+const CAUTION = /((?:one parent|\d+ parents) recently said it may no longer be worth it[^.]*\.|may no longer be worth it[^.]*\.|this one is old[^.]*\.|worth checking it hasn't changed\.|may be out of date[^.]*\.)/gi;
+
+const PRICE = /\$[\d,.]+(?:\s*-\s*\$?[\d,.]+)?/g;
+const CONFIRMED = /last confirmed [A-Z][a-z]{2} \d{4}/g;
+
+/**
+ * What `acceptVoice` checks the rewrite against, read from the draft itself.
+ * Pure, so the suites can run it on a real composed draft; the server passes
+ * the trust-label strings (`labels`) because this module imports nothing.
+ *
+ * ⚠ **Every record that is not general information is a parent record** (26
+ * Oct review). It used to be "not `public_only` and `firsthand_count > 0`", so
+ * a record parents only recommended or shared secondhand — *"A local parent
+ * has shared Waterworks…"* — was in neither list: its heads-up was not tied to
+ * its own span (a rewrite swapping two places' cautions, and one rewording
+ * Waterworks' own, were accepted), its evidence was not a keep-item (rewritten
+ * as *"And Waterworks…"*), and the unchanged draft was refused for that
+ * evidence's "parent", read as the model's own claim.
+ */
+export function readVoiceInput(input: {
+  draft: string;
+  question: string;
+  candidates: readonly AnswerCandidate[];
+  max: number;
+  /** Lines starting with one of these are trust labels (invariant 3). */
+  labels: readonly string[];
+}): VoiceInput {
+  const lines = input.draft.split("\n");
+  const heading = input.draft.indexOf(PUBLIC_HEADING);
+  const parentsEnd = heading >= 0 ? heading : input.draft.length;
+  const lower = input.draft.toLowerCase();
+  const isLabelLine = (line: string) => {
+    const t = line.trim();
+    return t.length > 0 && input.labels.some((l) => t.startsWith(l));
+  };
+  const parents: Array<VoiceRecord & { at: number }> = [];
+  const publicNames: string[] = [];
+  for (const c of input.candidates) {
+    const at = input.draft.indexOf(c.name);
+    if (at < 0) continue;
+    if (c.trust.public_only) {
+      if (heading >= 0 && at > heading) publicNames.push(c.name);
+      continue;
+    }
+    /* A parent record named only inside the public block was not shown as one. */
+    if (at >= parentsEnd) continue;
+    const line = lines.find((l) => l.includes(c.name)) ?? "";
+    /* A note the composer lower-cased or gave a full stop is still the
+       parent's words: found case-insensitively, kept as the draft prints it. */
+    const notes = [c.notes?.great, c.notes?.caveat, c.notes?.who_for, c.notes?.tip]
+      .filter((n): n is string => typeof n === "string" && n.trim().length > 0)
+      .map((n) => {
+        const core = n.trim().replace(/[.!]+$/, "");
+        const i = lower.indexOf(core.toLowerCase());
+        return i >= 0 ? input.draft.slice(i, i + core.length) : null;
+      })
+      .filter((n): n is string => n !== null);
+    parents.push({
+      name: c.name,
+      evidence: evidenceIn(line, c.name),
+      keep: notes,
+      tokens: c.named_by && /^\{n\d+\}$/.test(c.named_by) ? [c.named_by] : [],
+      at,
+    });
+  }
+  /* A caution belongs to the record it follows. */
+  parents.sort((a, b) => a.at - b.at);
+  const ownerAt = (index: number) => [...parents].reverse().find((p) => p.at <= index);
+  for (const m of input.draft.slice(0, parentsEnd).matchAll(CAUTION)) ownerAt(m.index ?? 0)?.keep.push(m[1]);
+  /* A trust-label line belongs to the record it sits under, and stays there
+     (26 Oct review: "Reference available." moved from Tiny Tots Gym to
+     Waterworks was accepted, because a label line was only required somewhere
+     — invariants 3 and 4). */
+  const labelLines = lines.slice(0, heading >= 0 ? lines.findIndex((l) => l.includes(PUBLIC_HEADING)) : lines.length).filter(isLabelLine);
+  let from = 0;
+  for (const l of labelLines) {
+    const i = input.draft.indexOf(l, from);
+    from = i + l.length;
+    ownerAt(i)?.keep.push(l);
+  }
+  /* A record's price and its "last confirmed" date belong to it: kept inside
+     its own span, not merely somewhere (22 Oct safety review: Tiny Tots Gym's
+     "$100-200 a term" moved onto Waterworks Aquatics and was accepted). */
+  for (let i = 0; i < parents.length; i++) {
+    const end = i + 1 < parents.length ? parents[i + 1].at : parentsEnd;
+    const span = input.draft.slice(parents[i].at, end);
+    parents[i].keep.push(...(span.match(PRICE) ?? []), ...(span.match(CONFIRMED) ?? []));
+  }
+  const mustContain = [...(input.draft.match(PRICE) ?? []), ...(input.draft.match(CONFIRMED) ?? [])];
+  return {
+    draft: input.draft,
+    question: input.question,
+    parents: parents.map(({ at: _at, ...r }) => r),
+    publicNames,
+    mustKeep: [
+      ...lines.filter((l) => l.startsWith("All of these:")),
+      ...labelLines,
+      ...(heading >= 0 ? input.draft.slice(heading).split("\n").filter((l) => l.trim()) : []),
+    ],
+    mustContain,
+    max: input.max,
+  };
+}
+
+/** A block's evidence clause ends in its verb ("…have used"); a bare count does not. */
+const CLAUSE_VERB = /\b(has|have) \w+$/i;
+/** What may follow a bare count ("2 parents", "1 parent"): punctuation, or having been there. */
+const AFTER_COUNT = /^\s*(?:$|[,.;:)!-]|(?:(?:has|have)\s+)?(?:used|been|tried|gone|went|employed|shared)\b)/i;
+
+/**
+ * ⚠ **A count says what the draft said the parents did** (26 Oct review). The
+ * check found "2 parents near you" on the line and not its verb, so "2 parents
+ * near you skipped Tiny Tots Gym" passed. A block's clause must now appear
+ * whole and be followed by the record's name or "it"; a bare count may be
+ * followed only by punctuation or a verb of having been there. Every
+ * occurrence in the record's region is held to it, not just one.
+ */
+function evidenceHolds(home: string, region: string, r: VoiceRecord): boolean {
+  if (!r.evidence) return true;
+  const ev = core(r.evidence);
+  if (!lc(home).includes(ev)) return false;
+  /* The record's own kept sentences (a withdrawal's "2 parents recently said…")
+     are not evidence and are not read as such. */
+  let scan = region;
+  for (const k of r.keep) {
+    const c = core(k);
+    if (!c) continue;
+    for (let at = lc(scan).indexOf(c); at >= 0; at = lc(scan).indexOf(c)) {
+      scan = `${scan.slice(0, at)} | ${scan.slice(at + c.length)}`;
+    }
+  }
+  const clause = CLAUSE_VERB.test(r.evidence);
+  const next = new RegExp(`^\\s+(?:${escapeRe(r.name)}|[Ii]t|[Tt]hem|[Hh]er|[Hh]im)(?![\\p{L}\\p{N}])`, "u");
+  let seen = 0;
+  for (let at = lc(scan).indexOf(ev); at >= 0; at = lc(scan).indexOf(ev, at + 1)) {
+    const after = scan.slice(at + ev.length);
+    if (clause ? !next.test(after) : !AFTER_COUNT.test(after)) return false;
+    seen++;
+  }
+  return seen > 0;
+}
+
 /** The rewrite, accepted, or null. Pure; every rule refuses rather than repairs (but see `ownLines`). */
 export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
   if (typeof raw !== "string") return null;
@@ -266,6 +459,7 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
   const starts = input.parents.map((r) => text.indexOf(r.name));
   if (starts.some((s) => s < 0)) return null;
   const heading = text.indexOf(PUBLIC_HEADING);
+  const regionStarts = spanStarts(text, starts);
   for (let i = 0; i < input.parents.length; i++) {
     const r = input.parents[i];
     const start = starts[i];
@@ -281,7 +475,9 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
     }
     const home = lines.find((l) => l.includes(r.name)) ?? "";
     if (input.parents.some((o) => o !== r && home.includes(o.name))) return null;
-    if (r.evidence && find(home, r.evidence) < 0) return null;
+    const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+    const region = text.slice(lineStart, spanEnd(regionStarts, i, heading >= 0 ? heading : text.length));
+    if (!evidenceHolds(home, region, r)) return null;
   }
 
   if (!factsStayHome(text, draft, input, starts, heading)) return null;
@@ -355,6 +551,16 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
      back is their words, not Pando praising a place (22 Oct live run). */
   const praise = tokensOf(`${draft.replace(/Best for:/gi, " ")}\n${input.question}`);
   for (const word of own.match(QUALITY) ?? []) if (!praise.has(lc(word))) return null;
+  /* Nothing about their child the parent did not say (26 Oct, the SMS lab):
+     "any good art classes near Pasadena" opened *"Looking for a gentle start in
+     art with a little one"* — an age and a temperament nobody gave. Words that
+     describe the child stand only where the question or the draft holds them. */
+  const said = lc(`${draft}\n${input.question}`);
+  for (const word of own.match(CHILD_WORDS) ?? []) {
+    const w = lc(word);
+    const stem = w.replace(/(ies)$/, "y").replace(/s$/, "");
+    if (!said.includes(w) && !said.includes(stem)) return null;
+  }
   for (const sentence of own.split(/(?<=[.!:])\s+|\n|\s*\|\s*/)) {
     const words = sentence.match(/[A-Za-z][A-Za-z'&-]*/g) ?? [];
     for (let i = 0; i < words.length; i++) {

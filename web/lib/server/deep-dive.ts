@@ -265,7 +265,10 @@ const SYSTEM = [
   "- `order`: the ids of the places you write about, best fit for THIS family first - what its pages",
   "  say on what the question turns on, the child's age against the ages it takes, the drive",
   "  against their limit, the hours against their logistics, the price against their budget. A",
-  "  place whose pages say little goes below one that clearly fits.",
+  "  place whose pages say little goes below one that clearly fits. A place with lines in",
+  "  `pando_prints_below` has local parents' notes printed under it: when its kind and ages fit the",
+  "  question, keep it in `order` even if its page is thin, and let its paragraph be short ('see",
+  "  the notes below') rather than leaving it out.",
   "- `also`: ids of other places worth naming in one line without detail (empty if none).",
   "- `options[].text`: for each place in `order`, a paragraph of about `paragraph_characters`",
   "  characters (the named place of a single question may take twice that): what it is and how it",
@@ -298,8 +301,9 @@ const SYSTEM = [
   "Rules - a sentence that breaks one is removed:",
   "- Use only the facts given. Every number must appear in the own facts of the place its sentence",
   "  names - never move a price or an age range from one place to another - or be the child's age,",
-  "  a drive estimate, the family's own limit or a year. Never invent a price, hours, ages or a",
-  "  distance.",
+  "  a drive estimate, the family's own limit or a year - in digits or in words. Never invent a",
+  "  price, hours, ages or a distance, and never say a place has or offers something (a pool, a free",
+  "  trial, lunch, a discount, parking) that its own facts do not mention.",
   "- Never say what parents, kids, families, reviewers or anyone else think, say, enjoy, love or",
   "  recommend, and never call a place popular, well-regarded, highly rated, loved, trusted, the",
   "  best or a favorite. Don't use the word 'recommend' yourself either - say 'I'd start with'.",
@@ -530,7 +534,7 @@ export function readDraft(
   const year = Number(todayPhrase(input.now).slice(-4));
   const years = `${year - 1} ${year} ${year + 1}`;
   /* Per option, so a price or a number goes with the place its sentence names (safety review, 22 Oct). */
-  const byOption = input.options.map((o) => ({ names: optionAliases(o.name, TOWNS), prices: pageText(o), numbers: pageText(o) }));
+  const byOption = input.options.map((o) => ({ names: optionAliases(o.name, TOWNS), prices: pageText(o), numbers: pageText(o), facts: pageText(o) }));
   const text: Record<string, string> = {};
   const watch: Record<string, string> = {};
   const removed: Removal[] = [];
@@ -556,7 +560,8 @@ export function readDraft(
     if (p.text) text[o.id] = p.text;
     for (const reason of p.dropped) removed.push({ id: o.id, field: "text", reason });
     if (typeof item.watch === "string" && item.watch.trim()) {
-      const c = keepSentences(watchPhrase(item.watch), { ...checks, max: 160 });
+      /* A watch names a thing to check, not a thing the place has: "whether it has a wait list". */
+      const c = keepSentences(watchPhrase(item.watch), { ...checks, verify: true, max: 160 });
       if (c.text) watch[o.id] = c.text.replace(/[.!?]$/, "");
       for (const reason of c.dropped) removed.push({ id: o.id, field: "watch", reason });
     }
@@ -599,6 +604,49 @@ function longer(a: string | null | undefined, b: string | null | undefined): str
   return (b?.length ?? 0) > (a?.length ?? 0) ? (b ?? null) : (a ?? null);
 }
 
+/**
+ * Two checked attempts as one report (the first draft and its one retry).
+ * Exported for `test:deep-dive`, which holds the opening to the ranking it
+ * was written for (26 Oct).
+ */
+export function mergeDrafts(first: CheckedDraft, second: CheckedDraft): CheckedDraft {
+  /* Per field, whichever attempt kept more; the order from the attempt that kept more text overall. */
+  const ids = new Set([...Object.keys(first.text), ...Object.keys(second.text)]);
+  const text: Record<string, string> = {};
+  for (const id of ids) {
+    const t = longer(first.text[id], second.text[id]);
+    if (t) text[id] = t;
+  }
+  const watchIds = new Set([...Object.keys(first.watch), ...Object.keys(second.watch)]);
+  const watch: Record<string, string> = {};
+  for (const id of watchIds) {
+    const t = second.watch[id] ?? first.watch[id];
+    if (t) watch[id] = t;
+  }
+  const kept = (c: CheckedDraft) => Object.values(c.text).join("").length;
+  const pick = kept(second) >= kept(first) && second.order.length ? second : first;
+  const other = pick === first ? second : first;
+  /*
+   * The opening, the side-by-side and the bottom line come with the order they
+   * were written for: each names a first pick. The other attempt's are used
+   * only when it ranked the places the same way — otherwise an opening that
+   * starts with Kidspace could head a report that ranks Galileo first (review,
+   * 26 Oct). With none, the report has no opening and `renderBlocks` falls back.
+   */
+  const sameOrder = other.order.join() === pick.order.join();
+  return {
+    opening: pick.opening ?? (sameOrder ? other.opening : null),
+    order: pick.order,
+    also: pick.also,
+    comparison: sameOrder ? longer(first.comparison, second.comparison) : pick.comparison,
+    text,
+    watch,
+    bottom_line: pick.bottom_line ?? (sameOrder ? other.bottom_line : null),
+    shape: pick.shape,
+    max_parts: pick.max_parts,
+  };
+}
+
 /** A first draft, and one retry told exactly what was removed — when anything was. */
 export async function draftChecked(input: {
   question: string;
@@ -617,38 +665,7 @@ export async function draftChecked(input: {
   const hints = first.removed.map((r) => `a sentence in ${r.field} for ${r.id}: ${refusalHint(r.reason)}`);
   const second = readDraft(await draft({ ...sized, refused: hints }), sized);
   if (!second) return { checked: first.checked, drafted: true, refusals: first.removed.length };
-  /* Per field, whichever attempt kept more; the order from the attempt that kept more text overall. */
-  const ids = new Set([...Object.keys(first.checked.text), ...Object.keys(second.checked.text)]);
-  const text: Record<string, string> = {};
-  for (const id of ids) {
-    const t = longer(first.checked.text[id], second.checked.text[id]);
-    if (t) text[id] = t;
-  }
-  const watchIds = new Set([...Object.keys(first.checked.watch), ...Object.keys(second.checked.watch)]);
-  const watch: Record<string, string> = {};
-  for (const id of watchIds) {
-    const t = second.checked.watch[id] ?? first.checked.watch[id];
-    if (t) watch[id] = t;
-  }
-  const kept = (c: CheckedDraft) => Object.values(c.text).join("").length;
-  const pick = kept(second.checked) >= kept(first.checked) && second.checked.order.length ? second : first;
-  const other = pick === first ? second : first;
-  return {
-    checked: {
-      /* The opening and the take come with the order they were written for: both now name the first pick. */
-      opening: pick.checked.opening ?? other.checked.opening,
-      order: pick.checked.order,
-      also: pick.checked.also,
-      comparison: longer(first.checked.comparison, second.checked.comparison),
-      text,
-      watch,
-      bottom_line: pick.checked.bottom_line ?? other.checked.bottom_line,
-      shape: pick.checked.shape,
-      max_parts: pick.checked.max_parts,
-    },
-    drafted: true,
-    refusals: second.removed.length,
-  };
+  return { checked: mergeDrafts(first.checked, second.checked), drafted: true, refusals: second.removed.length };
 }
 
 /* ------------------------------------------------------------- the trigger */
@@ -703,10 +720,13 @@ export async function deepDiveStep(input: {
   const deepWord = acceptsDeepDive(body);
   const explicit = asksForDeepDive(body);
 
-  if ((deepWord || explicit) && (await deepDiveInFlight(input.personId))) {
-    /* A second DEEP or a retried webhook builds nothing and says nothing; a new
-       subject is told why it is not starting (review, 21 Oct). */
-    return explicit && deepDiveTopic(body)
+  const flight = deepWord || explicit ? await deepDiveInFlight(input.personId) : null;
+  /* A second DEEP or a retried webhook builds nothing and says nothing; a new
+     subject is told why it is not starting (review, 21 Oct) — but only while one
+     is being built. One that just landed is not "on its way" (26 Oct): a new
+     subject then starts a new one. */
+  if (flight === "building" || (flight === "just_sent" && !(explicit && deepDiveTopic(body)))) {
+    return flight === "building" && explicit && deepDiveTopic(body)
       ? { reply: DEEP_DIVE_BUSY, template: "deep_dive_busy", run: null }
       : { reply: null, template: "deep_dive_in_flight", run: null };
   }
@@ -740,6 +760,15 @@ export async function deepDiveStep(input: {
     }
   }
 
+  /* A bare DEEP with no open offer (26 Oct): from someone Pando answered in the
+     last three days it is a request about that question, not a first name —
+     the 21 Oct rule let it fall through to "ask me about local classes". */
+  if (deepWord && !waiting) {
+    const last = await lastQuestionFor(input.phone);
+    const id = last ? await startExplicitDeepDive({ personId: input.personId, question: last }) : null;
+    if (last && id) return { reply: deepDiveStarted(last), template: "deep_dive_started", run: { id, question: last } };
+  }
+
   if (explicit) {
     const topic = deepDiveTopic(body) ?? (await lastQuestionFor(input.phone));
     const id = await startExplicitDeepDive({ personId: input.personId, question: topic });
@@ -749,6 +778,36 @@ export async function deepDiveStep(input: {
       : { reply: DEEP_DIVE_ASK_TOPIC, template: "deep_dive_topic", run: null };
   }
   return null;
+}
+
+/**
+ * The classifier read a request for a deep dive (26 Oct) — `deep_dive` with the
+ * subject it resolved, else the last question, else Pando asks. The same rules
+ * as the explicit trigger above: nothing new while one is being built.
+ */
+export async function requestDeepDive(input: {
+  personId: string;
+  phone: string;
+  subject: string | null;
+}): Promise<DeepDiveStep | null> {
+  if (!deepDiveConfigured()) return null;
+  const flight = await deepDiveInFlight(input.personId);
+  if (flight === "building") {
+    return input.subject
+      ? { reply: DEEP_DIVE_BUSY, template: "deep_dive_busy", run: null }
+      : { reply: null, template: "deep_dive_in_flight", run: null };
+  }
+  /* One just landed: the same request again (no subject of its own, or a
+     retried webhook) builds nothing; a named subject is a new report. */
+  if (flight === "just_sent" && !input.subject?.trim()) {
+    return { reply: null, template: "deep_dive_in_flight", run: null };
+  }
+  const topic = input.subject?.trim() || (await lastQuestionFor(input.phone));
+  const id = await startExplicitDeepDive({ personId: input.personId, question: topic });
+  if (!id) return null;
+  return topic
+    ? { reply: deepDiveStarted(topic), template: "deep_dive_started", run: { id, question: topic } }
+    : { reply: DEEP_DIVE_ASK_TOPIC, template: "deep_dive_topic", run: null };
 }
 
 /* ---------------------------------------------------------------- delivering */

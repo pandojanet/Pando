@@ -60,13 +60,23 @@
 /* ------------------------------------------------------------------ triggers */
 
 /**
- * The explicit trigger: the parent said "deep dive". Only that — "a full
- * breakdown of costs" is not a request for a future-paid feature, so phrases
- * like it make Pando *offer* one instead (`deepDiveWorthOffering`).
+ * The explicit trigger's fast path: the parent wrote "deep dive". Read before
+ * the classifier, so it costs no model call.
+ *
+ * ⚠ **Every other way of asking is the classifier's `deep_dive` intent** (26 Oct)
+ * — not a longer phrase list here. The SMS lab walk found the natural ones all
+ * missed (*"a deep research against these top 5 schools"*, *"comparison for
+ * these top 3 swim schools"*, *"I want to make DEEP"*), and a list grows one
+ * miss at a time; the model reads the request and resolves "these" against the
+ * last question (`lib/server/intent.ts`). "A full breakdown of costs" is not
+ * asking for the comparison itself and still only gets the offer.
  */
 export function asksForDeepDive(text: string): boolean {
   return /\bdeep[\s-]?dive\b/i.test(text) && !/^\s*(what|what's|whats)\b.*\?\s*$/i.test(text);
 }
+
+/** "against these top 5", "compare them": the subject is what Pando just sent. */
+const POINTS_BACK = /\b(these|those|them|the above|the ones (you|u) (sent|gave|listed))\b/i;
 
 /**
  * What the deep dive is about, from the message that asked for one — or null
@@ -74,6 +84,7 @@ export function asksForDeepDive(text: string): boolean {
  * the parent's last question or asks.
  */
 export function deepDiveTopic(text: string): string | null {
+  if (POINTS_BACK.test(text)) return null;
   /* "deep dive on camps" names a topic in one word; "I want a deep dive" names none. */
   const named = /\bdeep[\s-]?dive\s*[:,-]?\s*(on|about|into|for|of|re)?\s+\S/i.test(text);
   const rest = text
@@ -739,8 +750,45 @@ export function shapeOrder(
   } else {
     order = valid.slice(0, shape.detailed);
   }
+  order = withParentsInDetail(order, [...valid, ...draft.also], options, shape);
   const also = [...valid, ...draft.also].filter((id, i, all) => byId.has(id) && !order.includes(id) && all.indexOf(id) === i);
   return { order, also };
+}
+
+/**
+ * ⚠ **A ranking with no parents' place in it is not Pando's report** (26 Oct).
+ *
+ * Walked in the SMS lab, every deep dive printed `parent_options: 0`: the writer
+ * ranks on what pages state, a parents' record often has no page, and the
+ * rule "a place whose pages say little goes below one that clearly fits" sent
+ * each one to the "Also used by parents near you" line — the parents' words,
+ * heads-up and price printed under a block were never printed at all. Since the
+ * same day retrieval offers only records on the question's topic and ages, so
+ * a clean one (not withdrawn, not old, no warning) fits by construction.
+ *
+ * So in a top or open report the writer's order stands and, if it holds no
+ * clean parents' place, up to two are added **at its end** — one when only
+ * three or fewer places are detailed — taking the last places' slots. Never
+ * first: the 22 Oct row ("the writer's order, not parents first") is about a
+ * parents' camp leading while the bottom line recommended another, and the end
+ * of the list cannot do that. A place the writer did not write about gets
+ * `factsParagraph` and Pando's own parent lines beneath it.
+ */
+function withParentsInDetail(order: string[], pool: string[], options: DeepOption[], shape: DeepShape): string[] {
+  if ((shape.kind !== "top" && shape.kind !== "open") || order.length === 0) return order;
+  const byId = new Map(options.map((o) => [o.id, o]));
+  const clean = (id: string) => {
+    const o = byId.get(id);
+    return o !== undefined && o.source === "parents" && o.withdrawn === 0 && !o.stale && !o.warning;
+  };
+  if (order.some(clean)) return order;
+  const want = shape.detailed <= 3 ? 1 : 2;
+  const picks = [...pool, ...options.map((o) => o.id)]
+    .filter((id, i, all) => all.indexOf(id) === i && clean(id) && !order.includes(id))
+    .slice(0, want);
+  if (picks.length === 0) return order;
+  const room = Math.max(1, shape.detailed - picks.length);
+  return [...order.slice(0, Math.min(order.length, room)), ...picks];
 }
 
 /**
@@ -800,7 +848,8 @@ export type ProseRefusal =
   | "hearsay"
   | "characters"
   | "number"
-  | "name";
+  | "name"
+  | "feature";
 
 const REFUSAL_HINT: Record<ProseRefusal, string> = {
   not_text: "it was not text",
@@ -811,8 +860,9 @@ const REFUSAL_HINT: Record<ProseRefusal, string> = {
   first_person: "it spoke as someone who went there",
   hearsay: "it reported what others say or find (I'm told, others say, kids enjoy)",
   characters: "it used a character outside plain text",
-  number: "it used a number that is not in that option's own facts, its drive estimate or the family's own details",
+  number: "it used a number, in digits or in words, that is not in that option's own facts, its drive estimate or the family's own details",
   name: "it named a person, or a place or word that none of the options' facts contain",
+  feature: "it said a place has or offers something (a pool, a free trial, lunch, a discount, parking) that its own facts do not mention",
 };
 
 export function refusalHint(r: ProseRefusal): string {
@@ -891,12 +941,158 @@ export const REPORT_TESTIMONY =
 const REPORT_HEARSAY =
   /\bi('m|\s+am)?\s+(told|hear|heard|understand)\b|\b(others|everyone|everybody|they)\s+(say|said|says|find|found|think)\b|\b(kids|children|toddlers|students|little ones)\s+(enjoy|enjoyed|seem|seemed|tend to|tended to|find|found|loved?)\b|\b(apparently|reportedly|supposedly|rumou?r\w*|word is)\b/i;
 
+/* ------------------------------------------- numbers written out in words */
+
+const SMALL_NUMBERS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const NUMBER_WORD = String.raw`(?:${Object.keys(SMALL_NUMBERS).join("|")}|hundred|thousand)`;
+/**
+ * A run of number words ("fifty", "twenty-five", "fifteen hundred", "one
+ * hundred and fifty", "two and a half"), or the few phrases that mean a number
+ * ("a dozen", "a couple of", "a hundred", "twice a week").
+ */
+const SPELLED = new RegExp(
+  String.raw`\b(?:a\s+(?:dozen|couple\s+of)\b|(?:a\s+(?=hundred|thousand))?${NUMBER_WORD}(?:[\s-]+(?:(?<=(?:hundred|thousand)[\s-]+)and[\s-]+)?${NUMBER_WORD})*\b(?:\s+and\s+a\s+half\b)?|(?:once|twice)\s+(?:a|per|each)\s+(?=week|day|month|year|term|season))`,
+  "gi",
+);
+/**
+ * What a number measures, when it follows one (or one word on, never a
+ * function word: "the only one with hours" is not "one hour"): time, money,
+ * age, distance, people and places. "Twelve minutes away", "fifty dollars",
+ * "two Olympic-size pools", "seven sites" are facts; "eight that fit" and "the
+ * same three questions" are the writer counting.
+ */
+const MEASURE =
+  /^[\s-]*(?:(?!(?:with|of|the|a|an|and|or|in|on|at|for|to|that|which|who|whose|more|other|is|are|has|have)\b)[a-z'-]+\s+)?(?:minutes?|mins?|hours?|hrs?|days?|nights?|weeks?|months?|years?|yrs?|year-olds?|sessions?|terms?|semesters?|seasons?|class(?:es)?|lessons?|visits?|dollars?|bucks|cents|miles?|acres?|percent|feet|foot|meters?|metres?|yards?|kids|children|students|campers|teachers?|counselors?|coaches|instructors?|staff|adults?|times|spots?|seats?|pools?|sites?|locations?|campuses|rooms?|classrooms?|grades?|levels?|ages?|weekly|daily|per)\b/i;
+
+function spelledValue(raw: string): number | null {
+  const t = raw.toLowerCase().replace(/[\s-]+/g, " ").trim();
+  if (/^(once|twice)\b/.test(t)) return t.startsWith("once") ? 1 : 2;
+  if (t === "a dozen") return 12;
+  if (t === "a couple of") return 2;
+  /* "twenty-five", "fifteen hundred", "one hundred and fifty"; never "five ten" (that is two numbers). */
+  let total = 0;
+  let current = 0;
+  for (const w of t.replace(/^a (?=hundred|thousand)/, "").replace(/ and a half$/, "").split(" ")) {
+    if (w === "and") continue;
+    if (w in SMALL_NUMBERS) {
+      const v = SMALL_NUMBERS[w];
+      const rest = current % 100;
+      if (!(rest === 0 || (rest >= 20 && rest % 10 === 0 && v < 10))) return null;
+      current += v;
+    } else if (w === "hundred") {
+      if (current % 100 !== current || current >= 100) return null;
+      current = (current || 1) * 100;
+    } else if (w === "thousand") {
+      if (total > 0) return null;
+      total = (current || 1) * 1000;
+      current = 0;
+    } else return null;
+  }
+  return total + current + (/ and a half$/.test(t) ? 0.5 : 0);
+}
+
+/**
+ * The text with numbers written out in words turned into digits, so the
+ * number checks below see them (adversarial review, 26 Oct, proved:
+ * "Kidspace costs fifty dollars a visit" and "Kidspace is twelve minutes away"
+ * were kept while "$50" was refused). "N dollars" and "N bucks" become "$N",
+ * so a price in words meets the price check too.
+ *
+ * In facts (`every`), every number word becomes digits: a page's "five-day
+ * camps" backs the writer's "5-day". In a sentence of the writer's, a number
+ * up to twenty with no measure after it (`MEASURE`) stays a word, because it
+ * is the writer counting or a pronoun, not a fact: "one of them", "the only
+ * one", "one-on-one", "You asked for eight, and I found eight that fit", "Nine
+ * places fit your area, not ten" (22 Oct, cited in the decisions as the shape
+ * working), "ask the same three questions everywhere" (a saved 22 Oct report,
+ * refused by a first version that exempted only the report's own counts).
+ * "One week", "a one-hour class", "twelve minutes away", "two Olympic-size
+ * pools" and anything above twenty are numbers and checked.
+ * ⚠ Left unchecked on purpose: a small count before a noun `MEASURE` does not
+ * list ("three Clubhouses") — in digits it would be checked.
+ * `keep` are spans (options' names) never rewritten: "Two Bit Circus" is a name.
+ */
+export function spelledToDigits(text: string, opts: { every?: boolean; keep?: readonly string[] } = {}): string {
+  const spans: Array<[number, number]> = [];
+  for (const k of opts.keep ?? []) {
+    if (k.trim().length < 3) continue;
+    for (let at = text.indexOf(k); at >= 0; at = text.indexOf(k, at + 1)) spans.push([at, at + k.length]);
+  }
+  const convert = (raw: string, at: number): string => {
+    if (spans.some(([a, b]) => at >= a && at < b)) return raw;
+    const value = spelledValue(raw);
+    /* Two numbers side by side ("five ten-minute breaks"): each on its own. */
+    if (value === null) return raw.replace(new RegExp(String.raw`\b${NUMBER_WORD}\b`, "gi"), (w: string, i: number) => convert(w, at + i));
+    const digits = String(value);
+    if (opts.every) return /^(once|twice)/i.test(raw) ? `${digits} times ${raw.split(/\s+/)[1]} ` : digits;
+    const after = text.slice(at + raw.length, at + raw.length + 40);
+    if (value <= 20 && !MEASURE.test(after)) return raw;
+    return /^(once|twice)/i.test(raw) ? `${digits} times ${raw.split(/\s+/)[1]} ` : digits;
+  };
+  const out = text.replace(SPELLED, (raw: string, at: number) => convert(raw, at));
+  return out.replace(/(\d+(?:[.,]\d+)?)\s*(?:dollars?|bucks)\b/gi, "$$$1");
+}
+
+/** Facts as the number checks read them: the words as given, and their numbers as digits. */
+function withDigits(text: string): string {
+  return `${text} \n ${spelledToDigits(text, { every: true })}`;
+}
+
+/**
+ * Concrete things a place has or offers — the lower-case facts a parent acts
+ * on (adversarial review, 26 Oct, proved: "It has a heated pool and a free
+ * trial class" was kept with neither on any page, because only capitals and
+ * numbers were checked). Each word here must be in the facts of the place its
+ * sentence is about (the same owner as a number), unless the clause says it
+ * is absent or unknown ("no extended care listed", "whether there is a wait
+ * list"). Deliberately a short list, not every content word: over the 266
+ * sentences 13 saved 22 Oct drafts kept, a check on every content word
+ * refused 197 ("fits", "hours", "catch", "backup", "price"…); this one, with
+ * its owner and "not claimed" rules, refuses none of them (62 carry one of its
+ * words). Hours, ages and drop-off are not here — the writer infers those from
+ * a page's times, and the numbers check holds them.
+ * ⚠ Not checked: any concrete word outside this list ("an edible garden" is
+ * held, "a climbing wall" is not), and a feature said of two places at once
+ * ("Kidspace and Galileo both have pools") is asked of the nearer name only.
+ */
+const FEATURE =
+  /\b(free|heated|indoors?|outdoors?|trials?|discount\w*|siblings?|scholarships?|financial aid|sliding[\s-]scale|subsidi\w+|insurance|medi-cal|licensed|accredit\w*|certified|credential\w*|lunch(?:es)?|snacks?|meals?|breakfast|transport\w*|bus(?:es)?|shuttles?|parking|shaded?|air[\s-]condition\w*|pools?|gardens?|playgrounds?|gyms?|bilingual|spanish|mandarin|french|immersion|montessori|reggio|waldorf|religious|christian|catholic|jewish|kosher|vegan|organic|naps?|potty|diapers?|toilet|uniforms?|refunds?|refundable|cancel\w*|make-?ups?|private|semi-private|wait[\s-]?list\w*|sold out|nitrous|sedation|sedated|anesthe\w*|laughing gas|one-on-one|ratios?|small (?:class|classes|group|groups))\b/gi;
+/** Absent, unknown or to be asked: "no detail on sedation", "whether any weeks have a wait list". */
+const NOT_CLAIMED = /\b(no|not|never|nothing|neither|without|none|nor|whether|if|unless|unclear|unknown|unconfirmed|unlisted|ask|asking|check|confirm|missing|lacks?|silent)\b|n't\b/i;
+/** Where a clause turns: a "no" before it does not cover what follows. */
+const TURN = /\b(?:but|while|though|although|however|whereas|yet)\b|;/gi;
+/** A word's stem, short enough that "anesthesia" meets "anesthetic" and "classes" meets "class". */
+function featureStem(word: string): string {
+  let w = word.toLowerCase().replace(/'s$/, "");
+  if (w.length > 3) w = w.replace(/ies$/, "y").replace(/(?<=s|x|ch|sh)es$/, "").replace(/(?<!s)s$/, "").replace(/ed$/, "");
+  return w.slice(0, 6);
+}
+
+/** Whether `facts` hold a feature word: each of its words by stem, or the phrase run together ("wait list" / "waitlist"). */
+function factsHold(said: string, facts: string): boolean {
+  const oneWord = (t: string) => t.replace(/\bwait[\s-]+list/gi, "waitlist");
+  const feature = oneWord(said);
+  const lower = oneWord(plainText(facts).toLowerCase());
+  const have = new Set((lower.match(/[a-z][a-z']*/g) ?? []).map(featureStem));
+  /* "One-on-one" is how a writer says a page's "private lessons" (saved 22 Oct report, twice). */
+  if (/^one-on-one$/i.test(feature) && ["privat", "indivi"].some((s) => have.has(s))) return true;
+  const parts = feature.toLowerCase().split(/[\s-]+/).filter(Boolean);
+  if (parts.every((p) => have.has(featureStem(p)))) return true;
+  return parts.length > 1 && lower.replace(/[\s-]+/g, "").includes(parts.join(""));
+}
+
 /**
  * One sentence of the agentic report, or why not.
  *
  * Kept from `proseVerdict`: no link or phone, no quotation, no vouching, no
  * first-hand experience or hearsay, plain GSM-7 text, and no number the facts
- * do not hold. Dropped from it, each for a measured false refusal (22 Oct):
+ * do not hold — in digits or in words (`spelledToDigits`, 26 Oct). Added on
+ * 26 Oct: a thing the place has or offers (`FEATURE`) must be in its facts.
+ * Dropped from it, each for a measured false refusal (22 Oct):
  * the quantity words ("no drive at all"), and a capital at the start of a
  * sentence ("Drive times...", "Nothing listed..."). A capital mid-sentence
  * must still be a word the report's own facts carry, so the writer may compare
@@ -931,11 +1127,13 @@ export function reportSentence(
      * refused), and so must any other number in a sentence that names an option.
      * `names` are `optionAliases`.
      */
-    byOption?: Array<{ names: string[]; prices: string; numbers: string }>;
+    byOption?: Array<{ names: string[]; prices: string; numbers: string; facts?: string }>;
     /** The option a paragraph is about: the owner of a number no name comes before. */
     self?: number;
     /** Numbers any sentence may use whatever it names: the child's age, the drive minutes, the year. */
     common?: string;
+    /** A "Worth checking:" phrase: what it names is to be verified, not stated, so `FEATURE` is not asked of it. */
+    verify?: boolean;
   },
 ): { text: string } | { refused: ProseRefusal } {
   const text = plainText(sentence);
@@ -956,9 +1154,12 @@ export function reportSentence(
      ("La Cañada", 22 Oct run — a page's own town cost two paragraphs). */
   if ([...text].some((c) => !/[\x20-\x7E]/.test(c) && !GSM_LETTERS.includes(c)) || /[`[\]{}|^~\\]/.test(text)) return { refused: "characters" };
   const byOption = allowed.byOption;
-  const mentions = byOption ? mentionsIn(text, byOption) : [];
+  /* The numbers are read from the sentence with any written in words as digits; the names stay as written. */
+  const keep = [...(allowed.names ?? []), ...(byOption ?? []).flatMap((o) => o.names)];
+  const numText = spelledToDigits(text, { keep });
+  const mentions = byOption ? mentionsIn(numText, byOption) : [];
   /* Whose facts a number at `at` must come from: the option named nearest before it, else `self`, else any named after. */
-  const ownersAt = (at: number): number[] | null => {
+  const ownersAt = (at: number, mentions: Array<{ at: number; idx: number }>): number[] | null => {
     const before = mentions.filter((m) => m.at < at);
     if (before.length) {
       const last = Math.max(...before.map((m) => m.at));
@@ -970,39 +1171,57 @@ export function reportSentence(
   /* Thousands commas only: "$470 to $540, the lowest" read "540," and was refused (review, 22 Oct). */
   const DOLLARS = /\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)/g;
   if (byOption) {
-    for (const m of text.matchAll(DOLLARS)) {
-      const owners = ownersAt(m.index ?? 0);
+    for (const m of numText.matchAll(DOLLARS)) {
+      const owners = ownersAt(m.index ?? 0, mentions);
       if (!owners) return { refused: "number" };
-      const priced = owners.map((i) => plainText(byOption[i]?.prices ?? "").replace(/\s+/g, "")).join(" ");
+      const priced = owners.map((i) => plainText(withDigits(byOption[i]?.prices ?? "")).replace(/\s+/g, "")).join(" ");
       if (!priced.includes("$" + m[1])) return { refused: "number" };
     }
   } else if (allowed.prices !== undefined) {
-    const priced = plainText(allowed.prices).replace(/\s+/g, "");
-    for (const m of text.matchAll(DOLLARS)) {
+    const priced = plainText(withDigits(allowed.prices)).replace(/\s+/g, "");
+    for (const m of numText.matchAll(DOLLARS)) {
       if (!priced.includes("$" + m[1])) return { refused: "number" };
     }
   }
   /* Minutes of driving only: "20-minute lessons" is a page's fact, checked
      with the other numbers below (22 Oct run). */
   if (allowed.minutes) {
-    for (const m of text.matchAll(/(\d+)\s*(?:-|to)?\s*(\d+)?[\s-]*(min|mins|minutes|minute)\b(?=[^.;]{0,24}\b(away|drive|driving|by car|from (you|home|your)|of (you|home)|limit)\b)/gi)) {
+    for (const m of numText.matchAll(/(\d+)\s*(?:-|to)?\s*(\d+)?[\s-]*(min|mins|minutes|minute)\b(?=[^.;]{0,24}\b(away|drive|driving|by car|from (you|home|your)|of (you|home)|limit)\b)/gi)) {
       for (const n of [m[1], m[2]].filter(Boolean)) {
         if (!allowed.minutes.includes(Number(n))) return { refused: "number" };
       }
     }
   }
-  const numbers = tokensOf(allowed.numbers);
-  const common = tokensOf(allowed.common ?? "");
-  for (const m of text.matchAll(/\d+(?:[.,]\d+)?/g)) {
+  const numbers = tokensOf(withDigits(allowed.numbers));
+  const common = tokensOf(withDigits(allowed.common ?? ""));
+  for (const m of numText.matchAll(/\d+(?:[.,]\d+)?/g)) {
     const digits = m[0];
     /* A sentence that names an option (or a paragraph about one) draws on that option's facts only. */
-    const owners = byOption && (mentions.length > 0 || allowed.self !== undefined) ? ownersAt(m.index ?? 0) : null;
+    const owners = byOption && (mentions.length > 0 || allowed.self !== undefined) ? ownersAt(m.index ?? 0, mentions) : null;
     if (owners) {
       if (common.has(digits)) continue;
-      if (!owners.some((i) => tokensOf(byOption?.[i]?.numbers ?? "").has(digits))) return { refused: "number" };
+      if (!owners.some((i) => tokensOf(withDigits(byOption?.[i]?.numbers ?? "")).has(digits))) return { refused: "number" };
       continue;
     }
     if (!numbers.has(digits)) return { refused: "number" };
+  }
+  /*
+   * A thing the place has or offers must be in its own facts — the same owner
+   * as a number (`FEATURE`). A sentence that names no place and is about none
+   * ("what matters most is a clear weekend schedule and a small group", a
+   * saved 22 Oct opening) says what to look for, not what a place has; without
+   * `byOption` (a single place's check) the facts are `text`.
+   */
+  if (!allowed.verify && !/\?$/.test(text)) {
+    const named = byOption ? mentionsIn(text, byOption) : [];
+    for (const m of text.matchAll(FEATURE)) {
+      const at = m.index ?? 0;
+      if (NOT_CLAIMED.test(text.slice(0, at).split(TURN).pop() ?? "")) continue;
+      const owners = byOption ? ownersAt(at, named) : null;
+      if (byOption && !owners) continue;
+      const facts = owners ? owners.map((i) => byOption?.[i]?.facts ?? `${byOption?.[i]?.numbers ?? ""} \n ${byOption?.[i]?.prices ?? ""}`).join(" \n ") : allowed.text;
+      if (!factsHold(m[0], facts)) return { refused: "feature" };
+    }
   }
   const source = tokensOf(allowed.text);
   const words = text.match(/[A-Za-z][A-Za-z'-]*/g) ?? [];

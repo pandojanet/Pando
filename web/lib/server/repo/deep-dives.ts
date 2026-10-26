@@ -48,9 +48,15 @@ export async function recordDeepDiveOffer(input: {
 }
 
 /**
- * May Pando offer again? Once a week at most, and never over one still being
- * built or waiting for a topic — each with an age limit, so a row a crash left
- * behind cannot silence the offer for ever.
+ * May Pando offer again? Not within a week of an offer the parent left
+ * unanswered, and never over one still being built or waiting for a topic —
+ * each with an age limit, so a row a crash left behind cannot silence the
+ * offer for ever.
+ *
+ * ⚠ **Only an offer not taken counts toward the week** (26 Oct). Counting every
+ * row meant a parent who had just read a report and asked "top 5 camps" next
+ * got no offer for seven days — the week is there so an offer is not a sales
+ * line, and a parent who said yes last time is not being sold to.
  */
 export async function mayOfferDeepDive(personId: string): Promise<boolean> {
   const r = await withDb(async (db) => {
@@ -59,7 +65,7 @@ export async function mayOfferDeepDive(personId: string): Promise<boolean> {
       sql`
         select 1 from deep_dives
          where person_id = ${personId}::uuid
-           and (created_at > now() - make_interval(days => ${DEEP_DIVE_OFFER_GAP_DAYS})
+           and ((status = 'offered' and created_at > now() - make_interval(days => ${DEEP_DIVE_OFFER_GAP_DAYS}))
                 or (status = 'generating' and created_at > now() - interval '30 minutes')
                 or (status = 'awaiting_topic'
                     and created_at > now() - make_interval(hours => ${DEEP_DIVE_TOPIC_HOURS})))
@@ -119,24 +125,33 @@ export async function deepDiveAwaitingTopic(personId: string): Promise<string | 
 }
 
 /**
- * Is one already on its way — being built, or sent in the last ten minutes?
- * Then a second DEEP, or a retried webhook, builds nothing.
+ * Is one already on its way (`building`), or did one just land (`just_sent`,
+ * the last ten minutes)? A second DEEP or a retried webhook builds nothing in
+ * either case.
+ *
+ * ⚠ **Two answers, not one** (26 Oct): it was a boolean, so a parent who read a
+ * report and asked for another on a new subject two minutes later was told
+ * *"Your deep dive is still on its way"* — about one that had already arrived.
+ * Only `building` is "on its way"; after `just_sent` a request that names its
+ * own subject starts a new one.
  */
-export async function deepDiveInFlight(personId: string): Promise<boolean> {
+export async function deepDiveInFlight(personId: string): Promise<"building" | "just_sent" | null> {
   const r = await withDb(async (db) => {
     const out = await rows(
       db,
       sql`
-        select 1 from deep_dives
+        select case when status = 'generating' then 'building' else 'just_sent' end as state
+          from deep_dives
          where person_id = ${personId}::uuid
            and ((status = 'generating' and created_at > now() - interval '30 minutes')
                 or (status = 'sent' and sent_at > now() - interval '10 minutes'))
+         order by (status = 'generating') desc
          limit 1
       `,
     );
-    return out.length > 0;
+    return out[0]?.state === "building" ? "building" : out[0]?.state === "just_sent" ? "just_sent" : null;
   });
-  return r.persisted ? r.data === true : false;
+  return r.persisted ? (r.data ?? null) : null;
 }
 
 /** Accept an offer. False when it was already accepted (a second DEEP). */

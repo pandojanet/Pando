@@ -28,6 +28,17 @@ export type Intent =
   | "ask_recommendation"
   /** Specifically about a caregiver: nanny, sitter, night nurse, nanny share. */
   | "ask_caregiver"
+  /**
+   * Wants options compared, ranked or researched in depth — a Deep Dive (26 Oct).
+   *
+   * ⚠ A reading, not a phrase list. Until 26 Oct only the words "deep dive"
+   * started one, and a walk of the SMS lab found every natural way of asking
+   * missed: *"I want to make a deep research against these top 5 schools"*,
+   * *"comparison for these top 3 swim schools"*, *"I want to make DEEP"*. The
+   * model reads what is wanted and, with `subject`, what it is about — "these"
+   * resolved against the question Pando last answered.
+   */
+  | "deep_dive"
   /** A reply to a Network Ask Pando sent them. */
   | "answer_blast"
   /** Offering something unprompted — a place they loved, a tip. */
@@ -48,6 +59,7 @@ export type Intent =
 export const INTENTS: Intent[] = [
   "ask_recommendation",
   "ask_caregiver",
+  "deep_dive",
   "answer_blast",
   "contribute",
   "settings",
@@ -106,7 +118,17 @@ export interface IntentResult {
    * is one more field on a request that was being made anyway.
    */
   sensitive: boolean;
+  /**
+   * For `deep_dive`: what it is about, as a standalone request — "swim schools
+   * for a 4 year old in Altadena" — with "these"/"them" resolved against the
+   * last question. Null when the model gave none; the caller then uses the
+   * last question. Free text: never logged (invariant 7).
+   */
+  subject?: string | null;
 }
+
+/** The fallback's only Deep Dive reading: the words themselves, as on 21 Oct. */
+const DEEP_DIVE_WORDS = /\bdeep[\s-]?dive\b/i;
 
 const CAREGIVER_WORDS =
   /\b(nanny|nannies|sitter|babysitter|au ?pair|childminder|night nurse|newborn care|nanny share|childcare|daycare provider)\b/i;
@@ -224,6 +246,16 @@ export function fallbackIntent(text: string, context: IntentContext): IntentResu
     };
   }
 
+  if (DEEP_DIVE_WORDS.test(body) && !/^\s*(what|what's|whats)\b.*\?\s*$/i.test(body)) {
+    return {
+      intent: "deep_dive",
+      confidence: 0.7,
+      source: "fallback",
+      reason: "asks for a deep dive by name",
+      sensitive: false,
+    };
+  }
+
   if (CAREGIVER_WORDS.test(body)) {
     return {
       intent: "ask_caregiver",
@@ -289,6 +321,7 @@ export function applyThreshold(
     reason?: string;
     /** See `IntentResult.sensitive` — an escalation signal, never a clearance. */
     sensitive?: boolean;
+    subject?: string | null;
   } | null,
   text: string,
   context: IntentContext,
@@ -338,5 +371,6 @@ export function applyThreshold(
     source: "model",
     reason: model.reason?.slice(0, 200) ?? "",
     sensitive: model.sensitive === true,
+    subject: model.subject?.trim() ? model.subject.trim().slice(0, 300) : null,
   };
 }

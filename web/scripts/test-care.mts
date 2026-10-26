@@ -108,7 +108,7 @@ ok("no Network Ask is offered on top of a choice", !two.text.includes("Want me t
 ok("the choice is GSM-7 and inside the budget", seg.encodingFor(two.text) === "gsm7" && two.text.length <= a.SMS_BUDGET, `${seg.encodingFor(two.text)} ${two.text.length}`);
 ok("one caregiver alone is still one lead", !a.composeAnswer({ candidates: [t2("Elena V.", 2)], has_question: true }).text.startsWith("Two options"));
 ok("a caregiver among other kinds of record is not a choice of two people", !a.composeAnswer({ candidates: [t2("Elena V.", 2), t2("Maria G.", 1), { ...parentClass(), name: "Toddler Tunes" }], has_question: true }).text.startsWith("Two options"));
-const longFacts = "Works with babies. " + "Reliable and on time, plays actively, drives and can do pickups. ".repeat(6);
+const longFacts = "Works with babies. " + "Reliable and on time, plays actively, drives and can do pickups. ".repeat(10) /* 6 until the 26 Oct budget of eight segments */;
 const squeezed = a.composeAnswer({ candidates: [t2("Elena V.", 2, { care_facts: longFacts, care_brief: "works with babies" }), t2("Maria G.", 1, { care_facts: longFacts, care_brief: "works with toddlers" })], has_question: true });
 ok("when the full facts do not fit, the short form does - never a cut sentence", squeezed.text.length <= a.SMS_BUDGET && squeezed.text.includes("Works with babies.") && !squeezed.text.includes("Reliable and on time, plays actively, drives and can do pickups. Reliable"), squeezed.text.slice(0, 200));
 ok("the opening for a follow-up replaces the default", a.composeAnswer({ candidates: [t2("Elena V.", 2), t2("Maria G.", 1)], has_question: true, opening: "A few more that may fit:" }).text.startsWith("A few more that may fit:" + String.fromCharCode(10) + "1)"));
@@ -152,7 +152,9 @@ const { readFileSync } = await import("node:fs");
 const inbound = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
 ok("the queue stores a follow-up under the suffixed text", /question:\s*input\.more\s*\?\s*withMoreSuffix\(body\)\s*:\s*body/.test(inbound));
 /* The message's own classification; the deep-dive step (21 Oct) reads its topic earlier, separately. */
-ok("the follow-up branch runs before the classifier is called", inbound.indexOf("asksForMore(body)") > 0 && inbound.indexOf("asksForMore(body)") < inbound.indexOf("const reading = await classifyIntent("));
+/* 26 Oct: the reading may come from the clarifying step (a longer reply is read
+   there first); either way the follow-up branch decides before it is used. */
+ok("the follow-up branch runs before the classifier is called", inbound.indexOf("asksForMore(body)") > 0 && inbound.indexOf("asksForMore(body)") < inbound.indexOf("const reading = early && "));
 ok("a follow-up is only for a message no open question has claimed", /pending === null && !attached\.attached && !answeredSomething && !clarified && asksForMore\(body\)/.test(inbound));
 ok("a follow-up that names an age, a place or another topic is a new question", /bandsInQuestion\(body\)\.length > 0/.test(inbound) && /placePhraseIn\(body\) !== null/.test(inbound));
 const retrieval = readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");

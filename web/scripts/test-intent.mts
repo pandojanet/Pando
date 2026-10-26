@@ -430,5 +430,31 @@ for (const t of [
   ok(`not an opener: "${t}"`, !m.isBareOpener(t));
 }
 
+console.log("\n=== deep_dive: a reading, with its subject (26 Oct) ===");
+ok("deep_dive is an intent the model may return", m.INTENTS.includes("deep_dive"));
+{
+  const r = m.applyThreshold(
+    { intent: "deep_dive", confidence: 0.9, reason: "r", subject: "  swim schools for a 4 year old in Altadena " },
+    "I want to make comparison for these top 3 swim schools",
+    ctx(),
+  );
+  ok("a confident deep_dive reading is used", r.intent === "deep_dive" && r.source === "model");
+  ok("and carries its subject, trimmed", r.subject === "swim schools for a 4 year old in Altadena", String(r.subject));
+}
+ok(
+  "an empty subject is null, so the caller uses the last question",
+  m.applyThreshold({ intent: "deep_dive", confidence: 0.9, reason: "r", subject: "" }, "DEEP please", ctx()).subject === null,
+);
+ok(
+  "a hesitant deep_dive falls back, and the fallback knows only the words 'deep dive'",
+  m.applyThreshold({ intent: "deep_dive", confidence: 0.4, reason: "r" }, "compare these", ctx()).intent !== "deep_dive" &&
+    m.applyThreshold({ intent: "deep_dive", confidence: 0.4, reason: "r" }, "I want a deep dive on camps", ctx()).intent === "deep_dive",
+);
+ok("'what's a deep dive?' is not a request, even in the fallback", guess("what's a deep dive?").intent !== "deep_dive");
+ok(
+  "a Network Ask reply is still the Ask's, whatever it says",
+  m.applyThreshold({ intent: "deep_dive", confidence: 0.95, reason: "r" }, "deep dive please", ctx({ awaiting_blast_reply: true })).intent === "answer_blast",
+);
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

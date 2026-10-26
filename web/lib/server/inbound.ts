@@ -24,8 +24,8 @@ import {
 import { openDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { GENERAL_TIER } from "@/lib/blast-tiers";
 import { openIntroOfferAt } from "@/lib/server/repo/introductions";
-import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive } from "@/lib/server/deep-dive";
-import { deepDiveFamily, finishDeepDive, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
+import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDeepDive, type DeepDiveStep } from "@/lib/server/deep-dive";
+import { deepDiveFamily, finishDeepDive, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
 import { acceptsIntro, introOffer, introTarget } from "@/lib/introductions";
 import { introStep } from "@/lib/server/introductions";
@@ -801,59 +801,7 @@ export async function handleInboundMessage(input: {
   if (person && !attached.attached && !answeredSomething) {
     const step = await deepDiveStep({ personId: person.person_id, phone: from, body });
     if (step) {
-      /**
-       * ⚠ Read the subject **before** "On it" goes out. A deep dive has no
-       * reviewer, so a care, health, legal or safety question — or a claim
-       * about a person — is answered the ordinary way, where it is held; the
-       * model's sensitive flag is consulted because the rules alone have no
-       * medical vocabulary ("nosebleeds" reads as ordinary).
-       */
-      let reply = step.reply;
-      let template = step.template;
-      let unsupported = false;
-      let reading: Awaited<ReturnType<typeof classifyIntent>> | null = null;
-      if (step.run) {
-        reading = await classifyIntent({
-          text: step.run.question,
-          context: { awaiting_blast_reply: false, known_person: true },
-        });
-        /* The same care test answerQuestion applies — the words and the care
-           focus topics ("who can watch my toddler on Tuesdays") — so a care
-           subject is refused here, before "On it", not after it (audit). */
-        const runFocus = focusInQuestion(step.run.question, await focusOptions());
-        unsupported =
-          reading.sensitive ||
-          reading.intent === "ask_caregiver" ||
-          answerMentionsCaregiver(step.run.question) ||
-          (runFocus !== null && CARE_TOPICS.includes(runFocus)) ||
-          classifyDemand(step.run.question, null) !== "ordinary";
-        if (unsupported) {
-          await finishDeepDive({ id: step.run.id, status: "unsupported" });
-          reply = DEEP_DIVE_UNSUPPORTED;
-          template = "deep_dive_unsupported";
-        }
-      }
-      if (reply) {
-        await sendSms({
-          to: from,
-          body: reply,
-          category: "transactional",
-          personId: person.person_id,
-          template,
-          templateVersion: SMS_TEMPLATE_VERSION,
-        });
-      }
-      console.info("[sms:inbound] deep dive", { template, building: step.run !== null && !unsupported });
-      if (step.run) {
-        await answerQuestion({
-          from,
-          body: step.run.question,
-          person,
-          caregiverIntent: reading?.intent === "ask_caregiver",
-          sensitive: reading?.sensitive === true,
-          ...(unsupported ? {} : { deep: { id: step.run.id } }),
-        });
-      }
+      await runDeepDiveStep({ step, from, person });
       return;
     }
   }
@@ -892,6 +840,7 @@ export async function handleInboundMessage(input: {
    * helpful service becomes a form.
    */
   let clarified = false;
+  let early: Awaited<ReturnType<typeof classifyIntent>> | null = null;
   if (person && !attached.attached && !answeredSomething) {
     const pending = await pendingClarification(person.person_id);
     /**
@@ -927,17 +876,51 @@ export async function handleInboundMessage(input: {
         bandsInQuestion(body).length > 0 ||
         placePhraseIn(body) !== null ||
         focusInQuestion(body, await focusOptions()) !== null);
+    /**
+     * ⚠ **A sentence is read before it is taken as the answer** (26 Oct).
+     * `isClarifyingAnswer` is shape only — no "?" and twelve words or fewer —
+     * so with "How old are your kids?" open, *"I want to make a deep research
+     * against these top 5 schools"* was stored as a child aged 5, thanked, and
+     * the request itself was dropped. A short reply ("10", "3 and 7",
+     * "Pasadena", "Maya") stays the no-model fast path; anything longer is read
+     * by the classifier, told what Pando asked, and a new request is not an
+     * answer however many numbers it holds. The reading is kept for the step
+     * below, so the message costs one model call, not two.
+     */
+    const longReply = body.trim().split(/\s+/).length > 3;
+    /**
+     * ⚠ **Said without being asked** (26 Oct, the SMS lab): *"my son is 7 and my
+     * daughter is 4"*, sent when no question was open, read `unclear` and was
+     * answered "roughly how old is your child?" — the fact they had just given.
+     * When the profile still lacks the ages or the area, a message the
+     * classifier does not read as a request is offered to that question's
+     * parser too; it stores only what parses. Never the first name: a stray
+     * word taken as a name is the 21 Oct "Swim" mistake.
+     */
+    const unasked = !open ? nextQuestion(person.profile) : null;
+    const volunteered = unasked === "child_age" || unasked === "neighborhood" ? unasked : null;
+    if (((open && pending && !aQuestion && longReply) || volunteered) && isClarifyingAnswer(body)) {
+      early = await classifyIntent({
+        text: body,
+        lastQuestion: await lastQuestionFor(from),
+        askedThem: open && pending ? CLARIFYING_COPY[pending] : null,
+        context: { awaiting_blast_reply: false, known_person: !person.created },
+      });
+    }
+    const newRequest =
+      early !== null && early.intent !== "answer_blast" && early.intent !== "chitchat" && early.intent !== "unclear" && early.intent !== "settings";
+    const question = open && pending ? (aQuestion ? null : pending) : volunteered;
     /* ⚠ `isClarifyingAnswer` is what stops a new question being eaten by the
        age parser — see its own header. Without it, a question with a number in
        it stored the number and returned before answering anything. */
-    if (open && pending && !aQuestion && isClarifyingAnswer(body)) {
+    if (question && !newRequest && isClarifyingAnswer(body)) {
       const saved = await saveClarification({
         personId: person.person_id,
-        question: pending,
+        question,
         text: body,
-        areas: pending === "neighborhood" ? await marketAreas() : undefined,
+        areas: question === "neighborhood" ? await marketAreas() : undefined,
       });
-      console.info("[sms:inbound] clarification", { question: pending, saved });
+      console.info("[sms:inbound] clarification", { question, saved, asked: question === pending });
       /* Only a reply that *was* an answer is spent. An unreadable one stores
          nothing and is not asked again — and it may well be a question, which is
          what the step below is for. */
@@ -961,12 +944,12 @@ export async function handleInboundMessage(input: {
          * template that happened to close the exchange by being named like one
          * would be an accident holding the mechanism up.
          */
-        const next = nextQuestion(withAnswer(person.profile, pending, body));
-        const choice = pending === "participation" ? parseAllowanceChoice(body) : null;
+        const next = nextQuestion(withAnswer(person.profile, question, body));
+        const choice = question === "participation" ? parseAllowanceChoice(body) : null;
         await sendSms({
           to: from,
           body: clarifyReply({
-            question: pending,
+            question,
             text: body,
             next,
             confirmed: choice ? settingsConfirmation(choice) : undefined,
@@ -1080,9 +1063,12 @@ export async function handleInboundMessage(input: {
     return;
   }
 
-  const reading = await classifyIntent({
+  /* Read once: a new request the clarifying step already read is that reading. */
+  const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
     text: body,
     recent: contextFor(pending),
+    /* What "compare these" points at (26 Oct): the question last answered. */
+    lastQuestion: person && !attached.attached ? await lastQuestionFor(from) : null,
     context: {
       awaiting_blast_reply: attached.attached,
       /* Not hardcoded: `created` is true only for a number Pando had never seen,
@@ -1196,6 +1182,28 @@ export async function handleInboundMessage(input: {
     }
   }
 
+  /**
+   * A deep dive asked for in the parent's own words (26 Oct) — the classifier's
+   * reading, with the subject it resolved ("these top 5" → the last question's
+   * subject). After the sensitive non-question net above, so an allegation
+   * phrased as "compare these" is still held; the subject is then read for care
+   * and sensitivity again before "On it". Unconfigured or refused: answered as
+   * an ordinary question about the same subject.
+   */
+  if (reading.intent === "deep_dive" && person) {
+    if (pending) await closeQuestion(pending.id, "resolved");
+    const step = await requestDeepDive({ personId: person.person_id, phone: from, subject: reading.subject ?? null });
+    if (step) {
+      await runDeepDiveStep({ step, from, person });
+      return;
+    }
+    const subject = reading.subject ?? (await lastQuestionFor(from));
+    if (subject) {
+      await answerQuestion({ from, body: subject, person, caregiverIntent: false, sensitive: reading.sensitive });
+      return;
+    }
+  }
+
   const unreadable =
     reading.intent === "unclear" || (pending !== null && reading.intent === "chitchat");
 
@@ -1282,7 +1290,9 @@ export async function handleInboundMessage(input: {
     return;
   }
 
-  if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
+  /* A deep_dive nobody could start (no subject, no record of the sender) is
+     still a question about local options — answered, never left in silence. */
+  if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver" && reading.intent !== "deep_dive") {
     return;
   }
 
@@ -1325,6 +1335,69 @@ export async function handleInboundMessage(input: {
     caregiverIntent: reading.intent === "ask_caregiver",
     sensitive: reading.sensitive,
   });
+}
+
+/**
+ * A deep dive started by any of its doors — DEEP on an offer, "deep dive", or
+ * the classifier's `deep_dive` reading (26 Oct) — read for care and
+ * sensitivity, acknowledged, then built. One function so the doors cannot
+ * drift apart on the check that keeps a health question away from a report
+ * nobody reviews.
+ */
+async function runDeepDiveStep({ step, from, person }: { step: DeepDiveStep; from: string; person: ColdPerson }): Promise<void> {
+  /**
+   * ⚠ Read the subject **before** "On it" goes out. A deep dive has no
+   * reviewer, so a care, health, legal or safety question — or a claim
+   * about a person — is answered the ordinary way, where it is held; the
+   * model's sensitive flag is consulted because the rules alone have no
+   * medical vocabulary ("nosebleeds" reads as ordinary).
+   */
+  let reply = step.reply;
+  let template = step.template;
+  let unsupported = false;
+  let reading: Awaited<ReturnType<typeof classifyIntent>> | null = null;
+  if (step.run) {
+    reading = await classifyIntent({
+      text: step.run.question,
+      context: { awaiting_blast_reply: false, known_person: true },
+    });
+    /* The same care test answerQuestion applies — the words and the care
+       focus topics ("who can watch my toddler on Tuesdays") — so a care
+       subject is refused here, before "On it", not after it (audit). */
+    const runFocus = focusInQuestion(step.run.question, await focusOptions());
+    unsupported =
+      reading.sensitive ||
+      reading.intent === "ask_caregiver" ||
+      answerMentionsCaregiver(step.run.question) ||
+      (runFocus !== null && CARE_TOPICS.includes(runFocus)) ||
+      classifyDemand(step.run.question, null) !== "ordinary";
+    if (unsupported) {
+      await finishDeepDive({ id: step.run.id, status: "unsupported" });
+      reply = DEEP_DIVE_UNSUPPORTED;
+      template = "deep_dive_unsupported";
+    }
+  }
+  if (reply) {
+    await sendSms({
+      to: from,
+      body: reply,
+      category: "transactional",
+      personId: person.person_id,
+      template,
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+  }
+  console.info("[sms:inbound] deep dive", { template, building: step.run !== null && !unsupported });
+  if (step.run) {
+    await answerQuestion({
+      from,
+      body: step.run.question,
+      person,
+      caregiverIntent: reading?.intent === "ask_caregiver",
+      sensitive: reading?.sensitive === true,
+      ...(unsupported ? {} : { deep: { id: step.run.id } }),
+    });
+  }
 }
 
 /**
@@ -1447,13 +1520,21 @@ function publicSlots(
    *
    * Parents still lead the answer. What changes is how much follows them.
    */
-  const shown = Math.min(parentBacked, 2);
+  /* Four whatever the parents' half holds, since 26 Oct (the developer: "more
+     public information"); it was 4 − parents' places, so two whenever two
+     parents stood above. Parents still lead; the composer drops web lines from
+     the end before a parent's place gives way. */
+  void parentBacked;
   /* The ones whose page stated something first (22 Oct): live, the two lines
      that went out were "WaterWaves - swim lessons school in Pasadena." and its
      twin, while the findings with ages, ratios and a heated pool came third and
      fourth and were never read. Search order otherwise. */
   const withFacts = [...info.findings].sort((a, b) => Number(!a.detail) - Number(!b.detail));
-  return withFacts.slice(0, Math.max(2, 4 - shown));
+  /* A line that states nothing ("Rose Bowl Aquatics Center, toddler swim
+     lessons in Pasadena.") takes a slot only when fewer than two say something
+     (26 Oct, the SMS lab). */
+  const stating = withFacts.filter((f) => f.detail);
+  return (stating.length >= 2 ? stating : withFacts).slice(0, 4);
 }
 
 /** The focus topics that mean a person is being asked about. See `answerQuestion`. */
@@ -1592,6 +1673,9 @@ async function answerQuestion(input: {
     near: place.near,
     bands: asked.length > 0 ? asked : known,
     focus,
+    /* What was asked, so a record that names another thing inside the same
+       topic ("AYSO soccer" for a swim question) is not offered (26 Oct). */
+    question: body,
     shares: !wantsCare,
     caregivers: wantsCare,
     /* Deeper for a follow-up: the first answer took the best few, and "any
@@ -2016,6 +2100,8 @@ async function answerQuestion(input: {
   const composeWith = (headroom: boolean) => composeAnswer({
     candidates,
     has_question: true,
+    /* Chooses which of a record's notes go out when not all fit (22 Oct). */
+    question: body,
     ...(headroom ? { headroom: VOICE_HEADROOM } : {}),
     ...(given
       ? { opening: "A few more that may fit:", nothing_left: candidates.length === 0 }
@@ -2044,32 +2130,100 @@ async function answerQuestion(input: {
    */
   const caregiverRelated = wantsCare || retrieved.caregivers.length > 0;
 
-  const verdict = routeAnswer({
+  /**
+   * ⚠ **Everything decided about an answer is decided from the draft that is
+   * sent** (26 Oct review). The rewrite runs on the headroom draft; when it is
+   * refused the full-budget draft goes out, and that one can use more parents'
+   * places and end differently — measured: the headroom draft offered the
+   * Network Ask and the full one did not. Reading the verdict, the next step and
+   * the offers off the headroom draft stored `offer_blast` beside a text with no
+   * offer in it, so a later "yes" could start an Ask nobody offered. So each
+   * draft gets its own plan, and the one sent is the one whose plan is used.
+   */
+  const askLine = "\nWant me to ask a few nearby parents for more?";
+  const planFor = async (draft: typeof composed) => {
+    const verdict = routeAnswer({
+      /**
+       * Two readings, and the more cautious one wins.
+       *
+       * `classifyDemand` is the rule-based classifier and it stays the authority
+       * on *which* class a question is, because each class is owed something
+       * different (11 Aug). What it cannot do over SMS is find a class at all
+       * without a category tap: its keyword net has no medical vocabulary, so
+       * *"my 4 year old keeps having nosebleeds"* comes back `ordinary` — which
+       * was harmless while every answer waited for a person and is not any more.
+       *
+       * So the model's `sensitive` flag can lift an `ordinary` reading to
+       * `high_stakes`, and can never lower one. ⚠ **It lifts to `high_stakes` and
+       * never to `named_allegation`**, deliberately: the flag is coarse and that
+       * class carries its own storage rule (never circulated, review-only), which
+       * is not something a boolean has said.
+       */
+      sensitivity,
+      caregiver_related: caregiverRelated,
+      public_only: draft.public_only,
+      /* The parents' half only. A web result is information, never evidence:
+         counting it here would let three pages lift an answer out of
+         `low_evidence` and past the reviewer that thinness exists to summon. */
+      used: draft.parent_used,
+      next_step: draft.next_step,
+    });
+
     /**
-     * Two readings, and the more cautious one wins.
-     *
-     * `classifyDemand` is the rule-based classifier and it stays the authority
-     * on *which* class a question is, because each class is owed something
-     * different (11 Aug). What it cannot do over SMS is find a class at all
-     * without a category tap: its keyword net has no medical vocabulary, so
-     * *"my 4 year old keeps having nosebleeds"* comes back `ordinary` — which
-     * was harmless while every answer waited for a person and is not any more.
-     *
-     * So the model's `sensitive` flag can lift an `ordinary` reading to
-     * `high_stakes`, and can never lower one. ⚠ **It lifts to `high_stakes` and
-     * never to `named_allegation`**, deliberately: the flag is coarse and that
-     * class carries its own storage rule (never circulated, review-only), which
-     * is not something a boolean has said.
+     * Deep Dive, the proactive trigger (21 Oct): offered at the end of an answer
+     * when the request has grown into a deep one, at most once a week, never on a
+     * held, care or sensitive answer. **One ask per message**: the offer takes the
+     * clarifying question's place, and the Network Ask offer ("Want me to ask a
+     * few nearby parents?") is left out of this answer — its yes would otherwise
+     * start an Ask the parent may not have meant. Where the composer's own text
+     * is built around that ask ("That's everything I have…"), no deep dive is
+     * offered.
      */
-    sensitivity,
-    caregiver_related: caregiverRelated,
-    public_only: composed.public_only,
-    /* The parents' half only. A web result is information, never evidence:
-       counting it here would let three pages lift an answer out of
-       `low_evidence` and past the reviewer that thinness exists to summon. */
-    used: composed.parent_used,
-    next_step: composed.next_step,
-  });
+    const offerDeepEligible =
+      !verdict.hold &&
+      !ownsAPerson &&
+      !caregiverRelated &&
+      person !== null &&
+      !draft.text.replace(askLine, "").includes("Want me to ask") &&
+      deepDiveConfigured() &&
+      deepDiveWorthOffering(body, { more: Boolean(input.more) }) &&
+      (await mayOfferDeepDive(person.person_id));
+    const draftText = offerDeepEligible ? draft.text.replace(askLine, "") : draft.text;
+    const nextStep = offerDeepEligible && draft.next_step === "offer_blast" ? "none" : draft.next_step;
+
+    /**
+     * Introductions, the proactive trigger (21 Oct) — the client's *"by the way,
+     * a couple of people in your neighborhood go there too, want an
+     * introduction?"*. About the record the answer leads with, when parents other
+     * than the asker have been there; once a week at most; never on a held, care
+     * or sensitive answer, never beside a deep-dive offer or the Network Ask offer
+     * (one ask per message).
+     */
+    const lead =
+      draft.used_ids.length > 0
+        ? candidates.find(
+            (c) =>
+              c.id === draft.used_ids[0] &&
+              !c.trust.public_only &&
+              c.firsthand_count > 0 &&
+              c.kind !== "caregiver" &&
+              c.kind !== "tip",
+          )
+        : undefined;
+    const introOthers =
+      !offerDeepEligible &&
+      !verdict.hold &&
+      !ownsAPerson &&
+      !caregiverRelated &&
+      person !== null &&
+      lead?.id &&
+      !draftText.includes("Want me to ask")
+        ? await introCandidateCount(String(lead.id), person.person_id)
+        : 0;
+    const offerIntroEligible = introOthers > 0 && person !== null && (await mayOfferIntro(person.person_id));
+
+    return { draft, verdict, offerDeepEligible, draftText, nextStep, lead, introOthers, offerIntroEligible };
+  };
 
   /**
    * The warm rewrite (21 Oct): the same facts, in a real person's voice. Only
@@ -2078,68 +2232,15 @@ async function answerQuestion(input: {
    * text goes out exactly as before. Stored as sent, so the queue shows what
    * the parent read.
    */
-  /**
-   * Deep Dive, the proactive trigger (21 Oct): offered at the end of an answer
-   * when the request has grown into a deep one, at most once a week, never on a
-   * held, care or sensitive answer. **One ask per message**: the offer takes the
-   * clarifying question's place, and the Network Ask offer ("Want me to ask a
-   * few nearby parents?") is left out of this answer — its yes would otherwise
-   * start an Ask the parent may not have meant. Where the composer's own text
-   * is built around that ask ("That's everything I have…"), no deep dive is
-   * offered.
-   */
-  const askLine = "\nWant me to ask a few nearby parents for more?";
-  const offerDeepEligible =
-    !verdict.hold &&
-    !ownsAPerson &&
-    !caregiverRelated &&
-    person !== null &&
-    !composed.text.replace(askLine, "").includes("Want me to ask") &&
-    deepDiveConfigured() &&
-    deepDiveWorthOffering(body, { more: Boolean(input.more) }) &&
-    (await mayOfferDeepDive(person.person_id));
-  const draftText = offerDeepEligible ? composed.text.replace(askLine, "") : composed.text;
-  const nextStep = offerDeepEligible && composed.next_step === "offer_blast" ? "none" : composed.next_step;
-
-  /**
-   * Introductions, the proactive trigger (21 Oct) — the client's *"by the way,
-   * a couple of people in your neighborhood go there too, want an
-   * introduction?"*. About the record the answer leads with, when parents other
-   * than the asker have been there; once a week at most; never on a held, care
-   * or sensitive answer, never beside a deep-dive offer or the Network Ask offer
-   * (one ask per message).
-   */
-  const lead =
-    composed.used_ids.length > 0
-      ? candidates.find(
-          (c) =>
-            c.id === composed.used_ids[0] &&
-            !c.trust.public_only &&
-            c.firsthand_count > 0 &&
-            c.kind !== "caregiver" &&
-            c.kind !== "tip",
-        )
-      : undefined;
-  const introOthers =
-    !offerDeepEligible &&
-    !verdict.hold &&
-    !ownsAPerson &&
-    !caregiverRelated &&
-    person !== null &&
-    lead?.id &&
-    !draftText.includes("Want me to ask")
-      ? await introCandidateCount(String(lead.id), person.person_id)
-      : 0;
-  const offerIntroEligible = introOthers > 0 && person !== null && (await mayOfferIntro(person.person_id));
-
+  const first = await planFor(composed);
   const voiced =
-    !verdict.hold && !caregiverRelated && composed.parent_used > 0
-      ? await voiceAnswer({ question: body, text: draftText, candidates, budget: SMS_BUDGET })
+    !first.verdict.hold && !caregiverRelated && composed.parent_used > 0
+      ? await voiceAnswer({ question: body, text: first.draftText, candidates, budget: SMS_BUDGET })
       : null;
-  /* Refused or not run: the full-budget draft, with the same offer rule applied. */
-  const fallback = voiced === null && composedFull !== composed ? composedFull : composed;
-  const answerText =
-    voiced ?? (fallback === composed ? draftText : offerDeepEligible ? fallback.text.replace(askLine, "") : fallback.text);
+  /* Refused or not run: the full-budget draft, planned on its own. */
+  const plan = voiced === null && composedFull !== composed ? await planFor(composedFull) : first;
+  const { draft: sent, verdict, offerDeepEligible, nextStep, lead, introOthers, offerIntroEligible } = plan;
+  const answerText = voiced ?? plan.draftText;
 
   const answerId = await queueAnswer({
     personId: person?.person_id ?? null,
@@ -2149,17 +2250,17 @@ async function answerQuestion(input: {
     question: input.more ? withMoreSuffix(body) : body,
     answerText,
     nextStep,
-    labels: fallback.labels,
-    publicOnly: fallback.public_only,
+    labels: sent.labels,
+    publicOnly: sent.public_only,
     holdReason: verdict.reason,
-    shareIds: fallback.used_ids,
+    shareIds: sent.used_ids,
   });
 
   /* Counts and enums only (invariant 7) — never the question, never the answer. */
   console.info("[sms:answer] queued", {
     queued: answerId !== null,
-    used: composed.used,
-    next_step: composed.next_step,
+    used: sent.used,
+    next_step: nextStep,
     hold: verdict.reason,
     permanent: verdict.permanent,
     place: place.source,
@@ -2220,7 +2321,14 @@ async function answerQuestion(input: {
      profile has since answered is not pending. */
   const pendingAsked = person ? await pendingClarification(person.person_id) : null;
   const nextAsked = person ? nextQuestion(person.profile) : null;
-  const asking = nextAsked && pendingAsked !== nextAsked ? nextAsked : null;
+  /* Never ask what this very message just said (26 Oct, the SMS lab): *"swim
+     classes for a 4 year old in Altadena"* came back ending "How old are your
+     kids?". The profile is still missing it, so it is asked another time — a
+     question about one child is not every child's age. */
+  const saidHere =
+    (nextAsked === "child_age" && bandsInQuestion(body).length > 0) ||
+    (nextAsked === "neighborhood" && placePhraseIn(body) !== null);
+  const asking = nextAsked && pendingAsked !== nextAsked && !saidHere ? nextAsked : null;
 
   /**
    * The answer itself when nothing needs a person, and the holding line when

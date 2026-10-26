@@ -145,7 +145,8 @@ export function isWebSearchConfigured(): boolean {
 
 const SYSTEM = [
   "You look up general, publicly available information for a local parenting service.",
-  "Search the web, then list what a parent would actually consider - up to five.",
+  "Search the web, then list what a parent would actually consider - five or six when that",
+  "many fit, the ones whose own pages state ages, times, prices or what sets them apart first.",
   "",
   "Rules:",
   "- Only places, classes, camps, programmes or venues. Never an individual person,",

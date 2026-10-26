@@ -312,6 +312,29 @@ console.log("\n=== segments ===");
   );
   const ping20 = templates.freshnessPingSms({ name: "Little Maestros Acad" });
   ok("and is one segment for a twenty-character name", segments(ping20).segs === 1, `${ping20.length} chars`);
+  /* 26 Oct: a name over 25 characters made it two segments, a non-GSM one UCS-2. */
+  const pingSeg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+  for (const [name, shows] of [
+    ["Little Maestros", "Little Maestros"],
+    ["Little Maestros Academy", "Little Maestros Academy"],
+    ["Pasadena Conservatory of Music Summer Program", "Pasadena Conservatory..."],
+    ["Kid’s Club", "Kid's Club"],
+    ["Niños Felices", "Ninos Felices"],
+    ["Café Olé", "Cafe Ole"],
+    ["🎵 Music Time", "Music Time"],
+    ["音乐班", "the one you shared"],
+    ["Supercalifragilisticexpialidocious Academy", "the one you shared"],
+    ["A{B}", "the one you shared"],
+    ["", "the one you shared"],
+  ] as Array<[string, string]>) {
+    const body = templates.freshnessPingSms({ name });
+    const plan = pingSeg.planSegments(body);
+    ok(
+      `the ping for "${name}" is one GSM-7 segment and names it as "${shows}"`,
+      plan.encoding === "gsm7" && plan.segments === 1 && body.includes(` is ${shows} still worth `),
+      `${plan.encoding}, ${plan.segments} segment(s): ${body}`,
+    );
+  }
   ok(
     "and offers exactly the replies the reader and the keywords accept",
     /\bYES\b/.test(ping) && /\bNO\b/.test(ping) && /\bPASS\b/.test(ping),

@@ -291,32 +291,114 @@ export function parseAge(text: string): number | null {
  * Every child's age in one reply (21 Oct) — "3 and 7", "4, 9 and 18 months",
  * "a 6 year old and one on the way".
  *
- * The same narrow reading as `parseAge`, applied to each number in order: months
- * first and removed from the text (so "18 months" is one child aged 1, not two),
- * then whole numbers 0–25 that do not continue into more digits (a year or a
- * phone number offers nothing), then "expecting" as -1. Two equal ages are two
- * children — twins are a supported answer (10 Sep). Nothing readable is `[]`,
- * which stores nothing.
+ * The same narrow reading as `parseAge`, applied to each number in order: what
+ * is not an age blanked first (a count of children, a grade, a date, a time, a
+ * bound — 26 Oct), then months, weeks and days, removed from the text (so "18
+ * months" is one child aged 1, not two), then whole numbers 0–25 that do not
+ * continue into more digits (a year or a phone number offers nothing), then
+ * "expecting" as -1. Two equal ages are two children — twins are a supported
+ * answer (10 Sep), and "twins, both 2" says two of them once. Nothing readable
+ * is `[]`, which stores nothing.
  */
 export function parseAges(text: string): number[] {
-  let body = text.trim().toLowerCase();
-  const ages: Array<{ at: number; age: number }> = [];
+  let body = text.trim().toLowerCase().replace(/[’]/g, "'");
+  const ages: Array<{ at: number; age: number; atLeast: number }> = [];
+  const blank = (re: RegExp) => {
+    body = body.replace(re, (s) => " ".repeat(s.length));
+  };
+  /* Read every match as an age (or nothing), then blank it so the bare-number
+     pass below cannot read its digits a second time. */
+  const take = (re: RegExp, toAge: (m: RegExpMatchArray) => number | null) => {
+    for (const m of body.matchAll(re)) {
+      const age = toAge(m);
+      const at = m.index ?? 0;
+      if (age !== null) ages.push({ at, age, atLeast: multipleBirth(body, at, at + m[0].length) });
+    }
+    blank(re);
+  };
 
-  for (const m of body.matchAll(/\b(\d{1,2})\s*(?:months?|mos?|mo)\b/g)) {
-    const n = Number(m[1]);
-    if (n >= 0 && n <= 36) ages.push({ at: m.index ?? 0, age: Math.floor(n / 12) });
-  }
-  body = body.replace(/\b(\d{1,2})\s*(?:months?|mos?|mo)\b/g, (s) => " ".repeat(s.length));
+  /**
+   * ⚠⚠ **Numbers that are not ages are blanked first** (26 Oct). Every one of
+   * these invented a child: *"I have 2 kids, 3 and 7"* stored a two-year-old,
+   * *"in 3rd grade"* a three-year-old, *"2.5 and 5"* three children, *"born
+   * 3/15/2020"* a fifteen-year-old, *"6 weeks"* a six-year-old. A count of
+   * children is not an age, and a reply that is only a count ("2 kids") reads
+   * as nothing, which stores nothing.
+   */
+  blank(new RegExp(String.raw`\b\d{1,2}\s+(?:(?:${COUNT_ADJECTIVES})\s+)?(?:${COUNT_NOUNS})\b`, "g"));
+  /* "2 under 5": the count, then the bound — both go. */
+  blank(/\b\d{1,2}(?=\s+(?:under|over|below|above)\b)/g);
+  blank(/\b(?:under|over|below|above|younger than|older than)\s+(?:the\s+age\s+of\s+|age\s+)?\d{1,2}(?!\d)/g);
+  blank(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?(?!\d)/g); // a date, or "1/2"
+  blank(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}:\d{2}\b/g); // a time
+  blank(/\b\d{1,2}(?:st|nd|rd|th)\b|\bgrade\s+\d{1,2}(?!\d)/g); // a grade
 
-  for (const m of body.matchAll(/\b(\d{1,2})(?!\d)(?:\s*(?:years?|yrs?|yo|y\/o))?/g)) {
+  /* Months, weeks and days are a baby's age in the unit a parent uses: under
+     twelve months is age 0, as `parseAge` has always read it. */
+  take(/\b(\d{1,2})\s*(?:months?|mos?|mo)\b/g, (m) => {
     const n = Number(m[1]);
-    if (n >= 0 && n <= 25) ages.push({ at: m.index ?? 0, age: n });
-  }
+    return n <= 36 ? Math.floor(n / 12) : null;
+  });
+  take(/\b(\d{1,3})\s*(?:weeks?|wks?)\b/g, (m) => {
+    const n = Number(m[1]);
+    return n <= 156 ? Math.floor(n / 52) : null;
+  });
+  take(/\b(\d{1,3})\s*days?\b/g, (m) => (Number(m[1]) <= 365 ? 0 : null));
+  /* "2.5" is one child of two, not a two and a five. */
+  take(/\b(\d{1,2})\.\d(?!\d)(?:\s*(?:years?|yrs?|yo|y\/o))?/g, (m) => {
+    const n = Number(m[1]);
+    return n <= 25 ? n : null;
+  });
+
+  take(/\b(\d{1,2})(?!\d)(?:\s*(?:years?|yrs?|yo|y\/o))?/g, (m) => {
+    const n = Number(m[1]);
+    return n <= 25 ? n : null;
+  });
 
   const expecting = body.match(/\b(expecting|pregnant|due in|on the way|not born yet)\b/);
-  if (expecting) ages.push({ at: expecting.index ?? 0, age: -1 });
+  if (expecting) {
+    const at = expecting.index ?? 0;
+    ages.push({ at, age: -1, atLeast: multipleBirth(body, at, at + expecting[0].length) });
+  }
 
-  return ages.sort((a, b) => a.at - b.at).slice(0, 8).map((a) => a.age);
+  /* Twins said once ("twins, both 2", "4 year old twins") are two children;
+     twins already spelled out ("twins, 4 and 4") are not doubled again. */
+  const sorted = ages.sort((a, b) => a.at - b.at);
+  const out: number[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    out.push(sorted[i].age);
+    let run = 1;
+    while (i + run < sorted.length && sorted[i + run].age === sorted[i].age) run++;
+    for (let extra = run; extra < sorted[i].atLeast; extra++) out.push(sorted[i].age);
+  }
+  return out.slice(0, 8);
+}
+
+/** "2 kids", "3 little ones", "2 boys": a number before these is a count. */
+const COUNT_NOUNS =
+  "kids?|kiddos?|children|child|boys?|girls?|sons?|daughters?|babies|baby|toddlers?|teens?|teenagers?|little ones|ones|grandkids?|grandchildren|grandsons?|granddaughters?|step-?kids?|munchkins?|of them";
+const COUNT_ADJECTIVES =
+  "little|young|small|wonderful|beautiful|amazing|crazy|wild|grown|older|younger|teenage";
+
+/**
+ * How many children one stated age stands for: 2 for "twins" or "both" right
+ * before it ("twins, both 2", "twin girls aged 3") or "twins" right after it
+ * ("4 year old twins"), 3 for triplets, otherwise 1. Only adjacent words count —
+ * "twins and a 5 year old" gives the twins no age, so the 5 stays one child.
+ */
+function multipleBirth(body: string, start: number, end: number): number {
+  const before = body.slice(Math.max(0, start - 40), start);
+  const after = body.slice(end, end + 40);
+  const named = (w: string) => (w.startsWith("trip") ? 3 : 2);
+  const pre =
+    /\b(twins|triplets|twin (?:boys|girls|sons|daughters|babies))\b[\s,:;()-]*(?:(?:both|all|are|aged?|who are|just turned|turning)\s+)*$/.exec(
+      before,
+    );
+  if (pre) return named(pre[1]);
+  const post = /^[\s-]*(?:old\s+)?(?:(?:identical|fraternal|baby)\s+)?(twins|triplets)\b/.exec(after);
+  if (post) return named(post[1]);
+  if (/\bboth\s+(?:(?:are|aged?)\s+)?$/.test(before)) return 2;
+  return 1;
 }
 
 /**
@@ -326,8 +408,12 @@ export function parseAges(text: string): number[] {
  * letters with an inner hyphen or apostrophe, at most 30 characters, and the
  * reply no longer than four words once the opener is gone — anything longer is
  * a sentence, not a name. A refusal ("rather not", "skip") or a bare "sure"
- * comes back null, which stores nothing and is not asked again. Lowercase input
- * is capitalised; anything else is kept as typed.
+ * comes back null, which stores nothing and is not asked again. So does what is
+ * plainly not a name (26 Oct): a place the market knows ("Pasadena"), where they
+ * are ("I am in Pasadena"), what they want ("dance"), whose parent they are
+ * ("I'm Maya's mom"), a single letter. Lowercase input is capitalised; anything
+ * else is kept as typed. Of two words only the first is kept ("Mary Ann" is
+ * *Mary*). Never logged (invariant 7).
  */
 export function parseFirstName(text: string): string | null {
   let body = text.trim().replace(/[’]/g, "'").replace(/[.!?]+$/, "").trim();
@@ -339,12 +425,35 @@ export function parseFirstName(text: string): string | null {
     .replace(/^(hi|hey|hello)\b[,!.\s-]*/i, "")
     .replace(/^(i'm|im|i am|it's|its|this is|my name is|my name's|name is|name's|call me)\s+/i, "")
     .trim();
+  /* A place is not a name (26 Oct): "Pasadena" was saved as *Pasadena* and
+     "South Pasadena" as *South*, then greeted by it. */
+  if (isKnownPlace(body)) return null;
   const words = body.split(/\s+/).filter(Boolean);
   /* A first name, or a first and last: two words at most once the opener is
      gone (review, 21 Oct — "ballet for my 5yo" became *Ballet*). */
   if (words.length === 0 || words.length > 2) return null;
   const first = words[0].replace(/[,.;:]+$/, "");
-  if (!/^\p{L}(?:[\p{L}'-]{0,28}\p{L})?$/u.test(first)) return null;
+  /* Two letters at least: a lone "y" or "k" is an answer, not a name. */
+  if (!/^\p{L}[\p{L}'-]{0,28}\p{L}$/u.test(first)) return null;
+  /* "I'm Maya's mom" is the child's name, not theirs. */
+  if (/'s$/i.test(first)) return null;
+  if (
+    words.length === 2 &&
+    /^(mom|mum|mommy|mama|dad|daddy|papa|mother|father|parent|grandma|grandpa|granny|nanny|husband|wife)$/i.test(
+      words[1].replace(/[,.;:?!]+$/, ""),
+    )
+  ) {
+    return null;
+  }
+  /* What a question is about is not a name: "dance" became *Dance* (26 Oct).
+     "art" is deliberately not here — Art is a first name. */
+  if (
+    /^(dance|dancing|ballet|hip-hop|swim|swimming|soccer|football|baseball|basketball|softball|volleyball|tennis|golf|hockey|lacrosse|gymnastics|karate|judo|taekwondo|martial|sports?|music|piano|guitar|violin|drums|singing|choir|theater|theatre|drama|chess|coding|robotics|science|math|tutoring|tutors?|reading|camps?|preschools?|daycare|childcare|nanny|nannies|babysitters?|sitters?|playgroups?|playdates?|parks?|playgrounds?|library|museums?|zoo|lessons?|classes|activities|yoga|climbing|skating|surfing|riding|cooking|crafts|painting|pottery|spanish|mandarin|french|doctors?|dentists?|pediatricians?)$/i.test(
+      first,
+    )
+  ) {
+    return null;
+  }
   /* Two words where the second is what a question is about ("swim lessons",
      "camps near") are a question, not a first and last name. */
   if (
@@ -366,13 +475,63 @@ export function parseFirstName(text: string): string | null {
   /* Words that open a sentence rather than name a person — "what's this for",
      "why do you ask" — so a reply that is really a question stores nothing. */
   if (
-    /^(thanks|thank|sure|yes|ok|okay|hi|hey|hello|me|my|the|a|an|what|what's|whats|who|who's|why|how|when|where|which|can|could|do|does|is|are|will|would|please|just|not|i|we|our|it|that|this)$/i.test(
+    /^(thanks|thank|sure|yes|yup|yea|ya|ok|okay|hi|hey|hello|there|here|me|my|the|a|an|what|what's|whats|who|who's|why|how|when|where|which|can|could|do|does|is|are|will|would|please|just|not|i|we|our|it|that|this)$/i.test(
+      first,
+    )
+  ) {
+    return null;
+  }
+  /* "I am in Pasadena", "I'm from Altadena", "I'm new here": after the opener
+     the next word says where or how they are, never who (26 Oct — *In*). */
+  if (
+    /^(in|from|at|near|on|by|around|out|over|living|located|based|new|back|busy|ready|curious|interested|confused|lost|sorry|tired|looking|trying|wondering|moving|married|single)$/i.test(
       first,
     )
   ) {
     return null;
   }
   return first === first.toLowerCase() ? first[0].toUpperCase() + first.slice(1) : first;
+}
+
+/**
+ * The places Pando's market knows by name, folded — `PLACES` in
+ * `lib/home-places.ts` and the neighbourhood labels in `lib/market-options.ts`,
+ * copied because this module may not import (see the header). `test:onboarding`
+ * pins every one of those names to `parseFirstName` returning null, so a place
+ * added there and not here fails the suite rather than becoming a parent's name.
+ *
+ * ⚠ **Vincent is left out on purpose**: it is an unincorporated community of a
+ * few hundred homes and a common first name, and a parent named Vincent
+ * answering the name question is far likelier than one naming the place.
+ * Places an admin promotes at runtime ("Austin, TX") are deliberately not
+ * read either, for the same reason at scale — Austin, Madison, Florence and
+ * Charlotte are people before they are places.
+ */
+const KNOWN_PLACE_NAMES = new Set([
+  "alhambra", "arcadia", "azusa", "baldwin park", "bradbury", "claremont", "covina", "diamond bar",
+  "duarte", "el monte", "glendora", "city of industry", "industry", "irwindale",
+  "la canada flintridge", "la canada", "la puente", "la verne", "monrovia", "montebello",
+  "monterey park", "pasadena", "pomona", "rosemead", "san dimas", "san gabriel", "san marino",
+  "sierra madre", "south el monte", "south pasadena", "south pas", "temple city", "walnut",
+  "west covina", "altadena", "avocado heights", "bassett", "charter oak", "citrus",
+  "east pasadena", "east san gabriel", "hacienda heights", "mayflower village", "north el monte",
+  "rowland heights", "south monrovia island", "south san jose hills", "valinda",
+  "west puente valley", "eagle rock", "glendale", "highland park", "la crescenta", "montrose",
+  "bungalow heaven", "madison heights", "san rafael", "linda vista", "hastings ranch",
+  "playhouse district", "old pasadena", "northwest pasadena", "los angeles", "la", "sgv",
+  "san gabriel valley", "socal",
+]);
+
+function isKnownPlace(text: string): boolean {
+  const folded = text
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/^the /, "")
+    .replace(/ (ca|california|area)$/, "");
+  return KNOWN_PLACE_NAMES.has(folded);
 }
 
 /**

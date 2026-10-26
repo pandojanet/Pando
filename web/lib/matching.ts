@@ -316,25 +316,83 @@ export function bandsInQuestion(text: string): AgeBand[] {
  * these thirteen hand-written patterns, so a record tagged `outings` and named
  * "Birthday party venues" still cannot be reached by a question containing the
  * words "birthday party". That asymmetry is the accepted cost of the 4 Sep
- * decision, and it is survivable only because focus **ranks and never filters**.
+ * decision. ⚠ It was survivable because focus **ranked and never filtered**;
+ * since 26 Oct it filters (`topicFit` below, which says why), and what keeps a
+ * mis-tagged record reachable is that its own name is read with these words too.
  */
-const FOCUS_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/\b(nanny|nannies|au ?pair|childminder|full ?time care)\b/i, "nannies"],
-  [/\b(sitter\w*|babysitter\w*|babysitting|date ?night)\b/i, "babysitters"],
-  [/\b(newborn\w*|night nurse|postpartum|doula|new ?born care)\b/i, "newborn_care"],
-  [/\b(pediatric\w*|paediatric\w*|doctor\w*|dentist\w*|therapist\w*|speech|allerg\w+)\b/i, "pediatric_health"],
-  [/\b(special ?needs|iep|autis\w+|adhd|sensory)\b/i, "special_needs_resources"],
+/**
+ * The same words as before 26 Oct, in the same order, with one thing added:
+ * **which of them name the topic and which name a thing inside it.**
+ *
+ * `general` words say what the topic is ("sport", "school", "music", "a rainy
+ * day") and never tell two records apart. `subjects` are the distinct things a
+ * topic holds — swimming is not soccer, a guitar is not a violin — grouped where
+ * the vocabulary already holds two words for one thing (karate / martial arts,
+ * ballet / dance, a park / a trail / a hike, theatre / drama). Nothing was added
+ * to what a question is read for: each topic's regex is still exactly its words
+ * joined, so `focusInQuestion` reads every question as it did. Topics with no
+ * `subjects` are read as one thing (care, schools, camps), so they can only ever
+ * be matched by their tag.
+ */
+interface TopicWords {
+  topic: string;
+  general: readonly string[];
+  subjects?: ReadonlyArray<readonly string[]>;
+}
+
+const TOPIC_WORDS: readonly TopicWords[] = [
+  { topic: "nannies", general: ["nanny", "nannies", "au ?pair", "childminder", "full ?time care"] },
+  { topic: "babysitters", general: ["sitter\\w*", "babysitter\\w*", "babysitting", "date ?night"] },
+  { topic: "newborn_care", general: ["newborn\\w*", "night nurse", "postpartum", "doula", "new ?born care"] },
+  {
+    topic: "pediatric_health",
+    general: ["pediatric\\w*", "paediatric\\w*", "doctor\\w*"],
+    subjects: [["dentist\\w*"], ["therapist\\w*", "speech"], ["allerg\\w+"]],
+  },
+  { topic: "special_needs_resources", general: ["special ?needs", "iep", "autis\\w+", "adhd", "sensory"] },
   /* Above `preschools_schools`, or the bare "school" in "after school care"
      and "high school sports" swallows both of them. */
-  [/\b(childcare logistics|after ?school|daycare hours|work\w* parent|commut\w+|tutor\w*|tutoring)\b/i, "working_parent_logistics"],
-  [/\b(swim\w*|soccer|football|gymnastic\w*|karate|martial arts|sport\w*|ballet|dance|tennis|basketball)\b/i, "sports"],
-  [/\b(preschool\w*|pre-?k|school\w*|kindergart\w+|nurser\w+|daycare\w*|day ?care\w*)\b/i, "preschools_schools"],
-  [/\b(camp|camps)\b/i, "camps"],
-  [/\b(music|piano|guitar|violin|singing|art|arts|painting|drawing|potter\w+|theat\w+|drama)\b/i, "arts_music"],
-  [/\b(park\w*|playground\w*|trail\w*|hike|hiking|librar\w+|museum\w*|outing\w*|day ?trip\w*|rainy ?day|birthday part\w+)\b/i, "outings"],
-  [/\b(just moved|new to (the )?area|moving here|relocat\w+)\b/i, "new_to_area_help"],
-  [/\b(class\w*|lesson\w*|activit\w+|club\w*)\b/i, "activities"],
+  {
+    topic: "working_parent_logistics",
+    general: ["childcare logistics", "after ?school", "daycare hours", "work\\w* parent", "commut\\w+", "tutor\\w*", "tutoring"],
+  },
+  {
+    topic: "sports",
+    general: ["sport\\w*"],
+    subjects: [
+      ["swim\\w*"], ["soccer"], ["football"], ["gymnastic\\w*"], ["karate", "martial arts"],
+      ["ballet", "dance"], ["tennis"], ["basketball"],
+    ],
+  },
+  {
+    topic: "preschools_schools",
+    general: ["preschool\\w*", "pre-?k", "school\\w*", "kindergart\\w+", "nurser\\w+", "daycare\\w*", "day ?care\\w*"],
+  },
+  { topic: "camps", general: ["camp", "camps"] },
+  {
+    topic: "arts_music",
+    general: ["music", "art", "arts"],
+    subjects: [["piano"], ["guitar"], ["violin"], ["singing"], ["painting", "drawing"], ["potter\\w+"], ["theat\\w+", "drama"]],
+  },
+  {
+    topic: "outings",
+    general: ["outing\\w*", "day ?trip\\w*", "rainy ?day", "birthday part\\w+"],
+    subjects: [["park\\w*", "playground\\w*", "trail\\w*", "hike", "hiking"], ["librar\\w+"], ["museum\\w*"]],
+  },
+  { topic: "new_to_area_help", general: ["just moved", "new to (the )?area", "moving here", "relocat\\w+"] },
+  { topic: "activities", general: ["class\\w*", "lesson\\w*", "activit\\w+", "club\\w*"] },
 ];
+
+const wordsRe = (words: readonly string[]) => new RegExp(`\\b(${words.join("|")})\\b`, "i");
+
+const FOCUS_WORDS: ReadonlyArray<readonly [RegExp, string]> = TOPIC_WORDS.map((t) => [
+  wordsRe([...t.general, ...(t.subjects ?? []).flat()]),
+  t.topic,
+]);
+
+const SUBJECT_WORDS: ReadonlyArray<{ topic: string; key: string; re: RegExp }> = TOPIC_WORDS.flatMap((t) =>
+  (t.subjects ?? []).map((group) => ({ topic: t.topic, key: `${t.topic}:${group[0]}`, re: wordsRe(group) })),
+);
 
 export function focusInQuestion(
   text: string,
@@ -344,6 +402,101 @@ export function focusInQuestion(
     if (pattern.test(text) && offered.includes(focus)) return focus;
   }
   return null;
+}
+
+/**
+ * The general bucket, and the two topics that are kinds of it.
+ *
+ * "Any good toddler classes?" reads as `activities`, and the right answer to it
+ * is a music class or a swim class — which the extraction model tags
+ * `arts_music` and `sports`. A swim question is *not* answered by a record
+ * tagged `activities`, though: the general tag says the model could not tell
+ * what the thing is, which is exactly when it must not be offered as a swim
+ * class. Camps and outings are topics of their own, not classes.
+ */
+const GENERAL_FOCUS = "activities";
+const WITHIN_GENERAL: readonly string[] = ["sports", "arts_music"];
+
+/**
+ * What a question is about, as the record gate needs it (26 Oct).
+ *
+ * `focus` is the topic the caller already read and checked against the market
+ * (`focusInQuestion`); this adds the **subjects** inside it the text names —
+ * "swim" inside `sports`. No focus means the topic could not be read, and the
+ * gate then lets everything through: an open question ("what do parents near
+ * Altadena like for a 4 year old?") is fairly answered by whatever is near and
+ * the right age.
+ */
+export interface TopicRead {
+  focus: string | null;
+  subjects: string[];
+}
+
+export function readTopic(text: string, focus: string | null): TopicRead {
+  if (!focus) return { focus: null, subjects: [] };
+  return {
+    focus,
+    subjects: SUBJECT_WORDS.filter((s) => s.topic === focus && s.re.test(text)).map((s) => s.key),
+  };
+}
+
+/**
+ * Does this parents' record answer this question — and how well? (26 Oct)
+ *
+ * `0` names what was asked (the question names the record, or the record's own
+ * name names the subject: "Cheaper swim lessons" for a swim question). `1` is on
+ * the topic by its tag. `null` is not an answer to this question and is not
+ * offered at all.
+ *
+ * ⚠ **This reverses "the topic ranks and never filters" (4 Sep, 9 Sep)**, and
+ * the reason is what ranking did in practice: when nothing on the topic passed
+ * the place and age filters, ranking promoted whatever was left, and the
+ * answer and the Deep Dive presented a music class, a park and a soccer league
+ * as what parents near you use for swimming. An empty parents' half is honest —
+ * the web half and the Network Ask cover it; an unrelated one is not.
+ *
+ * The 4 Sep worry — a wrong model tag silently dropping the right record — is
+ * met three ways rather than by not filtering: the record's **name** is read
+ * with the same words as the question, so a record named for the subject or
+ * the topic gets in whatever its tag; a record the question names always gets
+ * in; and no topic read means no gate.
+ *
+ * Read off the name only. The venue is where it happens ("Victory Park pool")
+ * and a parent's note is about the experience, so either would name things the
+ * record is not.
+ */
+export function topicFit(
+  question: TopicRead,
+  record: { focus: string | null; name: string },
+  namedByQuestion = false,
+): 0 | 1 | null {
+  if (!question.focus) return 1;
+  if (namedByQuestion) return 0;
+
+  const name = record.name;
+  const nameSubjects = SUBJECT_WORDS.filter((s) => s.re.test(name));
+  if (nameSubjects.some((s) => question.subjects.includes(s.key))) return 0;
+
+  const accepted = question.focus === GENERAL_FOCUS ? [GENERAL_FOCUS, ...WITHIN_GENERAL] : [question.focus];
+  const nameTopics = FOCUS_WORDS.filter(([re]) => re.test(name)).map(([, topic]) => topic);
+  const tagged = record.focus !== null && accepted.includes(record.focus);
+  /* "Kidspace summer camp" tagged `activities` still answers "summer camps":
+     its name says what it is, and the name is the parent's own word for it. */
+  const named = nameTopics.some((t) => accepted.includes(t));
+  if (!tagged && !named) return null;
+
+  /* The question named a subject and the record's name names a different one
+     in the same topic: "AYSO soccer" for "swim classes". */
+  const askedTopics = new Set(question.subjects.map((k) => k.split(":")[0]));
+  if (nameSubjects.some((s) => askedTopics.has(s.topic) && !question.subjects.includes(s.key))) return null;
+
+  /* The name says it is something else entirely: a record tagged `sports`
+     but named "Play & Music" is not offered for swimming. The general bucket's
+     words ("class") say nothing either way. */
+  const specific = nameTopics.filter((t) => t !== GENERAL_FOCUS);
+  if (specific.length > 0 && !specific.some((t) => accepted.includes(t))) return null;
+
+  return 1;
 }
 
 /** Distance in bands, for 6.4's "similar but not identical". */

@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { areaGroup } from "@/lib/server/repo/areas";
+import { readTopic, topicFit } from "@/lib/matching";
+import { mentionsName } from "@/lib/public-info";
 import {
   labelsFor,
   usable,
@@ -59,20 +61,28 @@ export interface QuestionContext {
   /** Age bands the question is about, from the asker's children or the question. */
   bands?: string[];
   /**
-   * The `market_options.focus` topic the question is about — **a rank, never a
-   * filter**, and that is the whole mitigation for how these get assigned.
+   * The `market_options.focus` topic the question is about — **a filter since
+   * 26 Oct** (`topicFit` in `lib/matching.ts`), where until then it only ranked.
    *
    * The topic on a record is written by the extraction model (4 Sep, the
    * developer's call with the cost stated: *"дешево, і помиляється так, що ніхто
-   * не помітить"*). Ranking is what turns that from a silent failure into a
-   * recoverable one. A wrong topic re-orders an answer; a wrong topic that
-   * *excluded* would drop the right record and leave nothing on screen saying
-   * so — and nobody would ever know, which is precisely the accepted risk.
-   *
-   * The same argument the chip list already makes about the asker's area: it
-   * ranks and never filters.
+   * не помітить"*), and ranking was chosen so a wrong tag could only re-order an
+   * answer. What ranking did in practice was worse: when nothing on the topic
+   * passed the place and age filters, everything that did pass was promoted in
+   * its place, and "swim classes for a 4 year old in Altadena" led with a soccer
+   * league and a park — in the answer and in the Deep Dive's "Also used by
+   * parents near you". So a record off the topic is not offered now; a
+   * mis-tagged one stays reachable through its own name, and a question whose
+   * topic cannot be read is not filtered at all.
    */
   focus?: string | null;
+  /**
+   * The question as the parent wrote it, so the gate can read the **subject**
+   * inside the topic: `sports` holds both swimming and soccer, and only the
+   * words tell them apart. Optional — without it the gate is the tag alone.
+   * Never logged and never stored; it is read here and dropped.
+   */
+  question?: string;
   limit?: number;
   /**
    * Which half may answer this question.
@@ -254,22 +264,20 @@ export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
 }
 
 /**
- * ⚠ **What this does not do: read the subject of the question.**
+ * ⚠ **How the subject of a question is read** (4 Sep → 26 Oct).
  *
- * There is no text matching here at all. A question is a market, an area, a set
- * of age bands and a set of kinds; records are ranked by whether an admin marked
- * them answer-ready, whether they are in the asker's area, and how many parents
- * stand behind them. So *"toddler swim classes"* and *"birthday party venues"*
- * retrieve the **same activities**, and the only thing that separates them today
- * is `caregivers`/`shares` above.
+ * This header used to say it was not: a question was a market, an area, age
+ * bands and kinds, so *"toddler swim classes"* and *"birthday party venues"*
+ * retrieved the same activities. The topic taxonomy (`market_options.focus`,
+ * tagged on every record by the extraction pass) then ranked, and since 26 Oct
+ * it gates: `topicFit` keeps a record only when its tag is the question's topic
+ * or its own name says it is — and drops one whose name names a different
+ * thing inside the topic ("AYSO soccer" for a swim question).
  *
- * That was invisible while nothing called this function. It became visible the
- * day the inbound path did, and it is a real gap rather than a bug to patch
- * here: matching a subject means either a topic taxonomy or embeddings, and
- * name matching specifically does **not** work — a parent asking for "toddler
- * swim classes" shares no word with "Rose Bowl Aquatics parent & me", which is
- * the right answer. Recorded so the next session does not reach for trigrams and
- * conclude they helped.
+ * Name matching **alone** still does not work, which is why the tag carries the
+ * gate: "toddler swim classes" shares no word with "Rose Bowl Aquatics parent &
+ * me", which is the right answer, and gets in by its `sports` tag. The name is
+ * read only through the topic vocabulary, never by trigrams.
  */
 
 /** What may answer this question, with its labels. */
@@ -313,6 +321,14 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
     question.near == null ? null : `{${question.near.map((a) => `"${a}"`).join(",")}}`;
   const wantShares = question.shares !== false;
   const focus = question.focus ?? "";
+  /**
+   * With a topic to gate on, the query reads **every** candidate and the gate
+   * then takes `limit` of what fits. Cutting at `limit` first would let ten
+   * off-topic rows crowd out an on-topic eleventh. A market holds tens of
+   * approved records, so the bound is a guard, not a budget.
+   */
+  const topic = readTopic(question.question ?? "", question.focus ?? null);
+  const fetchLimit = topic.focus ? 200 : limit;
   const wantCaregivers = question.caregivers !== false;
 
   const result = await withDb(async (db: Db) => {
@@ -331,7 +347,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
 
     const shareRows = !wantShares ? [] : (await db.execute(sql`
       select
-        s.id, s.kind, s.subcategory, s.name, s.venue, s.neighborhoods, s.age_bands,
+        s.id, s.kind, s.subcategory, s.focus, s.name, s.venue, s.neighborhoods, s.age_bands,
         s.provenance, s.last_confirmed_at, s.answer_ready,
         (s.freshness_state = 'stale') as marked_stale,
         (select count(*) from freshness_pings fp
@@ -513,7 +529,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         s.answer_ready desc,
         count(sc.id) filter (where sc.firsthand) desc,
         s.last_confirmed_at desc nulls last
-      limit ${limit}
+      limit ${fetchLimit}
     `)) as unknown as Array<Record<string, unknown>>;
 
     /**
@@ -592,8 +608,28 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
   if (!result.persisted || !result.data) return EMPTY;
   const { policies, shareRows, caregiverRows } = result.data;
 
+  /**
+   * The topic gate (26 Oct, `topicFit`): off-topic records are dropped, and the
+   * ones that name what was asked go first — a stable sort, so within a tier
+   * the SQL order (topic, area, golden, parents) stands.
+   */
+  const fitted = shareRows
+    .map((r, i) => ({
+      r,
+      i,
+      fit: topicFit(
+        topic,
+        { focus: r.focus == null ? null : String(r.focus), name: String(r.name) },
+        mentionsName(question.question ?? "", String(r.name)),
+      ),
+    }))
+    .filter((x) => x.fit !== null)
+    .sort((a, b) => (a.fit as number) - (b.fit as number) || a.i - b.i)
+    .map((x) => x.r);
+
   const shares: ShareCandidate[] = [];
-  for (const r of shareRows) {
+  for (const r of fitted) {
+    if (shares.length >= limit) break;
     const candidate: Candidate = {
       kind: String(r.kind),
       provenance: String(r.provenance) as Candidate["provenance"],

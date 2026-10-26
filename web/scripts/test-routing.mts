@@ -334,6 +334,42 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "and asks no clarifying question under one",
     /const clarifier =\s+asking && !urgent/.test(src),
   );
+  /* 26 Oct, the SMS lab: "I want to make a deep research against these top 5
+     schools", sent while "How old are your kids?" was open, was stored as a
+     child aged 5 and the request dropped. A longer reply is read first, told
+     what Pando asked; a new request is not an answer. */
+  ok(
+    "a longer reply to a clarifying question is read before it is stored, and a new request is not an answer",
+    /const longReply = body\.trim\(\)\.split\(\/\\s\+\/\)\.length > 3;/.test(src) &&
+      /askedThem: open && pending \? CLARIFYING_COPY\[pending\] : null/.test(src) &&
+      /if \(question && !newRequest && isClarifyingAnswer\(body\)\)/.test(src),
+  );
+  ok(
+    "ages or an area said without being asked are offered to that question's parser, never a first name",
+    /const volunteered = unasked === "child_age" \|\| unasked === "neighborhood" \? unasked : null;/.test(src) &&
+      /const question = open && pending \? \(aQuestion \? null : pending\) : volunteered;/.test(src),
+  );
+  ok(
+    "and that reading is reused, so the message costs one model call",
+    /const reading = early && early\.intent !== "answer_blast" && !attached\.attached \? early : await classifyIntent/.test(src),
+  );
+  ok(
+    "the clarifier never asks what the question itself just said (an age, a place)",
+    /nextAsked === "child_age" && bandsInQuestion\(body\)\.length > 0/.test(src) &&
+      /nextAsked === "neighborhood" && placePhraseIn\(body\) !== null/.test(src) &&
+      /pendingAsked !== nextAsked && !saidHere/.test(src),
+  );
+  /* 26 Oct review: the verdict, next step and offers were read off the headroom
+     draft while the full-budget draft was sent — `offer_blast` stored beside a
+     text with no offer. Each draft is planned on its own; the sent one's plan is used. */
+  ok(
+    "an answer's verdict, next step and offers come from the draft that is sent",
+    src.includes("await planFor(composedFull)") &&
+      /const \{ draft: sent, verdict, offerDeepEligible, nextStep, lead, introOthers, offerIntroEligible \} = plan;/.test(src) &&
+      /answerText = voiced \?\? plan\.draftText/.test(src) &&
+      /labels: sent\.labels,\s+publicOnly: sent\.public_only,[\s\S]{0,80}shareIds: sent\.used_ids/.test(src) &&
+      !/next_step: composed\.next_step,\s+\}\);/.test(src),
+  );
   /* The second recording: the model read an allegation as an offer, and the
      parent was asked for "ages, cost, whether you'd recommend it". */
   const nonQuestion = src.indexOf("const unreadable =");

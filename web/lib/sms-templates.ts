@@ -196,8 +196,52 @@ export function freshnessPingSms(input: { name: string }): string {
      sent unprompted by `freshness_ping`, and it was the only proactive send
      without either — a stranger-looking text with no way out written on it.
      YES and NO are what `readPingReply` (lib/vouch.ts) reads, PASS is
-     `keywordOf`'s; one GSM-7 segment for a name up to ~25 characters. */
-  return `Pando: quick one - is ${input.name} still worth recommending to other parents? Reply YES, NO, or PASS to skip. Reply STOP to opt out, HELP for help.`;
+     `keywordOf`'s. One GSM-7 segment whatever the name: see `pingSubject`. */
+  return pingBody(pingSubject(input.name));
+}
+
+const pingBody = (subject: string) =>
+  `Pando: quick one - is ${subject} still worth recommending to other parents? Reply YES, NO, or PASS to skip. Reply STOP to opt out, HELP for help.`;
+
+/** What the ping calls the record when its name cannot ride in one GSM-7 segment. */
+const PING_NO_NAME = "the one you shared";
+
+/**
+ * The record's name as the ping can carry it (26 Oct).
+ *
+ * The body is 135 characters before the name, so a name over 25 characters
+ * made every ping two segments, and one character outside GSM-7 (a curly
+ * apostrophe, an o-acute, an emoji) put the whole ping in UCS-2 — 70
+ * characters a segment, three of them. So: typographic quotes and dashes made
+ * plain, accents and emoji dropped (an e-acute is GSM-7 and an o-acute is not,
+ * and a plain letter is always safe); then cut at a word with "..." while a word
+ * survives; otherwise no name. Kept to **printable ASCII minus GSM-7's escaped
+ * `^{}\[~]|` and the backtick**, every character of which is one GSM-7 slot —
+ * this module may not import `sms-segments.ts`, so `test:capture` checks the
+ * result with `planSegments` instead.
+ */
+function pingSubject(raw: string): string {
+  const room = 160 - pingBody("").length;
+  const name = raw
+    .replace(/[‘’‛`]/g, "'")
+    .replace(/[“”‟]/g, '"')
+    .replace(/[–—−]/g, "-")
+    .replace(/…/g, "...")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    /* A decorative emoji goes; the words around it are the name. */
+    .replace(/[\p{Extended_Pictographic}‍️]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (name === "" || !/^[\x20-\x7e]+$/.test(name) || /[\^{}\\[\]~|`]/.test(name)) return PING_NO_NAME;
+  if (name.length <= room) return name;
+  const words = name.split(" ");
+  while (words.length > 1) {
+    words.pop();
+    const cut = `${words.join(" ").replace(/[\s,.;:&-]+$/, "")}...`;
+    if (cut.length <= room && cut.length > 3) return cut;
+  }
+  return PING_NO_NAME;
 }
 
 export function profileDeletedSms(input: {

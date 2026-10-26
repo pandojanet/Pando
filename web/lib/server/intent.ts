@@ -57,6 +57,11 @@ const SYSTEM = [
   "  other specialist, or general local advice",
   "- ask_caregiver: looking for, or asking about finding, a nanny, sitter, night nurse, au pair or",
   "  nanny share",
+  "- deep_dive: wants options compared, ranked or researched in depth rather than a quick list —",
+  "  of what the service just sent ('compare these', 'deep research on these top 5', 'which of",
+  "  them is best for us, in detail', 'DEEP') or of a subject they name ('a detailed comparison",
+  "  of preschools in Altadena'). A plain question that only mentions 'best' or 'top 5' is",
+  "  ask_recommendation; deep_dive is asking for the in-depth comparison itself.",
   "- answer_blast: replying to a question the service asked them",
   "- contribute: volunteering something unprompted — a place they liked, a tip, or a person of their",
   "  own they want to recommend or add, including their own nanny or sitter ('I want to add our nanny",
@@ -75,6 +80,12 @@ const SYSTEM = [
   "⚠ When you are unsure, set it. A sensitive message is read by a person before",
   "anything is sent, so a false positive costs one extra reading and a miss sends",
   "an unread answer about a child's health. The two are not comparable.",
+  "",
+  "For deep_dive, set subject: what to compare, as one standalone request a search could",
+  "use, in plain words — e.g. 'swim schools for a 4 year old in Altadena'. Resolve 'these',",
+  "'them', 'those schools' from the previous question. Leave out the request wording itself",
+  "('I want to make a comparison of'). If you cannot tell what it is about, leave it empty.",
+  "For every other intent leave subject empty.",
   "",
   "Use unclear whenever you are not sure. It is routed to a person, which is the",
   "correct outcome for an ambiguous message — a confident wrong guess is worse",
@@ -122,8 +133,12 @@ const SCHEMA = {
       maxLength: 200,
       description: "One short clause. Never quote the message.",
     },
+    subject: {
+      type: "string",
+      description: "deep_dive only: what to compare, as a standalone request. Otherwise empty.",
+    },
   },
-  required: ["intent", "confidence", "reason", "sensitive"],
+  required: ["intent", "confidence", "reason", "sensitive", "subject"],
   additionalProperties: false,
 } as const;
 
@@ -143,6 +158,18 @@ export async function classifyIntent(input: {
   text: string;
   context: IntentContext;
   recent?: string[];
+  /**
+   * The question Pando last answered for them (26 Oct), so "compare these" and
+   * "deep research on these top 5" have something to point at. The parent's
+   * own words, sent to the same model already reading this message.
+   */
+  lastQuestion?: string | null;
+  /**
+   * What Pando's last message asked them, when it is still waiting for the
+   * answer — "How old are your kids?" (26 Oct). A reply that answers it reads
+   * `answer_blast`; a new request does not, whatever number is in it.
+   */
+  askedThem?: string | null;
 }): Promise<IntentResult> {
   const text = input.text.trim();
   if (text.length === 0) {
@@ -178,6 +205,12 @@ export async function classifyIntent(input: {
         {
           role: "user",
           content: [
+            input.lastQuestion
+              ? `Their previous question, which the service already answered with a list:\n${input.lastQuestion.slice(0, 500)}`
+              : null,
+            input.askedThem
+              ? `The service's last message asked them: "${input.askedThem.slice(0, 300)}". If this message answers that, the intent is answer_blast; if it is a new request instead, classify the request.`
+              : null,
             input.recent && input.recent.length > 0
               ? `Earlier in this conversation:\n${input.recent.slice(-3).join("\n")}`
               : null,
@@ -230,6 +263,7 @@ function safeParse(
   confidence: number;
   reason?: string;
   sensitive?: boolean;
+  subject?: string | null;
 } | null {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
@@ -260,6 +294,7 @@ function safeParse(
        * or nobody asked.
        */
       sensitive: value.sensitive === true,
+      subject: typeof value.subject === "string" ? value.subject : null,
     };
   } catch {
     return null;

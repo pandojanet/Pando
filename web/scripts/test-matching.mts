@@ -325,5 +325,99 @@ console.log("\n=== what a question is about, in the market's own vocabulary ==="
   );
 }
 
+console.log("\n=== a parents' record answers the question it is offered for (26 Oct) ===");
+{
+  /* The SMS lab, 26 Oct, on the demo cohort: with the topic only ranking,
+     whatever passed place and age filled the answer when nothing on the topic
+     did. "swim classes for my 2 year old in Pasadena" led with Little Maestros
+     (a music class); "a gentle preschool for my shy 4 year old in Altadena" with
+     Hahamongna Watershed Park and AYSO soccer; and a swim Deep Dive listed "Also
+     used by parents near you: Hahamongna Watershed Park, AYSO soccer, Tom
+     Sawyer Camps". The records below are the demo cohort's own (seed-demo.mjs),
+     with the tags the extraction pass gave them. */
+  const REC = {
+    maestros: { name: "Little Maestros", focus: "arts_music" },
+    roseBowl: { name: "Rose Bowl Aquatics parent & me", focus: "sports" },
+    ayso: { name: "AYSO soccer", focus: "sports" },
+    cheaperSwim: { name: "Cheaper swim lessons", focus: "sports" },
+    hahamongna: { name: "Hahamongna Watershed Park", focus: "outings" },
+    tomSawyer: { name: "Tom Sawyer Camps", focus: "camps" },
+    waitlists: { name: "Preschool waitlists", focus: "preschools_schools" },
+    library: { name: "La Pintoresca Branch Library", focus: "outings" },
+    conservatory: { name: "Pasadena Conservatory of Music", focus: "arts_music" },
+    gymboree: { name: "Gymboree Play & Music", focus: "activities" },
+    kidspaceCamp: { name: "Kidspace summer camp", focus: "camps" },
+    martial: { name: "Martial arts / taekwondo", focus: "sports" },
+  };
+  const ask = (text: string, focus: string | null) => m.readTopic(text, focus);
+  const fit = (q: ReturnType<typeof ask>, r: { name: string; focus: string | null }, named = false) =>
+    m.topicFit(q, r, named);
+
+  const swimToddler = ask("any good swim classes for my 2 year old in Pasadena?", "sports");
+  ok("a swim question reads the subject inside its topic", swimToddler.subjects.join() === "sports:swim\\w*", JSON.stringify(swimToddler));
+  ok("a music class is not offered for swimming", fit(swimToddler, REC.maestros) === null);
+  ok("the swim class is, by its tag, though no word is shared", fit(swimToddler, REC.roseBowl) === 1);
+  ok("a soccer league is not, though it is the same topic", fit(swimToddler, REC.ayso) === null);
+  ok("a record named for swimming leads", fit(swimToddler, REC.cheaperSwim) === 0);
+
+  const preschool = ask("looking for a gentle preschool for my shy 4 year old in Altadena", "preschools_schools");
+  ok("a park is not a preschool", fit(preschool, REC.hahamongna) === null);
+  ok("nor is a soccer league", fit(preschool, REC.ayso) === null);
+  ok("the preschool record is", fit(preschool, REC.waitlists) !== null);
+
+  const swimFour = ask("swim classes for a 4 year old in Altadena", "sports");
+  ok(
+    "the swim Deep Dive's 'Also used by parents' list loses all three",
+    [REC.hahamongna, REC.ayso, REC.tomSawyer].every((r) => fit(swimFour, r) === null),
+  );
+
+  /* Without the question's words the gate is the tag alone — what inbound.ts
+     sends until it passes the text. Better, not finished: soccer stays in. */
+  const tagOnly = ask("", "sports");
+  ok("tag only: the music class and the park are still out", fit(tagOnly, REC.maestros) === null && fit(tagOnly, REC.hahamongna) === null);
+  ok("tag only: soccer cannot be told from swimming", fit(tagOnly, REC.ayso) === 1);
+
+  /* What must not be lost. */
+  const classes = ask("any good toddler classes near South Pasadena?", "activities");
+  ok("a bare 'classes' still reaches a music class and a swim class", fit(classes, REC.maestros) === 1 && fit(classes, REC.roseBowl) === 1);
+  ok("but not a park", fit(classes, REC.hahamongna) === null);
+  const open = ask("what do parents near Altadena like for a 7 year old?", null);
+  ok("a question with no readable topic is not gated", Object.values(REC).every((r) => fit(open, r) === 1));
+  const named = ask("Does Tom Sawyer Camps do swimming?", "sports");
+  ok("a record the question names is always offered, first", fit(named, REC.tomSawyer, true) === 0);
+  ok("a mis-tagged record its own name places is offered", fit(ask("summer camps", "camps"), { name: "Kidspace summer camp", focus: "activities" }) === 1);
+  ok("an untagged one its name does not place is not", fit(ask("summer camps", "camps"), { name: "Little Gym", focus: null }) === null);
+  ok("one word for the same thing is not a conflict", fit(ask("karate for my 6 year old", "sports"), REC.martial) === 0);
+  ok("music is the topic, not a rival to the piano", fit(ask("piano lessons for a 7 year old", "arts_music"), REC.conservatory) === 1);
+  ok("a guitar school is a rival to the piano", fit(ask("piano lessons", "arts_music"), { name: "Rock Guitar School", focus: "arts_music" }) === null);
+  ok("a general-tag record named for another topic is not a swim class", fit(swimToddler, REC.gymboree) === null);
+  ok("a library is an outing", fit(ask("a library storytime", "outings"), REC.library) === 0);
+  ok("a camp question keeps its camps", fit(ask("summer camps in Altadena", "camps"), REC.kidspaceCamp) === 1);
+
+  /* The question reader is unchanged by the regrouping: every topic's regex
+     is still exactly its words joined. */
+  const OFFERED_ALL = [
+    "activities", "arts_music", "babysitters", "camps", "nannies", "new_to_area_help", "newborn_care",
+    "outings", "pediatric_health", "preschools_schools", "special_needs_resources", "sports", "working_parent_logistics",
+  ];
+  const before: Array<[string, string | null]> = [
+    ["we just moved to the area", "new_to_area_help"], ["after school care options", "working_parent_logistics"],
+    ["high school sports", "sports"], ["a doula for postpartum", "newborn_care"],
+    ["speech therapist", "pediatric_health"], ["a pre-k near us", "preschools_schools"],
+    ["date night sitter", "babysitters"], ["theatre camp", "camps"], ["hiking trails", "outings"],
+  ];
+  for (const [q, want] of before) {
+    ok(`still reads "${q}" as ${want}`, m.focusInQuestion(q, OFFERED_ALL) === want, String(m.focusInQuestion(q, OFFERED_ALL)));
+  }
+
+  /* And retrieval applies it: every candidate is read before any is cut, so
+     ten off-topic rows cannot crowd out an on-topic eleventh. */
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../lib/server/repo/retrieval.ts", import.meta.url), "utf8");
+  ok("retrieval gates on topicFit and drops what does not fit", src.includes("topicFit(") && src.includes(".filter((x) => x.fit !== null)"));
+  ok("retrieval reads every candidate before the gate cuts", src.includes("limit ${fetchLimit}") && src.includes("if (shares.length >= limit) break;"));
+  ok("retrieval selects the tag the gate reads", src.includes("s.subcategory, s.focus, s.name"));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);
