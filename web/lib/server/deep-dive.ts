@@ -286,7 +286,8 @@ const SYSTEM = [
   "- `comparison`: only for a compare question, or when the parent must choose between two or",
   "  three - two or three sentences on what decides it (under 450 characters). Empty otherwise.",
   "- `bottom_line`: one or two sentences (under 250 characters): where you would start and why,",
-  "  naming the place.",
+  "  naming the place. It is printed after every place, so a place's notes are above it here:",
+  "  'see its notes above', never 'below'.",
   "",
   "Everything you write, plus the lines Pando adds (`pando_adds_characters` per place), must fit in",
   "`room_characters`. Every 1,500 characters is one more text message, so be as long as the",
@@ -888,7 +889,7 @@ async function deliver(input: DeliverInput): Promise<boolean> {
         )
       ).filter((n): n is string => n !== null)
     : [];
-  const { parts, shown, named } = fitDeepDive({
+  const { parts, shown } = fitDeepDive({
     question: input.question,
     family,
     options,
@@ -901,10 +902,14 @@ async function deliver(input: DeliverInput): Promise<boolean> {
   const parentOptions = chosen.filter((o) => o.source === "parents").length;
   const sentText = parts.join("\n\n");
 
-  /* The records that went out — in a block of their own, or named as used by
-     parents near you — count as used, so "did it help?", thanks and INTRO all
-     reach them (9.1/9.2, introductions). */
-  const sentNames = new Set([...chosen, ...named].filter((o) => o.source === "parents").map((o) => o.name));
+  /* The records recommended in a block of their own count as used, so "did it
+     help?", thanks and INTRO reach them (9.1/9.2, introductions).
+     ⚠ **Not the ones only named** in "Also used by parents near you" (26 Oct,
+     the SMS lab): a yes to "did it help?" is about the report, so counting a
+     place merely named thanked its contributors for a use nobody made, and the
+     freshness job then asked the parent who said yes to vouch for a place they
+     had not been to — a vouch is a firsthand claim. */
+  const sentNames = new Set(chosen.filter((o) => o.source === "parents").map((o) => o.name));
   const shareIds = input.candidates
     .filter((c) => c.id && sentNames.has(c.name) && input.shareIds.includes(String(c.id)))
     .map((c) => String(c.id));

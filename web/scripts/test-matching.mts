@@ -349,10 +349,25 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
     kidspaceCamp: { name: "Kidspace summer camp", focus: "camps" },
     martial: { name: "Martial arts / taekwondo", focus: "sports" },
   };
-  const ask = (text: string, focus: string | null) => m.readTopic(text, focus);
+  /* The places retrieveFor passes (the question's place phrase, the area, the
+     near set), so a town is never read as a subject. */
+  const ask = (text: string, focus: string | null) =>
+    m.readTopic(text, focus, ["south pasadena", "south-pasadena", "altadena", "pasadena", "san marino", "sierra madre"]);
   const fit = (q: ReturnType<typeof ask>, r: { name: string; focus: string | null }, named = false) =>
     m.topicFit(q, r, named);
 
+  /* 26 Oct, the chat lab: a subject Pando has no topic for got a park, a camp and soccer from parents. */
+  const bike = m.readTopic("where can I get a kids bike fixed in Pasadena?", null, ["Pasadena"]);
+  ok("a subject with no topic is read as its words", bike.unknown?.join() === "bike,fixed", JSON.stringify(bike));
+  ok("and a record not named for it is not offered", fit(bike, REC.ayso) === null && fit(bike, REC.maestros) === null);
+  ok("but one named for it is", fit(bike, { name: "Kids Bike Repair Co-op", focus: null }) === 0);
+  const openAsk = m.readTopic("what do parents near Altadena like for a 4 year old?", null, ["Altadena"]);
+  ok("an open question leaves no subject and keeps every record", openAsk.unknown?.length === 0 && fit(openAsk, REC.ayso) === 1);
+  ok("a town named without in or near is a place, not a subject", m.readTopic("Altadena parents, what do you like for a 4 year old?", null, [null, "altadena"]).unknown?.length === 0);
+  for (const q of ["any ideas for a bored 6 year old", "what's good to do with kids on a hot day", "what should we do with grandma visiting this weekend"]) {
+    ok(`an open question stays open: "${q}"`, m.readTopic(q, null).unknown?.length === 0, JSON.stringify(m.readTopic(q, null)));
+  }
+  ok("a rainy-day question is open too", m.readTopic("things to do on a rainy day with kids", null).unknown?.length === 0);
   const swimToddler = ask("any good swim classes for my 2 year old in Pasadena?", "sports");
   ok("a swim question reads the subject inside its topic", swimToddler.subjects.join() === "sports:swim\\w*", JSON.stringify(swimToddler));
   ok("a music class is not offered for swimming", fit(swimToddler, REC.maestros) === null);
@@ -380,8 +395,15 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
   /* What must not be lost. */
   const classes = ask("any good toddler classes near South Pasadena?", "activities");
   ok("a bare 'classes' still reaches a music class and a swim class", fit(classes, REC.maestros) === 1 && fit(classes, REC.roseBowl) === 1);
+  /* 26 Oct, the SMS lab: "fencing classes" read as the general bucket, so AYSO soccer led a fencing answer. */
+  const fencing = ask("any good fencing classes for kids near Altadena?", "activities");
+  ok("a subject the vocabulary does not know, under a bare 'classes', must be in the record's name", fit(fencing, REC.ayso) === null && fit(fencing, REC.maestros) === null && fit(fencing, { name: "Pasadena Fencing Academy", focus: "sports" }) === 0);
+  const chess = ask("chess club for an 8 year old in Pasadena", "activities");
+  ok("'club', 'gym', 'program' are what a place is, not its subject", (chess.unknown ?? []).join() === "chess" && fit(chess, { name: "Chess Wizards", focus: "activities" }) === 0);
+  ok("weekend activities stay open", fit(ask("weekend activities for a 9 month old around Pasadena", "activities"), REC.roseBowl) === 1);
   ok("but not a park", fit(classes, REC.hahamongna) === null);
-  const open = ask("what do parents near Altadena like for a 7 year old?", null);
+  /* As retrieval reads it: with the question's place phrase taken out. */
+  const open = m.readTopic("what do parents near Altadena like for a 7 year old?", null, ["Altadena"]);
   ok("a question with no readable topic is not gated", Object.values(REC).every((r) => fit(open, r) === 1));
   const named = ask("Does Tom Sawyer Camps do swimming?", "sports");
   ok("a record the question names is always offered, first", fit(named, REC.tomSawyer, true) === 0);
@@ -417,6 +439,11 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
   ok("retrieval gates on topicFit and drops what does not fit", src.includes("topicFit(") && src.includes(".filter((x) => x.fit !== null)"));
   ok("retrieval reads every candidate before the gate cuts", src.includes("limit ${fetchLimit}") && src.includes("if (shares.length >= limit) break;"));
   ok("retrieval selects the tag the gate reads", src.includes("s.subcategory, s.focus, s.name"));
+  /* 26 Oct admin review (invariant 8): 11.4 flags the contribution, and the guard
+     compared the flag's subject with the record id only, so it never fired. */
+  const guards = src.split("f.reason = 'possible_named_person'").length - 1;
+  const both = src.split("where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))").length - 1;
+  ok("every named-person guard reads a flag on the record or on any of its contributions", guards === 5 && both === 5, `${both} of ${guards}`);
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

@@ -132,8 +132,20 @@
                        (`INTRO_MOVES`). Pure. Server: `lib/server/introductions.ts`;
                        rows: `lib/server/repo/introductions.ts`.
 `web/lib/answer-voice.ts` `acceptVoice` — refuses a warm rewrite of an answer
-                       unless every fact survives it. Server half:
-                       `lib/server/answer-voice.ts`.
+                       unless every fact survives it (and every parent's quote
+                       stays quoted). Server half: `lib/server/answer-voice.ts`.
+`web/lib/intent.ts` `ownRequestNotAnAnswer` — is a message inside an Ask's
+                       window the parent's own request rather than their answer
+                       (another topic, or a child's health)? Pure.
+`web/lib/matching.ts` `subjectWords` — what a question names once the asking,
+                       the child, the time and its place are gone; `readTopic`
+                       carries it as `unknown` for questions with no topic.
+`web/lib/more-options.ts` `publicNamesIn` — the web places an answer text
+                       already sent, by name (never a parent's words).
+`web/lib/public-info.ts` `inAnotherState` — a web finding plainly in another US
+                       state than the one asked about.
+`web/lib/deep-dive.ts` `sameProgram` — two findings for one place under session
+                       names ("… Summer Camp" / "… Camps").
 `web/lib/admin/labels.ts` `allowanceLabel` — how many asks a parent agreed to,
                        in the admin's words ("Not chosen" is never five).
 `web/lib/trust-labels.ts` — M5.6. The approved wording, verbatim, plus the

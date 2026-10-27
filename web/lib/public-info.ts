@@ -158,7 +158,7 @@ export function readFindings(
         /* Through the deep dive's filter since the detail grew to three facts
            (22 Oct): more words from a page is more room for "parents rave", a
            named teacher or a phone number, and each is dropped whole. */
-        deepFact((row as Record<string, unknown>).detail, limits.detailMax ?? DETAIL_MAX, isPerson, name),
+        withoutSilence(deepFact((row as Record<string, unknown>).detail, limits.detailMax ?? DETAIL_MAX, isPerson, name)),
       ),
     );
     if (out.length === (limits.max ?? MAX_PUBLIC_FINDINGS)) break;
@@ -540,7 +540,61 @@ function isPlaceRun(run: string): boolean {
   return STREET_WORD.test(run);
 }
 
+/**
+ * US states, as a page writes them: the two-letter code after a comma ("Pasadena,
+ * TX") or the full name. Used only to recognise a finding from another state.
+ */
+const US_STATES: Array<[string, string]> = [["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],["FL","Florida"],["GA","Georgia"],["HI","Hawaii"],["ID","Idaho"],["IL","Illinois"],["IN","Indiana"],["IA","Iowa"],["KS","Kansas"],["KY","Kentucky"],["LA","Louisiana"],["ME","Maine"],["MD","Maryland"],["MA","Massachusetts"],["MI","Michigan"],["MN","Minnesota"],["MS","Mississippi"],["MO","Missouri"],["MT","Montana"],["NE","Nebraska"],["NV","Nevada"],["NH","New Hampshire"],["NJ","New Jersey"],["NM","New Mexico"],["NY","New York"],["NC","North Carolina"],["ND","North Dakota"],["OH","Ohio"],["OK","Oklahoma"],["OR","Oregon"],["PA","Pennsylvania"],["RI","Rhode Island"],["SC","South Carolina"],["SD","South Dakota"],["TN","Tennessee"],["TX","Texas"],["UT","Utah"],["VT","Vermont"],["VA","Virginia"],["WA","Washington"],["WV","West Virginia"],["WI","Wisconsin"],["WY","Wyoming"]];
+
+/**
+ * Is this finding plainly in another US state than `region` (26 Oct, the chat
+ * lab)? Asked about swim classes in Pasadena, the search returned
+ * "Aqua-Tots Swim School - Pasadena, TX": the town shares a name with one in
+ * Texas, and the user-location hint does not stop a model reading the wrong one.
+ * A finding is dropped when its name, area or facts name a state — its code
+ * after a comma, its full name after a comma or "in" — that is not the one asked about. Silent
+ * about states, it stays — most local pages never say one.
+ */
+export function inAnotherState(
+  f: { name: string; area: string | null; detail?: string | null; what?: string | null },
+  region: string | null | undefined,
+): boolean {
+  if (!region) return false;
+  const want = US_STATES.find(([code, name]) => name.toLowerCase() === region.toLowerCase() || code === region.toUpperCase());
+  if (!want) return false;
+  const text = [f.name, f.area ?? "", f.detail ?? "", f.what ?? ""].join(" | ");
+  return US_STATES.some(([code, name]) => {
+    if (code === want[0]) return false;
+    /* A code only as an address ends: "Pasadena, TX" or "Pasadena, TX 77506" — never
+       "Small groups, OK for beginners" or "Open daily, IN person only" (26 Oct review). */
+    const asCode = new RegExp(`,\\s*${code}(?:\\s+\\d{5}(?:-\\d{4})?)?\\s*(?:$|[|),;.])`);
+    /* A full name only after a comma or "in", and not as the start of a place's own
+       name: "Saturday games in Washington Park" names no state. */
+    const asName = new RegExp(
+      `(?:,|\\bin)\\s+${name}\\b(?!\\s+(?:park|st|street|ave|avenue|blvd|boulevard|road|rd|drive|dr|school|elementary|middle|high|pool|center|centre|square|heights|hall|library|field|fields|plaza|place|way))`,
+      "i",
+    );
+    return asCode.test(text) || asName.test(text);
+  });
+}
+
 /** A trailing parenthesis, closed or not, taken off a short field. */
+/**
+ * A fact about what a page does **not** say is not a fact (26 Oct, the SMS lab):
+ * *"LoveBug & Me Music: Locally owned and operated and the page does not state
+ * ages or prices"*. The prompt asks for null when a page states nothing; when
+ * the model writes the silence out anyway, that clause is dropped and the rest
+ * kept. Ordinary answers only — a Deep Dive's "2027 dates are not posted yet"
+ * is advice, and its fields do not pass through here.
+ */
+const SILENCE =
+  /\b(?:(?:does|do|did)(?:n't| not) (?:state|list|mention|say|give|show|specify|include|post)|not (?:stated|listed|mentioned|given|specified|shown|provided|available|published)|no (?:price|prices|pricing|ages?|hours|schedule|dates|details|information|info)\b[^;,.]*\b(?:listed|given|stated|available|posted|shown|provided|found)|unknown|unclear|n\/a)\b/i;
+export function withoutSilence(detail: string | null): string | null {
+  if (!detail) return detail;
+  const kept = detail.split(/\s*;\s*/).filter((part) => part.trim() && !SILENCE.test(part));
+  return kept.length ? kept.join("; ") : null;
+}
+
 function withoutAside(value: unknown): unknown {
   if (typeof value !== "string") return value;
   /* An area is a place's name, so it ends where the model's aside begins — a

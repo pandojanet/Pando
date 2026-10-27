@@ -77,6 +77,10 @@ const SYSTEM = [
   "'who do you use for a dentist?') is a recommendation, not sensitive by itself. It IS",
   "sensitive once it describes a symptom, a condition, an injury or medication ('my son keeps",
   "getting ear infections, which ENT?').",
+  "A named person is a PERSON (a sitter, a teacher, a coach). A business, class, camp or school",
+  "named after someone ('Tom Sawyer Camps', 'Little Maestros', 'Dr. Seuss Library') is a place,",
+  "and asking whether a place is good ('Is Tom Sawyer Camps any good?') is a recommendation,",
+  "not sensitive.",
   "⚠ When you are unsure, set it. A sensitive message is read by a person before",
   "anything is sent, so a false positive costs one extra reading and a miss sends",
   "an unread answer about a child's health. The two are not comparable.",
@@ -170,6 +174,13 @@ export async function classifyIntent(input: {
    * `answer_blast`; a new request does not, whatever number is in it.
    */
   askedThem?: string | null;
+  /**
+   * Another parent's question the service sent them to help with — an open
+   * Network Ask (26 Oct). A suggestion for it reads `answer_blast` even put as
+   * a question ("have you looked at the YMCA camp?"); a request for their own
+   * family on something else is that request.
+   */
+  othersQuestion?: string | null;
 }): Promise<IntentResult> {
   const text = input.text.trim();
   if (text.length === 0) {
@@ -210,6 +221,9 @@ export async function classifyIntent(input: {
               : null,
             input.askedThem
               ? `The service's last message asked them: "${input.askedThem.slice(0, 300)}". If this message answers that, the intent is answer_blast; if it is a new request instead, classify the request.`
+              : null,
+            input.othersQuestion
+              ? `The service asked them to help ANOTHER parent, who asked: "${input.othersQuestion.slice(0, 300)}". A message suggesting, naming or asking about a place or option for that parent is answer_blast, even when it is put as a question ("have you tried X?", "maybe the 9am?"). Only a request for their OWN family about something else is a new request - classify that request.`
               : null,
             input.recent && input.recent.length > 0
               ? `Earlier in this conversation:\n${input.recent.slice(-3).join("\n")}`

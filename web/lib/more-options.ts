@@ -66,6 +66,39 @@ export function alreadyGiven(
 }
 
 /**
+ * The web places a parent was already sent, by name (26 Oct, the chat lab).
+ *
+ * "more" re-ran the same search, which found the same four places, and
+ * `alreadyGiven` then dropped every one: *"That's everything I have on this
+ * so far."* while the web plainly had more. The names go to the search as
+ * places Pando already has, so it looks past them.
+ *
+ * Read off the answer text, the one record of what was sent: the lines under
+ * the *Public/general information* heading, each up to its first colon, comma
+ * or dash. Only those lines — never a parent's own words, which have no
+ * business in a web search.
+ */
+export function publicNamesIn(texts: readonly string[]): string[] {
+  const names: string[] = [];
+  for (const text of texts) {
+    let inBlock = false;
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (/Public\/general information:$/.test(line)) { inBlock = true; continue; }
+      if (!inBlock) continue;
+      if (line === "") { inBlock = false; continue; }
+      const name = line
+        .split(":")[0]
+        .replace(/ \(above\), from its own page$/, "")
+        .split(/, | - /)[0]
+        .trim();
+      if (name.length >= 4 && !names.includes(name)) names.push(name);
+    }
+  }
+  return names.slice(0, 8);
+}
+
+/**
  * How a follow-up is stored.
  *
  * The answer to "any others?" is for the *same* question, and `answers` is read

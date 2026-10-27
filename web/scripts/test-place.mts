@@ -79,13 +79,21 @@ console.log("\n=== the answer path reads it (source checks) ===");
   ok("the search is told where", has(inbound, "location: searchLocationFor(place)"));
   ok("the offer needs parents near the place",
     has(inbound, "askable === null || askable >= MIN_ASKABLE_NEAR")
-      && has(inbound, "canAsk ? {} : { can_offer_blast: false, nobody_near:"));
+      /* 26 Oct: a "more" with nobody to ask makes no offer but is not "nothing from parents near". */
+      && has(inbound, "...(canAsk ? {} : given ? { can_offer_blast: false } : { can_offer_blast: false, nobody_near:"));
   ok("the Ask created from a yes is about the question's place",
     has(inbound, "neighborhood: asked.area,"));
 
   const retrieval = fs.readFileSync("lib/server/repo/retrieval.ts", "utf8");
   ok("shares are filtered to the near set",
     has(retrieval, "nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`"));
+  /* 26 Oct: except a record the question names by its first three words. Caregivers never are. */
+  ok("a record the question names is in whatever its place and ages, by its first three whole words (never one word)",
+    has(retrieval, "or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2")
+      && has(retrieval, "[1:3], ' ') || ' ') > 0)"));
+  ok("but only when the question names no place of its own",
+    has(retrieval, "${question.namedAnywhere ? sql`or (")
+      && has(inbound, "namedAnywhere: place.source === \"profile\" || place.source === \"pending_profile\" || place.source === \"none\","));
   ok("caregivers too",
     has(retrieval, "nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`"));
 

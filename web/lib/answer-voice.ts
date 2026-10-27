@@ -490,6 +490,11 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
   const quotes: string[] = (text.match(/"[^"]*"/g) ?? []).map(bareQuote);
   if (quotes.length > draftQuotes.length) return null;
   for (const q of quotes) if (!draftQuotes.includes(q)) return null;
+  /* ⚠ …and none is unquoted (26 Oct, the chat lab). A parent's words survived
+     word for word with the marks gone - "the water is genuinely warm ... we tried
+     two others where he screamed the entire time" - and read as Pando's own
+     experience. Every quote the draft holds stays a quote. */
+  for (const q of draftQuotes) if (!quotes.includes(q)) return null;
 
   /* The public block is the draft's: heading, then its lines unchanged. */
   const headingInDraft = draft.indexOf(PUBLIC_HEADING);

@@ -202,6 +202,49 @@ const OPENERS: RegExp[] = [
   /^(is|are) (this|you|it) (working|on|open)$/,
 ];
 
+/**
+ * ⚠ **A request of the parent's own is not an answer to somebody else's Ask**
+ * (26 Oct, the chat lab). Maya had been sent *"Anyone know a Saturday swim class
+ * that takes a nervous 4-year-old?"* and, inside its window, texted *"we need a
+ * nanny three days a week"* and then *"my toddler has a rash, what do i do"*.
+ * Both were filed as her answer to the swim Ask — the first thanked for, the
+ * second appended in silence — so a health question got no reply, and it sat
+ * in a reply an admin could approve and send to another parent.
+ *
+ * "Context beats the words" (27 Aug, 14 Sep) still stands for everything it was
+ * written for: "the 9am or the 10:30?" and "try Little Maestros?" are answers,
+ * and they stay answers. Only two shapes are taken out, each needing a request
+ * **and** something the Ask cannot be about:
+ *
+ *  - a request on **another topic** than the Ask's — both topics read, and
+ *    different ("activities" is the general bucket and differs from nothing);
+ *  - a request for **help with a child's health or safety** — never an answer
+ *    to an Ask about a class, and the one message that must reach a person.
+ */
+/* A request in so many words — never a bare "?": answers are often put as
+   questions ("have you looked at the YMCA camp?", review 26 Oct). */
+const OWN_REQUEST =
+  /\b(?:i|we)(?:'m| am| are)?\s+(?:really\s+|urgently\s+)?(?:need|want|looking for|searching for)\b|\b(?:what|how)\s+(?:do|should|can)\s+(?:i|we)\b|\bwhere\s+(?:can|do|should)\s+(?:i|we)\b|\b(?:does anyone|can anyone|anyone know|any recommendations?)\b/i;
+const HEALTH_HELP =
+  /\b(?:rash|fever|vomit\w*|throwing up|threw up|sick|ill|injur\w*|bleed\w*|nosebleeds?|swallowed|poison\w*|choking|emergency|hurt|bump(?:ed)? (?:his|her|their) head|not breathing|allergic reaction)\b/i;
+/* About their own child: "my toddler has…", "she has a fever…". */
+const OWN_CHILD =
+  /\b(?:my|our)\s+(?:son|daughter|kid|kids|child|toddler|baby|boy|girl|little one|twins)\b|\b(?:she|he)(?:'s| is| has| had| keeps| got)\b/i;
+
+export function ownRequestNotAnAnswer(
+  text: string,
+  askQuestion: string,
+  topicOf: (text: string) => string | null,
+): boolean {
+  const body = text.replace(/[’‘]/g, "'");
+  if (!OWN_REQUEST.test(body)) return false;
+  const theirs = topicOf(askQuestion);
+  /* Health: their own child, and an Ask that is not itself about health. */
+  if (HEALTH_HELP.test(body) && OWN_CHILD.test(body) && theirs !== "pediatric_health" && !HEALTH_HELP.test(askQuestion)) return true;
+  const mine = topicOf(body);
+  return mine !== null && theirs !== null && mine !== theirs && mine !== "activities" && theirs !== "activities";
+}
+
 const QUESTION_SHAPE =
   /\?|\b(anyone know|does anyone|looking for|any recommendations?|can anyone|who do you|where can|is there a|any good)\b/i;
 

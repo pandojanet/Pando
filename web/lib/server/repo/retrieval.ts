@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { areaGroup } from "@/lib/server/repo/areas";
 import { readTopic, topicFit } from "@/lib/matching";
+import { placePhraseIn } from "@/lib/place-in-question";
 import { mentionsName } from "@/lib/public-info";
 import {
   labelsFor,
@@ -40,6 +41,13 @@ import {
 
 export interface QuestionContext {
   marketId?: string;
+  /**
+   * The question names no place of its own (the place is the profile's), so a
+   * record it names may be offered outside the near set and the child's ages
+   * (26 Oct). Never for a question about another place: "music together classes
+   * in Brooklyn" must not reach a Pasadena record named Music Together.
+   */
+  namedAnywhere?: boolean;
   /** The asker's area, used to rank — never to filter. Same rule as the chip list. */
   area?: string | null;
   /**
@@ -327,8 +335,13 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
    * off-topic rows crowd out an on-topic eleventh. A market holds tens of
    * approved records, so the bound is a guard, not a budget.
    */
-  const topic = readTopic(question.question ?? "", question.focus ?? null);
-  const fetchLimit = topic.focus ? 200 : limit;
+  const topic = readTopic(question.question ?? "", question.focus ?? null, [
+    /* The place phrase too, or "Altadena" in "near Altadena" reads as a subject. */
+    placePhraseIn(question.question ?? ""),
+    question.area,
+    ...(question.near ?? []),
+  ]);
+  const fetchLimit = topic.focus || topic.unknown?.length ? 200 : limit;
   const wantCaregivers = question.caregivers !== false;
 
   const result = await withDb(async (db: Db) => {
@@ -380,7 +393,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
          */
         (case when exists (
                select 1 from flags f
-                where f.subject_id = s.id
+                where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))
                   and f.reason = 'possible_named_person'
                   and f.status in ('open', 'escalated')
              ) then null
@@ -398,7 +411,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         end)                                                            as note_great,
         (case when exists (
                select 1 from flags f
-                where f.subject_id = s.id
+                where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))
                   and f.reason = 'possible_named_person'
                   and f.status in ('open', 'escalated')
              ) then null
@@ -408,7 +421,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         end)                                                            as note_caveat,
         (case when exists (
                select 1 from flags f
-                where f.subject_id = s.id
+                where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))
                   and f.reason = 'possible_named_person'
                   and f.status in ('open', 'escalated')
              ) then null
@@ -418,7 +431,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         end)                                                            as note_who_for,
         (case when exists (
                select 1 from flags f
-                where f.subject_id = s.id
+                where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))
                   and f.reason = 'possible_named_person'
                   and f.status in ('open', 'escalated')
              ) then null
@@ -455,7 +468,7 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
          */
         (case when exists (
                select 1 from flags f
-                where f.subject_id = s.id
+                where (f.subject_id = s.id or f.subject_id in (select c2.id from share_contributions c2 where c2.share_id = s.id))
                   and f.reason = 'possible_named_person'
                   and f.status in ('open', 'escalated')
              ) then null
@@ -505,8 +518,24 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
         -- unreviewed record is not something Pando answers with.
         and s.status = 'approved'
         and sc.status = 'approved'
-        ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
-        ${nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`}
+        -- The age and place filters, unless the question names the record (26 Oct,
+        -- the chat lab): "compare Little Maestros and LoveBug" from a parent in
+        -- Arcadia, and "how is Rose Bowl Aquatics for a nervous swimmer?", were
+        -- answered "nothing from parents near Arcadia" with the very record they
+        -- named filtered out. Named = its first three words (all of a shorter
+        -- name, never a one-word one), as parents shorten "Rose Bowl Aquatics
+        -- parent & me". Whole words only, and only when the question names no
+        -- place of its own (namedAnywhere): "music together classes in
+        -- Brooklyn" never reaches a Pasadena record named Music Together.
+        and (
+          (true
+            ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
+            ${nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`})
+          ${question.namedAnywhere
+            ? sql`or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2
+              and strpos(' ' || regexp_replace(lower(${question.question ?? ""}), '[^a-z0-9&]+', ' ', 'g') || ' ',
+                         ' ' || array_to_string((regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '))[1:3], ' ') || ' ') > 0)`
+            : sql``})
       group by s.id
       order by
         -- The topic the question is about, then the asker's own area, then a

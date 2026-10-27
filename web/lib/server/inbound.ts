@@ -10,13 +10,14 @@ import {
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
-import { isBareOpener } from "@/lib/intent";
+import { isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
 import { composeAnswer, SMS_BUDGET, subcategoryWord, VOICE_HEADROOM, type AnswerCandidate } from "@/lib/answer";
 import {
   acceptsDeepDive,
   asksForDeepDive,
   DEEP_DIVE_FAILED,
-  DEEP_DIVE_OFFER,
+  deepDiveOffer,
+  deepDiveOfferVersion,
   DEEP_DIVE_OFFER_HOURS,
   DEEP_DIVE_UNSUPPORTED,
   deepDiveWorthOffering,
@@ -31,7 +32,7 @@ import { acceptsIntro, introOffer, introTarget } from "@/lib/introductions";
 import { introStep } from "@/lib/server/introductions";
 import { introCandidateCount, mayOfferIntro, recordIntroOffer } from "@/lib/server/repo/introductions";
 import { careFacts, careFit } from "@/lib/care-answer";
-import { alreadyGiven, asksForMore, withMoreSuffix } from "@/lib/more-options";
+import { publicNamesIn, alreadyGiven, asksForMore, withMoreSuffix } from "@/lib/more-options";
 import { placePhraseIn } from "@/lib/place-in-question";
 import { priorAnswersFor } from "@/lib/server/repo/answers-followup";
 import { CAREGIVER_TYPES } from "@/lib/caregiver-options";
@@ -105,7 +106,7 @@ import {
   settingsConfirmation,
   settingsPrompt,
 } from "@/lib/outreach-policy";
-import { attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
+import { askedRecently, attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
 import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
 import { mentionsName, sameName } from "@/lib/public-info";
@@ -147,7 +148,7 @@ import {
   setAllowance,
   type ColdPerson,
 } from "@/lib/server/repo/onboarding";
-import { recordInbound, setOptOut } from "@/lib/server/repo/outreach";
+import { isOptedOut, recordInbound, setOptOut } from "@/lib/server/repo/outreach";
 import { sendSms } from "@/lib/server/sms";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
@@ -375,6 +376,21 @@ export async function handleInboundMessage(input: {
             : "profile_delete_failed",
       templateVersion: SMS_TEMPLATE_VERSION,
     });
+    return;
+  }
+
+  /**
+   * ⚠ **Somebody who texted STOP is not answered until they text START**
+   * (26 Oct, the SMS lab). Their question went through the whole pipeline — the
+   * classifier, the web search, a composed answer — and only the send layer
+   * refused it, leaving a queued answer an admin could never send and a bill for
+   * work nobody could receive. The text is recorded (it is still a response, for
+   * 8.4) and nothing else happens. The keywords above — START, HELP, PASS,
+   * DELETE — still work: erasing their data is not something an opt-out removes.
+   */
+  if (await isOptedOut(from)) {
+    await recordInbound({ phone: from, category: "outreach", keyword: null });
+    console.info("[sms:inbound] opted out, not answered");
     return;
   }
 
@@ -630,7 +646,32 @@ export async function handleInboundMessage(input: {
      (review, 21 Oct). */
   const attached = isCommand(body)
     ? { attached: false, followUp: false }
-    : await attachResponse({ phone: from, text: body });
+    : await attachResponse({
+        phone: from,
+        text: body,
+        /* A request of their own on another subject, or about a child's health, is not their answer (26 Oct). */
+        ownRequest: async (question) => {
+          const list = await focusOptions();
+          if (ownRequestNotAnAnswer(body, question, (t) => focusInQuestion(t, list))) return true;
+          /**
+           * ⚠ **Read, not matched** (26 Oct, the SMS lab). The words above catch
+           * "we need…", "does anyone…" — and missed *"any good fencing classes for
+           * kids near Altadena?"*, sent by a parent holding a swim Ask: it was
+           * filed as her answer and thanked. A message shaped like a question is
+           * read by the classifier, told the Ask it would be filed under; a new
+           * request of their own is not an answer. A plain answer ("Rose Bowl,
+           * the water is warm") costs no call; "have you looked at the YMCA
+           * camp?" is read as the answer it is.
+           */
+          if (!/\?|\b(?:any|anyone|recommend|looking|need|where|which|who)\b/i.test(body)) return false;
+          const reading = await classifyIntent({
+            text: body,
+            othersQuestion: question,
+            context: { awaiting_blast_reply: false, known_person: true },
+          });
+          return reading.source === "model" && ["ask_recommendation", "ask_caregiver", "deep_dive"].includes(reading.intent);
+        },
+      });
   /* The reply is acknowledged once (25 Sep) — a follow-up appended to it is
      not, or two texts would earn two thank-yous. */
   if (attached.attached && !attached.followUp) {
@@ -695,7 +736,9 @@ export async function handleInboundMessage(input: {
     const ours = latest > newerOffer;
 
     if (!ours) {
-      console.info("[sms:inbound] yes left for a newer offer", { deep: deepOffer !== null, intro: introAt !== null });
+      /* Said only when there is a newer offer to leave it for: a yes to nothing
+         at all was logged as this too (26 Oct, the SMS lab). */
+      if (newerOffer > -1) console.info("[sms:inbound] yes left for a newer offer", { deep: deepOffer !== null, intro: introAt !== null });
     } else if (ping && asked(ping) === latest) {
       const outcome = await applyPingReply(ping, pingReply);
       /* Enums only — never the record's name or the parent's words. */
@@ -898,7 +941,12 @@ export async function handleInboundMessage(input: {
      * word taken as a name is the 21 Oct "Swim" mistake.
      */
     const unasked = !open ? nextQuestion(person.profile) : null;
-    const volunteered = unasked === "child_age" || unasked === "neighborhood" ? unasked : null;
+    /* An age said unasked must say whose it is: a bare "3", with nothing open, is
+       not one (26 Oct, the chat lab — it was stored as the child's age). */
+    const saysAChild =
+      /\b(?:son|sons|daughter|daughters|kid|kids|child|children|boy|girl|toddler|baby|twins?|year|years|yr|yrs|yo|months?|turns?|turning)\b|\b(?:she|he)(?:'s|’s| is)\s+\d/i.test(body);
+    const volunteered =
+      unasked === "neighborhood" || (unasked === "child_age" && saysAChild) ? unasked : null;
     if (((open && pending && !aQuestion && longReply) || volunteered) && isClarifyingAnswer(body)) {
       early = await classifyIntent({
         text: body,
@@ -1062,6 +1110,13 @@ export async function handleInboundMessage(input: {
     console.info("[sms:inbound] answered an opener");
     return;
   }
+
+  /* Already answered by a step above — a ping's YES, a yes to an offer, an
+     age saved: nothing below reads the message, so it is not sent to the model
+     (26 Oct, the SMS lab: each of those cost a classification that was then
+     discarded at the return below). A reply to an Ask still goes on: its
+     reading comes from the records, not the model. */
+  if (answeredSomething || clarified) return;
 
   /* Read once: a new request the clarifying step already read is that reading. */
   const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
@@ -1276,8 +1331,10 @@ export async function handleInboundMessage(input: {
   /* A reply to a Network Ask that has closed (the model read `answer_blast`
      and nothing attached) was met with silence (22 Oct audit); what it holds
      is still worth sharing, so it is answered as a contribution. */
-  const sharing = reading.intent === "contribute" || reading.intent === "answer_blast";
-  if (sharing || reading.intent === "chitchat") {
+  const sharing =
+    reading.intent === "contribute" || (reading.intent === "answer_blast" && (await askedRecently(from)));
+  /* An answer_blast reading from somebody never asked is small talk, not silence (26 Oct). */
+  if (sharing || reading.intent === "chitchat" || reading.intent === "answer_blast") {
     await sendSms({
       to: from,
       body: sharing ? SHARE_INVITE : SMALL_TALK,
@@ -1676,6 +1733,7 @@ async function answerQuestion(input: {
     /* What was asked, so a record that names another thing inside the same
        topic ("AYSO soccer" for a swim question) is not offered (26 Oct). */
     question: body,
+    namedAnywhere: place.source === "profile" || place.source === "pending_profile" || place.source === "none",
     shares: !wantsCare,
     caregivers: wantsCare,
     /* Deeper for a follow-up: the first answer took the best few, and "any
@@ -1784,10 +1842,14 @@ async function answerQuestion(input: {
          */
         exclude: deep
           ? []
-          : retrieved.shares
-              .slice(1)
-              .filter((share) => !mentionsName(body, share.name))
-              .map((share) => share.name),
+          : [
+              /* "more": the web places already sent come first, so the search looks past them (26 Oct). */
+              ...(input.more ? publicNamesIn(input.more.texts) : []),
+              ...retrieved.shares
+                .slice(1)
+                .filter((share) => !mentionsName(body, share.name))
+                .map((share) => share.name),
+            ],
         /* A deep dive (21 Oct) looks the records up instead: what the page says
            about them sits beside what parents said, matched by name. */
         ...(deep ? { enrich: retrieved.shares.slice(0, 6).map((share) => share.name) } : {}),
@@ -2014,13 +2076,17 @@ async function answerQuestion(input: {
       detail: sendableNote(finding.detail),
       kind: sendableNote(finding.what) ?? "a place",
       area: sendableNote(finding.area),
+      /* The same place as a parents' record: said as that, not as another one (26 Oct). */
+      same_as: retrieved.shares.find((share) => sameName(share.name, finding.name))?.name ?? null,
       trust: {
         labels: [TRUST_LABEL.PUBLIC],
         freshness: "fresh" as const,
         public_only: true,
       },
       firsthand_count: 0,
-    })),
+    }))
+      /* …and with nothing its page stated, it has nothing to add beside them. */
+      .filter((c) => !(c.same_as && !c.detail)),
   ];
 
   /**
@@ -2109,9 +2175,13 @@ async function answerQuestion(input: {
     /* Nobody near to ask is not "no budget": it must not reach a person as
        "someone is putting an answer together" (the generator_asked hold), which
        is a promise nobody near that place can keep. */
+    /* A "more" with nobody to ask is still not "nothing from parents near X":
+       parents' places near X were what it was sent first (26 Oct, the chat lab). */
     ...(canAsk
       ? {}
-      : { can_offer_blast: false, nobody_near: { place: place.label ? (toGsm7(place.label) ?? place.label) : null } }),
+      : given
+        ? { can_offer_blast: false }
+        : { can_offer_blast: false, nobody_near: { place: place.label ? (toGsm7(place.label) ?? place.label) : null } }),
   });
   const composed = composeWith(voiceRoom);
   /**
@@ -2400,7 +2470,7 @@ async function answerQuestion(input: {
     to: from,
     body: sending
       ? offerDeep
-        ? `${answerText}\n\n${DEEP_DIVE_OFFER}`
+        ? `${answerText}\n\n${deepDiveOffer(sent.parent_used > 0)}`
         : offerIntro && lead
           ? `${answerText}\n\n${introOffer(lead.name, introOthers)}`
           : clarifier
@@ -2432,7 +2502,8 @@ async function answerQuestion(input: {
   if (sending && result.sent) await markAnswerSent(answerId);
   /* The offer is a row the moment it went out, so "offered, never answered" is countable. */
   if (offerDeep && sending && result.sent && person) {
-    await recordDeepDiveOffer({ personId: person.person_id, question: body, sourceAnswerId: answerId });
+    /* The wording follows what was sent: a parents' record cut by the budget is not "what local parents said" (26 Oct review). */
+    await recordDeepDiveOffer({ personId: person.person_id, question: body, sourceAnswerId: answerId, offerVersion: deepDiveOfferVersion(sent.parent_used > 0) });
   }
   if (offerIntro && sending && result.sent && person && lead?.id) {
     await recordIntroOffer({ personId: person.person_id, shareId: String(lead.id), shareName: lead.name, answerId });

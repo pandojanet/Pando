@@ -30,6 +30,8 @@ export async function recordDeepDiveOffer(input: {
   personId: string;
   question: string;
   sourceAnswerId: string | null;
+  /** Which wording went out (`deepDiveOfferVersion`); the parents' one when unsaid. */
+  offerVersion?: string;
 }): Promise<string | null> {
   const r = await withDb(async (db) => {
     const out = await rows(
@@ -37,7 +39,7 @@ export async function recordDeepDiveOffer(input: {
       sql`
         insert into deep_dives (person_id, question, trigger, status, source_answer_id, offer_version, is_test)
         select ${input.personId}::uuid, ${input.question}, 'proactive', 'offered',
-               ${input.sourceAnswerId}::uuid, ${DEEP_DIVE_OFFER_VERSION}, p.is_test
+               ${input.sourceAnswerId}::uuid, ${input.offerVersion ?? DEEP_DIVE_OFFER_VERSION}, p.is_test
           from people p where p.id = ${input.personId}::uuid
         returning id
       `,

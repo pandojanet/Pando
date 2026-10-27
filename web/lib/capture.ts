@@ -204,11 +204,35 @@ const CAREGIVER_WORDS = [
  * nomination form would be the redirect firing on exactly the person it is not
  * for.
  */
-const OFFER_WORDS =
-  /\b(add|adding|added|recommend|recommending|share|sharing|suggest|suggesting|vouch|vouching)\b/i;
+/**
+ * ⚠ **The verb alone was not an offer** (26 Oct, the chat lab): *"can anyone
+ * recommend a nanny for two afternoons a week?"* carries "recommend" and was
+ * sent the nomination form instead of an answer — the parent asking for help
+ * was the one turned away (the 13 Oct audit's F1). An offer is the parent
+ * putting forward someone of **their own**: a first-person subject before the
+ * verb ("I want to add", "I'd recommend", "can I recommend"), an imperative
+ * about their own ("add our nanny Marisol"), or "our nanny Marisol is amazing"
+ * said without looking for one. The same shape lib/intent.ts reads as
+ * "contribute", so the gate and the classifier cannot disagree again.
+ */
+/* "share" and "suggest" only with their own after them: "we share custody" and
+   "can we share a nanny with another family?" are requests (26 Oct review). */
+const FIRST_PERSON_OFFER =
+  /\b(?:i|we)(?:'d|'ll| would| will| can| could| wanna| want to| want| would like to| like to| love to)?\s+(?:like\s+to\s+|love\s+to\s+)?(?:add|recommend|nominate|vouch(?:\s+for)?|(?:share|suggest)\s+(?:our|my)\b)\b|\bcan\s+(?:i|we)\s+(?:add|recommend|nominate|(?:share|suggest)\s+(?:our|my)\b)\b/i;
+/* Their own straight after the verb: "add our nanny Marisol", never "recommend a sitter for my twins". */
+const OWN_ADD = /^\s*(?:please\s+)?(?:add|recommend|nominate)\s+(?:our|my)\b/i;
+/* The -ing forms the earlier verb list caught: "Recommending our former sitter Ana", "Sharing Ana, …". */
+const OWN_GERUND = /^\s*(?:[Rr]ecommending|[Nn]ominating|[Aa]dding|[Ss]haring|[Vv]ouching for)\s+(?:[Oo]ur\b|[Mm]y\b|[A-Z])/;
+const OWN_CAREGIVER = /\b(?:our|my)\s+(?:nanny|sitter|babysitter|au ?pair|childminder|night nurse)\b/i;
+/** Looking for one after all: "our nanny is leaving, need a new one". */
+const NEEDS_ONE =
+  /\?|\b(?:need|needs|needed|looking|find|finding|replace|replacement|new one|another|backup|leaving|left|quit|quitting|recommendations?)\b/i;
 
 export function offersSomething(body: string): boolean {
-  return OFFER_WORDS.test(body);
+  /* A phone's curly apostrophe ("I’d recommend") reads as the straight one (26 Oct review). */
+  const text = body.replace(/[’‘´`]/g, "'");
+  if (FIRST_PERSON_OFFER.test(text) || OWN_ADD.test(text) || OWN_GERUND.test(text)) return true;
+  return OWN_CAREGIVER.test(text) && !NEEDS_ONE.test(text);
 }
 
 export function mentionsCaregiver(body: string): boolean {

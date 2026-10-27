@@ -134,6 +134,11 @@ const given = { ids: ["s1"], texts: ["2 parents near you have employed Elena V.,
 ok("a record already sent is excluded by id", m.alreadyGiven({ id: "s1", name: "Whatever" }, given));
 ok("a caregiver already sent is excluded by the name in the text", m.alreadyGiven({ name: "Elena V." }, given));
 ok("one not sent is kept", !m.alreadyGiven({ id: "s2", name: "Maria G." }, given));
+/* 26 Oct, the chat lab: "more" re-ran the same search and every finding was already sent. */
+const sentText = "3 parents near you have used Little Maestros, a class in South Pasadena.\nOne said: \"Small groups, ask for Ms Jo.\"\n\nPublic/general information:\nLoveBug & Me Music, baby and toddler music classes in South Pasadena: Ages 0-5.\nTom Sawyer Camps (above), from its own page: Ages 3 to 14.\nTinkergarten South Pasadena, outdoor play classes: Ages 1-8.\n\nBy the way, a parent Pando knows has used Little Maestros.";
+ok("the web places sent are read back by name", JSON.stringify(m.publicNamesIn([sentText])) === JSON.stringify(["LoveBug & Me Music", "Tom Sawyer Camps", "Tinkergarten South Pasadena"]), JSON.stringify(m.publicNamesIn([sentText])));
+ok("and never a parent's words or the offer", !m.publicNamesIn([sentText]).some((n) => /Ms Jo|By the way|parents near you/.test(n)));
+ok("the nobody-near head counts as the heading", m.publicNamesIn(["There's nothing from parents near Boston yet. Here's what I found. Public/general information:\nArt Planet, kids art classes in San Gabriel."])[0] === "Art Planet");
 ok("a short name never matches by substring", !m.alreadyGiven({ name: "Al" }, { ids: [], texts: ["Also nearby: Maria G."] }));
 const more = a.composeAnswer({ candidates: [t2("Maria G.", 1)], has_question: true, opening: "A few more that may fit:" }).text;
 ok("the opening sits above the first record", more.startsWith("A few more that may fit:\n"), more);
@@ -143,7 +148,8 @@ ok("an opening never replaces the public guard", a.composeAnswer({
   candidates: [{ name: "City parks", kind: "x", firsthand_count: 0, trust: { labels: [t.TRUST_LABEL.PUBLIC], freshness: "fresh", public_only: true } }],
   has_question: true,
   opening: "A few more that may fit:",
-}).text.startsWith(`Here's what I found. ${t.TRUST_LABEL.PUBLIC}:`));
+  /* 26 Oct: the opening now leads ("A few more that may fit."), and the label still closes the head, verbatim. */
+}).text.startsWith(`A few more that may fit. ${t.TRUST_LABEL.PUBLIC}:`));
 
 console.log("\n=== a follow-up is stored apart from the answer it follows ===");
 ok("the suffix round-trips", m.baseQuestion(m.withMoreSuffix("any good nanny?")) === "any good nanny?");

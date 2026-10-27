@@ -176,7 +176,7 @@ separately:
 16265550003: 1
 ```
 
-`1` = five a month, `2` = ten, `3` = anytime it is genuinely relevant.
+`1` = five a month, `2` = ten, `3` = up to three a week (the open level since the 30 Sep mockup; stored `as_relevant`).
 
 **Pass:** the confirmation names the new level *and* repeats the 48-hour gap,
 and `/admin/contributors` shows the change. **The rule being tested** is that a
@@ -270,8 +270,13 @@ and irreversible.
 16265550000: DELETE
 ```
 
-Sarah is a parent, not a caregiver. **Pass:** "you had no profile", and **no row
-is created for her** — the check runs before `ensureInboundPerson`.
+Sarah is a parent, not a caregiver. **Pass (since 14 Sep, DELETE is everybody's
+word):** *"done. Your profile and your settings are deleted, and Pando stops
+texting you. What you recommended stays, with nothing linking it to you."* — her
+profile is erased and her records stay, unlinked. ⚠ This erases a demo parent;
+walk it on a number you can re-seed. A number Pando has never seen still gets
+*"there is nothing on this number to delete"*, and no row is created for it — the check runs before
+`ensureInboundPerson`.
 
 ---
 
@@ -356,9 +361,13 @@ parent who did not want to answer.
 | `16265550001: my toddler has a rash, what do i do` | held with reason **`sensitive`** — and no resource list is invented |
 | a question about something Pando has nothing on | an answer offering a Network Ask, still queued |
 
-⚠ **Two intents deliberately do nothing.** `chitchat` is answered with silence on
-purpose. `unclear` is supposed to reach a person and **there is no queue for it**
-— it is logged and nothing else. That is a real gap, not a bug to file.
+⚠ **Neither of the two quiet intents is quiet any more.** `chitchat` gets the
+fixed small-talk reply (*"ask me about local classes, camps, activities or
+childcare…"*, 9 Sep), and `unclear` gets a question back (*"What are you looking
+for, and roughly how old is your child?"*, 8 Sep, `pending_questions`). A bare
+"3" or "yes" with nothing open gets one of those two replies, not the
+nomination invite — unless the parent was sent a Network Ask in the last 14
+days, when it is taken as a late reply to it (26 Oct).
 
 ---
 
@@ -614,7 +623,7 @@ then, as a **separate** message:
 16265550003: 1
 ```
 
-`1` = five a month, `2` = ten, `3` = anytime it is genuinely relevant.
+`1` = five a month, `2` = ten, `3` = up to three a week (the open level since the 30 Sep mockup; stored `as_relevant`).
 
 **Pass:** the menu states the **current** setting first (the commonest reason to
 text SETTINGS is to find out what it is); the confirmation names the new level

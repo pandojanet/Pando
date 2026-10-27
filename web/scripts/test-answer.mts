@@ -333,7 +333,9 @@ ok(
   const general = compose([publicRecord()], { can_offer_blast: false, nobody_near: { place: "New York, NY" } });
   ok("with general information, it says first that parents near there have nothing yet",
     general.text.startsWith("There's nothing from parents near New York yet."), general.text);
-  ok("and the information is still marked as not from a parent", general.text.includes("not from a parent"));
+  /* 26 Oct, the chat lab: the label is said once, in the head — not a guard sentence on top and "All of these:" underneath. */
+  ok("and the information carries its label, verbatim, once", general.text.split(t.TRUST_LABEL.PUBLIC).length === 2 && general.text.split("\n")[0].includes(t.TRUST_LABEL.PUBLIC), general.text);
+  ok("with no footer repeating it", !general.text.includes("All of these:"), general.text);
   ok("and it is sent, not queued for a person", general.next_step === "none");
 }
 
@@ -677,6 +679,14 @@ ok(
 const oneFinding = (row: Record<string, unknown>) =>
   pi.readFindings(JSON.stringify({ findings: [row] }), (n) => np.looksLikePerson(n))[0];
 
+/* 26 Oct, the SMS lab: "the page does not state ages or prices" went out as a fact. */
+ok(
+  "what a page does not say is not printed as a fact; the facts beside it stay",
+  oneFinding({ name: "LoveBug & Me Music", what: "toddler music class", area: "South Pasadena", detail: "Locally owned and operated; the page does not state ages or prices" })?.detail === "Locally owned and operated" &&
+    oneFinding({ name: "Tinkergarten", what: "outdoor classes", area: "Pasadena", detail: "prices not listed" })?.detail === null &&
+    oneFinding({ name: "Tinkergarten", what: "outdoor classes", area: "Pasadena", detail: "Ages 1-8; $25 a class" })?.detail === "Ages 1-8; $25 a class",
+  JSON.stringify(oneFinding({ name: "LoveBug & Me Music", what: "toddler music class", area: "South Pasadena", detail: "Locally owned and operated; the page does not state ages or prices" })),
+);
 /* 26 Oct, the SMS lab: an aside in the middle of the area leaked an address. */
 ok(
   "an area ends where the model's aside begins, wherever it is",
@@ -923,6 +933,20 @@ console.log("\n=== the M5/M6 relay walk (25 Sep) ===");
   const alone = compose([note("Rose Bowl Aquatics", 0, { great: "The water is warm.", caveat: "Parking is hard on game days.", who_for: "First-timers.", tip: "Go early." }, 3)]).text;
   ok("alone, the lead keeps every note", /first-timers/i.test(alone) && /go early/i.test(alone), alone);
 
+  /* 26 Oct, the chat lab: "Aqua-Tots Swim School - Pasadena, TX" answered a question about Pasadena, California. */
+  ok("a finding in another state is recognised", pi.inAnotherState({ name: "Aqua-Tots Swim School - Pasadena, TX", area: "Pasadena" }, "California") && pi.inAnotherState({ name: "Swim Kids", area: "Pasadena, Texas" }, "California"));
+  ok("an address with a ZIP is recognised too", pi.inAnotherState({ name: "Swim Kids", area: null, detail: "2101 Main St, Pasadena, TX 77506" }, "California"));
+  /* 26 Oct review: words that look like state codes or names, and are not. */
+  ok("'OK for beginners', 'IN person' and 'in Washington Park' name no state",
+    !pi.inAnotherState({ name: "Swim Kids", area: "Pasadena", detail: "Small groups, OK for beginners" }, "California")
+      && !pi.inAnotherState({ name: "Art Lab", area: "Pasadena", detail: "Open daily, IN person only" }, "California")
+      && !pi.inAnotherState({ name: "AYSO", area: "Pasadena", detail: "Saturday games in Washington Park" }, "California"));
+  ok("one in the right state, or saying none, is not",!pi.inAnotherState({ name: "Rose Bowl Aquatics", area: "Pasadena, CA" }, "California") && !pi.inAnotherState({ name: "Rose Bowl Aquatics", area: "Pasadena" }, "California") && !pi.inAnotherState({ name: "Washington Park", area: "Pasadena" }, "California"));
+  /* 26 Oct, the chat lab: the record asked about and its own page, said as one place. */
+  const same = compose([parent({ name: "Tom Sawyer Camps", rank: 0 }), publicRecord({ name: "Tom Sawyer Camps", same_as: "Tom Sawyer Camps", detail: "Ages 3 to 14; running since 1926" })]).text;
+  ok("a page about a record already shown says it is the same place", same.includes("Tom Sawyer Camps (above), from its own page: Ages 3 to 14 and running since 1926."), same);
+  const notShown = compose([publicRecord({ name: "Tom Sawyer Camps", same_as: "Tom Sawyer Camps", detail: "Ages 3 to 14" })]).text;
+  ok("and reads as its own line when that record is not in the answer", !notShown.includes("(above)"), notShown);
   /* 22 Oct: "a bit too little from the public web search" — up to three facts a place, cut whole. */
   ok("a page's facts are cut to whole facts, never mid-fact", a.wholeFacts("Ages 2 to 4; Mon-Fri 7am-6pm; small classes", 30) === "Ages 2 to 4; Mon-Fri 7am-6pm" && a.wholeFacts("Ages 2 to 4; Mon-Fri 7am-6pm", 200) === "Ages 2 to 4; Mon-Fri 7am-6pm" && a.wholeFacts("A very long single fact that does not fit", 10) === null);
   const pubRich = publicRecord({ name: "Firehouse School", detail: "Ages 2 to 4; Monday to Friday 7am to 6pm; $1,200 a month; small class sizes and an outdoor yard; a garden, a library corner and weekly music with a visiting teacher" });
@@ -976,6 +1000,15 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   ok("voice: one record's price moved onto another is refused, by its keep-item", v.acceptVoice(movedPrice, input(true)) === null);
   ok("voice: and by the span rule alone, without the keep-item", v.acceptVoice(movedPrice, input(false)) === null);
   ok("voice: a dropped 'last confirmed' date is refused", v.acceptVoice(good.replace(", last confirmed Sep 2026", ""), input(true)) === null);
+  {
+    /* 26 Oct, the chat lab: a parent's words went out with the quotation marks gone, in Pando's voice. */
+    const said = "The water is genuinely warm - we tried two others where he screamed";
+    const qDraft = compose([parent({ name: "Tiny Tots Gym", area: "altadena", rank: 0, notes: { great: said } })], { headroom: a.VOICE_HEADROOM }).text;
+    const qInput = { draft: qDraft, question: "swim for a nervous baby?", parents: [{ name: "Tiny Tots Gym", evidence: null, keep: [said], tokens: [] }], publicNames: [], mustKeep: [], mustContain: [], max: a.SMS_BUDGET };
+    ok("voice: the fixture carries the quote in marks", qDraft.includes(`"${said}`), qDraft);
+    const unquoted = qDraft.replace(/One said: "([^"]*)"/, "$1");
+    ok("voice: a parent's quote with its marks taken off is refused", unquoted !== qDraft && v.acceptVoice(unquoted, qInput) === null, unquoted);
+  }
   /* 26 Oct, the SMS lab: "a gentle start ... with a little one" for a question that said neither. */
   ok("voice: the child described in words nobody said is refused", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "A gentle start for your little one around Altadena - here you go."), input(true)) === null);
   ok("voice: the child described in the question's or draft's own words is fine", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "Classes for toddlers around Altadena - here you go."), input(true)) !== null);
@@ -1021,6 +1054,9 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   /* (6) A web-only answer says its label once. */
   const webOnly = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly; top-rope and bouldering", "arcadia"), web("Sender One", "climbing gym", "Youth classes from age 6", "glendale")]).text;
   ok("web-only: the verbatim label once, in the head", webOnly.startsWith(`Here's what I found. ${t.TRUST_LABEL.PUBLIC}:\n`) && webOnly.split(t.TRUST_LABEL.PUBLIC).length === 2 && !webOnly.includes("All of these"), webOnly);
+  /* 26 Oct, the chat lab: a web-only "more" said "There's nothing from parents near…" just after quoting them. */
+  const moreWeb = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia")], { opening: "A few more that may fit:", nothing_left: false, can_offer_blast: false }).text;
+  ok("a web-only 'more' says it is more, under the label", moreWeb.startsWith(`A few more that may fit. ${t.TRUST_LABEL.PUBLIC}:\n`) && !/nothing from parents/i.test(moreWeb), moreWeb);
 
   /* (7) Small copy. */
   ok("worth alone that names the value is its own sentence", compose([parent({ worth: "great value" })]).text.includes("\nGreat value.") && !compose([parent({ worth: "great value" })]).text.includes("Value for money: great value"));

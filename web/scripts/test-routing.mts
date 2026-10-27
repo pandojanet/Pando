@@ -326,6 +326,11 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     !/988|211|433-6251/.test(r.ALLEGATION_REPLY) && r.ALLEGATION_REPLY.includes("1-800-540-4000"),
   );
   const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  /* 26 Oct, the chat lab: a never-asked parent's bare "3" was read as answer_blast and told to text ADD. */
+  ok(
+    "an answer_blast reading is a contribution only for somebody sent an Ask lately",
+    /reading\.intent === "answer_blast" && \(await askedRecently\(from\)\)/.test(src),
+  );
   ok(
     "inbound sends them instead of the held reply, and flags the answer",
     src.includes("HIGH_STAKES_REPLY") && src.includes("ALLEGATION_REPLY") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
@@ -346,7 +351,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   );
   ok(
     "ages or an area said without being asked are offered to that question's parser, never a first name",
-    /const volunteered = unasked === "child_age" \|\| unasked === "neighborhood" \? unasked : null;/.test(src) &&
+    /unasked === "neighborhood" \|\| \(unasked === "child_age" && saysAChild\) \? unasked : null;/.test(src) &&
       /const question = open && pending \? \(aQuestion \? null : pending\) : volunteered;/.test(src),
   );
   ok(
@@ -358,6 +363,27 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     /nextAsked === "child_age" && bandsInQuestion\(body\)\.length > 0/.test(src) &&
       /nextAsked === "neighborhood" && placePhraseIn\(body\) !== null/.test(src) &&
       /pendingAsked !== nextAsked && !saidHere/.test(src),
+  );
+  /* 26 Oct, the SMS lab: "any good fencing classes…?" from a parent holding a swim Ask was filed as her answer. */
+  ok(
+    "a question-shaped message inside an Ask window is read by the classifier, told the other parent's question",
+    src.includes("othersQuestion: question,") &&
+      /if \(ownRequestNotAnAnswer\(body, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
+      /return reading\.source === "model" && \["ask_recommendation", "ask_caregiver", "deep_dive"\]\.includes\(reading\.intent\);/.test(src),
+  );
+  /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
+  {
+    const gate = src.indexOf("if (await isOptedOut(from)) {");
+    ok(
+      "an opted-out sender is recorded and not answered, after the keywords and DELETE, before anything is built",
+      gate > src.indexOf("if (isDeleteRequest(body)) {") && gate < src.indexOf("const person = await ensureInboundPerson({ phone: from });") && gate > 0,
+    );
+  }
+  /* 26 Oct, the SMS lab: a ping's YES or a saved age was still classified, then discarded. */
+  ok(
+    "a message a step above already answered is not sent to the model",
+    src.indexOf("if (answeredSomething || clarified) return;") > 0 &&
+      src.indexOf("if (answeredSomething || clarified) return;") < src.indexOf("const reading = early && "),
   );
   /* 26 Oct review: the verdict, next step and offers were read off the headroom
      draft while the full-budget draft was sent — `offer_blast` stored beside a

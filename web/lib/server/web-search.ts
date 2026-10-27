@@ -3,7 +3,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { looksLikePerson } from "@/lib/named-person";
 import { PLACES } from "@/lib/home-places";
-import { readDeepFindings, readDeepFocus, readFindings, sameName, type DeepFinding, type PublicFinding } from "@/lib/public-info";
+import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameName, type DeepFinding, type PublicFinding } from "@/lib/public-info";
 import { deepDiveShape } from "@/lib/deep-dive";
 
 /**
@@ -167,6 +167,7 @@ const SYSTEM = [
   "  or term dates), a published price, and one thing that sets it apart",
   "  ('indoor heated pool', 'parent in the water'). Under 25 words in all. Leave",
   "  out any fact the page did not state -- never inferred, never rounded, never",
+  "  never write that a page does not state something ('does not list prices') - just leave it out,",
   "  a guess -- and null if it stated none. No praise, no ratings, no marketing,",
   "  no person's name.",
   "- If the search finds nothing solid, return an empty list. An empty list is a",
@@ -601,7 +602,9 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
     /* A deep dive searches on Sonnet 5.5 (22 Oct) — see `deepSearchText`. */
     if (input.deep) {
       const text = await deepSearchText(anthropic, userContent, location, limits);
-      const deep = readDeepFindings(text, notAPlaceOfOurs, DEEP_MAX_FINDINGS);
+      const deep = readDeepFindings(text, notAPlaceOfOurs, DEEP_MAX_FINDINGS).filter(
+        (f) => !inAnotherState(f, location?.region),
+      );
       return { findings: deep.map(oneLine), deep, focus: readDeepFocus(text), configured: true };
     }
     const response = await anthropic.messages.create(
@@ -647,7 +650,10 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
       .trim();
 
     /* One line per place (a deep dive returned above, in fields). */
-    const findings: PublicFinding[] = readFindings(text, notAPlaceOfOurs, input.exclude ?? []);
+    /* Never a place in another state that shares the town's name (26 Oct: "Pasadena, TX"). */
+    const findings: PublicFinding[] = readFindings(text, notAPlaceOfOurs, input.exclude ?? []).filter(
+      (f) => !inAnotherState(f, location?.region),
+    );
 
     /**
      * ⚠ **A miss and a refusal look identical from the outside**, and both come

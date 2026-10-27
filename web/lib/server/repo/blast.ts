@@ -823,8 +823,28 @@ const OPEN_FOR_SENDER = sql`
 export async function attachResponse(input: {
   phone: string;
   text: string;
+  /**
+   * Is this text plainly a request of the sender's own rather than an answer
+   * to the Ask it would attach to (`ownRequestNotAnAnswer`, 26 Oct)? Given the
+   * Ask's question; true leaves the message to the ordinary pipeline.
+   */
+  ownRequest?: (askQuestion: string) => boolean | Promise<boolean>;
 }): Promise<{ attached: boolean; followUp: boolean }> {
   const result = await withDb(async (db: Db) => {
+    if (input.ownRequest) {
+      /* The Ask it would be filed under: the open one, else the one just answered. */
+      const ask = (await db.execute(sql`
+        select bl.question_text from people p
+          join blasts bl on bl.id = coalesce((${OPEN_FOR_SENDER}), (
+            select r.blast_id from blast_recipients r
+             where r.person_id = p.id and r.responded_at is not null
+               and r.responded_at > now() - (${REPLY_FOLLOW_UP_MINUTES} || ' minutes')::interval
+             order by r.responded_at desc limit 1))
+         where p.phone = ${input.phone}
+         limit 1`)) as unknown as Array<{ question_text: string | null }>;
+      const question = ask[0]?.question_text;
+      if (question && (await input.ownRequest(question))) return null;
+    }
     const rows = (await db.execute(sql`
       update blast_recipients br
          set responded_at = now(),
@@ -877,6 +897,26 @@ export async function attachResponse(input: {
 
 /** How long a second text still counts as the rest of an Ask reply. */
 const REPLY_FOLLOW_UP_MINUTES = 30;
+
+/**
+ * Was this number sent a Network Ask lately (26 Oct, the chat lab)? A reading
+ * of `answer_blast` with nothing attached is treated as a contribution because
+ * the Ask it answers has closed (22 Oct audit) — but the model also reads a bare
+ * "3" or "yes" from a parent who was never asked anything as `answer_blast`,
+ * and they were told to text ADD. Fourteen days: the longest window plus grace.
+ */
+export async function askedRecently(phone: string): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select 1 from blast_recipients br
+        join people p on p.id = br.person_id
+       where p.phone = ${phone}
+         and br.sent_at > now() - interval '14 days'
+       limit 1`)) as unknown as Array<unknown>;
+    return rows.length > 0;
+  });
+  return result.persisted ? Boolean(result.data) : false;
+}
 
 /**
  * M7.5 / strategy §6 — PASS.

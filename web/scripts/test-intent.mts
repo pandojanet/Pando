@@ -456,5 +456,21 @@ ok(
   m.applyThreshold({ intent: "deep_dive", confidence: 0.95, reason: "r" }, "deep dive please", ctx({ awaiting_blast_reply: true })).intent === "answer_blast",
 );
 
+{
+  /* 26 Oct, the chat lab: a parent inside an Ask's window asked two things of her own and both were filed as her answer. */
+  const mt = (await import(`../lib/matching.ts?v=${Date.now()}`)) as typeof import("../lib/matching.ts");
+  const offered = ["nannies", "babysitters", "sports", "arts_music", "camps", "outings", "preschools_schools", "pediatric_health", "activities"];
+  const topic = (t: string) => mt.focusInQuestion(t, offered);
+  const swim = "Anyone know a Saturday swim class that takes a nervous 4-year-old?";
+  for (const own of ["we need a nanny three days a week", "my toddler has a rash, what do i do", "does anyone know a good preschool in Altadena?", "she has a fever and threw up, what should we do"]) {
+    ok(`a request of their own is not their answer: "${own}"`, m.ownRequestNotAnAnswer(own, swim, topic));
+  }
+  for (const answer of ["the 9am or the 10:30?", "try Rose Bowl Aquatics, ask for Ms Jo", "Little Maestros?", "we loved the Saturday swim at the Y, our son was nervous too", "are there classes on Saturdays there?", "my son got sick of it after a month", "we need a class like that too!", "have you looked at the YMCA camp?", "Little Maestros? it's a music class but they do movement", "try Rose Bowl - did he get hurt in the water before?"]) {
+    ok(`an answer stays an answer: "${answer}"`, !m.ownRequestNotAnAnswer(answer, swim, topic));
+  }
+  ok("an answer to a health Ask stays an answer", !m.ownRequestNotAnAnswer("Dr Patel at Huntington? she's great when they are sick", "Anyone know a pediatrician who's good with sick kids?", topic));
+  ok("an Ask whose topic cannot be read takes any non-health request as the answer", !m.ownRequestNotAnAnswer("we need a nanny", "Anything good near us?", topic));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

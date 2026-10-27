@@ -430,10 +430,72 @@ const WITHIN_GENERAL: readonly string[] = ["sports", "arts_music"];
 export interface TopicRead {
   focus: string | null;
   subjects: string[];
+  /**
+   * With no topic read: the words that still name a subject (26 Oct). Empty for
+   * an open question; ["bike", "fixed"] for "where can I get a kids bike fixed".
+   */
+  unknown?: string[];
 }
 
-export function readTopic(text: string, focus: string | null): TopicRead {
-  if (!focus) return { focus: null, subjects: [] };
+/**
+ * Words that say nothing about what is wanted: the asking, the child, the
+ * praise, the time. What is left of a question after them (and after its place)
+ * is its subject.
+ */
+const NOT_A_SUBJECT = new Set(
+  (
+    "a an the any some all good great best nice fun cheap cheaper affordable local nearby near around close " +
+    "in at on for to of with from by into my our me us i we you your they them their his her it its " +
+    "kid kids child children childs toddler toddlers baby babies infant infants son sons daughter daughters boy boys girl girls " +
+    "year years yr yrs yo old month months week weeks age ages aged twins twin " +
+    "parent parents family families mom moms dad dads people anyone someone somebody everyone " +
+    "like likes love loves enjoy recommend recommended recommendation recommendations suggest suggestion suggestions idea ideas " +
+    "thing things stuff something anything everything do does did doing done can could should would will may might " +
+    "where what who how which when why is are was were be been there here get got getting find finding go going take " +
+    "know knows need needs needed want wants looking look looks try trying use used using about else other others more also " +
+    "place places spot spots option options weekend weekends today tomorrow morning mornings afternoon afternoons evening evenings " +
+    "monday tuesday wednesday thursday friday saturday sunday saturdays sundays " +
+    "this that these those and or but so if then than please thanks thank help just really very much many " +
+    "area neighborhood neighbourhood town city here free indoor outdoor outdoors rainy day days time times " +
+    "new first one two three four five six seven eight nine ten im ive id dont whats wheres hey hi hello " +
+    "pando local good recs rec rec's tips tip advice ok okay " +
+    /* How the child is, what the day is like, who is visiting (26 Oct review:
+       "a bored 6 year old", "a hot day", "grandma visiting" are open questions). */
+    "bored boring hot cold warm rainy sunny snowy wet windy energy energetic active shy nervous cautious quiet calm " +
+    "busy tired cranky picky spirited curious creative sporty outgoing restless " +
+    "grandma grandpa grandparents grandparent nana papa visiting visit visits visitors cousins cousin friends friend relatives guests " +
+    "summer winter spring fall autumn holiday holidays break vacation staycation"
+  ).split(" "),
+);
+
+/**
+ * The words left once the asking, the child and the place are gone. `places` are
+ * the question's place phrase and the market's area ids ("south-pasadena"), so a
+ * town named without "in" ("Altadena parents like…") is not taken for a subject.
+ */
+export function subjectWords(text: string, places: ReadonlyArray<string | null | undefined> = []): string[] {
+  const placeWords = new Set(places.flatMap((p) => (p ?? "").toLowerCase().split(/[^a-z]+/)));
+  return text
+    .toLowerCase()
+    .replace(/['’]s\b/g, "")
+    .replace(/[^a-z]+/g, " ")
+    .split(" ")
+    .filter((w) => w.length > 1 && !NOT_A_SUBJECT.has(w) && !placeWords.has(w));
+}
+
+/** What a place is, not what it teaches: "chess club", "climbing gym", "robotics program". */
+const VENUE = /^(?:gym|gyms|studio|studios|program|programs|programme|programmes|academy|academies|center|centers|centre|centres|team|teams|league|leagues|course|courses|group|groups|school|schools|session|sessions)$/;
+
+export function readTopic(text: string, focus: string | null, places: ReadonlyArray<string | null | undefined> = []): TopicRead {
+  if (!focus) return { focus: null, subjects: [], unknown: subjectWords(text, places) };
+  /* The general bucket says only "a class" (26 Oct, the SMS lab): "any good
+     fencing classes…?" read as `activities`, so every sports record passed and
+     AYSO soccer led a fencing answer. What is left once the class words and the
+     venue words are gone is the subject, and it must be in a record's name. */
+  if (focus === GENERAL_FOCUS) {
+    const unknown = subjectWords(text, places).filter((w) => !VENUE.test(w) && !FOCUS_WORDS.some(([re]) => re.test(w)));
+    return { focus, subjects: [], ...(unknown.length ? { unknown } : {}) };
+  }
   return {
     focus,
     subjects: SUBJECT_WORDS.filter((s) => s.topic === focus && s.re.test(text)).map((s) => s.key),
@@ -470,8 +532,25 @@ export function topicFit(
   record: { focus: string | null; name: string },
   namedByQuestion = false,
 ): 0 | 1 | null {
-  if (!question.focus) return 1;
+  /**
+   * ⚠ **No topic read is not always an open question** (26 Oct, the chat lab).
+   * *"Where can I get a kids bike fixed in Pasadena?"* names no topic Pando has,
+   * so the gate let everything through and the answer opened on a park, a camp
+   * and a soccer league from parents. An open question ("what do parents near
+   * Altadena like for a 4 year old?") leaves no subject words and keeps the old
+   * rule; one that leaves a subject takes only a record whose name says it.
+   */
+  if (!question.focus) {
+    if (namedByQuestion) return 0;
+    if (!question.unknown?.length) return 1;
+    const name = record.name.toLowerCase();
+    return question.unknown.some((w) => new RegExp(`\\b${w}`).test(name)) ? 0 : null;
+  }
   if (namedByQuestion) return 0;
+  if (question.focus === GENERAL_FOCUS && question.unknown?.length) {
+    const lower = record.name.toLowerCase();
+    return question.unknown.some((w) => new RegExp(`\\b${w}`).test(lower)) ? 0 : null;
+  }
 
   const name = record.name;
   const nameSubjects = SUBJECT_WORDS.filter((s) => s.re.test(name));

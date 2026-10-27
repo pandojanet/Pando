@@ -75,10 +75,18 @@ ok("and says what to reply", /Reply DEEP\.$/.test(d.DEEP_DIVE_OFFER));
 const started = d.deepDiveStarted("preschools near us");
 ok("the start says it is on its way", started.includes("Your deep dive is on its way"));
 ok("the offer is one segment", d.DEEP_DIVE_OFFER.length <= 160, String(d.DEEP_DIVE_OFFER.length));
+/* 26 Oct, the chat lab: a web-only answer was offered "what local parents said". */
+ok("the web-only offer promises no parents", !/parent/i.test(d.deepDiveOffer(false)) && d.deepDiveOffer(false).endsWith("Reply DEEP."));
+ok("the parents' offer still names them", d.deepDiveOffer(true) === d.DEEP_DIVE_OFFER);
+ok("each wording is stored as its own version", d.deepDiveOfferVersion(true) === d.DEEP_DIVE_OFFER_VERSION && d.deepDiveOfferVersion(false) === `${d.DEEP_DIVE_OFFER_VERSION}-web`);
+{
+  const inb = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("the wording follows what was sent, not what was found", inb.includes("deepDiveOffer(sent.parent_used > 0)") && inb.includes("offerVersion: deepDiveOfferVersion(sent.parent_used > 0)"));
+}
 ok("and so is the start", started.length <= 160, String(started.length));
 ok("nor does the start", !/free|paid|pay|price|cost|[$]/i.test(started));
 ok("a topic with an emoji cannot break GSM-7", !/[^\x20-\x7E]/.test(d.deepDiveStarted("camps \u{1F600} for July")));
-for (const [name, copy] of Object.entries({ OFFER: d.DEEP_DIVE_OFFER, STARTED: started, ASK: d.DEEP_DIVE_ASK_TOPIC, FAILED: d.DEEP_DIVE_FAILED, UNSUPPORTED: d.DEEP_DIVE_UNSUPPORTED })) {
+for (const [name, copy] of Object.entries({ OFFER: d.DEEP_DIVE_OFFER, OFFER_WEB: d.DEEP_DIVE_OFFER_WEB, STARTED: started, ASK: d.DEEP_DIVE_ASK_TOPIC, FAILED: d.DEEP_DIVE_FAILED, UNSUPPORTED: d.DEEP_DIVE_UNSUPPORTED })) {
   ok(`${name} is plain GSM-7`, !/[^\x20-\x7E]/.test(copy));
 }
 
@@ -236,6 +244,9 @@ const parentsOnly = d.renderDeepDive({ question: "x", family, options: [{ ...opt
 ok("with no page at all there is no public label", !parentsOnly.includes("Public/general information"));
 const fallback = d.renderDeepDive({ question: "camps", family: { ...family, children: null, home: null, travel_time: null, budget: null }, options: opts, draft: null, offerAsk: false });
 ok("with no draft it still goes out, a withdrawn record after the clean ones", fallback.indexOf("Sunny Days") < fallback.indexOf("Little Acorns"));
+/* 26 Oct, the chat lab: My take sits under every place, so their notes are above it. */
+const takeAbove = d.renderDeepDive({ question: "x", family, options: opts, draft: { order: ["p1"], text: {}, watch: {}, bottom_line: "I'd start with Sunny Days; look at the notes below.", comparison: "Read the notes below on both." }, offerAsk: false });
+ok("My take and Side by side say the notes are above", takeAbove.includes("look at the notes above.") && takeAbove.includes("Read the notes above on both.") && !/notes below/.test(takeAbove.slice(takeAbove.indexOf("Side by side"))), takeAbove);
 ok("an unknown id in the writer's order is ignored", d.renderDeepDive({ question: "x", family, options: opts, draft: { order: ["zz", "p1"], text: {}, watch: {}, bottom_line: null }, offerAsk: false }).includes("1) Sunny Days"));
 const many = Array.from({ length: 9 }, (_, i) => ({ ...base, id: `w${i + 1}`, name: `Place ${i + 1}`, what: "a camp", area: "Pasadena", source: "public" as const, firsthand: 0 }));
 const wide = d.renderDeepDive({ question: "camps", family, options: many, draft: null, offerAsk: false });
@@ -691,6 +702,11 @@ console.log("\n=== the deep search researches the question, not a form (22 Oct, 
   const finding = { name: "Bright Teeth Pediatric Dentistry", what: "pediatric dental practice", area: "Pasadena", ages: null, schedule: null, price: null, highlights: [], summary: null, answers: ["The first visit is a tour and a ride in the chair, with no treatment."], site: null };
   const joined = d.withWebFacts([], [finding], { same: pi.sameName, area: (a) => a, max: 12 });
   ok("withWebFacts carries the answers", joined[0]?.web?.answers?.[0] === finding.answers[0]);
+  /* 26 Oct, the chat lab: one place under two names was option 1 and again in "Also worth a look". */
+  const twice = d.withWebFacts([], [{ ...finding, name: "Kidspace Children's Museum Summer Camp" }, { ...finding, name: "Kidspace Children's Museum Camps" }, { ...finding, name: "Pasadena Summer Camp" }, { ...finding, name: "Pasadena Camp" }], { same: pi.sameName, area: (a) => a, max: 12 });
+  ok("one place under two session names is one option", twice.filter((o) => o.name.startsWith("Kidspace")).length === 1 && twice[0].name === "Kidspace Children's Museum Summer Camp");
+  ok("but a one-word core keeps both", twice.filter((o) => o.name.startsWith("Pasadena")).length === 2);
+  ok("different places stay apart", !d.sameProgram("Pasadena Montessori School", "Pasadena Montessori Academy") && !d.sameProgram("Kidspace Museum Camp", "Kidspace Swim Camp"));
   const para = d.factsParagraph({ ...opts[2], web: { what: "pediatric dental practice", ages: null, schedule: null, price: null, highlights: [], answers: finding.answers, site: null } }) ?? "";
   ok("the facts paragraph leads with what the question turns on", para.includes("The first visit is a tour and a ride in the chair, with no treatment."));
 
@@ -705,6 +721,13 @@ console.log("\n=== the deep search researches the question, not a form (22 Oct, 
   ok("and the writer is told not to list everything a page leaves out", ddSrc.includes("never list everything a page leaves"));
   const inSrc = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   ok("inbound makes the answers GSM-7 and passes the focus", inSrc.includes("answers: f.answers.map(sendableNote)") && inSrc.includes("focus: publicInfo.focus ?? []"));
+  /* 26 Oct, the SMS lab: a place only named in "Also used by parents near you"
+     was thanked for and pinged about after a yes to the whole report. */
+  ok(
+    "only places with a block of their own count as used (did it help?, thanks, vouch pings)",
+    ddSrc.includes('const sentNames = new Set(chosen.filter((o) => o.source === "parents").map((o) => o.name));') &&
+      !ddSrc.includes("...chosen, ...named]"),
+  );
 }
 
 

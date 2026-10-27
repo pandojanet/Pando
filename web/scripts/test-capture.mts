@@ -228,6 +228,13 @@ console.log("\n=== offering something is not the same as asking about it ===");
      parent who texted "I want to add our nanny Marisol" with no capture open
      sailed past the redirect and came back a queued answer. A nomination in
      the answers queue is a nomination nobody processes properly. */
+  /* 26 Oct, the chat lab: asking for a nanny with "recommend" in it is a question, not a nomination. */
+  for (const ask of ["can anyone recommend a nanny for two afternoons a week in Altadena?", "could someone suggest a sitter for Saturday night", "my nanny recommendations?", "our nanny is leaving, need a new one", "does anyone recommend a good babysitter", "Recommend a babysitter for my twins please", "recommend a sitter for my 3 year old", "I share custody with my ex and need a sitter on weekends", "can we share a nanny with another family in Altadena?"]) {
+    ok(`asking is not offering: "${ask}"`, !c.offersSomething(ask));
+  }
+  for (const offer of ["I'd recommend our sitter Ana", "can I recommend our babysitter? she's great", "add our nanny Marisol please", "our nanny Marisol is amazing", "we want to add our au pair", "I’d recommend our sitter Ana", "Recommending our former sitter Ana", "Sharing Ana, a nanny we employed for 2 years", "Vouching for Ana, the sitter we had", "we'd like to share our nanny Rosa"]) {
+    ok(`offering is: "${offer}"`, c.offersSomething(offer));
+  }
   ok("an offer is recognised", c.offersSomething("I want to add our nanny Marisol"));
   ok("in any of the capture verbs", c.offersSomething("I would recommend our sitter Ana"));
   ok(

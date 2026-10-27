@@ -139,6 +139,16 @@ export interface AnswerCandidate {
    * would be a claim about what parents found, which nobody made.
    */
   detail?: string | null;
+  /**
+   * A web finding about a record the answer already lists — its name (26 Oct,
+   * the chat lab). The record the question is about is deliberately not
+   * excluded from the search, so its page's facts can sit beside what parents
+   * said; but printed as its own line it read as a second recommendation of
+   * the same place under another label. With this set, and the record shown
+   * above, the line says it is the same place: "Tom Sawyer Camps (above), from
+   * its own page: …".
+   */
+  same_as?: string | null;
   trust: TrustLabels;
   firsthand_count: number;
   /**
@@ -1083,7 +1093,7 @@ function listOf(items: readonly string[]): string {
   return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-function line(candidate: AnswerCandidate, labels: readonly string[]): string {
+function line(candidate: AnswerCandidate, labels: readonly string[], above = false): string {
   const what = candidate.care ? careKindWords(candidate.care) : kindWordOf(candidate);
   const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
   const venue = candidate.venue ? `, ${candidate.venue}` : "";
@@ -1124,7 +1134,9 @@ function line(candidate: AnswerCandidate, labels: readonly string[]): string {
         : " This one is old, so treat it as a starting point.";
   /* Every label may have been hoisted, in which case the record is its own
      sentence and the full stop after the price already closed it. */
-  const body = `${shownName(candidate)}${describes}${extra ? `: ${extra}` : ""}.`;
+  const body = above
+    ? `${shownName(candidate)} (above), from its own page${extra ? `: ${extra}` : ""}.`
+    : `${shownName(candidate)}${describes}${extra ? `: ${extra}` : ""}.`;
   return claims === "" ? `${body}${age}`.trimEnd() : `${body} ${claims}.${age}`;
 }
 
@@ -1502,16 +1514,25 @@ function composeRanked(
    * "Public/general information." after every line. The head now carries the
    * labels every line shares, **verbatim** from the records (invariant 3), as
    * the heading of a mixed answer does (9 Sep), and the lines carry none.
-   * The nobody-near head is the 24 Sep guard wording and is left as it was.
+   *
+   * ⚠ **The nobody-near head too** (26 Oct, the chat lab). It was left on the
+   * 24 Sep guard wording and so carried no labels, and the shared label went
+   * to the footer: *"Here's general information, not from a parent:"* on top
+   * and *"All of these: Public/general information."* underneath — the same
+   * thing twice in one message. It now opens on the 24 Sep sentence and then
+   * the labels, verbatim, exactly as the other head does.
    */
-  const headLabels = publicOnly && !input.nobody_near
+  const headLabels = publicOnly
     ? ranked[0].trust.labels.filter((l) => ranked.every((c) => c.trust.labels.includes(l)))
     : [];
   const head = publicOnly
     ? input.nobody_near
-      ? `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
+      ? headLabels.length > 0
+        ? `There's nothing from parents near ${nobodyWhere} yet. Here's what I found. ${headLabels.join(". ")}:`
+        : `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
       : headLabels.length > 0
-        ? `Here's what I found. ${headLabels.join(". ")}:`
+        ? /* A "more" says so: "A few more that may fit. Public/general information:" (26 Oct). */
+          `${input.opening ? input.opening.replace(/:$/, ".") : "Here's what I found."} ${headLabels.join(". ")}:`
         : "Here's what I can tell you. This is general information, not from a parent:"
     : (input.opening ?? "");
 
@@ -1632,7 +1653,11 @@ function composeRanked(
       : candidate.trust.public_only
         ? /* No label on the line: the heading above it carries the only one it
              has, and repeating it under its own heading is noise. */
-          line(candidate, publicOnly ? perLine(candidate) : [])
+          line(
+            candidate,
+            publicOnly ? perLine(candidate) : [],
+            Boolean(candidate.same_as) && chosen.some((c) => !c.trust.public_only && c.name === candidate.same_as),
+          )
         : alsoLine(candidate);
     let cost = rendered.length + 1;
     /* The reserve applies to everything ahead of the public line and is released

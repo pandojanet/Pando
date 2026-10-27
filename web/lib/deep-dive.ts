@@ -133,7 +133,7 @@ export const DEEP_DIVE_OFFER_GAP_DAYS = 7;
 /** A topic asked for with "what should it be about?" is read for a day. */
 export const DEEP_DIVE_TOPIC_HOURS = 24;
 /** Stored on every offer, so wording can be compared later. */
-export const DEEP_DIVE_OFFER_VERSION = "offer-2026-10-21b";
+export const DEEP_DIVE_OFFER_VERSION = "offer-2026-10-26";
 
 /* ---------------------------------------------------------------------- copy */
 
@@ -141,9 +141,28 @@ export const DEEP_DIVE_OFFER_VERSION = "offer-2026-10-21b";
  * Conversational copy, not registered A2P samples (`sms-templates.ts`), so it
  * can be reworded as the pilot learns. GSM-7 throughout.
  */
-/* One segment (150 chars) on top of an answer that may already use five (review, 21 Oct). */
+/* One segment (128 chars; the web-only one 103) on top of the answer (review, 21 Oct). */
 export const DEEP_DIVE_OFFER =
   "Want a deep dive? I'll rank these for your family with what local parents said, what's online and rough drive times. Reply DEEP.";
+
+/**
+ * ⚠ **Parents are promised only where there are some** (26 Oct, the chat lab):
+ * an answer built wholly from the web offered a deep dive "with what local
+ * parents said", and the deep dive that followed had nothing from a parent in
+ * it. Under an answer with no parents' record, the offer names only what the
+ * deep dive will hold.
+ */
+export const DEEP_DIVE_OFFER_WEB =
+  "Want a deep dive? I'll rank these for your family with what's online and rough drive times. Reply DEEP.";
+
+export function deepDiveOffer(withParents: boolean): string {
+  return withParents ? DEEP_DIVE_OFFER : DEEP_DIVE_OFFER_WEB;
+}
+
+/** The stored version of the wording sent, so the two can be compared (26 Oct review). */
+export function deepDiveOfferVersion(withParents: boolean): string {
+  return withParents ? DEEP_DIVE_OFFER_VERSION : `${DEEP_DIVE_OFFER_VERSION}-web`;
+}
 
 export function deepDiveStarted(topic: string): string {
   /* The topic is not repeated: a whole question made this two segments and read badly mid-sentence. */
@@ -438,6 +457,25 @@ export function samePlace(f: { name: string; area: string | null }, o: { name: s
   return Boolean(fa && oa && fa === oa);
 }
 
+/** Words that name a session of a place, not the place: "Summer Camp", "Camps". */
+const PROGRAM_WORDS = new Set(["camp", "camps", "summer", "spring", "winter", "holiday", "break", "day", "week", "weekly", "program", "programs", "session", "sessions", "class", "classes", "lessons"]);
+
+/**
+ * Two findings for one place under two names (26 Oct, the chat lab): the deep
+ * search returned "Kidspace Children's Museum Summer Camp" and "Kidspace
+ * Children's Museum Camps", the first was option 1 and the second came back in
+ * "Also worth a look". `same` is a prefix rule, so the words after "Museum"
+ * kept them apart. Here the session words come off both names first; what is
+ * left must be the same words, at least two of them, so "Pasadena Camp" and
+ * "Pasadena Summer Camp" — one word left — are not taken for one place.
+ */
+export function sameProgram(a: string, b: string): boolean {
+  const core = (n: string) => nameWords(n).filter((w) => !PROGRAM_WORDS.has(w));
+  const x = core(a);
+  const y = core(b);
+  return x.length >= 2 && x.length === y.length && x.every((w, i) => w === y[i]);
+}
+
 export function withWebFacts(
   options: DeepOption[],
   findings: WebFinding[],
@@ -508,6 +546,8 @@ export function withWebFacts(
    */
   const publicOnes = findings
     .filter((f, j) => !used.has(j) && !parentOptions.some((o) => opts.same(f.name, o.name)))
+    /* One place, one option: the first of two findings that name it (the search puts the one with facts first). */
+    .filter((f, j, kept) => !kept.slice(0, j).some((e) => sameProgram(f.name, e.name)))
     .map(
       (f, i): DeepOption => ({
         id: `w${i + 1}`,
@@ -1625,8 +1665,11 @@ export function renderBlocks(input: RenderInput): { header: string; options: str
   const publicExtras = extras.filter((o) => o.source === "public");
   if (parentExtras.length) footer.push(`Also used by parents near you: ${named(parentExtras)}.`);
   if (publicExtras.length) footer.push(`Also worth a look (Public/general information): ${named(publicExtras)}.`);
-  if (input.draft?.comparison) footer.push(`Side by side: ${input.draft.comparison}`);
-  if (input.draft?.bottom_line) footer.push(`My take: ${input.draft.bottom_line}`);
+  /* The footer comes after every place, so a place's notes are above it (26 Oct, the
+     chat lab: My take said "look at the Little Maestros notes below" under the last of them). */
+  const notesAbove = (text: string) => text.replace(/\bnotes below\b/gi, "notes above");
+  if (input.draft?.comparison) footer.push(`Side by side: ${notesAbove(input.draft.comparison)}`);
+  if (input.draft?.bottom_line) footer.push(`My take: ${notesAbove(input.draft.bottom_line)}`);
   /* Any parent-backed option can lead to an introduction (lib/introductions.ts introTarget). */
   const firstParent = chosen.find(
     (o) => o.source === "parents" && (input.introducible === undefined || input.introducible.includes(o.name)),
