@@ -91,14 +91,22 @@ export function expiryFor(tier: BlastTier, from: Date): Date {
  * Has this Ask's window run out while it is still live? The admin reads the date
  * rather than the status, because `expire_blasts` runs on a schedule and the
  * page is read live. A settled Ask is already the truth.
+ *
+ * ⚠ **The job's rule, not the date alone** (26 Oct). `expire_blasts` never
+ * expires an Ask with an approved reply — the promise was kept — so an answered
+ * Ask stays `active` after its date until somebody marks it answered. Reading
+ * the date alone painted that Ask "can no longer be sent" and dropped it out of
+ * "Still open" while the job left it live. Pass `approved_responses` and the
+ * two agree; a row without the count is read by the date as before.
  */
 export function windowClosed(
-  row: { status: string; expires_at: string | null },
+  row: { status: string; expires_at: string | null; approved_responses?: number },
   now = Date.now(),
 ): boolean {
   return (
     row.expires_at !== null &&
     new Date(row.expires_at).getTime() < now &&
-    (row.status === "draft" || row.status === "active" || row.status === "pending_review")
+    (row.status === "draft" || row.status === "active" || row.status === "pending_review") &&
+    !((row.approved_responses ?? 0) > 0)
   );
 }

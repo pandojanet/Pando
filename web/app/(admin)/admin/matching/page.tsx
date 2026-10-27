@@ -38,10 +38,11 @@ import type { MatchCandidateRow, MatchingResult } from "@/lib/admin/types";
  * parent, see the ranking. **"Why them?"** — every row shows the reasons that add
  * up to its score, so a ranking can be disagreed with rather than trusted.
  *
- * There is **no send button, and no write action for this resource at all**. The
- * estimate's framing is "validated *before* any live outreach", and a screen that
- * could both score and message would put the pilot's first blast one mis-click
- * from a page whose whole purpose is experimenting.
+ * There is **no send button**. The estimate's framing is "validated *before* any
+ * live outreach", and a screen that could both score and message would put the
+ * pilot's first blast one mis-click from a page whose whole purpose is
+ * experimenting. Its only writes are the weights and the context step
+ * (`matching.weight`, `matching.relevance_step`) — numbers, never a message.
  *
  * ## 1 Sep — the picker, and the arithmetic
  *
@@ -336,7 +337,9 @@ export default function MatchingPage() {
  * and when" answerable later; a single bulk action would have to write the whole
  * table into one row's `after` and would record five decisions as one.
  *
- * **The context step is shown and cannot be edited.** `RELEVANCE_STEP` is a
+ * **The context step was shown and could not be edited** — superseded 8 Sep:
+ * it is a `matching_settings` row now and editable (see the step's cells
+ * below). The reasoning, kept for that history: `RELEVANCE_STEP` was a
  * constant in `lib/matching.ts`, not a row in `affinity_weights` — the whole of
  * life relevance is deliberately worth less than one shared school, and that
  * balance is a code decision rather than a knob. Hiding it would leave the
@@ -430,6 +433,11 @@ function WeightsCard({
     setBusy(true);
     setFailed(null);
     setNote(null);
+    /* What has gone through so far. A failure half way used to leave every
+       saved field in the draft, so pressing Save again re-sent them and wrote a
+       second audit row for each (27 Oct). */
+    const savedTypes: string[] = [];
+    let stepSaved = false;
     try {
       for (const w of changed) {
         await adminAction({
@@ -437,6 +445,7 @@ function WeightsCard({
           affinity_type: w.affinity_type,
           weight: Number(shown(w)),
         });
+        savedTypes.push(w.affinity_type);
       }
       /* Its own action and its own audit row, for the same reason each weight
          gets one: "who changed the context step, and when" has to be answerable
@@ -446,6 +455,7 @@ function WeightsCard({
           action: "matching.relevance_step",
           value: Number(shownStep),
         });
+        stepSaved = true;
       }
       setNote(
         pending === 1
@@ -459,6 +469,17 @@ function WeightsCard({
       onSaved();
     } catch (err) {
       setFailed(err instanceof Error ? err.message : "That didn't save");
+      /* Partly saved: forget what landed and re-read, so the fields show the
+         stored numbers and only what failed is still a change to send. */
+      if (savedTypes.length > 0 || stepSaved) {
+        setDraft((d) => {
+          const rest = { ...d };
+          for (const type of savedTypes) delete rest[type];
+          return rest;
+        });
+        if (stepSaved) setStepDraft(null);
+        onSaved();
+      }
     } finally {
       setBusy(false);
     }

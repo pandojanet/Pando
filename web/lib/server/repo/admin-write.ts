@@ -47,6 +47,12 @@ export type ActionOutcome =
       resource: string;
       resource_id: string | null;
       /**
+       * What the row said before, for the few actions where the change column
+       * means nothing without it (a weight: "4" says little, "2 → 4" says what
+       * moved). Written to `audit_log.before`; omitted, the column stays null.
+       */
+      before?: Record<string, unknown>;
+      /**
        * Something the caller needs that is **not** part of the record.
        *
        * For anything the admin needs in the response that must not go into
@@ -102,6 +108,8 @@ export type ActionOutcome =
         | "unknown_weight"
         /* 29 Sep — a hold the schema will not let go of (see release_hold). */
         | "hold_locked"
+        /* 27 Oct — a caregiver merge that would delete her own decision. */
+        | "merge_protected"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
         | "share_name_taken"
         ;
@@ -137,7 +145,7 @@ export async function applyAction(
   return db.transaction(async (tx) => {
     const outcome = await run(tx, ctx);
     if (outcome.applied) {
-      await audit(tx, ctx, outcome.resource, outcome.resource_id);
+      await audit(tx, ctx, outcome.resource, outcome.resource_id, outcome.before);
     }
     return outcome;
   });
@@ -155,12 +163,14 @@ async function audit(
   ctx: ActionContext,
   resource: string,
   resourceId: string | null,
+  before?: Record<string, unknown>,
 ): Promise<void> {
   const after = { ...ctx.body };
   delete after.action;
   await tx.execute(
-    sql`insert into audit_log (actor, action, resource, resource_id, after)
+    sql`insert into audit_log (actor, action, resource, resource_id, before, after)
         values (${ctx.actor}, ${ctx.action}, ${resource}, ${resourceId},
+                ${before ? JSON.stringify(before) : null}::jsonb,
                 ${JSON.stringify(after)}::jsonb)`,
   );
 }
@@ -588,11 +598,11 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      * (5.8), a caregiver claim is matched by hand (11 Aug), and a parent's
      * question reaches an admin as a demand signal or a queued answer.
      *
-     * ⚠ **It is not the automatic path, and that is still a decision.** A thin
-     * answer ends by offering one — *"Want me to ask a few nearby parents for
-     * more?"* — and nothing reads the parent's "yes". Wiring that means saying
-     * what the reply costs and whether it may charge, which is the client's
-     * call rather than ours.
+     * It is no longer the only path (27 Oct: this said nothing read the
+     * parent's "yes"). A thin answer ends by offering one — *"Want me to ask a
+     * few nearby parents for more?"* — and `inbound.ts` creates the Ask on the
+     * yes (`ask_started`). Every Network Ask is free (22 Oct), so neither path
+     * charges. This one is for a question that reached a person instead.
      *
      * ## Three things it does not do
      *
@@ -697,22 +707,34 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       /* A conditional UPDATE rather than a validation — the 11 Aug rule: a stale
          screen approving something already rejected is a no-op, not an aborted
          transaction that takes the audit row with it. */
-      await tx.execute(sql`
+      const approved = (await tx.execute(sql`
         update answers
            set status = 'approved', reviewed_by = ${ctx.actor}, reviewed_at = now()
          where id = ${target}::uuid and status = 'pending_review'
-      `);
+         returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      /* 26 Oct: no row changed ⇒ not_found, not `applied` with an audit row
+         recording a decision that did not happen. */
+      if (approved.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "answer", resource_id: target };
     }
 
+    /**
+     * From `approved` as well as `pending_review` (26 Oct). An approved answer
+     * not yet sent is still a decision that can be taken back — the page's own
+     * gold card exists because it can be forgotten, and until now the only
+     * button on it was Send. A sent answer cannot be unsent, so not from there.
+     */
     case "answer.reject": {
       const target = id(b.id);
       if (!target) return { applied: false, reason: "not_implemented" };
-      await tx.execute(sql`
+      const rejected = (await tx.execute(sql`
         update answers
            set status = 'rejected', reviewed_by = ${ctx.actor}, reviewed_at = now()
-         where id = ${target}::uuid and status = 'pending_review'
-      `);
+         where id = ${target}::uuid and status in ('pending_review', 'approved')
+         returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (rejected.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "answer", resource_id: target };
     }
 
@@ -729,11 +751,13 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const target = id(b.id);
       const body = text(b.text);
       if (!target || !body) return { applied: false, reason: "not_implemented" };
-      await tx.execute(sql`
+      const edited = (await tx.execute(sql`
         update answers
            set answer_text = ${body.slice(0, 2000)}, reviewed_by = ${ctx.actor}
          where id = ${target}::uuid and status = 'pending_review'
-      `);
+         returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (edited.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "answer", resource_id: target };
     }
 
@@ -1160,6 +1184,31 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       const merge = ids(b.merge).filter((x) => x !== keep);
       if (!keep || merge.length === 0) return { applied: false, reason: "not_implemented" };
       /**
+       * ⚠ **A record carrying her own decision is never the one deleted**
+       * (27 Oct). The folded rows are deleted below, and a caregiver's consent
+       * lives on the `caregivers` row — so folding a consented (or discoverable)
+       * record into a `mentioned` one erased her yes and its evidence, folding a
+       * declined or revoked one erased her no (and moved the families' words
+       * onto a record she never refused), and folding one her own sign-up is
+       * linked to orphaned the claim. Refused in words; keeping *that* record
+       * instead is the way through. `for update` so a consent recorded in
+       * another tab cannot slip in between.
+       */
+      const protectedRows = (await tx.execute(
+        sql`select c.id from caregivers c
+             where c.id in ${sql`(${sql.join(
+               merge.map((m) => sql`${m}::uuid`),
+               sql`, `,
+             )})`}
+               and (c.consent_status not in ('mentioned', 'invited')
+                    or c.active or c.discoverable or c.introducible
+                    or c.profile_person_id is not null
+                    or exists (select 1 from caregiver_claims cl
+                                where cl.linked_caregiver_id = c.id))
+             for update of c`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (protectedRows.length > 0) return { applied: false, reason: "merge_protected" };
+      /**
        * Nominations move to the surviving record; the folded rows are deleted,
        * not flagged. Their nominations are the evidence, and the audit row keeps
        * the list of what was folded in.
@@ -1277,7 +1326,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         sql`select market_id, category, submitted_value from pending_options
             where id = ${target}::uuid limit 1`,
       )) as unknown as Array<Record<string, unknown>>;
-      if (!row) return { applied: false, reason: "not_implemented" };
+      /* Gone since the screen was drawn — an ordinary race, not a missing
+         feature (it answered `not_implemented`, i.e. a 501, until 26 Oct). */
+      if (!row) return { applied: false, reason: "not_found" };
 
       const market = row.market_id as string;
       const category = row.category as string;
@@ -1479,9 +1530,14 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "option.retire": {
       const target = id(b.id);
       /** Retired, never deleted: existing rows still reference the value. */
-      await tx.execute(
-        sql`update market_options set active = false where id = ${target}::uuid`,
-      );
+      const retired = (await tx.execute(
+        sql`update market_options set active = false
+             where id = ${target}::uuid
+         returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      /* No row changed ⇒ nothing to audit (it answered `applied` and wrote an
+         audit row for a no-op until 26 Oct). */
+      if (retired.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "market_option", resource_id: target };
     }
 
@@ -1509,13 +1565,25 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "matching.weight": {
       const type = id(b.affinity_type);
       const weight = Number(b.weight);
+      /* The previous number, for `audit_log.before` — one extra read, worth it
+         here because a weight's change only means something next to what it
+         was (26 Oct). `for update` so a concurrent save cannot slip between. */
+      const [prev] = (await tx.execute(
+        sql`select weight from affinity_weights
+             where affinity_type = ${type} for update`,
+      )) as unknown as Array<Record<string, unknown>>;
       const [row] = (await tx.execute(
         sql`update affinity_weights set weight = ${weight}
              where affinity_type = ${type}
          returning affinity_type`,
       )) as unknown as Array<Record<string, unknown>>;
       if (!row) return { applied: false, reason: "unknown_weight" };
-      return { applied: true, resource: "affinity_weight", resource_id: type };
+      return {
+        applied: true,
+        resource: "affinity_weight",
+        resource_id: type,
+        before: prev ? { weight: Number(prev.weight) } : undefined,
+      };
     }
 
     /**
@@ -1530,13 +1598,23 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
      */
     case "matching.relevance_step": {
       const value = Number(b.value);
+      /* The previous step, for `audit_log.before` — as matching.weight (27 Oct). */
+      const [prev] = (await tx.execute(
+        sql`select value from matching_settings
+             where key = 'relevance_step' for update`,
+      )) as unknown as Array<Record<string, unknown>>;
       const [row] = (await tx.execute(
         sql`update matching_settings set value = ${value}
              where key = 'relevance_step'
          returning key`,
       )) as unknown as Array<Record<string, unknown>>;
       if (!row) return { applied: false, reason: "not_found" };
-      return { applied: true, resource: "matching_setting", resource_id: "relevance_step" };
+      return {
+        applied: true,
+        resource: "matching_setting",
+        resource_id: "relevance_step",
+        before: prev ? { value: Number(prev.value) } : undefined,
+      };
     }
 
     /* ── 2.7 Flags and demand ────────────────────────────────────────────── */
@@ -1583,9 +1661,17 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "demand.status": {
       const target = id(b.id);
-      await tx.execute(
-        sql`update demand_signals set status = ${id(b.to)} where id = ${target}::uuid`,
-      );
+      /* No row changed ⇒ not_found, and no audit row for a no-op (27 Oct: a
+         missing id answered `applied`). A malformed one too, rather than a
+         failed uuid cast. */
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
+        return { applied: false, reason: "not_found" };
+      }
+      const changed = (await tx.execute(
+        sql`update demand_signals set status = ${id(b.to)} where id = ${target}::uuid
+            returning id`,
+      )) as unknown as Array<Record<string, unknown>>;
+      if (changed.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "demand_signal", resource_id: target };
     }
 

@@ -115,6 +115,10 @@ export function ConsentRecords() {
                 <Th>Wording</Th>
                 <Th>When</Th>
                 <Th>Opted out</Th>
+                {/* 27 Oct — a START after the STOP. The STOP's date is kept on
+                    START, so without this column every number that ever texted
+                    STOP read as opted out today. */}
+                <Th>Opted back in</Th>
               </tr>
             </thead>
             <tbody>
@@ -153,8 +157,23 @@ export function ConsentRecords() {
                     {when(row.captured_at)}
                   </Td>
                   <Td className="text-[13px]">
+                    {/* Red only while the STOP is current; a STOP a later
+                        START undid stays listed — it is part of the sequence —
+                        but is history, not the state. */}
                     {row.opted_out_at ? (
-                      <span className="text-alert">{when(row.opted_out_at)}</span>
+                      <span className={row.opted_out ? "text-alert" : "text-muted"}>
+                        {when(row.opted_out_at)}
+                      </span>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </Td>
+                  <Td className="text-[13px]">
+                    {/* Muted when a later STOP superseded it again. */}
+                    {row.opted_in_at ? (
+                      <span className={row.opted_out ? "text-muted" : undefined}>
+                        {when(row.opted_in_at)}
+                      </span>
                     ) : (
                       <span className="text-muted">—</span>
                     )}
@@ -194,6 +213,10 @@ function downloadCsv(rows: ConsentRow[]): void {
     "consent_text_version",
     "consent_timestamp",
     "opted_out_at",
+    /* 27 Oct — the START, and whether the STOP still stands. Appended after
+       opted_out_at so a reader of the old file finds every column it had. */
+    "opted_in_at",
+    "currently_opted_out",
     "is_test",
   ];
 
@@ -211,6 +234,8 @@ function downloadCsv(rows: ConsentRow[]): void {
       r.text_version,
       r.captured_at,
       r.opted_out_at,
+      r.opted_in_at,
+      r.opted_out,
       r.is_test,
     ]
       .map(cell)

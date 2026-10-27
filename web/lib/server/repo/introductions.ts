@@ -200,6 +200,28 @@ export async function requestIntroExplicitly(input: {
         `,
       );
       if (open[0]?.id) return { id: String(open[0].id), already: true };
+      /* ⚠ An open offer for this record is taken, not shadowed (27 Oct).
+         "INTRO Little Maestros" after the offer named Little Maestros inserted a
+         second, explicit row beside it and left the offer `offered`, so
+         /admin/introductions read "0 of 1 offers taken" for a parent who took
+         it. Promote the offer — the same move
+         `takeIntroOffer` makes — and insert only when there is none. */
+      const promoted = await rows(
+        tx as unknown as Db,
+        sql`
+          update introductions set status = 'requested', requested_at = now()
+           where id = (
+             select id from introductions
+              where requester_id = ${input.personId}::uuid
+                and share_id = ${String(found[0].share_id)}::uuid
+                and status = 'offered'
+                and created_at > now() - make_interval(days => ${INTRO_OFFER_DAYS})
+              order by created_at desc limit 1)
+             and status = 'offered'
+          returning id
+        `,
+      );
+      if (promoted[0]?.id) return { id: String(promoted[0].id), already: false };
       const made = await rows(
         tx as unknown as Db,
         sql`

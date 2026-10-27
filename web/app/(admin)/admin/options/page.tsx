@@ -120,7 +120,10 @@ export default function PendingOptionsPage() {
                   <Td className="text-right">
                     {/* The number opens onto who it is (5 Oct). It is counted
                         from the profiles, falling back to the stored counter
-                        for a value no saved profile carries any more. */}
+                        for a value no saved profile carries any more.
+                        The two count different things — parents against
+                        saves, one parent re-saving counting twice — so the
+                        fallback says which it is (27 Oct). */}
                     <button
                       type="button"
                       aria-expanded={openId === row.id}
@@ -130,6 +133,11 @@ export default function PendingOptionsPage() {
                     >
                       {row.parent_count > 0 ? row.parent_count : row.occurrences}
                     </button>
+                    {row.parent_count === 0 && (
+                      <span className="block text-[12px] text-muted">
+                        times entered
+                      </span>
+                    )}
                   </Td>
                   <Td className="text-[13px]">
                     {row.recommendations.length === 0 ? (
@@ -196,7 +204,9 @@ export default function PendingOptionsPage() {
                           </p>
                           {row.parents.length === 0 ? (
                             <p className="text-muted">
-                              No saved profile carries it any more.
+                              No saved profile carries it any more — the number
+                              is how many times it was entered, not how many
+                              parents.
                             </p>
                           ) : (
                             <ul className="space-y-1">

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import { getDb } from "@/lib/server/db";
 import { isExtractionConfigured } from "@/lib/server/extract";
 import { sweepExtraction } from "@/lib/server/repo/flags";
@@ -24,6 +25,8 @@ export const dynamic = "force-dynamic";
 const MAX_BATCH = 50;
 
 export async function POST(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "extract");
+  if (refused) return refused;
   const session = await readAdminSession(
     (await cookies()).get(ADMIN_COOKIE)?.value,
   );
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
   try {
     const result = await sweepExtraction(db, limit);
     // Counts only — never the text that was scored (invariant 7).
-    console.info("[admin:extract]", { actor: session.user, ...result });
+    console.info("[admin:extract]", { ...result });
     return NextResponse.json({ ok: true, configured: true, ...result });
   } catch (err) {
     console.error(

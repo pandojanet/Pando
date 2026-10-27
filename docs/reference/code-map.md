@@ -74,6 +74,10 @@
 `web/lib/rate-limits.ts` — M15.4. How often one caller may hit each public
                        endpoint, and **which `X-Forwarded-For` entry is
                        actually theirs**. Pure; imports nothing.
+`web/lib/admin/request-guard.ts` — `refuseForeignAdminWrite(request, route)`:
+                       the first line of every admin POST/PUT/PATCH/DELETE —
+                       refuses another site's Origin/Referer (403) and a body
+                       that is not JSON (415). Pure; `test:security` pins it.
 `web/lib/server/rate-limit.ts` — the counters, and the one line a route adds.
                        In-process, which is honest about needing to move the day
                        there are two containers.

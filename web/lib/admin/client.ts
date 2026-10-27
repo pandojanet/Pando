@@ -161,7 +161,7 @@ export async function adminAction(
  */
 export async function readRestrictedNote(
   nominationId: string,
-): Promise<string | null> {
+): Promise<RestrictedNoteRead> {
   /**
    * The server answers with a **list** (a nomination can carry both a private
    * note and the reason behind a hesitant hire), and the sample answers with one
@@ -170,19 +170,40 @@ export async function readRestrictedNote(
    * nomination", every time). Both shapes are read now, joined by a blank line.
    */
   const data = await post<
-    QueryResponse<{ body?: string } | Array<{ body?: string }> | null>
+    QueryResponse<
+      { kind?: string; body?: string } | Array<{ kind?: string; body?: string }> | null
+    >
   >("/api/admin/query", {
     resource: "restricted_note",
     params: { nomination_id: nominationId },
   });
   if (!data.configured) {
-    return "No database is connected yet, so there is nothing to show.";
+    return { notes: [], message: "No database is connected yet, so there is nothing to show." };
   }
   const found = Array.isArray(data.rows) ? data.rows : data.rows ? [data.rows] : [];
-  const bodies = found
-    .map((n) => (typeof n.body === "string" ? n.body : ""))
-    .filter((b) => b.trim() !== "");
-  return bodies.length > 0 ? bodies.join("\n\n") : "No note on this nomination.";
+  /* Each with its kind (27 Oct): the reason behind a hesitant hire-again and
+     the private note are two different things the family said, and joined by
+     a blank line an admin could not tell which was which. */
+  const notes = found
+    .map((n) => ({
+      kind: n.kind === "hesitation_reason" ? "hesitation_reason" : "private_note",
+      body: typeof n.body === "string" ? n.body : "",
+    }))
+    .filter((n) => n.body.trim() !== "") as RestrictedNoteRead["notes"];
+  return {
+    notes,
+    message: notes.length > 0 ? null : "No note on this nomination.",
+  };
+}
+
+/**
+ * What the restricted-note read hands the caregivers page: each note with its
+ * kind, or a sentence when there is nothing to show. Admin-only, and never
+ * part of a list (invariant 12).
+ */
+export interface RestrictedNoteRead {
+  notes: Array<{ kind: "private_note" | "hesitation_reason"; body: string }>;
+  message: string | null;
 }
 
 export async function signOut(): Promise<void> {

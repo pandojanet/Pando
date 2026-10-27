@@ -47,8 +47,8 @@ export type AdminResource =
  * The estimate's reason for it, verbatim: "so matching quality can be validated
  * before any live outreach … the cheap way to de-risk matching early without
  * building a consumer web channel". So the shape is built for *reading a
- * ranking*, not for acting on one — there is no write action, and there is
- * deliberately no way to send anything from this page.
+ * ranking*, not for acting on one — its only writes are the weights and the
+ * context step, and there is deliberately no way to send anything from this page.
  */
 export interface MatchCandidateRow {
   person_id: string;
@@ -168,6 +168,12 @@ export interface AnswerRow {
    * same message four times.
    */
   duplicates: number;
+  /**
+   * A Deep Dive report (26 Oct): a `deep_dives` row points at this answer
+   * (`deep_dives.answer_id`). Its `labels` are empty by construction, so the
+   * card says what it is rather than "Claims: nothing". Optional for the sample.
+   */
+  deep_dive?: boolean;
   created_at: string;
   sent_at: string | null;
 }
@@ -379,6 +385,12 @@ export interface ContributorRow {
    */
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
+  /**
+   * A caregiver who signed herself up (2C, a `caregiver_claims` row) — a
+   * people row like a parent's, labelled as what she is and kept out of the
+   * referral picker (27 Oct).
+   */
+  is_caregiver: boolean;
   is_test: boolean;
   created_at: string;
 }
@@ -587,6 +599,16 @@ export interface ContributionRow {
    * only inside the audit log.
    */
   needs_detail_note: string | null;
+  /**
+   * The Network Ask this card came from (`drizzle/0022`), null for a Seed Tool
+   * or SMS capture card (26 Oct). Optional so the sample cohort needs no change.
+   */
+  source_blast_id?: string | null;
+  /**
+   * The most serious open flag on this card or on its record (26 Oct) — the
+   * reason and severity only; the words stay on `/admin/flags`.
+   */
+  open_flag?: { reason: string; severity: string } | null;
   provenance: Provenance;
   contributor: { id: string; name: string | null } | null;
   is_test: boolean;
@@ -742,8 +764,25 @@ export interface DuplicateCandidate {
     id: string;
     first_name: string;
     last_initial: string | null;
+    /** The newest nomination's kind of care. */
     type: string | null;
+    /** The newest nominating family's neighborhood. */
     neighborhood: string | null;
+    /** Where she says she works, from her own profile (2C). Empty when none. */
+    areas: string[];
+    /**
+     * What a merge decision rests on (27 Oct): `caregiver.merge` deletes every
+     * record but the one kept, and refuses to delete one carrying her own
+     * decision — a consent state other than mentioned/invited, or a sign-up
+     * of her own linked to it (`merge_protected`).
+     */
+    consent_status: ConsentStatus;
+    active: boolean;
+    discoverable: boolean;
+    introducible: boolean;
+    nominations: number;
+    claim_linked: boolean;
+    self_profile: boolean;
   }>;
 }
 
@@ -816,6 +855,12 @@ export interface FlagRow {
      * from taps alone.
      */
     wrote: Array<{ field: string; body: string }>;
+    /**
+     * The page where the subject is decided (26 Oct): `/admin/answers` for a
+     * flag on an SMS answer, the contributions page for a record or a card.
+     * Never carries a phone. Optional so the sample cohort needs no change.
+     */
+    href?: string | null;
   } | null;
   contributor: { id: string; name: string | null } | null;
   status: "open" | "resolved" | "escalated";
@@ -1298,6 +1343,14 @@ export interface ConsentRow {
   captured_at: string;
   /** From `sms_opt_outs` — a later STOP overrides an earlier yes. */
   opted_out_at: string | null;
+  /**
+   * From `sms_opt_outs.opted_in_at` — a START after the STOP (12.3). `setOptOut`
+   * keeps `opted_out_at` on START, so without this the file showed every number
+   * that ever texted STOP as still opted out (27 Oct).
+   */
+  opted_in_at: string | null;
+  /** The STOP is current: no START, or a START older than it. */
+  opted_out: boolean;
   /** Labelled rather than filtered: a complaint is about a number, not a flag. */
   is_test: boolean;
 }
@@ -1375,6 +1428,14 @@ export interface ConversationDetail {
   /** Their own agreement, so the history can be read against what they allowed. */
   monthly_contact_allowance: number | null;
   allowance_mode: "fixed" | "as_relevant";
+  /**
+   * What the send layer applies (`effectiveAllowance`, 27 Oct): the monthly
+   * number, or null for "up to 3 a week". Differs from what they chose when the
+   * response-rate governor has lowered it (`allowance_lowered`) or when they
+   * never chose (an SMS-only parent is treated as 5).
+   */
+  effective_allowance: number | null;
+  allowance_lowered: boolean;
   opted_out: boolean;
   messages: ConversationMessage[];
 }
@@ -1443,6 +1504,10 @@ export interface StandingRow {
   /** What the send layer applies this month: the stated limit, or one tier
    *  down when governed. Null means no fixed ceiling. */
   effective_allowance: number | null;
+  /** A current STOP (no START after it): the send layer asks them nothing. */
+  opted_out: boolean;
+  /** A caregiver's own sign-up (2C), not a parent — labelled as such (27 Oct). */
+  is_caregiver: boolean;
   is_test: boolean;
 }
 
@@ -1635,6 +1700,24 @@ export interface BlastPoolResult {
   cold: boolean;
   /** Set when the pool is short or the requirements are stacked (7.3). */
   human_review: { required: boolean; reason: string | null };
+  /**
+   * Who **was** asked, once the Ask has gone out (26 Oct) — read from
+   * `blast_recipients`, and `null` before it is sent. Re-running `selectPool`
+   * on a sent Ask showed "0 of 5 wanted" and the five it asked as "Asked in the
+   * last 48 hours": the preview counting its own send against itself. When
+   * this is set, `chosen` and `held` are empty and the page shows this list.
+   */
+  asked: Array<{
+    person_id: string;
+    name: string | null;
+    phone: string | null;
+    score: number | null;
+    sent_at: string | null;
+    /** replied · passed · waiting (sent, nothing back yet) · not_sent */
+    state: "replied" | "passed" | "waiting" | "not_sent";
+    /** The reply's review, when there is one: pending_review · approved · rejected. */
+    review_status: string;
+  }> | null;
 }
 
 /**
@@ -1650,3 +1733,11 @@ export interface BlastPoolResult {
  * where both sides already import their types from.
  */
 export const AUDIT_PAGE_SIZE = 500;
+
+/**
+ * The shortest new password `/api/admin/password` accepts, and the number
+ * `/admin/account` states. Here for the same reason as `AUDIT_PAGE_SIZE`: the
+ * page carried its own copy, and when a copy-stripping pass dropped the
+ * interpolation the hint read "At least  characters." (26 Oct).
+ */
+export const ADMIN_PASSWORD_MIN_LENGTH = 12;

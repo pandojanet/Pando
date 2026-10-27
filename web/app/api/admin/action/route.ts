@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import { cleanId, cleanText } from "@/lib/sanitize";
 import { TIER_IDS } from "@/lib/blast-tiers";
 import { withDb } from "@/lib/server/db";
@@ -140,6 +141,8 @@ const CONSENT_METHODS = new Set([
 const METHODS_NEEDING_NOTE = new Set(["call_logged", "in_person"]);
 
 export async function POST(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "action");
+  if (refused) return refused;
   const session = await readAdminSession(
     (await cookies()).get(ADMIN_COOKIE)?.value,
   );
@@ -678,9 +681,10 @@ export async function POST(request: Request) {
   }
 
   // Enums and ids only — never the free text an admin typed about a person.
+  /* No actor: the audit row carries who, and a log line is not the place for an
+     admin's name (invariant 7, 27 Oct). */
   console.info("[admin:action]", {
     action,
-    actor: session.user,
     resource_id: typeof body?.id === "string" ? body.id : null,
   });
 
@@ -734,12 +738,12 @@ export async function POST(request: Request) {
       link_test_mixed: "A test profile can't be connected to a real parent.",
       link_exists: "These two parents are already connected.",
       blast_needs_review:
-        "This Ask is waiting for a person. Preview the pool: a short one means the network could not fill the tier. Releasing it is a decision, and it asks for a reason.",
+        "This Ask is waiting for a person. Preview the pool: a short one means the network could not find enough parents to ask. Releasing it is a decision, and it asks for a reason.",
       /* The window is checked by its **date**, not by the status: nothing moves
          a blast to `expired` until a host cron runs `expire_blasts`, so on a
          deployment without one the status stays `active` for ever. */
       blast_expired:
-        "The window on this Ask has already closed, so nobody could answer inside the guarantee. Create a new one rather than sending this.",
+        "The window on this Ask has already closed, so nobody could answer in time. Create a new one rather than sending this.",
       blast_already_sent: "This Ask has already gone out. Replies come back on their own.",
       /* Quiet hours is named **first** because it is the likeliest cause and the
          least obvious one: the window is 8am-9pm *Pacific* (§14, the parent's
@@ -775,6 +779,9 @@ export async function POST(request: Request) {
       /* 29 Sep — `hold_when_hesitant` keeps a hesitant or "no" nomination held. */
       hold_locked:
         "This hold cannot be released. The family said they would not hire her again, or hesitated, and the database keeps a nomination like that held. Reject it instead.",
+      /* 27 Oct — `caregiver.merge` deletes every record but the one kept. */
+      merge_protected:
+        "Nothing was merged. A record you would fold in carries her own decision — her consent, her no, or her own sign-up — and merging deletes it. Keep that record instead, or leave both.",
       share_name_taken:
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:
@@ -791,8 +798,11 @@ export async function POST(request: Request) {
     if (result.data.reason === "not_found") {
       return NextResponse.json(
         {
-          error:
-            "That has changed since the page was loaded — reload and look again.",
+          /* 26 Oct: answer.approve / reject / edit answer not_found when no row
+             changed — the commonest cause is a second tab or a double press. */
+          error: action.startsWith("answer.")
+            ? "This answer was already decided — approved, sent or set aside since the page was loaded. Reload to see where it is now."
+            : "That has changed since the page was loaded — reload and look again.",
           reason: "not_found",
         },
         { status: 409 },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import { getDb } from "@/lib/server/db";
 import { isWebSearchConfigured } from "@/lib/server/web-search";
 import { runProviderCheck } from "@/lib/server/provider-check";
@@ -24,6 +25,8 @@ export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "provider-check");
+  if (refused) return refused;
   const session = await readAdminSession((await cookies()).get(ADMIN_COOKIE)?.value);
   if (!session) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
 
   try {
     const outcome = await runProviderCheck(db, shareId, { admin: true });
-    console.info("[admin:provider-check]", { actor: session.user, outcome: outcome.kind });
+    console.info("[admin:provider-check]", { outcome: outcome.kind });
     switch (outcome.kind) {
       case "stored":
         return NextResponse.json({ ok: true, status: outcome.status });

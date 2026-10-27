@@ -450,6 +450,172 @@ console.log("\n=== the admin sign-in lock is keyed on an address the caller cann
   );
 }
 
+console.log("\n=== admin writes refuse another site, and anything but JSON (27 Oct) ===");
+{
+  const guard = (await import(`../lib/admin/request-guard.ts?v=${Date.now()}`)) as typeof import(
+    "../lib/admin/request-guard.ts"
+  );
+  const SITE = "https://pando.is";
+  const req = (
+    method: string,
+    headers: Record<string, string>,
+    url = `${SITE}/api/admin/action`,
+  ) => new Request(url, { method, headers });
+  const json = { "content-type": "application/json" };
+
+  ok(
+    "a same-site JSON POST goes through",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", origin: SITE })) === null,
+  );
+  ok(
+    "a JSON POST from another site is refused",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", origin: "https://evil.example" })) ===
+      "foreign_origin",
+  );
+  ok(
+    "a look-alike host is another site",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", origin: "https://pando.is.evil.example" })) ===
+      "foreign_origin",
+  );
+  ok(
+    "Origin: null (a sandboxed frame) is refused",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", origin: "null" })) ===
+      "foreign_origin",
+  );
+  ok(
+    "with no Origin, a foreign Referer is refused",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", referer: "https://evil.example/x" })) ===
+      "foreign_origin",
+  );
+  ok(
+    "with no Origin, this site's Referer goes through",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "pando.is", referer: `${SITE}/admin/options` })) === null,
+  );
+  ok(
+    "neither header (a server-side suite's fetch) goes through when it is JSON",
+    guard.adminWriteRefusal(req("POST", { ...json, host: "127.0.0.1:3000" }, "http://127.0.0.1:3000/api/admin/query")) ===
+      null,
+  );
+  ok(
+    "behind the proxy, the forwarded host is this site too",
+    guard.adminWriteRefusal(
+      req("POST", { ...json, host: "pando-web:3000", "x-forwarded-host": "pando.is", origin: SITE }, "http://pando-web:3000/api/admin/action"),
+    ) === null,
+  );
+  ok(
+    "a form post (text/plain) is refused even from this site",
+    guard.adminWriteRefusal(req("POST", { "content-type": "text/plain", host: "pando.is", origin: SITE })) ===
+      "not_json",
+  );
+  ok(
+    "so is urlencoded, and so is no content type",
+    guard.adminWriteRefusal(
+      req("POST", { "content-type": "application/x-www-form-urlencoded", host: "pando.is", origin: SITE }),
+    ) === "not_json" &&
+      guard.adminWriteRefusal(req("POST", { host: "pando.is", origin: SITE })) === "not_json",
+  );
+  ok(
+    "a charset parameter is still JSON",
+    guard.adminWriteRefusal(
+      req("POST", { "content-type": "Application/JSON; charset=utf-8", host: "pando.is", origin: SITE }),
+    ) === null,
+  );
+  ok(
+    "sign-out (no body) is held to the origin half only",
+    guard.adminWriteRefusal(req("DELETE", { host: "pando.is", origin: SITE }), { body: false }) === null &&
+      guard.adminWriteRefusal(req("DELETE", { host: "pando.is", origin: "https://evil.example" }), { body: false }) ===
+        "foreign_origin",
+  );
+  ok(
+    "PUT and PATCH are writes too",
+    guard.adminWriteRefusal(req("PUT", { ...json, host: "pando.is", origin: "https://evil.example" })) ===
+      "foreign_origin" &&
+      guard.adminWriteRefusal(req("PATCH", { "content-type": "text/plain", host: "pando.is", origin: SITE })) ===
+        "not_json",
+  );
+  ok("a GET is not its business", guard.adminWriteRefusal(req("GET", { host: "pando.is", origin: "https://evil.example" })) === null);
+
+  const foreign = guard.refuseForeignAdminWrite(
+    req("POST", { ...json, host: "pando.is", origin: "https://evil.example" }),
+    "test",
+  );
+  const form = guard.refuseForeignAdminWrite(
+    req("POST", { "content-type": "text/plain", host: "pando.is", origin: SITE }),
+    "test",
+  );
+  ok("the refusal is a 403 for another site", foreign?.status === 403, String(foreign?.status));
+  ok("and a 415 for a body that is not JSON", form?.status === 415, String(form?.status));
+  ok(
+    "and nothing for a request that may pass",
+    guard.refuseForeignAdminWrite(req("POST", { ...json, host: "pando.is", origin: SITE }), "test") === null,
+  );
+
+  /* Structural: every state-changing handler under app/api/admin calls it
+     first — the way "every route is guarded" above stays true for the next one. */
+  const handlers: string[] = [];
+  const unguardedWrites: string[] = [];
+  (function walk(dir: string) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (entry === "route.ts") {
+        const src = readFileSync(full, "utf8");
+        for (const m of src.matchAll(
+          /export\s+async\s+function\s+(POST|PUT|PATCH|DELETE)\s*\([^)]*\)\s*\{([\s\S]{0,400})/g,
+        )) {
+          const name = `${relative("app/api/admin", full).replace(/\\/g, "/")} ${m[1]}`;
+          handlers.push(name);
+          /* The first statement, not merely somewhere in the file. */
+          const first = m[2].replace(/\/\*[\s\S]*?\*\//g, "").trim();
+          if (!/^const refused = refuseForeignAdminWrite\(request,/.test(first)) {
+            unguardedWrites.push(name);
+          }
+        }
+      }
+    }
+  })("app/api/admin");
+  ok("there are admin writes to check", handlers.length >= 7, handlers.join(", "));
+  ok(
+    "every admin POST/PUT/PATCH/DELETE runs the guard before anything else",
+    unguardedWrites.length === 0,
+    unguardedWrites.join(", "),
+  );
+}
+
+console.log("\n=== invariant 7, admin: no error message, no admin name in a log (27 Oct) ===");
+{
+  /* `err.message` on a DrizzleQueryError is the SQL and every bound value; and
+     an admin's name is a name. The audit row says who — a log line does not. */
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry)) {
+        const src = readFileSync(full, "utf8");
+        for (const call of src.match(/console\.(log|info|warn|error)\([^;]*/g) ?? []) {
+          if (/\.message\b|\b(user|actor)\s*[:,}]|session\.user/.test(call)) {
+            offenders.push(`${full}: ${call.slice(0, 90).replace(/\s+/g, " ")}`);
+          }
+        }
+      }
+    }
+  };
+  walk("app/api/admin");
+  walk("lib/admin");
+  ok(
+    "no admin route or admin module logs an error message or who acted",
+    offenders.length === 0,
+    offenders.join(" | "),
+  );
+  const auth = readFileSync("lib/admin/auth.ts", "utf8");
+  const eq = auth.slice(auth.indexOf("function safeEqual"), auth.indexOf("function safeEqual") + 400);
+  ok(
+    "the shared-password compare hashes both sides first (no length leak)",
+    /createHash\("sha256"\)/.test(eq) && !/length !==/.test(eq),
+  );
+}
+
 console.log("\n=== admin writes report what they changed ===");
 {
   const write = readFileSync("lib/server/repo/admin-write.ts", "utf8");

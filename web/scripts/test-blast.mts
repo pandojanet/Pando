@@ -64,6 +64,11 @@ ok(
   t.windowClosed({ status: "active", expires_at: "2026-08-01T00:00:00Z" }, NOW.getTime()) &&
     !t.windowClosed({ status: "fulfilled", expires_at: "2026-08-01T00:00:00Z" }, NOW.getTime()),
 );
+ok(
+  "an answered Ask past its date is not closed - expire_blasts never expires one with an approved reply",
+  !t.windowClosed({ status: "active", expires_at: "2026-08-01T00:00:00Z", approved_responses: 1 }, NOW.getTime()) &&
+    t.windowClosed({ status: "active", expires_at: "2026-08-01T00:00:00Z", approved_responses: 0 }, NOW.getTime()),
+);
 
 console.log("\n=== 7.8  the text a Network Ask actually sends ===");
 const ask = t2.blastRequestSms({

@@ -38,9 +38,11 @@ import {
   matchReason,
   matchReasonValue,
   poolHeldReason,
+  REVIEW_STATUS,
   sentence,
 } from "@/lib/admin/labels";
 import { GENERAL_TIER, windowClosed } from "@/lib/blast-tiers";
+import { maskPhoneRecognisable } from "@/lib/phone";
 import type {
   BlastPoolResult,
   BlastRow,
@@ -219,7 +221,7 @@ export default function BlastsPage() {
 
   return (
     <>
-      <PageHead title="Network Checks" />
+      <PageHead title="Network Asks" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {sample && <SampleBanner />}
@@ -324,6 +326,10 @@ export default function BlastsPage() {
                * the page had not, so it offered a button that could only fail
                * — which is the thing the comment on that very button warns
                * against.
+               *
+               * And with the job's exception (26 Oct): an Ask with an approved
+               * reply is never expired by `expire_blasts`, so it is not
+               * "closed" here either — `windowClosed` reads the count.
                */
               const closed = windowClosed(row);
               const status = closed
@@ -337,7 +343,15 @@ export default function BlastsPage() {
                   title={<span className="font-normal leading-relaxed">“{row.question_text}”</span>}
                   aside={
                     <>
-                      {row.asker?.name ?? "No profile"}
+                      {/* A parent who only ever texted has a people row and no
+                          name (27 Oct): "No profile" read as a deleted asker.
+                          Their number, masked — never the whole of it here. */}
+                      {row.asker
+                        ? (row.asker.name ??
+                          (row.asker.phone
+                            ? maskPhoneRecognisable(row.asker.phone)
+                            : "A parent by text"))
+                        : "No longer in Pando"}
                       <span className="mt-0.5 block">{when(row.created_at)}</span>
                     </>
                   }
@@ -443,7 +457,13 @@ export default function BlastsPage() {
                         disabled={busy === row.id}
                         onClick={() => setOpenPool(openPool === row.id ? null : row.id)}
                       >
-                        {openPool === row.id ? "Hide the pool" : "Who would be asked"}
+                        {/* Sent: who *was* asked, from blast_recipients
+                            (27 Oct). The preview is for an unsent Ask only. */}
+                        {openPool === row.id
+                          ? "Hide the pool"
+                          : row.recipients > 0
+                            ? "Who was asked"
+                            : "Who would be asked"}
                       </Button>
 
                       {(row.status === "active" ||
@@ -646,6 +666,46 @@ function PoolPreview({ blastId }: { blastId: string }) {
     );
   }
 
+  /* Sent (27 Oct): who was asked, from `blast_recipients`. Re-running the
+     preview on a sent Ask counted its own texts against the people it sent
+     them to — "0 of 5 wanted", and the five listed as asked too recently. */
+  if (rows.asked) {
+    const replied = rows.asked.filter((m) => m.state === "replied").length;
+    return (
+      <RecordDrawer
+        title={`Who Pando asked (${rows.asked.length} of ${rows.wanted} wanted, ${replied} replied)`}
+      >
+        <ul className="space-y-2">
+          {rows.asked.map((member) => {
+            const state = ASKED_STATE[member.state];
+            const review =
+              member.state === "replied" ? REVIEW_STATUS[member.review_status] : undefined;
+            return (
+              <li
+                key={member.person_id}
+                className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-bark/50 pb-2 last:border-b-0"
+              >
+                <span className="text-[13.5px] font-semibold">
+                  {member.name ?? "Unnamed"}
+                  {member.phone && (
+                    <span className="ml-2 font-normal text-muted">{member.phone}</span>
+                  )}
+                </span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone={state.tone}>{state.label}</Badge>
+                  {review && <Badge tone={review.tone}>{review.label}</Badge>}
+                  {member.sent_at && (
+                    <span className="text-[12px] text-muted">{when(member.sent_at)}</span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </RecordDrawer>
+    );
+  }
+
   return (
     <RecordDrawer title={`Who Pando would ask (${rows.chosen.length} of ${rows.wanted} wanted)`}>
       {rows.human_review.required && (
@@ -715,8 +775,26 @@ function PoolPreview({ blastId }: { blastId: string }) {
   );
 }
 
-/** Live: not settled, and its window has not run out (`windowClosed`). */
-function stillOpen(row: { status: string; expires_at: string | null }): boolean {
+/** Where each person an Ask went to has got to (27 Oct). */
+const ASKED_STATE: Record<
+  NonNullable<BlastPoolResult["asked"]>[number]["state"],
+  { label: string; tone: "green" | "gold" | "neutral" | "muted" }
+> = {
+  replied: { label: "Replied", tone: "green" },
+  passed: { label: "Passed — no penalty", tone: "muted" },
+  waiting: { label: "Asked, nothing back yet", tone: "neutral" },
+  not_sent: { label: "Not sent", tone: "muted" },
+};
+
+/**
+ * Live: not settled, and its window has not run out (`windowClosed`) — which an
+ * answered Ask's has not, by `expire_blasts`' own rule (26 Oct).
+ */
+function stillOpen(row: {
+  status: string;
+  expires_at: string | null;
+  approved_responses: number;
+}): boolean {
   return (
     (row.status === "draft" ||
       row.status === "pending_review" ||

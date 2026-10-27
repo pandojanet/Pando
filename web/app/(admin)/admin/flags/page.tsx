@@ -16,6 +16,7 @@ import {
   PageHead,
   ResultNote,
   SampleBanner,
+  TextLink,
   when,
 } from "@/components/admin/ui";
 import { Quote, RecordGroup } from "@/components/admin/Record";
@@ -93,7 +94,12 @@ function FlagCard({
   setNotes: Dispatch<SetStateAction<Record<string, string>>>;
   run: (label: string, fn: () => Promise<{ persisted: boolean }>) => Promise<void>;
 }) {
-  const isQuestion = flag.subject?.kind === "demand_signal";
+  /* An SMS question's flag is on its answer row (26 Oct) — the same words. */
+  const isQuestion =
+    flag.subject?.kind === "demand_signal" || flag.subject?.kind === "answer";
+  /* A flag on a record itself is about its name, not about anything a parent
+     wrote or tapped — the title above is the subject. */
+  const isRecord = flag.subject?.kind === "share";
   const wrote = flag.subject?.wrote ?? [];
   /**
    * What these buttons act on, for their accessible name.
@@ -145,6 +151,16 @@ function FlagCard({
           ]
             .filter(Boolean)
             .join(" · ")}
+          {/* 26 Oct — where the subject is decided: the answer queue for an
+              SMS question, the contributions page for a record or a card. */}
+          {flag.subject?.href && (
+            <>
+              {" · "}
+              <TextLink href={flag.subject.href}>
+                {flag.subject.kind === "answer" ? "Open the answer" : "Open the cards"}
+              </TextLink>
+            </>
+          )}
         </p>
       </div>
 
@@ -165,6 +181,10 @@ function FlagCard({
             </Quote>
           ))}
         </div>
+      ) : isRecord ? (
+        <p className="mt-2 text-[13px] text-muted">
+          About the record&apos;s name — nothing a parent wrote is attached.
+        </p>
       ) : (
         <p className="mt-2 text-[13px] text-muted">
           They wrote nothing — this came from what they tapped

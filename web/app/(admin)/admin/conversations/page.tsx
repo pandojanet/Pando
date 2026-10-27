@@ -377,7 +377,7 @@ function History({ detail }: { detail: ConversationDetail }) {
               {m.direction === "in" ? "They wrote" : "Pando wrote"}
             </Badge>
             <span className="text-[13.5px] font-medium">
-              {messageLabel(m.template, m.category)}
+              {messageLabel(m.template, m.category, m.direction)}
             </span>
             <span className="text-[12.5px] text-muted">{when(m.sent_at)}</span>
             {m.answered_something && (
@@ -412,11 +412,27 @@ function askedAndAnswered(asked: number, answered: number): string {
   return `${asked} asked · ${answered} answered`;
 }
 
-/** What they agreed to, so the history above can be read against it. */
+/**
+ * What they agreed to, so the history above can be read against it — and what
+ * Pando applies, where that differs (27 Oct).
+ *
+ * A parent who only ever texted never chose (`monthly_contact_allowance` null,
+ * mode `fixed`): the send layer treats them as 5, and the page said "They
+ * agreed to be asked up to 5 a month" — an agreement they never made.
+ */
 function agreement(detail: ConversationDetail): string {
-  const limit =
+  const chose = detail.allowance_mode === "as_relevant" || detail.monthly_contact_allowance !== null;
+  const stated =
     detail.allowance_mode === "as_relevant"
       ? "up to 3 questions a week"
       : `up to ${detail.monthly_contact_allowance ?? 5} questions a month`;
-  return `They agreed to be asked ${limit}, with at least 48 hours between any two.`;
+  const first = chose
+    ? `They agreed to be asked ${stated}, with at least 48 hours between any two.`
+    : "No allowance chosen (treated as 5 a month), with at least 48 hours between any two.";
+  if (!detail.allowance_lowered) return first;
+  const applied =
+    detail.effective_allowance === null
+      ? "up to 3 a week"
+      : `up to ${detail.effective_allowance} a month`;
+  return `${first} Pando applies ${applied} for now: they answered fewer than a quarter of the requests in the last 30 days.`;
 }

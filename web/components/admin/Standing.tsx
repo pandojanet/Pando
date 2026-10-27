@@ -190,11 +190,16 @@ function StandingTableRow({ row }: { row: StandingRow }) {
   return (
     <tr>
       <Td>
-        <span className="font-semibold">{row.name ?? "Unnamed"}</span>
+        {/* Unnamed rows are listed since 27 Oct (a parent who only ever texted
+            has no first name), and are read by their number. */}
+        <span className={row.name ? "font-semibold" : "text-muted"}>
+          {row.name ?? "No name given"}
+        </span>
         {row.phone && (
           <span className="ml-2 text-[12.5px] text-muted">{row.phone}</span>
         )}
         {row.is_test && <Badge tone="neutral">Test</Badge>}
+        {row.is_caregiver && <Badge tone="neutral">Caregiver sign-up</Badge>}
       </Td>
       <Td>
         <Badge tone={row.tier === "founding" ? "gold" : "green"}>
@@ -226,8 +231,12 @@ function StandingTableRow({ row }: { row: StandingRow }) {
       </Td>
       <Td className="text-right text-[13px]">
         {/* What the send layer applies, not only what they chose: when the
-            governor lowers it, the stated limit is history (25 Sep). */}
-        {row.governed ? (
+            governor lowers it, the stated limit is history (25 Sep). A current
+            STOP comes first (27 Oct): the send layer refuses every request
+            before any limit is read, so "Up to 5 a month" was untrue. */}
+        {row.opted_out ? (
+          <Badge tone="muted">Opted out — not asked</Badge>
+        ) : row.governed ? (
           <>
             {perMonth(row.effective_allowance ?? 5)}{" "}
             <Badge tone="gold">

@@ -15,8 +15,10 @@ import type {
   BlastPoolResult,
   BlastResponseRow,
   BlastRow,
+  ConsentStatus,
   ConversationDetail,
   ConversationsResult,
+  DuplicateCandidate,
   FreshnessOutcomeRow,
   ImpactResult,
   StandingRow,
@@ -239,14 +241,27 @@ async function overview(db: Db) {
         from checklist
       )
       select
-        (select count(*) from people where not is_test)                            as contributors_total,
+        -- 26 Oct: everybody who opened the Seed Tool, not every number on file.
+        -- A parent who only ever texted is a people row too (onboarding.ts writes
+        -- source sms_inbound, completeness 0), and counting them here made
+        -- "finished the profile" read as a share of people who never saw it.
+        (select count(*) from people
+          where not is_test
+            and not (source = 'sms_inbound' and profile_completeness = 0))         as contributors_total,
         (select count(*) from people where not is_test and profile_completeness > 0) as contributors_completed,
         r.with_two_plus,
-        (select count(*) from submissions where kind = 'activity' and not is_test) as activities,
-        (select count(*) from submissions where kind = 'caregiver' and not is_test) as caregivers,
-        (select count(*) from submissions where kind = 'place' and not is_test)    as places,
-        (select count(*) from submissions where kind = 'tip' and not is_test)      as tips,
-        (select count(*) from submissions where kind::text = 'doctor' and not is_test) as doctors,
+        -- 26 Oct: what came in, counted as contributions (the cards on a record),
+        -- not as Seed Tool submissions — so an SMS capture and an approved
+        -- Network Ask reply count, which a submissions count never saw.
+        (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+          where s.kind::text = 'activity' and not sc.is_test)                      as activities,
+        (select count(*) from caregiver_nominations where not is_test)             as caregivers,
+        (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+          where s.kind::text = 'place' and not sc.is_test)                         as places,
+        (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+          where s.kind::text = 'tip' and not sc.is_test)                           as tips,
+        (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+          where s.kind::text = 'doctor' and not sc.is_test)                        as doctors,
         (select count(distinct person_id) from consents
            where scope = 'follow_up' and status = 'opted_in')                      as follow_up_opt_in,
         (select count(*) from caregiver_nominations
@@ -286,8 +301,12 @@ async function overview(db: Db) {
         (select count(*) from caregiver_nominations where review_hold and not is_test) as review_holds,
         (select count(*) from caregiver_claims
            where status = 'pending' and not is_test)                            as pending_claims,
+        -- 26 Oct: needs_detail too. The contributions page's "To review" tab
+        -- keeps a card held for one detail on purpose (18 Aug: held, not
+        -- rejected), so counting only pending_review made this, the sidebar
+        -- badge and that tab three numbers for one queue (10 against 11).
         (select count(*) from share_contributions
-           where status = 'pending_review' and not is_test)                        as pending_contributions,
+           where status in ('pending_review', 'needs_detail') and not is_test)     as pending_contributions,
         -- NOTE: both of these used to be their own count over people, and the
         -- first of them is now the queue's own rule rather than "everybody who
         -- finished the flow" — so it comes from the same CTE the queue filters
@@ -321,13 +340,24 @@ async function overview(db: Db) {
         (select count(*) from blasts
           where not is_test
             and status in ('draft', 'pending_review', 'active')
-            and (expires_at is null or expires_at > now()))                    as blasts_open,
+            -- An answered Ask stays live past its date: expire_blasts never
+            -- expires one with an approved reply, and the tab agrees (26 Oct).
+            and (expires_at is null or expires_at > now()
+                 or exists (select 1 from blast_recipients br2
+                             where br2.blast_id = blasts.id
+                               and br2.review_status = 'approved')))       as blasts_open,
         -- Estimate 2.2's funnel. Four counts, each a real row rather than an
         -- event: opens come from the invite counter, the rest from what landed.
         (select coalesce(sum(opens), 0) from invites)                              as funnel_opens,
-        (select count(*) from people where not is_test)                            as funnel_arrived,
+        -- 26 Oct: a finished profile, the step's own name — it counted every
+        -- people row, including numbers that only ever texted (completeness 0).
         (select count(*) from people
-          where not is_test and phone_verified_at is not null)                     as funnel_verified,
+          where not is_test and profile_completeness > 0)                          as funnel_arrived,
+        -- The same Seed Tool population as the tile above: a number that only
+        -- texted is verified by texting, and is not a step in this funnel.
+        (select count(*) from people
+          where not is_test and phone_verified_at is not null
+            and not (source = 'sms_inbound' and profile_completeness = 0))         as funnel_verified,
         (select count(*) from founding_checklist
           where qualifying_approved > 0 or caregiver_approved > 0)                 as funnel_delivered
       from reward r
@@ -405,7 +435,8 @@ async function overview(db: Db) {
      *
      *  - **opened** the invite counter (see drizzle/0016 — it counts opens, not
      *    people, and is honest about that);
-     *  - **arrived** a `people` row exists, i.e. they finished the profile;
+     *  - **arrived** a finished profile (`profile_completeness > 0`) — not
+     *    merely a `people` row, which an SMS-only number also has (26 Oct);
      *  - **confirmed a number** the point after which anything is stored at all;
      *  - **shared something we could use** at least one qualifying contribution.
      *
@@ -446,7 +477,17 @@ async function contributors(db: Db) {
              p.phone_verified_at is not null                                     as phone_verified,
              p.profile_depth                                                      as profile_depth,
              coalesce(array_agg(c.birth_year) filter (where c.birth_year is not null), '{}') as birth_years,
-             (select count(*) from submissions s where s.person_id = p.id)        as submissions,
+             -- 27 Oct: what they shared, counted as the detail page counts it —
+             -- their cards (share_contributions) plus their caregiver
+             -- nominations — not Seed Tool submissions, which never saw an SMS
+             -- capture or an approved Network Ask reply.
+             ((select count(*) from share_contributions sc
+                where sc.person_id = p.id and not sc.is_test)
+              + (select count(*) from caregiver_nominations cn
+                  where cn.person_id = p.id and not cn.is_test))                  as submissions,
+             -- A caregiver who signed herself up (2C) is a people row too; she
+             -- is labelled as one, never read as a parent (27 Oct).
+             exists (select 1 from caregiver_claims cl where cl.person_id = p.id) as is_caregiver,
              -- Joined, not sub-selected twice: founding_checklist runs two
              -- correlated counts per person, so asking it for one column and
              -- then the other ran the whole view twice for every row.
@@ -522,6 +563,7 @@ async function contributors(db: Db) {
       monthly_contact_allowance:
         r.monthly_contact_allowance === null ? null : Number(r.monthly_contact_allowance),
       allowance_mode: r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
+      is_caregiver: r.is_caregiver === true,
       is_test: r.is_test,
       created_at: r.created_at,
     };
@@ -609,6 +651,8 @@ async function contributorDetail(db: Db, id: string) {
              and al.resource_id = p.id::text)                           as notes,
         (select to_json(fc) from founding_checklist fc
            where fc.person_id = p.id)                                   as checklist,
+        exists (select 1 from caregiver_claims cl
+                 where cl.person_id = p.id)                             as is_caregiver,
         -- A voided link is excluded rather than deleted: "we thought Sarah
         -- brought her, we were wrong" is still something the trail should hold.
         (select json_build_object('id', r.referrer_id,
@@ -693,9 +737,14 @@ async function contributorDetail(db: Db, id: string) {
     }),
     reward_paid_at: p.reward_paid_at ? String(p.reward_paid_at) : null,
     founding_status: p.founding,
-    follow_up_opt_in:
-      consentRows.find((c) => c.scope === "follow_up")?.status === "opted_in",
+    /* Null when there is no follow_up row at all (27 Oct): "never asked" is not
+       "declined", and the list one click away already said so. */
+    follow_up_opt_in: (() => {
+      const row = consentRows.find((c) => c.scope === "follow_up");
+      return row ? row.status === "opted_in" : null;
+    })(),
     wants_founding: p.wants_founding,
+    is_caregiver: p.is_caregiver === true,
     is_test: p.is_test,
     created_at: p.created_at,
     invite_code: p.invite_code,
@@ -784,6 +833,15 @@ function uuidOrNull(value: unknown): string | null {
   return typeof value === "string" && UUID.test(value) ? value : null;
 }
 
+/** `reason|severity` from the contributions read, split (26 Oct). */
+function splitFlag(value: string | null): { reason: string; severity: string } | null {
+  if (!value) return null;
+  const at = value.lastIndexOf("|");
+  return at < 0
+    ? { reason: value, severity: "note" }
+    : { reason: value.slice(0, at), severity: value.slice(at + 1) };
+}
+
 async function contributions(db: Db, personId: string | null = null) {
   const list = await rows(
     db,
@@ -795,7 +853,24 @@ async function contributions(db: Db, personId: string | null = null) {
              pl.subcategory,
              sub.fields->>'subcategory' as card_subcategory,
              pl.id as share_id, pl.kind, pl.provenance,
-             p.id as contributor_id, p.first_name, p.last_name
+             p.id as contributor_id, p.first_name, p.last_name,
+             /* 26 Oct — an open flag on this card (flags.ts writes the
+                possible-named-person one against the contribution) or on its
+                record, so the card says so where Add to Pando is pressed.
+                The reason only: the words stay on /admin/flags. */
+             (select f.reason || '|' ||
+                     case when f.status = 'escalated' then 'escalation' else f.severity::text end
+                from flags f
+               where f.status in ('open', 'escalated')
+                 and ((f.subject_kind in ('share_contribution', 'place_contribution')
+                       and f.subject_id = pc.id)
+                   or (f.subject_kind = 'share' and f.subject_id = pc.share_id))
+               -- The most serious first (a named person outranks a thin note),
+               -- then the card's own flag over its record's, then the newest.
+               order by case when f.status = 'escalated' or f.severity = 'escalation' then 0
+                             when f.severity = 'review' then 1 else 2 end,
+                        (f.subject_id = pc.id) desc, f.created_at desc
+               limit 1) as open_flag_reason
       from share_contributions pc
       join shares pl on pl.id = pc.share_id
       left join people p on p.id = pc.person_id
@@ -803,8 +878,9 @@ async function contributions(db: Db, personId: string | null = null) {
       where ${personId}::uuid is null or pc.person_id = ${personId}::uuid
       -- Waiting ones first: the sidebar counts every pending row, and a plain
       -- newest-first cut at 500 would drop the oldest of them once enough
-      -- decided cards had been added behind them.
-      order by (pc.status = 'pending_review') desc, pc.created_at desc
+      -- decided cards had been added behind them. needs_detail is in the
+      -- count since 26 Oct, so it is in the head of the list too.
+      order by (pc.status in ('pending_review', 'needs_detail')) desc, pc.created_at desc
       limit 500
     `,
   );
@@ -858,6 +934,10 @@ async function contributions(db: Db, personId: string | null = null) {
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,
     needs_detail_note: (r.needs_detail_note as string | null) ?? null,
+    /* 26 Oct — the Ask this card came from (drizzle/0022), read through the
+       row so a missing column is null rather than an error. */
+    source_blast_id: (r.source_blast_id as string | null | undefined) ?? null,
+    open_flag: splitFlag(r.open_flag_reason as string | null),
     provenance: r.provenance,
     contributor: r.contributor_id
       ? { id: r.contributor_id, name: fullName(r.first_name, r.last_name) }
@@ -880,7 +960,7 @@ async function caregivers(db: Db) {
     sql`
       select r.*, n.needs_horizon, n.needs_change_type, n.recontact_ok,
              n.pay_band, n.pay_benchmark_consent,
-             n.schedule_pattern, n.hours_per_week, n.benefits,
+             n.schedule_pattern, n.hours_per_week, n.benefits, n.hire_again,
              exists (select 1 from caregiver_nominations n2
                       where n2.caregiver_id = r.id
                         and n2.invite_token is not null)        as has_invite_link,
@@ -892,8 +972,15 @@ async function caregivers(db: Db) {
                order by cl.created_at desc
                limit 1)                                         as claim_status
       from admin_caregiver_rows r
-      left join caregiver_nominations n
-        on n.caregiver_id = r.id and n.status = r.nomination_status
+      -- The newest nomination, by id — the one the view's row describes. It
+      -- was joined on status (n.status = r.nomination_status), so two
+      -- nominations in the same status put one caregiver on the page twice
+      -- (27 Oct).
+      left join lateral (
+        select n0.* from caregiver_nominations n0
+         where n0.caregiver_id = r.id
+         order by n0.created_at desc nulls last
+         limit 1) n on true
       order by r.created_at desc
       limit 500
     `,
@@ -915,7 +1002,10 @@ async function caregivers(db: Db) {
     invite_sent_by_parent: r.invite_sent_by_parent,
     has_invite_link: r.has_invite_link === true,
     claim_status: (r.claim_status ?? null) as CaregiverRow["claim_status"],
-    hire_again: null,
+    /* The answer only (yes · hesitant · no), never the reason behind it — that
+       stays a restricted note (invariant 12). It decides whether a hold can be
+       released at all (`hold_when_hesitant`), so the card needs it (27 Oct). */
+    hire_again: (r.hire_again as string | null) ?? null,
     review_hold: r.review_hold ?? false,
     hold_reasons: r.hold_reasons ?? [],
     has_restricted_notes: r.has_restricted_notes ?? false,
@@ -969,11 +1059,40 @@ async function restrictedNote(db: Db, nominationId: string) {
  * an identifier, so this proposes and a human decides.
  */
 async function duplicates(db: Db) {
+  /**
+   * 27 Oct — each member carries what a merge decision rests on: her consent
+   * state, the kind of care, where she works or where the family is, and
+   * whether her own sign-up is linked to the record. It sent `null` for the
+   * type and the place and nothing about consent, so an admin chose which
+   * record to delete blind — and `caregiver.merge` deletes the other one.
+   */
+  const member = (alias: string) => sql.raw(`
+             json_build_object(
+               'id', ${alias}.id, 'first_name', ${alias}.first_name,
+               'last_initial', ${alias}.last_initial,
+               'consent_status', ${alias}.consent_status,
+               'active', ${alias}.active, 'discoverable', ${alias}.discoverable,
+               'introducible', ${alias}.introducible,
+               'type', (select n.care_type from caregiver_nominations n
+                         where n.caregiver_id = ${alias}.id
+                         order by n.created_at desc nulls last limit 1),
+               'neighborhood', (select fam.neighborhood from caregiver_nominations n
+                                 join people fam on fam.id = n.person_id
+                                 where n.caregiver_id = ${alias}.id
+                                 order by n.created_at desc nulls last limit 1),
+               'areas', coalesce((select cp.areas_served from caregiver_profiles cp
+                                   where cp.caregiver_id = ${alias}.id), '{}'),
+               'nominations', (select count(*) from caregiver_nominations n
+                                where n.caregiver_id = ${alias}.id),
+               'claim_linked', exists (select 1 from caregiver_claims cl
+                                        where cl.linked_caregiver_id = ${alias}.id),
+               'self_profile', ${alias}.profile_person_id is not null)`);
   const list = await rows(
     db,
     sql`
-      select a.id as a_id, a.first_name as a_first, a.last_initial as a_initial,
-             b.id as b_id, b.first_name as b_first, b.last_initial as b_initial,
+      select a.id as a_id, b.id as b_id,
+             ${member("a")} as a_member,
+             ${member("b")} as b_member,
              similarity(lower(a.first_name), lower(b.first_name)) as score
       from caregivers a
       join caregivers b
@@ -986,26 +1105,30 @@ async function duplicates(db: Db) {
     `,
   );
 
+  const toMember = (m: unknown): DuplicateCandidate["members"][number] => {
+    const v = (m ?? {}) as Row;
+    return {
+      id: String(v.id),
+      first_name: String(v.first_name ?? ""),
+      last_initial: (v.last_initial as string | null) ?? null,
+      type: (v.type as string | null) ?? null,
+      neighborhood: (v.neighborhood as string | null) ?? null,
+      areas: Array.isArray(v.areas) ? (v.areas as string[]) : [],
+      consent_status: String(v.consent_status ?? "mentioned") as ConsentStatus,
+      active: v.active === true,
+      discoverable: v.discoverable === true,
+      introducible: v.introducible === true,
+      nominations: Number(v.nominations ?? 0),
+      claim_linked: v.claim_linked === true,
+      self_profile: v.self_profile === true,
+    };
+  };
+
   return list.map((r) => ({
     key: `${r.a_id}:${r.b_id}`,
     score: Number(r.score ?? 0),
     reason: ["similar first name", "same last initial"],
-    members: [
-      {
-        id: r.a_id,
-        first_name: r.a_first,
-        last_initial: r.a_initial,
-        type: null,
-        neighborhood: null,
-      },
-      {
-        id: r.b_id,
-        first_name: r.b_first,
-        last_initial: r.b_initial,
-        type: null,
-        neighborhood: null,
-      },
-    ],
+    members: [toMember(r.a_member), toMember(r.b_member)],
   }));
 }
 
@@ -1028,6 +1151,13 @@ async function pendingOptions(db: Db) {
    * not a contribution, and this is where an admin sees whether anyone has also
    * *said* something about it — filed under the same name in the same market.
    */
+  /* ⚠ The row's own category and market only (27 Oct). It matched the words
+     under any question key in any market, so "Lincoln" typed as a school was
+     counted against "Lincoln" parked as a neighborhood. `raw_answers.other` is
+     keyed by question id; the map turns that into the category it was parked
+     under, the way `derivePendingOptions` does. */
+  const { pendingCategoryByQuestion } = await import("@/lib/derive");
+  const categoryOf = JSON.stringify(pendingCategoryByQuestion());
   const mentions = sql`exists (
       select 1
         from jsonb_each(
@@ -1036,7 +1166,9 @@ async function pendingOptions(db: Db) {
              jsonb_array_elements_text(
                case when jsonb_typeof(e.value) = 'array' then e.value else '[]'::jsonb end
              ) v
-       where lower(trim(v)) = lower(trim(po.submitted_value)))`;
+       where pp.market_id = po.market_id
+         and (${categoryOf}::jsonb ->> e.key) = po.category
+         and lower(trim(v)) = lower(trim(po.submitted_value)))`;
   const list = await rows(
     db,
     sql`
@@ -1133,18 +1265,28 @@ async function flagRows(db: Db) {
     db,
     sql`
       select f.*, p.id as person_id, p.first_name, p.last_name,
-             sh.name as share_name,
+             -- 26 Oct: a flag raised on a record itself (subject 'share' — an
+             -- SMS capture or an Ask reply named after a person) has its name
+             -- here too; it read as a blank card until then.
+             coalesce(sh.name, fsh.name) as share_name,
              sc.what_makes_it_great, sc.caveat, sc.tip_text,
              sc.who_for, sc.who_not_for,
-             ds.question_text
+             -- 26 Oct: an SMS question's flag is on its answers row, not a
+             -- demand signal, so its words were never joined. The question
+             -- only: answers.phone is never selected here.
+             coalesce(ds.question_text, ans.question_text) as question_text
       from flags f
       left join people p on p.id = f.person_id
       left join share_contributions sc
         on sc.id = f.subject_id
        and f.subject_kind in ('share_contribution', 'place_contribution')
       left join shares sh on sh.id = sc.share_id
+      left join shares fsh
+        on fsh.id = f.subject_id and f.subject_kind = 'share'
       left join demand_signals ds
         on ds.id = f.subject_id and f.subject_kind = 'demand_signal'
+      left join answers ans
+        on ans.id = f.subject_id and f.subject_kind = 'answer'
       order by
         -- Open ones first, or the 300 below fills with resolved escalations
         -- (which sort first on severity) and cuts off open flags the sidebar
@@ -1190,6 +1332,7 @@ async function flagRows(db: Db) {
             id: r.subject_id as string,
             title: (r.share_name as string | null) ?? "",
             wrote,
+            href: flagSubjectHref(r.subject_kind as string),
           }
         : null,
       contributor: r.person_id
@@ -1200,6 +1343,19 @@ async function flagRows(db: Db) {
       created_at: r.created_at,
     };
   });
+}
+
+/**
+ * Where a flag's subject is worked (26 Oct). An answer is decided on the answer
+ * queue; a record or a card on the contributions page, which has no per-record
+ * address yet, so the link opens every card. Null where no page acts on it.
+ */
+function flagSubjectHref(kind: string): string | null {
+  if (kind === "answer") return "/admin/answers";
+  if (kind === "demand_signal") return "/admin/demand?filter=open";
+  if (kind === "share" || kind === "share_contribution" || kind === "place_contribution")
+    return "/admin/activities?filter=all";
+  return null;
 }
 
 async function demandRows(db: Db) {
@@ -1407,16 +1563,23 @@ async function foundingQueue(db: Db) {
              coalesce(array_agg(c.birth_year) filter (where c.birth_year is not null), '{}') as birth_years,
              (select ps.option_value from person_schools ps
                 where ps.person_id = p.id limit 1)                                as school,
-             (select count(*) from submissions s
-                where s.person_id = p.id and s.kind = 'activity')                 as activities,
-             (select count(*) from submissions s
-                where s.person_id = p.id and s.kind = 'caregiver')                as caregivers,
-             (select count(*) from submissions s
-                where s.person_id = p.id and s.kind = 'place')                    as places,
-             (select count(*) from submissions s
-                where s.person_id = p.id and s.kind = 'tip')                      as tips,
-             (select count(*) from submissions s
-                where s.person_id = p.id and s.kind::text = 'doctor')             as doctors
+             -- 27 Oct: their cards and nominations, as the contributor page
+             -- counts them — not Seed Tool submissions, which missed every SMS
+             -- capture and approved Network Ask reply.
+             (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+                where sc.person_id = p.id and not sc.is_test
+                  and s.kind::text = 'activity')                                  as activities,
+             (select count(*) from caregiver_nominations cn
+                where cn.person_id = p.id and not cn.is_test)                     as caregivers,
+             (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+                where sc.person_id = p.id and not sc.is_test
+                  and s.kind::text = 'place')                                     as places,
+             (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+                where sc.person_id = p.id and not sc.is_test
+                  and s.kind::text = 'tip')                                       as tips,
+             (select count(*) from share_contributions sc join shares s on s.id = sc.share_id
+                where sc.person_id = p.id and not sc.is_test
+                  and s.kind::text = 'doctor')                                    as doctors
       from founding_checklist fc
       join people p on p.id = fc.person_id
       left join children c on c.person_id = p.id
@@ -1557,7 +1720,13 @@ async function consentRows(db: Db) {
       select c.id, c.person_id, c.scope, c.status, c.source,
              c.text_version, c.captured_at,
              p.first_name, p.last_name, p.phone, p.is_test,
-             o.opted_out_at
+             -- Both halves of the sequence (27 Oct): setOptOut keeps
+             -- opted_out_at on START and stamps opted_in_at, so reading only
+             -- the first showed a number that texted START as still opted out.
+             -- "Current" is the send layer's rule (outreach.ts).
+             o.opted_out_at, o.opted_in_at,
+             (o.phone is not null
+              and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)) as opted_out
       from consents c
       left join people p on p.id = c.person_id
       left join sms_opt_outs o on o.phone = p.phone
@@ -1577,6 +1746,8 @@ async function consentRows(db: Db) {
     text_version: r.text_version,
     captured_at: r.captured_at,
     opted_out_at: r.opted_out_at,
+    opted_in_at: (r.opted_in_at as string | null) ?? null,
+    opted_out: r.opted_out === true,
     is_test: r.is_test === true,
   }));
 }
@@ -1623,7 +1794,8 @@ function fullName(first: unknown, last: unknown): string | null {
  *
  * ## The one thing it deliberately does not do
  *
- * Send. There is no write action for this resource. The estimate's own framing is
+ * Send. Its only writes are the weights and the context step (`matching.weight`,
+ * `matching.relevance_step`) — numbers, never a message. The estimate's own framing is
  * "validated **before** any live outreach", and a page that could both score and
  * message would make the pilot's first blast one mis-click away.
  */
@@ -1809,12 +1981,19 @@ async function answerQueue(db: Db): Promise<AnswerRow[]> {
              sum(case when a.status = 'pending_review' then 1 else 0 end)
                over (partition by a.phone, a.question_text)
                - case when a.status = 'pending_review' then 1 else 0 end
-               as pending_twins
+               as pending_twins,
+             /* 26 Oct — a Deep Dive report is an answers row a deep_dives row
+                points at; its labels are [] by construction (deep-dive.ts). */
+             exists (select 1 from deep_dives dd where dd.answer_id = a.id)
+               as deep_dive
         from answers a
         left join people p on p.id = a.person_id
        where not a.is_test
        order by
-         case when a.status = 'pending_review' then 0 else 1 end,
+         -- 26 Oct: approved-but-unsent is a parent still waiting too (the
+         -- sidebar counts it), so it is in the head of the list, not cut at
+         -- a hundred behind sent rows.
+         case a.status when 'pending_review' then 0 when 'approved' then 1 else 2 end,
          a.created_at desc
        limit 100
     `,
@@ -1837,6 +2016,7 @@ async function answerQueue(db: Db): Promise<AnswerRow[]> {
        decision already taken would be a fact about somebody else's row. */
     duplicates:
       String(r.status ?? "") === "pending_review" ? Number(r.pending_twins ?? 0) : 0,
+    deep_dive: r.deep_dive === true,
     created_at: String(r.created_at ?? ""),
     sent_at: (r.sent_at as string | null) ?? null,
   }));
@@ -2058,12 +2238,38 @@ async function conversationDetail(db: Db, personId: string) {
                 where o.phone = p.phone
                   and o.opted_out_at is not null
                   and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)
-             ) as opted_out
+             ) as opted_out,
+             -- 27 Oct: the governor's two counts, the list row's arithmetic
+             -- (outreach_30 / answered_30 above), so the page can say the
+             -- allowance Pando applies when it is not the one they chose.
+             (select count(*)::int from message_log m
+               where m.person_id = p.id and m.direction = 'out'
+                 and m.category = 'outreach' and m.retry_of is null
+                 and m.template is distinct from 'thanks'
+                 and m.sent_at > now() - interval '30 days') as asked_30,
+             (select count(distinct m.responded_to)::int from message_log m
+               where m.person_id = p.id and m.direction = 'in'
+                 and m.responded_to is not null
+                 and m.sent_at > now() - interval '30 days') as answered_30
         from people p
        where p.id = ${personId}::uuid
        limit 1`,
   );
   if (!person) return null;
+  const stated = {
+    allowance_mode: person.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
+    monthly_contact_allowance:
+      person.monthly_contact_allowance === null ? null : Number(person.monthly_contact_allowance),
+  } as const;
+  /* The send layer's own rule (`effectiveAllowance`), as the standing view reads it. */
+  const applied = effectiveAllowance(stated, {
+    sent_last_30_days: Number(person.asked_30 ?? 0),
+    sent_last_7_days: 0,
+    responded_last_30_days: Number(person.answered_30 ?? 0),
+    last_outreach_at: null,
+    pings_this_month: 0,
+    blast_today: false,
+  });
 
   const messages = await rows(
     db,
@@ -2085,6 +2291,8 @@ async function conversationDetail(db: Db, personId: string) {
         ? null
         : Number(person.monthly_contact_allowance),
     allowance_mode: person.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
+    effective_allowance: applied.allowance,
+    allowance_lowered: applied.lowered,
     opted_out: person.opted_out === true,
     messages: messages.map((m: Row) => ({
       id: String(m.id),
@@ -2217,13 +2425,32 @@ async function contributorStanding(db: Db) {
         (select count(distinct m.responded_to) from message_log m
           where m.person_id = p.id and m.direction = 'in'
             and m.responded_to is not null
-            and m.sent_at > now() - interval '30 days')::int             as answered_30
+            and m.sent_at > now() - interval '30 days')::int             as answered_30,
+        -- What the page shows (27 Oct): replies to the requests counted in
+        -- asked_30 — a reply this month to last month's request counted above
+        -- and not in asked_30, so the rate could read 2 of 1 · 200%. The
+        -- governor's own number stays above, for effectiveAllowance.
+        (select count(distinct q.id) from message_log m
+           join message_log q on q.id = m.responded_to
+          where m.person_id = p.id and m.direction = 'in'
+            and q.person_id = p.id and q.direction = 'out'
+            and q.category = 'outreach'
+            and q.retry_of is null
+            and q.template is distinct from 'thanks'
+            and q.sent_at > now() - interval '30 days')::int             as answered_in_window,
+        -- A current STOP (the send layer's rule, outreach.ts): nobody asks them.
+        exists (select 1 from sms_opt_outs o
+                 where o.phone = p.phone
+                   and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)) as opted_out,
+        exists (select 1 from caregiver_claims cl where cl.person_id = p.id) as is_caregiver
       from people p
       left join impact_events e on e.person_id = p.id and not e.is_test
-      where p.first_name is not null
+      -- Everybody, named or not (27 Oct): a parent who only ever texted has no
+      -- first name and can still be asked, so the filter hid exactly the
+      -- people whose standing nobody had looked at. Shown by number instead.
       group by p.id, p.first_name, p.last_name, p.phone, p.is_test, p.founding,
                p.monthly_contact_allowance, p.allowance_mode
-      order by p.first_name
+      order by p.first_name nulls last, p.created_at desc
       limit 300`,
   );
 
@@ -2248,8 +2475,12 @@ async function contributorStanding(db: Db) {
     const tier = tierFor({ founding: r.founding === "founding", equivalents });
     const next = nextTier(tier);
     const asked = Number(r.asked_30 ?? 0);
+    /* The governor's count, fed to effectiveAllowance below so "Lowered" is
+       what the send layer decides; the page shows `shown`, which only counts
+       replies to the requests in `asked` and so can never pass 100% (27 Oct). */
     const answered = Number(r.answered_30 ?? 0);
-    const rate = asked >= RESPONSE_MIN_SAMPLE ? answered / asked : null;
+    const shown = Math.min(asked, Number(r.answered_in_window ?? 0));
+    const rate = asked >= RESPONSE_MIN_SAMPLE ? shown / asked : null;
     /* The send layer's own rule rather than a restatement of it (25 Sep): the
        rate alone called a contributor already at five "Lowered" when the
        governor has nothing left to take, and the page showed the limit they
@@ -2282,7 +2513,7 @@ async function contributorStanding(db: Db) {
       freshness_confirmed: confirmed,
       answers_used: Number(r.answers_used ?? 0),
       asked_30: asked,
-      answered_30: answered,
+      answered_30: shown,
       response_rate: rate,
       monthly_contact_allowance:
         r.monthly_contact_allowance === null
@@ -2291,6 +2522,8 @@ async function contributorStanding(db: Db) {
       allowance_mode: allowanceMode,
       governed: applied.lowered,
       effective_allowance: applied.allowance,
+      opted_out: r.opted_out === true,
+      is_caregiver: r.is_caregiver === true,
       is_test: r.is_test === true,
     };
   }) satisfies StandingRow[];
@@ -2331,12 +2564,22 @@ async function introductionRows(db: Db) {
              a.question_text,
              op.id as op_id, op.first_name as op_first, op.last_name as op_last, op.phone as op_phone,
              coalesce((
-               select json_agg(c) from (
+               select json_agg(c order by c.recency_rank, c.vouched_at desc, c.person_id) from (
                  select p.id::text as person_id, p.first_name, p.last_name, p.phone,
                         exists (select 1 from sms_opt_outs o
                                  where o.phone = p.phone
                                    and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at)) as opted_out,
-                        (array_agg(sc.last_there))[1] as last_there
+                        (array_agg(sc.last_there order by case sc.last_there
+                           when 'current' then 0 when 'recent' then 1 when 'unsure' then 2
+                           when 'over_year' then 3 else 4 end))[1] as last_there,
+                        -- 27 Oct: the order is the default pick (the page takes
+                        -- the first), so it is decided here rather than left to
+                        -- the planner: whoever goes there now, then went
+                        -- recently, then the latest to vouch for it.
+                        min(case sc.last_there
+                              when 'current' then 0 when 'recent' then 1 when 'unsure' then 2
+                              when 'over_year' then 3 else 4 end) as recency_rank,
+                        max(sc.created_at) as vouched_at
                    from share_contributions sc
                    join people p on p.id = sc.person_id
                   where sc.share_id = i.share_id and sc.status = 'approved' and sc.firsthand and sc.follow_up_ok
@@ -2614,7 +2857,50 @@ async function blastPool(
       from blasts b where b.id = ${blastId}::uuid
   `)) as unknown as Array<Record<string, unknown>>;
   const blast = rows[0];
-  if (!blast?.asker_id) return null;
+  if (!blast) return null;
+
+  /**
+   * ⚠ An Ask that has gone out shows **who was asked**, not a fresh pool
+   * (26 Oct). `selectPool` counts the Ask's own texts against the people it
+   * sent them to, so re-running it after the send read "0 of 5 wanted", "short
+   * pool", "nobody is eligible" and listed the five it asked as "Asked in the
+   * last 48 hours". `blast_recipients` is the truth once there is one.
+   */
+  const recipients = (await db.execute(sql`
+    select r.person_id::text as person_id, r.match_score, r.sent_at,
+           r.responded_at, r.passed_at, r.review_status,
+           p.first_name, p.last_name, p.phone
+      from blast_recipients r
+      left join people p on p.id = r.person_id
+     where r.blast_id = ${blastId}::uuid
+     order by r.match_score desc nulls last, r.sent_at asc nulls last
+  `)) as unknown as Array<Record<string, unknown>>;
+  if (recipients.some((r) => r.sent_at !== null && r.sent_at !== undefined)) {
+    return {
+      blast_id: String(blast.id),
+      wanted: Number(blast.pool_target ?? 0),
+      chosen: [],
+      held: [],
+      cold: false,
+      human_review: { required: false, reason: null },
+      asked: recipients.map((r) => ({
+        person_id: String(r.person_id),
+        name: fullName(r.first_name, r.last_name),
+        phone: adminPhone((r.phone as string | null) ?? null),
+        score: r.match_score === null || r.match_score === undefined ? null : Number(r.match_score),
+        sent_at: r.sent_at ? String(r.sent_at) : null,
+        state: r.responded_at
+          ? "replied"
+          : r.passed_at
+            ? "passed"
+            : r.sent_at
+              ? "waiting"
+              : "not_sent",
+        review_status: String(r.review_status ?? "pending_review"),
+      })),
+    };
+  }
+  if (!blast.asker_id) return null;
 
   const { selectPool } = await import("@/lib/server/repo/blast");
   const { nearbyAreas } = await import("@/lib/server/repo/areas");
@@ -2674,6 +2960,7 @@ async function blastPool(
       required: pool.human_review.required && !blast.released_at,
       reason: blast.released_at ? null : (pool.human_review.reason ?? null),
     },
+    asked: null,
   };
 }
 

@@ -156,10 +156,18 @@ function Diff({
           <span className="text-muted">
             {AUDIT_FIELD[key] ?? sentence(key)}:{" "}
           </span>
-          <span className="line-through decoration-alert/40">
-            {format(before?.[key])}
-          </span>
-          <span className="mx-1 text-muted">→</span>
+          {/* A "from → to" only where the row recorded a "from". Most actions
+              never capture `before` (admin-write's `audit()` says why), and
+              printing "— → 4" on every row claimed each value used to be empty
+              (26 Oct). */}
+          {before && Object.hasOwn(before, key) ? (
+            <>
+              <span className="line-through decoration-alert/40">
+                {format(before[key])}
+              </span>
+              <span className="mx-1 text-muted">→</span>
+            </>
+          ) : null}
           <span className="font-medium">{format(after?.[key])}</span>
         </li>
       ))}

@@ -29,7 +29,7 @@ import { RewardPaid } from "@/components/admin/RewardPaid";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributorRow } from "@/lib/admin/types";
-import { allowanceLabel } from "@/lib/admin/labels";
+import { allowanceLabel, foundingStanding } from "@/lib/admin/labels";
 
 /**
  * Everyone who came through, in two views of the same people: what they shared,
@@ -249,12 +249,16 @@ export default function ContributorsPage() {
                 <Th>
                   Founding
                 </Th>
+                {/* The consent's own name (27 Oct): the column reads the
+                    follow_up scope, and the profile calls it "Follow-ups". */}
                 <Th>
-                  Open to questions
+                  Follow-ups
                 </Th>
                 {/* What they chose (21 Oct). A governor-lowered limit is on
-                    the "What they have earned" tab, which reads the send layer. */}
-                <Th>Asks a month</Th>
+                    the "What they have earned" tab, which reads the send layer.
+                    "May be asked" (27 Oct), the earned tab's own heading, and
+                    the profile's: "Asks a month" sat above "Up to 3 a week". */}
+                <Th>May be asked</Th>
                 <Th>Joined</Th>
               </tr>
             </thead>
@@ -271,6 +275,12 @@ export default function ContributorsPage() {
                     {row.is_test && (
                       <span className="mt-1 inline-block">
                         <Badge tone="gold">test</Badge>
+                      </span>
+                    )}
+                    {/* 27 Oct — her own 2C sign-up, not a parent. */}
+                    {row.is_caregiver && (
+                      <span className="mt-1 inline-block">
+                        <Badge tone="neutral">Caregiver sign-up</Badge>
                       </span>
                     )}
                   </Td>
@@ -361,7 +371,16 @@ export default function ContributorsPage() {
                          is the 7 Sep rule stated once more: a fact true of a
                          whole run of rows belongs above them, and what stays on
                          the row is what differs between rows. */
-                      <Badge tone="neutral">Waiting on you</Badge>
+                      /* 27 Oct — "Waiting on you" only where it is true: the
+                         row is on the Founding queue. It was on every
+                         undecided row, ready or not. */
+                      foundingStanding(row) === "queued" ? (
+                        <Badge tone="neutral">Waiting on you</Badge>
+                      ) : foundingStanding(row) === "asked" ? (
+                        <Badge tone="muted">Asked, not ready</Badge>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )
                     )}
                   </Td>
                   <Td>

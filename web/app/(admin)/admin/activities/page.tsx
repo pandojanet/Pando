@@ -31,7 +31,7 @@ import { qualityOf } from "@/lib/admin/quality";
 import { adminAction, recheckProvider, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import type { ContributionRow } from "@/lib/admin/types";
-import { REVIEW_STATUS } from "@/lib/admin/labels";
+import { flagTitle, REVIEW_STATUS } from "@/lib/admin/labels";
 import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
 
 /**
@@ -155,7 +155,11 @@ export default function ContributionsPage() {
       low: real.filter((r) => r.confidence !== null && r.confidence < 0.6).length,
       follow_up: real.filter((r) => qualityOf(r).status === "needs_follow_up").length,
       too_thin: real.filter((r) => qualityOf(r).status === "too_thin").length,
-      golden: real.filter((r) => r.share.answer_ready).length,
+      /* 26 Oct — **records**, the unit the mark is set on and the unit the
+         Overview counts (`shares.answer_ready`). It counted cards on those
+         records, so one class three parents shared read as 3 here and 1 there. */
+      golden: new Set(real.filter((r) => r.share.answer_ready).map((r) => r.share.id)).size,
+      goldenPool: real.filter((r) => r.status === "approved").length,
       all: real.length,
     }),
     [real],
@@ -214,6 +218,16 @@ export default function ContributionsPage() {
       </div>
 
       <Card>
+        {/* 26 Oct — the tab's number is records, the list is cards: say both,
+            once, so the 5 on the pill and the 23 cards below are not read as a
+            disagreement. */}
+        {filter === "golden" && rows && (
+          <p className="border-b border-bark/70 px-4 py-2.5 text-[13px] text-muted">
+            {counts.golden} {counts.golden === 1 ? "record is" : "records are"} marked
+            ready to answer with. Below: every added card ({counts.goldenPool}), marked
+            ones first — the mark is on the record, so each of its cards shows it.
+          </p>
+        )}
         {loading && all.length === 0 ? (
           <Loading />
         ) : error && all.length === 0 ? (
@@ -262,8 +276,33 @@ export default function ContributionsPage() {
                         <Badge tone="green">
                           They went themselves
                         </Badge>
+                      ) : row.source_blast_id ? (
+                        /* 26 Oct — an Ask reply is written firsthand = false
+                           because a text never asks the R1 question, not
+                           because a friend told them (admin-write,
+                           blast_response.approve). Said for what it is. */
+                        <Badge tone="gold">From a Network Ask reply</Badge>
                       ) : (
                         <Badge tone="gold">Heard from a friend</Badge>
+                      )}
+                      {row.firsthand && row.source_blast_id && (
+                        <Badge tone="neutral">From a Network Ask reply</Badge>
+                      )}
+                      {/* 26 Oct — an open flag on the card or its record (a
+                          named person, above all), where Add to Pando is
+                          pressed. The reason only; the words are on Flags. */}
+                      {row.open_flag && (
+                        <Badge
+                          tone={
+                            row.open_flag.severity === "escalation"
+                              ? "red"
+                              : row.open_flag.severity === "review"
+                                ? "gold"
+                                : "neutral"
+                          }
+                        >
+                          Flag: {flagTitle(row.open_flag.reason)}
+                        </Badge>
                       )}
                       <ProvenanceBadge provenance={row.provenance} />
                       {/* The client's "is it a valid doctor" (8 Oct), where

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ADMIN_PASSWORD_MIN_LENGTH } from "@/lib/admin/types";
 import { cookies } from "next/headers";
 import {
   ADMIN_COOKIE,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/server/admin-auth";
 import { withDb } from "@/lib/server/db";
 import { changeOwnPassword } from "@/lib/server/repo/admin-users";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 
 /**
  * POST /api/admin/password — a signed-in admin changes their own password.
@@ -44,9 +46,11 @@ import { changeOwnPassword } from "@/lib/server/repo/admin-users";
  *     change would look exactly like being logged out at random.
  */
 
-const MIN_LENGTH = 12;
+const MIN_LENGTH = ADMIN_PASSWORD_MIN_LENGTH;
 
 export async function POST(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "password");
+  if (refused) return refused;
   const set = await adminCredentials();
   const session = readToken((await cookies()).get(ADMIN_COOKIE)?.value, set);
   if (!session) {
@@ -127,7 +131,8 @@ export async function POST(request: Request) {
 
   /* The cache still holds the old hash, and the session key with it. */
   invalidateAdminCredentials();
-  console.info("[admin:password] changed", { user: session.user });
+  /* Who is in the audit row (admin.password); the log line names nobody. */
+  console.info("[admin:password] changed");
 
   const token = issueToken(session.user, await adminCredentials(true));
   const response = NextResponse.json({ ok: true });

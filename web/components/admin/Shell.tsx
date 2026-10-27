@@ -190,7 +190,7 @@ const NAV: NavSection[] = [
      * and 14.5 are still their own pages, because the rows overlap and the
      * reading does not (3 Sep).
      */
-    group: "Network Checks",
+    group: "Network Asks",
     items: [
       {
         /**
@@ -202,7 +202,7 @@ const NAV: NavSection[] = [
          */
         href: "/admin/blasts",
         icon: Megaphone,
-        label: "Network Checks",
+        label: "Network Asks",
         count: (o) => o.blasts?.open ?? 0,
       },
       {

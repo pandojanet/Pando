@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { sql } from "drizzle-orm";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import * as sample from "@/lib/admin/sample";
 import type { AdminResource } from "@/lib/admin/types";
 import { getDb } from "@/lib/server/db";
@@ -176,6 +177,9 @@ function sampleFor(resource: AdminResource, params: unknown): unknown {
 }
 
 export async function POST(request: Request) {
+  /* A read, but a POST — and two of its reads write an audit row. */
+  const refused = refuseForeignAdminWrite(request, "query");
+  if (refused) return refused;
   const session = await readAdminSession(
     (await cookies()).get(ADMIN_COOKIE)?.value,
   );
@@ -190,7 +194,8 @@ export async function POST(request: Request) {
   } | null;
 
   const resource = body?.resource as AdminResource | undefined;
-  if (!resource || !(resource in EMPTY)) {
+  /* Own keys only: `"toString" in EMPTY` is true, and would reach the reader. */
+  if (typeof resource !== "string" || !Object.hasOwn(EMPTY, resource)) {
     return NextResponse.json({ error: "Unknown resource" }, { status: 400 });
   }
 
@@ -228,11 +233,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ configured: true, rows: data ?? EMPTY[resource] });
   } catch (err) {
-    // No arguments logged: these queries carry names and phone numbers.
+    /* The class name only (27 Oct). A `DrizzleQueryError`'s message is the
+       rendered SQL **and every bound value** — names and phone numbers — the
+       leak `driverError` in lib/server/db.ts was written to stop. */
     console.error(
       "[admin:query] failed",
       resource,
-      err instanceof Error ? err.message : "unknown error",
+      err instanceof Error ? (err.constructor?.name ?? "Error") : "unknown",
     );
     return NextResponse.json(
       { error: "Could not load that right now" },

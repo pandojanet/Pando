@@ -302,11 +302,16 @@ function fingerprint(user: string, set: CredentialSet): string {
     .slice(0, 16);
 }
 
+/**
+ * Constant-time string equality that does not leak the length either (27 Oct).
+ * The earlier version returned early on a length mismatch, which for the
+ * deprecated shared password told a caller how long it was. Both sides are
+ * hashed to 32 bytes first, so the comparison is the same work every time.
+ */
 function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
+  const ah = createHash("sha256").update(a, "utf8").digest();
+  const bh = createHash("sha256").update(b, "utf8").digest();
+  return timingSafeEqual(ah, bh);
 }
 
 export const ADMIN_COOKIE = COOKIE;

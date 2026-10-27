@@ -27,6 +27,7 @@ import {
   AFFILIATION_KIND,
   allowanceLabel,
   CARD_KIND,
+  foundingStanding,
   RELATIONSHIP,
   REVIEW_STATUS,
   sentence,
@@ -228,9 +229,15 @@ export default function ContributorDetailPage({
                     Decide again
                   </Button>
                 </>
-              ) : (
-                <Badge tone="gold">Founding pending</Badge>
-              )}
+              ) : foundingStanding(c) === "queued" ? (
+                /* 27 Oct — "Founding pending" was on every undecided profile,
+                   including people who never asked and are nowhere near the
+                   queue. Now: on the queue, asked and not ready, or nothing. */
+                <Badge tone="gold">Founding — waiting on you</Badge>
+              ) : foundingStanding(c) === "asked" ? (
+                <Badge tone="muted">Asked for Founding, not ready</Badge>
+              ) : null}
+              {c.is_caregiver && <Badge tone="neutral">Caregiver sign-up</Badge>}
               {/**
                 * ⚠⚠ **Whether the $10 is in play, on the page where somebody
                 * decides about one parent.** It was computed and sent from
@@ -329,7 +336,9 @@ export default function ContributorDetailPage({
                 />
                 {/* What they agreed to (21 Oct); a governor-lowered limit is on
                     the contributors list's "What they have earned" tab. */}
-                <Pair label="Asks a month" value={allowanceLabel(c)} />
+                {/* "May be asked" (27 Oct): the value can be "Up to 3 a week",
+                    and the earned tab already uses these words. */}
+                <Pair label="May be asked" value={allowanceLabel(c)} />
                 <Pair label="Joined" value={when(c.created_at)} />
               </dl>
             </Card>
@@ -568,7 +577,9 @@ export default function ContributorDetailPage({
                         {everyoneLoading ? "Loading contributors…" : "Pick a parent"}
                       </option>
                       {(everyone ?? [])
-                        .filter((p) => p.id !== id && !p.is_test)
+                        /* "Pick a parent": a caregiver's own sign-up is not
+                           one, and cannot have invited anybody (27 Oct). */
+                        .filter((p) => p.id !== id && !p.is_test && !p.is_caregiver)
                         .map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name ?? "Unknown"}

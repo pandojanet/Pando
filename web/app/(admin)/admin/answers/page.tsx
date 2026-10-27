@@ -20,6 +20,8 @@ import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { holdReasonLabel, sentence } from "@/lib/admin/labels";
 import type { AnswerRow } from "@/lib/admin/types";
+import { SMS_BUDGET } from "@/lib/answer";
+import { planSegments } from "@/lib/sms-segments";
 
 /**
  * Estimate 14.2 — the answer queue, and the last link in the chain.
@@ -124,13 +126,18 @@ function AnswerCard({
         What Pando would send
       </p>
       {editing ? (
-        <textarea
-          className={`${inputClass} mt-1 min-h-[7rem] w-full`}
-          value={draft}
-          onChange={(e) =>
-            setDrafts((d) => ({ ...d, [row.id]: e.target.value.slice(0, 2000) }))
-          }
-        />
+        <>
+          <textarea
+            id={`rewrite-${row.id}`}
+            aria-describedby={`rewrite-count-${row.id}`}
+            className={`${inputClass} mt-1 min-h-[7rem] w-full`}
+            value={draft}
+            onChange={(e) =>
+              setDrafts((d) => ({ ...d, [row.id]: e.target.value.slice(0, 2000) }))
+            }
+          />
+          <RewriteCount id={`rewrite-count-${row.id}`} text={draft ?? ""} />
+        </>
       ) : (
         <p className="mt-1 whitespace-pre-line rounded-xl border border-bark bg-card px-3 py-2 text-[15px] leading-relaxed text-ink">
           {row.answer_text}
@@ -148,7 +155,12 @@ function AnswerCard({
         <span className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
           Claims
         </span>
-        {row.public_only ? (
+        {/* 26 Oct: a Deep Dive report carries no labels by construction
+            (deep-dive.ts writes `labels: []`), so "nothing" was a false claim
+            about it. Said for what it is. */}
+        {row.deep_dive ? (
+          <Badge tone="neutral">Deep Dive report</Badge>
+        ) : row.public_only ? (
           <Badge tone="neutral">
             General information only
           </Badge>
@@ -171,7 +183,7 @@ function AnswerCard({
         </Badge>
         {row.next_step === "offer_blast" && (
           <Badge tone="gold">
-            Offers a Network Check
+            Offers a Network Ask
           </Badge>
         )}
       </p>
@@ -254,16 +266,32 @@ function AnswerCard({
         )}
 
         {row.status === "approved" && (
-          <Button
-            tone="primary"
-            subject={`"${row.question.slice(0, 44).trimEnd()}"`}
-            disabled={busy}
-            onClick={() =>
-              void run("Sent.", async () => adminAction({ action: "answer.send", id: row.id }))
-            }
-          >
-            Send it
-          </Button>
+          <>
+            <Button
+              tone="primary"
+              subject={`"${row.question.slice(0, 44).trimEnd()}"`}
+              disabled={busy}
+              onClick={() =>
+                void run("Sent.", async () => adminAction({ action: "answer.send", id: row.id }))
+              }
+            >
+              Send it
+            </Button>
+            {/* 26 Oct: an approval is not a send, so it can still be taken
+                back — answer.reject accepts `approved` since then. */}
+            <Button
+              tone="danger"
+              subject={`"${row.question.slice(0, 44).trimEnd()}"`}
+              disabled={busy}
+              onClick={() =>
+                void run("Set aside — nothing sent.", async () =>
+                  adminAction({ action: "answer.reject", id: row.id, reason: "not_good_enough" }),
+                )
+              }
+            >
+              Don&apos;t send
+            </Button>
+          </>
         )}
 
         {row.status === "sent" && (
@@ -272,6 +300,32 @@ function AnswerCard({
         {row.status === "rejected" && <Badge tone="neutral">Not sent</Badge>}
       </div>
     </li>
+  );
+}
+
+/**
+ * The rewrite's size, live (26 Oct): characters against `SMS_BUDGET` — the
+ * ceiling the composer itself writes to — and the segments a carrier will bill,
+ * from the same `planSegments` the send layer uses. A curly quote or an em dash
+ * turns the whole message Unicode and shrinks every segment to 67, so the
+ * characters that did it are named.
+ */
+function RewriteCount({ id, text }: { id: string; text: string }) {
+  const plan = planSegments(text);
+  const over = text.length > SMS_BUDGET;
+  return (
+    <p
+      id={id}
+      aria-live="polite"
+      className={`mt-1 text-[12.5px] tabular-nums ${over ? "text-alert" : "text-muted"}`}
+    >
+      {text.length} / {SMS_BUDGET} characters · {plan.segments}{" "}
+      {plan.segments === 1 ? "text" : "texts"}
+      {plan.encoding === "ucs2" && plan.offenders.length > 0
+        ? ` · Unicode because of ${plan.offenders.slice(0, 5).join(" ")}`
+        : ""}
+      {over ? " · longer than an answer is allowed to be" : ""}
+    </p>
   );
 }
 

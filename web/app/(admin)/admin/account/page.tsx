@@ -9,6 +9,7 @@ import {
   PageHead,
   inputClass,
 } from "@/components/admin/ui";
+import { ADMIN_PASSWORD_MIN_LENGTH } from "@/lib/admin/types";
 
 /**
  * Your own account — which, in this admin, means exactly one thing: changing your
@@ -26,7 +27,7 @@ import {
  * sign-in screen does.
  */
 
-const MIN_LENGTH = 12;
+const MIN_LENGTH = ADMIN_PASSWORD_MIN_LENGTH;
 
 export default function AccountPage() {
   const [current, setCurrent] = useState("");
@@ -124,7 +125,7 @@ export default function AccountPage() {
             </Field>
             <Field
               label="New password"
-              hint={`At least  characters.`}
+              hint={`At least ${MIN_LENGTH} characters.`}
             >
               <input
                 className={inputClass}

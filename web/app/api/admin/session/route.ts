@@ -9,6 +9,7 @@ import {
 } from "@/lib/admin/auth";
 import { adminCredentials, verifyAdminSignIn } from "@/lib/server/admin-auth";
 import { clientAddress } from "@/lib/rate-limits";
+import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 
 /** POST /api/admin/session — sign in. DELETE — sign out. (Estimate 2.1.) */
 
@@ -37,6 +38,8 @@ function clientKey(request: Request): string {
 }
 
 export async function POST(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "session");
+  if (refused) return refused;
   /**
    * Read once, uncached, and reused below — so somebody added to `admin_users` a
    * moment ago can sign in a moment later, and so an unreadable store answers 503
@@ -87,7 +90,8 @@ export async function POST(request: Request) {
   /* Issued against the set that just verified them, so the session fingerprint
      matches the credential it was proved with. */
   const token = issueToken(user, attempt.set);
-  console.info("[admin:login] signed in", { user });
+  /* No name: a log line is not an audit trail (invariant 7, 27 Oct). */
+  console.info("[admin:login] signed in");
 
   const response = NextResponse.json({ ok: true, user });
   response.cookies.set(ADMIN_COOKIE, token.value, {
@@ -100,7 +104,14 @@ export async function POST(request: Request) {
   return response;
 }
 
-export async function DELETE() {
+/**
+ * Sign-out sends no body, so it is held to the origin half of the guard only.
+ * Guarded at all because a cross-site page could otherwise sign an admin out
+ * mid-review — a nuisance, not a breach, and one line to close (27 Oct).
+ */
+export async function DELETE(request: Request) {
+  const refused = refuseForeignAdminWrite(request, "session", { body: false });
+  if (refused) return refused;
   const response = NextResponse.json({ ok: true });
   response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
   return response;

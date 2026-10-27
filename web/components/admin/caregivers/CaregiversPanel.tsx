@@ -34,6 +34,7 @@ import {
   adminAction,
   readRestrictedNote,
   useAdminRows,
+  type RestrictedNoteRead,
 } from "@/lib/admin/client";
 import type { CaregiverRow, ConsentStatus, DuplicateCandidate } from "@/lib/admin/types";
 import {
@@ -101,6 +102,46 @@ const METHODS = [
 /** No artefact of their own — the note is the evidence. */
 const NEEDS_NOTE = ["call_logged", "in_person"];
 
+/**
+ * The other consent moves, in plain words (27 Oct). They read "Mark declined"
+ * and "Mark revoked" — the enum, not what happened — and the confirmation said
+ * "Marked declined".
+ */
+const CONSENT_MOVE: Partial<Record<ConsentStatus, { action: string; done: string }>> = {
+  declined: { action: "She said no", done: "Recorded that she said no." },
+  revoked: { action: "She withdrew her yes", done: "Recorded that she withdrew her yes." },
+};
+
+/**
+ * The two kinds of restricted note, each named for what the family was asked
+ * (27 Oct) — they were joined by a blank line, so an admin could not tell the
+ * reason behind a hesitant "would you hire her again" from the private note.
+ */
+const RESTRICTED_KIND: Record<RestrictedNoteRead["notes"][number]["kind"], string> = {
+  hesitation_reason: "Why the family hesitated to hire her again",
+  private_note: "The family’s private note",
+};
+
+/**
+ * `hold_when_hesitant` keeps a nomination held while the family's hire-again
+ * is hesitant or no, and `nomination.release_hold` refuses it (`hold_locked`).
+ */
+const holdLocked = (row: CaregiverRow): boolean =>
+  row.review_hold && (row.hire_again === "hesitant" || row.hire_again === "no");
+
+/**
+ * A duplicate record merging would delete but must not: it carries her own
+ * decision. The same rule `caregiver.merge` refuses with (`merge_protected`).
+ */
+const mergeProtected = (m: DuplicateCandidate["members"][number]): string | null =>
+  m.claim_linked || m.self_profile
+    ? "her own sign-up is linked to it"
+    : m.consent_status === "consented" || m.active || m.discoverable || m.introducible
+      ? "she consented on this record"
+      : m.consent_status === "declined" || m.consent_status === "revoked"
+        ? "her no is recorded on this record"
+        : null;
+
 export function CaregiversPanel() {
   const caregivers = useAdminRows<CaregiverRow[]>("caregivers");
   const duplicates = useAdminRows<DuplicateCandidate[]>("duplicates");
@@ -116,7 +157,7 @@ export function CaregiversPanel() {
   const [releaseNote, setReleaseNote] = useState("");
   /** A restricted note is fetched one at a time, on request, and never listed. */
   const [noteFor, setNoteFor] = useState<string | null>(null);
-  const [noteBody, setNoteBody] = useState<string | null>(null);
+  const [noteBody, setNoteBody] = useState<RestrictedNoteRead | null>(null);
   /**
    * Why the failure needs its own state: `noteBody` is `null` while loading, so
    * a rejected read left the modal reading **"Loading…" forever** — on the one
@@ -284,8 +325,16 @@ export function CaregiversPanel() {
                   row.nominations > 0 &&
                   row.nomination_status !== "approved" &&
                   !row.review_hold;
-                const canRejectNomination =
+                /* A hesitant or "no" hire-again is a hold the database keeps
+                   (27 Oct): releasing it is refused, so it is not offered —
+                   setting the nomination aside is what applies, and it becomes
+                   the button in the release button's place (and leaves the
+                   menu, so it is not offered twice). */
+                const locked = holdLocked(row);
+                const rejectable =
                   row.nominations > 0 && row.nomination_status !== "rejected";
+                const rejectAsButton = locked && rejectable;
+                const canRejectNomination = rejectable && !rejectAsButton;
                 const menu = [
                   ...(canRejectNomination ? ["reject_nomination"] : []),
                   ...NEXT_STATES[row.consent_status].filter((to) => to !== "consented"),
@@ -402,7 +451,7 @@ export function CaregiversPanel() {
                           </Button>
                         )}
 
-                        {row.review_hold && (
+                        {row.review_hold && !locked && (
                           <Button
                             tone="danger"
                             disabled={busy === row.id}
@@ -410,6 +459,28 @@ export function CaregiversPanel() {
                             onClick={() => setReleasing(row.id)}
                           >
                             Release the hold…
+                          </Button>
+                        )}
+
+                        {rejectAsButton && (
+                          <Button
+                            tone="danger"
+                            disabled={busy === row.id}
+                            subject={row.first_name}
+                            onClick={() =>
+                              void run(
+                                row.id,
+                                "Nomination set aside — it is no longer used.",
+                                async () =>
+                                  adminAction({
+                                    action: "nomination.reject",
+                                    id: row.id,
+                                    reason: "set_aside",
+                                  }),
+                              )
+                            }
+                          >
+                            Don’t use this nomination
                           </Button>
                         )}
 
@@ -459,7 +530,7 @@ export function CaregiversPanel() {
                                 disabled={busy === row.id}
                                 tone={to === "declined" ? "danger" : "plain"}
                                 onSelect={() =>
-                                  void run(row.id, `Marked ${to}`, async () =>
+                                  void run(row.id, CONSENT_MOVE[to]?.done ?? sentence(to), async () =>
                                     adminAction({
                                       action: "caregiver.consent",
                                       id: row.id,
@@ -471,7 +542,7 @@ export function CaregiversPanel() {
                                   )
                                 }
                               >
-                                Mark {to}
+                                {CONSENT_MOVE[to]?.action ?? sentence(to)}
                               </MenuItem>
                             ))}
 
@@ -595,6 +666,20 @@ export function CaregiversPanel() {
                           <Fact label="Her consent">
                             <Badge tone={consent.tone}>{consent.label}</Badge>
                           </Fact>
+                          {/* The ladder's last rung (27 Oct): stored and never
+                              shown, so "Families can see her" was all the card
+                              said about a caregiver families could also be
+                              introduced to. Only once she has consented — before
+                              that it cannot be true. */}
+                          {row.consent_status === "consented" && (
+                            <Fact label="Introductions">
+                              {row.introducible ? (
+                                <Badge tone="green">Can be introduced</Badge>
+                              ) : (
+                                <Badge tone="muted">Not offered</Badge>
+                              )}
+                            </Fact>
+                          )}
                         </FactGrid>
                       );
                     })()}
@@ -831,20 +916,64 @@ export function CaregiversPanel() {
                     </span>
                   </div>
                   <ul className="mt-2 space-y-1.5">
-                    {group.members.map((m) => (
+                    {group.members.map((m) => {
+                      /* 27 Oct — what the merge decision rests on, on both
+                         records, and which way round it can go: merging deletes
+                         every other record, and one carrying her own decision
+                         is refused (`merge_protected`). */
+                      const consent = CAREGIVER_CONSENT[m.consent_status] ?? {
+                        label: sentence(m.consent_status),
+                        tone: "neutral" as const,
+                      };
+                      const blockers = group.members
+                        .filter((other) => other.id !== m.id)
+                        .map((other) => mergeProtected(other))
+                        .filter((why): why is string => why !== null);
+                      const areas = m.areas.map((a) => slugLabel(a)).join(", ");
+                      return (
                       <li
                         key={m.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-bark px-3 py-2 text-[13.5px]"
                       >
-                        <span>
-                          {m.first_name}
-                          {m.last_initial ? ` ${m.last_initial}.` : ""} ·{" "}
-                          {m.type ? optionLabel(CAREGIVER_TYPES, m.type) : "—"} ·{" "}
-                          {m.neighborhood ? slugLabel(m.neighborhood) : "—"}
+                        <span className="min-w-0">
+                          <span className="font-medium">
+                            {m.first_name}
+                            {m.last_initial ? ` ${m.last_initial}.` : ""}
+                          </span>{" "}
+                          <Badge tone={consent.tone}>{consent.label}</Badge>
+                          {m.discoverable && (
+                            <>
+                              {" "}
+                              <Badge tone="green">Families can see her</Badge>
+                            </>
+                          )}
+                          {(m.claim_linked || m.self_profile) && (
+                            <>
+                              {" "}
+                              <Badge tone="neutral">Her own sign-up</Badge>
+                            </>
+                          )}
+                          <span className="mt-0.5 block text-[12.5px] text-muted">
+                            {[
+                              m.type ? optionLabel(CAREGIVER_TYPES, m.type) : "Kind of care not given",
+                              areas
+                                ? `works in ${areas}`
+                                : m.neighborhood
+                                  ? `family in ${slugLabel(m.neighborhood)}`
+                                  : "no area given",
+                              m.nominations === 1 ? "1 nomination" : `${m.nominations} nominations`,
+                            ].join(" · ")}
+                          </span>
+                          {blockers.length > 0 && (
+                            <span className="mt-0.5 block text-[12.5px] text-muted">
+                              Can’t keep this one: the other record would be
+                              deleted, and {blockers[0]}.
+                            </span>
+                          )}
                         </span>
                         <Button
                           tone="secondary"
-                          disabled={busy === m.id}
+                          disabled={busy === m.id || blockers.length > 0}
                           onClick={() =>
                             void run(m.id, "Merged", async () =>
                               adminAction({
@@ -860,7 +989,8 @@ export function CaregiversPanel() {
                           Keep this one, merge the rest
                         </Button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                   {/* Kept, unlike the other footnotes cut in this pass: this one
                       is about an action that cannot be undone, and it is short. */}
@@ -914,10 +1044,24 @@ export function CaregiversPanel() {
           <ErrorNote>{noteError}</ErrorNote>
         ) : noteBody === null ? (
           <Loading inline />
+        ) : noteBody.notes.length === 0 ? (
+          <p className="text-[14px] text-muted">{noteBody.message}</p>
         ) : (
-          <p className="whitespace-pre-line text-[14px] leading-relaxed">
-            {noteBody}
-          </p>
+          /* Each note under what the family was asked (27 Oct), so the
+             reason behind a hesitant hire-again is never read as the private
+             note, or the other way round. Rendered here and nowhere else. */
+          <div className="space-y-4">
+            {noteBody.notes.map((n, i) => (
+              <section key={`${n.kind}-${i}`}>
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                  {RESTRICTED_KIND[n.kind]}
+                </h3>
+                <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed">
+                  {n.body}
+                </p>
+              </section>
+            ))}
+          </div>
         )}
       </Dialog>
     </>

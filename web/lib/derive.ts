@@ -316,6 +316,24 @@ export function derivePendingOptions(session: DerivationInput): PendingOptionRow
 }
 
 /**
+ * Question id → the `pending_options.category` its "other" answers are parked
+ * under, keyed exactly as `derivePendingOptions` keys them (27 Oct). The admin
+ * options page counts the parents behind a parked value from
+ * `raw_answers.other`, which is keyed by question id — without this it counted
+ * the same words typed into any question, in any market.
+ */
+export function pendingCategoryByQuestion(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const screen of ALL_SCREENS) {
+    for (const question of screen.questions) {
+      out[question.id] =
+        question.source.type === "market" ? question.source.category : question.id;
+    }
+  }
+  return out;
+}
+
+/**
  * The mirror of `derivePendingOptions`: given the `category` it stored, what does
  * that value become in the graph once an admin promotes it?
  *

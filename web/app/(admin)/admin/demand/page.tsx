@@ -17,6 +17,7 @@ import {
   PageHead,
   ResultNote,
   SampleBanner,
+  TextLink,
   Toolbar,
   slugLabel,
   when,
@@ -182,7 +183,19 @@ export default function DemandPage() {
 
   return (
     <>
-      <PageHead title="What parents asked for" />
+      {/* 27 Oct: this page reads `demand_signals`, which only the Seed Tool's
+          "what are you looking for" writes. A question texted to Pando is an
+          `answers` row and lives on /admin/answers — said here, so an empty
+          queue is not read as nobody asking. */}
+      <PageHead
+        title="What parents asked for"
+        intro={
+          <>
+            Questions parents left in the Seed Tool. Questions texted to Pando are
+            on <TextLink href="/admin/answers">Answers to send</TextLink>.
+          </>
+        }
+      />
 
       {/* Banners above the filter — see `/admin/activities` for why: a wrapped
           filter row pushes a confirmation off a phone screen. */}

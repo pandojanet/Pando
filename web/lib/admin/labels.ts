@@ -205,6 +205,30 @@ export function allowanceLabel(a: {
 }
 
 /**
+ * Where somebody stands on Founding, in the words the contributors list and
+ * profile both use (27 Oct). They said **"Waiting on you"** / **"Founding
+ * pending"** for every undecided row — almost the whole directory — when the
+ * Founding queue lists only those who meet every requirement
+ * (`meetsFoundingRequirements`, mirrored by `rewardStatus`: requirements met
+ * and not yet decided reads `in_review`, or `missed_deadline` once late).
+ *
+ *  - `founding` → confirmed · `request_invite` → an admin said no;
+ *  - undecided **and** meeting the requirements → `queued` (it is on the queue);
+ *  - `pending_founding` otherwise → `asked`: they finished the flow and asked,
+ *    and are not ready yet;
+ *  - `none` otherwise → `none`: not in the Founding flow at all.
+ */
+export function foundingStanding(a: {
+  founding_status: string;
+  reward_status: string;
+}): "confirmed" | "declined" | "queued" | "asked" | "none" {
+  if (a.founding_status === "founding") return "confirmed";
+  if (a.founding_status === "request_invite") return "declined";
+  if (a.reward_status === "in_review" || a.reward_status === "missed_deadline") return "queued";
+  return a.founding_status === "pending_founding" ? "asked" : "none";
+}
+
+/**
  * Where a caregiver's **self-registration** has got to — `caregiver_claims.status`.
  *
  * Deliberately not `CONSENT_STATE`, which is the caregiver *ladder* (mentioned →
@@ -398,6 +422,8 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   contributor_note: "a note on a contributor",
   person_relationship: "a connection between two parents",
   introduction: "an introduction",
+  /* `profile.delete` (repo/parent-delete.ts) names the table, not the row. */
+  people: "a parent's profile",
 };
 
 /**
@@ -471,6 +497,10 @@ export const AUDIT_ACTION: Record<string, string> = {
   "intro.contacted": "Contacted a parent about an introduction",
   "intro.connected": "Recorded an introduction as connected",
   "intro.declined": "Recorded that the other parent said no",
+  /* Written outside admin-write (26 Oct): repo/admin-users.ts and
+     repo/parent-delete.ts. The second's actor is 'parent' — the parent did it. */
+  "admin.password": "Changed their own admin password",
+  "profile.delete": "Deleted their profile",
   /**
    * Not a write. `/api/admin/query` logs this for the two reads that are events
    * in themselves: opening a restricted note, and exporting the consent file.
@@ -497,6 +527,9 @@ export const AUDIT_FIELD: Record<string, string> = {
   needs_detail_note: "Question asked",
   requires_human_review: "Needs a person",
   weak_starter_password: "Starter password still in place",
+  /* Matching writes (26 Oct). `value` is only ever the context step's number. */
+  affinity_type: "Kind of connection",
+  value: "Context step",
 };
 
 /**
@@ -748,6 +781,9 @@ export const POOL_HELD_REASON: Record<string, string> = {
   ping_this_month: "Already had a freshness ping this month",
   ping_same_day_as_blast: "Already asked something today",
   opted_out: "Asked Pando to stop texting",
+  /* selectPool's own word (repo/blast.ts) for a match its eligibility read
+     dropped: texted STOP, a test profile, or a removed number (27 Oct). */
+  opted_out_or_test: "Texted STOP, or a test profile",
   no_phone: "No number on record",
   counters_unavailable: "Their limits could not be read — refused rather than guessed",
   unknown_person: "No profile to check limits against",
@@ -780,9 +816,15 @@ export const MESSAGE_LABEL: Record<string, string> = {
   answer_high_stakes: "Pointed to professional help",
   answer_allegation: "Told a person will read it",
   blast_answers: "Answers from other parents",
+  /* 27 Oct — every template the send paths use has words (test:admin-wiring). */
+  answer_deep_offer: "Answer, with a deep-dive offer",
+  answer_intro_offer: "Answer, with an introduction offer",
+  opener: "Answered a hello",
   // Onboarding and conversation.
   clarify_child_age: "Asked the child's age",
   clarify_neighborhood: "Asked where they live",
+  clarify_first_name: "Asked their first name",
+  clarify_participation: "Asked how often they may be asked",
   clarification_saved: "Thanked for an answer",
   ask_detail: "Asked what they meant",
   unclear_handover: "Handed to a person",
@@ -794,6 +836,20 @@ export const MESSAGE_LABEL: Record<string, string> = {
   blast_request: "Asked to help another parent",
   blast_reply_saved: "Thanked for an Ask reply",
   ask_started: "Told the network is being asked",
+  ask_not_started: "Told the network could not be asked",
+  // Deep dives.
+  deep_dive_started: "Deep dive: started",
+  deep_dive_topic: "Deep dive: asked what to look into",
+  deep_dive_busy: "Deep dive: one is already being built",
+  deep_dive_in_flight: "Deep dive: already under way",
+  deep_dive_cancelled: "Deep dive: cancelled",
+  deep_dive_unsupported: "Deep dive: not for this subject",
+  deep_dive_report: "Deep dive report",
+  deep_dive_failed: "Deep dive: could not be finished",
+  // Introductions.
+  intro_requested: "Told their introduction request was taken",
+  intro_already: "Told the introduction is already asked for",
+  intro_nothing: "Told there is nobody to introduce yet",
   // Freshness and thanks.
   freshness_ping: "Asked if a record still holds",
   freshness_reply_saved: "Thanked for a freshness reply",
@@ -814,10 +870,21 @@ export const MESSAGE_LABEL: Record<string, string> = {
   caregiver_invite: "Caregiver invite",
   caregiver_delete_none: "Nothing to delete",
   verification: "Verification code",
+  // Deleting a profile by text.
+  profile_deleted: "Profile deleted",
+  profile_delete_none: "Nothing to delete",
+  profile_delete_failed: "Deleting the profile failed",
 };
 
-export function messageLabel(template: string | null, category?: string | null): string {
+export function messageLabel(
+  template: string | null,
+  category?: string | null,
+  direction?: "in" | "out",
+): string {
   if (template) return MESSAGE_LABEL[template] ?? sentence(template);
+  /* An ordinary inbound text has no template, only the category it was filed
+     under for the governor — which read "They wrote · Outreach" (27 Oct). */
+  if (direction === "in") return "A text";
   return category ? sentence(category) : "Message";
 }
 

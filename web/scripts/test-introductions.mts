@@ -113,6 +113,21 @@ const repoNow = fs.readFileSync(new URL("../lib/server/repo/introductions.ts", i
 ok("only parents who said yes to being asked are candidates (follow_up_ok)", (repoNow.match(/sc\.follow_up_ok/g) ?? []).length >= 2);
 ok("and never an opted-out one", (repoNow.match(/sms_opt_outs/g) ?? []).length >= 2);
 ok("INTRO <name> asks only about that record", repoNow.includes("not ${strict}"));
+/* 27 Oct: "INTRO Little Maestros" after the offer named it inserted a second row
+   and left the offer `offered` — "0 of 1 offers taken" for a parent who took it. */
+const explicitFn = repoNow.slice(repoNow.indexOf("export async function requestIntroExplicitly"));
+const promoteAt = explicitFn.indexOf("update introductions set status = 'requested'");
+const insertAt = explicitFn.indexOf("insert into introductions");
+ok(
+  "a named INTRO takes the open offer for that record before it would insert one",
+  promoteAt > 0 && insertAt > promoteAt &&
+    /status = 'offered'[\s\S]{0,200}status = 'offered'\s*returning id/.test(explicitFn.slice(promoteAt, insertAt)) &&
+    /share_id = \$\{String\(found\[0\]\.share_id\)\}::uuid\s*and status = 'offered'/.test(explicitFn.slice(promoteAt, insertAt)),
+);
+ok(
+  "and the promoted offer is a fresh request, not 'already asked'",
+  /if \(promoted\[0\]\?\.id\) return \{ id: String\(promoted\[0\]\.id\), already: false \};/.test(explicitFn),
+);
 const stepNow = fs.readFileSync(new URL("../lib/server/introductions.ts", import.meta.url), "utf8");
 ok("'intro classes for toddlers' that names no record is answered as a question (review, 21 Oct)", stepNow.includes("if (!made && target && /\\b(class|classes|lessons?"));
 ok("a named search escapes LIKE and needs four letters", repoNow.includes(".replace(/[\\\\%_]/g") && repoNow.includes("length < 4) return null;"));
@@ -124,9 +139,16 @@ const contacted = writeNow.slice(writeNow.indexOf('case "intro.contacted": {'), 
 ok("'I contacted this parent' refuses somebody who texted STOP", contacted.includes("from sms_opt_outs o"));
 const readNow = fs.readFileSync(new URL("../lib/server/repo/admin-read.ts", import.meta.url), "utf8");
 const introRead = readNow.slice(readNow.indexOf("from introductions i"), readNow.length).length > 0
-  ? readNow.slice(readNow.lastIndexOf("select json_agg(c) from ("), readNow.lastIndexOf(") c), '[]'::json) as candidates"))
+  ? readNow.slice(readNow.lastIndexOf("select json_agg(c"), readNow.lastIndexOf(") c), '[]'::json) as candidates"))
   : "";
 ok("and the admin's candidate list leaves them out", /and not exists \(select 1 from sms_opt_outs o2/.test(introRead), introRead.slice(0, 80));
+/* 27 Oct: the page's default pick is the first candidate, which was planner order. */
+ok(
+  "the candidates are ordered on purpose: goes there now, then recently, then the latest to vouch",
+  introRead.startsWith("select json_agg(c order by c.recency_rank, c.vouched_at desc, c.person_id)") &&
+    /when 'current' then 0 when 'recent' then 1/.test(introRead),
+  introRead.slice(0, 80),
+);
 const inboundNow = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
 ok("a 'no' is checked against a newer deep-dive or intro offer too, not only a 'yes'", inboundNow.includes('const [deepOffer, introAt] = helpedReply !== null || pingReply !== "unclear"'));
 

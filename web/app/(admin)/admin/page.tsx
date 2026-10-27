@@ -108,10 +108,43 @@ export default function AdminOverviewPage() {
           href: "/admin/demand?filter=open",
           urgent: false,
         },
+        /* 26 Oct — the answer queue was missing from this list while the
+           sidebar counted it, and it is a parent waiting: approved-but-unsent
+           is inside the number, as the sidebar's comment says. */
         {
-          label: "recommendations to look at",
+          label: "answers to read or send — a parent is waiting",
+          n: o.answers.waiting,
+          href: "/admin/answers",
+          urgent: true,
+        },
+        {
+          label: "replies to a Network Ask to read",
+          n: o.answers.replies,
+          href: "/admin/responses",
+          urgent: false,
+        },
+        {
+          label: "Network Asks still open",
+          n: o.blasts.open,
+          href: "/admin/blasts",
+          urgent: false,
+        },
+        {
+          /* The same count as the "To review" tab and the sidebar badge since
+             26 Oct: waiting for a first decision, or held for one detail. */
+          label: "recommendations to review, or held for a detail",
           n: o.quality.pending_contributions,
           href: "/admin/activities?filter=pending",
+          urgent: false,
+        },
+        /* 26 Oct — the sidebar's "Withdrawn recommendations" badge. A subset
+           of the flags above, overlapping on purpose exactly as the sidebar's
+           two badges do: "I've read it" there leaves the record answering, and
+           this is the keep-or-retire decision. */
+        {
+          label: "recommendations a parent took back — keep or retire",
+          n: o.quality.withdrawn_records,
+          href: "/admin/freshness",
           urgent: false,
         },
         {
@@ -328,10 +361,14 @@ export default function AdminOverviewPage() {
               <Count label="Tips" n={o.submissions.tips} />
             </dl>
             <p className="border-t border-bark/70 px-4 py-2.5 text-[13px] text-muted">
+              {/* 26 Oct — records, the unit the mark is set on and the number
+                  on the "Ready to answer with" tab. "Of them" read it as a
+                  share of the contributions counted above, which it is not. */}
               <TextLink href="/admin/activities?filter=golden">
-                {o.answer_ready}
+                {o.answer_ready} {o.answer_ready === 1 ? "record" : "records"}
               </TextLink>{" "}
-              of them are good enough to answer a question with on their own.
+              {o.answer_ready === 1 ? "is" : "are"} marked ready to answer a
+              question with on their own.
             </p>
           </Card>
 
@@ -399,8 +436,11 @@ export default function AdminOverviewPage() {
             <Card title="Where people stop">
               <ul className="divide-y divide-bark/50">
                 {o.drop_off.map((row, i) => {
-                  const first = o.drop_off[0]?.reached || 1;
-                  const pct = Math.round((row.reached / first) * 100);
+                  /* 26 Oct — scaled to the largest step, not the first: with
+                     no invite opens counted (0) every later bar divided by 1
+                     and drew past 100%. */
+                  const top = Math.max(1, ...o.drop_off.map((d) => d.reached));
+                  const pct = Math.round((row.reached / top) * 100);
                   const lost = i > 0 ? o.drop_off[i - 1].reached - row.reached : 0;
                   return (
                     <li key={row.step} className="px-4 py-2.5">
