@@ -153,6 +153,7 @@ import { sendSms } from "@/lib/server/sms";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
+import { withTrace, traceIdentify } from "@/lib/server/trace";
 
 /**
  * What Pando does with an inbound message, whatever carried it.
@@ -192,7 +193,7 @@ import { isSlackRelayEnabled } from "@/lib/server/slack";
  * person: care, sensitive, a named person); everything held is read on
  * /admin/answers (14.2) before it goes. Every message gets exactly one reply.
  */
-export async function handleInboundMessage(input: {
+async function handleInboundMessageUntraced(input: {
   /** E.164, already parsed by whichever transport received it. */
   from: string;
   body: string;
@@ -416,6 +417,7 @@ export async function handleInboundMessage(input: {
    * comes back with their id, which is what the next two steps need anyway.
    */
   const person = await ensureInboundPerson({ phone: from });
+  traceIdentify(person?.person_id);
 
   await recordInbound({ phone: from, category: "outreach", keyword: null });
 
@@ -2514,4 +2516,9 @@ async function answerQuestion(input: {
     sent: result.sent,
     reason: result.sent ? null : result.reason,
   });
+}
+
+/** handleInboundMessage, as one trace (27 Oct, lib/server/trace.ts). */
+export async function handleInboundMessage(input: Parameters<typeof handleInboundMessageUntraced>[0]): ReturnType<typeof handleInboundMessageUntraced> {
+  return withTrace("sms_inbound", () => handleInboundMessageUntraced(input));
 }

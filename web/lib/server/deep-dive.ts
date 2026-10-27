@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch, span } from "@/lib/server/trace";
 import { withdrawalNote, type AnswerCandidate } from "@/lib/answer";
 import {
   acceptsDeepDive,
@@ -428,7 +429,7 @@ async function draft(input: {
 }): Promise<DeepDraft | null> {
   if (!deepDiveConfigured()) return null;
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, fetch: tracedFetch("deep_dive_draft") });
     const response = await anthropic.beta.messages.create(
       {
         model: MODEL,
@@ -841,7 +842,7 @@ export interface DeliverInput {
  * the row. Never throws: any failure closes the row as failed and returns
  * false, and the caller answers the ordinary way.
  */
-export async function deliverDeepDive(input: DeliverInput): Promise<boolean> {
+async function deliverDeepDiveUntraced(input: DeliverInput): Promise<boolean> {
   try {
     return await deliver(input);
   } catch (e) {
@@ -966,4 +967,9 @@ async function deliver(input: DeliverInput): Promise<boolean> {
     offer_ask: offerAsk,
   });
   return sent > 0;
+}
+
+/** deliverDeepDive, as one step of the trace (27 Oct, lib/server/trace.ts). */
+export async function deliverDeepDive(input: Parameters<typeof deliverDeepDiveUntraced>[0]): ReturnType<typeof deliverDeepDiveUntraced> {
+  return span("deep_dive", () => deliverDeepDiveUntraced(input), (r) => ({ delivered: r }));
 }

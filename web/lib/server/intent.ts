@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch, span } from "@/lib/server/trace";
 import {
   INTENTS,
   applyThreshold,
@@ -158,7 +159,7 @@ export function isIntentConfigured(): boolean {
  * capped hard: three turns is enough to tell a reply from a new question, and
  * more would start to be a transcript sent to a model for no added accuracy.
  */
-export async function classifyIntent(input: {
+async function classifyIntentUntraced(input: {
   text: string;
   context: IntentContext;
   recent?: string[];
@@ -205,7 +206,7 @@ export async function classifyIntent(input: {
   }
 
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, fetch: tracedFetch("intent") });
     const response = await anthropic.messages.create({
       model: MODEL,
       thinking: { type: "disabled" },
@@ -313,4 +314,9 @@ function safeParse(
   } catch {
     return null;
   }
+}
+
+/** classifyIntent, as one step of the trace (27 Oct, lib/server/trace.ts). */
+export async function classifyIntent(input: Parameters<typeof classifyIntentUntraced>[0]): ReturnType<typeof classifyIntentUntraced> {
+  return span("classify", () => classifyIntentUntraced(input), (r) => ({ intent: r.intent, source: r.source, sensitive: r.sensitive, confidence: r.confidence }));
 }

@@ -11,6 +11,7 @@ import {
   type FreshnessPolicy,
   type TrustLabels,
 } from "@/lib/trust-labels";
+import { span } from "@/lib/server/trace";
 
 /**
  * M5.5 — candidate retrieval.
@@ -289,7 +290,7 @@ export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
  */
 
 /** What may answer this question, with its labels. */
-export async function retrieveFor(question: QuestionContext): Promise<Retrieved> {
+async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved> {
   const marketId = question.marketId ?? "pasadena";
   const limit = Math.min(25, Math.max(1, question.limit ?? 10));
   /**
@@ -755,4 +756,9 @@ export async function retrieveFor(question: QuestionContext): Promise<Retrieved>
       caregivers.some((c) => !c.trust.public_only),
     configured: true,
   };
+}
+
+/** retrieveFor, as one step of the trace (27 Oct, lib/server/trace.ts). */
+export async function retrieveFor(input: Parameters<typeof retrieveForUntraced>[0]): ReturnType<typeof retrieveForUntraced> {
+  return span("retrieve", () => retrieveForUntraced(input), (r) => ({ configured: r.configured, shares: r.shares.length, caregivers: r.caregivers.length }));
 }

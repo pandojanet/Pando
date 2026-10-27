@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch } from "@/lib/server/trace";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { isWebSearchConfigured } from "@/lib/server/web-search";
@@ -238,7 +239,7 @@ export async function checkProvider(input: {
   /* Nobody in NPPES: the web step, which needs the search key. Without it the
      answer is unknown, not "not found" — nothing was searched. */
   if (!isWebSearchConfigured()) return null;
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, fetch: tracedFetch("provider_check") });
   try {
     const web = await searchStep(client, { name, town: input.town });
     if (web.kind === "match") return { status: "web", url: web.hit.url };

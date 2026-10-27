@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch, span } from "@/lib/server/trace";
 import { looksLikePerson } from "@/lib/named-person";
 import { PLACES } from "@/lib/home-places";
 import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameName, type DeepFinding, type PublicFinding } from "@/lib/public-info";
@@ -386,7 +387,7 @@ const MARKET_LOCATION: Record<
  * and never filters, the same rule the starter lists follow, and the exclusions
  * are enforced after the fact rather than trusted to the prompt. See `brief`.
  */
-export async function searchPublicInformation(input: SearchInput): Promise<PublicSearchResult> {
+async function searchPublicInformationUntraced(input: SearchInput): Promise<PublicSearchResult> {
   const first = await searchOnce(input);
   /**
    * **Once more, when this half is all the answer has** (24 Sep).
@@ -595,7 +596,7 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
   const context = brief({ ...input, region: location?.region ?? null });
 
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, fetch: tracedFetch("web_search") });
     const userContent = `A parent asked:\n${question}\n\nWhat Pando knows:\n${context
       .map((line) => `- ${line}`)
       .join("\n")}`;
@@ -692,4 +693,9 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
     });
     return { findings: [], configured: true };
   }
+}
+
+/** searchPublicInformation, as one step of the trace (27 Oct, lib/server/trace.ts). */
+export async function searchPublicInformation(input: Parameters<typeof searchPublicInformationUntraced>[0]): ReturnType<typeof searchPublicInformationUntraced> {
+  return span("web_search", () => searchPublicInformationUntraced(input), (r) => ({ configured: r.configured, findings: r.findings.length, deep: Array.isArray((r as { deep?: unknown[] }).deep) }));
 }

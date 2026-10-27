@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch } from "@/lib/server/trace";
 
 /**
  * Estimate 1.8 — the extraction pass.
@@ -180,7 +181,7 @@ export function isExtractionConfigured(): boolean {
 let client: Anthropic | null = null;
 function getClient(): Anthropic | null {
   if (!isExtractionConfigured()) return null;
-  if (!client) client = new Anthropic();
+  if (!client) client = new Anthropic({ fetch: tracedFetch("extract") });
   return client;
 }
 

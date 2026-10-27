@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch, span } from "@/lib/server/trace";
 import { SHARE_LINE, type AnswerCandidate } from "@/lib/answer";
 import { acceptVoice, readVoiceInput, type VoiceInput } from "@/lib/answer-voice";
 import { TRUST_LABEL } from "@/lib/trust-labels";
@@ -173,7 +174,7 @@ export function voiceInputFor(input: {
  * `budget` is the whole message's ceiling (`SMS_BUDGET`): the rewrite may use
  * whatever the draft's own trailing lines leave.
  */
-export async function voiceAnswer(input: {
+async function voiceAnswerUntraced(input: {
   question: string;
   text: string;
   candidates: AnswerCandidate[];
@@ -209,7 +210,7 @@ export async function voiceAnswer(input: {
   });
   if (check.parents.length === 0) return null;
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, fetch: tracedFetch("answer_voice") });
     const response = await anthropic.messages.create(
       {
         model: MODEL,
@@ -257,4 +258,9 @@ export async function voiceAnswer(input: {
     console.warn("[answer-voice] failed", { status: err.status ?? null, type: err.name ?? null });
     return null;
   }
+}
+
+/** voiceAnswer, as one step of the trace (27 Oct, lib/server/trace.ts). */
+export async function voiceAnswer(input: Parameters<typeof voiceAnswerUntraced>[0]): ReturnType<typeof voiceAnswerUntraced> {
+  return span("answer_voice", () => voiceAnswerUntraced(input), (r) => ({ accepted: r !== null }));
 }

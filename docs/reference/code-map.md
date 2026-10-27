@@ -153,6 +153,12 @@
                        never wears a parent label. Pure.
 `web/lib/server/repo/retrieval.ts` — M5.5. What could answer a question, with
                        invariant 1's four conditions in the WHERE clause.
+`web/lib/server/trace.ts` — **traces to PostHog** from the server (27 Oct): `withTrace` (one per
+                       inbound text or job), `span` (a step), `tracedFetch(purpose)` (every
+                       Anthropic call as `$ai_generation`: model, tokens, cost, latency),
+                       `traceEvent`, and the house log lines forwarded as `pando_log`.
+                       `safeProps` is invariant 7's second net. Reuse it for any new step
+                       or model client: `new Anthropic({ …, fetch: tracedFetch("…") })`.
 `web/lib/server/inbound.ts` — what Pando does with an inbound message, whatever
                        carried it. Extracted from `/api/sms/inbound` when the
                        Slack relay gave it a second door; the transports keep

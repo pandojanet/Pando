@@ -1,6 +1,7 @@
 import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
+import { tracedFetch } from "@/lib/server/trace";
 import {
   ASSIST_ENABLED,
   NAME_TOKEN,
@@ -81,7 +82,7 @@ export function isAssistConfigured(): boolean {
  */
 let shared: Anthropic | null = null;
 function client(): Anthropic {
-  shared ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
+  shared ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, fetch: tracedFetch("assist") });
   return shared;
 }
 

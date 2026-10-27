@@ -19,6 +19,7 @@ import {
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
 import { runRetrySweep } from "@/lib/server/repo/retry";
+import { withTrace } from "@/lib/server/trace";
 
 /**
  * M9.5 — running a scheduled job, and the three jobs themselves.
@@ -49,7 +50,7 @@ export interface RunOutcome extends JobResult {
 }
 
 /** Run one job, if it is due. Everything about "is it due" is in the database. */
-export async function runJob(name: JobName): Promise<RunOutcome> {
+async function runJobUntraced(name: JobName): Promise<RunOutcome> {
   const spec = JOBS[name];
 
   const claim = await withDb(async (db: Db) => {
@@ -523,4 +524,9 @@ async function freshness_ping(): Promise<JobResult> {
     skipped,
     failed: 0,
   };
+}
+
+/** runJob, as one trace (27 Oct, lib/server/trace.ts). */
+export async function runJob(input: Parameters<typeof runJobUntraced>[0]): ReturnType<typeof runJobUntraced> {
+  return withTrace(`job:${input}`, () => runJobUntraced(input));
 }
