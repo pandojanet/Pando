@@ -397,8 +397,11 @@ export interface ReadOptions {
  * it claims is checked rather than trusted. A result that carries no usable
  * name is **dropped**, not repaired — the same rule as `readFindings`.
  */
+/** The default market's state (lib/markets.ts), for a caller that passes none; `test:markets` pins it. */
+export const GEO_DEFAULT_STATE = "CA";
+
 export function readGeocode(body: unknown, opts: ReadOptions = {}): GeocodeOutcome {
-  const marketState = (opts.marketState ?? "CA").toUpperCase();
+  const marketState = (opts.marketState ?? GEO_DEFAULT_STATE).toUpperCase();
   const limit = opts.limit ?? 5;
 
   if (typeof body !== "object" || body === null) return { ok: false, reason: "unavailable" };
@@ -645,7 +648,7 @@ export function readPlaceSearch(
   body: unknown,
   opts: PlaceSearchOptions,
 ): GeocodeOutcome {
-  const marketState = (opts.marketState ?? "CA").toUpperCase();
+  const marketState = (opts.marketState ?? GEO_DEFAULT_STATE).toUpperCase();
   const limit = opts.limit ?? PLACE_SEARCH_LIMIT;
 
   if (typeof body !== "object" || body === null) return { ok: false, reason: "unavailable" };

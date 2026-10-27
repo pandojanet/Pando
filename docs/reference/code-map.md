@@ -135,6 +135,11 @@
                        offer's words, statuses and the moves an admin may make
                        (`INTRO_MOVES`). Pure. Server: `lib/server/introductions.ts`;
                        rows: `lib/server/repo/introductions.ts`.
+`web/lib/markets.ts` `marketConfig` · `DEFAULT_MARKET_ID` · `isQuietHoursIn` — everything
+                       a market is (clock, state, search area, local crisis lines,
+                       quiet hours). Pure; never write a market fact anywhere else.
+`web/lib/models.ts` `MODELS` · `MODEL_PRICES` — which model each role uses, and
+                       its price. Never write a model id anywhere else.
 `web/lib/answer-voice.ts` `acceptVoice` — refuses a warm rewrite of an answer
                        unless every fact survives it (and every parent's quote
                        stays quoted). Server half: `lib/server/answer-voice.ts`.

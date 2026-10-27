@@ -1,4 +1,5 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
@@ -26,7 +27,7 @@ const LABELS = [...Object.values(TRUST_LABEL), "Recommended by a local parent"].
  * returns null and the composed answer is sent exactly as before.
  */
 
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 /** On the parent's wait for every answer, so short; a miss costs only the warmth. */
 const TIMEOUT_MS = 7_000;
 

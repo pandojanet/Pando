@@ -22,9 +22,7 @@ import type { AgeBand, MarketCategory, MarketId, Option } from "./types";
  * a code change.
  */
 
-export const MARKET_LABELS: Record<MarketId, string> = {
-  pasadena: "Pasadena & the San Gabriel Valley",
-};
+/* The market's label lives in lib/markets.ts (27 Oct). */
 
 type MarketOptions = Record<MarketCategory, Option[]>;
 

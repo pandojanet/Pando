@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { withDb, type Db } from "@/lib/server/db";
@@ -235,7 +236,7 @@ export async function saveCapturedCard(
         select s.id::text as share_id
           from shares s
           join people p on p.id = ${capture.person_id}::uuid
-         where s.market_id = coalesce(p.market_id, 'pasadena')
+         where s.market_id = coalesce(p.market_id, ${DEFAULT_MARKET_ID})
            and s.kind = ${card.kind}::share_kind
            and lower(s.name) = lower(${card.name})
          limit 1
@@ -245,7 +246,7 @@ export async function saveCapturedCard(
         ? existing
         : ((await tx.execute(sql`
         insert into shares (market_id, kind, name, neighborhoods, status, provenance)
-        select coalesce(p.market_id, 'pasadena'), ${card.kind}::share_kind, ${card.name},
+        select coalesce(p.market_id, ${DEFAULT_MARKET_ID}), ${card.kind}::share_kind, ${card.name},
                case when p.neighborhood is null then null
                     else array[p.neighborhood] end,
                'pending_review', 'parent_submitted'

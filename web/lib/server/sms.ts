@@ -1,8 +1,9 @@
 import "server-only";
+import { isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketConfig } from "@/lib/markets";
 
 import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
-import { isOptedOut, outreachAllowed, recordSend } from "@/lib/server/repo/outreach";
+import { isOptedOut, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
 import {
   isSlackRelayEnabled,
   postToSlack,
@@ -157,19 +158,12 @@ export function isSmsProvisioned(): boolean {
 }
 
 /**
- * Pacific quiet hours: no outreach before 08:00 or after 21:00 PT (spec §14).
- * Computed in America/Los_Angeles regardless of where the server runs — the rule
- * is about the parent's clock, and our VPS is not in California.
+ * Quiet hours: no outreach before 08:00 or from 21:00 on (spec §14), on the
+ * parent's clock — their market's time zone (lib/markets.ts), the default
+ * market's when nobody is named. Never the server's: our VPS is not in California.
  */
-export function isQuietHours(now = new Date()): boolean {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "numeric",
-      hour12: false,
-    }).format(now),
-  );
-  return hour < 8 || hour >= 21;
+export function isQuietHours(now = new Date(), timeZone: string = marketConfig().timeZone): boolean {
+  return isQuietHoursIn(timeZone, now);
 }
 
 /**
@@ -334,7 +328,15 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
    * just texted at 10pm is a reply, not an intrusion.
    */
   const transport = transportFor(input);
-  const quiet = isQuietHours();
+  /* Only a proactive message can be held, so only then is the parent's market read (27 Oct). */
+  const proactive = category === "outreach" && !input.inReplyTo;
+  const marketId = proactive && input.personId ? await personMarketId(input.personId) : null;
+  /* Unreadable or unknown market: quiet wherever any market is (fails closed, 27 Oct review). */
+  const quiet = !proactive
+    ? isQuietHours()
+    : isMarketId(marketId)
+      ? isQuietHours(new Date(), marketConfig(marketId).timeZone)
+      : isQuietHoursAnywhere();
   if (quietHoursBlocks({ category, inReplyTo: Boolean(input.inReplyTo), quiet, transport })) {
     return { sent: false, reason: "quiet_hours" };
   }

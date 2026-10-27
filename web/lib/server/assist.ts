@@ -1,4 +1,6 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
+import { marketConfig } from "@/lib/markets";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch } from "@/lib/server/trace";
@@ -59,7 +61,7 @@ import type { FieldValue, Fields, Script, Step } from "@/lib/seed-chat/types";
  * turns asked ahead hide most of the difference. Thinking tokens count against
  * `max_tokens`, hence 2,000.
  */
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 const TURN_TIMEOUT_MS = 8_000;
 
 /** For the log: was the model's own wording of the question the one said? */
@@ -358,8 +360,9 @@ async function askModel(input: {
 export async function assistTurn(input: TurnInput): Promise<TurnResult> {
   if (!isAssistConfigured()) return NOT_CONFIGURED;
   const started = Date.now();
-  const general = buildScripts("pasadena")[input.kind];
-  const subs = buildSubScripts("pasadena");
+  const market = marketConfig(input.market_id).id;
+  const general = buildScripts(market)[input.kind];
+  const subs = buildSubScripts(market);
 
   /* The script this turn is read against: the sub-category's once known. */
   let subcategory = input.classify ? null : input.subcategory;

@@ -1,12 +1,7 @@
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import type { DeliveryCounts } from "@/lib/delivery";
-import {
-  decideOutreach,
-  REPLY_LINK_DAYS,
-  type OutreachHistory,
-  type OutreachKind,
-} from "@/lib/outreach-policy";
+import { ALLOWANCE_WINDOW_DAYS, OPEN_WEEKLY_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, decideOutreach, REPLY_LINK_DAYS, type OutreachHistory, type OutreachKind } from "@/lib/outreach-policy";
 
 /**
  * M8 + M12.3 — the counters and the opt-out mirror the send layer reads.
@@ -51,6 +46,17 @@ export interface SendRecord {
   retryOf?: string | null;
   /** How many attempts preceded this one. Zero for a first send. */
   retryCount?: number;
+}
+
+/** Which market a person is in, for the clock their quiet hours are kept on. Null when unknown. */
+export async function personMarketId(personId: string): Promise<string | null> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select market_id from people where id = ${personId}::uuid limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows[0]?.market_id ? String(rows[0].market_id) : null;
+  });
+  return result.persisted ? (result.data ?? null) : null;
 }
 
 /**
@@ -151,7 +157,7 @@ export async function outreachAllowed(
                            and m.retry_of is null
                            and m.id is distinct from ${excludeId}::uuid
                            and m.template is distinct from 'thanks'
-                           and m.sent_at > now() - interval '30 days'
+                           and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS})
                       then 1 else 0 end), 0)::int                     as sent_30,
         -- The open level's ceiling is weekly (OPEN_WEEKLY_LIMIT): the same
         -- requests, the same exclusions, over seven days.
@@ -160,14 +166,14 @@ export async function outreachAllowed(
                            and m.retry_of is null
                            and m.id is distinct from ${excludeId}::uuid
                            and m.template is distinct from 'thanks'
-                           and m.sent_at > now() - interval '7 days'
+                           and m.sent_at > now() - make_interval(days => ${OPEN_WEEKLY_WINDOW_DAYS})
                       then 1 else 0 end), 0)::int                     as sent_7,
         -- Answered: how many *requests* got a reply, not how many texts came in.
         -- Distinct on the request, so one answer sent as three messages is one
         -- answer, and the rate can never pass 100%.
         count(distinct case when m.direction = 'in'
                              and m.responded_to is not null
-                             and m.sent_at > now() - interval '30 days'
+                             and m.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS})
                         then m.responded_to end)::int                 as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
                   and m.retry_of is null

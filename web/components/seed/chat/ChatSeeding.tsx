@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -118,7 +119,7 @@ export function ChatSeeding() {
 
   /* The neighborhood chips inside these scripts come from `market_options`;
      `optionsVersion` changes when that table loads, which is what rebuilds them. */
-  const optionsVersion = useMarketOptions(session?.market_id ?? "pasadena");
+  const optionsVersion = useMarketOptions(session?.market_id ?? DEFAULT_MARKET_ID);
   /* A place the parent found on the map and an admin has not approved yet is
      still where they live, so their cards can name it (21 Sep). Joined into a
      string for the dependency list: a fresh array each render would rebuild
@@ -127,11 +128,11 @@ export function ChatSeeding() {
   /* Their own neighbourhood (12 Oct): first among the town chips, and what the
      town question may offer as a check. It never leaves the device. */
   const home = session?.answers.neighborhood ?? null;
-  const homeArea = homeAreaLabel(session?.market_id ?? "pasadena", home, ownPlaces ? ownPlaces.split("|") : []);
+  const homeArea = homeAreaLabel(session?.market_id ?? DEFAULT_MARKET_ID, home, ownPlaces ? ownPlaces.split("|") : []);
   const scripts = useMemo(
     () =>
       buildScripts(
-        session?.market_id ?? "pasadena",
+        session?.market_id ?? DEFAULT_MARKET_ID,
         ownPlaces ? ownPlaces.split("|") : [],
         home,
       ),
@@ -141,7 +142,7 @@ export function ChatSeeding() {
   const subScripts = useMemo(
     () =>
       buildSubScripts(
-        session?.market_id ?? "pasadena",
+        session?.market_id ?? DEFAULT_MARKET_ID,
         ownPlaces ? ownPlaces.split("|") : [],
         home,
       ),
@@ -175,7 +176,7 @@ export function ChatSeeding() {
 
     const existing =
       loadSession() ??
-      newSession({ invite_code: null, market_id: "pasadena", source: "direct" });
+      newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "direct" });
 
     let chat: ChatState =
       existing.chat ??
@@ -773,6 +774,7 @@ export function ChatSeeding() {
       last_step: last.id,
       followed_up: followedUpIds(d.fields),
       child_ages: session?.answers.child_ages ?? [],
+      market_id: session?.market_id ?? DEFAULT_MARKET_ID,
       may_name: nameAllowed(d, firstName !== null),
       has_area: homeArea !== null,
       recent_reactions: d.reactions ?? [],
@@ -1562,7 +1564,7 @@ export function ChatSeeding() {
             onUndo={undoLast}
             /* `place` only: which directory to search, and the parent's own
                town to rank by — a hint after relevance, never a filter. */
-            market={session?.market_id ?? "pasadena"}
+            market={session?.market_id ?? DEFAULT_MARKET_ID}
             area={session?.answers.neighborhood ?? null}
           />
         ) : (

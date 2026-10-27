@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -118,7 +119,7 @@ export function SignIn() {
        */
       const existing =
         loadSession() ??
-        newSession({ invite_code: null, market_id: "pasadena", source: "signin" });
+        newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "signin" });
       saveSession({
         ...existing,
         phone: toE164(phone),

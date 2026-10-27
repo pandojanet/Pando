@@ -308,9 +308,14 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
 {
   /* Walked over the relay: a fever of 104 was told Pando was putting together
      an answer "from local parents". These are the replies that replace it. */
+  /* The local lines are the market's since 27 Oct (lib/markets.ts); the pilot's are checked here. */
+  const mk = (await import(`../lib/markets.ts?v=${Date.now()}`)) as typeof import("../lib/markets.ts");
+  const crisis = mk.marketConfig().crisis;
+  const HIGH = r.highStakesReply(crisis);
+  const ALLEGATION = r.allegationReply(crisis);
   for (const [name, text] of [
-    ["the health, legal or safety reply", r.HIGH_STAKES_REPLY],
-    ["the claim-about-a-person reply", r.ALLEGATION_REPLY],
+    ["the health, legal or safety reply", HIGH],
+    ["the claim-about-a-person reply", ALLEGATION],
   ] as const) {
     const plan = seg.planSegments(text);
     ok(`${name} is GSM-7`, plan.encoding === "gsm7", plan.offenders?.join("") ?? "");
@@ -319,11 +324,16 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   }
   ok(
     "the high-stakes reply carries the same four resources as the web panel",
-    ["911", "211", "988", "1-800-433-6251"].every((n) => r.HIGH_STAKES_REPLY.includes(n)),
+    ["911", "211", "988", "1-800-433-6251"].every((n) => HIGH.includes(n)),
+  );
+  ok(
+    "another market's lines replace the pilot's, word for word otherwise",
+    r.highStakesReply({ ...crisis, legalHelp: { name: "X", phone: "1-800-000-0000" } }) === HIGH.replace("1-800-433-6251", "1-800-000-0000")
+      && r.allegationReply({ ...crisis, childProtection: { name: "Cook County DCFS", phone: "1-800-252-2873" } }).includes("Cook County DCFS at 1-800-252-2873."),
   );
   ok(
     "the allegation reply carries no resource list, only the number for a child at risk",
-    !/988|211|433-6251/.test(r.ALLEGATION_REPLY) && r.ALLEGATION_REPLY.includes("1-800-540-4000"),
+    !/988|211|433-6251/.test(ALLEGATION) && ALLEGATION.includes("LA County child protection at 1-800-540-4000."),
   );
   const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   /* 26 Oct, the chat lab: a never-asked parent's bare "3" was read as answer_blast and told to text ADD. */
@@ -333,7 +343,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   );
   ok(
     "inbound sends them instead of the held reply, and flags the answer",
-    src.includes("HIGH_STAKES_REPLY") && src.includes("ALLEGATION_REPLY") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
+    src.includes("highStakesReply(marketConfig(marketOf(person)).crisis)") && src.includes("allegationReply(marketConfig(marketOf(person)).crisis)") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
   );
   ok(
     "and asks no clarifying question under one",

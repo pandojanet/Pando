@@ -1,3 +1,5 @@
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
+import type { MarketId } from "@/lib/types";
 import { sql } from "drizzle-orm";
 import { INBOUND_CONSENT_VERSION } from "@/lib/consent";
 import {
@@ -46,6 +48,8 @@ import { withDb, type Db } from "@/lib/server/db";
 
 export interface ColdPerson {
   person_id: string;
+  /** Their market (people.market_id): which areas, records, clock and local lines apply. */
+  market_id: MarketId;
   /** True when this call created them — the first text, and their opt-in. */
   created: boolean;
   profile: KnownProfile;
@@ -76,7 +80,7 @@ export async function ensureInboundPerson(input: {
       } else {
         const rows = (await tx.execute(sql`
           insert into people (phone, market_id, source, phone_verified_at)
-          values (${input.phone}, ${input.marketId ?? "pasadena"}, 'sms_inbound', now())
+          values (${input.phone}, ${input.marketId ?? DEFAULT_MARKET_ID}, 'sms_inbound', now())
           returning id
         `)) as unknown as Array<Record<string, unknown>>;
         personId = String(rows[0]?.id ?? "");
@@ -103,6 +107,7 @@ export async function ensureInboundPerson(input: {
 
       const hood = (await tx.execute(sql`
         select neighborhood,
+               market_id,
                raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place,
                nullif(btrim(first_name), '')                    as first_name,
                (allowance_mode = 'as_relevant'
@@ -113,6 +118,7 @@ export async function ensureInboundPerson(input: {
       return {
         person_id: personId,
         created,
+        market_id: marketConfig(hood[0]?.market_id as string | null).id,
         profile: {
           child_birth_years: (kids[0]?.years as number[] | null) ?? [],
           neighborhood: (hood[0]?.neighborhood as string | null) ?? null,
@@ -274,7 +280,7 @@ export async function saveClarification(input: {
  * by texting its name, even though a stored answer still resolves against it.
  */
 export async function marketAreas(
-  marketId = "pasadena",
+  marketId: string = DEFAULT_MARKET_ID,
 ): Promise<Array<{ id: string; label: string }>> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`

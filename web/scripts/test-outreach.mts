@@ -532,7 +532,7 @@ for (const [label, file] of [
   const src = fs.readFileSync("lib/server/repo/admin-read.ts", "utf8").replace(/\s+/g, " ");
   ok(
     "the standing view counts the governor's numbers the way the send layer does",
-    src.includes("and m.template is distinct from 'thanks' and m.sent_at > now() - interval '30 days')::int as asked_30") &&
+    src.includes("and m.template is distinct from 'thanks' and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS}))::int as asked_30") &&
       src.includes("(select count(distinct m.responded_to) from message_log m"),
   );
 }

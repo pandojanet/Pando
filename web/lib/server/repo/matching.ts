@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import {
@@ -79,7 +80,7 @@ const EMPTY: MatchOutcome = {
  * that found nobody. The caller can tell them apart because `asker` is null.
  */
 export async function matchesFor(query: MatchQuery): Promise<MatchOutcome> {
-  const marketId = query.marketId ?? "pasadena";
+  const marketId = query.marketId ?? DEFAULT_MARKET_ID;
   const wanted = query.wanted ?? 5;
 
   const result = await withDb(async (db: Db) => {

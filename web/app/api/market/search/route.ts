@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { MARKET_CATEGORIES } from "@/lib/types";
@@ -57,7 +58,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
 
-  const marketId = (url.searchParams.get("market_id") ?? "pasadena").toLowerCase().slice(0, 40);
+  const marketId = (url.searchParams.get("market_id") ?? DEFAULT_MARKET_ID).toLowerCase().slice(0, 40);
   if (!/^[a-z0-9-]+$/.test(marketId)) {
     return NextResponse.json({ error: "Unknown market" }, { status: 400 });
   }

@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID, marketConfig, type MarketConfig } from "@/lib/markets";
 
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
@@ -136,18 +137,8 @@ export type GeocodeLookup =
  * rendered into each API's own spelling below, because two hand-written copies
  * of one rectangle is a rectangle that stops being one.
  */
-const MARKETS: Record<
-  string,
-  { state: string; sw: { lat: number; lng: number }; ne: { lat: number; lng: number } }
-> = {
-  pasadena: {
-    state: "CA",
-    sw: { lat: 33.9, lng: -118.4 },
-    ne: { lat: 34.32, lng: -117.6 },
-  },
-};
-
-type Market = (typeof MARKETS)[string];
+/* The rectangle and the state are the market's own (lib/markets.ts, 27 Oct). */
+type Market = Pick<MarketConfig, "state" | "sw" | "ne">;
 
 /** Where a place's own lookups look first, once there is a place to centre on. */
 interface Centre {
@@ -219,8 +210,8 @@ export async function lookupPlaces(input: {
   if (!key) return { ok: false, reason: "not_configured" };
 
   const kind: LookupKind = input.kind ?? "place";
-  const marketId = (input.marketId ?? "pasadena").toLowerCase();
-  const market = MARKETS[marketId] ?? MARKETS.pasadena;
+  const market: Market = marketConfig(input.marketId);
+  const marketId = (input.marketId ?? DEFAULT_MARKET_ID).toLowerCase();
   const folded = cacheKey(input.query);
   /**
    * ⚠ Only an establishment search is centred. A `place` lookup is how the
@@ -433,7 +424,7 @@ async function askPlaces(
          * ⚠⚠ **The parent's own place when there is one, the market box when
          * there is not** — and until 17 Sep it was always the box, which has
          * exactly one entry (`pasadena`) and catches every unknown market in
-         * its `?? MARKETS.pasadena` fallback. So a parent who had just told
+         * its default-market fallback (`marketConfig`). So a parent who had just told
          * Pando they live in Detroit typed a school name and got answers
          * ranked around the San Gabriel Valley: the feature running, the
          * request succeeding, and the wrong city.

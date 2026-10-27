@@ -1,4 +1,5 @@
 import type { DemandSensitivity } from "./demand";
+import type { MarketConfig } from "./markets";
 
 /**
  * M5.8 — what holds an answer back from being sent.
@@ -265,11 +266,15 @@ export function heldReply(clarifying: string | null): string {
  *
  * ⚠ New user-facing copy, on the list for the client.
  */
-export const HIGH_STAKES_REPLY =
-  "Pando is a parent network, not a professional service, so for this please reach someone qualified today. " +
-  "Emergency: 911. Medical advice any hour: your pediatrician's after-hours line, or 211. " +
-  "Someone to talk to now: call or text 988. Legal help: 1-800-433-6251. " +
-  "A person at Pando will also read your message.";
+/* 911, 211 and 988 are national; the legal line is the market's (lib/markets.ts, 27 Oct). */
+export function highStakesReply(crisis: MarketConfig["crisis"]): string {
+  return (
+    "Pando is a parent network, not a professional service, so for this please reach someone qualified today. " +
+    "Emergency: 911. Medical advice any hour: your pediatrician's after-hours line, or 211. " +
+    "Someone to talk to now: call or text 988. Legal help: " + crisis.legalHelp.phone + ". " +
+    "A person at Pando will also read your message."
+  );
+}
 
 /**
  * A claim about a named person: silence until a person has read it (11 Aug),
@@ -279,6 +284,10 @@ export const HIGH_STAKES_REPLY =
  *
  * ⚠ New user-facing copy, on the list for the client.
  */
-export const ALLEGATION_REPLY =
-  "Thank you for telling us. A person at Pando will read this, and it won't be shared or turned into an answer for anyone. " +
-  "If a child has been harmed or is at risk, please call 911 or LA County child protection at 1-800-540-4000.";
+/* The child-protection line is the market's own (lib/markets.ts, 27 Oct). */
+export function allegationReply(crisis: MarketConfig["crisis"]): string {
+  return (
+    "Thank you for telling us. A person at Pando will read this, and it won't be shared or turned into an answer for anyone. " +
+    "If a child has been harmed or is at risk, please call 911 or " + crisis.childProtection.name + " at " + crisis.childProtection.phone + "."
+  );
+}

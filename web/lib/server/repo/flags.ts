@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { looksLikePerson, NAMED_PERSON_FLAG } from "@/lib/named-person";
 
 import { sql, type SQL } from "drizzle-orm";
@@ -145,7 +146,7 @@ export async function extractAndFlag(
       ? (
           (await db.execute(
             sql`select option_value, label from market_options
-                 where market_id = ${String(row.market_id ?? "pasadena")}
+                 where market_id = ${String(row.market_id ?? DEFAULT_MARKET_ID)}
                    and category = 'focus' and active
                  order by option_value`,
           )) as unknown as Array<Record<string, unknown>>
@@ -245,7 +246,7 @@ export async function extractAndFlag(
       await flagNamedPersonRecord(db, {
         shareId: String(row.share_id),
         name: result.title,
-        marketId: String(row.market_id ?? "pasadena"),
+        marketId: String(row.market_id ?? DEFAULT_MARKET_ID),
         personId: (row.person_id as string | null) ?? null,
       });
     }
@@ -412,7 +413,7 @@ export async function flagNamedPersonRecord(
      */
     const areas = (await db.execute(sql`
       select distinct label from market_options
-       where market_id = ${input.marketId ?? "pasadena"}
+       where market_id = ${input.marketId ?? DEFAULT_MARKET_ID}
          and category = 'neighborhoods'
     `)) as unknown as Array<Record<string, unknown>>;
     const placeWords = areas.map((r) => String(r.label));

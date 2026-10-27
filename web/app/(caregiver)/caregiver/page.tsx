@@ -1,9 +1,10 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { CaregiverFlow } from "@/components/caregiver/CaregiverFlow";
 import { CaregiverInviteRequired } from "@/components/caregiver/CaregiverInviteRequired";
 import { isDbConfigured } from "@/lib/server/db";
 import type { MarketId } from "@/lib/types";
 
-const MARKET: MarketId = "pasadena";
+const MARKET: MarketId = DEFAULT_MARKET_ID;
 
 /**
  * `pando.is/caregiver` — the bare address, **closed since 23 Sep**.

@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
@@ -65,7 +66,7 @@ export async function queueAnswer(input: QueuedAnswer): Promise<string | null> {
         (market_id, person_id, phone, question_text, answer_text, next_step,
          labels, public_only, hold_reason, share_ids, is_test)
       values
-        (${input.marketId ?? "pasadena"},
+        (${input.marketId ?? DEFAULT_MARKET_ID},
          ${input.personId ? sql`${input.personId}::uuid` : sql`null`},
          ${input.phone}, ${input.question}, ${input.answerText}, ${input.nextStep},
          ${labels}::text[], ${input.publicOnly}, ${input.holdReason},

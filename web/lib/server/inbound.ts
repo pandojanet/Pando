@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 
 import {
   SMS_TEMPLATE_VERSION,
@@ -51,8 +52,8 @@ import {
   SMALL_TALK,
 } from "@/lib/replies";
 import {
-  ALLEGATION_REPLY,
-  HIGH_STAKES_REPLY,
+  allegationReply,
+  highStakesReply,
   heldReply,
   routeAnswer,
   mentionsCaregiver as answerMentionsCaregiver,
@@ -653,7 +654,7 @@ async function handleInboundMessageUntraced(input: {
         text: body,
         /* A request of their own on another subject, or about a child's health, is not their answer (26 Oct). */
         ownRequest: async (question) => {
-          const list = await focusOptions();
+          const list = await focusOptions(marketOf(person));
           if (ownRequestNotAnAnswer(body, question, (t) => focusInQuestion(t, list))) return true;
           /**
            * ⚠ **Read, not matched** (26 Oct, the SMS lab). The words above catch
@@ -789,12 +790,13 @@ async function handleInboundMessageUntraced(input: {
         /* The Ask is about the place the question was about, worked out again
            from the question the same way the offer was (the geocode is
            cached), so its pool is that place's parents. */
-        const asked = await placeForQuestion({ question: offer.question, profile: person.profile });
+        const asked = await placeForQuestion({ question: offer.question, profile: person.profile, marketId: person.market_id });
         const blast = await createBlast({
           askerId: person.person_id,
           question: offer.question,
           tier: GENERAL_TIER,
           neighborhood: asked.area,
+          marketId: person.market_id,
         });
         created = blast.ok;
         /* Either way the parent hears back (22 Oct audit: a failed create was silence). */
@@ -920,7 +922,7 @@ async function handleInboundMessageUntraced(input: {
       (asksForMore(body) ||
         bandsInQuestion(body).length > 0 ||
         placePhraseIn(body) !== null ||
-        focusInQuestion(body, await focusOptions()) !== null);
+        focusInQuestion(body, await focusOptions(marketOf(person))) !== null);
     /**
      * ⚠ **A sentence is read before it is taken as the answer** (26 Oct).
      * `isClarifyingAnswer` is shape only — no "?" and twelve words or fewer —
@@ -968,7 +970,7 @@ async function handleInboundMessageUntraced(input: {
         personId: person.person_id,
         question,
         text: body,
-        areas: question === "neighborhood" ? await marketAreas() : undefined,
+        areas: question === "neighborhood" ? await marketAreas(marketOf(person)) : undefined,
       });
       console.info("[sms:inbound] clarification", { question, saved, asked: question === pending });
       /* Only a reply that *was* an answer is spent. An unreadable one stores
@@ -1062,7 +1064,7 @@ async function handleInboundMessageUntraced(input: {
   if (pending === null && !attached.attached && !answeredSomething && !clarified && asksForMore(body)) {
     const prior = await priorAnswersFor(from);
     if (prior) {
-      const list = await focusOptions();
+      const list = await focusOptions(marketOf(person));
       const before = focusInQuestion(prior.question, list);
       const now = focusInQuestion(body, list);
       const careBefore =
@@ -1228,7 +1230,7 @@ async function handleInboundMessageUntraced(input: {
       if (pending) await closeQuestion(pending.id, "resolved");
       await sendSms({
         to: from,
-        body: urgent === "high_stakes" ? HIGH_STAKES_REPLY : ALLEGATION_REPLY,
+        body: urgent === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis) : allegationReply(marketConfig(marketOf(person)).crisis),
         category: "transactional",
         personId: person?.person_id,
         template: urgent === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
@@ -1378,7 +1380,7 @@ async function handleInboundMessageUntraced(input: {
   /* Only when there is an exchange to compare against. The list is the market
      cache's, so this costs nothing on the common path and nothing at all when
      no question is open. */
-  const focusList = pending ? await focusOptions() : [];
+  const focusList = pending ? await focusOptions(marketOf(person)) : [];
   const switched = changedSubject(pending, body, (text) =>
     focusInQuestion(text, focusList),
   );
@@ -1423,7 +1425,7 @@ async function runDeepDiveStep({ step, from, person }: { step: DeepDiveStep; fro
     /* The same care test answerQuestion applies — the words and the care
        focus topics ("who can watch my toddler on Tuesdays") — so a care
        subject is refused here, before "On it", not after it (audit). */
-    const runFocus = focusInQuestion(step.run.question, await focusOptions());
+    const runFocus = focusInQuestion(step.run.question, await focusOptions(marketOf(person)));
     unsupported =
       reading.sensitive ||
       reading.intent === "ask_caregiver" ||
@@ -1457,6 +1459,11 @@ async function runDeepDiveStep({ step, from, person }: { step: DeepDiveStep; fro
       ...(unsupported ? {} : { deep: { id: step.run.id } }),
     });
   }
+}
+
+/** The parent's market; nobody known yet is the default market (a cold number is created there). */
+function marketOf(person: ColdPerson | null | undefined): string {
+  return person?.market_id ?? DEFAULT_MARKET_ID;
 }
 
 /**
@@ -1668,7 +1675,7 @@ async function answerQuestion(input: {
    * `special_needs_resources` must not have questions matched against it, and
    * `market_options` is the table that decides.
    */
-  const focus = focusInQuestion(body, await focusOptions());
+  const focus = focusInQuestion(body, await focusOptions(marketOf(person)));
 
   /**
    * ⚠ **A caregiver only answers a question about care**, and the first version
@@ -1725,9 +1732,10 @@ async function answerQuestion(input: {
    * the answer uses it: the parents' records, the search's place, the Network
    * Ask offer and, later, its pool. No place list in code decides any of it.
    */
-  const place = await placeForQuestion({ question: body, profile: profile ?? null });
+  const place = await placeForQuestion({ question: body, profile: profile ?? null, marketId: marketOf(person) });
 
   const retrieved = await retrieveFor({
+    marketId: marketOf(person),
     area: place.area,
     near: place.near,
     bands: asked.length > 0 ? asked : known,
@@ -1752,7 +1760,7 @@ async function answerQuestion(input: {
   const askable =
     place.near === null
       ? null
-      : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null });
+      : await askablePeopleNear({ near: place.near, askerId: person?.person_id ?? null, marketId: marketOf(person) });
   const canAsk = askable === null || askable >= MIN_ASKABLE_NEAR;
 
   /* Read before the search rather than after it, because it decides whether the
@@ -1792,9 +1800,8 @@ async function answerQuestion(input: {
       { findings: [], configured: false }
     : await searchPublicInformation({
         question: body,
-        /* One market in the pilot, and the profile defaults a cold number to
-           the same one. */
-        market: "pasadena",
+        /* The parent's market; a cold number is created in the default one. */
+        market: marketOf(person),
         area: place.area,
         placeLabel: place.label,
         /* Nobody near to ask, so this half is the whole answer: an empty
@@ -2114,6 +2121,7 @@ async function answerQuestion(input: {
   if (deep) {
     const delivered = await deliverDeepDive({
       deepDiveId: deep.id,
+      marketId: marketOf(person),
       personId: person?.person_id ?? null,
       phone: from,
       question: body,
@@ -2316,6 +2324,7 @@ async function answerQuestion(input: {
 
   const answerId = await queueAnswer({
     personId: person?.person_id ?? null,
+    marketId: marketOf(person),
     phone: from,
     /* A follow-up is stored under its own text so the Send guard and the
        queue's duplicate note do not mistake it for the same answer twice. */
@@ -2361,7 +2370,7 @@ async function answerQuestion(input: {
       }
       await sendSms({
         to: from,
-        body: sensitivity === "high_stakes" ? HIGH_STAKES_REPLY : ALLEGATION_REPLY,
+        body: sensitivity === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis) : allegationReply(marketConfig(marketOf(person)).crisis),
         category: "transactional",
         personId: person?.person_id,
         template: sensitivity === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
@@ -2479,9 +2488,9 @@ async function answerQuestion(input: {
           ? `${answerText}\n\n${clarifier}`
           : answerText
       : urgent === "high_stakes"
-        ? HIGH_STAKES_REPLY
+        ? highStakesReply(marketConfig(marketOf(person)).crisis)
         : urgent === "named_allegation"
-          ? ALLEGATION_REPLY
+          ? allegationReply(marketConfig(marketOf(person)).crisis)
           : heldReply(clarifier),
     category: "transactional",
     personId: person?.person_id,

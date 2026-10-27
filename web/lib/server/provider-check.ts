@@ -1,4 +1,6 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
+import { marketConfig } from "@/lib/markets";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch } from "@/lib/server/trace";
@@ -58,7 +60,7 @@ import {
 
 /** The pairing `web-search.ts` measured as working on this account — see its note. */
 /* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was 4.5). */
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 const SEARCH_TOOL = "web_search_20250305" as const;
 /** The web step, with the SDK's retries off: it holds an admin's click for half a minute at most. */
 const TIMEOUT_MS = 30_000;
@@ -69,12 +71,14 @@ const STALE_CLAIM = "5 minutes";
 /** The admin's "Check again" may not re-run a check this recent — a double-click. */
 const RECHECK_GAP = "1 minute";
 
+/* The pilot market's place (lib/markets.ts); a check does not carry a market yet. */
+const MARKET = marketConfig();
 const LOCATION = {
   type: "approximate" as const,
-  city: "Pasadena",
-  region: "California",
-  country: "US",
-  timezone: "America/Los_Angeles",
+  city: MARKET.city,
+  region: MARKET.stateName,
+  country: MARKET.country,
+  timezone: MARKET.timeZone,
 };
 
 const SYSTEM = [
@@ -146,7 +150,7 @@ async function searchStep(
           role: "user",
           content: JSON.stringify({
             provider: input.name,
-            where: input.town ? `${input.town}, California` : "the Pasadena area, California",
+            where: input.town ? `${input.town}, ${MARKET.stateName}` : `the ${MARKET.city} area, ${MARKET.stateName}`,
           }),
         },
       ],
@@ -190,7 +194,7 @@ type NpiStep =
  * never not found" rule as the web step.
  */
 async function npiStep(input: { name: string; town: string | null }): Promise<NpiStep> {
-  const query = npiQuery(input.name, input.town);
+  const query = npiQuery(input.name, input.town, MARKET.state);
   if (!query) return { kind: "none" };
   try {
     const res = await fetch(`${NPPES_API}?${query}`, {
@@ -228,7 +232,7 @@ export async function checkProvider(input: {
      neighbourhood found nobody. Any find ends the NPPES step and skips the web
      (the developer, 9 Oct); an unknown stops the check. */
   let npi: NpiStep = { kind: "none" };
-  for (const city of npiCities(input.town)) {
+  for (const city of npiCities(input.town, MARKET.city)) {
     npi = await npiStep({ name, town: city });
     if (npi.kind !== "none") break;
   }

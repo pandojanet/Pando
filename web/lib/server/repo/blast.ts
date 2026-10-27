@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import {
   expiryFor,
@@ -7,7 +8,7 @@ import {
 } from "@/lib/blast-tiers";
 import { SMS_BUDGET } from "@/lib/answer";
 import { composeBlastAnswer } from "@/lib/blast-answer";
-import { decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
+import { ALLOWANCE_WINDOW_DAYS, OPEN_WEEKLY_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
 import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-templates";
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
@@ -109,7 +110,7 @@ export async function selectPool(input: {
     const local = await withDb(async (db: Db) =>
       (await db.execute(sql`
         select id::text as id from people
-         where market_id = ${input.marketId ?? "pasadena"}
+         where market_id = ${input.marketId ?? DEFAULT_MARKET_ID}
            and not is_test
            -- A seat in the pool is for somebody Pando can text (25 Sep): a
            -- phoneless row took one of five and the send then skipped it.
@@ -197,16 +198,16 @@ export async function selectPool(input: {
         coalesce(sum(case when m.direction = 'out' and m.category = 'outreach'
                            and m.retry_of is null
                            and m.template is distinct from 'thanks'
-                           and m.sent_at > now() - interval '30 days'
+                           and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS})
                       then 1 else 0 end), 0)::int                      as sent_30,
         -- The open level's weekly ceiling (OPEN_WEEKLY_LIMIT), same clauses.
         coalesce(sum(case when m.direction = 'out' and m.category = 'outreach'
                            and m.retry_of is null
                            and m.template is distinct from 'thanks'
-                           and m.sent_at > now() - interval '7 days'
+                           and m.sent_at > now() - make_interval(days => ${OPEN_WEEKLY_WINDOW_DAYS})
                       then 1 else 0 end), 0)::int                      as sent_7,
         count(distinct case when m.direction = 'in' and m.responded_to is not null
-                             and m.sent_at > now() - interval '30 days'
+                             and m.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS})
                         then m.responded_to end)::int                  as answered_30,
         max(case when m.direction = 'out' and m.category = 'outreach'
                   and m.retry_of is null
@@ -369,7 +370,7 @@ export async function createBlastIn(
   },
 ): Promise<CreatedBlast | null> {
   const spec = tierSpec(input.tier);
-  const marketId = input.marketId ?? "pasadena";
+  const marketId = input.marketId ?? DEFAULT_MARKET_ID;
   const expires = expiryFor(input.tier, new Date());
 
   const asker = (await tx.execute(
@@ -518,7 +519,7 @@ async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
   if (!blast.asker_id) return { ok: false, sent: 0, skipped: 0, reason: "not_ready" };
 
   const tier = String(blast.tier) as BlastTier;
-  const market = String(blast.market_id ?? "pasadena");
+  const market = String(blast.market_id ?? DEFAULT_MARKET_ID);
   const pool = await selectPool({
     askerId: String(blast.asker_id),
     tier,
@@ -905,13 +906,15 @@ const REPLY_FOLLOW_UP_MINUTES = 30;
  * "3" or "yes" from a parent who was never asked anything as `answer_blast`,
  * and they were told to text ADD. Fourteen days: the longest window plus grace.
  */
+const ASKED_RECENTLY_DAYS = 14;
+
 export async function askedRecently(phone: string): Promise<boolean> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select 1 from blast_recipients br
         join people p on p.id = br.person_id
        where p.phone = ${phone}
-         and br.sent_at > now() - interval '14 days'
+         and br.sent_at > now() - make_interval(days => ${ASKED_RECENTLY_DAYS})
        limit 1`)) as unknown as Array<unknown>;
     return rows.length > 0;
   });

@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { areaGroup } from "@/lib/server/repo/areas";
@@ -261,7 +262,7 @@ const EMPTY: Retrieved = {
  * which reads as "match no topic" and costs an ordering nudge rather than an
  * answer.
  */
-export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
+export async function focusOptions(marketId: string = DEFAULT_MARKET_ID): Promise<string[]> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select option_value from market_options
@@ -291,7 +292,7 @@ export async function focusOptions(marketId = "pasadena"): Promise<string[]> {
 
 /** What may answer this question, with its labels. */
 async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved> {
-  const marketId = question.marketId ?? "pasadena";
+  const marketId = question.marketId ?? DEFAULT_MARKET_ID;
   const limit = Math.min(25, Math.max(1, question.limit ?? 10));
   /**
    * **Doctors are in answers since 21 Oct** (the developer: every kind Pando
@@ -680,7 +681,7 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
       venue: r.venue ? String(r.venue) : null,
       neighborhoods: (r.neighborhoods as string[] | null) ?? [],
       age_bands: (r.age_bands as string[] | null) ?? [],
-      trust: labelsFor(candidate, { policies }),
+      trust: labelsFor(candidate, { policies, timeZone: marketConfig(marketId).timeZone }),
       firsthand_count: candidate.firsthand_count,
       secondhand_count: candidate.secondhand_count,
       withdrawn: Number(r.withdrawn ?? 0),
@@ -743,7 +744,7 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
       rate_band: r.rate_band ? String(r.rate_band) : null,
       up_front: r.up_front ? String(r.up_front) : null,
       last_confirmed_at: r.last_confirmed_at ? String(r.last_confirmed_at) : null,
-      trust: labelsFor(candidate, { policies }),
+      trust: labelsFor(candidate, { policies, timeZone: marketConfig(marketId).timeZone }),
       firsthand_count: candidate.firsthand_count,
     });
   }

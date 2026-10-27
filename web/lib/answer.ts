@@ -738,13 +738,20 @@ function article(what: string): string {
   return /^[aeiou]/i.test(what) ? "an " : "a ";
 }
 
+/**
+ * The clock a parent reads a month on: the default market's (lib/markets.ts),
+ * which this module may not import — `test:markets` pins the two together. A
+ * second market in another zone moves a date only at a month's last hours.
+ */
+export const ANSWER_TIME_ZONE = "America/Los_Angeles";
+
 function monthOf(at: string): string {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return "recently";
   return d.toLocaleDateString("en-US", {
     month: "short",
     year: "numeric",
-    timeZone: "America/Los_Angeles",
+    timeZone: ANSWER_TIME_ZONE,
   });
 }
 

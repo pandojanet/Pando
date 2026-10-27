@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
 import {
@@ -984,7 +985,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (!shareId) {
         const created = (await tx.execute(sql`
           insert into shares (market_id, kind, name, neighborhoods, status, provenance)
-          values (${String(reply.market_id ?? "pasadena")}, ${kind}::share_kind,
+          values (${String(reply.market_id ?? DEFAULT_MARKET_ID)}, ${kind}::share_kind,
                   ${name},
                   case when ${reply.neighborhood}::text is null then null
                        else array[${reply.neighborhood}::text] end,
@@ -1007,7 +1008,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           await flagNamedPersonRecord(tx, {
             shareId,
             name,
-            marketId: String(reply.market_id ?? "pasadena"),
+            marketId: String(reply.market_id ?? DEFAULT_MARKET_ID),
             personId,
           });
         }
@@ -1263,7 +1264,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         sql`insert into invites (code, market_id, label, kind,
                                 group_option_value, school_option_value,
                                 note, created_by)
-            values (${code}, ${id(b.market_id) || "pasadena"}, ${label},
+            values (${code}, ${id(b.market_id) || DEFAULT_MARKET_ID}, ${label},
                     ${kind},
                     ${kind === "group" ? text(b.group_option_value) : null},
                     ${kind === "school" ? text(b.school_option_value) : null},

@@ -49,6 +49,13 @@
 export const OUTREACH_GAP_DAYS = 2;
 
 /**
+ * "Five a month" is counted over the last thirty days, rolling (27 Oct: named;
+ * the queries had the number written in). The governor's window below is the
+ * same length and a different rule.
+ */
+export const ALLOWANCE_WINDOW_DAYS = 30;
+
+/**
  * The lowest a monthly allowance can go.
  *
  * Five is not a cautious opening offer, it is the floor of the community

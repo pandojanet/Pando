@@ -414,6 +414,7 @@ export function FinishAsks() {
               travels in the same write. */}
           {session && (
             <DemandQuestion
+              marketId={session.market_id}
               saved={session.demand}
               onSave={(value) => {
                 const next = saveSession({

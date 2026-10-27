@@ -1,4 +1,6 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
+import { isMarketId, marketConfig } from "@/lib/markets";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
@@ -66,7 +68,7 @@ const notAPlaceOfOurs = (name: string) => looksLikePerson(name, { placeWords: TO
 
 /* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was
    4.5). The tool pairing below was re-tested with it the same day. */
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 
 /**
  * ⚠ **`web_search_20250305`, and not a newer one — this pairing is load-bearing.**
@@ -318,6 +320,8 @@ function brief(input: {
   now?: Date;
   /** The state the search is located in, when the label does not carry one. */
   region?: string | null;
+  /** Whose clock "Today" is read on (lib/markets.ts). */
+  market?: string;
 }): string[] {
   const lines: string[] = [];
 
@@ -344,7 +348,7 @@ function brief(input: {
     `Today: ${now.toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
-      timeZone: "America/Los_Angeles",
+      timeZone: marketConfig(input.market).timeZone,
     })}`,
   );
 
@@ -365,18 +369,12 @@ function brief(input: {
   return lines;
 }
 
-/** Pasadena is the pilot market; anything else searches without a location. */
-const MARKET_LOCATION: Record<
-  string,
-  { city: string; region: string; country: string; timezone: string }
-> = {
-  pasadena: {
-    city: "Pasadena",
-    region: "California",
-    country: "US",
-    timezone: "America/Los_Angeles",
-  },
-};
+/** A known market searches from its own city (lib/markets.ts); anything else without a location. */
+function marketLocation(market: string): { city: string; region: string; country: string; timezone: string } | null {
+  if (!isMarketId(market)) return null;
+  const m = marketConfig(market);
+  return { city: m.city, region: m.stateName, country: m.country, timezone: m.timeZone };
+}
 
 /**
  * What is generally known about this question.
@@ -517,7 +515,7 @@ type SearchInput = {
  * `pause_turn`; the turn is handed back unchanged to let the server resume —
  * twice at most, inside the one deadline.
  */
-const DEEP_MODEL = "claude-sonnet-5-5";
+const DEEP_MODEL = MODELS.deep;
 const DEEP_SEARCH_TOOL = "web_search_20260209" as const;
 const DEEP_FETCH_TOOL = "web_fetch_20260209" as const;
 /** Pages read in full, at most — each is up to ~6k tokens of input. */
@@ -583,7 +581,7 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
   if (question.length === 0) return NOTHING;
   if (!isWebSearchConfigured()) return NOTHING;
 
-  const market = MARKET_LOCATION[input.market] ?? null;
+  const market = marketLocation(input.market);
   const location = (() => {
     if (input.location === undefined || input.location === "market") return market;
     const { inMarket, ...where } = input.location;

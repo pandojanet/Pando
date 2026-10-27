@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { NextResponse } from "next/server";
 import { activityLines } from "@/lib/recent-activity";
 import { withDb } from "@/lib/server/db";
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
   const limited = rateLimited(request, "market_read");
   if (limited) return limited;
 
-  const marketId = (new URL(request.url).searchParams.get("market_id") ?? "pasadena").toLowerCase().slice(0, 40);
+  const marketId = (new URL(request.url).searchParams.get("market_id") ?? DEFAULT_MARKET_ID).toLowerCase().slice(0, 40);
   if (!/^[a-z0-9-]+$/.test(marketId)) return NextResponse.json({ lines: [] });
 
   let rows = cachedRecent(marketId);

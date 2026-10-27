@@ -75,7 +75,7 @@ console.log("\n=== the answer path reads it (source checks) ===");
     && inbound.indexOf("placeForQuestion(") < inbound.indexOf("retrieveFor({"));
   const has = (src: string, text: string) => src.replace(/\s+/g, " ").includes(text);
   ok("retrieval gets the resolved area and its near set",
-    has(inbound, "retrieveFor({ area: place.area, near: place.near,"));
+    has(inbound, "retrieveFor({ marketId: marketOf(person), area: place.area, near: place.near,"));
   ok("the search is told where", has(inbound, "location: searchLocationFor(place)"));
   ok("the offer needs parents near the place",
     has(inbound, "askable === null || askable >= MIN_ASKABLE_NEAR")

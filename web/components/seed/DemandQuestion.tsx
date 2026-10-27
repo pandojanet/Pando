@@ -12,6 +12,7 @@ import {
   DEMAND_CATEGORIES,
   type DemandSensitivity,
 } from "@/lib/demand";
+import { marketConfig, type MarketConfig } from "@/lib/markets";
 
 /**
  * D1 — the closing question, on the completion screen.
@@ -40,10 +41,14 @@ export interface DemandValue {
 export function DemandQuestion({
   saved,
   onSave,
+  marketId,
 }: {
   saved: DemandValue | null;
   onSave: (value: DemandValue) => void;
+  /** Whose local lines the safety panels name (lib/markets.ts). */
+  marketId?: string | null;
 }) {
+  const crisis = marketConfig(marketId).crisis;
   const [text, setText] = useState(saved?.question_text ?? "");
   const [category, setCategory] = useState<string | null>(saved?.category ?? null);
   const [stage, setStage] = useState<"asking" | "responding" | "done">(
@@ -97,6 +102,7 @@ export function DemandQuestion({
     return (
       <Response
         sensitivity={sensitivity}
+        crisis={crisis}
         onKeep={(maySave) => {
           /* "Just needed to say it" has to mean it on this device too — the server
              drops the text either way, but leaving it in the session would be us
@@ -197,9 +203,12 @@ export function DemandQuestion({
 function Response({
   sensitivity,
   onKeep,
+  crisis,
 }: {
   sensitivity: DemandSensitivity;
   onKeep: (maySave: boolean) => void;
+  /** The market's local lines (lib/markets.ts). */
+  crisis: MarketConfig["crisis"];
 }) {
   if (sensitivity === "named_allegation") {
     return (
@@ -211,8 +220,9 @@ function Response({
         </p>
         <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
           We&apos;re not able to look into it, mediate it or take anything away from
-          anybody. If a child has been harmed or is at risk, please call 911, or LA
-          County child protection at 1-800-540-4000 — they can act and we can&apos;t.
+          anybody. If a child has been harmed or is at risk, please call 911, or{" "}
+          {crisis.childProtection.name} at {crisis.childProtection.phone} — they can act
+          and we can&apos;t.
         </p>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <Button full onClick={() => onKeep(true)}>
@@ -253,15 +263,15 @@ function Response({
           </li>
           <li>
             <strong>Medical advice, any hour:</strong> your pediatrician&apos;s
-            after-hours line, or the LA County nurse line at 211.
+            after-hours line, or {crisis.nurseLine.name} at {crisis.nurseLine.phone}.
           </li>
           <li>
             <strong>Someone to talk to now:</strong> call or text 988 (Suicide &amp;
             Crisis Lifeline).
           </li>
           <li>
-            <strong>Legal help:</strong> Neighborhood Legal Services of LA County,
-            1-800-433-6251.
+            <strong>Legal help:</strong> {crisis.legalHelp.name},{" "}
+            {crisis.legalHelp.phone}.
           </li>
         </ul>
         <p className="mt-3 text-[13.5px] leading-relaxed text-gold-ink/80">

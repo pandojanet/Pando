@@ -1,4 +1,5 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch } from "@/lib/server/trace";
@@ -41,7 +42,7 @@ import { tracedFetch } from "@/lib/server/trace";
  * thinking tokens count against `max_tokens`, and a classification this small
  * does not need it — the same behaviour 4.5 had.
  */
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 
 export interface ExtractionInput {
   kind: "activity" | "place" | "tip" | "doctor";

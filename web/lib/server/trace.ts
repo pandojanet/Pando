@@ -1,4 +1,5 @@
 import "server-only";
+import { MODEL_PRICES, WEB_SEARCH_USD } from "@/lib/models";
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -221,23 +222,17 @@ export async function span<T>(
 
 /* ------------------------------------------------------------- generations */
 
-/** $ per million tokens (input, output), and per web search. Anthropic list prices. */
-const PRICE: Record<string, [number, number]> = {
-  "claude-haiku-5-5": [0.1, 0.5],
-  "claude-sonnet-5-5": [2, 10],
-  "claude-opus-5-5": [4, 20],
-};
-const WEB_SEARCH_USD = 0.01;
+/* The prices live beside the model ids (lib/models.ts), so a model and its price move together. */
 
 export function costOf(model: string, u: {
   input_tokens?: number; output_tokens?: number;
   cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
   web_search_requests?: number;
 }): number | null {
-  const p = PRICE[model];
+  const p = MODEL_PRICES[model];
   if (!p) return null;
   const input = (u.input_tokens ?? 0) + 1.25 * (u.cache_creation_input_tokens ?? 0) + 0.1 * (u.cache_read_input_tokens ?? 0);
-  return (input * p[0] + (u.output_tokens ?? 0) * p[1]) / 1e6 + (u.web_search_requests ?? 0) * WEB_SEARCH_USD;
+  return (input * p.input + (u.output_tokens ?? 0) * p.output) / 1e6 + (u.web_search_requests ?? 0) * WEB_SEARCH_USD;
 }
 
 /**

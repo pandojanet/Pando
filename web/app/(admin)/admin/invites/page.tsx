@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -68,7 +69,7 @@ export default function InvitesPage() {
    */
   const [schools, setSchools] = useState<Array<{ id: string; label: string }>>([]);
   useEffect(() => {
-    void fetch("/api/market/options?market_id=pasadena")
+    void fetch(`/api/market/options?market_id=${DEFAULT_MARKET_ID}`)
       .then((r) => r.json())
       .then((body) => {
         setGroups(body?.options?.parent_groups ?? []);
@@ -130,7 +131,7 @@ export default function InvitesPage() {
         action: "invite.create",
         code: value,
         label: label.trim(),
-        market_id: "pasadena",
+        market_id: DEFAULT_MARKET_ID,
         kind,
         /* Only the target its own kind names. The route refuses a mismatch in
            words, and clearing here is what stops the form ever sending one. */

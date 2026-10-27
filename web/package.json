@@ -56,6 +56,7 @@
     "test:feedback": "tsx scripts/test-seed-feedback.mts",
     "test:deep-dive": "tsx scripts/test-deep-dive.mts",
     "test:trace": "tsx scripts/test-trace.mts",
+    "test:markets": "node scripts/test-markets.mts",
     "test:audit": "node --experimental-strip-types --no-warnings scripts/test-audit-oct22.mts",
     "test:links": "node --experimental-strip-types --no-warnings scripts/test-person-links.mts",
     "test:intro": "tsx scripts/test-introductions.mts",

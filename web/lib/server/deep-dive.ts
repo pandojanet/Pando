@@ -1,4 +1,6 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
+import { marketConfig } from "@/lib/markets";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
@@ -86,7 +88,7 @@ import { SMS_TEMPLATE_VERSION } from "@/lib/sms-templates";
  * (`fallbacks: "default"`), so a safety decline is re-run on another model
  * inside the same call rather than dropping the reasons to the template.
  */
-const MODEL = "claude-sonnet-5-5";
+const MODEL = MODELS.deep;
 const TIMEOUT_MS = 90_000;
 
 /**
@@ -101,9 +103,9 @@ const PARENT_OPTIONS_TO_WEIGH = 6;
 /* This market's towns: never a place's distinguishing name, never a sign the question names a place. */
 const TOWNS = PLACES.map((p) => p.name);
 
-/** "October 2026", in the pilot's clock. */
-export function todayPhrase(now: Date = new Date()): string {
-  return now.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "America/Los_Angeles" });
+/** "October 2026", on the market's clock (the default market's unless given). */
+export function todayPhrase(now: Date = new Date(), timeZone: string = marketConfig().timeZone): string {
+  return now.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone });
 }
 
 /* ---------------------------------------------------------------- the options */
@@ -133,7 +135,7 @@ function monthOf(at: string | null | undefined): string | null {
   if (!at) return null;
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "America/Los_Angeles" });
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: marketConfig().timeZone });
 }
 
 
@@ -193,14 +195,14 @@ export function deepOptionsFrom(candidates: AnswerCandidate[]): DeepOption[] {
  * `geocode_cache`, so a second report about the same towns costs nothing).
  * A town Google cannot place simply has no distance.
  */
-async function centres(names: string[]): Promise<Map<string, LatLng>> {
+async function centres(names: string[], marketId?: string): Promise<Map<string, LatLng>> {
   const out = new Map<string, LatLng>();
   if (!geocodeConfigured()) return out;
   const unique = [...new Set(names.filter(Boolean))].slice(0, 10);
   await Promise.all(
     unique.map(async (name) => {
-      const query = /,\s*[A-Z]{2}\b/.test(name) ? name : `${name}, CA`;
-      const r = await lookupPlaces({ query, kind: "place", limit: 1 }).catch(() => null);
+      const query = /,\s*[A-Z]{2}\b/.test(name) ? name : `${name}, ${marketConfig(marketId).state}`;
+      const r = await lookupPlaces({ query, kind: "place", limit: 1, marketId }).catch(() => null);
       const place = r && r.ok ? r.places[0] : null;
       if (place && place.lat !== null && place.lng !== null) out.set(name, { lat: place.lat, lng: place.lng });
     }),
@@ -208,9 +210,9 @@ async function centres(names: string[]): Promise<Map<string, LatLng>> {
   return out;
 }
 
-export async function withDistances(options: DeepOption[], home: string | null): Promise<DeepOption[]> {
+export async function withDistances(options: DeepOption[], home: string | null, marketId?: string): Promise<DeepOption[]> {
   if (!home) return options;
-  const map = await centres([home, ...options.map((o) => o.area ?? "")]);
+  const map = await centres([home, ...options.map((o) => o.area ?? "")], marketId);
   const from = map.get(home);
   if (!from) return options;
   return options.map((o) => {
@@ -426,6 +428,7 @@ async function draft(input: {
   named: string[];
   /** On the one retry: what was removed last time, and why. */
   refused?: string[];
+  timeZone?: string;
 }): Promise<DeepDraft | null> {
   if (!deepDiveConfigured()) return null;
   try {
@@ -451,7 +454,7 @@ async function draft(input: {
                 preferences: familyPreferences(input.family),
               },
               /* A model has no clock: a July page read in October is last season (22 Oct run). */
-              today: todayPhrase(),
+              today: todayPhrase(new Date(), input.timeZone),
               question_turns_on: input.focus ?? [],
               answer_shape: {
                 kind: input.shape.kind,
@@ -655,6 +658,8 @@ export async function draftChecked(input: {
   family: DeepFamily;
   options: DeepOption[];
   focus?: string[];
+  /** The market's clock for "today" (lib/markets.ts). */
+  timeZone?: string;
 }): Promise<{ checked: CheckedDraft | null; drafted: boolean; refusals: number }> {
   const shape = deepDiveShape(input.question, { towns: TOWNS });
   const named = namedInQuestion(input.question, input.options, TOWNS);
@@ -816,6 +821,8 @@ export async function requestDeepDive(input: {
 
 export interface DeliverInput {
   deepDiveId: string;
+  /** The parent's market: the answer row, the drive-time lookups and the report's date (27 Oct). */
+  marketId?: string;
   personId: string | null;
   phone: string;
   question: string;
@@ -867,8 +874,8 @@ async function deliver(input: DeliverInput): Promise<boolean> {
     await finishDeepDive({ id: input.deepDiveId, status: "failed" });
     return false;
   }
-  const options = await withDistances(base, input.home);
-  const { checked, drafted, refusals } = await draftChecked({ question: input.question, family, options, focus: input.focus });
+  const options = await withDistances(base, input.home, input.marketId);
+  const { checked, drafted, refusals } = await draftChecked({ question: input.question, family, options, focus: input.focus, timeZone: marketConfig(input.marketId).timeZone });
 
   /* Offer to ask parents when the top of the report rests on public pages. */
   const top = reportOrder(options, checked?.order ?? []);
@@ -917,6 +924,7 @@ async function deliver(input: DeliverInput): Promise<boolean> {
 
   const answerId = await queueAnswer({
     personId: input.personId,
+    marketId: input.marketId,
     phone: input.phone,
     question: input.question,
     answerText: sentText,

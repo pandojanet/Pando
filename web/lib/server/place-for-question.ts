@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { placesForZip } from "@/lib/home-places";
 import { knownPlaceIn, locationFromLabel, placePhraseIn } from "@/lib/place-in-question";
@@ -93,7 +94,7 @@ export async function placeForQuestion(input: {
   marketId?: string;
   profile: { neighborhood: string | null; pending_place?: string | null } | null;
 }): Promise<QuestionPlace> {
-  const marketId = input.marketId ?? "pasadena";
+  const marketId = input.marketId ?? DEFAULT_MARKET_ID;
   const areas = await marketAreas(marketId);
 
   const named = knownPlaceIn(input.question, areas);
@@ -191,7 +192,7 @@ export async function askablePeopleNear(input: {
     const rows = (await db.execute(sql`
       select count(*)::int as n
         from people p
-       where p.market_id = ${input.marketId ?? "pasadena"}
+       where p.market_id = ${input.marketId ?? DEFAULT_MARKET_ID}
          and not p.is_test
          -- Somebody Pando can actually text (25 Sep). A row with no phone — a
          -- nameless demo row near Temple City, walked over the relay — counted

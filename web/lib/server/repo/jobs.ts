@@ -387,6 +387,9 @@ async function delivery_check(): Promise<JobResult> {
  * indistinguishable from a bug, and the point of the ladder is that Pando is
  * scarce.
  */
+/** A contributor is not asked about the same record again within this many days (22 Oct audit). */
+const FRESHNESS_REPEAT_DAYS = 90;
+
 async function freshness_ping(): Promise<JobResult> {
   const PER_RUN = 5;
 
@@ -433,7 +436,7 @@ async function freshness_ping(): Promise<JobResult> {
            -- ping or a PASS was re-sent every month (22 Oct audit).
            and not exists (select 1 from freshness_pings fp
                             where fp.person_id = sc.person_id and fp.share_id = s.id
-                              and fp.asked_at > now() - interval '90 days')
+                              and fp.asked_at > now() - make_interval(days => ${FRESHNESS_REPEAT_DAYS}))
         union
         select a.person_id, s.id as share_id, s.name, s.kind, s.last_confirmed_at
           from answers a
@@ -446,7 +449,7 @@ async function freshness_ping(): Promise<JobResult> {
            )
            and not exists (select 1 from freshness_pings fp
                             where fp.person_id = a.person_id and fp.share_id = s.id
-                              and fp.asked_at > now() - interval '90 days')
+                              and fp.asked_at > now() - make_interval(days => ${FRESHNESS_REPEAT_DAYS}))
       )
       -- Who is worth asking, chosen so the cap below cannot be spent on people
       -- sendSms is certain to refuse (26 Sep). Two exclusions, both restating a

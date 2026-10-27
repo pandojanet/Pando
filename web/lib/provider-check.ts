@@ -254,7 +254,7 @@ function plainLetters(s: string): string {
  * neighbourhood that is not a postal city ("Bungalow Heaven") finds nobody, and
  * the web step takes over — which is the rule, not a failure.
  */
-export function npiQuery(name: string, town: string | null): URLSearchParams | null {
+export function npiQuery(name: string, town: string | null, state: string = NPPES_DEFAULT_STATE): URLSearchParams | null {
   const cleaned = searchableName(name);
   if (!cleaned) return null;
   const words = nameWords(cleaned).filter((w) => /^[a-z]+$/.test(w));
@@ -263,7 +263,7 @@ export function npiQuery(name: string, town: string | null): URLSearchParams | n
   const q = new URLSearchParams({
     version: "2.1",
     enumeration_type: "NPI-1",
-    state: "CA",
+    state,
     last_name: last,
     limit: String(NPPES_LIMIT),
   });
@@ -273,8 +273,13 @@ export function npiQuery(name: string, town: string | null): URLSearchParams | n
   return q;
 }
 
-/** Where a doctor is looked for when the neighbourhood finds nobody (9 Oct). */
+/**
+ * Where a doctor is looked for when the neighbourhood finds nobody (9 Oct), and
+ * the state searched — the default market's (lib/markets.ts), which the server
+ * passes in; `test:markets` pins these two to it. This module may not import.
+ */
 export const NPPES_FALLBACK_CITY = "Pasadena";
+export const NPPES_DEFAULT_STATE = "CA";
 
 /**
  * The cities NPPES is asked about, in order (9 Oct, the developer: "if there is
@@ -283,12 +288,12 @@ export const NPPES_FALLBACK_CITY = "Pasadena";
  * postal city, and a family in Altadena may well see a Pasadena paediatrician.
  * No neighbourhood → Pasadena only. Pasadena is never asked twice.
  */
-export function npiCities(town: string | null): string[] {
+export function npiCities(town: string | null, fallbackCity: string = NPPES_FALLBACK_CITY): string[] {
   const own = town ? plainLetters(town) : "";
-  if (!own || own.toLowerCase() === NPPES_FALLBACK_CITY.toLowerCase()) {
-    return [NPPES_FALLBACK_CITY];
+  if (!own || own.toLowerCase() === fallbackCity.toLowerCase()) {
+    return [fallbackCity];
   }
-  return [town as string, NPPES_FALLBACK_CITY];
+  return [town as string, fallbackCity];
 }
 
 export type NpiOutcome =

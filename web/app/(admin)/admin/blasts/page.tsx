@@ -1,4 +1,5 @@
 "use client";
+import { isQuietHoursIn, marketConfig, quietWindowPhrase } from "@/lib/markets";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -108,23 +109,18 @@ function QuietHoursNote({ relay }: { relay: boolean }) {
   }, []);
   if (!now) return null;
 
+  /* The pilot market's clock and the send layer's own rule (lib/markets.ts). */
+  const market = marketConfig();
   const time = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
+    timeZone: market.timeZone,
     hour: "numeric",
     minute: "2-digit",
   }).format(now);
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Los_Angeles",
-      hour: "numeric",
-      hour12: false,
-    }).format(now),
-  );
   /* The relay is exempt, so a banner warning about the hour while sends
      actually go through would be the page contradicting the send layer — the
      class of thing this file keeps fixing. `quietHoursBlocks` is the one rule;
      this reads the same two facts it does. */
-  const quiet = hour < 8 || hour >= 21;
+  const quiet = isQuietHoursIn(market.timeZone, now);
   const blocked = quiet && !relay;
 
   return (
@@ -135,9 +131,9 @@ function QuietHoursNote({ relay }: { relay: boolean }) {
           : "border-bark bg-paper text-muted"
       }`}
     >
-      {time} in Pasadena —{" "}
+      {time} in {market.city} —{" "}
       {blocked
-        ? "outside 8am–9pm Pacific, so nothing will send."
+        ? `outside ${quietWindowPhrase(market, "–")}, so nothing will send.`
         : quiet
           ? "sending is open (Slack test channel)."
           : "sending is open."}

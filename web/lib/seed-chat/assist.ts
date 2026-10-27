@@ -76,6 +76,8 @@ export interface TurnInput {
   followed_up: string[];
   /** The parent's children's ages from the profile, for the wording. */
   child_ages: number[];
+  /** The session's market, whose scripts and tap lists the turn is read against (27 Oct). */
+  market_id?: string | null;
   /**
    * The parent may be addressed by name on this turn (12 Oct): the chat knows
    * a first name and has not used it on this card yet. The name itself is
@@ -178,6 +180,7 @@ export function readTurnInput(body: unknown): TurnInput | null {
       ? b.followed_up.filter((x): x is string => typeof x === "string" && /^[a-z_]{1,40}$/.test(x)).slice(0, 40)
       : [],
     child_ages: cleanAges(b.child_ages),
+    market_id: typeof b.market_id === "string" && /^[a-z0-9-]{1,40}$/.test(b.market_id) ? b.market_id : null,
     may_name: b.may_name === true,
     has_area: b.has_area === true,
     conversation: Array.isArray(b.conversation)

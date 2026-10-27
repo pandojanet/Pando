@@ -1,3 +1,4 @@
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { randomUUID } from "node:crypto";
 import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
   const inviteToken = isCaregiverInviteToken(raw.invite_token)
     ? raw.invite_token
     : null;
-  const marketId = cleanId(raw.market_id) ?? "pasadena";
+  const marketId = cleanId(raw.market_id) ?? DEFAULT_MARKET_ID;
 
   const result = await withDb(async (db) => {
     const invite = inviteToken

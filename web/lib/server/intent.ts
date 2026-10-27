@@ -1,4 +1,5 @@
 import "server-only";
+import { MODELS } from "@/lib/models";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
@@ -46,7 +47,7 @@ import {
 
 /* Haiku 5.5, thinking off (12 Oct, the developer: "Haiku 5.5 everywhere"; was
    4.5): one label per message, on the path of every question asked. */
-const MODEL = "claude-haiku-5-5";
+const MODEL = MODELS.fast;
 
 const SYSTEM = [
   "You classify a single SMS a parent sent to a local parenting recommendation service.",

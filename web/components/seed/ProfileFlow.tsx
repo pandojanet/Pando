@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -178,7 +179,7 @@ export function ProfileFlow() {
     const existing = loadSession();
     setSession(
       existing ??
-        newSession({ invite_code: null, market_id: "pasadena", source: "direct" }),
+        newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "direct" }),
     );
     /**
      * A parent whose profile is already saved opens on the **review**, not
@@ -253,7 +254,7 @@ export function ProfileFlow() {
    * before the loading early-return, because a hook cannot be conditional; until
    * it resolves, `optionsFor` returns the built-in lists.
    */
-  useMarketOptions(session?.market_id ?? "pasadena");
+  useMarketOptions(session?.market_id ?? DEFAULT_MARKET_ID);
 
   const screens = useMemo(
     () => (answers ? visibleScreens(answers) : []),

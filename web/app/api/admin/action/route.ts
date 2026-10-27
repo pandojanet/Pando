@@ -1,3 +1,4 @@
+import { quietWindowPhrase } from "@/lib/markets";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
@@ -750,7 +751,7 @@ export async function POST(request: Request) {
          clock), so an admin working European hours is inside it for most of
          their working day and would otherwise read this as a broken send. */
       blast_nobody_reachable:
-        "Nothing went out. It is outside 8am-9pm Pacific, or every parent in the pool was refused — opted out, inside their 48-hour gap, over their monthly limit — or no messaging provider is configured here. The Ask is marked for review.",
+        `Nothing went out. It is outside ${quietWindowPhrase()}, or every parent in the pool was refused — opted out, inside their 48-hour gap, over their monthly limit — or no messaging provider is configured here. The Ask is marked for review.`,
       blast_not_ready:
         "This Ask is not in a state that can be sent — it may have been fulfilled or expired.",
       /* M7's exit (8 Sep). Each of these is a different next step, which is the

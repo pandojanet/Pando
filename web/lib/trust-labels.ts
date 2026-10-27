@@ -113,7 +113,10 @@ export const TRUST_LABEL = {
   REFERENCE_AVAILABLE: "Reference available",
 } as const;
 
-export function lastConfirmedLabel(at: Date | string | null): string | null {
+/** The default market's clock (lib/markets.ts); `test:markets` pins it. Callers pass their market's. */
+export const LABEL_TIME_ZONE = "America/Los_Angeles";
+
+export function lastConfirmedLabel(at: Date | string | null, timeZone: string = LABEL_TIME_ZONE): string | null {
   if (!at) return null;
   const d = at instanceof Date ? at : new Date(at);
   if (Number.isNaN(d.getTime())) return null;
@@ -121,7 +124,7 @@ export function lastConfirmedLabel(at: Date | string | null): string | null {
   return `Last confirmed ${d.toLocaleDateString("en-US", {
     month: "short",
     year: "numeric",
-    timeZone: "America/Los_Angeles",
+    timeZone,
   })}`;
 }
 
@@ -192,7 +195,7 @@ export interface TrustLabels {
  */
 export function labelsFor(
   candidate: Candidate,
-  options: { policies?: FreshnessPolicy[]; now?: Date } = {},
+  options: { policies?: FreshnessPolicy[]; now?: Date; timeZone?: string } = {},
 ): TrustLabels {
   const now = options.now ?? new Date();
   const freshness = candidate.marked_stale
@@ -235,7 +238,7 @@ export function labelsFor(
   if (candidate.human_reviewed) labels.push(TRUST_LABEL.HUMAN_REVIEWED);
   if (candidate.reference_available === true) labels.push(TRUST_LABEL.REFERENCE_AVAILABLE);
 
-  const confirmed = lastConfirmedLabel(candidate.last_confirmed_at);
+  const confirmed = lastConfirmedLabel(candidate.last_confirmed_at, options.timeZone);
   if (confirmed) labels.push(confirmed);
 
   return { labels, freshness, public_only: false };

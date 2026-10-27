@@ -618,16 +618,20 @@ console.log("\n=== the deep dive runs on Sonnet 5.5 (22 Oct) ===");
 {
   const dd = fs.readFileSync(new URL("../lib/server/deep-dive.ts", import.meta.url), "utf8");
   const ws = fs.readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
-  ok("the report is drafted on Sonnet 5.5", /const MODEL = "claude-sonnet-5-5";/.test(dd));
+  /* The ids live in lib/models.ts since 27 Oct; each module names a role. */
+  const roles = fs.readFileSync(new URL("../lib/models.ts", import.meta.url), "utf8");
+  const isSonnet = /deep: "claude-sonnet-5-5"/.test(roles);
+  const isHaiku = /fast: "claude-haiku-5-5"/.test(roles);
+  ok("the report is drafted on Sonnet 5.5", isSonnet && /const MODEL = MODELS.deep;/.test(dd));
   const factsFn = dd.slice(dd.indexOf("function factsOf("), dd.indexOf("async function draft("));
   ok("the writer never sees a parent's count, words or price (22 Oct)", !/firsthand|quote|caveat|who_for|o\.price|named_by/.test(factsFn));
   ok("and never asks it to disable thinking (a 400 on Sonnet 5.5)", !/thinking: \{ type: "disabled" \}/.test(dd));
   ok("with the server-side refusal fallback on", dd.includes('fallbacks: "default"') && dd.includes('"server-side-fallback-2026-07-01"'));
   ok("and room for thinking in max_tokens", /max_tokens: 16000/.test(dd));
   const deepFn = ws.slice(ws.indexOf("async function deepSearchText("), ws.indexOf("async function searchOnce("));
-  ok("the deep search is Sonnet 5.5 with the newer web search tool", ws.includes('const DEEP_MODEL = "claude-sonnet-5-5";') && ws.includes('const DEEP_SEARCH_TOOL = "web_search_20260209"') && deepFn.includes("model: DEEP_MODEL"));
+  ok("the deep search is Sonnet 5.5 with the newer web search tool", isSonnet && ws.includes("const DEEP_MODEL = MODELS.deep;") && ws.includes('const DEEP_SEARCH_TOOL = "web_search_20260209"') && deepFn.includes("model: DEEP_MODEL"));
   ok("it resumes a paused server-side search instead of dropping it", deepFn.includes('response.stop_reason === "pause_turn"'));
-  ok("the ordinary search stays on Haiku 5.5 with web_search_20250305", ws.includes('const MODEL = "claude-haiku-5-5";') && ws.includes('const SEARCH_TOOL = "web_search_20250305"'));
+  ok("the ordinary search stays on Haiku 5.5 with web_search_20250305", isHaiku && ws.includes("const MODEL = MODELS.fast;") && ws.includes('const SEARCH_TOOL = "web_search_20250305"'));
 }
 
 
@@ -923,7 +927,7 @@ console.log("\n=== the length review (22 Oct): the shape is decided in code and 
   ok("a public place has none", d.pandoPrintsBelow(opts[2]).length === 0);
   const ddSrc = fs.readFileSync(new URL("../lib/server/deep-dive.ts", import.meta.url), "utf8");
   ok("the writer is given them, and told not to call a covered thing unknown", ddSrc.includes("pando_prints_below: pandoPrintsBelow(o)") && ddSrc.includes("missing when `pando_prints_below` covers it"));
-  ok("the writer gets today's month and the season rule", ddSrc.includes("today: todayPhrase()") && ddSrc.includes("Sold out, closed or wait-listed in a past season is not current advice"));
+  ok("the writer gets today's month and the season rule", /* on the parent's market clock since 27 Oct */ ddSrc.includes("today: todayPhrase(new Date(), input.timeZone)") && ddSrc.includes("Sold out, closed or wait-listed in a past season is not current advice"));
   ok("the opening starts with the answer and never restates the family's details", ddSrc.includes("START WITH THE ANSWER") && ddSrc.includes("Never restate the child's age, the area"));
   ok("no word about a missing drive time; a watch never repeats the paragraph", ddSrc.includes("Never mention a missing drive time") && ddSrc.includes("Never repeat what the"));
   ok("the writer's order is held to the shape in readDraft", ddSrc.includes("const held = shapeOrder("));

@@ -1,4 +1,5 @@
 import "server-only";
+import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
@@ -8,7 +9,7 @@ import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
 import { EVENT_WEIGHT, nextTier, tierFor } from "@/lib/tiers";
-import { RESPONSE_MIN_SAMPLE, effectiveAllowance } from "@/lib/outreach-policy";
+import { ALLOWANCE_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, RESPONSE_MIN_SAMPLE, effectiveAllowance } from "@/lib/outreach-policy";
 import type {
   AdminResource,
   AnswerRow,
@@ -2170,10 +2171,10 @@ async function conversationRows(db: Db) {
                            and m.category = 'outreach'
                            and m.retry_of is null
                            and m.template is distinct from 'thanks'
-                           and m.sent_at > now() - interval '30 days')::int as outreach_30,
+                           and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS}))::int as outreach_30,
         count(distinct m.responded_to) filter (where m.direction = 'in'
                            and m.responded_to is not null
-                           and m.sent_at > now() - interval '30 days')::int as answered_30,
+                           and m.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS}))::int as answered_30,
         count(*) filter (where m.status in ('failed', 'undelivered'))::int  as failed,
         (array_agg(m.direction order by m.sent_at desc))[1]           as last_direction,
         (array_agg(m.template order by m.sent_at desc))[1]            as last_template
@@ -2246,11 +2247,11 @@ async function conversationDetail(db: Db, personId: string) {
                where m.person_id = p.id and m.direction = 'out'
                  and m.category = 'outreach' and m.retry_of is null
                  and m.template is distinct from 'thanks'
-                 and m.sent_at > now() - interval '30 days') as asked_30,
+                 and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS})) as asked_30,
              (select count(distinct m.responded_to)::int from message_log m
                where m.person_id = p.id and m.direction = 'in'
                  and m.responded_to is not null
-                 and m.sent_at > now() - interval '30 days') as answered_30
+                 and m.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS})) as answered_30
         from people p
        where p.id = ${personId}::uuid
        limit 1`,
@@ -2421,11 +2422,11 @@ async function contributorStanding(db: Db) {
             and m.category = 'outreach'
             and m.retry_of is null
             and m.template is distinct from 'thanks'
-            and m.sent_at > now() - interval '30 days')::int             as asked_30,
+            and m.sent_at > now() - make_interval(days => ${ALLOWANCE_WINDOW_DAYS}))::int             as asked_30,
         (select count(distinct m.responded_to) from message_log m
           where m.person_id = p.id and m.direction = 'in'
             and m.responded_to is not null
-            and m.sent_at > now() - interval '30 days')::int             as answered_30,
+            and m.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS}))::int             as answered_30,
         -- What the page shows (27 Oct): replies to the requests counted in
         -- asked_30 — a reply this month to last month's request counted above
         -- and not in asked_30, so the rate could read 2 of 1 · 200%. The
@@ -2437,7 +2438,7 @@ async function contributorStanding(db: Db) {
             and q.category = 'outreach'
             and q.retry_of is null
             and q.template is distinct from 'thanks'
-            and q.sent_at > now() - interval '30 days')::int             as answered_in_window,
+            and q.sent_at > now() - make_interval(days => ${RESPONSE_WINDOW_DAYS}))::int             as answered_in_window,
         -- A current STOP (the send layer's rule, outreach.ts): nobody asks them.
         exists (select 1 from sms_opt_outs o
                  where o.phone = p.phone
@@ -2904,7 +2905,7 @@ async function blastPool(
 
   const { selectPool } = await import("@/lib/server/repo/blast");
   const { nearbyAreas } = await import("@/lib/server/repo/areas");
-  const market = String(blast.market_id ?? "pasadena");
+  const market = String(blast.market_id ?? DEFAULT_MARKET_ID);
   /* The same near set the send uses, or the preview shows a pool the send
      would not pick. */
   const pool = await selectPool({

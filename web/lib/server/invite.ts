@@ -1,7 +1,7 @@
 import "server-only";
 
 import { sql } from "drizzle-orm";
-import { MARKET_LABELS } from "../market-options";
+import { DEFAULT_MARKET_ID, MARKETS, isMarketId, marketConfig } from "../markets";
 import type { InviteResult, MarketId } from "../types";
 import { withDb } from "./db";
 import { cachedInvites, cacheInvites, type InviteRecord } from "./invite-cache";
@@ -41,9 +41,10 @@ import { cachedInvites, cacheInvites, type InviteRecord } from "./invite-cache";
  * got it the week before.
  */
 
+/* Every market's own id is a code for it; "sgv-founding" is the pilot's founding code. */
 const DEFAULT_CODES: Record<string, MarketId> = {
   "sgv-founding": "pasadena",
-  pasadena: "pasadena",
+  ...Object.fromEntries((Object.keys(MARKETS) as MarketId[]).map((id) => [id, id])),
 };
 
 function codeTable(): Record<string, MarketId> {
@@ -53,7 +54,7 @@ function codeTable(): Record<string, MarketId> {
   const table: Record<string, MarketId> = {};
   for (const pair of raw.split(",")) {
     const [code, market] = pair.split(":").map((s) => s?.trim());
-    if (code) table[code.toLowerCase()] = (market || "pasadena") as MarketId;
+    if (code) table[code.toLowerCase()] = (market || DEFAULT_MARKET_ID) as MarketId;
   }
   return Object.keys(table).length > 0 ? table : DEFAULT_CODES;
 }
@@ -134,13 +135,13 @@ export async function validateInviteCode(
   code: string | null | undefined,
 ): Promise<InviteResult> {
   const normalized = normalizeCode(code);
-  const fallback: MarketId = "pasadena";
+  const fallback: MarketId = DEFAULT_MARKET_ID;
 
   if (!normalized) {
     return {
       valid: false,
       market_id: fallback,
-      market_label: MARKET_LABELS[fallback],
+      market_label: marketConfig(fallback).label,
       reason: "missing",
     };
   }
@@ -151,7 +152,7 @@ export async function validateInviteCode(
     return {
       valid: true,
       market_id: invite.market_id,
-      market_label: MARKET_LABELS[invite.market_id] ?? invite.market_id,
+      market_label: isMarketId(invite.market_id) ? marketConfig(invite.market_id).label : invite.market_id,
       invite_id: invite.id,
       group_label: invite.label,
       group_option_value: invite.group_option_value,
@@ -173,7 +174,7 @@ export async function validateInviteCode(
     return {
       valid: false,
       market_id: fallback,
-      market_label: MARKET_LABELS[fallback],
+      market_label: marketConfig(fallback).label,
       reason: "unknown",
     };
   }
@@ -185,7 +186,7 @@ export async function validateInviteCode(
     return {
       valid: false,
       market_id: fallback,
-      market_label: MARKET_LABELS[fallback],
+      market_label: marketConfig(fallback).label,
       reason: "unknown",
     };
   }
@@ -193,7 +194,7 @@ export async function validateInviteCode(
   return {
     valid: true,
     market_id: market,
-    market_label: MARKET_LABELS[market] ?? market,
+    market_label: isMarketId(market) ? marketConfig(market).label : market,
   };
 }
 
