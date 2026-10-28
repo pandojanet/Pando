@@ -9,6 +9,7 @@ import {
 import { SMS_BUDGET } from "@/lib/answer";
 import { composeBlastAnswer } from "@/lib/blast-answer";
 import { ALLOWANCE_WINDOW_DAYS, OPEN_WEEKLY_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
+import { marketZoneOf } from "@/lib/server/repo/outreach";
 import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-templates";
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
@@ -215,15 +216,17 @@ export async function selectPool(input: {
                  then m.sent_at end)                                   as last_outreach,
         coalesce(sum(case when m.direction = 'out' and m.template = 'freshness_ping'
                            and m.retry_of is null
-                           and date_trunc('month', m.sent_at)
-                             = date_trunc('month', now())
+                           and date_trunc('month', m.sent_at at time zone z.tz)
+                             = date_trunc('month', now() at time zone z.tz)
                       then 1 else 0 end), 0)::int                      as pings_month,
         coalesce(bool_or(m.direction = 'out' and m.category = 'outreach'
                      and m.retry_of is null
                      and m.template is distinct from 'freshness_ping'
                      and m.template is distinct from 'thanks'
-                     and m.sent_at::date = now()::date), false)        as blast_today
+                     and (m.sent_at at time zone z.tz)::date
+                         = (now() at time zone z.tz)::date), false)   as blast_today
       from people p
+      cross join lateral (select ${marketZoneOf(sql`p.market_id`)} as tz) z
       left join message_log m on m.person_id = p.id
       where p.id = any(${literal}::uuid[])
         and not p.is_test
@@ -234,7 +237,7 @@ export async function selectPool(input: {
            where o.phone = p.phone
              and o.opted_out_at is not null
              and (o.opted_in_at is null or o.opted_in_at < o.opted_out_at))
-      group by p.id, p.monthly_contact_allowance, p.allowance_mode
+      group by p.id, p.monthly_contact_allowance, p.allowance_mode, z.tz
     `)) as unknown as Array<Record<string, unknown>>;
     return rows;
   });
@@ -558,6 +561,33 @@ async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
       continue;
     }
 
+    /**
+     * The recipient is claimed **before** the text goes (28 Oct, architecture
+     * review §4.6).
+     *
+     * `already` above is a read, and the send is many awaits later: a double
+     * click, or two admins pressing Send together, both read nought and both
+     * walked the pool — every parent asked twice. The row's primary key
+     * (blast_id, person_id) makes the claim atomic: whichever call inserts it
+     * sends, the other skips her. `sent_at` stays null until the provider
+     * accepted the text, so `already` and every count still mean "went"; a
+     * refused send gives the claim back.
+     */
+    const claimed = await withDb(async (db: Db) => {
+      const rows = (await db.execute(sql`
+        insert into blast_recipients (blast_id, person_id, match_score, match_reasons)
+        values (${blastId}::uuid, ${member.person_id}::uuid, ${member.score},
+                ${JSON.stringify(member.reasons)}::jsonb)
+        on conflict do nothing
+        returning person_id
+      `)) as unknown as Array<Record<string, unknown>>;
+      return rows.length > 0;
+    });
+    if (!claimed.persisted || !claimed.data) {
+      skipped += 1;
+      continue;
+    }
+
     const result = await sendSms({
       to: phone,
       body: blastRequestSms({
@@ -571,23 +601,24 @@ async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
       templateVersion: SMS_TEMPLATE_VERSION,
     });
 
+    /* Recorded as sent only because it went; a refused send leaves no row. The
+       score and reasons travel with it so the pool can be argued with
+       afterwards, exactly as the 6.7 harness shows it. */
+    await withDb(async (db: Db) => {
+      await db.execute(
+        result.sent
+          ? sql`update blast_recipients set sent_at = now()
+                 where blast_id = ${blastId}::uuid and person_id = ${member.person_id}::uuid`
+          : sql`delete from blast_recipients
+                 where blast_id = ${blastId}::uuid and person_id = ${member.person_id}::uuid
+                   and sent_at is null`,
+      );
+      return true;
+    });
     if (!result.sent) {
       skipped += 1;
       continue;
     }
-
-    /* Recorded only because it went. The score and reasons travel with it so the
-       pool can be argued with afterwards, exactly as the 6.7 harness shows it. */
-    await withDb(async (db: Db) => {
-      await db.execute(sql`
-        insert into blast_recipients
-          (blast_id, person_id, match_score, match_reasons, sent_at)
-        values (${blastId}::uuid, ${member.person_id}::uuid, ${member.score},
-                ${JSON.stringify(member.reasons)}::jsonb, now())
-        on conflict do nothing
-      `);
-      return true;
-    });
     sent += 1;
   }
 

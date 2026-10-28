@@ -351,6 +351,24 @@ export function normaliseAnswers(stored: unknown): ProfileAnswers {
   return out;
 }
 
+/**
+ * The saved chat, only if it still has the shape the chat reads (28 Oct,
+ * architecture review §7.2). It was passed through unchecked, so one copy the
+ * current build cannot read — an older shape, or a hand-edited one — threw on
+ * every reload. A chat that does not fit is dropped; the profile beside it is
+ * kept, and the cards it sent are in the database.
+ */
+function chatOrNull(value: unknown): SeedSession["chat"] {
+  if (!value || typeof value !== "object") return null;
+  const chat = value as Record<string, unknown>;
+  const isObject = (v: unknown) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (!Array.isArray(chat.messages) || !chat.messages.every(isObject)) return null;
+  if (!Array.isArray(chat.submissions) || !chat.submissions.every(isObject)) return null;
+  if (chat.mode !== "menu" && chat.mode !== "card" && chat.mode !== "closed") return null;
+  if (chat.draft !== null && chat.draft !== undefined && !isObject(chat.draft)) return null;
+  return { ...(chat as unknown as NonNullable<SeedSession["chat"]>), draft: (chat.draft ?? null) as never };
+}
+
 export function loadSession(): SeedSession | null {
   if (typeof window === "undefined") return null;
   dropRetired();
@@ -368,7 +386,7 @@ export function loadSession(): SeedSession | null {
          1 Sep's "clear or migrate any saved test data that already violates
          these limits". */
       answers: pruneAnswers(normaliseAnswers(parsed.answers)),
-      chat: parsed.chat ?? null,
+      chat: chatOrNull(parsed.chat),
       is_test: parsed.is_test === true,
       first_name: parsed.first_name ?? null,
       last_name: parsed.last_name ?? null,

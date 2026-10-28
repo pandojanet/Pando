@@ -63,6 +63,12 @@
                        25%/30-day governor, the ping limits, and the SETTINGS
                        exchange. No runtime imports, so `test:outreach` loads it
                        in plain node — and most of its checks assert a refusal.
+`web/lib/server/repo/outreach.ts` `marketZoneOf` — a person's market time zone as a
+                       SQL fragment, from the registry. Any "today" or "this month"
+                       about a parent in SQL goes through it, never `now()::date`.
+`web/lib/analytics.ts` `scrubAnalyticsEvent` · `scrubAnalyticsUrl` — what PostHog may
+                       see of a URL; the provider's `before_send`. A new secret in a
+                       URL, or a new private route, is added here.
 `web/scripts/stage-outreach.mjs` — `npm run stage:outreach` — the rows that make
                        the gap and the governor fire, so they can be walked
                        without waiting a month. Asserts nothing: every

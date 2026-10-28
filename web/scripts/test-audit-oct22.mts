@@ -40,7 +40,8 @@ const analytics = read("../lib/analytics.ts");
 ok("a personal referral code is sent as the word 'personal'", analytics.includes('invite_code: props.personal ? "personal" : props.invite_code'));
 ok("the landing page says which links are personal", read("../components/seed/InviteLanding.tsx").includes("personal: invite.has_inviter === true"));
 const provider = read("../lib/posthog-provider.tsx");
-ok("and the invite code is stripped from the page URL", provider.includes('params.delete("i")') && provider.includes('params.delete("invite")'));
+/* 28 Oct: one scrubber for every URL property, its behaviour checked in test:security. */
+ok("and the invite code is stripped from the page URL", provider.includes("scrubAnalyticsUrl(") && analytics.includes('const SECRET_PARAMS = ["i", "invite"]'));
 
 console.log("\n=== freshness pings at each kind's threshold ===");
 const jobs = read("../lib/server/repo/jobs.ts");

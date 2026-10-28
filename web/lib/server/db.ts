@@ -68,6 +68,13 @@ function create(url: string): Db {
     idle_timeout: 300,
     connect_timeout: 10,
     /**
+     * Who holds a connection, in `pg_stat_activity` (28 Oct, architecture
+     * review §6.4). The pool has run out once already, and every client read
+     * "postgres.js" — the driver's default for this same startup parameter, so
+     * naming it changes nothing a pooler sees.
+     */
+    connection: { application_name: "pando-web" },
+    /**
      * Never let the driver print a query — the values in these statements are
      * phone numbers, names and free text about real families (invariant 7).
      */

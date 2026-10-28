@@ -4,6 +4,7 @@ import { Suspense, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { PostHogProvider as Provider } from "posthog-js/react";
+import { scrubAnalyticsEvent, scrubAnalyticsUrl } from "@/lib/analytics";
 
 /**
  * The other half of estimate 3.1 — `lib/analytics.ts` has always called
@@ -76,6 +77,9 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
       // would only ever see the first screen a parent lands on.
       capture_pageview: false,
       autocapture: false,
+      /* Nothing from the admin or a caregiver's page, and no invite code or
+         caregiver token in any URL property (28 Oct) — see scrubAnalyticsEvent. */
+      before_send: (event) => scrubAnalyticsEvent(event, window.location.pathname),
       /* Off by default, and that default is the product's position (invariant 7:
          never log names or free text — replay ships the whole screen). It is a
          switch rather than a constant for one reason: the client walks this flow
@@ -206,12 +210,9 @@ function PageviewTracker() {
     if (!posthog.__loaded) return;
     /* The invite code never rides along in the URL (22 Oct audit): a personal
        one is built from the inviter's first name — invariant 7. */
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("i");
-    params.delete("invite");
-    const query = params.toString();
+    const query = searchParams.toString();
     posthog.capture("$pageview", {
-      $current_url: query ? `${pathname}?${query}` : pathname,
+      $current_url: scrubAnalyticsUrl(query ? `${pathname}?${query}` : pathname),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, searchParams]);

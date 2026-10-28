@@ -88,6 +88,19 @@ export function checkSlackSignature(input: {
   return verifySlackSignature({ ...input, secret: config().secret || null });
 }
 
+/**
+ * The one channel the relay reads (28 Oct, architecture review §4.3).
+ *
+ * The bot can be in other channels, and a message there in the `+1626… DELETE`
+ * shape was acted on as that parent: anyone in the workspace could erase a
+ * profile or opt a number out from a channel nobody watches. Only the channel
+ * Pando posts to is a parent's door; `isSlackRelayEnabled` already requires it
+ * to be set.
+ */
+export function slackRelayChannel(): string {
+  return config().channel;
+}
+
 /** Our own bot's id, so the events route can ignore what Pando itself posted. */
 export function slackBotUserId(): string | null {
   return process.env.SLACK_BOT_USER_ID?.trim() || null;

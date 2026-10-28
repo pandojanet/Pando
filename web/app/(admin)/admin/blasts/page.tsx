@@ -160,6 +160,9 @@ export default function BlastsPage() {
     null,
   );
   const [note, setNote] = useState("");
+  /* The Ask waiting for a second press (28 Oct, review §4.6): one click texted
+     the whole pool, and a text cannot be taken back. */
+  const [confirmSend, setConfirmSend] = useState<string | null>(null);
   /* The Ask being acted on — or CREATING, for the form at the top, which is
      the one control on this page that belongs to no row. */
   const [busy, setBusy] = useState<string | null>(null);
@@ -203,6 +206,7 @@ export default function BlastsPage() {
       setMessage(!result.persisted ? `${label} — but nothing was saved.` : label);
       setNoteFor(null);
       setNote("");
+      setConfirmSend(null);
       await reload();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "That didn't go through");
@@ -409,20 +413,40 @@ export default function BlastsPage() {
                       {!closed &&
                         row.pool_target > 0 &&
                         row.recipients === 0 &&
-                        (row.status === "draft" || row.status === "active") && (
+                        (row.status === "draft" || row.status === "active") &&
+                        (confirmSend === row.id ? (
+                          <>
+                            <span className="basis-full text-[13px]">
+                              Text up to {row.pool_target}{" "}
+                              {row.pool_target === 1 ? "parent" : "parents"} now? A text
+                              cannot be taken back.
+                            </span>
+                            <Button
+                              tone="primary"
+                              disabled={busy === row.id}
+                              subject={row.question_text}
+                              onClick={() =>
+                                void run(row.id, "The Ask went out.", async () =>
+                                  adminAction({ action: "blast.send", id: row.id }),
+                                )
+                              }
+                            >
+                              Yes, send it
+                            </Button>
+                            <Button tone="secondary" onClick={() => setConfirmSend(null)}>
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
                           <Button
                             tone="primary"
                             disabled={busy === row.id}
                             subject={row.question_text}
-                            onClick={() =>
-                              void run(row.id, "The Ask went out.", async () =>
-                                adminAction({ action: "blast.send", id: row.id }),
-                              )
-                            }
+                            onClick={() => setConfirmSend(row.id)}
                           >
                             Send the Ask
                           </Button>
-                        )}
+                        ))}
 
                       {/**
                         * M7's exit, and the other half of the same hole: until

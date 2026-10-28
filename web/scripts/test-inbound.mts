@@ -119,6 +119,14 @@ for (const word of tpl.OPT_OUT_KEYWORDS) {
 }
 ok("surrounding whitespace is ignored", tpl.keywordOf("  stop  ") === "opt_out");
 ok("a trailing full stop is ignored", tpl.keywordOf("Stop.") === "opt_out");
+/* 28 Oct — the FCC's words, and whole messages that say the same. */
+ok("REVOKE opts out", tpl.keywordOf("revoke") === "opt_out");
+ok("opt-out, hyphenated, opts out", tpl.keywordOf("Opt-out") === "opt_out");
+ok("opt out, two words, opts out", tpl.keywordOf("opt  out!") === "opt_out");
+ok("'Stop texting me' opts out", tpl.keywordOf("Stop texting me.") === "opt_out");
+ok("'please stop' opts out", tpl.keywordOf("please stop") === "opt_out");
+ok("a sentence that only contains stop does not", tpl.keywordOf("stop by the park at 3") === null);
+ok("'I'll stop asking' does not", tpl.keywordOf("I'll stop asking") === null);
 ok(
   '"stop by the park at 3" is NOT an opt-out',
   tpl.keywordOf("stop by the park at 3") === null,

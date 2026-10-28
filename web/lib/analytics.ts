@@ -255,3 +255,83 @@ export function trackAbandonOnHide(getProps: () => Props): () => void {
   document.addEventListener("visibilitychange", onHide);
   return () => document.removeEventListener("visibilitychange", onHide);
 }
+
+/**
+ * What PostHog may see of a URL (28 Oct, architecture review §4.10).
+ *
+ * The provider sits in the root layout, so before this every route sent
+ * events, the admin included — and `/caregiver/<token>` *is* the key to that
+ * page, while posthog-js copies the location into `$pathname`,
+ * `$initial_current_url` and `$session_entry_url` on its own, not only into
+ * the `$current_url` the pageview sets. Two rules, applied to every event in
+ * `before_send`:
+ *
+ *  - **Nothing at all from the admin or a caregiver's page.** The admin shows
+ *    private notes (invariant 12) and phones; a caregiver's page is reached by
+ *    a secret. A replay there would carry the whole screen.
+ *  - **Everywhere else, a URL loses its secrets**: the invite code (`i`,
+ *    `invite`, built from the inviter's first name — invariant 7) and a
+ *    caregiver token in the path.
+ *
+ * Pure, so the rules are tested without a browser.
+ */
+export function isUntrackedPath(pathname: string): boolean {
+  return /^\/(admin|caregiver)(\/|$)/.test(pathname);
+}
+
+const SECRET_PARAMS = ["i", "invite"];
+
+export function scrubAnalyticsUrl(value: string): string {
+  let url: URL;
+  let relative = false;
+  try {
+    url = new URL(value);
+  } catch {
+    try {
+      url = new URL(value, "https://x.invalid");
+      relative = true;
+    } catch {
+      return value;
+    }
+  }
+  for (const key of SECRET_PARAMS) url.searchParams.delete(key);
+  url.pathname = url.pathname.replace(/^\/caregiver\/[^/]+/, "/caregiver/[token]");
+  url.hash = "";
+  const query = url.searchParams.toString();
+  const path = url.pathname + (query ? `?${query}` : "");
+  return relative ? path : `${url.origin}${path}`;
+}
+
+/** The properties posthog-js fills from the location on its own. */
+const URL_PROPERTIES = [
+  "$current_url",
+  "$pathname",
+  "$initial_current_url",
+  "$initial_pathname",
+  "$session_entry_url",
+  "$session_entry_pathname",
+  "$referrer",
+  "$initial_referrer",
+];
+
+type Bag = Record<string, unknown> | undefined;
+
+function scrubBag(bag: Bag): void {
+  if (!bag) return;
+  for (const key of URL_PROPERTIES) {
+    if (typeof bag[key] === "string") bag[key] = scrubAnalyticsUrl(bag[key] as string);
+  }
+}
+
+/** `before_send`: null drops the event. `pathname` is where the browser is now. */
+export function scrubAnalyticsEvent<T extends { properties?: Bag; $set?: Bag; $set_once?: Bag }>(
+  event: T | null,
+  pathname: string,
+): T | null {
+  if (!event) return null;
+  if (isUntrackedPath(pathname)) return null;
+  scrubBag(event.properties);
+  scrubBag(event.$set);
+  scrubBag(event.$set_once);
+  return event;
+}

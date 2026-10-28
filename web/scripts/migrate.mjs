@@ -66,12 +66,18 @@ const client = postgres(url, {
   // pooler cannot keep prepared statements across it.
   max: 1,
   prepare: false,
+  connection: { application_name: "pando-migrate" },
   // Never let the driver print a statement — these carry no data yet, but the
   // same rule applies everywhere the app talks to Postgres (invariant 7).
   onnotice: () => {},
 });
 
 try {
+  /* An ALTER waits behind a long query, and every query of the app then waits
+     behind the ALTER (28 Oct, architecture review §6.4). Give up after ten
+     seconds instead — a failed migration is rerun; a locked table is an outage.
+     One connection (max: 1), so the setting holds for the whole run. */
+  await client`set lock_timeout = '10s'`;
   console.log("applying migrations from ./drizzle …");
   await migrate(drizzle(client), { migrationsFolder: "./drizzle" });
 

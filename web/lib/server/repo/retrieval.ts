@@ -594,7 +594,10 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
         c.id, c.first_name, c.last_initial, c.provenance,
         cp.roles_wanted, cp.areas_served,
         cp.age_experience, cp.strengths, cp.rate_band,
-        max(n.created_at)                                               as last_confirmed_at,
+        -- The same families as firsthand below (28 Oct, review §6.2): a
+        -- nomination nobody approved yet, or one set aside, confirms nothing.
+        max(n.created_at) filter (where n.status = 'approved' and not n.review_hold)
+                                                                        as last_confirmed_at,
         (array_agg(n.caveat order by n.created_at desc)
            filter (where n.caveat is not null and btrim(n.caveat) <> ''
                      and not n.review_hold

@@ -648,6 +648,39 @@ console.log("\n=== admin writes report what they changed ===");
   );
 }
 
+/* ── What PostHog may see of a URL (28 Oct, review §4.10) ─────────────────── */
+{
+  const a = (await import(`../lib/analytics.ts?v=${Date.now()}`)) as typeof import("../lib/analytics.ts");
+  ok("nothing is sent from the admin", a.scrubAnalyticsEvent({ properties: {} }, "/admin/answers") === null);
+  ok("nothing is sent from a caregiver page", a.scrubAnalyticsEvent({ properties: {} }, "/caregiver/abc123") === null);
+  ok("a page merely starting with the word is still tracked", a.scrubAnalyticsEvent({ properties: {} }, "/administer") !== null);
+  ok(
+    "a caregiver token never leaves in a URL",
+    a.scrubAnalyticsUrl("https://pando.is/caregiver/s3cr3t-token?x=1") === "https://pando.is/caregiver/[token]?x=1",
+  );
+  ok("the invite code is cut from a relative URL", a.scrubAnalyticsUrl("/join?i=sarah-k7&utm_source=sms") === "/join?utm_source=sms");
+  const ev = a.scrubAnalyticsEvent(
+    {
+      properties: { $current_url: "https://pando.is/join?invite=sarah", $pathname: "/caregiver/tok", n: 1 } as Record<string, unknown>,
+      $set_once: { $initial_current_url: "https://pando.is/?i=sarah-k7#top" } as Record<string, unknown>,
+    },
+    "/join",
+  );
+  ok(
+    "every location property posthog-js fills is scrubbed, others untouched",
+    ev?.properties?.$current_url === "https://pando.is/join" &&
+      ev?.properties?.$pathname === "/caregiver/[token]" &&
+      ev?.properties?.n === 1 &&
+      ev?.$set_once?.$initial_current_url === "https://pando.is/",
+  );
+  ok(
+    "the provider runs every event through it",
+    /before_send: \(event\) => scrubAnalyticsEvent\(event, window\.location\.pathname\)/.test(
+      readFileSync(new URL("../lib/posthog-provider.tsx", import.meta.url), "utf8"),
+    ),
+  );
+}
+
 console.log(
   failures === 0
     ? `\n  ${checks} checks passed.`

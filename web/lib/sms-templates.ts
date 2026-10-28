@@ -379,6 +379,32 @@ export const OPT_OUT_KEYWORDS = [
   "CANCEL",
   "END",
   "QUIT",
+  /* The FCC's 2024 revocation order (in force April 2025) names these two as
+     well, and asks that consent be revocable "by any reasonable means" — so a
+     parent who texts REVOKE or "opt out" is out (28 Oct, architecture review
+     §4.11). Twilio's Advanced Opt-Out lists them too. */
+  "REVOKE",
+  "OPTOUT",
+  "OPT OUT",
+] as const;
+
+/**
+ * Whole messages that plainly mean the same thing (28 Oct).
+ *
+ * Still exact, on the whole message, for the reason above: "stop by the park"
+ * must not silence anyone. These are the ways a parent says it that are not a
+ * single word; a sentence that merely contains one is left to the classifier.
+ */
+export const OPT_OUT_PHRASES = [
+  "STOP TEXTING",
+  "STOP TEXTING ME",
+  "STOP MESSAGING ME",
+  "STOP SENDING ME TEXTS",
+  "PLEASE STOP",
+  "STOP PLEASE",
+  "UNSUBSCRIBE ME",
+  "TAKE ME OFF YOUR LIST",
+  "REMOVE ME FROM YOUR LIST",
 ] as const;
 
 export const OPT_IN_KEYWORDS = ["START", "UNSTOP"] as const;
@@ -414,8 +440,11 @@ export const PASS_KEYWORDS = ["PASS", "SKIP"] as const;
 export function keywordOf(
   body: string,
 ): "opt_out" | "opt_in" | "help" | "pass" | null {
-  const word = body.trim().toUpperCase().replace(/[.!]+$/, "");
+  /* Spaces and hyphens fold to one space, so "Opt-out" and "opt  out" are
+     "OPT OUT". */
+  const word = body.trim().toUpperCase().replace(/[.!]+$/, "").replace(/[\s-]+/g, " ");
   if ((OPT_OUT_KEYWORDS as readonly string[]).includes(word)) return "opt_out";
+  if ((OPT_OUT_PHRASES as readonly string[]).includes(word)) return "opt_out";
   if ((OPT_IN_KEYWORDS as readonly string[]).includes(word)) return "opt_in";
   if ((HELP_KEYWORDS as readonly string[]).includes(word)) return "help";
   if ((PASS_KEYWORDS as readonly string[]).includes(word)) return "pass";

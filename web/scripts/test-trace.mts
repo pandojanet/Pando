@@ -103,7 +103,7 @@ console.log("\n=== one inbound text, end to end ===");
   ok("and never the model's input or output", !("$ai_input" in gen) && !("$ai_output_choices" in gen) && !("$ai_output" in gen));
   ok("the person is the hash, on every event, once known", ev.every((e) => e.properties.distinct_id === tr.personKey("8873c507-ef17-4e6f-864f-43e48a7f0ed5")) && ev.every((e) => !("$process_person_profile" in e.properties)));
   const json = JSON.stringify(batches);
-  ok("nothing the model wrote and no phone is anywhere in what was sent", !json.includes("Maya") && !json.includes("555") && !json.includes("Little Maestros"));
+  ok("nothing the model wrote and no phone is anywhere in what was sent", !json.includes("Maya") && /* The phone in every form it was given — not a bare "555", which a random id or hash contains often enough to fail now and then (28 Oct). */ !["6265550001", "626 555 0001", "555-0001"].some((p) => json.includes(p)) && !json.includes("Little Maestros"));
   ok("the log line became an event with its enums", by("pando_log")[0]?.properties.tag === "sms:inbound" && by("pando_log")[0]?.properties.keyword === "text");
 }
 

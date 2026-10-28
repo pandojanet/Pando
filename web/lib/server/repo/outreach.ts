@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { DEFAULT_MARKET_ID, MARKETS, marketConfig } from "@/lib/markets";
 import { withDb, type Db } from "@/lib/server/db";
 import type { DeliveryCounts } from "@/lib/delivery";
 import { ALLOWANCE_WINDOW_DAYS, OPEN_WEEKLY_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, decideOutreach, REPLY_LINK_DAYS, type OutreachHistory, type OutreachKind } from "@/lib/outreach-policy";
@@ -125,6 +126,23 @@ export type OutreachVerdict = { ok: true } | { ok: false; reason: string };
  * **A person who is not in `people` is refused**, not waved through: the whole
  * point of the per-person limits is that nobody is contacted without them.
  */
+/**
+ * A person's market clock, in SQL (28 Oct, architecture review §4.5).
+ *
+ * Invariant 5's "one freshness ping a month, never on the same day as a blast"
+ * counted its month and its day on the database's clock, which is UTC: a blast
+ * at 16:30 and a ping at 18:00 Pacific fell on different UTC days and both
+ * went, every evening from 17:00 to midnight. The day is the parent's, so it is
+ * read from their market's time zone in the registry; an id the registry does
+ * not know is the default market's clock, as `marketConfig` reads it.
+ * `outreachAllowed` and `selectPool` both use this, so the two stay one rule.
+ */
+export function marketZoneOf(marketId: SQL): SQL {
+  const zones = Object.values(MARKETS).map((m) => sql`(${m.id}::text, ${m.timeZone}::text)`);
+  return sql`coalesce((select mz.tz from (values ${sql.join(zones, sql`, `)}) as mz(id, tz)
+                     where mz.id = ${marketId}), ${marketConfig(DEFAULT_MARKET_ID).timeZone}::text)`;
+}
+
 export async function outreachAllowed(
   personId: string,
   kind: OutreachKind,
@@ -195,8 +213,8 @@ export async function outreachAllowed(
                            and m.template = 'freshness_ping'
                            and m.retry_of is null
                            and m.id is distinct from ${excludeId}::uuid
-                           and date_trunc('month', m.sent_at)
-                             = date_trunc('month', now())
+                           and date_trunc('month', m.sent_at at time zone z.tz)
+                             = date_trunc('month', now() at time zone z.tz)
                       then 1 else 0 end), 0)::int                     as pings_month,
         coalesce(bool_or(m.direction = 'out'
                      and m.category = 'outreach'
@@ -204,11 +222,13 @@ export async function outreachAllowed(
                      and m.id is distinct from ${excludeId}::uuid
                      and m.template is distinct from 'freshness_ping'
                      and m.template is distinct from 'thanks'
-                     and m.sent_at::date = now()::date), false)       as blast_today
+                     and (m.sent_at at time zone z.tz)::date
+                         = (now() at time zone z.tz)::date), false)  as blast_today
       from people p
+      cross join lateral (select ${marketZoneOf(sql`p.market_id`)} as tz) z
       left join message_log m on m.person_id = p.id
       where p.id = ${personId}::uuid
-      group by p.id, p.monthly_contact_allowance, p.allowance_mode
+      group by p.id, p.monthly_contact_allowance, p.allowance_mode, z.tz
     `)) as unknown as Array<Record<string, unknown>>;
     return rows[0] ?? null;
   });

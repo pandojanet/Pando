@@ -8,6 +8,7 @@ import {
   checkSlackSignature,
   isSlackRelayEnabled,
   slackBotUserId,
+  slackRelayChannel,
 } from "@/lib/server/slack";
 
 /**
@@ -155,6 +156,13 @@ export async function POST(request: Request) {
      The bot check is the one that matters: without it Pando answers itself. */
   const botId = slackBotUserId();
   if (event.bot_id || (botId && event.user === botId) || event.subtype) {
+    return NextResponse.json({ ok: true });
+  }
+
+  /* Only the relay's own channel speaks for a parent (28 Oct): a message in any
+     other channel the bot sits in is somebody talking, not a parent texting. */
+  if (event.channel !== slackRelayChannel()) {
+    console.info("[slack:events] ignored", { reason: "other_channel" });
     return NextResponse.json({ ok: true });
   }
 
