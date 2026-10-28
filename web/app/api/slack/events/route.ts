@@ -162,7 +162,13 @@ export async function POST(request: Request) {
   /* Only the relay's own channel speaks for a parent (28 Oct): a message in any
      other channel the bot sits in is somebody talking, not a parent texting. */
   if (event.channel !== slackRelayChannel()) {
-    console.info("[slack:events] ignored", { reason: "other_channel" });
+    /* Events always carry the channel's id (C…/G…). A name in SLACK_CHANNEL_ID
+       still posts, but would make every reply land here — so the log says which
+       of the two it is, and the misconfiguration is one line to spot. */
+    console.info("[slack:events] ignored", {
+      reason: "other_channel",
+      configured: /^[CGD][A-Z0-9]{6,}$/.test(slackRelayChannel()) ? "id" : "not_an_id",
+    });
     return NextResponse.json({ ok: true });
   }
 
