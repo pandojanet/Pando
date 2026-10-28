@@ -171,6 +171,14 @@ async function searchStep(
     return { kind: "unknown" };
   }
   const hit = verifiedMatch({ reply, hits: search.hits, name: input.name });
+  /* Counts and booleans only (invariant 7): enough to tell "the web had
+     nothing" from "the model claimed a page the checks refused" (28 Oct). */
+  console.info("[provider-check] web", {
+    hits: search.hits.length,
+    claimed: reply.match === true,
+    claimed_url_in_hits: reply.url ? search.hits.some((h) => h.url === reply.url) : false,
+    verified: hit !== null,
+  });
   /* A claimed match the checks refuse is a no: the search answered, and what
      it pointed at was not this provider on this page. */
   return hit ? { kind: "match", hit } : { kind: "no_match" };

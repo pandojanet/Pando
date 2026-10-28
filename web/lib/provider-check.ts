@@ -180,10 +180,21 @@ function hostOf(url: string): string | null {
  * "Pasadena Pediatrics" and "Pasadena Dental" share the town, and a false
  * "valid" costs more than a miss the admin checks by hand.
  */
+/**
+ * One form for a word that only differs by a plural "s" (28 Oct, found in the
+ * lab): a parent typed "Huntington Health Pediatrics" and the practice's page
+ * is titled "Huntington Health Pediatric Care Pasadena" — the same practice,
+ * refused because "pediatrics" is not "pediatric". Applied to both sides, and
+ * only past four letters, so "Lee", "Wu" or "Ross" are compared as typed.
+ */
+function wordForm(word: string): string {
+  return word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
+}
+
 export function namesCarry(typedName: string, text: string): boolean {
-  const typed = [...new Set(nameWords(typedName))];
+  const typed = [...new Set(nameWords(typedName).map(wordForm))];
   if (typed.length === 0) return false;
-  const seen = new Set(nameWords(text));
+  const seen = new Set(nameWords(text).map(wordForm));
   return typed.filter((w) => seen.has(w)).length >= Math.min(typed.length, 2);
 }
 
@@ -223,7 +234,28 @@ export function verifiedMatch(input: {
    */
   if (carries(hit.title ?? "")) return hit;
   if (input.host && typed.length >= 2 && carries(reply.name ?? "")) return hit;
+  if (!input.host && carriedByTitleAndHost(typed, hit)) return hit;
   return null;
+}
+
+/**
+ * A practice's own site often titles a page by the service, not the practice
+ * (28 Oct, found in the lab): "Huntington Health Pediatrics" was claimed on
+ * huntingtonhealth.org under "Pasadena Pediatric Care", and refused. The host
+ * comes from the search result, not from the model, so it may count — but only
+ * beside the title: at least one typed word in the title, the rest in the host,
+ * and a host word must be five letters or more, so "Dr. Lee" never matches a
+ * site whose name merely contains "lee".
+ */
+function carriedByTitleAndHost(typed: readonly string[], hit: SearchHit): boolean {
+  const host = (hostOf(hit.url) ?? "").replace(/^www\./, "");
+  if (!host) return false;
+  const words = typed.map(wordForm);
+  const title = new Set(nameWords(hit.title ?? "").map(wordForm));
+  const inTitle = words.filter((w) => title.has(w));
+  if (inTitle.length === 0) return false;
+  const inHost = words.filter((w) => !title.has(w) && w.length >= 5 && host.includes(w));
+  return inTitle.length + inHost.length >= Math.min(words.length, 2);
 }
 
 /* ── NPPES, the first step (9 Oct) ─────────────────────────────── */
@@ -254,10 +286,26 @@ function plainLetters(s: string): string {
  * neighbourhood that is not a postal city ("Bungalow Heaven") finds nobody, and
  * the web step takes over — which is the rule, not a failure.
  */
+/**
+ * What a provider does, which parents write beside the name — "Dr. Ronni
+ * Bergman, pediatrics" (28 Oct, found in the lab). In the NPPES query the last
+ * word is the last name, so "pediatrics" was searched as one and a doctor in the
+ * registry read "Not found". Dropped from the **person** search only: for a
+ * practice the specialty is what tells two apart ("Pasadena Pediatrics" is not
+ * "Pasadena Dental"), so `nameWords` and the web match keep it.
+ */
+const SPECIALTY_WORDS = new Set([
+  "pediatrics", "pediatric", "pediatrician", "paediatrics", "paediatrician", "peds", "ped",
+  "dentist", "dental", "dentistry", "orthodontist", "orthodontics",
+  "dermatologist", "dermatology", "allergist", "allergy", "optometrist", "ophthalmologist",
+  "ent", "obgyn", "ob", "gyn", "cardiologist", "neurologist", "psychiatrist", "psychologist",
+  "therapist", "therapy", "speech", "occupational", "physical", "chiropractor",
+]);
+
 export function npiQuery(name: string, town: string | null, state: string = NPPES_DEFAULT_STATE): URLSearchParams | null {
   const cleaned = searchableName(name);
   if (!cleaned) return null;
-  const words = nameWords(cleaned).filter((w) => /^[a-z]+$/.test(w));
+  const words = nameWords(cleaned).filter((w) => /^[a-z]+$/.test(w) && !SPECIALTY_WORDS.has(w));
   const last = words.at(-1);
   if (!last) return null;
   const q = new URLSearchParams({

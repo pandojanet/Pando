@@ -108,6 +108,22 @@ ok("a name made only of titles and generic words can never match",
 console.log("\n=== the words a name is matched on ===");
 ok("titles and degrees are dropped", nameWords("Dr. Maya J. Lee, MD, FAAP").join(" ") === "maya lee");
 ok("accents do not split a name", nameWords("Dr. José Núñez").join(" ") === "jose nunez");
+/* 28 Oct: a specialty after the name is not the name. */
+ok("and NPPES is asked for the right person", npiQuery("Dr. Ronni Bergman, pediatrics", "Pasadena")?.get("last_name") === "bergman" && npiQuery("Dr. Ronni Bergman, pediatrics", "Pasadena")?.get("first_name") === "ronni");
+ok("a specialty before the name too", npiQuery("Pediatrician Dr. Maya Lee", null)?.get("last_name") === "lee" && npiQuery("Pediatrician Dr. Maya Lee", null)?.get("first_name") === "maya");
+ok("a practice keeps its specialty for the web match", nameWords("Pasadena Pediatrics").join(" ") === "pasadena pediatrics");
+ok("a plural typed matches the singular on the page", namesCarry("Huntington Health Pediatrics", "Huntington Health Pediatric Care Pasadena, Pasadena, CA"));
+ok("and the other way round", namesCarry("Huntington Pediatric", "Huntington Pediatrics"));
+ok("a different practice in the same town is still refused", !namesCarry("Huntington Health Pediatrics", "Pasadena Pediatric Care"));
+{
+  const hh = { url: "https://www.huntingtonhealth.org/huntington-health-physicians/our-services/pediatric-care/", title: "Pasadena Pediatric Care" };
+  ok("a practice's own site counts its name in the host, beside the title",
+    verifiedMatch({ reply: reply({ url: hh.url, name: "Pasadena Pediatric Care" }), hits: [hh], name: "Huntington Health Pediatrics" }) !== null);
+  ok("the host alone is not enough — no typed word in the title",
+    verifiedMatch({ reply: reply({ url: hh.url }), hits: [{ ...hh, title: "Our services" }], name: "Huntington Health Pediatrics" }) === null);
+  const lee = { url: "https://www.kaleeidoscope-kids.example/team", title: "Our team" };
+  ok("a short name never matches inside a host", verifiedMatch({ reply: reply({ url: lee.url }), hits: [lee], name: "Dr. Lee" }) === null);
+}
 
 console.log("\n=== what may go to a search engine ===");
 ok("a phone number, an email and a note in parentheses are cut",
