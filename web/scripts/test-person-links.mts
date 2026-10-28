@@ -30,7 +30,9 @@ const m44 = read("../drizzle/0044_person_relationships.sql");
 const journal = JSON.parse(read("../drizzle/meta/_journal.json")) as { entries: Array<{ tag: string; when: number }> };
 const entry = journal.entries.find((e) => e.tag === "0061_person_links");
 ok("it is in the journal", Boolean(entry));
-ok("with the largest `when`, or the migrator skips it", entry !== undefined && entry.when === Math.max(...journal.entries.map((e) => e.when)));
+/* Later than every migration before it (a later file may follow it). */
+const before = journal.entries.slice(0, journal.entries.findIndex((e) => e.tag === "0061_person_links"));
+ok("with a `when` after every earlier one, or the migrator skips it", entry !== undefined && before.every((e) => e.when < entry.when));
 for (const name of ["person_relationships_relationship_check", "person_relationships_source_check"]) {
   ok(`${name} is the name 0044 gave it`, m44.includes(name) && m.includes(`DROP CONSTRAINT IF EXISTS ${name}`));
 }
