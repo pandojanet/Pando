@@ -68,28 +68,6 @@ export default function DeepDivesPage() {
     };
   }, [all]);
 
-  /* 27 Oct — the yes rate per offer wording (`offer_version`), so a change to
-     the offer's words can be read against the one before. Same rules as the
-     funnel: offers only, and the rate over settled ones. Newest version first. */
-  const byVersion = useMemo(() => {
-    const now = Date.now();
-    const groups = new Map<string, { offered: number; taken: number; settled: number; latest: number }>();
-    for (const r of all) {
-      if (r.trigger !== "proactive") continue;
-      const key = r.offer_version ?? "";
-      const g = groups.get(key) ?? { offered: 0, taken: 0, settled: 0, latest: 0 };
-      const at = Date.parse(r.created_at);
-      g.offered += 1;
-      if (r.accepted_at !== null) g.taken += 1;
-      if (r.accepted_at !== null || now - at > OFFER_WINDOW_MS) g.settled += 1;
-      g.latest = Math.max(g.latest, at);
-      groups.set(key, g);
-    }
-    return [...groups.entries()]
-      .map(([version, g]) => ({ version, ...g }))
-      .sort((a, b) => b.latest - a.latest);
-  }, [all]);
-
   const { shown, hidden, revealAll } = useReveal(all);
   const tableConfigured = configured && rows?.configured !== false;
 
@@ -163,40 +141,6 @@ export default function DeepDivesPage() {
                 </div>
               </dl>
             </Card>
-
-            {byVersion.length > 0 && (
-              <Card title="Yes rate by offer wording">
-                <TableWrap label="Deep-dive offers by wording">
-                  <thead>
-                    <tr>
-                      <Th>Wording</Th>
-                      <Th className="text-right">Offered</Th>
-                      <Th className="text-right">Said yes</Th>
-                      <Th className="text-right">Rate</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {byVersion.map((v) => (
-                      <tr key={v.version || "none"}>
-                        <Td>
-                          {v.version ? (
-                            <code className="text-[12.5px]">{v.version}</code>
-                          ) : (
-                            <span className="text-muted">not recorded</span>
-                          )}
-                        </Td>
-                        <Td className="text-right tabular-nums">{v.offered}</Td>
-                        <Td className="text-right tabular-nums">{v.taken}</Td>
-                        <Td className="whitespace-nowrap text-right tabular-nums">
-                          {percent(v.taken, v.settled)}
-                          <span className="ml-1 text-[12.5px] text-muted">of {v.settled} settled</span>
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
-              </Card>
-            )}
 
             {all.length === 0 ? (
               <Card>
