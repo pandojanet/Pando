@@ -49,6 +49,14 @@ import {
    4.5): one label per message, on the path of every question asked. */
 const MODEL = MODELS.fast;
 
+/**
+ * Per attempt, in milliseconds (28 Oct audit). Every other model call here has a
+ * bound; this one, the first on the path of every inbound text, had the SDK's
+ * ten minutes, so a stalled request left a parent with no reply at all. A timeout
+ * lands in the `catch` below like any failure and routes the text to a person.
+ */
+const INTENT_TIMEOUT_MS = 15_000;
+
 const SYSTEM = [
   "You classify a single SMS a parent sent to a local parenting recommendation service.",
   "Answer only what the person wants. Do not answer their question, do not judge",
@@ -267,7 +275,7 @@ async function classifyIntentUntraced(input: {
     const status = (err as { status?: unknown })?.status;
     console.error("[intent] classification failed", {
       status: typeof status === "number" ? status : null,
-    });
+    }, { timeout: INTENT_TIMEOUT_MS });
     return applyThreshold(null, text, input.context);
   }
 }

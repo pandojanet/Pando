@@ -53,3 +53,35 @@ migration fails on production.
 
 **Then.** A CI job with a Postgres service: apply `web/drizzle/` from empty, assert the
 applied count equals the journal's, then run `test:compliance` against it.
+
+## A question about one named place is answered with a list that leaves it out
+
+**Now.** Walked in the SMS lab on 28 Oct: after "swim lessons for my 4 year old in Pasadena" and "what about for my 8 year old?", the text "is the first one good for a shy kid?" was rewritten correctly (*Is the City of Pasadena Aquatics Program good for a shy 8 year old learning to swim?*), but the answer listed two other places and not that one. A place the question names leads only when it is a parent's record (`rank: mentionsName(body, share.name) ? -1 : i` in `lib/server/inbound.ts`); the place here is a web result. The cause past that was not traced. The rewrite (`standalone`) was uncommitted work that day.
+
+**Due when** the `standalone` rewrite is committed.
+
+**Then.** Give the web search the named place as its subject, and answer honestly when no parent has used it ("no one I know has used it; here is what its page says").
+
+## The care reply is the same for a swallowed battery as for a rash
+
+**Now.** "My 2 year old swallowed a battery and is drooling" gets `highStakesReply` (`lib/answer-routing.ts`): 911, an after-hours line, 988, legal help, and "please reach someone qualified **today**". It is correct and a person is flagged, but it names no Poison Control (1-800-222-1222) and says nothing about minutes. The copy is marked there as new user-facing copy on the list for the client, so it was not changed.
+
+**Due when** the next round of client copy.
+
+**Then.** Ask the client to approve a second wording for swallowing, choking and not breathing that says "now" and gives Poison Control; pick it in `highStakesReply` from the existing `HEALTH_HELP` words in `lib/intent.ts`.
+
+## No cap on inbound texts per number
+
+**Now.** `/api/sms/inbound` checks Twilio's signature and nothing else, so a real number can send without limit and each text runs the classifier and may run a web search. The 27 Oct review left a throttle step and webhook replay for a decision (see its row in [decisions.md](decisions.md)); this is the same gap seen from the cost side.
+
+**Due when** the model bill shows a spike that one number explains, or the pilot opens beyond the first cohort.
+
+**Then.** Count inbound texts per number per hour in the route before `after()`, answer the first one over the limit with one plain sentence and stay silent after it, and record the limit in decisions.md (the handler's rule is one reply per message, so this is a decision, not a fix).
+
+## Two SQL arrays are built by string
+
+**Now.** `lib/server/repo/admin-read.ts` (`ARRAY['${ids.join("','")}']::uuid[]`) and `lib/server/repo/profile.ts` (`sql.raw("ARRAY[" … "]::text[]")`, quotes doubled by hand) build an array literal from values. Both are safe today: the first takes ids the same query read from `people`, the second doubles every quote. `app/api/market/search/route.ts` is held by a `[a-z0-9-]` filter.
+
+**Due when** either function is next changed, or a third copy appears.
+
+**Then.** Build the array with `sql.join(values.map((v) => sql`${v}`), sql`, `)` inside `ARRAY[ … ]`, so nothing is concatenated, and check it against Postgres in the same change.
