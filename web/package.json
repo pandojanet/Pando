@@ -68,6 +68,7 @@
     "test:capture": "node --experimental-strip-types --no-warnings scripts/test-capture.mts",
     "test:provider-check": "node --experimental-strip-types --no-warnings scripts/test-provider-check.mts",
     "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
+    "test:rich": "node --experimental-strip-types --no-warnings scripts/test-rich.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
     "test:hooks": "node ../.claude/hooks/protect-files.test.mjs && node ../.claude/hooks/context-guard.test.mjs",
     "test:githooks": "node ../.githooks/pre-commit.test.mjs",

@@ -3,6 +3,7 @@ import { ONE_SENDER, isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketCon
 
 import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
+import { richContentSid, richVariables, type RichKind } from "@/lib/sms-rich";
 import { isOptedOut, marketIdForPhone, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
 import {
   isSlackRelayEnabled,
@@ -125,6 +126,16 @@ interface SendInput {
    * backwards.
    */
   purpose?: "verification";
+  /**
+   * Ask for the RCS quick-reply version of this message (`lib/sms-rich.ts`).
+   *
+   * `body` is still the text, and it is still what the segment plan, the
+   * throttle and every rule above the provider read. It rides in the template as
+   * its one variable, and the template's own `twilio/text` is the SMS a phone
+   * without RCS receives. Ignored — plain `Body` — when that kind has no content
+   * SID set, on the Slack relay, and when the body is too long for a card.
+   */
+  rich?: RichKind;
 }
 
 function provisioning(marketId?: string | null) {
@@ -418,29 +429,76 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
         ? await personMarketId(input.personId)
         : await marketIdForPhone(to);
   const { sid, token, service, base } = provisioning(senderMarket);
-  const params = new URLSearchParams({
+  const plainParams = new URLSearchParams({
     To: to,
     MessagingServiceSid: service,
     Body: body,
   });
 
-  try {
-    const res = await fetch(`${base}/2010-04-01/Accounts/${sid}/Messages.json`, {
+  /**
+   * The RCS version, when this kind is switched on and the body fits a card.
+   *
+   * **No `Body` beside `ContentSid`:** Twilio rejects a `Body` sent together with
+   * `ContentVariables` (error 35127) and says the template supersedes it. The SMS
+   * text lives in the template's own `twilio/text`, from the same variable.
+   */
+  const contentSid = input.rich ? richContentSid(input.rich) : null;
+  const variables = contentSid ? richVariables(body) : null;
+  const richParams =
+    contentSid && variables
+      ? new URLSearchParams({
+          To: to,
+          MessagingServiceSid: service,
+          ContentSid: contentSid,
+          ContentVariables: variables,
+        })
+      : null;
+
+  type ProviderReply = { sid?: string; code?: number; message?: string; status?: string };
+  const post = async (form: URLSearchParams) => {
+    const response = await fetch(`${base}/2010-04-01/Accounts/${sid}/Messages.json`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: params,
+      body: form,
       signal: AbortSignal.timeout(10_000),
     });
+    const reply = (await response.json().catch(() => null)) as ProviderReply | null;
+    return { res: response, data: reply };
+  };
 
-    const data = (await res.json().catch(() => null)) as {
-      sid?: string;
-      code?: number;
-      message?: string;
-      status?: string;
-    } | null;
+  try {
+    let viaRich = richParams !== null;
+    let { res, data } = await post(richParams ?? plainParams);
+
+    /**
+     * A rich send Twilio refused is sent again as the plain text it always was.
+     *
+     * Only a **definite refusal** (a 4xx), so nothing was accepted and a second
+     * message cannot be a duplicate: a timeout, a dropped connection or a 5xx
+     * says nothing about whether the first went, and is left as the failure it
+     * is. The two errors the plain text would meet again — an opt-out and a bad
+     * number — are not retried either. A wrong SID, an archived template or a
+     * variable Twilio dislikes therefore costs the card, never the message.
+     */
+    if (
+      richParams &&
+      !res.ok &&
+      res.status >= 400 &&
+      res.status < 500 &&
+      data?.code !== TWILIO_OPTED_OUT &&
+      data?.code !== TWILIO_UNSUBSCRIBED_RECIPIENT
+    ) {
+      console.warn("[sms] rich send refused, sending plain", {
+        category,
+        status: res.status,
+        code: typeof data?.code === "number" ? data.code : null,
+      });
+      viaRich = false;
+      ({ res, data } = await post(plainParams));
+    }
 
     if (!res.ok) {
       const code = typeof data?.code === "number" ? data.code : null;
@@ -475,7 +533,7 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
       return { sent: false, reason: "provider_error" };
     }
 
-    console.info("[sms] sent", { category, has_message_id: Boolean(data?.sid) });
+    console.info("[sms] sent", { category, has_message_id: Boolean(data?.sid), rich: viaRich });
 
     /**
      * The record every later rule reads.

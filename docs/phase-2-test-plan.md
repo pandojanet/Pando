@@ -900,7 +900,7 @@ Reporting these as failures wastes a round.
 | **The open board** (was the $5 Board Ask; no kinds since 21 Oct) | a surface, not a feature of Blast; answering there must not spend the allowance |
 | **Re-blast from `/admin/freshness`** | a Network Ask has an asker and a price; a freshness question asked by an admin has neither |
 | **11.5** | asks Pando to text a nominated caregiver — reversed by the client on 3 Aug, and forbidden by invariant 13 |
-| **RCS buttons** | Twilio needs Content API templates; `Body` alone stays plain text on RCS |
+| **RCS buttons beyond two** | built only for the Network Ask offer and SETTINGS (29 Oct, [rcs-quick-replies](rcs-quick-replies.md)); everything else is plain text, which is what `Body` alone is on RCS |
 
 ---
 

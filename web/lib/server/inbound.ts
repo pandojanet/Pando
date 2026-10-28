@@ -489,6 +489,7 @@ async function settingsStep({ from, body, person }: { from: string; body: string
         category: "transactional",
         personId: person.person_id,
         template: SETTINGS_TEMPLATE,
+        rich: "settings_allowance",
       });
       return HANDLED;
     }
@@ -1409,6 +1410,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
       category: "transactional",
       personId: person.person_id,
       template: SETTINGS_TEMPLATE,
+      rich: "settings_allowance",
     });
     console.info("[sms:inbound] settings menu offered from a model reading");
     return;
@@ -2577,6 +2579,13 @@ async function answerQuestion(input: {
           : heldReply(clarifier),
     category: "transactional",
     personId: person?.person_id,
+    /* RCS Yes/No under the Network Ask offer (29 Oct), only when the offer is
+       what the text ends on — the same test the clarifier above uses — and not
+       when another offer or a held reply is what goes out. */
+    rich:
+      sending && !urgent && !offerDeep && !offerIntro && nextStep === "offer_blast" && answerText.includes("Want me to ask")
+        ? "yes_no"
+        : undefined,
     template: urgent
       ? urgent === "high_stakes"
         ? "answer_high_stakes"

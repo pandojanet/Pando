@@ -230,11 +230,14 @@ export function parseAllowanceChoice(
 ): { allowance: number | null; mode: "fixed" | "as_relevant" } | null {
   const body = text.trim().toUpperCase().replace(/[.!?]+$/, "");
 
-  if (/^(ANYTIME|ALWAYS|ANY TIME|RELEVANT|3)$/.test(body)) {
+  /* The last words of each alternative are the titles of the RCS buttons
+     (`RICH_BUTTONS.settings_allowance`): a tap may reach us as its title, and
+     `test:rich` fails if one stops parsing. */
+  if (/^(ANYTIME|ALWAYS|ANY TIME|RELEVANT|AS RELEVANT|3)$/.test(body)) {
     return { allowance: null, mode: "as_relevant" };
   }
-  if (/^(5|FIVE|1)$/.test(body)) return { allowance: 5, mode: "fixed" };
-  if (/^(10|TEN|2)$/.test(body)) return { allowance: 10, mode: "fixed" };
+  if (/^(5|FIVE|1|5 A MONTH)$/.test(body)) return { allowance: 5, mode: "fixed" };
+  if (/^(10|TEN|2|10 A MONTH)$/.test(body)) return { allowance: 10, mode: "fixed" };
   return null;
 }
 
