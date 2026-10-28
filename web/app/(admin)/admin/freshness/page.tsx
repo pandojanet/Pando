@@ -75,7 +75,7 @@ export default function FreshnessPage() {
   const reasonId = useId();
 
   const { rows, configured, loading, error, demo, setDemo, reload } =
-    useAdminRows<FreshnessOutcomeRow[]>("freshness");
+    useAdminRows("freshness");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 

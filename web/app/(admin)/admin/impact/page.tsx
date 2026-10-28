@@ -25,7 +25,7 @@ import {
 } from "@/components/admin/Record";
 import { useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
-import type { ImpactEventRow, ImpactResult } from "@/lib/admin/types";
+import type { ImpactEventRow } from "@/lib/admin/types";
 
 /**
  * Estimate 14.6 — thank-you events, contribution impact and reward status.
@@ -67,7 +67,7 @@ export default function ImpactPage() {
   const [hideTest, setHideTest] = useState(true);
 
   const { rows, configured, loading, error, demo, setDemo } =
-    useAdminRows<ImpactResult>("impact");
+    useAdminRows("impact");
 
   const all = rows?.rows ?? [];
   /* The pill counts come from the rows on screen, with test rows left out

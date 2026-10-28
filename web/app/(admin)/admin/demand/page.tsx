@@ -39,7 +39,7 @@ import {
   DEMAND_STATUS,
   sentence,
 } from "@/lib/admin/labels";
-import type { DemandRow, PlaceDemand } from "@/lib/admin/types";
+import type { PlaceDemand } from "@/lib/admin/types";
 
 /**
  * Estimate 2.7 — what parents asked for (D1).
@@ -77,11 +77,11 @@ const VIEWS_IDS = VIEWS.map((v) => v.id);
 
 export default function DemandPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<DemandRow[]>("demand");
+    useAdminRows("demand");
   /* Its own resource rather than a field on the rows above: this is an
      aggregate over two tables with a roll-up the browser cannot do, and the
      queue is filtered by tab while these totals never are. */
-  const { rows: placeData } = useAdminRows<PlaceDemand>("demand_places");
+  const { rows: placeData } = useAdminRows("demand_places");
   const places = placeData ?? { rows: [], questions_no_place: 0 };
 
   const [filter, setFilter] = useUrlFilter(FILTERS, "urgent");

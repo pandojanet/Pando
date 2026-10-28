@@ -317,7 +317,7 @@ function Grouped({
 
 export default function FlagsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<FlagRow[]>("flags", { status: "open" });
+    useAdminRows("flags", { status: "open" });
 
   const [notes, setNotes] = useState<Record<string, string>>({});
   /* The flag being resolved, not the whole queue. */

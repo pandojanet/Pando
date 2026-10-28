@@ -41,6 +41,13 @@ export interface MarketConfig {
   timeZone: string;
   /** How the zone is named in copy ("8am-9pm Pacific"). */
   timeZoneName: string;
+  /**
+   * The environment variable holding this market's Twilio Messaging Service
+   * SID — the sender its texts go out from (27 Oct). Unset in the environment
+   * means the default market's service: a second market can share one A2P
+   * service and add its local numbers to that sender pool.
+   */
+  messagingServiceEnv: string;
   /** Two-letter state code, as Google's address components spell it. */
   state: string;
   /** The state's name, as the web search's user_location and `inAnotherState` take it. */
@@ -70,6 +77,7 @@ export const MARKETS: Record<MarketId, MarketConfig> = {
     label: "Pasadena & the San Gabriel Valley",
     timeZone: "America/Los_Angeles",
     timeZoneName: "Pacific",
+    messagingServiceEnv: "TWILIO_MESSAGING_SERVICE_SID",
     state: "CA",
     stateName: "California",
     city: "Pasadena",
@@ -102,6 +110,15 @@ export function isQuietHoursIn(timeZone: string, now: Date = new Date()): boolea
   const hour = hourIn(timeZone, now);
   return hour < QUIET_HOURS.start || hour >= QUIET_HOURS.end;
 }
+
+/**
+ * True while every market names the same Messaging Service variable: the send
+ * layer then never needs to know whose text it is to pick the sender. Two
+ * markets naming different variables read the market on every Twilio send,
+ * even if both variables hold one service.
+ */
+export const ONE_SENDER =
+  new Set(Object.values(MARKETS).map((m) => m.messagingServiceEnv)).size === 1;
 
 /**
  * Quiet hours for a parent whose market could not be read (27 Oct review): quiet

@@ -5,7 +5,7 @@ import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
 import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import * as sample from "@/lib/admin/sample";
-import type { AdminResource } from "@/lib/admin/types";
+import type { AdminResource, AdminResourceRows } from "@/lib/admin/types";
 import { getDb } from "@/lib/server/db";
 import { readResource } from "@/lib/server/repo/admin-read";
 
@@ -21,7 +21,7 @@ import { readResource } from "@/lib/server/repo/admin-read";
  * is only reachable when there is no backend at all.
  */
 
-const EMPTY: Record<AdminResource, unknown> = {
+const EMPTY: AdminResourceRows = {
   answers: [],
   /* 14.3. An empty list, and the pool preview is an object because the page
      reads three fields off it. */
@@ -33,6 +33,8 @@ const EMPTY: Record<AdminResource, unknown> = {
     held: [],
     cold: false,
     human_review: { required: false, reason: null },
+    /* Null before an Ask is sent — the page then shows `chosen`. */
+    asked: null,
   },
 
   overview: null,
@@ -65,11 +67,16 @@ const EMPTY: Record<AdminResource, unknown> = {
   delivery: {
     configured: false,
     window_days: 7,
+    /* The same fields the reader answers with when it cannot count (27 Oct: these four were missing). */
+    relay: false,
     rate: null,
     below_floor: false,
+    coverage: null,
+    thin_sample: false,
     settled: 0,
     delivered: 0,
     in_flight: 0,
+    unreported: 0,
     alerts: [],
   },
   /**
@@ -84,13 +91,14 @@ const EMPTY: Record<AdminResource, unknown> = {
     wanted: 0,
     found: 0,
     weights: [],
-    adjacency_pairs: 0,
+    /* Null: no step saved, the page shows the code default. */
+    relevance_step: null,
     people: [],
   },
   audit: [],
 };
 
-const SAMPLE: Record<AdminResource, unknown> = {
+const SAMPLE: AdminResourceRows = {
   answers: [],
   /* 14.3 / 14.5. No sample rows, for the reason the conversation history gives
      one line up: invented money is worse than invented anything else. A page
@@ -104,6 +112,8 @@ const SAMPLE: Record<AdminResource, unknown> = {
     held: [],
     cold: false,
     human_review: { required: false, reason: null },
+    /* Null before an Ask is sent — the page then shows `chosen`. */
+    asked: null,
   },
 
   blast_responses: [],
@@ -113,7 +123,8 @@ const SAMPLE: Record<AdminResource, unknown> = {
   contributions: sample.sampleContributions,
   caregivers: sample.sampleCaregivers,
   caregiver_claims: sample.sampleCaregiverClaims,
-  restricted_note: sample.sampleRestrictedNote,
+  /* A list, as the real read answers (the client reads both). */
+  restricted_note: [sample.sampleRestrictedNote],
   duplicates: sample.sampleDuplicates,
   options: sample.samplePendingOptions,
   flags: sample.sampleFlags,
@@ -138,11 +149,16 @@ const SAMPLE: Record<AdminResource, unknown> = {
   delivery: {
     configured: false,
     window_days: 7,
+    /* The same fields the reader answers with when it cannot count (27 Oct: these four were missing). */
+    relay: false,
     rate: null,
     below_floor: false,
+    coverage: null,
+    thin_sample: false,
     settled: 0,
     delivered: 0,
     in_flight: 0,
+    unreported: 0,
     alerts: [],
   },
   /* Deliberately empty rather than fabricated: a made-up ranking is the one thing
@@ -155,7 +171,8 @@ const SAMPLE: Record<AdminResource, unknown> = {
     wanted: 0,
     found: 0,
     weights: [],
-    adjacency_pairs: 0,
+    /* Null: no step saved, the page shows the code default. */
+    relevance_step: null,
     people: [],
   },
   audit: sample.sampleAudit,

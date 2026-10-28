@@ -33,6 +33,8 @@ function ok(what: string, cond: boolean, detail = "") {
 }
 
 const route = readFileSync("app/api/admin/action/route.ts", "utf8");
+/* The allowlist moved out of the route on 27 Oct; the route imports it. */
+const names = readFileSync("lib/admin/action-names.ts", "utf8");
 const write = readFileSync("lib/server/repo/admin-write.ts", "utf8");
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -48,10 +50,11 @@ function walk(dir: string, out: string[] = []): string[] {
 
 console.log("=== the allowlist, the handlers and the screens agree ===");
 
-const allowBlock = route.slice(
-  route.indexOf("const ACTIONS = new Set(["),
-  route.indexOf("]);", route.indexOf("const ACTIONS = new Set([")),
+const allowBlock = names.slice(
+  names.indexOf("export const ADMIN_ACTION_NAMES = ["),
+  names.indexOf("] as const;"),
 );
+ok("the route checks against that list", route.includes("if (!isAdminActionName(action))"));
 const allowed = new Set(
   [...allowBlock.matchAll(/^\s*"([a-z_]+\.[a-z_]+)",/gm)].map((m) => m[1]),
 );

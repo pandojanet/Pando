@@ -59,7 +59,7 @@ export default function ContributorDetailPage({
 }) {
   const { id } = use(params);
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<ContributorDetail | null>("contributor", { id });
+    useAdminRows("contributor", { id });
 
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,9 +75,7 @@ export default function ContributorDetailPage({
    * finding it among everybody else's. Same read as the queue, narrowed to this
    * person, so both pages show one record the same way.
    */
-  const { rows: contributions, loading: contributionsLoading } = useAdminRows<
-    ContributionRow[]
-  >("contributions", { person_id: id });
+  const { rows: contributions, loading: contributionsLoading } = useAdminRows("contributions", { person_id: id });
 
   /**
    * The picker's options. Linking a referral is an admin judgement — with one
@@ -93,9 +91,7 @@ export default function ContributorDetailPage({
   const [pickerOpen, setPickerOpen] = useState(false);
   /* The connection picker (22 Oct) reads the same list, on its own click. */
   const [linkOpen, setLinkOpen] = useState(false);
-  const { rows: everyone, loading: everyoneLoading, error: everyoneError } = useAdminRows<
-    ContributorRow[]
-  >("contributors", undefined, pickerOpen || linkOpen);
+  const { rows: everyone, loading: everyoneLoading, error: everyoneError } = useAdminRows("contributors", undefined, pickerOpen || linkOpen);
   const [linkTo, setLinkTo] = useState("");
   const [linkNote, setLinkNote] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);

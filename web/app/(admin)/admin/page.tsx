@@ -34,7 +34,7 @@ import type { Overview } from "@/lib/admin/types";
  */
 export default function AdminOverviewPage() {
   const { rows, configured, sample, demo, setDemo, loading, error } =
-    useAdminRows<Overview | null>("overview");
+    useAdminRows("overview");
 
   const o = rows;
   const completion =

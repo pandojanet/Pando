@@ -22,7 +22,6 @@ import {
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import type { PendingOptionRow } from "@/lib/admin/types";
 import { CATEGORY_LABEL, REVIEW_STATUS, sentence } from "@/lib/admin/labels";
 
 /**
@@ -37,7 +36,7 @@ import { CATEGORY_LABEL, REVIEW_STATUS, sentence } from "@/lib/admin/labels";
  */
 export default function PendingOptionsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<PendingOptionRow[]>("options", { status: "pending" });
+    useAdminRows("options", { status: "pending" });
 
   /* The name being decided on, not the whole list. */
   const [busy, setBusy] = useState<string | null>(null);

@@ -381,12 +381,25 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
       /if \(ownRequestNotAnAnswer\(body, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
       /return reading\.source === "model" && \["ask_recommendation", "ask_caregiver", "deep_dive"\]\.includes\(reading\.intent\);/.test(src),
   );
+  /* 27 Oct: the handler is a list of steps, and their order is the product's precedence (the comment above handleInboundMessageUntraced explains each place). */
+  {
+    const main = src.slice(src.indexOf("async function handleInboundMessageUntraced("), src.indexOf("const HANDLED = Symbol("));
+    const order = ["await keywordStep(", "await ensureInboundPerson(", "await settingsStep(", "await captureStep(", "await attachStep(", "await repliesStep(", "await clarifyStep(", "await openQuestionStep(", "await routeStep("];
+    const at = order.map((call) => main.indexOf(call));
+    ok("the steps run in their fixed order: keywords, who it is, settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
+      at.every((i) => i > 0) && at.every((i, n) => n === 0 || i > at[n - 1]), order.filter((_, n) => at[n] <= 0).join(", "));
+    ok("a step that answered ends the turn", (main.match(/=== HANDLED\) return;/g) ?? []).length === 5);
+  }
   /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
   {
-    const gate = src.indexOf("if (await isOptedOut(from)) {");
+    /* Since 27 Oct the check lives in `keywordStep`, which the handler runs before it looks the sender up. */
+    const step = src.slice(src.indexOf("async function keywordStep("), src.indexOf("async function settingsStep("));
+    const gate = step.indexOf("if (await isOptedOut(from)) {");
+    const main = src.slice(src.indexOf("async function handleInboundMessageUntraced("), src.indexOf("const HANDLED = Symbol("));
     ok(
       "an opted-out sender is recorded and not answered, after the keywords and DELETE, before anything is built",
-      gate > src.indexOf("if (isDeleteRequest(body)) {") && gate < src.indexOf("const person = await ensureInboundPerson({ phone: from });") && gate > 0,
+      gate > 0 && gate > step.indexOf("if (isDeleteRequest(body)) {") &&
+        main.indexOf("await keywordStep(") > 0 && main.indexOf("await keywordStep(") < main.indexOf("const person = await ensureInboundPerson({ phone: from });"),
     );
   }
   /* 26 Oct, the SMS lab: a ping's YES or a saved age was still classified, then discarded. */

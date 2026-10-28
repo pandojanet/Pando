@@ -49,6 +49,17 @@ export interface SendRecord {
 }
 
 /** Which market a person is in, for the clock their quiet hours are kept on. Null when unknown. */
+/** The market of whoever holds this number, for a text sent before Pando has looked them up (START, HELP). */
+export async function marketIdForPhone(phone: string): Promise<string | null> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select market_id from people where phone = ${phone} limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows[0]?.market_id ? String(rows[0].market_id) : null;
+  });
+  return result.persisted ? (result.data ?? null) : null;
+}
+
 export async function personMarketId(personId: string): Promise<string | null> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`

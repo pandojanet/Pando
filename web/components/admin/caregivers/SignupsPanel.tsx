@@ -128,7 +128,7 @@ function ViaNomination({
 
 export function SignupsPanel() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<CaregiverClaimRow[]>("caregiver_claims");
+    useAdminRows("caregiver_claims");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});

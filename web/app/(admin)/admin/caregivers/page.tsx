@@ -37,7 +37,7 @@ export default function CaregiversPage() {
     "caregivers",
     "view",
   );
-  const overview = useAdminRows<Overview | null>("overview");
+  const overview = useAdminRows("overview");
   const counts = overview.rows
     ? {
         caregivers: overview.rows.quality.review_holds,

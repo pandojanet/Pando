@@ -73,11 +73,11 @@ export default function ConversationsPage() {
   const [open, setOpen] = useState<string | null>(null);
 
   const { rows, configured, loading, error, demo, setDemo } =
-    useAdminRows<ConversationsResult>("conversations");
+    useAdminRows("conversations");
 
   /* Fetched only once a row is opened — a history nobody asked for is a round
      trip spent on nothing (the `enabled` argument exists for exactly this). */
-  const detail = useAdminRows<ConversationDetail>(
+  const detail = useAdminRows(
     "conversation",
     { person_id: open ?? "" },
     open !== null,

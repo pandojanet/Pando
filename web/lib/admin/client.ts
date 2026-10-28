@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { AdminAction, AdminResource } from "./types";
+import type { AdminAction, AdminResource, AdminResourceRows } from "./types";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -57,8 +57,9 @@ interface QueryResponse<T> {
  * isn't set yet — pages show that state instead of pretending they have data, and
  * offer sample rows for reviewing the layout.
  */
-export function useAdminRows<T>(
-  resource: AdminResource,
+export function useAdminRows<R extends AdminResource>(
+  /** The rows' type comes from `AdminResourceRows` — a page no longer chooses it. */
+  resource: R,
   params?: Record<string, unknown>,
   /**
    * Set false to hold the request back until the page actually needs the rows.
@@ -67,7 +68,7 @@ export function useAdminRows<T>(
    */
   enabled = true,
 ) {
-  const [rows, setRows] = useState<T | null>(null);
+  const [rows, setRows] = useState<AdminResourceRows[R] | null>(null);
   const [configured, setConfigured] = useState(true);
   const [sample, setSample] = useState(false);
   const [demo, setDemo] = useState(false);
@@ -81,7 +82,7 @@ export function useAdminRows<T>(
       setLoading(true);
       setError(null);
       try {
-        const data = await post<QueryResponse<T>>("/api/admin/query", {
+        const data = await post<QueryResponse<AdminResourceRows[R]>>("/api/admin/query", {
           resource,
           params: JSON.parse(key) as Record<string, unknown>,
           demo: withDemo,

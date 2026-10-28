@@ -21,7 +21,7 @@ import { SegmentedFilter } from "@/components/admin/kit";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
-import type { IntroductionRow, IntroductionsResult } from "@/lib/admin/types";
+import type { IntroductionRow } from "@/lib/admin/types";
 import { INTRO_STATUS, LAST_THERE } from "@/lib/admin/labels";
 
 /**
@@ -60,7 +60,7 @@ export default function IntroductionsPage() {
   const noteId = useId();
 
   const { rows, configured, loading, error, demo, setDemo, reload } =
-    useAdminRows<IntroductionsResult>("introductions");
+    useAdminRows("introductions");
 
   const all = useMemo(() => {
     const list = rows?.rows ?? [];

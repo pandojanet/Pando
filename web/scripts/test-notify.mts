@@ -110,7 +110,8 @@ ok("reward paid: only a Founding-approved person can be ticked, and ticking twic
   /case "contributor\.reward_paid"/.test(write) &&
     /coalesce\(reward_paid_at, now\(\)\)/.test(write) && /founding = 'founding'/.test(write));
 ok("and it is reachable through the one admin endpoint",
-  /"contributor\.reward_paid"/.test(code("../app/api/admin/action/route.ts")));
+  /* The allowlist lives in lib/admin/action-names.ts since 27 Oct. */
+  /"contributor\.reward_paid"/.test(code("../lib/admin/action-names.ts")));
 ok("the migration refuses a date without a name, and a name without a date",
   /reward_paid_pair/.test(read("../drizzle/0052_reward_paid.sql")));
 

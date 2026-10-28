@@ -33,7 +33,7 @@ import type { FoundingRow } from "@/lib/admin/types";
  */
 export default function FoundingQueuePage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<FoundingRow[]>("founding", { status: "pending_founding" });
+    useAdminRows("founding", { status: "pending_founding" });
 
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

@@ -48,7 +48,7 @@ const CREATING = "new-invite";
 
 export default function InvitesPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<InviteRow[]>("invites");
+    useAdminRows("invites");
 
   /**
    * The **live** parent-group chips, from the same endpoint the questionnaire

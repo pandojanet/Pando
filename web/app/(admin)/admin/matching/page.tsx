@@ -22,7 +22,7 @@ import { PersonPicker } from "@/components/admin/PersonPicker";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { RELEVANCE_STEP } from "@/lib/matching";
 import { affinityLabel, matchReason, matchReasonValue } from "@/lib/admin/labels";
-import type { MatchCandidateRow, MatchingResult } from "@/lib/admin/types";
+import type { MatchCandidateRow } from "@/lib/admin/types";
 
 /**
  * Estimate 6.7 — the matching harness.
@@ -100,7 +100,7 @@ export default function MatchingPage() {
   const [asker, setAsker] = useState("");
   const [wanted, setWanted] = useState(5);
 
-  const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows<MatchingResult>(
+  const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows(
     "matching",
     { asker, wanted },
   );

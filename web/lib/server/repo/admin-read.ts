@@ -28,7 +28,7 @@ import type {
   MatchingResult,
   PlaceDemand,
 } from "@/lib/admin/types";
-import { AUDIT_PAGE_SIZE, type CaregiverClaimRow, type CaregiverRow } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE, type AdminResourceRows, type CaregiverClaimRow, type CaregiverRow, type RestrictedNote } from "@/lib/admin/types";
 import type { ProviderCheck } from "@/lib/provider-check";
 import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import {
@@ -69,81 +69,73 @@ function adminPhone(phone: string | null): string | null {
   return phone || null;
 }
 
-type Row = Record<string, unknown>;
-
-async function rows(db: Db, query: ReturnType<typeof sql>): Promise<Row[]> {
-  const result = await db.execute(query);
-  return result as unknown as Row[];
+/**
+ * A column read straight off a SQL row, taken as the type its page declares
+ * (`AdminResourceRows`, 27 Oct). An identity at run time: the database is where
+ * these values come from, as it was when each page chose its own row type. What
+ * the compiler checks now is everything else — that every field a page reads is
+ * supplied, and that every value a reader computes has the declared type.
+ */
+function col<T = never>(value: unknown): T {
+  return value as T;
 }
 
-export async function readResource(
+type Row = Record<string, unknown>;
+
+/** A query's rows; `T` names their columns where a reader hands them on as they are. */
+async function rows<T = Row>(db: Db, query: ReturnType<typeof sql>): Promise<T[]> {
+  const result = await db.execute(query);
+  return result as unknown as T[];
+}
+
+type Reader<R extends AdminResource> = (db: Db, params: Record<string, unknown>) => Promise<AdminResourceRows[R]>;
+
+/**
+ * One reader per resource, each held to the row type the page reads
+ * (`AdminResourceRows`, 27 Oct). Until then this was a switch returning
+ * `unknown`, and each page chose its own type for what came back.
+ */
+const READERS: { [R in AdminResource]: Reader<R> } = {
+  overview: (db) => overview(db),
+  contributors: (db) => contributors(db),
+  contributor: (db, params) => contributorDetail(db, String(params.id ?? "")),
+  /* 23 Sep: one parent's cards, for the contributor page the Founding
+     queue now links to. Anything that is not a uuid reads as "everyone"
+     rather than reaching the query. */
+  contributions: (db, params) => contributions(db, uuidOrNull(params.person_id)),
+  caregivers: (db) => caregivers(db),
+  caregiver_claims: (db) => caregiverClaims(db),
+  restricted_note: (db, params) => restrictedNote(db, String(params.nomination_id ?? params.id ?? "")),
+  duplicates: (db) => duplicates(db),
+  options: (db) => pendingOptions(db),
+  matching: (db, params) => matchingHarness(db, params),
+  answers: (db) => answerQueue(db),
+  blast_responses: (db) => blastResponses(db),
+  blasts: (db) => blastRows(db),
+  blast_pool: (db, params) => blastPool(db, params),
+  delivery: (_db, params) => deliveryHealthRow(params),
+  flags: (db) => flagRows(db),
+  demand: (db) => demandRows(db),
+  demand_places: (db) => demandPlaces(db),
+  founding: (db) => foundingQueue(db),
+  invites: (db) => inviteRows(db),
+  consents: (db) => consentRows(db),
+  freshness: (db) => freshnessOutcomes(db),
+  standing: (db) => contributorStanding(db),
+  impact: (db) => impactRows(db),
+  deep_dives: (db) => deepDiveRows(db),
+  introductions: (db) => introductionRows(db),
+  conversations: (db) => conversationRows(db),
+  conversation: (db, params) => conversationDetail(db, String(params.person_id ?? params.id ?? "")),
+  audit: (db) => auditRows(db),
+};
+
+export async function readResource<R extends AdminResource>(
   db: Db,
-  resource: AdminResource,
+  resource: R,
   params: Record<string, unknown>,
-): Promise<unknown> {
-  switch (resource) {
-    case "overview":
-      return overview(db);
-    case "contributors":
-      return contributors(db);
-    case "contributor":
-      return contributorDetail(db, String(params.id ?? ""));
-    case "contributions":
-      /* 23 Sep: one parent's cards, for the contributor page the Founding
-         queue now links to. Anything that is not a uuid reads as "everyone"
-         rather than reaching the query. */
-      return contributions(db, uuidOrNull(params.person_id));
-    case "caregivers":
-      return caregivers(db);
-    case "caregiver_claims":
-      return caregiverClaims(db);
-    case "restricted_note":
-      return restrictedNote(db, String(params.nomination_id ?? params.id ?? ""));
-    case "duplicates":
-      return duplicates(db);
-    case "options":
-      return pendingOptions(db);
-    case "matching":
-      return matchingHarness(db, params);
-    case "answers":
-      return answerQueue(db);
-    case "blast_responses":
-      return blastResponses(db);
-    case "blasts":
-      return blastRows(db);
-    case "blast_pool":
-      return blastPool(db, params);
-    case "delivery":
-      return deliveryHealthRow(params);
-    case "flags":
-      return flagRows(db);
-    case "demand":
-      return demandRows(db);
-    case "demand_places":
-      return demandPlaces(db);
-    case "founding":
-      return foundingQueue(db);
-    case "invites":
-      return inviteRows(db);
-    case "consents":
-      return consentRows(db);
-    case "freshness":
-      return freshnessOutcomes(db);
-    case "standing":
-      return contributorStanding(db);
-    case "impact":
-      return impactRows(db);
-    case "deep_dives":
-      return deepDiveRows(db);
-    case "introductions":
-      return introductionRows(db);
-    case "conversations":
-      return conversationRows(db);
-    case "conversation":
-      return conversationDetail(db, String(params.person_id ?? params.id ?? ""));
-    case "audit":
-      return auditRows(db);
-  }
+): Promise<AdminResourceRows[R]> {
+  return READERS[resource](db, params);
 }
 
 /**
@@ -197,7 +189,7 @@ const AWAITING_FOUNDING_DECISION = sql`fc.founding in ('none', 'pending_founding
 
 /* ── 2.1 Overview ────────────────────────────────────────────────────────── */
 
-async function overview(db: Db) {
+async function overview(db: Db): Promise<AdminResourceRows["overview"]> {
   const completeCount = completeCountSql(await completeCounts(db), sql`fc.person_id`);
   const [r] = await rows(
     db,
@@ -458,7 +450,7 @@ async function overview(db: Db) {
 
 /* ── 2.3 Contributors ────────────────────────────────────────────────────── */
 
-async function contributors(db: Db) {
+async function contributors(db: Db): Promise<AdminResourceRows["contributors"]> {
   const complete = await completeCounts(db);
   const list = await rows(
     db,
@@ -519,10 +511,10 @@ async function contributors(db: Db) {
     const submissions = Number(r.submissions ?? 0);
 
     return {
-      id: r.id,
+      id: col(r.id),
       name: fullName(r.first_name, r.last_name),
       phone: adminPhone(r.phone as string | null),
-      neighborhood: r.neighborhood,
+      neighborhood: col(r.neighborhood),
       child_birth_years: (r.birth_years as number[]) ?? [],
       submissions,
       qualifying_approved: qualifying,
@@ -558,20 +550,20 @@ async function contributors(db: Db) {
         founding_approved: r.founding === "founding",
       }),
       reward_paid_at: r.reward_paid_at ? String(r.reward_paid_at) : null,
-      founding_status: r.founding,
+      founding_status: col(r.founding),
       follow_up_opt_in: r.follow_up === null ? null : r.follow_up === "opted_in",
-      wants_founding: r.wants_founding,
+      wants_founding: col(r.wants_founding),
       monthly_contact_allowance:
         r.monthly_contact_allowance === null ? null : Number(r.monthly_contact_allowance),
       allowance_mode: r.allowance_mode === "as_relevant" ? "as_relevant" : "fixed",
       is_caregiver: r.is_caregiver === true,
-      is_test: r.is_test,
-      created_at: r.created_at,
+      is_test: col(r.is_test),
+      created_at: col(r.created_at),
     };
   });
 }
 
-async function contributorDetail(db: Db, id: string) {
+async function contributorDetail(db: Db, id: string): Promise<AdminResourceRows["contributor"]> {
   if (!id) return null;
   /**
    * One statement, ten result sets.
@@ -703,10 +695,10 @@ async function contributorDetail(db: Db, id: string) {
   const connections = list<Row>(p.connections);
 
   return {
-    id: p.id,
+    id: col(p.id),
     name: fullName(p.first_name, p.last_name),
     phone: adminPhone(p.phone as string | null),
-    neighborhood: p.neighborhood,
+    neighborhood: col(p.neighborhood),
     child_birth_years: kids.filter((y): y is number => typeof y === "number"),
     submissions: cards.length,
     qualifying_approved: Number(checklist[0]?.qualifying_approved ?? 0),
@@ -737,30 +729,30 @@ async function contributorDetail(db: Db, id: string) {
       founding_approved: p.founding === "founding",
     }),
     reward_paid_at: p.reward_paid_at ? String(p.reward_paid_at) : null,
-    founding_status: p.founding,
+    founding_status: col(p.founding),
     /* Null when there is no follow_up row at all (27 Oct): "never asked" is not
        "declined", and the list one click away already said so. */
     follow_up_opt_in: (() => {
       const row = consentRows.find((c) => c.scope === "follow_up");
       return row ? row.status === "opted_in" : null;
     })(),
-    wants_founding: p.wants_founding,
+    wants_founding: col(p.wants_founding),
     is_caregiver: p.is_caregiver === true,
-    is_test: p.is_test,
-    created_at: p.created_at,
-    invite_code: p.invite_code,
-    source: p.source,
+    is_test: col(p.is_test),
+    created_at: col(p.created_at),
+    invite_code: col(p.invite_code),
+    source: col(p.source),
     profile_completeness: Number(p.profile_completeness ?? 0),
     profile_depth: Number(checklist[0]?.profile_depth ?? 0),
     approved_contributions: completeForPerson,
-    time_in_area: p.time_in_area,
-    moved_from: p.moved_from,
-    attribution: p.attribution,
-    aggregate_display: p.aggregate_display,
-    monthly_contact_allowance: p.monthly_contact_allowance,
-    allowance_mode: p.allowance_mode,
-    topic_preferences: p.topic_preferences ?? [],
-    topics_lived_experience: p.topics_lived_experience ?? [],
+    time_in_area: col(p.time_in_area),
+    moved_from: col(p.moved_from),
+    attribution: col(p.attribution),
+    aggregate_display: col(p.aggregate_display),
+    monthly_contact_allowance: col(p.monthly_contact_allowance),
+    allowance_mode: col(p.allowance_mode),
+    topic_preferences: col(p.topic_preferences ?? []),
+    topics_lived_experience: col(p.topics_lived_experience ?? []),
     school_status: Object.fromEntries(
       schools.map((s) => [s.option_value as string, s.status as string]),
     ),
@@ -776,28 +768,28 @@ async function contributorDetail(db: Db, id: string) {
       revoked_at: v.revoked_at ? String(v.revoked_at) : null,
     })),
     affinities: affinities.map((a) => ({
-      affinity_type: a.affinity_type,
-      affinity_value: a.affinity_value,
+      affinity_type: col(a.affinity_type),
+      affinity_value: col(a.affinity_value),
       /** `weight`, not `weight_at_capture`: the json_build_object above renames it. */
-      weight: a.weight,
+      weight: col(a.weight),
     })),
-    relevance: relevance.map((r) => ({ dimension: r.dimension, value: r.value })),
+    relevance: relevance.map((r) => ({ dimension: col(r.dimension), value: col(r.value) })),
     cards: cards.map((c) => ({
-      id: c.id,
-      kind: c.kind,
-      title: c.title,
-      status: c.status,
-      firsthand: c.firsthand,
-      created_at: c.received_at,
+      id: col(c.id),
+      kind: col(c.kind),
+      title: col(c.title),
+      status: col(c.status),
+      firsthand: col(c.firsthand),
+      created_at: col(c.received_at),
     })),
-    consents: consentRows,
+    consents: col(consentRows),
     /** The chat stays on the device; nothing is stored until that is a decision. */
     transcript: [],
     notes: notes.map((n) => ({
-      id: n.id,
-      author: n.actor,
+      id: col(n.id),
+      author: col(n.actor),
       body: (n.after as { body?: string } | null)?.body ?? "",
-      at: n.at,
+      at: col(n.at),
     })),
     connections: connections.map((r) => ({
       id: String(r.id),
@@ -821,7 +813,7 @@ async function contributorDetail(db: Db, id: string) {
         referral_id: r.referral_id as string,
         id: r.referred_id as string,
         name: fullName(r.first_name, r.last_name),
-        status: r.status,
+        status: col(r.status),
       })),
     },
   };
@@ -843,7 +835,7 @@ function splitFlag(value: string | null): { reason: string; severity: string } |
     : { reason: value.slice(0, at), severity: value.slice(at + 1) };
 }
 
-async function contributions(db: Db, personId: string | null = null) {
+async function contributions(db: Db, personId: string | null = null): Promise<AdminResourceRows["contributions"]> {
   const list = await rows(
     db,
     sql`
@@ -887,16 +879,16 @@ async function contributions(db: Db, personId: string | null = null) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    kind: r.kind,
+    id: col(r.id),
+    kind: col(r.kind),
     share: {
-      id: r.share_id,
-      name: r.name,
-      venue: r.venue,
-      neighborhoods: r.neighborhoods ?? [],
-      age_bands: r.age_bands ?? [],
-      freshness_state: r.freshness_state,
-      last_confirmed_at: r.last_confirmed_at,
+      id: col(r.share_id),
+      name: col(r.name),
+      venue: col(r.venue),
+      neighborhoods: col(r.neighborhoods ?? []),
+      age_bands: col(r.age_bands ?? []),
+      freshness_state: col(r.freshness_state),
+      last_confirmed_at: col(r.last_confirmed_at),
       validated_count: Number(r.validated_count ?? 0),
       answer_ready: r.answer_ready === true,
       provider_check: (r.provider_check ?? null) as ProviderCheck | null,
@@ -904,22 +896,22 @@ async function contributions(db: Db, personId: string | null = null) {
       provider_check_url: (r.provider_check_url as string | null) ?? null,
       subcategory: (r.subcategory as string | null) ?? null,
     },
-    firsthand: r.firsthand,
-    child_age_at_time: r.child_age_at_time ?? [],
-    last_there: r.last_there,
-    how_much: r.how_much,
-    recommendation: r.recommendation,
-    what_makes_it_great: r.what_makes_it_great,
-    caveat: r.caveat,
-    caveat_answered: r.caveat_answered,
-    who_for: r.who_for,
-    who_not_for: r.who_not_for,
-    price_band: r.price_band,
-    price_unit: r.price_unit,
-    worth_it: r.worth_it,
-    follow_up_ok: r.follow_up_ok,
-    tip_text: r.tip_text,
-    extra_note: r.extra_note,
+    firsthand: col(r.firsthand),
+    child_age_at_time: col(r.child_age_at_time ?? []),
+    last_there: col(r.last_there),
+    how_much: col(r.how_much),
+    recommendation: col(r.recommendation),
+    what_makes_it_great: col(r.what_makes_it_great),
+    caveat: col(r.caveat),
+    caveat_answered: col(r.caveat_answered),
+    who_for: col(r.who_for),
+    who_not_for: col(r.who_not_for),
+    price_band: col(r.price_band),
+    price_unit: col(r.price_unit),
+    worth_it: col(r.worth_it),
+    follow_up_ok: col(r.follow_up_ok),
+    tip_text: col(r.tip_text),
+    extra_note: col(r.extra_note),
     visit_reason: (r.visit_reason as string | null) ?? null,
     appointment_ease: (r.appointment_ease as string | null) ?? null,
     /* What this card was asked as (9 Oct) — read from its own capture, because
@@ -931,7 +923,7 @@ async function contributions(db: Db, personId: string | null = null) {
     timing_note: (r.timing_note as string | null) ?? null,
     detail_note: (r.detail_note as string | null) ?? null,
     amenities: (r.amenities as string[] | null) ?? [],
-    status: r.status,
+    status: col(r.status),
     confidence: r.confidence === null ? null : Number(r.confidence),
     confidence_note: (r.confidence_note as string | null) ?? null,
     needs_detail_note: (r.needs_detail_note as string | null) ?? null,
@@ -939,18 +931,18 @@ async function contributions(db: Db, personId: string | null = null) {
        row so a missing column is null rather than an error. */
     source_blast_id: (r.source_blast_id as string | null | undefined) ?? null,
     open_flag: splitFlag(r.open_flag_reason as string | null),
-    provenance: r.provenance,
-    contributor: r.contributor_id
-      ? { id: r.contributor_id, name: fullName(r.first_name, r.last_name) }
+    provenance: col(r.provenance),
+    contributor: col(r.contributor_id)
+      ? { id: col(r.contributor_id), name: fullName(r.first_name, r.last_name) }
       : null,
-    is_test: r.is_test,
-    created_at: r.created_at,
+    is_test: col(r.is_test),
+    created_at: col(r.created_at),
   }));
 }
 
 /* ── 2.5 Caregivers ──────────────────────────────────────────────────────── */
 
-async function caregivers(db: Db) {
+async function caregivers(db: Db): Promise<AdminResourceRows["caregivers"]> {
   /**
    * Straight off `admin_caregiver_rows`, which is the view that decides what a
    * list is allowed to know. Note what it returns about the restricted notes: a
@@ -988,43 +980,43 @@ async function caregivers(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    first_name: r.first_name,
-    last_initial: r.last_initial,
-    type: r.type,
-    good_with_bands: r.good_with_bands ?? [],
+    id: col(r.id),
+    first_name: col(r.first_name),
+    last_initial: col(r.last_initial),
+    type: col(r.type),
+    good_with_bands: col(r.good_with_bands ?? []),
     strengths: [],
     good_fit_for: [],
-    consent_status: r.consent_status,
-    active: r.active,
-    discoverable: r.discoverable,
-    introducible: r.introducible,
-    consent_evidence: r.consent_evidence,
-    invite_sent_by_parent: r.invite_sent_by_parent,
+    consent_status: col(r.consent_status),
+    active: col(r.active),
+    discoverable: col(r.discoverable),
+    introducible: col(r.introducible),
+    consent_evidence: col(r.consent_evidence),
+    invite_sent_by_parent: col(r.invite_sent_by_parent),
     has_invite_link: r.has_invite_link === true,
     claim_status: (r.claim_status ?? null) as CaregiverRow["claim_status"],
     /* The answer only (yes · hesitant · no), never the reason behind it — that
        stays a restricted note (invariant 12). It decides whether a hold can be
        released at all (`hold_when_hesitant`), so the card needs it (27 Oct). */
     hire_again: (r.hire_again as string | null) ?? null,
-    review_hold: r.review_hold ?? false,
-    hold_reasons: r.hold_reasons ?? [],
-    has_restricted_notes: r.has_restricted_notes ?? false,
-    caveat: r.caveat,
-    nomination_status: r.nomination_status ?? "pending_review",
-    contributor_reference_opt_in: r.contributor_reference_opt_in,
-    needs_horizon: r.needs_horizon,
-    needs_change_type: r.needs_change_type,
-    recontact_ok: r.recontact_ok ?? false,
-    pay_band: r.pay_band,
-    pay_benchmark_consent: r.pay_benchmark_consent ?? false,
-    schedule_pattern: r.schedule_pattern ?? [],
-    hours_per_week: r.hours_per_week,
-    benefits: r.benefits ?? [],
+    review_hold: col(r.review_hold ?? false),
+    hold_reasons: col(r.hold_reasons ?? []),
+    has_restricted_notes: col(r.has_restricted_notes ?? false),
+    caveat: col(r.caveat),
+    nomination_status: col(r.nomination_status ?? "pending_review"),
+    contributor_reference_opt_in: col(r.contributor_reference_opt_in),
+    needs_horizon: col(r.needs_horizon),
+    needs_change_type: col(r.needs_change_type),
+    recontact_ok: col(r.recontact_ok ?? false),
+    pay_band: col(r.pay_band),
+    pay_benchmark_consent: col(r.pay_benchmark_consent ?? false),
+    schedule_pattern: col(r.schedule_pattern ?? []),
+    hours_per_week: col(r.hours_per_week),
+    benefits: col(r.benefits ?? []),
     nominations: Number(r.nominations ?? 0),
-    provenance: r.provenance,
-    is_test: r.is_test,
-    created_at: r.created_at,
+    provenance: col(r.provenance),
+    is_test: col(r.is_test),
+    created_at: col(r.created_at),
   }));
 }
 
@@ -1032,7 +1024,7 @@ async function caregivers(db: Db) {
  * Fetched one at a time, deliberately. The caller writes an audit row for every
  * read — that is the whole reason this is not a column on the list.
  */
-async function restrictedNote(db: Db, nominationId: string) {
+async function restrictedNote(db: Db, nominationId: string): Promise<AdminResourceRows["restricted_note"]> {
   if (!nominationId) return null;
   /**
    * The id may be a nomination's or a caregiver's (audit, 29 Sep): the
@@ -1041,7 +1033,7 @@ async function restrictedNote(db: Db, nominationId: string) {
    * A caregiver id resolves to the newest nomination, the one the list row
    * describes and whose `has_restricted_notes` offered the button.
    */
-  const list = await rows(
+  const list = await rows<RestrictedNote>(
     db,
     sql`select id, nomination_id, kind, body, created_at
         from restricted_notes
@@ -1059,7 +1051,7 @@ async function restrictedNote(db: Db, nominationId: string) {
  * Suggestions only — never merged automatically (2.5). Name and initial are not
  * an identifier, so this proposes and a human decides.
  */
-async function duplicates(db: Db) {
+async function duplicates(db: Db): Promise<AdminResourceRows["duplicates"]> {
   /**
    * 27 Oct — each member carries what a merge decision rests on: her consent
    * state, the kind of care, where she works or where the family is, and
@@ -1135,7 +1127,7 @@ async function duplicates(db: Db) {
 
 /* ── 2.6 Tap lists ───────────────────────────────────────────────────────── */
 
-async function pendingOptions(db: Db) {
+async function pendingOptions(db: Db): Promise<AdminResourceRows["options"]> {
   /**
    * One statement with the details as sub-selects (the pooler rule: round trips
    * are the cost, not query complexity).
@@ -1219,22 +1211,22 @@ async function pendingOptions(db: Db) {
       approved: number | string;
     }>;
     return {
-      id: r.id,
-      market_id: r.market_id,
-      category: r.category,
-      submitted_value: r.submitted_value,
-      submitted_by: r.person_id
-        ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
+      id: col(r.id),
+      market_id: col(r.market_id),
+      category: col(r.category),
+      submitted_value: col(r.submitted_value),
+      submitted_by: col(r.person_id)
+        ? { id: col(r.person_id), name: fullName(r.first_name, r.last_name) }
         : null,
       occurrences: Number(r.occurrences ?? 1),
-      status: r.status,
-      created_at: r.created_at,
+      status: col(r.status),
+      created_at: col(r.created_at),
       parent_count: Number(r.parent_count ?? 0),
       parents: parents.map((pp) => ({
-        id: pp.id,
+        id: col(pp.id),
         name: fullName(pp.first_name, pp.last_name),
-        neighborhood: pp.neighborhood,
-        at: pp.at,
+        neighborhood: col(pp.neighborhood),
+        at: col(pp.at),
       })),
       recommendations: recommendations.map((rec) => ({
         ...rec,
@@ -1261,7 +1253,7 @@ async function pendingOptions(db: Db) {
  * `subject.title` used to be the reason string repeated, which told nobody
  * anything. It is now what the flag is actually about: the class, or the question.
  */
-async function flagRows(db: Db) {
+async function flagRows(db: Db): Promise<AdminResourceRows["flags"]> {
   const list = await rows(
     db,
     sql`
@@ -1320,14 +1312,14 @@ async function flagRows(db: Db) {
       .map(([field, v]) => ({ field, body: (v as string).trim() }));
 
     return {
-      id: r.id,
+      id: col(r.id),
       /* A legacy `escalated` row (flag.escalate wrote it until 29 Sep) is an
          open flag at the top: the page lists `open` and sorts on severity. */
-      severity: r.status === "escalated" ? "escalation" : r.severity,
-      reason: r.reason,
-      excerpt: r.excerpt ?? "",
-      field: r.field,
-      subject: r.subject_kind
+      severity: r.status === "escalated" ? "escalation" : col(r.severity),
+      reason: col(r.reason),
+      excerpt: col(r.excerpt ?? ""),
+      field: col(r.field),
+      subject: col(r.subject_kind)
         ? {
             kind: r.subject_kind as string,
             id: r.subject_id as string,
@@ -1336,12 +1328,12 @@ async function flagRows(db: Db) {
             href: flagSubjectHref(r.subject_kind as string),
           }
         : null,
-      contributor: r.person_id
-        ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
+      contributor: col(r.person_id)
+        ? { id: col(r.person_id), name: fullName(r.first_name, r.last_name) }
         : null,
-      status: r.status === "escalated" ? "open" : r.status,
+      status: r.status === "escalated" ? "open" : col(r.status),
       confidence: r.confidence === null ? null : Number(r.confidence),
-      created_at: r.created_at,
+      created_at: col(r.created_at),
     };
   });
 }
@@ -1359,7 +1351,7 @@ function flagSubjectHref(kind: string): string | null {
   return null;
 }
 
-async function demandRows(db: Db) {
+async function demandRows(db: Db): Promise<AdminResourceRows["demand"]> {
   const list = await rows(
     db,
     sql`
@@ -1404,19 +1396,19 @@ async function demandRows(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    question_text: r.question_text,
-    category: r.category,
-    neighborhood: r.neighborhood,
-    city: r.city ?? null,
-    sensitivity: r.sensitivity,
-    requires_human_review: r.requires_human_review,
-    status: r.status,
-    contributor: r.person_id
-      ? { id: r.person_id, name: fullName(r.first_name, r.last_name) }
+    id: col(r.id),
+    question_text: col(r.question_text),
+    category: col(r.category),
+    neighborhood: col(r.neighborhood),
+    city: col(r.city ?? null),
+    sensitivity: col(r.sensitivity),
+    requires_human_review: col(r.requires_human_review),
+    status: col(r.status),
+    contributor: col(r.person_id)
+      ? { id: col(r.person_id), name: fullName(r.first_name, r.last_name) }
       : null,
-    is_test: r.is_test,
-    created_at: r.created_at,
+    is_test: col(r.is_test),
+    created_at: col(r.created_at),
   }));
 }
 
@@ -1441,7 +1433,7 @@ async function demandRows(db: Db) {
  * confirm it. The candidate list is still computed and still shown for a sign-up
  * that came through the bare address.
  */
-async function caregiverClaims(db: Db) {
+async function caregiverClaims(db: Db): Promise<AdminResourceRows["caregiver_claims"]> {
   const list = await rows(
     db,
     sql`
@@ -1494,25 +1486,25 @@ async function caregiverClaims(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    first_name: r.first_name,
-    last_initial: r.last_initial,
+    id: col(r.id),
+    first_name: col(r.first_name),
+    last_initial: col(r.last_initial),
     phone: adminPhone(r.phone as string | null),
-    roles_wanted: r.roles_wanted ?? [],
-    age_experience: r.age_experience ?? [],
-    strengths: r.strengths ?? [],
-    areas_served: r.areas_served ?? [],
-    drives: r.drives,
-    days_available: r.days_available ?? [],
-    available_from: r.available_from,
-    hours_note: r.hours_note,
-    rate_band: r.rate_band,
-    appear_in_answers: r.appear_in_answers,
-    open_to_introductions: r.open_to_introductions,
-    open_to_reference_intros: r.open_to_reference_intros,
-    consent_text_version: r.consent_text_version,
-    status: r.status,
-    linked_caregiver: r.linked_caregiver_id
+    roles_wanted: col(r.roles_wanted ?? []),
+    age_experience: col(r.age_experience ?? []),
+    strengths: col(r.strengths ?? []),
+    areas_served: col(r.areas_served ?? []),
+    drives: col(r.drives),
+    days_available: col(r.days_available ?? []),
+    available_from: col(r.available_from),
+    hours_note: col(r.hours_note),
+    rate_band: col(r.rate_band),
+    appear_in_answers: col(r.appear_in_answers),
+    open_to_introductions: col(r.open_to_introductions),
+    open_to_reference_intros: col(r.open_to_reference_intros),
+    consent_text_version: col(r.consent_text_version),
+    status: col(r.status),
+    linked_caregiver: col(r.linked_caregiver_id)
       ? {
           id: r.linked_caregiver_id as string,
           first_name: r.linked_first_name as string,
@@ -1521,7 +1513,7 @@ async function caregiverClaims(db: Db) {
       : null,
     candidates: Array.isArray(r.candidates) ? r.candidates : [],
     via: viaOf(r.via),
-    created_at: r.created_at,
+    created_at: col(r.created_at),
   }));
 }
 
@@ -1553,7 +1545,7 @@ function viaOf(v: unknown): CaregiverClaimRow["via"] {
 
 /* ── 2.2 Founding queue ──────────────────────────────────────────────────── */
 
-async function foundingQueue(db: Db) {
+async function foundingQueue(db: Db): Promise<AdminResourceRows["founding"]> {
   const complete = await completeCounts(db);
   const completeCount = completeCountSql(complete, sql`fc.person_id`);
   const list = await rows(
@@ -1615,14 +1607,14 @@ async function foundingQueue(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.person_id,
+    id: col(r.person_id),
     name: fullName(r.first_name, r.last_name),
     phone: adminPhone(r.phone as string | null),
-    neighborhood: r.neighborhood,
+    neighborhood: col(r.neighborhood),
     child_birth_years: (r.birth_years as number[]) ?? [],
-    school: r.school,
-    invited_by: r.invited_via_group,
-    arrived_via: r.invite_code ?? r.source,
+    school: col(r.school),
+    invited_by: col(r.invited_via_group),
+    arrived_via: col(r.invite_code ?? r.source),
     submissions: {
       activities: Number(r.activities ?? 0),
       caregivers: Number(r.caregivers ?? 0),
@@ -1631,10 +1623,10 @@ async function foundingQueue(db: Db) {
       doctors: Number(r.doctors ?? 0),
     },
     checklist: {
-      verified: r.verified,
-      has_neighborhood: r.has_neighborhood,
-      has_children: r.has_children,
-      allowance_ok: r.allowance_ok,
+      verified: col(r.verified),
+      has_neighborhood: col(r.has_neighborhood),
+      has_children: col(r.has_children),
+      allowance_ok: col(r.allowance_ok),
       qualifying_approved: Number(r.qualifying_approved ?? 0),
       caregiver_approved: Number(r.caregiver_approved ?? 0),
       /* The two the queue is now filtered on, carried so the card can show what
@@ -1642,8 +1634,8 @@ async function foundingQueue(db: Db) {
       profile_depth: Number(r.profile_depth ?? 0),
       approved_contributions: complete.get(String(r.person_id)) ?? 0,
     },
-    status: r.founding,
-    created_at: r.created_at,
+    status: col(r.founding),
+    created_at: col(r.created_at),
   }));
 }
 
@@ -1661,7 +1653,7 @@ async function foundingQueue(db: Db) {
  * One statement with scalar sub-selects rather than three round trips (CLAUDE.md:
  * against the pooler the round trip is the cost, not the query).
  */
-async function inviteRows(db: Db) {
+async function inviteRows(db: Db): Promise<AdminResourceRows["invites"]> {
   const list = await rows(
     db,
     sql`
@@ -1683,21 +1675,21 @@ async function inviteRows(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    code: r.code,
-    label: r.label,
-    market_id: r.market_id,
+    id: col(r.id),
+    code: col(r.code),
+    label: col(r.label),
+    market_id: col(r.market_id),
     kind: (r.kind ?? "group") as "group" | "school" | "personal",
-    group_option_value: r.group_option_value,
-    school_option_value: r.school_option_value ?? null,
+    group_option_value: col(r.group_option_value),
+    school_option_value: col(r.school_option_value ?? null),
     referrer_name: (r.referrer_name as string | null) || null,
     active: r.active === true,
-    note: r.note,
+    note: col(r.note),
     opens: Number(r.opens ?? 0),
     contributors: Number(r.contributors ?? 0),
     delivered: Number(r.delivered ?? 0),
-    created_at: r.created_at,
-    created_by: r.created_by,
+    created_at: col(r.created_at),
+    created_by: col(r.created_by),
   }));
 }
 
@@ -1714,7 +1706,7 @@ async function inviteRows(db: Db) {
  * rather than looked up per row: the defence has to show the *sequence* (agreed
  * here, withdrew there), and one join gives it.
  */
-async function consentRows(db: Db) {
+async function consentRows(db: Db): Promise<AdminResourceRows["consents"]> {
   const list = await rows(
     db,
     sql`
@@ -1737,16 +1729,16 @@ async function consentRows(db: Db) {
   );
 
   return list.map((r) => ({
-    id: r.id,
-    person_id: r.person_id,
+    id: col(r.id),
+    person_id: col(r.person_id),
     name: fullName(r.first_name, r.last_name),
-    phone: r.phone,
-    scope: r.scope,
-    status: r.status,
-    source: r.source,
-    text_version: r.text_version,
-    captured_at: r.captured_at,
-    opted_out_at: r.opted_out_at,
+    phone: col(r.phone),
+    scope: col(r.scope),
+    status: col(r.status),
+    source: col(r.source),
+    text_version: col(r.text_version),
+    captured_at: col(r.captured_at),
+    opted_out_at: col(r.opted_out_at),
     opted_in_at: (r.opted_in_at as string | null) ?? null,
     opted_out: r.opted_out === true,
     is_test: r.is_test === true,
@@ -1755,20 +1747,20 @@ async function consentRows(db: Db) {
 
 /* ── 2.8 Audit ───────────────────────────────────────────────────────────── */
 
-async function auditRows(db: Db) {
+async function auditRows(db: Db): Promise<AdminResourceRows["audit"]> {
   const list = await rows(
     db,
     sql`select * from audit_log order by at desc limit ${AUDIT_PAGE_SIZE}`,
   );
   return list.map((r) => ({
-    id: r.id,
-    at: r.at,
-    user: r.actor,
-    action: r.action,
-    resource: r.resource,
-    resource_id: r.resource_id,
-    before: r.before,
-    after: r.after,
+    id: col(r.id),
+    at: col(r.at),
+    user: col(r.actor),
+    action: col(r.action),
+    resource: col(r.resource),
+    resource_id: col(r.resource_id),
+    before: col(r.before),
+    after: col(r.after),
   }));
 }
 
@@ -1800,7 +1792,7 @@ function fullName(first: unknown, last: unknown): string | null {
  * "validated **before** any live outreach", and a page that could both score and
  * message would make the pilot's first blast one mis-click away.
  */
-async function matchingHarness(db: Db, params: Record<string, unknown>) {
+async function matchingHarness(db: Db, params: Record<string, unknown>): Promise<AdminResourceRows["matching"]> {
   /* Who can be asked about, and who can be asked. Contributors first, so the
      picker leads with the people whose graph is actually populated. */
   const people = (await rows(
@@ -2153,7 +2145,7 @@ async function deliveryHealthRow(
  * separate reads — the 10 Aug rule that against the pooler the round trips are
  * the cost and the query itself is single digits.
  */
-async function conversationRows(db: Db) {
+async function conversationRows(db: Db): Promise<AdminResourceRows["conversations"]> {
   const list = await rows(
     db,
     sql`
@@ -2226,7 +2218,7 @@ async function conversationRows(db: Db) {
  * eight outbound messages is either well inside "ask me anytime" or a bug,
  * and the page cannot tell without it.
  */
-async function conversationDetail(db: Db, personId: string) {
+async function conversationDetail(db: Db, personId: string): Promise<AdminResourceRows["conversation"]> {
   if (!personId) return null;
 
   const [person] = await rows(
@@ -2328,7 +2320,7 @@ async function conversationDetail(db: Db, personId: string) {
  * disappeared from here while its flag stayed open would leave the Flags page
  * insisting on something this page had already dealt with.
  */
-async function freshnessOutcomes(db: Db) {
+async function freshnessOutcomes(db: Db): Promise<AdminResourceRows["freshness"]> {
   const list = await rows(
     db,
     sql`
@@ -2397,7 +2389,7 @@ async function freshnessOutcomes(db: Db) {
  * what the send layer would actually do about it, so the page reports the
  * consequence rather than leaving a reader to infer it from a percentage.
  */
-async function contributorStanding(db: Db) {
+async function contributorStanding(db: Db): Promise<AdminResourceRows["standing"]> {
   const list = await rows(
     db,
     sql`
@@ -2552,7 +2544,7 @@ async function contributorStanding(db: Db) {
  * requester — the same set the offer counted — with whether they texted STOP,
  * so nobody is contacted by SMS who said not to be.
  */
-async function introductionRows(db: Db) {
+async function introductionRows(db: Db): Promise<AdminResourceRows["introductions"]> {
   const exists = await rows(db, sql`select to_regclass('public.introductions') is not null as ok`);
   if (exists[0]?.ok !== true) return { configured: false, rows: [] };
   const list = await rows(
@@ -2604,7 +2596,7 @@ async function introductionRows(db: Db) {
     configured: true,
     rows: list.map((r) => ({
       id: String(r.id),
-      status: String(r.status),
+      status: col(String(r.status)),
       trigger: r.trigger === "explicit" ? "explicit" : "proactive",
       requester: {
         id: String(r.rq_id),
@@ -2614,7 +2606,7 @@ async function introductionRows(db: Db) {
       },
       record: { id: r.share_id ? String(r.share_id) : null, name: (r.share_name as string | null) ?? null },
       question: (r.question_text as string | null) ?? null,
-      other_parent: r.op_id
+      other_parent: col(r.op_id)
         ? { id: String(r.op_id), name: fullName(r.op_first, r.op_last), phone: adminPhone(r.op_phone as string | null) }
         : null,
       candidates: ((r.candidates as Array<Record<string, unknown>>) ?? []).map((c) => ({
@@ -2652,7 +2644,7 @@ async function openIntroductions(db: Db): Promise<number> {
  * applied — `configured: false` rather than an error, so the page says the
  * table is missing instead of failing.
  */
-async function deepDiveRows(db: Db) {
+async function deepDiveRows(db: Db): Promise<AdminResourceRows["deep_dives"]> {
   const exists = await rows(db, sql`select to_regclass('public.deep_dives') is not null as ok`);
   if (exists[0]?.ok !== true) return { configured: false, rows: [] };
   const list = await rows(
@@ -2674,7 +2666,7 @@ async function deepDiveRows(db: Db) {
       question: r.question === null ? null : String(r.question),
       asker: r.asker === null ? null : String(r.asker),
       trigger: r.trigger === "explicit" ? "explicit" : "proactive",
-      status: String(r.status),
+      status: col(String(r.status)),
       created_at: String(r.created_at),
       accepted_at: r.accepted_at ? String(r.accepted_at) : null,
       sent_at: r.sent_at ? String(r.sent_at) : null,
@@ -2689,7 +2681,7 @@ async function deepDiveRows(db: Db) {
   };
 }
 
-async function impactRows(db: Db) {
+async function impactRows(db: Db): Promise<AdminResourceRows["impact"]> {
   const list = await rows(
     db,
     sql`

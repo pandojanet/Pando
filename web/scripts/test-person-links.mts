@@ -57,7 +57,8 @@ ok("a parent's own invite answer is never removed by an admin", /delete from per
 
 console.log("\n=== the route and the screen ===");
 const route = read("../app/api/admin/action/route.ts");
-ok("both actions are allowlisted", route.includes('"person.link",') && route.includes('"person.unlink",'));
+const names = read("../lib/admin/action-names.ts");
+ok("both actions are allowlisted", names.includes('"person.link",') && names.includes('"person.unlink",'));
 ok("a parent cannot be connected to themselves", route.includes("A parent cannot be connected to themselves"));
 ok("each refusal has a sentence", /links_not_migrated:/.test(route) && /link_test_mixed:/.test(route));
 const page = read("../app/(admin)/admin/contributors/[id]/page.tsx");

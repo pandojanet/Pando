@@ -166,7 +166,8 @@ console.log("\n=== HELP and START are Twilio's to answer (24 Sep) ===");
   const src = fs.readFileSync("lib/server/inbound.ts", "utf8");
   const branch = (kw: string) => {
     const from = src.indexOf(`if (keyword === "${kw}")`);
-    return src.slice(from, src.indexOf("return;", from));
+    /* The branch ends at its exit — `return HANDLED;` since the handler was split into steps (27 Oct). */
+    return src.slice(from, src.indexOf("return HANDLED;", from));
   };
   for (const kw of ["opt_in", "help"]) {
     const b = branch(kw);

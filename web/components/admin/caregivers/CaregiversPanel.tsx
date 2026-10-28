@@ -143,8 +143,8 @@ const mergeProtected = (m: DuplicateCandidate["members"][number]): string | null
         : null;
 
 export function CaregiversPanel() {
-  const caregivers = useAdminRows<CaregiverRow[]>("caregivers");
-  const duplicates = useAdminRows<DuplicateCandidate[]>("duplicates");
+  const caregivers = useAdminRows("caregivers");
+  const duplicates = useAdminRows("duplicates");
 
   const [openConsent, setOpenConsent] = useState<string | null>(null);
   const [method, setMethod] = useState(METHODS[0].id);

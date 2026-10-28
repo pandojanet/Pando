@@ -56,6 +56,13 @@ ok("the same instant can be open in New York and quiet in Los Angeles", !mk.isQu
 ok("an unreadable market is quiet wherever any market is", mk.isQuietHoursAnywhere(at("2026-10-26T14:59:00Z")) && !mk.isQuietHoursAnywhere(at("2026-10-26T18:00:00Z")));
 ok("the window reads as the copy always did", mk.quietWindowPhrase() === "8am-9pm Pacific" && mk.quietWindowPhrase(def, "–") === "8am–9pm Pacific");
 const sms = readFileSync("lib/server/sms.ts", "utf8");
+
+console.log("\n=== the sender ===");
+ok("the default market sends from the service the deploy already sets", def.messagingServiceEnv === "TWILIO_MESSAGING_SERVICE_SID");
+ok("every market names an environment variable", Object.values(mk.MARKETS).every((m) => /^[A-Z][A-Z0-9_]+$/.test(m.messagingServiceEnv)));
+ok("while every market shares a sender, the send layer reads no market to pick it", mk.ONE_SENDER === (new Set(Object.values(mk.MARKETS).map((m) => m.messagingServiceEnv)).size === 1) &&
+  sms.includes("const senderMarket = ONE_SENDER\n    ? null") && sms.includes(": await marketIdForPhone(to);"));
+ok("always a Messaging Service, never a number (invariant 6)", sms.includes("MessagingServiceSid: service,") && !/["']?\bFrom["']?\s*[:,]|\(\s*["']From["']/.test(sms));
 ok("the send layer fails closed when the market cannot be read", sms.includes("isMarketId(marketId)") && sms.includes(": isQuietHoursAnywhere();"));
 
 console.log("\n=== modules that may not import the registry agree with it ===");

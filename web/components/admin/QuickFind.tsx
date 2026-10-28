@@ -7,7 +7,6 @@ import { Highlight } from "./PersonPicker";
 import { Loading, slugLabel } from "./ui";
 import { useAdminRows } from "@/lib/admin/client";
 import { rankPeople } from "@/lib/admin/person-search";
-import type { ContributorRow } from "@/lib/admin/types";
 
 /**
  * Find one parent from anywhere in the admin.
@@ -47,7 +46,7 @@ export function QuickFind() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
-  const { rows, loading, configured } = useAdminRows<ContributorRow[]>(
+  const { rows, loading, configured } = useAdminRows(
     "contributors",
     undefined,
     open,

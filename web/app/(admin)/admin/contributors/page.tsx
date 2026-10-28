@@ -69,7 +69,7 @@ export default function ContributorsPage() {
     "view",
   );
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<ContributorRow[]>("contributors");
+    useAdminRows("contributors");
   const [search, setSearch] = useState("");
   const [hideTest, setHideTest] = useState(true);
   /* `owed` and `paid` are the two halves of an approved reward (30 Sep): the

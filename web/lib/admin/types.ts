@@ -1,4 +1,5 @@
 import type { ProviderCheck } from "@/lib/provider-check";
+import type { AdminActionName } from "./action-names";
 /**
  * Shapes the admin pages read and write. These are the contract for the two
  * endpoints (`/api/admin/query` and `/api/admin/action`) — one switch on
@@ -1262,6 +1263,58 @@ export type AdminAction =
   | { action: "intro.contacted"; id: string; parent_id: string; note?: string }
   | { action: "intro.connected"; id: string; note?: string }
   | { action: "intro.declined"; id: string; note?: string };
+
+/* AdminAction names exactly lib/admin/action-names.ts — a name in one and not the other fails here. */
+type SameNames<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const actionNamesMatch: SameNames<AdminAction["action"], AdminActionName> = true;
+void actionNamesMatch;
+
+/**
+ * What each resource answers, in one place (27 Oct).
+ *
+ * The server's readers are held to it (`READERS` in admin-read.ts), the
+ * route's empty and sample answers are held to it, and a page gets its rows'
+ * type from it instead of choosing one. The compiler then catches a field a
+ * page reads that the reader never supplies, and a computed value of the wrong
+ * type. A column passed through `col()` is taken as declared: its type is the
+ * SQL's word, checked by nobody — the same as before this map.
+ */
+export interface AdminResourceRows {
+  overview: Overview | null;
+  contributors: ContributorRow[];
+  contributor: ContributorDetail | null;
+  contributions: ContributionRow[];
+  caregivers: CaregiverRow[];
+  caregiver_claims: CaregiverClaimRow[];
+  restricted_note: RestrictedNote[] | null;
+  duplicates: DuplicateCandidate[];
+  options: PendingOptionRow[];
+  flags: FlagRow[];
+  demand: DemandRow[];
+  demand_places: PlaceDemand;
+  founding: FoundingRow[];
+  invites: InviteRow[];
+  consents: ConsentRow[];
+  matching: MatchingResult;
+  blast_responses: BlastResponseRow[];
+  blasts: BlastRow[];
+  /* Null when the id names no Ask. */
+  blast_pool: BlastPoolResult | null;
+  answers: AnswerRow[];
+  delivery: DeliveryHealthRow;
+  conversations: ConversationsResult;
+  conversation: ConversationDetail | null;
+  freshness: FreshnessOutcomeRow[];
+  standing: StandingRow[];
+  impact: ImpactResult;
+  deep_dives: DeepDivesResult;
+  introductions: IntroductionsResult;
+  audit: AuditRow[];
+}
+
+/* Every resource has a row type, and every row type a resource. */
+const resourceRowsMatch: SameNames<AdminResource, keyof AdminResourceRows> = true;
+void resourceRowsMatch;
 
 /**
  * One invite — a **group**, never a person (see `lib/server/invite.ts`).

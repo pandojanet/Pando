@@ -50,7 +50,7 @@ import type { ConsentRow } from "@/lib/admin/types";
  */
 export function ConsentRecords() {
   const { rows, configured, sample, demo, setDemo, loading, error } =
-    useAdminRows<ConsentRow[]>("consents");
+    useAdminRows("consents");
 
   const [scope, setScope] = useState<string>("all");
   const all = rows ?? [];

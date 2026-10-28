@@ -149,7 +149,7 @@ const CREATING = "new-ask";
 
 export default function BlastsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<BlastRow[]>("blasts");
+    useAdminRows("blasts");
 
   const [filter, setFilter] = useUrlFilter(FILTERS, "open");
   const [openPool, setOpenPool] = useState<string | null>(null);
@@ -168,10 +168,10 @@ export default function BlastsPage() {
   /* 7.1's entry. The people list comes from the matching resource, which
      already returns it with no asker chosen — a second query for the same
      names would be a second list to keep in step. */
-  const { rows: matching } = useAdminRows<MatchingResult>("matching");
+  const { rows: matching } = useAdminRows("matching");
   /* Only for the transport flag — whether a send tonight reaches a phone or a
      Slack channel decides whether the quiet-hours window applies at all. */
-  const { rows: delivery } = useAdminRows<DeliveryHealthRow>("delivery");
+  const { rows: delivery } = useAdminRows("delivery");
   const [asker, setAsker] = useState("");
   const [question, setQuestion] = useState("");
   /* One kind of Network Ask, free (21 Oct): there is nothing to choose. */
@@ -637,7 +637,7 @@ export default function BlastsPage() {
  * network, and only this list can tell you which.
  */
 function PoolPreview({ blastId }: { blastId: string }) {
-  const { rows, loading, error } = useAdminRows<BlastPoolResult>(
+  const { rows, loading, error } = useAdminRows(
     "blast_pool",
     { id: blastId },
   );

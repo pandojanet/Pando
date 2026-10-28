@@ -1,9 +1,9 @@
 import "server-only";
-import { isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketConfig } from "@/lib/markets";
+import { ONE_SENDER, isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketConfig } from "@/lib/markets";
 
 import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
-import { isOptedOut, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
+import { isOptedOut, marketIdForPhone, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
 import {
   isSlackRelayEnabled,
   postToSlack,
@@ -127,12 +127,18 @@ interface SendInput {
   purpose?: "verification";
 }
 
-function provisioning() {
+function provisioning(marketId?: string | null) {
   return {
     sid: process.env.TWILIO_ACCOUNT_SID ?? "",
     token: process.env.TWILIO_AUTH_TOKEN ?? "",
-    /** The client's instruction: always the Messaging Service, never the number. */
-    service: process.env.TWILIO_MESSAGING_SERVICE_SID ?? "",
+    /**
+     * The client's instruction: always the Messaging Service, never the number —
+     * the recipient's market's (lib/markets.ts), else the default one.
+     */
+    service:
+      process.env[marketConfig(marketId).messagingServiceEnv] ||
+      process.env.TWILIO_MESSAGING_SERVICE_SID ||
+      "",
     /**
      * Overridable so the provisioned path can be exercised against a local stub
      * instead of shipping an unexercised code path — or firing test requests at
@@ -398,7 +404,20 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
     return { sent: false, reason: "not_provisioned" };
   }
 
-  const { sid, token, service, base } = provisioning();
+  /*
+   * Whose sender: read only while markets name different services (never for the
+   * pilot). A proactive text's market was read for quiet hours above; a text
+   * sent before the sender is looked up (START, HELP) is matched by its number.
+   * Unreadable ⇒ the default service.
+   */
+  const senderMarket = ONE_SENDER
+    ? null
+    : proactive && input.personId
+      ? marketId
+      : input.personId
+        ? await personMarketId(input.personId)
+        : await marketIdForPhone(to);
+  const { sid, token, service, base } = provisioning(senderMarket);
   const params = new URLSearchParams({
     To: to,
     MessagingServiceSid: service,

@@ -331,7 +331,7 @@ function RewriteCount({ id, text }: { id: string; text: string }) {
 
 export default function AnswersPage() {
   const { rows, configured, demo, setDemo, loading, error, reload } =
-    useAdminRows<AnswerRow[]>("answers");
+    useAdminRows("answers");
 
   /* The row being acted on, not a page-wide flag. Reading one answer while
      another is sending is ordinary work; freezing every button on the page for

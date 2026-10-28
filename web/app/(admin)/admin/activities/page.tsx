@@ -30,7 +30,6 @@ import { ContributionEditor } from "@/components/admin/ContributionEditor";
 import { qualityOf } from "@/lib/admin/quality";
 import { adminAction, recheckProvider, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
-import type { ContributionRow } from "@/lib/admin/types";
 import { flagTitle, REVIEW_STATUS } from "@/lib/admin/labels";
 import { PROVIDER_CHECK_PAUSED } from "@/lib/provider-check";
 
@@ -85,7 +84,7 @@ const FILTERS = [
 
 export default function ContributionsPage() {
   const { rows, configured, sample, demo, setDemo, loading, error, reload } =
-    useAdminRows<ContributionRow[]>("contributions");
+    useAdminRows("contributions");
 
   /* In the URL, so the Overview's "Ready to answer with" row can point at the
      tab it counted. It has linked to `?filter=golden` since 19 Aug and this

@@ -1,5 +1,6 @@
 import "server-only";
 import { DEFAULT_MARKET_ID } from "@/lib/markets";
+import type { AdminActionName } from "@/lib/admin/action-names";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
 import {
@@ -38,7 +39,8 @@ import {
 
 export interface ActionContext {
   actor: string;
-  action: string;
+  /** One of lib/admin/action-names.ts; the switch in `run` is exhaustive over them. */
+  action: AdminActionName;
   body: Record<string, unknown>;
 }
 
@@ -2141,8 +2143,12 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return { applied: true, resource: "introduction", resource_id: target };
     }
 
-    default:
+    default: {
+      /* A name in action-names.ts with no case here does not compile. */
+      const unhandled: never = ctx.action;
+      void unhandled;
       return { applied: false, reason: "not_implemented" };
+    }
   }
 }
 

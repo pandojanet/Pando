@@ -62,7 +62,7 @@ export function Standing() {
   const [hideTest, setHideTest] = useState(true);
 
   const { rows, configured, loading, error, demo, setDemo } =
-    useAdminRows<StandingRow[]>("standing");
+    useAdminRows("standing");
 
   const all = rows ?? [];
 

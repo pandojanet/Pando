@@ -338,7 +338,7 @@ function ResponseCard({
 
 export default function BlastResponsesPage() {
   const { rows, configured, demo, setDemo, loading, error, reload } =
-    useAdminRows<BlastResponseRow[]>("blast_responses");
+    useAdminRows("blast_responses");
 
   /* The reply being acted on, not the whole page. */
   const [busy, setBusy] = useState<string | null>(null);

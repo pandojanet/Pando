@@ -137,7 +137,8 @@
                        rows: `lib/server/repo/introductions.ts`.
 `web/lib/markets.ts` `marketConfig` · `DEFAULT_MARKET_ID` · `isQuietHoursIn` — everything
                        a market is (clock, state, search area, local crisis lines,
-                       quiet hours). Pure; never write a market fact anywhere else.
+                       quiet hours, its Messaging Service variable; `ONE_SENDER`).
+                       Pure; never write a market fact anywhere else.
 `web/lib/models.ts` `MODELS` · `MODEL_PRICES` — which model each role uses, and
                        its price. Never write a model id anywhere else.
 `web/lib/answer-voice.ts` `acceptVoice` — refuses a warm rewrite of an answer
@@ -172,6 +173,15 @@
                        carried it. Extracted from `/api/sms/inbound` when the
                        Slack relay gave it a second door; the transports keep
                        only the signature check and "which number is this".
+                       Since 27 Oct a list of steps in a fixed order (keywordStep …
+                       routeStep); a new kind of text is a new step in that list,
+                       and a step that answered returns HANDLED.
+`web/lib/admin/action-names.ts` `ADMIN_ACTION_NAMES` · `isAdminActionName` — every admin
+                       action's name; the route, `AdminAction` and admin-write's
+                       switch are compiled against it. A new action starts here.
+`web/lib/admin/types.ts` `AdminResourceRows` — what each admin resource answers; the
+                       readers, the route's empty/sample answers and `useAdminRows`
+                       all take their type from it. A new resource starts here.
 `web/lib/slack-text.ts` — what Slack's event `text` actually contains, undone:
                        tel links, labels, entities, and the address prefix. Pure,
                        imports nothing, and tested — the regex used to live in the

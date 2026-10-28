@@ -19,7 +19,6 @@ import {
 import { sentence } from "@/lib/admin/labels";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { useAdminRows } from "@/lib/admin/client";
-import type { DeepDivesResult } from "@/lib/admin/types";
 import { DEEP_DIVE_STATUS } from "@/lib/admin/labels";
 
 /**
@@ -42,7 +41,7 @@ function percent(n: number, of: number): string {
 
 export default function DeepDivesPage() {
   const [hideTest, setHideTest] = useState(true);
-  const { rows, configured, loading, error, demo, setDemo } = useAdminRows<DeepDivesResult>("deep_dives");
+  const { rows, configured, loading, error, demo, setDemo } = useAdminRows("deep_dives");
 
   const all = useMemo(() => {
     const list = rows?.rows ?? [];

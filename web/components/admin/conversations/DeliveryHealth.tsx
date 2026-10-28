@@ -12,7 +12,6 @@ import {
 } from "@/components/admin/ui";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
-import type { DeliveryHealthRow } from "@/lib/admin/types";
 
 /**
  * Estimate 12.5 — delivery health, as the top of `/admin/conversations`.
@@ -46,7 +45,7 @@ import type { DeliveryHealthRow } from "@/lib/admin/types";
  */
 export function DeliveryHealth() {
   const [days, setDays] = useState(7);
-  const { rows, loading, error } = useAdminRows<DeliveryHealthRow>(
+  const { rows, loading, error } = useAdminRows(
     "delivery",
     { days },
   );

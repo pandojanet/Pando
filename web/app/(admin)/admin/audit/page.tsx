@@ -27,7 +27,6 @@ import {
   REVIEW_STATUS,
   sentence,
 } from "@/lib/admin/labels";
-import type { AuditRow } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
 
 /**
@@ -40,7 +39,7 @@ import { AUDIT_PAGE_SIZE } from "@/lib/admin/types";
  */
 export default function AuditPage() {
   const { rows, configured, sample, demo, setDemo, loading, error } =
-    useAdminRows<AuditRow[]>("audit");
+    useAdminRows("audit");
 
   const entries = rows ?? [];
   /**

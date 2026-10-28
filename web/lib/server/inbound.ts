@@ -203,6 +203,71 @@ async function handleInboundMessageUntraced(input: {
 
   const keyword = keywordOf(body);
   console.info("[sms:inbound]", { keyword: keyword ?? "text", length: body.length });
+  if ((await keywordStep({ from, body, keyword })) === HANDLED) return;
+
+
+  /**
+   * Ordinary text, in the steps below (split into functions, 27 Oct).
+   *
+   * They are separate because they answer separate questions: who is this (5.9),
+   * does this count as a response (8.4), is it a settings command (8.3), is it an
+   * answer to a Network Ask (7.5), and is it an answer to something Pando asked
+   * them (5.4).
+   */
+
+  /**
+   * 5.9 — the cold inbound.
+   *
+   * Before anything is logged against them, they have to exist. An inbound text
+   * proves possession of the number in the same way an OTP does, so this creates
+   * a **nameless** person with `phone_verified_at` set and records their first
+   * text as the opt-in it is — under a consent version that says *that*, not the
+   * seed wording they never saw.
+   *
+   * It runs for everybody, not only strangers: an existing contributor simply
+   * comes back with their id, which is what the next two steps need anyway.
+   */
+  const person = await ensureInboundPerson({ phone: from });
+  traceIdentify(person?.person_id);
+
+  await recordInbound({ phone: from, category: "outreach", keyword: null });
+  if ((await settingsStep({ from, body, person })) === HANDLED) return;
+  if ((await captureStep({ from, body, person })) === HANDLED) return;
+
+  const { attached } = await attachStep({ from, body, person });
+
+  const afterReplies = await repliesStep({ from, body, person, attached });
+  if (afterReplies === HANDLED) return;
+  const { answeredSomething } = afterReplies;
+
+  const { clarified, early } = await clarifyStep({ from, body, person, attached, answeredSomething });
+
+  const afterOpen = await openQuestionStep({ from, body, person, attached, answeredSomething, clarified });
+  if (afterOpen === HANDLED) return;
+  const { pending } = afterOpen;
+
+
+  /* Already answered by a step above — a ping's YES, a yes to an offer, an
+     age saved: nothing below reads the message, so it is not sent to the model
+     (26 Oct, the SMS lab: each of those cost a classification that was then
+     discarded at the return below). A reply to an Ask still goes on: its
+     reading comes from the records, not the model. */
+  if (answeredSomething || clarified) return;
+
+  await routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending });
+}
+
+/** A step has sent this message's reply, or decided none is due: the turn ends. */
+const HANDLED = Symbol("handled");
+
+type InboundPerson = Awaited<ReturnType<typeof ensureInboundPerson>>;
+type Attached = Exclude<Awaited<ReturnType<typeof attachStep>>, typeof HANDLED>["attached"];
+
+/**
+ * Step 1 — the carrier keywords (STOP, START, HELP, PASS), DELETE, and an
+ * opted-out number, all before Pando looks the sender up.
+ */
+async function keywordStep({ from, body, keyword }: { from: string; body: string; keyword: ReturnType<typeof keywordOf> }): Promise<typeof HANDLED | undefined> {
 
   if (keyword === "opt_out") {
     /**
@@ -215,7 +280,7 @@ async function handleInboundMessageUntraced(input: {
      */
     await setOptOut(from, "out", body);
     await recordInbound({ phone: from, category: "outreach", keyword: "opt_out" });
-    return;
+    return HANDLED;
   }
 
   /**
@@ -248,7 +313,7 @@ async function handleInboundMessageUntraced(input: {
          the opt-out list, so this cannot go to somebody still opted out. */
       await sendSms({ to: from, body: optInConfirmationSms(), category: "transactional" });
     }
-    return;
+    return HANDLED;
   }
 
   if (keyword === "help") {
@@ -256,7 +321,7 @@ async function handleInboundMessageUntraced(input: {
     if (repliesOnTwilioBehalf) {
       await sendSms({ to: from, body: helpSms(), category: "transactional" });
     }
-    return;
+    return HANDLED;
   }
 
   /**
@@ -296,7 +361,7 @@ async function handleInboundMessageUntraced(input: {
      */
     await recordPass({ phone: from });
     await recordInbound({ phone: from, category: "outreach", keyword: "pass" });
-    return;
+    return HANDLED;
   }
 
   /**
@@ -378,7 +443,7 @@ async function handleInboundMessageUntraced(input: {
             : "profile_delete_failed",
       templateVersion: SMS_TEMPLATE_VERSION,
     });
-    return;
+    return HANDLED;
   }
 
   /**
@@ -393,34 +458,15 @@ async function handleInboundMessageUntraced(input: {
   if (await isOptedOut(from)) {
     await recordInbound({ phone: from, category: "outreach", keyword: null });
     console.info("[sms:inbound] opted out, not answered");
-    return;
+    return HANDLED;
   }
+  return undefined;
+}
 
-  /**
-   * Ordinary text, in five steps.
-   *
-   * They are separate because they answer separate questions: who is this (5.9),
-   * does this count as a response (8.4), is it a settings command (8.3), is it an
-   * answer to a Network Ask (7.5), and is it an answer to something Pando asked
-   * them (5.4).
-   */
-
-  /**
-   * 5.9 — the cold inbound.
-   *
-   * Before anything is logged against them, they have to exist. An inbound text
-   * proves possession of the number in the same way an OTP does, so this creates
-   * a **nameless** person with `phone_verified_at` set and records their first
-   * text as the opt-in it is — under a consent version that says *that*, not the
-   * seed wording they never saw.
-   *
-   * It runs for everybody, not only strangers: an existing contributor simply
-   * comes back with their id, which is what the next two steps need anyway.
-   */
-  const person = await ensureInboundPerson({ phone: from });
-  traceIdentify(person?.person_id);
-
-  await recordInbound({ phone: from, category: "outreach", keyword: null });
+/**
+ * Step 2 — SETTINGS and the reply to it (8.3).
+ */
+async function settingsStep({ from, body, person }: { from: string; body: string; person: InboundPerson }): Promise<typeof HANDLED | undefined> {
 
   /**
    * 8.3 — the settings command, and the reply to it.
@@ -444,7 +490,7 @@ async function handleInboundMessageUntraced(input: {
         personId: person.person_id,
         template: SETTINGS_TEMPLATE,
       });
-      return;
+      return HANDLED;
     }
 
     if (await awaitingSettingsChoice(person.person_id)) {
@@ -463,13 +509,20 @@ async function handleInboundMessageUntraced(input: {
           template: "settings_confirmed",
         });
         console.info("[sms:inbound] allowance changed", { mode: choice.mode });
-        return;
+        return HANDLED;
       }
       /* Unreadable: fall through and treat it as an ordinary message. Re-sending
          the menu at somebody who wrote something else is how a service starts
          arguing with a parent. */
     }
   }
+  return undefined;
+}
+
+/**
+ * Step 3 — a recommendation captured over SMS, one question at a time.
+ */
+async function captureStep({ from, body, person }: { from: string; body: string; person: InboundPerson }): Promise<typeof HANDLED | undefined> {
 
   /**
    * 10.1 — adding a recommendation, one question at a time.
@@ -500,7 +553,7 @@ async function handleInboundMessageUntraced(input: {
         template: "capture_cancelled",
         templateVersion: SMS_TEMPLATE_VERSION,
       });
-      return;
+      return HANDLED;
     }
 
     /**
@@ -575,7 +628,7 @@ async function handleInboundMessageUntraced(input: {
         template: personNamed ? "capture_named_person_redirect" : "capture_caregiver_redirect",
         templateVersion: SMS_TEMPLATE_VERSION,
       });
-      return;
+      return HANDLED;
     }
 
     /* INTRO or DEEP is a command, not a capture answer: the capture stays open
@@ -609,7 +662,7 @@ async function handleInboundMessageUntraced(input: {
             }
             console.info("[sms:inbound] capture saved", { saved: card !== null });
           }
-          return;
+          return HANDLED;
         }
       } else {
         /* Unreadable on a closed step. The question is repeated **once, as
@@ -624,7 +677,7 @@ async function handleInboundMessageUntraced(input: {
           template: `capture_${capture.step}`,
           templateVersion: SMS_TEMPLATE_VERSION,
         });
-        return;
+        return HANDLED;
       }
     }
 
@@ -639,10 +692,17 @@ async function handleInboundMessageUntraced(input: {
           template: `capture_${started.step}`,
           templateVersion: SMS_TEMPLATE_VERSION,
         });
-        return;
+        return HANDLED;
       }
     }
   }
+  return undefined;
+}
+
+/**
+ * Step 4 — a reply to a Network Ask this parent was sent.
+ */
+async function attachStep({ from, body, person }: { from: string; body: string; person: InboundPerson }) {
 
   /* An exact INTRO or DEEP from somebody who is also a recipient of an open
      Network Ask is that command, not their answer to another parent's question
@@ -686,6 +746,13 @@ async function handleInboundMessageUntraced(input: {
       template: "blast_reply_saved",
     });
   }
+  return { attached };
+}
+
+/**
+ * Step 5 — the answer to a freshness ping or a "did it help?".
+ */
+async function repliesStep({ from, body, person, attached }: { from: string; body: string; person: InboundPerson; attached: Attached }) {
 
   /**
    * Three questions Pando may be waiting on, all answered with the word "yes":
@@ -849,7 +916,7 @@ async function handleInboundMessageUntraced(input: {
     const step = await deepDiveStep({ personId: person.person_id, phone: from, body });
     if (step) {
       await runDeepDiveStep({ step, from, person });
-      return;
+      return HANDLED;
     }
   }
 
@@ -871,9 +938,16 @@ async function handleInboundMessageUntraced(input: {
         templateVersion: SMS_TEMPLATE_VERSION,
       });
       console.info("[sms:inbound] introduction", { template: intro.template });
-      return;
+      return HANDLED;
     }
   }
+  return { answeredSomething };
+}
+
+/**
+ * Step 6 — an answer to the clarifying question Pando asked.
+ */
+async function clarifyStep({ from, body, person, attached, answeredSomething }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean }) {
 
   /**
    * 5.4 — if Pando asked them something, this is the answer.
@@ -1014,6 +1088,13 @@ async function handleInboundMessageUntraced(input: {
       }
     }
   }
+  return { clarified, early };
+}
+
+/**
+ * Step 7 — the exchange still open, "more", and a bare opener.
+ */
+async function openQuestionStep({ from, body, person, attached, answeredSomething, clarified }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean; clarified: boolean }) {
 
   /**
    * 5.3 — the reading, and it is the model's now.
@@ -1087,7 +1168,7 @@ async function handleInboundMessageUntraced(input: {
           sensitive: prior.holdReason === "sensitive",
           more: { texts: prior.texts, shareIds: prior.shareIds },
         });
-        return;
+        return HANDLED;
       }
     }
   }
@@ -1112,15 +1193,16 @@ async function handleInboundMessageUntraced(input: {
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     console.info("[sms:inbound] answered an opener");
-    return;
+    return HANDLED;
   }
+  return { pending };
+}
 
-  /* Already answered by a step above — a ping's YES, a yes to an offer, an
-     age saved: nothing below reads the message, so it is not sent to the model
-     (26 Oct, the SMS lab: each of those cost a classification that was then
-     discarded at the return below). A reply to an Ask still goes on: its
-     reading comes from the records, not the model. */
-  if (answeredSomething || clarified) return;
+/**
+ * Step 8 — what the text asks for, read once, and the answer that follows.
+ * Last, so a bare `return` here ends the turn as it did inline.
+ */
+async function routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean; clarified: boolean; early: Awaited<ReturnType<typeof classifyIntent>> | null; pending: Awaited<ReturnType<typeof openQuestion>> | null }): Promise<void> {
 
   /* Read once: a new request the clarifying step already read is that reading. */
   const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
@@ -1397,6 +1479,7 @@ async function handleInboundMessageUntraced(input: {
     sensitive: reading.sensitive,
   });
 }
+
 
 /**
  * A deep dive started by any of its doors — DEEP on an offer, "deep dive", or

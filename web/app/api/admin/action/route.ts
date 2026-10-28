@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
 import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
+import { isAdminActionName } from "@/lib/admin/action-names";
 import { cleanId, cleanText } from "@/lib/sanitize";
 import { TIER_IDS } from "@/lib/blast-tiers";
 import { withDb } from "@/lib/server/db";
@@ -35,79 +36,7 @@ import { applyAction } from "@/lib/server/repo/admin-write";
  *    value, so it is chosen deliberately at promotion rather than derived twice.
  */
 
-const ACTIONS = new Set([
-  "contribution.approve",
-  "contribution.needs_detail",
-  "contribution.reject",
-  "contribution.edit",
-  "share.answer_ready",
-  /* 4 Oct — a record's own name, for everyone who shared it. */
-  "share.rename",
-  /* 14.9 — the two ways out of the freshness queue. */
-  "share.retire",
-  "share.keep",
-  /**
-   * M5's answer queue and M7's blast loop (2 Sep).
-   *
-   * All eight were implemented in `admin-write.ts` and wired to buttons on
-   * `/admin/answers` and `/admin/responses`, and **none of them was in this
-   * set** — so every one of those buttons answered `400 Unknown action`, and
-   * the two queues could not be worked at all. Found by diffing the switch
-   * against this list; the fix is the list, since the implementations were
-   * already there and already audited.
-   */
-  "answer.approve",
-  "answer.send",
-  "answer.reject",
-  "answer.edit",
-  /* 7.1's entry (7 Sep). `createBlast` had no caller at all before it. */
-  "blast.create",
-  "blast.send",
-  /* M7's exit — the approved replies, back to the parent who asked (8 Sep). */
-  "blast.deliver",
-  /* 14.3 — the blast manager's verbs. */
-  "blast.release",
-  "blast.fulfil",
-  "blast_response.rate",
-  "blast_response.approve",
-  "blast_response.reject",
-  "nomination.approve",
-  "nomination.reject",
-  "nomination.release_hold",
-  "caregiver.consent",
-  "caregiver.visibility",
-  "caregiver.merge",
-  "invite.create",
-  "invite.retire",
-  "invite.restore",
-  "option.promote",
-  "option.reject",
-  "option.retire",
-  "flag.resolve",
-  "flag.escalate",
-  "demand.status",
-  "matching.weight",
-  "matching.relevance_step",
-  "founding.approve",
-  "founding.request_invite",
-  /* 13 Oct — the way back from "Not Founding", which had none. */
-  "founding.reopen",
-  "contributor.note",
-  "contributor.reward_paid",
-  "claim.link",
-  "claim.decline",
-  "claim.delete",
-  "referral.link",
-  "referral.void",
-  "person.link",
-  "person.unlink",
-  /* Introductions — parent to parent (21 Oct). */
-  "intro.approve",
-  "intro.reject",
-  "intro.contacted",
-  "intro.connected",
-  "intro.declined",
-]);
+/* The names live in lib/admin/action-names.ts, with the type and the switch held to them. */
 
 /** The ladder, as the only transitions this endpoint will forward. */
 const CONSENT_TARGETS = new Set([
@@ -152,8 +81,8 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const action = typeof body?.action === "string" ? body.action : "";
-  if (!ACTIONS.has(action)) {
+  const action = body?.action;
+  if (!isAdminActionName(action)) {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
 
