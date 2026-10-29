@@ -281,10 +281,10 @@ export async function saveClarification(input: {
  */
 export async function marketAreas(
   marketId: string = DEFAULT_MARKET_ID,
-): Promise<Array<{ id: string; label: string }>> {
+): Promise<Array<{ id: string; label: string; area?: string | null }>> {
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      select option_value, label
+      select option_value, label, area
         from market_options
        where market_id = ${marketId}
          and category = 'neighborhoods'
@@ -294,6 +294,9 @@ export async function marketAreas(
     return rows.map((r) => ({
       id: String(r.option_value),
       label: String(r.label ?? r.option_value),
+      /* The city a district sits in, as written ("Pasadena" for Linda Vista) — the
+         web search names it (30 Oct, lib/server/place-for-question.ts). */
+      area: r.area == null ? null : String(r.area),
     }));
   });
   return result.persisted && result.data ? result.data : [];

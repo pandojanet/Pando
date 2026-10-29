@@ -171,6 +171,8 @@
                        already sent, by name (never a parent's words).
 `web/lib/public-info.ts` `inAnotherState` — a web finding plainly in another US
                        state than the one asked about.
+`web/lib/place-in-question.ts` `searchPlacePhrase` — what a web search is told the
+                       question is about: district, its city, state (30 Oct).
 `web/lib/public-info.ts` `sameDeepPlace` — two deep findings are one place: `sameName`,
                        unless the names say different kinds (School vs Academy),
                        or the same site. `sameName` stays the record/page guard.

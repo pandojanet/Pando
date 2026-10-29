@@ -126,3 +126,25 @@ export function locationFromLabel(
     country: "US",
   };
 }
+
+/**
+ * The place a web search is told the question is about (30 Oct): the label, then
+ * the city a district sits in, then the state — "Linda Vista, Pasadena,
+ * California".
+ *
+ * A district's own name is not enough. Walked in the chat lab: a parent in
+ * Pasadena's Linda Vista asked about doctors, the search was told "Linda Vista,
+ * California", and it came back with a dentist on Clairemont Drive — Linda Vista
+ * is also a San Diego neighborhood, and the state cannot tell the two apart (so
+ * `inAnotherState` cannot either). The city comes from `market_options.area_slug`
+ * (`areaCity`), never a list here. A label that carries its own state ("New
+ * York, NY") is said as it is.
+ */
+export function searchPlacePhrase(input: { label: string | null; city?: string | null; region?: string | null }): string | null {
+  const label = input.label?.trim() || null;
+  if (!label) return null;
+  if (label.includes(",")) return label;
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const city = input.city?.trim() && !same(input.city, label) ? input.city.trim() : null;
+  return [label, city, input.region?.trim() || null].filter(Boolean).join(", ");
+}

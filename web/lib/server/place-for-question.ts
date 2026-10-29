@@ -3,7 +3,7 @@ import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
 import { placesForZip } from "@/lib/home-places";
 import { knownPlaceIn, locationFromLabel, placePhraseIn } from "@/lib/place-in-question";
-import { nearbyAreas } from "@/lib/server/repo/areas";
+import { areaCity, nearbyAreas } from "@/lib/server/repo/areas";
 import { marketAreas } from "@/lib/server/repo/onboarding";
 import { lookupPlaces } from "@/lib/server/geocode";
 import { withDb, type Db } from "@/lib/server/db";
@@ -53,6 +53,12 @@ export interface QuestionPlace {
    * parents' half is therefore empty rather than somebody else's region.
    */
   near: string[] | null;
+  /**
+   * The city a district sits in, as a person calls it — "Pasadena" for Linda
+   * Vista — or null when the place is a city itself or unknown (30 Oct). For the
+   * web search only: "Linda Vista, California" is also San Diego.
+   */
+  city?: string | null;
   /** Where it came from, for the log line (an enum, never the text). */
   source: "question" | "geocoded" | "profile" | "pending_profile" | "none";
 }
@@ -72,7 +78,7 @@ function sameStart(a: string, b: string): boolean {
   return x.length > 0 && y.length > 0 && (x.startsWith(y) || y.startsWith(x));
 }
 
-type Area = { id: string; label: string };
+type Area = { id: string; label: string; area?: string | null };
 
 /** A market neighborhood by its exact name (the part before any comma). */
 function byName(areas: readonly Area[], name: string): Area | undefined {
@@ -81,8 +87,25 @@ function byName(areas: readonly Area[], name: string): Area | undefined {
   return areas.find((a) => fold(a.label.split(",")[0] ?? a.label) === want);
 }
 
-async function supported(marketId: string, area: Area, source: QuestionPlace["source"]): Promise<QuestionPlace> {
-  return { area: area.id, label: area.label, near: await nearbyAreas(marketId, area.id), source };
+/**
+ * The city a market district sits in, by name; null for a city itself.
+ *
+ * `area_slug` first (the roll-up matching uses), else the row's own `area`, which
+ * the neighborhood seed writes ("Pasadena" for Linda Vista) and `area_slug` is
+ * derived from only by the taxonomy import — the chat lab's database has the one
+ * and not the other (30 Oct).
+ */
+async function cityOf(marketId: string, areaId: string, areas: readonly Area[]): Promise<string | null> {
+  const self = areas.find((a) => a.id === areaId);
+  const city = await areaCity(marketId, areaId);
+  if (city && city !== areaId) return areas.find((a) => a.id === city)?.label ?? null;
+  const written = self?.area?.trim();
+  return written && self && fold(written) !== fold(self.label) ? written : null;
+}
+
+async function supported(marketId: string, area: Area, source: QuestionPlace["source"], areas: readonly Area[]): Promise<QuestionPlace> {
+  const [near, city] = await Promise.all([nearbyAreas(marketId, area.id), cityOf(marketId, area.id, areas)]);
+  return { area: area.id, label: area.label, near, city, source };
 }
 
 function unsupported(label: string, source: QuestionPlace["source"]): QuestionPlace {
@@ -98,7 +121,7 @@ export async function placeForQuestion(input: {
   const areas = await marketAreas(marketId);
 
   const named = knownPlaceIn(input.question, areas);
-  if (named) return supported(marketId, named, "question");
+  if (named) return supported(marketId, named, "question", areas);
 
   const phrase = placePhraseIn(input.question);
   if (phrase) {
@@ -108,10 +131,10 @@ export async function placeForQuestion(input: {
       const serving = placesForZip(phrase)
         .map((p) => areas.find((a) => a.id === p.id))
         .filter((a): a is Area => Boolean(a));
-      if (serving.length === 1) return supported(marketId, serving[0], "question");
+      if (serving.length === 1) return supported(marketId, serving[0], "question", areas);
     } else {
       const listed = byName(areas, phrase);
-      if (listed) return supported(marketId, listed, "question");
+      if (listed) return supported(marketId, listed, "question", areas);
     }
 
     const looked = await lookupPlaces({ query: phrase, marketId, kind: "place", limit: 1 });
@@ -125,7 +148,7 @@ export async function placeForQuestion(input: {
       first && (/^\d{5}$/.test(phrase) || sameStart(first.name, phrase)) ? first : undefined;
     if (found) {
       const listed = byName(areas, found.name);
-      if (listed) return supported(marketId, listed, "geocoded");
+      if (listed) return supported(marketId, listed, "geocoded", areas);
       return unsupported(found.storedValue, "geocoded");
     }
   }
@@ -137,6 +160,7 @@ export async function placeForQuestion(input: {
       area: home,
       label: listed?.label ?? null,
       near: await nearbyAreas(marketId, home),
+      city: await cityOf(marketId, home, areas),
       source: "profile",
     };
   }
@@ -147,7 +171,7 @@ export async function placeForQuestion(input: {
        promotion reached this person's row (a profile re-saved afterwards
        writes the chip answer, which is empty). */
     const listed = knownPlaceIn(pending, areas) ?? byName(areas, pending);
-    if (listed) return supported(marketId, listed, "pending_profile");
+    if (listed) return supported(marketId, listed, "pending_profile", areas);
     return unsupported(pending, "pending_profile");
   }
 
@@ -168,6 +192,11 @@ export function searchLocationFor(
 ): { city?: string; region?: string; country: string; inMarket: boolean } {
   if (!place.label) return { country: "US", inMarket: false };
   const loc = locationFromLabel(place.label);
+  /* A district is searched from its city (30 Oct): "Linda Vista" alone is also
+     San Diego. The district stays in the brief (`placeLabel`), beside the city. */
+  if (place.city && place.area !== null) {
+    return { ...loc, city: place.city, inMarket: loc.region === undefined };
+  }
   return { ...loc, inMarket: place.area !== null && loc.region === undefined };
 }
 

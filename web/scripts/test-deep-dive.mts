@@ -1175,5 +1175,20 @@ console.log("\n=== 29 Oct review: real places were dropped by the readers, silen
   ok("the report log says which rules removed sentences, and how many web places became options", sddSrc.includes("refused_${k}") && sddSrc.includes("web_options: options.filter((o) => o.source !== \"parents\").length,"));
 }
 
+console.log("\n=== where the search looks: a district says its city (30 Oct, Linda Vista read as San Diego) ===");
+{
+  const piq = (await import(`../lib/place-in-question.ts?v=${Date.now()}`)) as typeof import("../lib/place-in-question");
+  const p = piq.searchPlacePhrase;
+  ok("a Pasadena district: district, city, state", p({ label: "Linda Vista", city: "Pasadena", region: "California" }) === "Linda Vista, Pasadena, California");
+  ok("a city of the market is not said twice", p({ label: "Arcadia", city: "Arcadia", region: "California" }) === "Arcadia, California" && p({ label: "Arcadia", city: null, region: "California" }) === "Arcadia, California");
+  ok("a label with its own state is said as it is", p({ label: "New York, NY", city: "New York", region: null }) === "New York, NY");
+  ok("nothing known says nothing", p({ label: null, city: "Pasadena", region: "California" }) === null && p({ label: "  ", region: "California" }) === null);
+  const ws = fs.readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
+  ok("the brief says it, for the ordinary search and the deep one alike", ws.includes("const where = searchPlacePhrase({ label: bare, city: input.city, region: input.region });") && ws.includes("const context = brief({ ...input, region: location?.region ?? null, city: location?.city ?? null });"));
+  const pf = fs.readFileSync(new URL("../lib/server/place-for-question.ts", import.meta.url), "utf8");
+  ok("a district is searched from its city (user_location), read from area_slug, not a list", pf.includes("const city = await areaCity(marketId, areaId);") && pf.includes("return { ...loc, city: place.city, inMarket: loc.region === undefined };"));
+  ok("the profile's district and a named one both carry it", pf.includes("city: await cityOf(marketId, home, areas),") && pf.includes('supported(marketId, named, "question", areas)'));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

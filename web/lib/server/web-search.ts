@@ -8,6 +8,7 @@ import { looksLikePerson } from "@/lib/named-person";
 import { PLACES } from "@/lib/home-places";
 import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameDeepPlace, type DeepFinding, type DeepReadStats, type PublicFinding } from "@/lib/public-info";
 import { deepDiveShape } from "@/lib/deep-dive";
+import { searchPlacePhrase } from "@/lib/place-in-question";
 
 /**
  * The person check for web text, with this market's towns as a veto: "South
@@ -321,6 +322,8 @@ function brief(input: {
   now?: Date;
   /** The state the search is located in, when the label does not carry one. */
   region?: string | null;
+  /** The city the search is located in — for a district, the city it sits in (30 Oct). */
+  city?: string | null;
   /** Whose clock "Today" is read on (lib/markets.ts). */
   market?: string;
 }): string[] {
@@ -331,7 +334,9 @@ function brief(input: {
      Texas as readily as California: walked over the relay on 25 Sep, a toddler
      swim question came back with a swim school "in Pasadena, TX". The tool's
      `user_location` already said California; the words it was given did not. */
-  const where = bare && input.region && !bare.includes(",") ? `${bare}, ${input.region}` : bare;
+  /* And the city a district sits in (30 Oct): "Linda Vista, California" is also
+     San Diego — see `searchPlacePhrase`. */
+  const where = searchPlacePhrase({ label: bare, city: input.city, region: input.region });
   if (where) lines.push(`The question is about: ${where}`);
 
   const phrases = (input.bands ?? [])
@@ -664,7 +669,7 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
       ? { ...where, region: market.region, timezone: market.timezone }
       : where;
   })();
-  const context = brief({ ...input, region: location?.region ?? null });
+  const context = brief({ ...input, region: location?.region ?? null, city: location?.city ?? null });
 
   try {
     /* No SDK retries on a deep search (29 Oct): a timeout inside the one 150 s
