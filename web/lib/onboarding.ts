@@ -149,6 +149,29 @@ export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
 };
 
 /**
+ * The participation question as an RCS card says it (29 Oct): its three buttons
+ * are the levels, so the "Reply 1…" sentence goes — but not what "As relevant"
+ * allows, which no button can say. "3 a week" is `OPEN_WEEKLY_LIMIT`, written out
+ * as the SMS above writes it. The other questions take typed answers and have no
+ * card version.
+ */
+export const PARTICIPATION_CARD =
+  "Last thing: how many questions from nearby parents could Pando send you? As relevant means up to 3 a week.";
+
+/**
+ * A message that asks the participation question, with the card's wording in
+ * place of the SMS's — or null when the message does not ask it, so the caller
+ * sends no buttons. The three places that ask it (under an answer, after a
+ * clarifying answer, under a held reply) all carry `CLARIFYING_COPY.participation`
+ * verbatim, which is what this finds.
+ */
+export function participationCard(text: string): string | null {
+  return text.includes(CLARIFYING_COPY.participation)
+    ? text.replace(CLARIFYING_COPY.participation, PARTICIPATION_CARD)
+    : null;
+}
+
+/**
  * What Pando says when a clarifying answer lands, and the next question with it.
  *
  * The reply to an answer is a thank-you and, while the profile still misses

@@ -90,10 +90,12 @@
 `web/lib/sms-segments.ts` — M13.3. What a message actually costs to send, and
                        where it breaks. One character outside GSM-7 halves the
                        budget; this measures and never rewrites registered copy.
-`web/lib/sms-rich.ts` — RCS quick replies. The two kinds (`yes_no`,
-                       `settings_allowance`), their button titles, the env var that
-                       switches each on, and the Content Template an operator creates.
-                       Pure; `test:rich` pins it. Used through `sendSms({ rich })`.
+`web/lib/sms-rich.ts` — RCS quick replies. The nine kinds (button sets), their
+                       titles and ids, the env var that switches each on, `tapText`
+                       (a tap's id → its word), and the Content Template an operator
+                       creates. Pure; `test:rich` pins it. Used through
+                       `sendSms({ rich: { kind, card } })`; card texts live beside the
+                       SMS texts they shorten.
 `web/lib/server/repo/retry.ts` — M13.4. Which failed messages are worth sending
                        again, and rebuilding the three that can be.
 `web/app/(admin)/admin/blasts/page.tsx` — M14.3. The Ask, its pool before it

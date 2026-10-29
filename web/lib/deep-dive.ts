@@ -159,6 +159,19 @@ export function deepDiveOffer(withParents: boolean): string {
   return withParents ? DEEP_DIVE_OFFER : DEEP_DIVE_OFFER_WEB;
 }
 
+/** The offer as an RCS card says it, under a "Deep dive" button (29 Oct): the same words, without "Reply DEEP." */
+export function deepDiveOfferCard(withParents: boolean): string {
+  return deepDiveOffer(withParents).replace(/ Reply DEEP\.$/, "");
+}
+
+/**
+ * The Network Ask offer at the foot of a report, and its card form under Yes and
+ * No (29 Oct). One constant, because `server/deep-dive.ts` finds it in the last
+ * part to decide whether that part carries buttons.
+ */
+export const DEEP_ASK_FOOTER = "Want me to ask nearby parents about these? Reply YES.";
+export const DEEP_ASK_FOOTER_CARD = "Want me to ask nearby parents about these?";
+
 /** The stored version of the wording sent, so the two can be compared (26 Oct review). */
 export function deepDiveOfferVersion(withParents: boolean): string {
   return withParents ? DEEP_DIVE_OFFER_VERSION : `${DEEP_DIVE_OFFER_VERSION}-web`;
@@ -1678,7 +1691,7 @@ export function renderBlocks(input: RenderInput): { header: string; options: str
     footer.push(`Want to hear from a parent who's been? Reply INTRO and the name, like INTRO ${firstParent.name}.`);
   }
   if (anyDistance) footer.push("Drive times are rough estimates.");
-  if (input.offerAsk) footer.push("Want me to ask nearby parents about these? Reply YES.");
+  if (input.offerAsk) footer.push(DEEP_ASK_FOOTER);
   return { header: header.join("\n"), options: blocks, footer: footer.join("\n") };
 }
 

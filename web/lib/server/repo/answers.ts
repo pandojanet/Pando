@@ -2,6 +2,7 @@ import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
+import { askOfferRich } from "@/lib/sms-rich";
 
 /**
  * M14.2 / 5.8 — the answer queue.
@@ -97,7 +98,7 @@ export async function approveAndSend(input: {
 }): Promise<SendVerdict> {
   const loaded = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      select id, phone, answer_text, person_id, status
+      select id, phone, answer_text, person_id, status, next_step
         from answers
        where id = ${input.id}::uuid
     `)) as unknown as Array<Record<string, unknown>>;
@@ -122,6 +123,8 @@ export async function approveAndSend(input: {
     body: String(row.answer_text),
     category: "transactional",
     personId: row.person_id ? String(row.person_id) : undefined,
+    /* Yes / No on RCS when the approved text still ends on the Network Ask offer (29 Oct). */
+    rich: askOfferRich(row.next_step ? String(row.next_step) : null, String(row.answer_text)),
     template: "answer",
   });
 

@@ -68,6 +68,12 @@ export interface CaptureQuestion {
   options?: CaptureOption[];
   /** A step the parent may decline. Skipping is an answer, not a gap. */
   skippable?: boolean;
+  /**
+   * The prompt as an RCS card says it, above buttons that are the options (or
+   * Skip) — the prompt without "Reply …" (29 Oct, `lib/sms-rich.ts`). A step
+   * without one is sent as text only.
+   */
+  card?: string;
 }
 
 /**
@@ -82,6 +88,7 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
     step: "kind",
     prompt:
       "Pando: happy to add it. Is it a class, a camp, a place, or a tip? Reply with one word.",
+    card: "Pando: happy to add it. Is it a class, a camp, a place, or a tip?",
     /**
      * The values are `share_kind` exactly, and **a camp is stored as an
      * activity** — that enum has four members and camp is not one of them.
@@ -117,6 +124,7 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
      */
     prompt:
       "Pando: did you use it yourself, or did you hear about it from someone? Reply USED or HEARD.",
+    card: "Pando: did you use it yourself, or did you hear about it from someone?",
     options: [
       { value: "yes", words: ["USED", "US", "ME", "MYSELF", "YES", "FIRSTHAND"] },
       { value: "no", words: ["HEARD", "FRIEND", "SECONDHAND", "NO"] },
@@ -132,6 +140,7 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
      */
     prompt:
       "Pando: would you recommend it to another parent? Reply YES, YES BUT (if there's a catch), or NO.",
+    card: "Pando: would you recommend it to another parent? Yes but means there's a catch.",
     options: [
       { value: "yes", words: ["YES", "Y", "DEFINITELY", "ABSOLUTELY"] },
       {
@@ -145,6 +154,7 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
     step: "detail",
     prompt:
       "Pando: last one, anything another parent should know? Reply with a sentence, or SKIP.",
+    card: "Pando: last one, anything another parent should know? Reply with a sentence.",
     skippable: true,
   },
 };

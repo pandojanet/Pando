@@ -1,5 +1,11 @@
 import "server-only";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
+/* RCS quick replies (29 Oct): the card wording of each message that carries buttons. */
+import { askOfferRich, captureStepRich, type RichKind } from "@/lib/sms-rich";
+import { introOfferCard } from "@/lib/introductions";
+import { participationCard } from "@/lib/onboarding";
+import { settingsPromptCard } from "@/lib/outreach-policy";
+import { deepDiveOfferCard } from "@/lib/deep-dive";
 
 import {
   SMS_TEMPLATE_VERSION,
@@ -489,7 +495,7 @@ async function settingsStep({ from, body, person }: { from: string; body: string
         category: "transactional",
         personId: person.person_id,
         template: SETTINGS_TEMPLATE,
-        rich: "settings_allowance",
+        rich: { kind: "settings_allowance", card: settingsPromptCard(current) },
       });
       return HANDLED;
     }
@@ -646,6 +652,7 @@ async function captureStep({ from, body, person }: { from: string; body: string;
               body: CAPTURE_QUESTIONS[saved.next].prompt,
               category: "transactional",
               personId: person.person_id,
+              rich: captureStepRich(saved.next, CAPTURE_QUESTIONS[saved.next].card),
               template: `capture_${saved.next}`,
               templateVersion: SMS_TEMPLATE_VERSION,
             });
@@ -675,6 +682,7 @@ async function captureStep({ from, body, person }: { from: string; body: string;
           body: CAPTURE_QUESTIONS[capture.step].prompt,
           category: "transactional",
           personId: person.person_id,
+          rich: captureStepRich(capture.step, CAPTURE_QUESTIONS[capture.step].card),
           template: `capture_${capture.step}`,
           templateVersion: SMS_TEMPLATE_VERSION,
         });
@@ -690,6 +698,7 @@ async function captureStep({ from, body, person }: { from: string; body: string;
           body: CAPTURE_QUESTIONS[started.step].prompt,
           category: "transactional",
           personId: person.person_id,
+          rich: captureStepRich(started.step, CAPTURE_QUESTIONS[started.step].card),
           template: `capture_${started.step}`,
           templateVersion: SMS_TEMPLATE_VERSION,
         });
@@ -1073,16 +1082,20 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
          */
         const next = nextQuestion(withAnswer(person.profile, question, body));
         const choice = question === "participation" ? parseAllowanceChoice(body) : null;
+        const reply = clarifyReply({
+          question,
+          text: body,
+          next,
+          confirmed: choice ? settingsConfirmation(choice) : undefined,
+        });
+        /* The participation question, when it is the one asked next, carries its three levels as buttons. */
+        const card = participationCard(reply);
         await sendSms({
           to: from,
-          body: clarifyReply({
-            question,
-            text: body,
-            next,
-            confirmed: choice ? settingsConfirmation(choice) : undefined,
-          }),
+          body: reply,
           category: "transactional",
           personId: person.person_id,
+          rich: card ? { kind: "settings_allowance", card } : undefined,
           template: next ? clarifyTemplate(next) : "clarification_saved",
           templateVersion: SMS_TEMPLATE_VERSION,
         });
@@ -1404,13 +1417,14 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * answer, and the parent's next message is read as the choice.
    */
   if (reading.intent === "settings" && person) {
+    const current = await currentAllowance(person.person_id);
     await sendSms({
       to: from,
-      body: settingsPrompt(await currentAllowance(person.person_id)),
+      body: settingsPrompt(current),
       category: "transactional",
       personId: person.person_id,
       template: SETTINGS_TEMPLATE,
-      rich: "settings_allowance",
+      rich: { kind: "settings_allowance", card: settingsPromptCard(current) },
     });
     console.info("[sms:inbound] settings menu offered from a model reading");
     return;
@@ -2561,31 +2575,44 @@ async function answerQuestion(input: {
       ? CLARIFYING_COPY[asking]
       : null;
   const sending = !verdict.hold;
+  const text = sending
+    ? offerDeep
+      ? `${answerText}\n\n${deepDiveOffer(sent.parent_used > 0)}`
+      : offerIntro && lead
+        ? `${answerText}\n\n${introOffer(lead.name, introOthers)}`
+        : clarifier
+        ? `${answerText}\n\n${clarifier}`
+        : answerText
+    : urgent === "high_stakes"
+      ? highStakesReply(marketConfig(marketOf(person)).crisis)
+      : urgent === "named_allegation"
+        ? allegationReply(marketConfig(marketOf(person)).crisis)
+        : heldReply(clarifier);
+
+  /* RCS buttons (29 Oct, lib/sms-rich.ts) for the one question the message ends
+     on, never on a crisis reply. The card is the same text with "Reply …" gone:
+     the deep-dive and intro offers by their card wording, the participation
+     question wherever it rides (under an answer or a held reply), and the Network
+     Ask offer only when the text still carries it. */
+  const participation = participationCard(text);
+  const rich: { kind: RichKind; card?: string } | undefined = urgent
+    ? undefined
+    : sending && offerDeep
+      ? { kind: "deep_offer", card: `${answerText}\n\n${deepDiveOfferCard(sent.parent_used > 0)}` }
+      : sending && offerIntro && lead
+        ? { kind: "intro_offer", card: `${answerText}\n\n${introOfferCard(lead.name, introOthers)}` }
+        : participation
+          ? { kind: "settings_allowance", card: participation }
+          : sending
+            ? askOfferRich(nextStep, answerText)
+            : undefined;
 
   const result = await sendSms({
     to: from,
-    body: sending
-      ? offerDeep
-        ? `${answerText}\n\n${deepDiveOffer(sent.parent_used > 0)}`
-        : offerIntro && lead
-          ? `${answerText}\n\n${introOffer(lead.name, introOthers)}`
-          : clarifier
-          ? `${answerText}\n\n${clarifier}`
-          : answerText
-      : urgent === "high_stakes"
-        ? highStakesReply(marketConfig(marketOf(person)).crisis)
-        : urgent === "named_allegation"
-          ? allegationReply(marketConfig(marketOf(person)).crisis)
-          : heldReply(clarifier),
+    body: text,
     category: "transactional",
     personId: person?.person_id,
-    /* RCS Yes/No under the Network Ask offer (29 Oct), only when the offer is
-       what the text ends on — the same test the clarifier above uses — and not
-       when another offer or a held reply is what goes out. */
-    rich:
-      sending && !urgent && !offerDeep && !offerIntro && nextStep === "offer_blast" && answerText.includes("Want me to ask")
-        ? "yes_no"
-        : undefined,
+    rich,
     template: urgent
       ? urgent === "high_stakes"
         ? "answer_high_stakes"

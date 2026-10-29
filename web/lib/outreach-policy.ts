@@ -249,15 +249,33 @@ export function parseAllowanceChoice(
  * are is a menu you have to guess your way out of.
  */
 export function settingsPrompt(current: Allowance): string {
-  const now =
-    current.allowance_mode === "as_relevant"
-      ? `up to ${OPEN_WEEKLY_LIMIT} questions a week`
-      : `up to ${current.monthly_contact_allowance ?? ALLOWANCE_FLOOR} questions a month`;
   return [
-    `Right now Pando may ask you ${now}.`,
+    `Right now Pando may ask you ${allowanceNow(current)}.`,
     `Reply 1 for up to 5 a month, 2 for up to 10, or 3 for up to ${OPEN_WEEKLY_LIMIT} a week.`,
     "However you set it, you'll never get two requests within 48 hours.",
   ].join(" ");
+}
+
+/**
+ * The same menu as an RCS card, whose three buttons are the choice (29 Oct): the
+ * "Reply 1…" sentence beside them read as a mistake on a real phone, so the card
+ * asks instead. Two things the SMS says stay: what "As relevant" allows — the
+ * buttons cannot say it, and it is a limit the code enforces (invariant 5) — and
+ * the 48-hour promise, the rule the parent is choosing under.
+ */
+export function settingsPromptCard(current: Allowance): string {
+  return [
+    `Right now Pando may ask you ${allowanceNow(current)}.`,
+    "How many would you like?",
+    `As relevant means up to ${OPEN_WEEKLY_LIMIT} a week.`,
+    "However you set it, you'll never get two requests within 48 hours.",
+  ].join(" ");
+}
+
+function allowanceNow(current: Allowance): string {
+  return current.allowance_mode === "as_relevant"
+    ? `up to ${OPEN_WEEKLY_LIMIT} questions a week`
+    : `up to ${current.monthly_contact_allowance ?? ALLOWANCE_FLOOR} questions a month`;
 }
 
 /** The confirmation, so a change is never silent. */

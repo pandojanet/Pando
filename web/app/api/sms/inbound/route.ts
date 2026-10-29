@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { toE164 } from "@/lib/phone";
 import { verifyTwilioSignature } from "@/lib/server/twilio-signature";
 import { handleInboundMessage } from "@/lib/server/inbound";
+import { tapText } from "@/lib/sms-rich";
 
 /**
  * M13.2 — the inbound webhook, and M12.3/12.4's precedence.
@@ -55,7 +56,10 @@ export async function POST(request: Request) {
   }
 
   const from = toE164(params.From ?? "");
-  const body = params.Body ?? "";
+  /* A tapped RCS button arrives with its id in `ButtonPayload`; a known id is read
+     as its button's word, so the tap means the same whatever `Body` carried
+     (29 Oct, lib/sms-rich.ts). Signed like every other parameter. */
+  const body = tapText({ body: params.Body ?? "", buttonPayload: params.ButtonPayload });
   if (!from) {
     console.warn("[sms:inbound] no usable sender");
     return twiml();

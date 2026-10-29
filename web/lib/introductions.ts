@@ -139,6 +139,11 @@ export function introOffer(place: string, others: number): string {
   return `By the way, ${who} used ${name || "it"}. Want an introduction? Reply INTRO and someone at Pando will ask them first.`;
 }
 
+/** The offer as an RCS card says it, under an "Intro" button (29 Oct): only "Reply INTRO and" goes. */
+export function introOfferCard(place: string, others: number): string {
+  return introOffer(place, others).replace("Reply INTRO and someone", "Someone");
+}
+
 export const INTRO_REQUESTED =
   "Thanks. Someone at Pando will ask a parent who's used it, and put you two in touch only if they say yes.";
 

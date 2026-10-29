@@ -176,8 +176,9 @@ console.log("\n=== answering it is not met with silence ===");
   );
   ok(
     "a saved clarification replies rather than returning quietly",
-    /* `question` since 26 Oct: the one asked, or the fact said unasked. */
-    /body: clarifyReply\(\{\s*question,\s*text: body,\s*next,/.test(inbound),
+    /* `question` since 26 Oct: the one asked, or the fact said unasked. Built
+       first and then sent since 29 Oct, so its RCS card can be read from it. */
+    /const reply = clarifyReply\(\{\s*question,\s*text: body,\s*next,[\s\S]{0,600}?body: reply,/.test(inbound),
   );
   ok(
     "and the next question it carries is remembered by its template",

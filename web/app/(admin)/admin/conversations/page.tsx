@@ -22,6 +22,7 @@ import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { DeliveryHealth } from "@/components/admin/conversations/DeliveryHealth";
 import { useAdminRows } from "@/lib/admin/client";
+import { DELIVERED_STATUSES } from "@/lib/delivery";
 import { useUrlFilter } from "@/lib/admin/url-state";
 import { slugLabel } from "@/components/admin/ui";
 import { messageLabel } from "@/lib/admin/labels";
@@ -387,7 +388,8 @@ function History({ detail }: { detail: ConversationDetail }) {
                 Answered a request
               </Badge>
             )}
-            {m.status && m.status !== "delivered" && (
+            {/* Delivered or read (RCS, 29 Oct) needs no badge; anything else does. */}
+            {m.status && !(DELIVERED_STATUSES as readonly string[]).includes(m.status) && (
               <Badge tone={m.error_code ? "red" : "gold"}>
                 {m.error_code ? `${slugLabel(m.status)} · ${m.error_code}` : slugLabel(m.status)}
               </Badge>

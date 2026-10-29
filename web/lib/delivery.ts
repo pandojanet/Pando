@@ -8,15 +8,26 @@
  * would bury the only one that is a bug in Pando.
  */
 
-/** Twilio's terminal states. Anything else is still in flight. */
+/**
+ * Twilio's terminal states. Anything else is still in flight.
+ *
+ * `read` came with RCS (29 Oct): Twilio reports it for an RCS message the person
+ * has read, when their read receipts are on. It is a delivery that went further,
+ * so it counts as delivered — a message that only ever reported `read` would
+ * otherwise sit "in flight" for ever and then read as unreported.
+ */
 export type DeliveryStatus =
   | "queued"
   | "sent"
   | "delivered"
+  | "read"
   | "undelivered"
   | "failed";
 
-export const TERMINAL_STATUSES: DeliveryStatus[] = ["delivered", "undelivered", "failed"];
+export const TERMINAL_STATUSES: DeliveryStatus[] = ["delivered", "read", "undelivered", "failed"];
+
+/** The statuses that mean the message reached the phone. */
+export const DELIVERED_STATUSES: DeliveryStatus[] = ["delivered", "read"];
 
 /**
  * The three that matter, from 12.5's own list.

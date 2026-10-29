@@ -77,6 +77,20 @@ export function blastRequestSms(input: {
   return `Pando: a parent nearby asked — "${input.question}" We thought of you (${input.because}). Reply with anything useful, or PASS to skip. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
 }
 
+/*
+ * The RCS card versions of the registered texts (29 Oct, lib/sms-rich.ts).
+ *
+ * The SMS text above stays the registered sample, character for character; it is
+ * what a phone without RCS receives. The card drops only the instruction its
+ * buttons replace, and keeps STOP and HELP. ⚠ New wording: it goes to the client,
+ * and into the RCS sender's registration samples, before it is switched on.
+ */
+
+/** The Network Ask request with a Pass button: the answer is still typed. */
+export function blastRequestCard(input: { question: string; because: string }): string {
+  return `Pando: a parent nearby asked — "${input.question}" We thought of you (${input.because}). Reply with anything useful. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`;
+}
+
 /**
  * The one-clause reason, from the matcher's own reasons.
  *
@@ -122,6 +136,11 @@ export function askReason(kinds: string[]): string {
  */
 export function thanksPromptSms(): string {
   return "Pando: a few days ago we sent you a recommendation from a local parent. Did it help? Reply YES or NO — a yes lets us thank whoever shared it. Reply STOP to opt out, HELP for help.";
+}
+
+/** "Did it help?" with Yes and No buttons (see `blastRequestCard`). */
+export function thanksPromptCard(): string {
+  return "Pando: a few days ago we sent you a recommendation from a local parent. Did it help? A yes lets us thank whoever shared it. Reply STOP to opt out, HELP for help.";
 }
 
 /**
@@ -198,6 +217,11 @@ export function freshnessPingSms(input: { name: string }): string {
      YES and NO are what `readPingReply` (lib/vouch.ts) reads, PASS is
      `keywordOf`'s. One GSM-7 segment whatever the name: see `pingSubject`. */
   return pingBody(pingSubject(input.name));
+}
+
+/** The ping with Yes, No and Pass buttons (see `blastRequestCard`). Same name rule. */
+export function freshnessPingCard(input: { name: string }): string {
+  return `Pando: quick one - is ${pingSubject(input.name)} still worth recommending to other parents? Reply STOP to opt out, HELP for help.`;
 }
 
 const pingBody = (subject: string) =>

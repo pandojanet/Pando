@@ -3,6 +3,7 @@ import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import type { AdminActionName } from "@/lib/admin/action-names";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
+import { askOfferRich } from "@/lib/sms-rich";
 import {
   createBlastIn,
   deliverBlastAnswers,
@@ -781,7 +782,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (!target) return { applied: false, reason: "not_implemented" };
 
       const rows = (await tx.execute(sql`
-        select phone, question_text, answer_text, person_id, status
+        select phone, question_text, answer_text, person_id, status, next_step
           from answers where id = ${target}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
       const row = rows[0];
@@ -826,6 +827,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         body: String(row.answer_text),
         category: "transactional",
         personId: row.person_id ? String(row.person_id) : undefined,
+        /* Yes / No on RCS when the approved text still ends on the Network Ask offer (29 Oct). */
+        rich: askOfferRich(row.next_step ? String(row.next_step) : null, String(row.answer_text)),
         template: "answer",
       });
 

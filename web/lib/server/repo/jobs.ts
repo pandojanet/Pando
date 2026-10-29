@@ -14,8 +14,10 @@ import { thanksList } from "@/lib/thanks";
 import {
   SMS_TEMPLATE_VERSION,
   thanksPromptSms,
+  thanksPromptCard,
   thanksSms,
   freshnessPingSms,
+  freshnessPingCard,
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
 import { runRetrySweep } from "@/lib/server/repo/retry";
@@ -203,6 +205,8 @@ async function thanks_prompt(): Promise<JobResult> {
     const result = await sendSms({
       to: answer.phone,
       body: thanksPromptSms(),
+      /* Yes and No buttons on RCS (29 Oct); the SMS is the registered sample. */
+      rich: { kind: "yes_no", card: thanksPromptCard() },
       category: "outreach",
       /* A question, so a request: gapped, capped and counted (24 Sep). */
       outreachKind: "prompt",
@@ -498,6 +502,8 @@ async function freshness_ping(): Promise<JobResult> {
     const result = await sendSms({
       to: String(row.phone),
       body: freshnessPingSms({ name: String(row.name) }),
+      /* Yes and No buttons on RCS (29 Oct); no Pass button — see `RICH_BUTTONS.yes_no`. */
+      rich: { kind: "yes_no", card: freshnessPingCard({ name: String(row.name) }) },
       category: "outreach",
       personId: String(row.person_id),
       outreachKind: "ping",

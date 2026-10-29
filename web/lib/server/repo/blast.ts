@@ -10,7 +10,7 @@ import { SMS_BUDGET } from "@/lib/answer";
 import { composeBlastAnswer } from "@/lib/blast-answer";
 import { ALLOWANCE_WINDOW_DAYS, OPEN_WEEKLY_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, decideOutreach, type OutreachHistory } from "@/lib/outreach-policy";
 import { marketZoneOf } from "@/lib/server/repo/outreach";
-import { SMS_TEMPLATE_VERSION, askReason, blastRequestSms } from "@/lib/sms-templates";
+import { SMS_TEMPLATE_VERSION, askReason, blastRequestCard, blastRequestSms } from "@/lib/sms-templates";
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
 import { matchesFor } from "@/lib/server/repo/matching";
@@ -594,6 +594,11 @@ async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
         question,
         because: askReason(member.reasons.map((r) => r.kind)),
       }),
+      /* A Pass button on RCS (29 Oct): the answer is typed, leaving is one tap. */
+      rich: {
+        kind: "pass",
+        card: blastRequestCard({ question, because: askReason(member.reasons.map((r) => r.kind)) }),
+      },
       category: "outreach",
       personId: member.person_id,
       outreachKind: "blast",

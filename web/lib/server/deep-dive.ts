@@ -9,6 +9,8 @@ import {
   acceptsDeepDive,
   asksForDeepDive,
   childrenPhrase,
+  DEEP_ASK_FOOTER,
+  DEEP_ASK_FOOTER_CARD,
   DEEP_DIVE_ASK_TOPIC,
   DEEP_DIVE_BUSY,
   DEEP_DIVE_CANCELLED,
@@ -939,11 +941,14 @@ async function deliver(input: DeliverInput): Promise<boolean> {
 
   let sent = 0;
   for (const body of parts) {
+    /* Yes / No on RCS under the Network Ask offer, which only the last part carries (29 Oct). */
+    const asks = body.includes(DEEP_ASK_FOOTER);
     const r = await sendSms({
       to: input.phone,
       body,
       category: "transactional",
       personId: input.personId ?? undefined,
+      rich: asks ? { kind: "yes_no", card: body.replace(DEEP_ASK_FOOTER, DEEP_ASK_FOOTER_CARD) } : undefined,
       template: "deep_dive_report",
       templateVersion: SMS_TEMPLATE_VERSION,
     });

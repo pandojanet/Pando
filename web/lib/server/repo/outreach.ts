@@ -399,7 +399,7 @@ export async function recordDeliveryStatus(input: {
              status_at = now()
        where provider_message_id = ${input.providerMessageId}
          and (status is null
-              or status not in ('delivered', 'undelivered', 'failed'))
+              or status not in ('delivered', 'read', 'undelivered', 'failed'))
     `);
     return true;
   });
@@ -420,8 +420,9 @@ export async function deliveryCounts(days = 7): Promise<DeliveryCounts | null> {
     const rows = (await db.execute(sql`
       select
         count(*) filter (
-          where status in ('delivered', 'undelivered', 'failed'))::int      as settled,
-        count(*) filter (where status = 'delivered')::int                   as delivered,
+          where status in ('delivered', 'read', 'undelivered', 'failed'))::int as settled,
+        -- 'read' is an RCS message that was delivered and then read (29 Oct).
+        count(*) filter (where status in ('delivered', 'read'))::int         as delivered,
         count(*) filter (
           where (status is null or status in ('queued', 'sent'))
             and sent_at > now() - interval '24 hours')::int                 as in_flight,

@@ -131,11 +131,13 @@ interface SendInput {
    *
    * `body` is still the text, and it is still what the segment plan, the
    * throttle and every rule above the provider read. It rides in the template as
-   * its one variable, and the template's own `twilio/text` is the SMS a phone
-   * without RCS receives. Ignored — plain `Body` — when that kind has no content
-   * SID set, on the Slack relay, and when the body is too long for a card.
+   * `{{2}}`, and the template's own `twilio/text` is the SMS a phone without RCS
+   * receives. `card` is `{{1}}`, the card's text — the body without the sentence
+   * that says what to type; omitted, the body is both. Ignored — plain `Body` —
+   * when that kind has no content SID set, on the Slack relay, and when either
+   * text is too long for its type.
    */
-  rich?: RichKind;
+  rich?: { kind: RichKind; card?: string };
 }
 
 function provisioning(marketId?: string | null) {
@@ -440,10 +442,10 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
    *
    * **No `Body` beside `ContentSid`:** Twilio rejects a `Body` sent together with
    * `ContentVariables` (error 35127) and says the template supersedes it. The SMS
-   * text lives in the template's own `twilio/text`, from the same variable.
+   * text lives in the template's own `twilio/text`, as `{{2}}`.
    */
-  const contentSid = input.rich ? richContentSid(input.rich) : null;
-  const variables = contentSid ? richVariables(body) : null;
+  const contentSid = input.rich ? richContentSid(input.rich.kind) : null;
+  const variables = contentSid && input.rich ? richVariables(input.rich.card ?? body, body) : null;
   const richParams =
     contentSid && variables
       ? new URLSearchParams({
