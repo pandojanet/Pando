@@ -3,6 +3,7 @@ import { toE164 } from "@/lib/phone";
 import { verifyTwilioSignature } from "@/lib/server/twilio-signature";
 import { handleInboundMessage } from "@/lib/server/inbound";
 import { tapText } from "@/lib/sms-rich";
+import { inboundChannel } from "@/lib/rcs-typing";
 
 /**
  * M13.2 — the inbound webhook, and M12.3/12.4's precedence.
@@ -60,6 +61,8 @@ export async function POST(request: Request) {
      as its button's word, so the tap means the same whatever `Body` carried
      (29 Oct, lib/sms-rich.ts). Signed like every other parameter. */
   const body = tapText({ body: params.Body ?? "", buttonPayload: params.ButtonPayload });
+  /* RCS or SMS, from Twilio's `ChannelMetadata` — RCS gets "typing…" (29 Oct, lib/rcs-typing.ts). */
+  const channel = inboundChannel(params.ChannelMetadata);
   if (!from) {
     console.warn("[sms:inbound] no usable sender");
     return twiml();
@@ -81,7 +84,7 @@ export async function POST(request: Request) {
    */
   after(async () => {
     try {
-      await handleInboundMessage({ from, body });
+      await handleInboundMessage({ from, body, channel });
     } catch (err) {
       console.error("[sms:inbound] pipeline failed", {
         error: err instanceof Error ? err.name : "unknown",

@@ -323,6 +323,22 @@ would make the wait visible. It is a Twilio call and would have to live in
 `lib/server/sms.ts` (invariant 6). Read receipts arrive as status `read`; beyond counting
 them as delivered (change 3), Pando has no use for them now.
 
+**Built 29 Oct**, after the developer asked for it: [rcs-quick-replies](rcs-quick-replies.md),
+"Pando is typing…". Checked that day: the endpoint and body (`channel: "RCS"`,
+`from: "rcs:<sender>"`, `to: "rcs:<number>"`, `event: "START"`), 20 seconds or until
+delivery, repeatable; no price published; an inbound RCS message carries `ChannelMetadata`
+whose `type` is `rcs`.
+
+### 6.8 Variables in button titles (found 29 Oct, after section 6 was written)
+
+Twilio's `twilio/card` page says variables are supported in a quick reply's **title**
+("in-session") and **id**, and in a URL button's title, id and the end of its URL. That
+changes 6.2 and 6.5 from "titles are fixed" to "possible, if it works on RCS": what
+"in-session" means for RCS is not stated, so one template with a variable title has to be
+tried on a phone first. If it works: a neighbourhood question with the market's areas as
+buttons, an Intro button per deep-dive option (the place's name, the record in the id),
+and age buttons once the product question in 6.2 is answered.
+
 ## 7. Code changes for the implementation
 
 1. **Two variables.** `sendSms({ rich })` sends `{"1": cardText, "2": body}`. Each rich

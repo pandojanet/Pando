@@ -4,6 +4,7 @@ import { ONE_SENDER, isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketCon
 import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
 import { cardFormat, richContentSid, richVariables, type RichKind } from "@/lib/sms-rich";
+import { createTyping, rcsSenderId, typingRequest } from "@/lib/rcs-typing";
 import { isOptedOut, marketIdForPhone, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
 import {
   isSlackRelayEnabled,
@@ -283,6 +284,66 @@ async function sendViaSlack(input: SendInput): Promise<SendResult> {
   return { sent: true, message_id: result.ts };
 }
 
+/**
+ * "Pando is typing…" on an RCS phone (29 Oct) — the timing is `lib/rcs-typing.ts`;
+ * the request is here because it is a Twilio call (invariant 6).
+ *
+ * Not a message: nothing reaches a phone without RCS, nothing is logged to
+ * `message_log`, and no limit counts it. It is still refused to a number that
+ * opted out, and it is only ever sent while that person's own text is being
+ * answered. Off unless `TWILIO_RCS_SENDER_ID` is set; never on the relay.
+ * Twilio publishes no price for it (29 Oct) — check the usage records after.
+ */
+async function postTyping(to: string): Promise<boolean> {
+  const sender = rcsSenderId(process.env.TWILIO_RCS_SENDER_ID);
+  if (!sender) return false;
+  const { sid, token } = provisioning();
+  /* The lab's stand-in serves both APIs under TWILIO_API_BASE; Twilio's lives on its own host. */
+  const url = process.env.TWILIO_API_BASE
+    ? `${process.env.TWILIO_API_BASE}/v3/Indicators/Typing.json`
+    : "https://messaging.twilio.com/v3/Indicators/Typing.json";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(typingRequest(sender, to)),
+      signal: AbortSignal.timeout(3_000),
+    });
+    /* Status only — Twilio's message may echo the number back (invariant 7). */
+    if (!res.ok) console.warn("[sms] typing refused", { status: res.status });
+    else console.info("[sms] typing shown");
+    return res.ok;
+  } catch (error) {
+    console.warn("[sms] typing unreachable", { error: error instanceof Error ? error.name : "unknown" });
+    return false;
+  }
+}
+
+const typing = createTyping({ post: postTyping, isOptedOut });
+
+function typingAvailable(): boolean {
+  return rcsSenderId(process.env.TWILIO_RCS_SENDER_ID) !== null && isSmsProvisioned() && !isSlackRelayEnabled();
+}
+
+/**
+ * Show the dots to this number while its own RCS text is answered; returns the
+ * end of that. Any send to the number stops them first (`sendSmsUntraced`).
+ */
+export function startTyping(to: string): () => void {
+  return typingAvailable() ? typing.begin(to) : () => {};
+}
+
+/**
+ * The dots again after a message went, inside the same answer — the deep dive
+ * after "On it". Nothing unless this number's RCS text is being answered.
+ */
+export function resumeTyping(to: string, maxMs?: number): void {
+  if (typingAvailable()) typing.resume(to, maxMs);
+}
+
 /** At most four sends a second from this process (invariant 6's throttle). */
 export const THROTTLE_MS = 250;
 let nextSlot = 0;
@@ -296,6 +357,8 @@ async function throttle(): Promise<void> {
 
 async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
   const { to, body, category } = input;
+  /* A message to this number is going: no "typing…" may follow it. */
+  typing.stop(to);
 
   /**
    * 13.3 — what this body will actually cost, worked out once.

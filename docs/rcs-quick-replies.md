@@ -230,6 +230,52 @@ Clear a kind's variable in `/docker/pando/.env` and run `docker compose up -d`; 
 message is plain text from then on. No code change and no migration. To remove the code,
 revert the commits; nothing else depends on it.
 
+## "Pando is typing…"
+
+On a phone with RCS, while Pando works out the answer to the person's own text, the
+phone shows the typing dots (Twilio's Typing Indicator API, v3; built 29 Oct). Code:
+`web/lib/rcs-typing.ts` for the timing, the request in `lib/server/sms.ts`.
+
+- **When:** an ordinary text that arrived over RCS (Twilio's `ChannelMetadata` says
+  `rcs`). Never for STOP, START, HELP or PASS, never on a phone without RCS, never for
+  anything proactive. Other commands (SETTINGS, DELETE, a tap) are answered within the
+  first 1.5 seconds and so show none.
+- **How long:** the first indicator after 1.5 seconds; renewed every 15 seconds (Twilio
+  shows it for 20); at most 90 seconds for an answer. A deep dive shows them again after
+  "On it" for up to 10 minutes, until the report arrives (deep searches of 260 and 484
+  seconds are on record).
+- **Stopped by:** any message Pando sends to that number, before it is posted, and the
+  end of the answer. The opt-out list is read before every request, so a number that
+  opted out sees none, and a STOP that arrives mid-answer ends them at the next renewal.
+  A refused request ends them.
+- **Limits:** dots already shown cannot be taken back. A text that ends with no reply
+  after more than 1.5 seconds (a "no" to an offer, say) leaves them for up to 20 seconds.
+  Two texts from one phone answered at the same time share one loop; the first reply
+  ends it.
+- **What it is not:** a message. Nothing is written to `message_log`, no limit counts it,
+  and it changes nothing about how long an answer or a deep dive takes.
+
+**Switching it on:** Console → Messaging → Senders → RCS → copy the sender's ID
+(`rcs:…_agent`), then in `/docker/pando/.env`:
+
+```
+TWILIO_RCS_SENDER_ID=rcs:pando_xxxxxxxx_agent
+```
+
+and `docker compose up -d`. **Off:** clear the value and run the same command.
+
+**Checking it:** ask an ordinary question from an RCS phone; the dots appear after about
+a second and a half and go when the answer lands. The container log shows `[sms] typing
+shown` for each request, and `[sms] typing refused` with Twilio's status when it said no
+(check the sender ID). `[sms:inbound]` carries `channel: "rcs"` or `"sms"`; if a phone
+with RCS shows `sms` there, Twilio's `ChannelMetadata` is not what the docs describe and
+no indicator is sent.
+
+**Price:** Twilio publishes none for the indicator (checked 29 Oct). After the first day
+on, check Console → Monitor → Usage for a new line; an answer sends one or two requests,
+a deep dive about six to twenty. The requests are not throttled with the messages:
+they are not messages.
+
 ## What is not verified
 
 - Every kind except SETTINGS has been walked only in the local chat lab, not on a phone.
@@ -237,3 +283,8 @@ revert the commits; nothing else depends on it.
 - The real wait before an offline RCS phone gets the SMS instead.
 - How the cards look on an iPhone (Twilio: buttons in a dropdown).
 - Which channel each message used: `message_log` does not record it.
+- The typing indicator on a real phone: walked in the chat lab only (29 Oct). Not seen:
+  that Twilio's `ChannelMetadata` reaches us with `type: "rcs"`, that the request is
+  accepted with the account's SID and token, its price, and whether a request that lands
+  after the answer shows dots again (the loop stops before every send, but one already
+  on its way can arrive late).

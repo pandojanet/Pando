@@ -156,7 +156,8 @@ import {
   type ColdPerson,
 } from "@/lib/server/repo/onboarding";
 import { isOptedOut, recordInbound, setOptOut } from "@/lib/server/repo/outreach";
-import { sendSms } from "@/lib/server/sms";
+import { resumeTyping, sendSms, startTyping } from "@/lib/server/sms";
+import { TYPING_DEEP_MAX_MS } from "@/lib/rcs-typing";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
@@ -204,11 +205,13 @@ async function handleInboundMessageUntraced(input: {
   /** E.164, already parsed by whichever transport received it. */
   from: string;
   body: string;
+  /** How it arrived, when the transport knows (Twilio's `ChannelMetadata`, 29 Oct). */
+  channel?: "rcs" | "sms";
 }): Promise<void> {
   const { from, body } = input;
 
   const keyword = keywordOf(body);
-  console.info("[sms:inbound]", { keyword: keyword ?? "text", length: body.length });
+  console.info("[sms:inbound]", { keyword: keyword ?? "text", length: body.length, channel: input.channel ?? null });
   if ((await keywordStep({ from, body, keyword })) === HANDLED) return;
 
 
@@ -1553,6 +1556,8 @@ async function runDeepDiveStep({ step, from, person }: { step: DeepDiveStep; fro
     });
   }
   console.info("[sms:inbound] deep dive", { template, building: step.run !== null && !unsupported });
+  /* "On it" stopped the dots; on RCS they come back while the report is built (29 Oct). */
+  if (step.run && !unsupported) resumeTyping(from, TYPING_DEEP_MAX_MS);
   if (step.run) {
     await answerQuestion({
       from,
@@ -2653,5 +2658,15 @@ async function answerQuestion(input: {
 
 /** handleInboundMessage, as one trace (27 Oct, lib/server/trace.ts). */
 export async function handleInboundMessage(input: Parameters<typeof handleInboundMessageUntraced>[0]): ReturnType<typeof handleInboundMessageUntraced> {
-  return withTrace("sms_inbound", () => handleInboundMessageUntraced(input));
+  return withTrace("sms_inbound", async () => {
+    /* "Pando is typing…" while an ordinary text over RCS is answered (29 Oct,
+       lib/rcs-typing.ts). Not for a keyword: Twilio or the keyword step answers
+       those at once. The first reply sent stops it; so does the end of the run. */
+    const stopTyping = input.channel === "rcs" && keywordOf(input.body) === null ? startTyping(input.from) : null;
+    try {
+      return await handleInboundMessageUntraced(input);
+    } finally {
+      stopTyping?.();
+    }
+  });
 }

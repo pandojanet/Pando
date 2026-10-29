@@ -96,6 +96,11 @@
                        creates. Pure; `test:rich` pins it. Used through
                        `sendSms({ rich: { kind, card } })`; card texts live beside the
                        SMS texts they shorten.
+`web/lib/rcs-typing.ts` — "Pando is typing…" on RCS: when the dots start, repeat and
+                       stop (`createTyping`), and `inboundChannel` (RCS or SMS from
+                       `ChannelMetadata`). Pure; `test:rich` pins it. Used through
+                       `startTyping` / `resumeTyping` in `lib/server/sms.ts`, which
+                       makes the Twilio request; every `sendSms` stops the dots.
 `web/lib/server/repo/retry.ts` — M13.4. Which failed messages are worth sending
                        again, and rebuilding the three that can be.
 `web/app/(admin)/admin/blasts/page.tsx` — M14.3. The Ask, its pool before it

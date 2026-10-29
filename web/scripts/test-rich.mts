@@ -311,5 +311,124 @@ ok("read is terminal", delivery.TERMINAL_STATUSES.includes("read"));
 ok("read and delivered are the delivered ones", JSON.stringify(delivery.DELIVERED_STATUSES) === '["delivered","read"]');
 ok("sent and queued are still in flight", !delivery.TERMINAL_STATUSES.includes("sent") && !delivery.TERMINAL_STATUSES.includes("queued"));
 
+console.log("\n=== \"Pando is typing…\" on RCS (lib/rcs-typing.ts) ===");
+{
+  const typing = (await import(`../lib/rcs-typing.ts?v=${Date.now()}`)) as typeof import("../lib/rcs-typing.ts");
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const P = "+16265550001";
+  /* Short timings: dots after 20 ms, again every 60 ms, for at most 300 ms (requests
+     near 20, 80, 140, 200, 260). Windows timers run ~15 ms late, hence the margins. */
+  const rig = (opts: { refuse?: boolean; optedOut?: boolean } = {}) => {
+    const posts: string[] = [];
+    const state = { optedOut: opts.optedOut === true };
+    const t = typing.createTyping({
+      post: async (to) => { posts.push(to); return !opts.refuse; },
+      isOptedOut: async () => state.optedOut,
+      delayMs: 20,
+      repeatMs: 60,
+      maxMs: 300,
+    });
+    return { t, posts, state };
+  };
+
+  {
+    const { t, posts } = rig();
+    const end = t.begin(P);
+    await wait(5);
+    ok("no dots at once: a quick reply never shows them", posts.length === 0);
+    await wait(30);
+    ok("dots once the reply takes longer, to that number", posts.length === 1 && posts[0] === P, String(posts.length));
+    await wait(60);
+    ok("and again before Twilio's 20 seconds run out", posts.length === 2, String(posts.length));
+    t.stop(P);
+    const sent = posts.length;
+    await wait(80);
+    ok("a message to the number stops them, and nothing follows it", posts.length === sent && t.active() === 0);
+    end();
+  }
+  {
+    const { t, posts } = rig();
+    const end = t.begin(P);
+    await wait(5);
+    t.stop(P);
+    await wait(60);
+    ok("a reply sent within the delay: no dots at all", posts.length === 0);
+    end();
+  }
+  {
+    const { t, posts } = rig();
+    t.begin(P);
+    await wait(600);
+    ok("bounded: the loop ends by itself after its maximum", t.active() === 0 && posts.length >= 3 && posts.length <= 5, String(posts.length));
+  }
+  {
+    const { t, posts, state } = rig();
+    t.begin(P);
+    await wait(40);
+    state.optedOut = true; /* STOP through another webhook, mid-answer */
+    await wait(120);
+    ok("a STOP that arrives mid-answer ends the dots at the next renewal", posts.length === 1 && t.active() === 0, String(posts.length));
+  }
+  {
+    const { t, posts } = rig({ optedOut: true });
+    t.begin(P);
+    await wait(60);
+    ok("a number that opted out is shown nothing", posts.length === 0 && t.active() === 0);
+  }
+  {
+    const { t, posts } = rig({ refuse: true });
+    t.begin(P);
+    await wait(120);
+    ok("a refused request ends the loop, no retrying", posts.length === 1 && t.active() === 0, String(posts.length));
+  }
+  {
+    const { t, posts } = rig();
+    t.resume(P);
+    await wait(60);
+    ok("no session, no dots: resume alone shows nothing (nothing proactive)", posts.length === 0);
+    const end = t.begin(P);
+    t.stop(P); /* "On it" went */
+    t.resume(P, 1000); /* the deep dive */
+    await wait(40);
+    ok("inside a session, the deep dive shows them again after its first message", posts.length === 1, String(posts.length));
+    end();
+    await wait(60);
+    ok("the end of the answer stops them", posts.length === 1 && t.active() === 0, String(posts.length));
+  }
+  {
+    const { t, posts } = rig();
+    const endA = t.begin(P);
+    const endB = t.begin(P);
+    endA();
+    t.resume(P);
+    await wait(40);
+    ok("two texts from one phone: the first one ending leaves the second's session", posts.length === 1, String(posts.length));
+    endB();
+    endB();
+    ok("and ending twice is harmless", t.active() === 0);
+  }
+
+  ok("ChannelMetadata of type rcs is RCS", typing.inboundChannel('{"type":"rcs","data":{"context":{}}}') === "rcs");
+  ok("missing, other or unreadable ChannelMetadata is SMS", typing.inboundChannel(undefined) === "sms" && typing.inboundChannel("") === "sms" && typing.inboundChannel('{"type":"whatsapp"}') === "sms" && typing.inboundChannel("{not json") === "sms" && typing.inboundChannel("null") === "sms");
+  ok("the sender id, as the Console shows it, with or without rcs:", typing.rcsSenderId("rcs:pando_ab12_agent") === "pando_ab12_agent" && typing.rcsSenderId(" pando_ab12_agent ") === "pando_ab12_agent");
+  ok("unset or malformed: no sender, so no indicator", typing.rcsSenderId(undefined) === null && typing.rcsSenderId("") === null && typing.rcsSenderId("pando agent") === null && typing.rcsSenderId("rcs:") === null);
+  ok(
+    "the request is the one Twilio documents",
+    JSON.stringify(typing.typingRequest("pando_ab12_agent", P)) === '{"channel":"RCS","from":"rcs:pando_ab12_agent","to":"rcs:+16265550001","event":"START"}',
+  );
+  ok("timings: dots after 1.5 s, renewed every 15 s (Twilio shows 20), 90 s for an answer, 10 min for a deep dive", typing.TYPING_DELAY_MS === 1500 && typing.TYPING_REPEAT_MS === 15000 && typing.TYPING_MAX_MS === 90000 && typing.TYPING_DEEP_MAX_MS === 600000);
+
+  /* The wiring, read from the source: these are the lines that keep it honest. */
+  const smsSrc = readFileSync(new URL("../lib/server/sms.ts", import.meta.url), "utf8");
+  const untraced = smsSrc.slice(smsSrc.indexOf("async function sendSmsUntraced"));
+  ok("every send stops the dots before anything else, even one that is then refused", untraced.indexOf("typing.stop(to)") > 0 && untraced.indexOf("typing.stop(to)") < untraced.indexOf("isOptedOut(to)"));
+  ok("the request goes from sms.ts and nowhere else", !readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8").includes("Indicators/Typing") && smsSrc.includes("/v3/Indicators/Typing.json"));
+  ok("off without a sender id and on the relay", /typingAvailable\(\)[\s\S]{0,40}\{\s*return rcsSenderId\(process\.env\.TWILIO_RCS_SENDER_ID\) !== null && isSmsProvisioned\(\) && !isSlackRelayEnabled\(\)/.test(smsSrc));
+  const inboundSrc = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("only for an ordinary text that came over RCS — never a keyword", inboundSrc.includes('input.channel === "rcs" && keywordOf(input.body) === null ? startTyping(input.from) : null'));
+  const routeSrc = readFileSync(new URL("../app/api/sms/inbound/route.ts", import.meta.url), "utf8");
+  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel })"));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
