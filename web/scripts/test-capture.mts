@@ -67,7 +67,8 @@ console.log("\n=== the kinds are share_kind exactly ===");
  * A capture offering `camp` as a value would fail on the enum at runtime, with a
  * clean typecheck and green tests: the `bands` shape of bug.
  */
-const KINDS = ["activity", "caregiver", "place", "tip"];
+/* `doctor` since 8 Oct (drizzle/0053); offered by text since 29 Oct (five categories). */
+const KINDS = ["activity", "caregiver", "place", "tip", "doctor"];
 ok(
   "every option stores a real share_kind",
   (c.CAPTURE_QUESTIONS.kind.options ?? []).every((o) => KINDS.includes(o.value)),
@@ -77,6 +78,26 @@ ok(
   "a camp is accepted as a word and stored as an activity",
   c.readAnswer("kind", "camp").ok &&
     (c.readAnswer("kind", "camp") as { value: string }).value === "activity",
+);
+/* Five categories, 29 Oct: the web flow's buttons, by their words and by their button titles. */
+const kindSeg = (await import(`../lib/sms-segments.ts?v=${Date.now()}`)) as typeof import("../lib/sms-segments.ts");
+const kindOf = (w: string) => {
+  const a = c.readAnswer("kind", w);
+  return a.ok && "value" in a ? a.value : null;
+};
+ok("an activity or class is an activity", kindOf("Activity or class") === "activity" && kindOf("class") === "activity");
+ok("a place is a place", kindOf("Place") === "place");
+ok(
+  "a doctor or specialist is a doctor, by any of its words",
+  ["Doctor or specialist", "doctor", "specialist", "dentist", "therapist", "pediatrician"].every((w) => kindOf(w) === "doctor"),
+);
+ok("something else is a tip, like a tip or a product", ["Something else", "other", "tip", "product"].every((w) => kindOf(w) === "tip"));
+ok("the Caregiver button is read as a caregiver, and so refused and handed on", c.mentionsCaregiver("Caregiver"));
+ok("the question offers all five", /activity.*place.*doctor or specialist.*caregiver.*something else/i.test(c.CAPTURE_QUESTIONS.kind.prompt));
+ok(
+  "and is still one GSM-7 segment",
+  kindSeg.planSegments(c.CAPTURE_QUESTIONS.kind.prompt).segments === 1 &&
+    kindSeg.planSegments(c.CAPTURE_QUESTIONS.kind.prompt).encoding === "gsm7",
 );
 ok(
   "and no option offers caregiver",

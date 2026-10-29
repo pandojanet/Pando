@@ -191,7 +191,7 @@ true already, because it is the SMS text.
 | "did it help?" (`thanks_prompt`, A2P sample) | `repo/jobs.ts` | "Reply YES or NO" | **Buttons** — `yes_no` |
 | freshness ping (`freshness_ping`) | `repo/jobs.ts` | "Reply YES, NO, or PASS" | **Buttons** — `yes_no` (no Pass: it would release an open Network Ask, 9) |
 | Network Ask request to a contributor (`blast_request`, A2P sample) | `repo/blast.ts` | "Reply with anything useful, or PASS to skip" | **Button** — `pass` (the free-text answer stays typed) |
-| ADD: kind (`capture_kind`) | `inbound.ts` capture | "a class, a camp, a place, or a tip?" | **Buttons** — `capture_kind` |
+| ADD: kind (`capture_kind`) | `inbound.ts` capture | the web flow's five categories since 29 Oct (was "a class, a camp, a place, or a tip?", with no doctors) | **Buttons** — `capture_kind` |
 | ADD: firsthand (`capture_firsthand`) | capture | "Reply USED or HEARD" | **Buttons** — `capture_firsthand` |
 | ADD: recommend (`capture_recommend`) | capture | "Reply YES, YES BUT, or NO" | **Buttons** — `capture_recommend` |
 | ADD: detail (`capture_detail`) | capture | "Reply with a sentence, or SKIP" | **Button** — `skip` |
@@ -220,7 +220,7 @@ body `{{2}}`; the buttons below as **Quick reply** with the given title and id.
 | `pando_pass` | Pass → `pass` | Network Ask request | new |
 | `pando_deep_offer` | Deep dive → `deep` | deep-dive offer under an answer | new |
 | `pando_intro_offer` | Intro → `intro` | introduction offer under an answer | new |
-| `pando_capture_kind` | Class → `class`, Camp → `camp`, Place → `place`, Tip → `tip` | ADD, first step | new |
+| `pando_capture_kind` | Activity or class → `activity`, Place → `place`, Doctor or specialist → `doctor`, Caregiver → `caregiver`, Something else → `other` | ADD, first step | new |
 | `pando_capture_firsthand` | Used → `used`, Heard → `heard` | ADD, firsthand | new |
 | `pando_capture_recommend` | Yes → `yes`, Yes but → `yes_but`, No → `no` | ADD, recommend | new |
 | `pando_skip` | Skip → `skip` | ADD, last step | new |
@@ -255,7 +255,7 @@ card versions will be RCS registration samples:
 | "did it help?" | "Pando: a few days ago we sent you a recommendation from a local parent. Did it help? A yes lets us thank whoever shared it. Reply STOP to opt out, HELP for help." |
 | freshness ping | "Pando: quick one - is … still worth recommending to other parents? Reply STOP to opt out, HELP for help." |
 | Network Ask request | "Pando: a parent nearby asked — "…" We thought of you (…). Reply with anything useful. Msg & data rates may apply. Reply STOP to opt out, HELP for help." |
-| ADD kind | "Pando: happy to add it. Is it a class, a camp, a place, or a tip?" |
+| ADD kind | "Pando: happy to add it. Is it an activity, a place, a doctor or specialist, a caregiver, or something else?" |
 | ADD firsthand | "Pando: did you use it yourself, or did you hear about it from someone?" |
 | ADD recommend | "Pando: would you recommend it to another parent? Yes but means there's a catch." (the SMS explains "YES BUT"; without it the button is unclear) |
 | ADD detail | "Pando: last one, anything another parent should know? Reply with a sentence." |
@@ -363,6 +363,11 @@ participation cards say what "As relevant" allows (the first version dropped it 
 digits); the freshness ping has no Pass button (PASS is read before the ping and releases
 an open Network Ask — true of a typed PASS already, filed separately); and a tap's
 `ButtonPayload` never replaces words the person typed.
+
+Creating the first template showed the ADD question was older than the web flow: "a
+class, a camp, a place, or a tip", and no doctors at all. The developer: *"Перший
+варіант, приводь до п'яти категорій"* — the question and its buttons now follow the web's
+five (decision row of 29 Oct).
 
 ## 10. Sources
 

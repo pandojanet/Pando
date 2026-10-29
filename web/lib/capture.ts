@@ -86,26 +86,31 @@ export interface CaptureQuestion {
 export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
   kind: {
     step: "kind",
+    /*
+     * The web flow's five categories (five categories, 29 Oct): the developer,
+     * when the RCS buttons showed the old "a class, a camp, a place, or a tip" —
+     * which had no doctors at all, though `doctor` has been a kind since 8 Oct.
+     * The buttons (lib/sms-rich.ts) are the same five. "A caregiver" is offered
+     * as the web offers it, and answered the same way: `mentionsCaregiver` reads
+     * the word and the parent gets the link to the careful form; nothing is kept.
+     */
     prompt:
-      "Pando: happy to add it. Is it a class, a camp, a place, or a tip? Reply with one word.",
-    card: "Pando: happy to add it. Is it a class, a camp, a place, or a tip?",
+      "Pando: happy to add it. Is it an activity, a place, a doctor or specialist, a caregiver, or something else? Reply ACTIVITY, PLACE, DOCTOR, CAREGIVER or OTHER.",
+    card: "Pando: happy to add it. Is it an activity, a place, a doctor or specialist, a caregiver, or something else?",
     /**
-     * The values are `share_kind` exactly, and **a camp is stored as an
-     * activity** — that enum has four members and camp is not one of them.
-     *
-     * Worth knowing rather than "fixing": camps are a first-class category in
-     * the *taxonomy* (§8.4/§15.3, a `market_options` category the questionnaire
-     * offers), and they have never been a `shares.kind`. So a camp is offered as
-     * a word a parent can say, because that is what they will type, and it lands
-     * where every other camp in the database already is. Adding a fifth enum
-     * member is a migration plus a freshness policy plus a label, not a line
-     * here.
+     * The values are `share_kind` exactly, and **a class and a camp are stored as
+     * an activity** — the web's "An activity or class" button, whose
+     * sub-categories they are. Camps were never a `shares.kind`; they are a
+     * taxonomy category (§8.4/§15.3). A doctor or specialist is `doctor`, the web's
+     * "Specialists & Doctors"; "something else" is `tip`, the web's tips and
+     * products. The words are what a parent will type and what the buttons say.
      */
     options: [
-      { value: "activity", words: ["CLASS", "ACTIVITY", "LESSON", "LESSONS"] },
+      { value: "activity", words: ["ACTIVITY", "ACTIVITY OR CLASS", "CLASS", "LESSON", "LESSONS"] },
       { value: "activity", words: ["CAMP", "CAMPS"] },
       { value: "place", words: ["PLACE", "PARK", "SPOT"] },
-      { value: "tip", words: ["TIP", "ADVICE"] },
+      { value: "doctor", words: ["DOCTOR", "DOCTOR OR SPECIALIST", "SPECIALIST", "DENTIST", "THERAPIST", "PEDIATRICIAN"] },
+      { value: "tip", words: ["OTHER", "SOMETHING ELSE", "TIP", "ADVICE", "PRODUCT"] },
     ],
   },
   name: {

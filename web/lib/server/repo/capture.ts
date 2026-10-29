@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { withDb, type Db } from "@/lib/server/db";
 import { cardFrom, nextStep, type CaptureStep } from "@/lib/capture";
+import { unsureSubcategory } from "@/lib/seed-chat/subcategories";
 
 /**
  * M10.1 — the state behind an SMS capture, and the write that ends it.
@@ -258,6 +259,17 @@ export async function saveCapturedCard(
       const shareId = created[0] ? String(created[0].share_id) : "";
       if (!shareId) return null;
 
+      /* A doctor or specialist added by text is filed as the web files one whose
+         sub-category is unsure — `specialists` (12 Oct) — so no provider check
+         runs on a tutor or a party vendor; an admin can correct it (five
+         categories, 29 Oct). */
+      if (card.kind === "doctor") {
+        await tx.execute(sql`
+          update shares set subcategory = ${unsureSubcategory("doctor")}, updated_at = now()
+           where id = ${shareId}::uuid and subcategory is null
+        `);
+      }
+
       /**
        * 11.4 — belt, behind the braces.
        *
@@ -268,11 +280,14 @@ export async function saveCapturedCard(
        * record can be answered with. Never throws; the card saving is the
        * important half.
        */
-      await flagNamedPersonRecord(tx, {
-        shareId,
-        name: card.name,
-        personId: capture.person_id,
-      });
+      if (card.kind !== "doctor") {
+        /* Not for a doctor or specialist, whose name is a person's by design — the web's rule (cards.ts, 8 Oct; five categories, 29 Oct). */
+        await flagNamedPersonRecord(tx, {
+          shareId,
+          name: card.name,
+          personId: capture.person_id,
+        });
+      }
 
       await tx.execute(sql`
         insert into share_contributions

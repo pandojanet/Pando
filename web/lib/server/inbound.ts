@@ -588,8 +588,13 @@ async function captureStep({ from, body, person }: { from: string; body: string;
      * answer to "you are describing a person", and a second wording of it would
      * be a second thing to keep true.
      */
+    /* A doctor or specialist is named by design — "Dr. Patel" is the answer — so
+       that kind is not refused on a person's name, as the web flow does not flag
+       one (five categories, 29 Oct). The caregiver words are still read above. */
     const named =
-      capture?.step === "name" ? looksLikePerson(body) : { person: false as const };
+      capture?.step === "name" && capture.answers.kind !== "doctor"
+        ? looksLikePerson(body)
+        : { person: false as const };
 
     /**
      * ⚠ **And the same refusal for an offer made outside a capture**, which is

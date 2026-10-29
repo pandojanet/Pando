@@ -88,7 +88,14 @@ export const RICH_BUTTONS: Record<RichKind, readonly RichButton[]> = {
   /* SETTINGS and the participation question: `parseAllowanceChoice`. */
   settings_allowance: [b("5 a month", "5_a_month"), b("10 a month", "10_a_month"), b("As relevant", "as_relevant")],
   /* ADD, step by step: `CAPTURE_QUESTIONS` in lib/capture.ts. */
-  capture_kind: [b("Class", "class"), b("Camp", "camp"), b("Place", "place"), b("Tip", "tip")],
+  /* The web flow's five categories (29 Oct); "Caregiver" is answered with the link to the careful form. */
+  capture_kind: [
+    b("Activity or class", "activity"),
+    b("Place", "place"),
+    b("Doctor or specialist", "doctor"),
+    b("Caregiver", "caregiver"),
+    b("Something else", "other"),
+  ],
   capture_firsthand: [b("Used", "used"), b("Heard", "heard")],
   capture_recommend: [b("Yes", "yes"), b("Yes but", "yes_but"), b("No", "no")],
   /* ADD's last step: the note is typed; skipping is one tap. */

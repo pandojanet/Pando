@@ -18,7 +18,7 @@ the same message arrives as the SMS it always was.
 | `deep_offer` | `pando_deep_offer` | Deep dive | the deep-dive offer under an answer |
 | `intro_offer` | `pando_intro_offer` | Intro | the introduction offer under an answer |
 | `settings_allowance` | `pando_settings_allowance` | 5 a month, 10 a month, As relevant | the SETTINGS menu; the participation question wherever it is asked |
-| `capture_kind` | `pando_capture_kind` | Class, Camp, Place, Tip | ADD, first step |
+| `capture_kind` | `pando_capture_kind` | Activity or class, Place, Doctor or specialist, Caregiver, Something else | ADD, first step (the web flow's five categories) |
 | `capture_firsthand` | `pando_capture_firsthand` | Used, Heard | ADD, "did you use it yourself?" |
 | `capture_recommend` | `pando_capture_recommend` | Yes, Yes but, No | ADD, "would you recommend it?" |
 | `skip` | `pando_skip` | Skip | ADD, last step (the note is typed) |
@@ -136,11 +136,14 @@ The samples are only for the Console's preview; Pando fills both variables on ev
 
 ### 6. `pando_capture_kind` — new
 
+The web flow's five categories. Caregiver saves nothing: the parent gets the link to the
+careful form, as when they type the word.
+
 | Field | Value |
 | --- | --- |
-| Buttons | **Class** (`class`), **Camp** (`camp`), **Place** (`place`), **Tip** (`tip`) |
-| Sample `{{1}}` | `Pando: happy to add it. Is it a class, a camp, a place, or a tip?` |
-| Sample `{{2}}` | `Pando: happy to add it. Is it a class, a camp, a place, or a tip? Reply with one word.` |
+| Buttons | **Activity or class** (`activity`), **Place** (`place`), **Doctor or specialist** (`doctor`), **Caregiver** (`caregiver`), **Something else** (`other`) |
+| Sample `{{1}}` | `Pando: happy to add it. Is it an activity, a place, a doctor or specialist, a caregiver, or something else?` |
+| Sample `{{2}}` | `Pando: happy to add it. Is it an activity, a place, a doctor or specialist, a caregiver, or something else? Reply ACTIVITY, PLACE, DOCTOR, CAREGIVER or OTHER.` |
 | Env var | `TWILIO_RCS_CONTENT_SID_CAPTURE_KIND` |
 
 ### 7. `pando_capture_firsthand` — new
