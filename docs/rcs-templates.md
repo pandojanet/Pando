@@ -109,6 +109,16 @@ true already, because it is the SMS text.
 - `ButtonType` (`REPLY` or `ACTION`) and `ChannelMetadata` (`type: "rcs"`) also arrive.
 - Whether a tap on a URL or dial button sends anything: not documented.
 
+### 2.5b Formatting (tested on a phone, 29 Oct)
+
+No markup renders on RCS through Twilio: `*bold*`, `**bold**`, `_italic_`, `~strike~`,
+backticks and `<b>` all arrive as typed. Unicode's mathematical sans-serif letters
+("𝗕𝗼𝗹𝗱") and "•" show, because they are ordinary characters — which is also their cost:
+a copied name would not match, a search would not find it, a screen reader reads them
+oddly. GSMA's Universal Profile 4.0 (March 2026) adds real bold and italic; when it
+reaches phones is unknown. What Pando does with this: [rcs-quick-replies](rcs-quick-replies.md),
+point 7.
+
 ### 2.6 Delivery, fallback and opt-out
 
 - Twilio checks whether the phone can take RCS and sends RCS first, otherwise the

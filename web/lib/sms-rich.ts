@@ -136,6 +136,75 @@ export function richContentSid(
   return /^HX[0-9a-f]{32}$/i.test(value) ? value : null;
 }
 
+/*
+ * Formatting on the card (29 Oct).
+ *
+ * Tested on a real phone: RCS through Twilio renders no markup — `*bold*`,
+ * `**bold**`, `_italic_`, `~strike~`, backticks and `<b>` all arrive as typed —
+ * while Unicode's mathematical sans-serif letters and "•" do show. Those letters
+ * are *other characters* that look bold: a copied name would not match, a search
+ * in the thread would not find it, a screen reader reads them oddly. So they are
+ * used only where nobody copies or searches — the section labels at the start of
+ * a line — and never on a name, a price, an address, a site, a parent's words, a
+ * trust label (invariant 3: verbatim), STOP and HELP, or an answer word. The SMS
+ * text is never formatted.
+ */
+
+/** Section labels, bold when a line starts with one. Each is written by lib/answer.ts or lib/deep-dive.ts. */
+export const CARD_BOLD_LABELS = [
+  "Fits what you asked:",
+  "Best for:",
+  "Heads up:",
+  "One tip:",
+  "Value for money:",
+  "Also nearby:",
+  "All of these:",
+  "Fits:",
+  "Good for:",
+  "Tip:",
+  "Worth checking:",
+  "Site:",
+  "Also used by parents near you:",
+  "Side by side:",
+  "My take:",
+] as const;
+
+/** Whole notes set in italic: Pando's own asides, which nobody copies and no rule fixes the wording of. */
+export const CARD_ITALIC_NOTES = ["Drive times are rough estimates."] as const;
+
+const shift = (text: string, upper: number, lower: number, digit: number | null) =>
+  Array.from(text, (ch) => {
+    const c = ch.codePointAt(0) ?? 0;
+    if (c >= 65 && c <= 90) return String.fromCodePoint(upper + c - 65);
+    if (c >= 97 && c <= 122) return String.fromCodePoint(lower + c - 97);
+    if (digit !== null && c >= 48 && c <= 57) return String.fromCodePoint(digit + c - 48);
+    return ch;
+  }).join("");
+
+/** Mathematical sans-serif bold: letters and digits; everything else unchanged. */
+export const unicodeBold = (text: string) => shift(text, 0x1d5d4, 0x1d5ee, 0x1d7ec);
+/** Mathematical sans-serif italic: letters only (there are no italic digits). */
+export const unicodeItalic = (text: string) => shift(text, 0x1d608, 0x1d622, null);
+
+/**
+ * The card's text with the formatting a phone can show: section labels bold, the
+ * italic notes italic, "- " list lines as "• ". Every change is one a reader sees
+ * and nothing else: under Unicode NFKC the text is the unformatted one again,
+ * with "•" for "-" (`test:rich` holds it to that).
+ */
+export function cardFormat(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      let out = line.startsWith("- ") ? `• ${line.slice(2)}` : line;
+      const label = CARD_BOLD_LABELS.find((l) => out.startsWith(l));
+      if (label) out = unicodeBold(label) + out.slice(label.length);
+      for (const note of CARD_ITALIC_NOTES) out = out.split(note).join(unicodeItalic(note));
+      return out;
+    })
+    .join("\n");
+}
+
 /**
  * The template's two variables: `{{1}}` the card's text, `{{2}}` the SMS text.
  *

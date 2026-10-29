@@ -48,6 +48,13 @@ How it works:
    Tested on a real phone on 29 Oct (SETTINGS).
 6. RCS reports a delivery status `read`; it counts as delivered.
 
+7. The card text is formatted (`cardFormat`): section labels at the start of a line
+   ("Heads up:", "My take:"…) in bold Unicode letters, "Drive times are rough estimates."
+   in italic, "- " list lines as "• ". Markup such as `*bold*` does not render on RCS
+   (tested 29 Oct), Unicode letters do. Names, prices, sites, parents' words, trust labels
+   and STOP/HELP are never formatted, because those are copied, searched or read aloud;
+   the SMS text is never formatted.
+
 It is **off per kind**. A kind with no SID set sends plain text exactly as before.
 
 ## Creating a template in the Twilio Console

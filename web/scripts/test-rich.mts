@@ -16,6 +16,8 @@
  * Expected values are literals, never computed by the code under test.
  */
 
+import { readFileSync } from "node:fs";
+
 const r = (await import(`../lib/sms-rich.ts?v=${Date.now()}`)) as typeof import("../lib/sms-rich.ts");
 const policy = (await import(`../lib/outreach-policy.ts?v=${Date.now()}`)) as typeof import("../lib/outreach-policy.ts");
 const thanks = (await import(`../lib/thanks.ts?v=${Date.now()}`)) as typeof import("../lib/thanks.ts");
@@ -258,6 +260,51 @@ ok(
     '["5_a_month","10_a_month","as_relevant"]' &&
     JSON.stringify(r.contentTemplateDefinition("capture_recommend").types["twilio/card"].actions.map((a) => a.id)) === '["yes","yes_but","no"]',
 );
+
+console.log("\n=== the card's formatting: seen, never changed ===");
+/* What a reader of the card sees, written out. Tested on a phone, 29 Oct: these letters show bold. */
+ok("a section label is bold", r.cardFormat("Heads up: the parking fills up.") === "𝗛𝗲𝗮𝗱𝘀 𝘂𝗽: the parking fills up.");
+ok("a list line gets a bullet", r.cardFormat("- About 12 min away") === "• About 12 min away");
+const italic = r.cardFormat("Drive times are rough estimates.");
+ok(
+  "the drive-time note is italic, letters only",
+  [...italic].filter((ch) => /\p{L}/u.test(ch)).every((ch) => (ch.codePointAt(0) ?? 0) >= 0x1d608 && (ch.codePointAt(0) ?? 0) <= 0x1d63b) &&
+    italic.endsWith("."),
+);
+const report = [
+  "1) Rose Bowl Aquatics, Pasadena (about 12 min)",
+  "2 parents near you have used it, last confirmed Sep 2026.",
+  'Maria said: "My take: book early, it fills up."',
+  "Good for: toddlers who are nervous in water.",
+  "Heads up: the parking fills up on Saturdays.",
+  "Site: https://www.example.com/swim",
+  "- Saturday mornings",
+  "Public/general information:",
+  "Also worth a look (Public/general information): Pasadena Aquatics.",
+  "My take: start with Rose Bowl.",
+  "We liked it. Heads up: it is busy.",
+  "Drive times are rough estimates.",
+  "Want me to ask nearby parents about these?",
+  "Reply STOP to opt out, HELP for help.",
+].join("\n");
+const formatted = r.cardFormat(report);
+const lines = formatted.split("\n");
+ok(
+  "under NFKC the card is the unformatted text again (with • for -)",
+  formatted.normalize("NFKC").replace(/^• /gm, "- ") === report,
+);
+ok("a name is never formatted", lines[0] === "1) Rose Bowl Aquatics, Pasadena (about 12 min)");
+ok("a parent's words are never formatted, even with a label inside", lines[2] === 'Maria said: "My take: book early, it fills up."');
+ok("a site's address stays as typed", lines[5].endsWith(": https://www.example.com/swim") && lines[5] !== "Site: https://www.example.com/swim");
+ok("a trust label stays verbatim (invariant 3)", lines[7] === "Public/general information:" && lines[8] === "Also worth a look (Public/general information): Pasadena Aquatics.");
+ok("a label inside a sentence is left alone", lines[10] === "We liked it. Heads up: it is busy.");
+ok("STOP and HELP stay as typed", lines[13] === "Reply STOP to opt out, HELP for help.");
+ok("formatting twice changes nothing more", r.cardFormat(formatted) === formatted);
+const sources = ["../lib/answer.ts", "../lib/deep-dive.ts"].map((p) => readFileSync(new URL(p, import.meta.url), "utf8")).join("\n");
+for (const label of r.CARD_BOLD_LABELS) {
+  ok(`"${label}" is a label the answers or the deep dive really write`, sources.includes(label));
+}
+for (const note of r.CARD_ITALIC_NOTES) ok(`"${note}" is a note the deep dive really writes`, sources.includes(note));
 
 console.log("\n=== a read RCS message counts as delivered ===");
 ok("read is terminal", delivery.TERMINAL_STATUSES.includes("read"));

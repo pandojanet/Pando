@@ -3,7 +3,7 @@ import { ONE_SENDER, isMarketId, isQuietHoursAnywhere, isQuietHoursIn, marketCon
 
 import { quietHoursBlocks, type OutreachKind } from "@/lib/outreach-policy";
 import { planSegments } from "@/lib/sms-segments";
-import { richContentSid, richVariables, type RichKind } from "@/lib/sms-rich";
+import { cardFormat, richContentSid, richVariables, type RichKind } from "@/lib/sms-rich";
 import { isOptedOut, marketIdForPhone, outreachAllowed, personMarketId, recordSend } from "@/lib/server/repo/outreach";
 import {
   isSlackRelayEnabled,
@@ -445,7 +445,8 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
    * text lives in the template's own `twilio/text`, as `{{2}}`.
    */
   const contentSid = input.rich ? richContentSid(input.rich.kind) : null;
-  const variables = contentSid && input.rich ? richVariables(input.rich.card ?? body, body) : null;
+  /* The card alone is formatted (`cardFormat`); the SMS text goes exactly as written. */
+  const variables = contentSid && input.rich ? richVariables(cardFormat(input.rich.card ?? body), body) : null;
   const richParams =
     contentSid && variables
       ? new URLSearchParams({
