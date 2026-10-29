@@ -447,7 +447,25 @@ const DEEP_LINK =
  * pass; what is refused is people saying, loving or rating something.
  */
 const DEEP_CLAIM =
-  /\b(love[sd]?|loving|rave[sd]?|raving|recommend\w*|review\w*|rated|ratings?|stars?|award\w*|voted|winning|best|top[\s-]rated|favou?rite\w*|popular|beloved|trusted|go[\s-]to|amazing|excellent|outstanding|exceptional|incredible|wonderful|fantastic|renowned|famous|acclaimed|premier|leading|#\s?1|number one|highly|approved|according to|tells? us|keep coming back|come back|well[\s-]regarded|well[\s-]known|well[\s-]loved|sought[\s-]after|yelp|google|facebook|instagram|nextdoor|happy|satisfied|testimonials?|magical|unforgettable|praised?|praising|glowing|feedback|adored?|adores|cherished|treasured|widely|keeps? returning|look(s|ing)? forward|can'?t stop|cannot stop|five[\s-]star|\d[\s-]star)\b|\bscores?\s+\d|\b\d(\.\d)?\s*(\/\s*5|out of 5)\b/i;
+  /\b(love[sd]?|loving|rave[sd]?|raving|recommend\w*|review\w*|rated|ratings?|stars?|award\w*|voted|winning|best|top[\s-]rated|favou?rite\w*|popular|beloved|trusted|go[\s-]to|amazing|excellent|outstanding|exceptional|incredible|wonderful|fantastic|renowned|famous|acclaimed|premier|leading|#\s?1|number one|highly|approved|according to (?:(?:our|many|most|local)\s+)?(?:parents?|families|reviews?|reviewers|customers|clients|students|moms?|dads?|locals|people|users|members|campers|kids)|tells? us|keep coming back|come back|well[\s-]regarded|well[\s-]known|well[\s-]loved|sought[\s-]after|yelp|google|facebook|instagram|nextdoor|happy|satisfied|testimonials?|magical|unforgettable|praised?|praising|glowing|feedback|adored?|adores|cherished|treasured|widely|keeps? returning|look(s|ing)? forward|can'?t stop|cannot stop|five[\s-]star|\d[\s-]star)\b|\bscores?\s+\d|(?<![\d/])\d(\.\d)?\s*(\/\s*5|out of 5)\b/i;
+/* 29 Oct (the Deep Dive review): "according to" alone refused "grouped according to
+   ability", and "3/5" inside "2/3/5 days a week" read as a rating. Both narrowed;
+   "According to parents…" and "4.9/5" are still claims. */
+
+/**
+ * A place's **name** that is itself a claim — "#1 Rated Swim School", "Best Swim
+ * School Pasadena". Narrower than `DEEP_CLAIM` on purpose (29 Oct): a brand word is
+ * not a page praising itself, and "Happy Fish Swim School", "Swim Stars" and
+ * "Premier Swim Academy" are real schools that the whole list dropped, silently,
+ * before the writer ever saw them. The name is printed as the place's name, never
+ * as a fact about it, so only a name that rates itself is refused.
+ */
+const NAME_CLAIM =
+  /(#\s?1\b|\bnumber one\b|\bbest\b|\btop[\s-]rated\b|\b(?:highly\s+)?rated\b|\bvoted\b|\baward[\s-]?winning\b|\b(?:five|\d)[\s-]star\b|\breviews?\b|\byelp\b|\bgoogle\b|\brecommend\w*|\b(?:most\s+)?trusted\b|\bapproved\b|\bfavou?rite\b|\b(?:be)?loved?\b|\bloves\b|\bparents?['’]?\s+(?:choice|pick|favou?rite)\b)/i;
+/* Kept in it (29 Oct review): a name that vouches — "Recommended Swim Lessons",
+   "Parents' Choice Swim School", "Kids Love Swim", "Most Trusted Swim Academy" —
+   printed under the public label would read as parent trust (invariant 3). Only
+   brand adjectives (happy, stars, premier, leading…) are free in a name. */
 
 /**
  * Somebody's experience or opinion of the place — the shape the word list
@@ -526,8 +544,93 @@ function deepFact(
      Pasadena", "Fair Oaks Avenue" and "Arroyo Blvd" each cost a whole field. */
   const runs = v.match(/(?<![\p{L}])\p{Lu}\p{Ll}[\p{Ll}'’-]*(?:\s+\p{Lu}\p{Ll}[\p{Ll}'’-]*){1,2}(?![\p{L}])/gu) ?? [];
   const ownWords = own.toLowerCase();
-  if (runs.some((run) => !isPlaceRun(run) && !ownWords.includes(run.toLowerCase()) && isPerson(run).person)) return null;
+  if (runs.some((run) => !isPlaceRun(run) && !NOT_PEOPLE.test(run) && !ownWords.includes(run.toLowerCase()) && isPerson(run).person)) return null;
   return v;
+}
+
+/**
+ * `what` — required, so a refusal drops the whole place. Read **without** the
+ * place's own name as an exemption (29 Oct review): there is no first-name
+ * dictionary, so "Maria Lopez" in "Maria Lopez Swim" looks exactly like "Rose
+ * Bowl" in "Rose Bowl Aquatics", and exempting the name let an instructor's own
+ * business through with "Maria Lopez swim lessons". Known organisations and
+ * venues are `NOT_PEOPLE` instead.
+ */
+function deepWhat(value: unknown, isPerson: (name: string) => { person: boolean; strong?: boolean }): string | null {
+  return deepFact(clean(value, 40), 40, isPerson);
+}
+
+/**
+ * The name a place's facts may use freely — or "" when the name opens with a
+ * person's (29 Oct review). "Jenny Kim Swim" exempted "Jenny Kim" from the person
+ * check in its own facts, so *"Jenny Kim leads every class"* and *"Jenny Kim
+ * teaches small groups"* were printed verbatim — a named person's description
+ * nobody reviewed (invariant 8; a fault since the exemption was written). With
+ * no exemption the facts are read like any other; "Tom Sawyer Camps runs field
+ * trips" still passes, because the whole run reads as a camp.
+ */
+function ownExemption(name: string, isPerson: (name: string) => { person: boolean; strong?: boolean }): string {
+  const lead = name.match(/^\p{Lu}\p{Ll}[\p{Ll}'’-]*\s+\p{Lu}\p{Ll}[\p{Ll}'’-]*(?![\p{L}])/u)?.[0];
+  if (!lead || isPlaceRun(lead) || NOT_PEOPLE.test(lead)) return name;
+  return isPerson(lead).person ? "" : name;
+}
+
+/**
+ * Capitalised runs that are organisations or programmes, never people (29 Oct, the
+ * Deep Dive review): the weak two-capitalised-words signal cannot tell "Red Cross
+ * swim lessons" from "Maria Lopez swim lessons", and a refused `what` drops the
+ * whole place — so the YMCA's lessons vanished. Weakening the signal would let the
+ * second through (measured the same day), so the known names are listed instead.
+ * Add to it only names of organisations, never a surname.
+ */
+const NOT_PEOPLE =
+  /^(?:Red Cross|Little League|Girl Scouts?|Boy Scouts?|Cub Scouts?|Scouts Bsa|Special Olympics|Boys And Girls|Mommy And Me|Daddy And Me|Parent And Me|Water Safety|Swim America|Learn To Swim|Jump Start|Head Start|Early Head|Rose Bowl|Hollywood Bowl)\b/i;
+/* Matched at the start of a run, so "Red Cross Swim" (a three-word run) is covered
+   too. Venues of this kind are listed by name: a venue word added to
+   `named-person.ts` would change what the SMS capture and the admin flags see. */
+
+/** The kind of institution a name says it is — the words `normaliseName` strips. */
+const INSTITUTION_KIND: Array<[RegExp, string]> = [
+  [/\bschools?\b/i, "school"],
+  [/\bacadem(?:y|ies)\b/i, "academy"],
+  [/\bclubs?\b/i, "club"],
+  [/\bcent(?:er|re)s?\b/i, "center"],
+  [/\bstudios?\b/i, "studio"],
+  [/\binstitutes?\b/i, "institute"],
+  [/\bconservator(?:y|ies)\b/i, "conservatory"],
+];
+function kindsOf(name: string): Set<string> {
+  return new Set(INSTITUTION_KIND.filter(([re]) => re.test(name)).map(([, kind]) => kind));
+}
+
+/**
+ * Two deep findings are one place (29 Oct) — `sameName`, unless the two names
+ * say they are different kinds of institution, or the same official site.
+ *
+ * `sameName` drops "school", "academy", "club", "center"… so a parents' record
+ * and a page about it can never print twice under two trust labels — its job, and
+ * it keeps it there. Between two **web** findings that same stripping merged
+ * different schools: "Pasadena Swim School" and "Pasadena Swim Academy" both read
+ * "pasadena swim", and the second vanished. So a merge is vetoed when both names
+ * carry an institution word and they share none; a branch, a town suffix or a
+ * missing "Swim School" still merges ("The Little Gym" / "The Little Gym of
+ * Pasadena", "Aqua-Tots" / "Aqua-Tots Swim School").
+ */
+export function sameDeepPlace(a: { name: string; site?: string | null }, b: { name: string; site?: string | null }): boolean {
+  if (a.site && b.site && a.site === b.site) return true;
+  if (!sameName(a.name, b.name)) return false;
+  const x = kindsOf(a.name);
+  const y = kindsOf(b.name);
+  return x.size === 0 || y.size === 0 || [...x].some((k) => y.has(k));
+}
+
+/** Why `readDeepFindings` left a place out — counts only, for the log (29 Oct). */
+export type DeepDropReason = "malformed" | "no_name" | "what_refused" | "person" | "name_claim" | "credential" | "duplicate" | "over_max";
+export interface DeepReadStats {
+  /** Rows the model wrote, or null when the reply held no readable object. */
+  returned: number | null;
+  kept: number;
+  dropped: Partial<Record<DeepDropReason, number>>;
 }
 
 /**
@@ -643,7 +746,13 @@ export function readDeepFindings(
   text: string,
   isPerson: (name: string) => { person: boolean; strong?: boolean },
   max: number = MAX_DEEP_FINDINGS,
+  /** Filled with what was written and why anything was left out (29 Oct) — counts only. */
+  stats?: DeepReadStats,
 ): DeepFinding[] {
+  const drop = (reason: DeepDropReason) => {
+    if (stats) stats.dropped[reason] = (stats.dropped[reason] ?? 0) + 1;
+  };
+  if (stats) Object.assign(stats, { returned: null, kept: 0, dropped: {} });
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) return [];
@@ -655,27 +764,57 @@ export function readDeepFindings(
   }
   const list = (parsed as { findings?: unknown })?.findings;
   if (!Array.isArray(list)) return [];
+  if (stats) stats.returned = list.length;
   const out: DeepFinding[] = [];
   for (const row of list) {
-    if (!row || typeof row !== "object") continue;
+    if (out.length === max) {
+      drop("over_max");
+      continue;
+    }
+    if (!row || typeof row !== "object") {
+      drop("malformed");
+      continue;
+    }
     const r = row as Record<string, unknown>;
     /* A long name loses its parenthesis whole rather than half of it (22 Oct
        run: "Crowell Family YMCA (formerly South Pasadena San Marino"). */
     const rawName = typeof r.name === "string" && r.name.length > 60 ? r.name.replace(/\s*\([^)]*\)?\s*$/, "") : r.name;
     const name = clean(rawName, 60);
-    const what = deepFact(clean(r.what, 40), 40, isPerson);
-    if (!name || !what) continue;
+    if (!name) {
+      drop("no_name");
+      continue;
+    }
+    const what = deepWhat(r.what, isPerson);
+    if (!what) {
+      drop("what_refused");
+      continue;
+    }
     const verdict = isPerson(name);
-    if (verdict.person && verdict.strong) continue;
-    /* A name is printed as given, so a name that is itself a link or a claim
-       ("#1 Rated Swim School") is not a place to print. */
-    if (DEEP_LINK.test(name) || DEEP_CLAIM.test(name)) continue;
+    if (verdict.person && verdict.strong) {
+      drop("person");
+      continue;
+    }
+    /* A name is printed as given, so a name that is itself a link or rates itself
+       ("#1 Rated Swim School") is not a place to print (`NAME_CLAIM`, 29 Oct). */
+    if (DEEP_LINK.test(name) || NAME_CLAIM.test(name)) {
+      drop("name_claim");
+      continue;
+    }
     /* "Tony S. Hwang DDS" is a named individual, as in the ordinary search. */
-    if (CREDENTIAL.test(name)) continue;
-    if (out.some((f) => sameName(f.name, name))) continue;
+    if (CREDENTIAL.test(name)) {
+      drop("credential");
+      continue;
+    }
+    const site = domainOf(r.site);
+    if (out.some((f) => sameDeepPlace(f, { name, site }))) {
+      drop("duplicate");
+      continue;
+    }
+    /* The name its facts may use freely — none when it opens with a person (29 Oct). */
+    const own = ownExemption(name, isPerson);
     const highlights = Array.isArray(r.highlights)
       ? (r.highlights as unknown[])
-          .map((h) => deepFact(h, 90, isPerson, name))
+          .map((h) => deepFact(h, 90, isPerson, own))
           .filter((h): h is string => h !== null)
           .slice(0, 3)
       : [];
@@ -690,17 +829,17 @@ export function readDeepFindings(
       schedule: deepFact(r.schedule, 70, isPerson),
       price: deepFact(r.price, 60, isPerson),
       highlights,
-      summary: deepFact(r.summary, 260, isPerson, name),
+      summary: deepFact(r.summary, 260, isPerson, own),
       answers: Array.isArray(r.answers)
         ? (r.answers as unknown[])
-            .map((a) => deepFact(a, 180, isPerson, name))
+            .map((a) => deepFact(a, 180, isPerson, own))
             .filter((a): a is string => a !== null)
             .slice(0, 4)
         : [],
-      site: domainOf(r.site),
+      site,
       known: r.known === true,
     });
-    if (out.length === max) break;
   }
+  if (stats) stats.kept = out.length;
   return out;
 }

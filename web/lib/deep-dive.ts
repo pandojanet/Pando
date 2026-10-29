@@ -1614,6 +1614,45 @@ function rankedAll(options: DeepOption[], modelOrder: string[]): DeepOption[] {
  * found (invariant 3) — the writer is never shown a parent's words and is
  * refused any sentence that vouches (`VOUCHING`).
  */
+/**
+ * The parent's own question, turned to face them (29 Oct, the chat lab): the
+ * header quoted it as written, so Pando said *"Here's your deep dive: swim
+ * lessons for my 5 year old"* — Pando's "my". First person becomes second; the
+ * rest is the parent's words, untouched.
+ *
+ * Left alone (29 Oct review): "US" in capitals (the country), the "me" of
+ * "Mommy and Me" / "parent & me" (a kind of class), and "I" after a level word
+ * ("Swim Level I"). "I am"/"I was" agree ("you are", "you were"); a curly
+ * apostrophe, as phones type it, is read like a straight one; a lone lower-case
+ * "i" is the parent's "I".
+ */
+export function inSecondPerson(question: string): string {
+  const A = "['’]";
+  return question
+    .replace(new RegExp(`\\bI${A}m\\b`, "gi"), "you're")
+    .replace(new RegExp(`\\bI${A}ve\\b`, "gi"), "you've")
+    .replace(new RegExp(`\\bI${A}d\\b`, "gi"), "you'd")
+    .replace(new RegExp(`\\bI${A}ll\\b`, "gi"), "you'll")
+    .replace(new RegExp(`\\bwe${A}re\\b`, "gi"), "you're")
+    .replace(new RegExp(`\\bwe${A}ve\\b`, "gi"), "you've")
+    .replace(/\b[Ii] am\b/g, "you are")
+    .replace(/\b[Ii] was\b/g, "you were")
+    .replace(/\bwe were\b/gi, "you were")
+    .replace(/\b(Level|Grade|Part|Phase|Stage|Book|Step|Unit|Class|Type|Year|Section)\s+I\b/g, "$1 \u0000")
+    .replace(/\b[Ii]\b/g, "you")
+    .replace(/\u0000/g, "I")
+    .replace(/\bwe\b/gi, "you")
+    .replace(/\b(my|our)\b/gi, "your")
+    .replace(/\b(mine|ours)\b/gi, "yours")
+    /* The class's "me" is parked as a control character, in its own case, while "me" is turned. */
+    .replace(/\b((?:mommy|mom|mama|mummy|daddy|dad|papa|parent|grown-?up|caregiver|baby|toddler|tot)s?\s*(?:and|&|n['’]?)\s*)(me)\b/gi, (_, pre: string, me: string) => pre + (me === "me" ? "\u0001" : me === "ME" ? "\u0002" : "\u0003"))
+    .replace(/\bme\b/gi, "you")
+    .replace(/\u0001/g, "me")
+    .replace(/\u0002/g, "ME")
+    .replace(/\u0003/g, "Me")
+    .replace(/\bus\b/g, "you");
+}
+
 export function renderBlocks(input: RenderInput): { header: string; options: string[]; footer: string } {
   const all = rankedAll(input.options, input.draft?.order ?? []);
   const detailed = Math.max(1, Math.min(input.detailed ?? detailCount(input), DEEP_DIVE_MAX_DETAILED));
@@ -1629,7 +1668,7 @@ export function renderBlocks(input: RenderInput): { header: string; options: str
   ];
   const prefs = familyPreferences(input.family);
 
-  const header = [`Here's your deep dive: ${clip(gsmSafe(input.question), 80)}`];
+  const header = [`Here's your deep dive: ${clip(gsmSafe(inSecondPerson(input.question)), 80)}`];
   /* Only with no opening of the writer's (22 Oct run): "I weighed it for your 7
      year old near Altadena: within 20 min…" followed by an opening saying the
      same in other words. The opening now starts with the answer. */

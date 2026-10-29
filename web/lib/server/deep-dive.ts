@@ -662,19 +662,26 @@ export async function draftChecked(input: {
   focus?: string[];
   /** The market's clock for "today" (lib/markets.ts). */
   timeZone?: string;
-}): Promise<{ checked: CheckedDraft | null; drafted: boolean; refusals: number }> {
+}): Promise<{ checked: CheckedDraft | null; drafted: boolean; refusals: number; reasons: Partial<Record<ProseRefusal, number>> }> {
   const shape = deepDiveShape(input.question, { towns: TOWNS });
   const named = namedInQuestion(input.question, input.options, TOWNS);
   /* A comparison the options cannot back (fewer than two of its places found) is answered as an open question. */
   const held: DeepShape = shape.kind === "compare" && named.length < 2 ? deepDiveShape("", {}) : shape;
   const sized = { ...input, shape: held, named };
+  /* Which rules removed sentences, as counts per reason (29 Oct): the count alone
+     could not say whether the writer or the checker was at fault. */
+  const tally = (removed: Removal[]) => {
+    const out: Partial<Record<ProseRefusal, number>> = {};
+    for (const r of removed) out[r.reason] = (out[r.reason] ?? 0) + 1;
+    return out;
+  };
   const first = readDraft(await draft(sized), sized);
-  if (!first) return { checked: null, drafted: false, refusals: 0 };
-  if (first.removed.length === 0) return { checked: first.checked, drafted: true, refusals: 0 };
+  if (!first) return { checked: null, drafted: false, refusals: 0, reasons: {} };
+  if (first.removed.length === 0) return { checked: first.checked, drafted: true, refusals: 0, reasons: {} };
   const hints = first.removed.map((r) => `a sentence in ${r.field} for ${r.id}: ${refusalHint(r.reason)}`);
   const second = readDraft(await draft({ ...sized, refused: hints }), sized);
-  if (!second) return { checked: first.checked, drafted: true, refusals: first.removed.length };
-  return { checked: mergeDrafts(first.checked, second.checked), drafted: true, refusals: second.removed.length };
+  if (!second) return { checked: first.checked, drafted: true, refusals: first.removed.length, reasons: tally(first.removed) };
+  return { checked: mergeDrafts(first.checked, second.checked), drafted: true, refusals: second.removed.length, reasons: tally(second.removed) };
 }
 
 /* ------------------------------------------------------------- the trigger */
@@ -877,7 +884,7 @@ async function deliver(input: DeliverInput): Promise<boolean> {
     return false;
   }
   const options = await withDistances(base, input.home, input.marketId);
-  const { checked, drafted, refusals } = await draftChecked({ question: input.question, family, options, focus: input.focus, timeZone: marketConfig(input.marketId).timeZone });
+  const { checked, drafted, refusals, reasons } = await draftChecked({ question: input.question, family, options, focus: input.focus, timeZone: marketConfig(input.marketId).timeZone });
 
   /* Offer to ask parents when the top of the report rests on public pages. */
   const top = reportOrder(options, checked?.order ?? []);
@@ -970,11 +977,16 @@ async function deliver(input: DeliverInput): Promise<boolean> {
   console.info("[deep-dive] delivered", {
     weighed: options.length,
     web_findings: input.web.length,
+    /* The public options the writer was given (29 Oct): web findings that became
+       options of their own, plus any public-only records — with `web_findings`
+       beside it, the findings joined to a record, dropped as one, or past the cap. */
+    web_options: options.filter((o) => o.source !== "parents").length,
     web_matched: options.filter((o) => o.source === "parents" && o.web).length,
     options: chosen.length,
     parent_options: parentOptions,
     drafted,
     refusals,
+    ...Object.fromEntries(Object.entries(reasons).map(([k, v]) => [`refused_${k}`, v])),
     parts: parts.length,
     sent,
     offer_ask: offerAsk,

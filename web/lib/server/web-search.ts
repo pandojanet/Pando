@@ -6,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
 import { looksLikePerson } from "@/lib/named-person";
 import { PLACES } from "@/lib/home-places";
-import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameName, type DeepFinding, type PublicFinding } from "@/lib/public-info";
+import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameDeepPlace, type DeepFinding, type DeepReadStats, type PublicFinding } from "@/lib/public-info";
 import { deepDiveShape } from "@/lib/deep-dive";
 
 /**
@@ -317,6 +317,7 @@ function brief(input: {
   focus?: string | null;
   exclude?: readonly string[];
   enrich?: readonly string[];
+  found?: readonly string[];
   now?: Date;
   /** The state the search is located in, when the label does not carry one. */
   region?: string | null;
@@ -366,6 +367,16 @@ function brief(input: {
   const enrich = (input.enrich ?? []).filter((n) => n.trim().length > 0).slice(0, 6);
   if (enrich.length > 0) lines.push(`Also look up these places parents already told Pando about: ${enrich.join("; ")}`);
 
+  /* The thin retry (29 Oct): a first search found too few; this one looks wider. */
+  const found = (input.found ?? []).filter((n) => n.trim().length > 0).slice(0, 10);
+  if (input.found) {
+    lines.push(
+      found.length > 0
+        ? `A first search found only: ${found.join("; ")}. Find at least six OTHER places that fit - search more widely (nearby towns, other kinds of provider, city and community programmes) - and do not list these again.`
+        : "A first search found nothing usable. Search more widely - nearby towns, other kinds of provider, city and community programmes - and find at least six places that fit.",
+    );
+  }
+
   return lines;
 }
 
@@ -404,7 +415,7 @@ async function searchPublicInformationUntraced(input: SearchInput): Promise<Publ
    * the model simply stopped early — and the developer's complaint about the
    * first deep dives was exactly *too little information*. So under
    * `DEEP_MIN_FINDINGS` a second search runs and its places are added to the
-   * first's, one place never twice (`sameName`).
+   * first's, one place never twice (`sameDeepPlace` since 29 Oct; `sameName` before).
    */
   /**
    * ⚠ **What "thin" means, measured (22 Oct, the length review).** Counting
@@ -421,10 +432,15 @@ async function searchPublicInformationUntraced(input: SearchInput): Promise<Publ
   const said = (first.deep ?? []).filter(substantive).length;
   if (input.deep && first.configured && said < DEEP_MIN_FINDINGS && (!namesItsPlaces || said === 0)) {
     console.info("[web-search] deep search came back thin, searching once more", { found: first.deep?.length ?? 0, substantive: said });
-    const second = await searchOnce(input, DEEP_RETRY);
+    /* The second search is told what the first found and looks for others
+       (29 Oct, the chat lab): asked the same thing again it brought back the same
+       one place, three runs of three. */
+    const second = await searchOnce({ ...input, found: (first.deep ?? []).map((f) => f.name) }, DEEP_RETRY);
     const deep = [...(first.deep ?? [])];
     for (const f of second.deep ?? []) {
-      const i = deep.findIndex((d) => sameName(d.name, f.name));
+      /* `sameDeepPlace`, not `sameName` (29 Oct): two schools whose names differ
+         only in "School" and "Academy" are two schools. */
+      const i = deep.findIndex((d) => sameDeepPlace(d, f));
       if (i >= 0) {
         if (fieldCount(f) > fieldCount(deep[i])) deep[i] = f;
         continue;
@@ -501,6 +517,8 @@ type SearchInput = {
   deep?: boolean;
   /** Deep mode: places Pando already has, to be looked up rather than skipped. */
   enrich?: readonly string[];
+  /** Deep mode, the second search: places the first one found — find others. */
+  found?: readonly string[];
 };
 
 /**
@@ -527,22 +545,68 @@ type DeepLimits = { searches: number; fetches: number };
 /* 22 Oct sim: with 5 searches, looking up our own records used them all; "top 10" needs more. */
 const DEEP_LIMITS: DeepLimits = { searches: 10, fetches: DEEP_FETCHES };
 
+/**
+ * How a deep search ended (29 Oct) — enums and counts, for the log. Before this a
+ * reply cut off at `max_tokens`, a refusal, a run of `pause_turn`s and a deadline
+ * all came back as an empty string, indistinguishable from "the web had nothing".
+ */
+type DeepEnd = "end_turn" | "max_tokens" | "refusal" | "pause_limit" | "deadline" | string;
+interface DeepText {
+  text: string;
+  end: DeepEnd;
+  turns: number;
+  searches: number;
+  fetches: number;
+  /** Tool results that were errors, by code. */
+  errors: Record<string, number>;
+}
+
+/**
+ * Room for the reply. Adaptive thinking spends from the same budget across up to
+ * ten searches and eight pages, and fifteen places in fields is ~4k tokens of
+ * JSON; at 16k a long run could end mid-object, and an unclosed object reads as
+ * no places at all (29 Oct review). Output is billed as written, not as allowed.
+ */
+const DEEP_MAX_TOKENS = 32000;
+
 async function deepSearchText(
   anthropic: Anthropic,
   userContent: string,
   location: { city?: string; region?: string; country: string; timezone?: string } | null,
   limits: DeepLimits = DEEP_LIMITS,
-): Promise<string> {
+): Promise<DeepText> {
   const started = Date.now();
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: userContent }];
-  for (let turn = 0; turn <= DEEP_CONTINUATIONS; turn++) {
+  let searches = 0;
+  let fetches = 0;
+  /* A search or a page read that came back as an error, by the tool's own code —
+     "too_many_requests" and "max_uses_exceeded" leave the model nothing to list. */
+  const errors: Record<string, number> = {};
+  const count = (content: Anthropic.Beta.BetaContentBlock[]) => {
+    for (const block of content) {
+      if (block.type === "server_tool_use") {
+        if (block.name === "web_search") searches++;
+        else if (block.name === "web_fetch") fetches++;
+        continue;
+      }
+      if (block.type === "web_search_tool_result" || block.type === "web_fetch_tool_result") {
+        const result = (block as { content?: unknown }).content as { type?: string; error_code?: string } | unknown[] | undefined;
+        if (result && !Array.isArray(result) && typeof result.error_code === "string") {
+          const key = `${block.type === "web_search_tool_result" ? "search" : "fetch"}_${result.error_code}`.replace(/[^a-z_]/gi, "").slice(0, 40);
+          errors[key] = (errors[key] ?? 0) + 1;
+        }
+      }
+    }
+  };
+  let turn = 0;
+  for (; turn <= DEEP_CONTINUATIONS; turn++) {
     const left = DEEP_SEARCH_TIMEOUT_MS - (Date.now() - started);
-    if (left <= 0) break;
+    if (left <= 0) return { text: "", end: "deadline", turns: turn, searches, fetches, errors };
     const response = await anthropic.beta.messages.create(
       {
         model: DEEP_MODEL,
         thinking: { type: "adaptive" },
-        max_tokens: 16000,
+        max_tokens: DEEP_MAX_TOKENS,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         output_config: { effort: "medium" },
@@ -563,17 +627,26 @@ async function deepSearchText(
       },
       { timeout: left },
     );
+    count(response.content);
     if (response.stop_reason === "pause_turn") {
       messages.push({ role: "assistant", content: response.content });
       continue;
     }
-    if (response.stop_reason === "refusal") return "";
-    return response.content
-      .map((block) => (block.type === "text" ? block.text : ""))
-      .join("")
-      .trim();
+    const end = response.stop_reason ?? "unknown";
+    if (end === "refusal") return { text: "", end, turns: turn + 1, searches, fetches, errors };
+    return {
+      text: response.content
+        .map((block) => (block.type === "text" ? block.text : ""))
+        .join("")
+        .trim(),
+      end,
+      turns: turn + 1,
+      searches,
+      fetches,
+      errors,
+    };
   }
-  return "";
+  return { text: "", end: "pause_limit", turns: turn, searches, fetches, errors };
 }
 
 async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS): Promise<PublicSearchResult> {
@@ -594,17 +667,47 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
   const context = brief({ ...input, region: location?.region ?? null });
 
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, fetch: tracedFetch("web_search") });
+    /* No SDK retries on a deep search (29 Oct): a timeout inside the one 150 s
+       deadline would otherwise run the whole search again, unseen, at full cost —
+       the draft's client already says the same (lib/server/deep-dive.ts). The
+       ordinary search keeps the SDK's default. */
+    const anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      fetch: tracedFetch("web_search"),
+      ...(input.deep ? { maxRetries: 0 } : {}),
+    });
     const userContent = `A parent asked:\n${question}\n\nWhat Pando knows:\n${context
       .map((line) => `- ${line}`)
       .join("\n")}`;
     /* A deep dive searches on Sonnet 5.5 (22 Oct) — see `deepSearchText`. */
     if (input.deep) {
-      const text = await deepSearchText(anthropic, userContent, location, limits);
-      const deep = readDeepFindings(text, notAPlaceOfOurs, DEEP_MAX_FINDINGS).filter(
-        (f) => !inAnotherState(f, location?.region),
-      );
-      return { findings: deep.map(oneLine), deep, focus: readDeepFocus(text), configured: true };
+      const run = await deepSearchText(anthropic, userContent, location, limits);
+      const stats: DeepReadStats = { returned: null, kept: 0, dropped: {} };
+      const read = readDeepFindings(run.text, notAPlaceOfOurs, DEEP_MAX_FINDINGS, stats);
+      const deep = read.filter((f) => !inAnotherState(f, location?.region));
+      /**
+       * Every place the model wrote, and where each one went (29 Oct). Counts and
+       * enums only (invariant 7). Without it "the model returned 1" and "the model
+       * returned 10 and the readers dropped 9" were the same `found: 1`, and a thin
+       * report in production could not be told apart from a thin web.
+       */
+      console.info("[web-search] deep read", {
+        end: run.end,
+        turns: run.turns,
+        searches: run.searches,
+        fetches: run.fetches,
+        ...Object.fromEntries(Object.entries(run.errors).map(([k, v]) => [`error_${k}`, v])),
+        returned: stats.returned,
+        /* The reply's size and how many places it names anywhere — a reply that
+           names ten and parses as one is a reading fault, not a thin web. */
+        text_length: run.text.length,
+        name_keys: (run.text.match(/"name"\s*:/g) ?? []).length,
+        kept: deep.length,
+        ...Object.fromEntries(Object.entries(stats.dropped).map(([k, v]) => [`dropped_${k}`, v])),
+        dropped_other_state: read.length - deep.length,
+        substantive: deep.filter(substantive).length,
+      });
+      return { findings: deep.map(oneLine), deep, focus: readDeepFocus(run.text), configured: true };
     }
     const response = await anthropic.messages.create(
       {
@@ -688,6 +791,10 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
       status: (err as { status?: number })?.status ?? null,
       kind:
         (err as { error?: { error?: { type?: string } } })?.error?.error?.type ?? null,
+      /* The class name (29 Oct): a timeout and a dropped connection both had
+         neither status nor kind, and read the same. A name, never the message. */
+      error: err instanceof Error ? err.name.slice(0, 40) : "unknown",
+      deep: input.deep === true,
     });
     return { findings: [], configured: true };
   }

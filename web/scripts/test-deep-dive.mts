@@ -205,7 +205,7 @@ const draftIn = {
 };
 const text = d.renderDeepDive({ question: "top preschools near us", family, options: opts, draft: draftIn, offerAsk: true });
 const at = (s: string) => text.indexOf(s);
-ok("opens with what it is about", text.startsWith("Here's your deep dive: top preschools near us"));
+ok("opens with what it is about, facing the parent (29 Oct: 'near us' is 'near you')", text.startsWith("Here's your deep dive: top preschools near you"));
 ok("with the writer's opening, the 'I weighed it for' line is not printed too (22 Oct: it said the same twice)", !text.includes("I weighed it for"), text.split("\n")[1]);
 ok("with no opening, it says who it was weighed for", d.renderDeepDive({ question: "top preschools near us", family, options: opts, draft: { ...draftIn, opening: undefined }, offerAsk: true }).includes("I weighed it for your 4 year old near Altadena: within 20 min, good value for the money."));
 ok("the writer's opening follows", text.includes("the drive and the price matter most"));
@@ -640,9 +640,9 @@ console.log("\n=== a thin deep search runs once more (22 Oct, measured live: 1 p
   const wsSrc = fs.readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
   ok("a deep search with too few places that say something is searched again", wsSrc.includes("const said = (first.deep ?? []).filter(substantive).length;") && wsSrc.includes("if (input.deep && first.configured && said < DEEP_MIN_FINDINGS && (!namesItsPlaces || said === 0))"));
   ok("the minimum is a real number of options (3 to 6)", (() => { const m = wsSrc.match(/const DEEP_MIN_FINDINGS = (\d+);/); return !!m && Number(m[1]) >= 3 && Number(m[1]) <= 6; })());
-  ok("and the two are joined, one place never twice, the fuller copy kept", wsSrc.includes("const i = deep.findIndex((d) => sameName(d.name, f.name));") && wsSrc.includes("if (fieldCount(f) > fieldCount(deep[i])) deep[i] = f;"));
+  ok("and the two are joined, one place never twice, the fuller copy kept", wsSrc.includes("const i = deep.findIndex((d) => sameDeepPlace(d, f));") && wsSrc.includes("if (fieldCount(f) > fieldCount(deep[i])) deep[i] = f;"));
   ok("22 Oct: a question that names its places is not searched again unless nothing said anything", wsSrc.includes('const namesItsPlaces = shape === "compare" || shape === "single";'));
-  ok("22 Oct: the retry is smaller than the first search (6 searches, 4 pages)", wsSrc.includes("const DEEP_RETRY: DeepLimits = { searches: 6, fetches: 4 };") && wsSrc.includes("await searchOnce(input, DEEP_RETRY)") && wsSrc.includes("max_uses: limits.searches") && wsSrc.includes("max_uses: limits.fetches"));
+  ok("22 Oct: the retry is smaller than the first search (6 searches, 4 pages)", wsSrc.includes("const DEEP_RETRY: DeepLimits = { searches: 6, fetches: 4 };") && wsSrc.includes("}, DEEP_RETRY);") && wsSrc.includes("max_uses: limits.searches") && wsSrc.includes("max_uses: limits.fetches"));
   ok("22 Oct: places the question names are researched fully, outside the two-search cap", wsSrc.includes("Places the question itself NAMES are not under that limit"));
   ok("22 Oct: the deep search is told about past seasons", wsSrc.includes("never report a past season's sold out, closed or wait list"));
 }
@@ -718,7 +718,7 @@ console.log("\n=== the deep search researches the question, not a form (22 Oct, 
   ok("the deep brief asks what the question turns on first", wsSrc.includes("First decide what this parent needs to know to choose"));
   ok("and reads the places' own pages", /type: DEEP_FETCH_TOOL, name: "web_fetch"/.test(wsSrc) && /const DEEP_FETCH_TOOL = "web_fetch_20260209"/.test(wsSrc));
   ok("the brief still refuses praise, ratings and reviews", wsSrc.includes("No praise, ratings, reviews, testimonials"));
-  ok("the search returns its focus", wsSrc.includes("focus: readDeepFocus(text)"));
+  ok("the search returns its focus", wsSrc.includes("focus: readDeepFocus(run.text)"));
   const ddSrc = fs.readFileSync(new URL("../lib/server/deep-dive.ts", import.meta.url), "utf8");
   ok("the writer is given what the question turns on", ddSrc.includes("question_turns_on: input.focus ?? []") && ddSrc.includes("on_what_the_question_turns_on: w.answers ?? []"));
   ok("the answers are facts a sentence may draw on", ddSrc.includes("...(w.answers ?? [])"));
@@ -1078,6 +1078,101 @@ console.log("\n=== readDraft and the merge of two attempts, run (26 Oct) ===");
   ok("merge: with the same order the other attempt's opening stands in", m2.opening === "Kidspace first." && m2.bottom_line === "Start with w1." && m2.comparison === "w1 decides it.", JSON.stringify(m2));
   const m3 = dd.mergeDrafts(attempt(["w1", "w2"], "Kidspace first.", 90), attempt(["w2", "w1"], "Galileo first.", 50));
   ok("merge: the attempt that kept more text gives the order and its own opening", m3.order.join() === "w1,w2" && m3.opening === "Kidspace first.");
+}
+
+console.log("\n=== 29 Oct review: real places were dropped by the readers, silently ===");
+{
+  const pr = (await import(`../lib/public-info.ts?v=${Date.now()}`)) as typeof import("../lib/public-info");
+  const npr = (await import(`../lib/named-person.ts?v=${Date.now()}`)) as typeof import("../lib/named-person");
+  const hpr = (await import(`../lib/home-places.ts?v=${Date.now()}`)) as typeof import("../lib/home-places");
+  const towns = hpr.PLACES.map((p) => p.name);
+  const isP = (n: string) => npr.looksLikePerson(n, { placeWords: towns });
+  const reply = (rows: Array<Record<string, unknown>>) => JSON.stringify({ focus: [], findings: rows.map((r) => ({ what: "swim school", area: "Pasadena", ...r })) });
+  /* Twelve ordinary swim schools; before this review six of them never reached the writer. */
+  const schools: Array<[string, string]> = [
+    ["Happy Fish Swim School", "swim school"],
+    ["Swim Stars Aquatics", "swim lessons"],
+    ["Premier Swim Academy", "swim school"],
+    ["Rose Bowl Aquatics Center", "Rose Bowl swim lessons"],
+    ["Pasadena YMCA", "Red Cross swim lessons"],
+    ["Aqua-Tots Swim School", "year-round swim school"],
+    ["British Swim School", "swim lessons"],
+    ["Pasadena Swim School", "swim school"],
+    ["Pasadena Swim Academy", "swim school"],
+    ["AquaMobile Swim School", "at-home swim lessons"],
+    ["Sierra Madre Pool", "public pool lessons"],
+    ["Goldfish Swim School", "swim school"],
+  ];
+  const stats: import("../lib/public-info").DeepReadStats = { returned: null, kept: 0, dropped: {} };
+  const kept = pr.readDeepFindings(reply(schools.map(([name, what]) => ({ name, what }))), isP, 15, stats);
+  ok("all twelve real schools reach the writer (a brand word, the place's own name in `what`, an organisation, School vs Academy)", kept.length === 12, kept.map((f) => f.name).join(" | "));
+  ok("and the reader says what it was given and kept", stats.returned === 12 && stats.kept === 12 && Object.keys(stats.dropped).length === 0, JSON.stringify(stats));
+
+  ok("a name that rates itself is still refused", ["#1 Rated Swim School", "Best Swim School Pasadena", "Top-Rated Kids Gym", "Voted Swim Academy", "5 Star Swim"].every((name) => pr.readDeepFindings(reply([{ name }]), isP).length === 0));
+  const s2: import("../lib/public-info").DeepReadStats = { returned: null, kept: 0, dropped: {} };
+  pr.readDeepFindings(reply([{ name: "#1 Rated Swim School" }, { name: "Ms. Jane Smith", what: "tutor" }, { name: "Tony Hwang DDS", what: "dentist" }, { name: "Oak Swim", what: "Maria Lopez swim lessons" }, { name: "Oak Swim School" }, { name: "Oak Swim School - Arcadia" }]), isP, 15, s2);
+  ok("each refusal is counted by its reason", s2.returned === 6 && s2.kept === 1 && s2.dropped.name_claim === 1 && s2.dropped.person === 1 && s2.dropped.credential === 1 && s2.dropped.what_refused === 1 && s2.dropped.duplicate === 1, JSON.stringify(s2));
+  ok("a reply that is not JSON reads as nothing returned, not as zero places", (() => { const s: import("../lib/public-info").DeepReadStats = { returned: 0, kept: 0, dropped: {} }; pr.readDeepFindings('{"findings": [ {"name": "Cut off', isP, 15, s); return s.returned === null; })());
+
+  for (const what of ["Maria Lopez swim lessons", "Sarah Johnson piano lessons", "Coach Mike swim lessons", "Miss Anna's dance class"]) {
+    ok(`a person in \`what\` still drops the place: "${what}"`, pr.readDeepFindings(reply([{ name: "Oak Grove Center", what }]), isP).length === 0);
+  }
+  const facts = pr.readDeepFindings(reply([{ name: "Oak Swim", highlights: ["Grouped according to ability", "2/3/5 days a week", "According to parents, the staff are kind", "Rated 4.8/5", "Over 1,000 happy campers"] }]), isP)[0]?.highlights ?? [];
+  ok("'according to ability' and '2/3/5 days' are facts; praise and ratings are still refused", JSON.stringify(facts) === JSON.stringify(["Grouped according to ability", "2/3/5 days a week"]), JSON.stringify(facts));
+
+  ok("two different kinds of institution are two places", !pr.sameDeepPlace({ name: "Pasadena Swim School" }, { name: "Pasadena Swim Academy" }) && !pr.sameDeepPlace({ name: "Arroyo Music Studio" }, { name: "Arroyo Music Conservatory" }));
+  const one = (a: string, b: string, sa?: string, sb?: string) => pr.sameDeepPlace({ name: a, site: sa ?? null }, { name: b, site: sb ?? null });
+  ok(
+    "a branch, a town, a missing kind word, a plural, a legal suffix, a parenthesis or the same site is one place (review, 29 Oct)",
+    one("The Little Gym", "The Little Gym of Pasadena") &&
+      one("Aqua-Tots", "Aqua-Tots Swim School") &&
+      one("Aqua-Tots Swim School", "Aqua-Tots Swim Schools Pasadena") &&
+      one("Aqua-Tots Swim School", "Aqua-Tots Swim School Pasadena") &&
+      one("The Little Gym, Inc.", "Little Gym") &&
+      one("Crowell Family YMCA (formerly X)", "Crowell Family YMCA") &&
+      one("Swim Kids", "SwimKids Pasadena", "swimkids.com", "swimkids.com"),
+  );
+  ok("the parents' record guard keeps its looser match (one place, two trust labels)", pr.sameName("Pasadena Swim School", "Pasadena Swim Academy"));
+
+  /* An instructor's own business (review, 29 Oct): the place's name is no exemption for `what`. */
+  ok("'Jenny Kim Swim' — 'Jenny Kim teaches swim' — is a person, dropped", pr.readDeepFindings(reply([{ name: "Jenny Kim Swim", what: "Jenny Kim teaches swim" }]), isP).length === 0);
+  ok("'Maria Lopez Swim' — 'Maria Lopez swim lessons' — dropped", pr.readDeepFindings(reply([{ name: "Maria Lopez Swim", what: "Maria Lopez swim lessons" }]), isP).length === 0);
+  {
+    const facts = (row: Record<string, unknown>) => pr.readDeepFindings(reply([row]), isP)[0];
+    const jenny = facts({ name: "Jenny Kim Swim", what: "swim lessons", highlights: ["Jenny Kim leads every class", "heated pool"], summary: "Jenny Kim teaches small groups." });
+    ok("a business named after a person: what its pages say about that person is not printed (invariant 8)", JSON.stringify(jenny?.highlights) === '["heated pool"]' && jenny?.summary === null, JSON.stringify(jenny));
+    const tom = facts({ name: "Tom Sawyer Camps", what: "day camp", highlights: ["Tom Sawyer Camps runs field trips"], summary: "Tom Sawyer Camps runs weekly sessions." });
+    ok("but a camp whose name only sounds like one keeps its facts", tom?.highlights.length === 1 && tom?.summary !== null, JSON.stringify(tom));
+  }
+  ok("an organisation run of three words is still an organisation ('Red Cross Swim Lessons')", pr.readDeepFindings(reply([{ name: "Pasadena YMCA", what: "Red Cross Swim Lessons" }]), isP).length === 1);
+  ok(
+    "a name that vouches is refused (invariant 3)",
+    ["Recommended Swim Lessons", "Parents' Choice Swim School", "Kids Love Swim", "Most Trusted Swim Academy", "Favorite Swim School", "Parent Approved Swim"].every((name) => pr.readDeepFindings(reply([{ name }]), isP).length === 0),
+  );
+  ok("a brand that only sounds like a word in the list is a brand ('Lovebug & Me Music', 'Stars Gymnastics')", pr.readDeepFindings(reply([{ name: "Lovebug & Me Music" }, { name: "Stars Gymnastics" }]), isP).length === 2);
+
+  const sp = d.inSecondPerson;
+  const cases: Array<[string, string]> = [
+    ["swim lessons for my 5 year old near us", "swim lessons for your 5 year old near you"],
+    ["I'm looking for camps we can afford, send me our options in the US", "you're looking for camps you can afford, send you your options in the US"],
+    ["I am looking for a preschool", "you are looking for a preschool"],
+    ["I’m looking for ballet", "you're looking for ballet"],
+    ["i need a class for my son", "you need a class for your son"],
+    ["Mommy and Me classes near us", "Mommy and Me classes near you"],
+    ["parent & me music for my baby", "parent & me music for your baby"],
+    ["Swim Level I for my daughter", "Swim Level I for your daughter"],
+    ["bus routes and US camps", "bus routes and US camps"],
+  ];
+  for (const [q, want] of cases) ok(`header: "${q}" → "${want}"`, sp(q) === want, sp(q));
+
+  const wsSrc = fs.readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
+  ok("the deep search logs how it ended and where every place went", wsSrc.includes('console.info("[web-search] deep read", {') && wsSrc.includes("end: run.end,") && wsSrc.includes("returned: stats.returned,") && wsSrc.includes("dropped_other_state:"));
+  ok("an ending other than end_turn is named, not an empty string", wsSrc.includes('end: "deadline"') && wsSrc.includes('end: "pause_limit"'));
+  ok("tool errors are counted by code, and a failure names its error class", wsSrc.includes('block.type === "web_search_tool_result" || block.type === "web_fetch_tool_result"') && wsSrc.includes("error: err instanceof Error ? err.name.slice(0, 40)"));
+  ok("the thin retry is told what the first search found and asked for others", wsSrc.includes("await searchOnce({ ...input, found: (first.deep ?? []).map((f) => f.name) }, DEEP_RETRY)") && wsSrc.includes("Find at least six OTHER places that fit"));
+  ok("room for the reply: 32k, and no unseen SDK retry of a whole deep search", wsSrc.includes("const DEEP_MAX_TOKENS = 32000;") && wsSrc.includes("max_tokens: DEEP_MAX_TOKENS,") && wsSrc.includes("...(input.deep ? { maxRetries: 0 } : {}),"));
+  const sddSrc = fs.readFileSync(new URL("../lib/server/deep-dive.ts", import.meta.url), "utf8");
+  ok("the report log says which rules removed sentences, and how many web places became options", sddSrc.includes("refused_${k}") && sddSrc.includes("web_options: options.filter((o) => o.source !== \"parents\").length,"));
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

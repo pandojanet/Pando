@@ -171,6 +171,9 @@
                        already sent, by name (never a parent's words).
 `web/lib/public-info.ts` `inAnotherState` — a web finding plainly in another US
                        state than the one asked about.
+`web/lib/public-info.ts` `sameDeepPlace` — two deep findings are one place: `sameName`,
+                       unless the names say different kinds (School vs Academy),
+                       or the same site. `sameName` stays the record/page guard.
 `web/lib/deep-dive.ts` `sameProgram` — two findings for one place under session
                        names ("… Summer Camp" / "… Camps").
 `web/lib/admin/labels.ts` `allowanceLabel` — how many asks a parent agreed to,
