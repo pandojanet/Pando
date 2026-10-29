@@ -49,6 +49,8 @@ interface Trace {
   personKnown: boolean;
   spans: string[];
   out: Captured[];
+  /** What the trace was about and what it answered with, lifted onto `$ai_trace` (see `summarise`). */
+  summary: { intent: string | null; intentSource: string | null; keyword: string | null; replyTemplate: string | null; replies: number };
 }
 
 const store = new AsyncLocalStorage<Trace>();
@@ -125,8 +127,66 @@ function capture(t: Trace | undefined, event: string, input: Record<string, unkn
     environment: process.env.TRACE_ENVIRONMENT?.trim() || "production",
   };
   const row: Captured = { event, properties, timestamp: new Date().toISOString() };
-  if (t) t.out.push(row);
-  else void send([row], "anon", false);
+  if (t) {
+    t.out.push(row);
+    summarise(t, event, properties);
+  } else void send([row], "anon", false);
+}
+
+/**
+ * The trace's one-line story (29 Oct): what the text was read as and what Pando
+ * answered with, so the traces list says it without opening each one. Read from
+ * what the trace already records — the reading's log line (`intent`, `source`),
+ * the keyword step's (`keyword`), and each `send` span's `template` — after
+ * `safeProps`, so only enums ever reach it. The first reading wins (later lines
+ * may mention an intent in passing); the last reply that went out wins.
+ */
+function summarise(t: Trace, event: string, p: Props): void {
+  const s = t.summary;
+  if (s.intent === null && typeof p.intent === "string") {
+    s.intent = p.intent;
+    s.intentSource = typeof p.source === "string" ? p.source : null;
+  }
+  if (s.keyword === null && typeof p.keyword === "string" && p.keyword !== "text") s.keyword = p.keyword;
+  if (event === "$ai_span" && p.$ai_span_name === "send" && p.sent === true && typeof p.template === "string") {
+    s.replyTemplate = p.template;
+    s.replies++;
+  }
+}
+
+/**
+ * What a text was about when nothing classified it — a keyword, or a handler that
+ * reads its own words before any model (SETTINGS, ADD, a yes to a ping) — told by
+ * the family of the reply it got. Marked `intent_source: "reply"`, so it is never
+ * mistaken for a reading.
+ */
+/* The parameter is `reply` on purpose: test:wiring reads a "template" key under lib/server as a send's name. */
+export function replyFamily(reply: string): string {
+  if (reply.startsWith("settings")) return "settings";
+  if (reply.startsWith("capture_")) return "capture";
+  if (reply.startsWith("clarif")) return "clarification";
+  if (reply.startsWith("deep_dive")) return "deep_dive";
+  if (reply.startsWith("intro_")) return "intro";
+  if (reply.startsWith("profile_delete")) return "delete";
+  if (reply === "ask_started" || reply === "ask_not_started") return "ask_offer_reply";
+  return reply.replace(/_saved$/, "");
+}
+
+/** The trace-level properties: the summary, with the intent filled from the keyword or the reply when nothing read the text. */
+export function traceSummary(name: string, s: Trace["summary"]): Props {
+  const inbound = name === "sms_inbound";
+  const intent = s.intent ?? (inbound ? (s.keyword ?? (s.replyTemplate ? replyFamily(s.replyTemplate) : null)) : null);
+  const intentSource = s.intent ? s.intentSource : !inbound ? null : s.keyword ? "keyword" : s.replyTemplate ? "reply" : null;
+  return {
+    intent,
+    intent_source: intentSource,
+    keyword: s.keyword,
+    reply_template: s.replyTemplate,
+    replies: s.replies,
+    /* PostHog's "input" and "output" of the whole trace: enums, never words (invariant 7). */
+    $ai_input_state: intent,
+    $ai_output_state: s.replyTemplate,
+  };
 }
 
 /**
@@ -144,6 +204,7 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
     personKnown: false,
     spans: [],
     out: [],
+    summary: { intent: null, intentSource: null, keyword: null, replyTemplate: null, replies: 0 },
   };
   t.distinctId = `trace_${t.id}`;
   let outcome = "ok";
@@ -160,6 +221,7 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
       outcome,
       generations: t.out.filter((e) => e.event === "$ai_generation").length,
       spans: t.out.filter((e) => e.event === "$ai_span").length,
+      ...traceSummary(name, t.summary),
     });
     await send(t.out, t.distinctId, t.personKnown);
   }

@@ -116,6 +116,64 @@ console.log("\n=== a trace with nobody named ===");
 }
 
 console.log("\n=== switched off ===");
+console.log("\n=== each trace says what it was about and what it answered (29 Oct) ===");
+{
+  const traceOf = async (name: string, body: () => Promise<void>) => {
+    batches.length = 0;
+    await tr.withTrace(name, body);
+    return batches[0]?.batch.find((e) => e.event === "$ai_trace")?.properties ?? {};
+  };
+  const sent = (template: string) => tr.span("send", async () => ({ sent: true }), () => ({ template, sent: true, category: "transactional" }));
+
+  const read = await traceOf("sms_inbound", async () => {
+    console.info("[sms:inbound]", { keyword: "text", length: 40 });
+    console.info("[sms:inbound] read as", { intent: "ask_recommendation", source: "model", sensitive: false });
+    console.info("[sms:answer] queued", { intent: "something_else_later" });
+    await sent("answer_sent");
+  });
+  ok("a read text: the model's intent and its source", read.intent === "ask_recommendation" && read.intent_source === "model", JSON.stringify(read));
+  ok("the first reading wins over a later line that mentions an intent", read.intent === "ask_recommendation");
+  ok("the reply that went out, and how many", read.reply_template === "answer_sent" && read.replies === 1);
+  ok("PostHog's input and output of the trace are the two enums", read.$ai_input_state === "ask_recommendation" && read.$ai_output_state === "answer_sent");
+  ok("a plain text is not reported as a keyword", read.keyword === null);
+
+  const stop = await traceOf("sms_inbound", async () => {
+    console.info("[sms:inbound]", { keyword: "opt_out", length: 4 });
+  });
+  ok("a keyword with no reply: the keyword is the intent", stop.intent === "opt_out" && stop.intent_source === "keyword" && stop.replies === 0 && stop.$ai_output_state === null);
+
+  const settings = await traceOf("sms_inbound", async () => {
+    console.info("[sms:inbound]", { keyword: "text", length: 8 });
+    await sent("settings");
+  });
+  ok("SETTINGS, read by no model: told by its reply, and marked so", settings.intent === "settings" && settings.intent_source === "reply" && settings.reply_template === "settings");
+
+  const refused = await traceOf("sms_inbound", async () => {
+    await tr.span("send", async () => ({ sent: false }), () => ({ template: "answer_sent", sent: false }));
+  });
+  ok("a reply that did not go out is not the reply", refused.reply_template === null && refused.replies === 0);
+
+  const job = await traceOf("job:freshness_ping", async () => {
+    await sent("freshness_ping");
+    await sent("freshness_ping");
+  });
+  ok("a job is not given an intent; its texts are counted", job.intent === null && job.intent_source === null && job.reply_template === "freshness_ping" && job.replies === 2);
+
+  ok(
+    "reply families, written out",
+    tr.replyFamily("settings_confirmed") === "settings" &&
+      tr.replyFamily("capture_kind") === "capture" &&
+      tr.replyFamily("clarify_child_age") === "clarification" &&
+      tr.replyFamily("deep_dive_started") === "deep_dive" &&
+      tr.replyFamily("intro_requested") === "intro" &&
+      tr.replyFamily("ask_not_started") === "ask_offer_reply" &&
+      tr.replyFamily("freshness_reply_saved") === "freshness_reply" &&
+      tr.replyFamily("opener") === "opener",
+  );
+  const all = JSON.stringify([read, stop, settings, job]);
+  ok("still nothing but enums and counts on the trace", !/Maya|555|\+1/.test(all));
+}
+
 {
   delete process.env.POSTHOG_SERVER_KEY;
   batches.length = 0;
