@@ -92,9 +92,11 @@ export const AFFILIATION_CONSENT_CAVEAT =
  * place: stored records must stay resolvable to the text that was actually shown.
  */
 /* ⚠ Bumped on 10 Sep, when the two SMS consents became one — see the text
-   below. Never edit a version in place: a stored row must keep resolving to
-   the words that were actually on screen. */
-export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-09-10";
+   below — and again on 2 Nov, when "a weekly digest and reminders I request"
+   was added to the kinds of message it names (the carrier reviewers compare the
+   box with the registered campaign). Never edit a version in place: a stored
+   row must keep resolving to the words that were actually on screen. */
+export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-11-02";
 
 /**
  * 5.9 — consent given by texting first, where no wording was shown at all.
@@ -148,7 +150,7 @@ export const INBOUND_CONSENT_VERSION = "inbound-text-2026-08";
  * versions are never edited in place.
  */
 export const SMS_CONSENT_TEXT =
-  "I agree to receive recurring automated text messages (SMS and RCS) from Pando Systems, Inc. at the number provided — including a verification code, answers to my questions, occasional requests from the parent network, and account notifications. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
+  "I agree to receive recurring automated text messages (SMS and RCS) from Pando Systems, Inc. at the number provided — including a verification code, answers to my questions, occasional requests from the parent network, account notifications, and a weekly digest and reminders I request. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 /**
  * The same registered wording, split for display only — and **derived** from it, so

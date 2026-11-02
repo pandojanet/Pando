@@ -2582,6 +2582,7 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     ["recurring automated messaging", /recurring automated/i],
     ["RCS by name", /RCS/],
     ["the verification code it also covers", /verification code/i],
+    ["the weekly digest and requested reminders (2 Nov)", /a weekly digest and reminders I request/],
     ["the frequency disclosure", /Message frequency varies/],
     ["the rates disclosure", /rates may apply/i],
     ["STOP and HELP", /STOP to opt out, HELP for help/],
@@ -2590,7 +2591,7 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   }
   ok(
     "and it is a new version, because the text changed",
-    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-09-10",
+    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-02",
     c.SMS_CONSENT_TEXT_VERSION,
   );
   /* The split is derived, so the label can never carry the carrier disclosure

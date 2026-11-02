@@ -101,7 +101,7 @@ export function JoinFacts() {
         <RewardFact />
       </div>
       <div role="listitem" className={TILE}>
-        <b className={TILE_VALUE}>Jan 2027</b>
+        <b className={TILE_VALUE}>Feb 2027</b>
         <span className={TILE_LABEL}>Pilot opens</span>
       </div>
     </div>
