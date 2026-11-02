@@ -2582,7 +2582,7 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     ["recurring automated messaging", /recurring automated/i],
     ["RCS by name", /RCS/],
     ["the verification code it also covers", /verification code/i],
-    ["the weekly digest and requested reminders (2 Nov)", /a weekly digest and reminders I request/],
+    ["the weekly digest and requested reminders (2 Nov)", /a weekly digest and reminders you request/],
     ["the frequency disclosure", /Message frequency varies/],
     ["the rates disclosure", /rates may apply/i],
     ["STOP and HELP", /STOP to opt out, HELP for help/],
@@ -2591,7 +2591,7 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   }
   ok(
     "and it is a new version, because the text changed",
-    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-02",
+    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-02b",
     c.SMS_CONSENT_TEXT_VERSION,
   );
   /* 2 Nov: the RCS application describes a text opt-in, so /join says how, in
@@ -2599,9 +2599,12 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
      text is an opt-in (5.9) — so the line must not promise one. */
   ok("the text opt-in number is Pando's, in E.164", c.PANDO_TEXT_NUMBER === "+16267263424", c.PANDO_TEXT_NUMBER);
   ok(
-    "/join shows the line with the formatted number",
-    /Text \{formatPhone\(PANDO_TEXT_NUMBER\)\} to opt in\./.test(join),
+    "/join shows the line with the formatted number, as a tap-to-text link",
+    /Prefer to opt in by text\?/.test(join) &&
+      /href=\{`sms:\$\{PANDO_TEXT_NUMBER\}`\}/.test(join) &&
+      /\{formatPhone\(PANDO_TEXT_NUMBER\)\}[\s\S]{0,200}to opt in\./.test(join),
   );
+  ok("and it is the quiet panel, not a second tick", /<Panel tone="quiet" size="inset"/.test(join));
   ok("and the line names no keyword", !/TEXT_OPT_IN_KEYWORD/.test(join) && !("TEXT_OPT_IN_KEYWORD" in c));
   /* The split is derived, so the label can never carry the carrier disclosure
      — a tap anywhere in a label toggles its checkbox. */

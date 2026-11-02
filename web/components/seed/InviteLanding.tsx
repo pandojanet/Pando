@@ -778,12 +778,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 <span className="text-muted">{PILOT_LAUNCH_CONSENT_TEXT}</span>
               </Consent>
 
-              {/* The text opt-in the RCS application describes (2 Nov). Not a
-                  second consent: it is how to opt in without the form. */}
-              <p className="-mt-1 mb-3.5 text-[0.88rem] leading-[1.45] text-muted">
-                Text {formatPhone(PANDO_TEXT_NUMBER)} to opt in.
-              </p>
-
               {alreadySaved ? (
                 <button type="button" className={JOIN_BUTTON} onClick={() => router.push("/done")}>
                   See what happens next
@@ -821,6 +815,36 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 </p>
               )}
             </div>
+
+            {/* The text opt-in the RCS application describes (2 Nov), in the
+                application's words: "Text <number> to opt in." Not a second
+                consent and not a form field — it is the other way in, so it sits
+                apart from the ticks, in the quiet panel register, and the number
+                is a tap-to-text link on a phone. */}
+            {!alreadySaved && (
+              <Panel tone="quiet" size="inset" className="mt-5">
+                <div className="flex items-start gap-3">
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-wash text-green-deep"
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V16.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z" />
+                    </svg>
+                  </span>
+                  <div>
+                    <p className="text-control font-semibold text-ink">Prefer to opt in by text?</p>
+                    <p className="mt-0.5 text-[0.94rem] leading-[1.5] text-ink-soft">
+                      Text{" "}
+                      <InlineAction href={`sms:${PANDO_TEXT_NUMBER}`} tone="green">
+                        {formatPhone(PANDO_TEXT_NUMBER)}
+                      </InlineAction>{" "}
+                      to opt in.
+                    </p>
+                  </div>
+                </div>
+              </Panel>
+            )}
 
             {startError && <Note className="mt-4">{startError}</Note>}
 
