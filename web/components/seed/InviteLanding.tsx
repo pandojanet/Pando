@@ -38,9 +38,11 @@ import {
 } from "@/lib/inviter-relationship";
 import {
   buildConsentRecord,
+  PANDO_TEXT_NUMBER,
   PILOT_LAUNCH_CONSENT_TEXT,
   SMS_CONSENT_AGREEMENT,
   SMS_CONSENT_TERMS,
+  TEXT_OPT_IN_KEYWORD,
 } from "@/lib/consent";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import {
@@ -776,6 +778,12 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               >
                 <span className="text-muted">{PILOT_LAUNCH_CONSENT_TEXT}</span>
               </Consent>
+
+              {/* The text opt-in the RCS application describes (2 Nov). Not a
+                  second consent: it is how to opt in without the form. */}
+              <p className="-mt-1 mb-3.5 text-[0.88rem] leading-[1.45] text-muted">
+                Prefer to opt in by text? Text {TEXT_OPT_IN_KEYWORD} to {formatPhone(PANDO_TEXT_NUMBER)}.
+              </p>
 
               {alreadySaved ? (
                 <button type="button" className={JOIN_BUTTON} onClick={() => router.push("/done")}>

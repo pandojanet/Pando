@@ -247,6 +247,24 @@ export const PILOT_LAUNCH_CONSENT_TEXT_VERSION = "seed-pilot-launch-2026-10-14";
 export const PILOT_LAUNCH_CONSENT_TEXT = "Also text me when the pilot opens (optional).";
 
 /**
+ * Opting in by text (2 Nov). The RCS application describes a text opt-in as well
+ * as the web form, and the carrier reviewers look for it on `/join`, so the page
+ * says it: send `TEXT_OPT_IN_KEYWORD` to `PANDO_TEXT_NUMBER`.
+ *
+ * ⚠ **The keyword must be a real opt-in word.** It is `START`, which
+ * `OPT_IN_KEYWORDS` in `lib/sms-templates.ts` treats as an opt-in (`test:feedback`
+ * pins that), so changing either one without the other puts a promise on the page
+ * that the inbound handler does not keep.
+ *
+ * The number is E.164 and shown through `formatPhone`. It is the number
+ * the campaign sends from; it is a constant rather than an env var because it is
+ * public copy on a page the carriers review, and it must read the same in every
+ * build.
+ */
+export const PANDO_TEXT_NUMBER = "+16267263424";
+export const TEXT_OPT_IN_KEYWORD = "START";
+
+/**
  * 2C — the caregiver's own permissions (G2, G8–G10).
  *
  * Four decisions, asked and stored separately, because they are four different

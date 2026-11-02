@@ -2594,6 +2594,19 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
     c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-02",
     c.SMS_CONSENT_TEXT_VERSION,
   );
+  /* 2 Nov: the RCS application describes a text opt-in, so /join says how. The
+     keyword has to be one the inbound handler really treats as an opt-in. */
+  const tplOptIn = (await import(`../lib/sms-templates.ts?v=${Date.now()}`)) as typeof import("../lib/sms-templates.ts");
+  ok("the text opt-in number is Pando's, in E.164", c.PANDO_TEXT_NUMBER === "+16267263424", c.PANDO_TEXT_NUMBER);
+  ok(
+    "and the keyword it names opts in",
+    (tplOptIn.OPT_IN_KEYWORDS as readonly string[]).includes(c.TEXT_OPT_IN_KEYWORD),
+    c.TEXT_OPT_IN_KEYWORD,
+  );
+  ok(
+    "/join shows the line, the keyword and the formatted number",
+    /Prefer to opt in by text\? Text \{TEXT_OPT_IN_KEYWORD\} to \{formatPhone\(PANDO_TEXT_NUMBER\)\}/.test(join),
+  );
   /* The split is derived, so the label can never carry the carrier disclosure
      — a tap anywhere in a label toggles its checkbox. */
   ok(
