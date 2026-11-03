@@ -162,6 +162,54 @@ const HIGH_STAKES_TERMS = [
   "attorney",
   "police",
   "social services",
+
+  /**
+   * Money decisions and hazards in the home (3 Nov). The 30 Oct brief puts
+   * financial advice behind a person; the Agent Playbook (28 Oct) names
+   * *"unsafe childcare, medical, financial/legal and home hazards"* as what
+   * escalates to a responsible human or a qualified professional.
+   *
+   * The same line as the medical words: **a decision or a danger, never a
+   * price.** "affordable", "cost", "budget" and "savings" are how a parent asks
+   * for a camp, so they are absent; so is "financial advisor", which asks for a
+   * name the way "pediatrician" does. Digits are stripped before matching, so
+   * "529" cannot be listed — "college savings" carries it.
+   */
+  "financial advice",
+  "invest",
+  "investing",
+  "investment",
+  "investments",
+  "stocks",
+  "crypto",
+  "retirement",
+  "college savings",
+  "tax",
+  "taxes",
+  "debt",
+  "debts",
+  "loan",
+  "loans",
+  "mortgage",
+  "bankruptcy",
+  "gas leak",
+  "smell gas",
+  "smells like gas",
+  "carbon monoxide",
+  "exposed wire",
+  "exposed wires",
+  "sparking",
+  "electric shock",
+  "electrocuted",
+  "mold",
+  "mould",
+  "lead paint",
+  "asbestos",
+  "radon",
+  "poison",
+  "poisoning",
+  "poisoned",
+  "swallowed",
 ];
 
 const PEER_SUPPORT_TERMS = [

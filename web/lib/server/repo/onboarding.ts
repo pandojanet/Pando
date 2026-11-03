@@ -215,8 +215,13 @@ export async function saveClarification(input: {
     const result = await withDb(async (db: Db) => {
       /* Birth year, not age — the same conversion the seed flow makes, and for
          the same reason: an age stops being true in a year, a birth year does
-         not. `expecting` (-1) becomes this year, which is what the questionnaire
-         already assumes. */
+         not.
+
+         `expecting` (-1) is a baby on the way, written the way the seed flow
+         writes one (`derive.ts`): no birth year, a due year of next year
+         (3 Nov). It was stored as born this year, so a parent who said "expecting"
+         read as having an infant. The year is assumed, not stated — a text
+         names no year — and `due_year_precision` says so. */
       const thisYear = new Date().getFullYear();
       /**
        * ⚠⚠ **`on conflict do nothing` stood here and guarded nothing** (21 Sep).
@@ -235,10 +240,17 @@ export async function saveClarification(input: {
        */
       await db.transaction(async (tx) => {
         for (const age of ages) {
-          await tx.execute(sql`
-            insert into children (person_id, birth_year)
-            values (${input.personId}::uuid, ${thisYear - Math.max(0, age)})
-          `);
+          await tx.execute(
+            age < 0
+              ? sql`
+                  insert into children (person_id, expecting, due_year, due_year_precision)
+                  values (${input.personId}::uuid, true, ${thisYear + 1}, 'assumed_capture_year')
+                `
+              : sql`
+                  insert into children (person_id, birth_year)
+                  values (${input.personId}::uuid, ${thisYear - age})
+                `,
+          );
         }
       });
       return true;

@@ -202,6 +202,13 @@ console.log("\n=== answering it is not met with silence ===");
     !/insert into children[\s\S]{0,160}on conflict/.test(repo),
     "children has no unique key: twins are a supported answer",
   );
+  /* 3 Nov — "expecting" was written as a child born this year, an infant. */
+  ok(
+    "a baby on the way is written as expecting, with a due year and no birth year",
+    /insert into children \(person_id, expecting, due_year, due_year_precision\)/.test(repo) &&
+      !repo.includes("Math.max(0, age)"),
+    "the year_shape CHECK and derive.ts write it this way",
+  );
 }
 
 /**

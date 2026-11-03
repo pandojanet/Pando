@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { CaptureStep } from "../lib/capture.ts";
 
 /**
@@ -123,6 +124,13 @@ ok("a number and an email are masked, the rest kept",
     "Text her at [number] or [email], class at 9:30, $120 a term, ages 3-5");
 ok("any US format is a number", ["(626) 555 7692", "+16265557690", "626.555.7690"].every((n) => cd.maskContactDetails(n) === "[number]"));
 ok("fewer than ten digits is not", !cd.hasContactDetail("open 2026 10 28, ages 3 4 5 6 7"));
+/* 3 Nov: the web route masks every card's prose, not only a caregiver card's. */
+const saveRoute = fs.readFileSync(new URL("../app/api/seed/save/route.ts", import.meta.url), "utf8");
+ok(
+  "the web save route masks every kind's free text",
+  /kind === "caregiver" \|\| TEXT_FIELDS\.has\(k\)\) \? maskContactDetails\(v\)/.test(saveRoute),
+  "an activity tip names a person as easily as a caregiver card",
+);
 const redirect = c.caregiverRedirectSms();
 ok("the redirect points at /share", redirect.includes("pando.is/share"));
 ok(

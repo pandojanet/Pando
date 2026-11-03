@@ -28,7 +28,8 @@ and a repo secret, not a line in the server's `.env`.
 
 ## 1. One-time: the GitHub repo
 
-The repo does not exist yet. From `D:\Work\pando`:
+Done: the repo is `github.com/pandojanet/Pando`, and `main` deploys. The steps
+are kept for a fresh copy of the pipeline. From the project folder:
 
 ```bash
 git init -b main

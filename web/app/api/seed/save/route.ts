@@ -180,13 +180,18 @@ export async function POST(request: Request) {
   const cleaned = cleanFields(raw.submission.fields ?? {});
   /* A caregiver's number or email typed into prose (28 Oct audit): "Text her at
      626-…" in "up front" was stored as the note families see, and verbatim in
-     submissions.fields. Masked before either is written (invariant 13). */
-  const fields =
-    kind === "caregiver"
-      ? Object.fromEntries(
-          Object.entries(cleaned).map(([k, v]) => [k, typeof v === "string" ? maskContactDetails(v) : v]),
-        )
-      : cleaned;
+     submissions.fields. Masked before either is written (invariant 13).
+
+     3 Nov: every card's free text too, not only the caregiver's. An activity's
+     tip ("ask for Maria, 626-…") names a person as easily, and SMS ADD has
+     masked its prose since 28 Oct. Only the prose fields: a card's other strings
+     are ids and links, and a long digit run in a URL is not a phone number. */
+  const fields = Object.fromEntries(
+    Object.entries(cleaned).map(([k, v]) => [
+      k,
+      typeof v === "string" && (kind === "caregiver" || TEXT_FIELDS.has(k)) ? maskContactDetails(v) : v,
+    ]),
+  );
 
   /* The caregiver invite's token (drizzle/0049). Shape-checked and nothing else:
      it names this card's own recommendation, so a client choosing its own can
