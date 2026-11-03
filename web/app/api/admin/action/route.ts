@@ -712,6 +712,9 @@ export async function POST(request: Request) {
       /* 27 Oct — `caregiver.merge` deletes every record but the one kept. */
       merge_protected:
         "Nothing was merged. A record you would fold in carries her own decision — her consent, her no, or her own sign-up — and merging deletes it. Keep that record instead, or leave both.",
+      /* 28 Oct — her claim's own answers (G9) are read before visibility changes. */
+      caregiver_declined:
+        "Nothing changed. Her own sign-up said she does not want to appear in answers, or to be introduced, and that is hers to change — not ours.",
       share_name_taken:
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:

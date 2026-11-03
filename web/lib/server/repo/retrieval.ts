@@ -486,9 +486,12 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
                               sc.confidence desc nulls last, sc.created_at desc)
                      filter (where sc.firsthand))[1]
         end)                                                            as named_by,
-        count(sc.id) filter (where sc.firsthand)                        as firsthand,
-        count(sc.id) filter (where not sc.firsthand)                    as secondhand,
-        count(sc.id) filter (where sc.firsthand
+        -- Parents, not rows (28 Oct audit): a second card or capture from the
+        -- same parent, once approved, made one parent "Validated by multiple
+        -- parents". An anonymous contribution has no person and is its own.
+        count(distinct coalesce(sc.person_id::text, sc.id::text)) filter (where sc.firsthand)   as firsthand,
+        count(distinct coalesce(sc.person_id::text, sc.id::text)) filter (where not sc.firsthand) as secondhand,
+        count(distinct coalesce(sc.person_id::text, sc.id::text)) filter (where sc.firsthand
                                and sc.recommendation in ('yes','yes_with_caveats'))
                                                                         as recommending,
         -- Agreement, not an average: the count of distinct answers is what the
@@ -500,7 +503,10 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
         min(sc.price_unit) filter (where sc.price_unit is not null)     as price_unit,
         min(sc.worth_it) filter (where sc.worth_it is not null)         as worth_it
       from shares s
-      join share_contributions sc on sc.share_id = s.id
+      -- A test parent's contribution is not a parent (28 Oct audit): a test card
+      -- attaches to a real share by name, and once approved it was counted in
+      -- "2 parents near you" and the labels while the admin's counts left it out.
+      join share_contributions sc on sc.share_id = s.id and not sc.is_test
       -- LEFT, because a contribution has no person on the anonymous path and an
       -- inner join would drop the record from every answer rather than drop the
       -- name from one line.
@@ -532,13 +538,32 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
         and (
           (true
             ${bandList === null ? sql`` : sql`and s.age_bands && ${bandList}::text[]`}
-            ${nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`})
+            ${nearList === null
+              ? sql``
+              : /* A tip with no place is the market's advice, not a record
+                   somewhere else (28 Oct audit): an empty array overlaps no
+                   near list, so every tip fell out of every answer to a parent
+                   with a place — "how early for preschool waitlists in
+                   Altadena?" got "nothing from parents near Altadena" beside
+                   a parent's tip on exactly that. */
+                sql`and (s.neighborhoods && ${nearList}::text[]
+                         or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))`})
           ${question.namedAnywhere
             ? sql`or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2
               and strpos(' ' || regexp_replace(lower(${question.question ?? ""}), '[^a-z0-9&]+', ' ', 'g') || ' ',
                          ' ' || array_to_string((regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '))[1:3], ' ') || ' ') > 0)`
             : sql``})
       group by s.id
+      -- Not a record the parents advised against (28 Oct audit). Since 8 Oct a
+      -- No or a Probably not is stored and approved like any card; its reason
+      -- is never quoted, but the record still led answers to "good swim
+      -- classes?" as "2 parents near you have used it" under Validated by
+      -- multiple parents. Left out when a parent who used it said no and none
+      -- said yes; a record with no answer to that question (older cards) stays.
+      having not (
+        count(sc.id) filter (where sc.firsthand and sc.recommendation in ('no','probably_not')) > 0
+        and count(sc.id) filter (where sc.firsthand and sc.recommendation in ('yes','yes_with_caveats')) = 0
+      )
       order by
         -- The topic the question is about, then the asker's own area, then a
         -- golden answer (17.1), then how many parents stand behind it. All four
@@ -600,6 +625,9 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
                                                                         as last_confirmed_at,
         (array_agg(n.caveat order by n.created_at desc)
            filter (where n.caveat is not null and btrim(n.caveat) <> ''
+                     -- Approved, as every other word behind her (28 Oct audit:
+                     -- a merged, unreviewed nomination's note was read out).
+                     and n.status = 'approved'
                      and not n.review_hold
                      and n.created_at >= ${PUBLIC_NOTE_SINCE}::timestamptz))[1]
                                                                         as up_front,
@@ -607,8 +635,11 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
         -- (22 Oct audit): a held nomination is a hesitant or "would not hire
         -- again" one, and an unreviewed one is nobody's word yet — counted,
         -- either could make "Validated by multiple parents" (invariant 3/4).
-        count(n.id) filter (where n.worked_for_family and n.status = 'approved'
-                              and not n.review_hold)                    as firsthand,
+        -- Families, not rows: a merged duplicate nomination by the same parent
+        -- is one family (28 Oct audit).
+        count(distinct coalesce(n.person_id::text, n.id::text))
+          filter (where n.worked_for_family and n.status = 'approved'
+                    and not n.review_hold)                              as firsthand,
         bool_or(n.reference_willing = 'yes' and n.status = 'approved'
                 and not n.review_hold)                                   as reference
       from caregivers c

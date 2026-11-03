@@ -33,7 +33,7 @@ import { openDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { GENERAL_TIER } from "@/lib/blast-tiers";
 import { openIntroOfferAt } from "@/lib/server/repo/introductions";
 import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDeepDive, type DeepDiveStep } from "@/lib/server/deep-dive";
-import { deepDiveFamily, finishDeepDive, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
+import { deepDiveFamily, finishDeepDive, lastExchangeFor, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
 import { acceptsIntro, introOffer, introTarget } from "@/lib/introductions";
 import { introStep } from "@/lib/server/introductions";
@@ -66,6 +66,7 @@ import {
 } from "@/lib/answer-routing";
 import { TRUST_LABEL } from "@/lib/trust-labels";
 import { classifyDemand, escalateSensitivity } from "@/lib/demand";
+import { maskContactDetails } from "@/lib/contact-details";
 import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
 import {
   CLARIFYING_COPY,
@@ -649,7 +650,10 @@ async function captureStep({ from, body, person }: { from: string; body: string;
     /* INTRO or DEEP is a command, not a capture answer: the capture stays open
        and the command is handled below (review, 21 Oct). */
     if (capture && !isCommand(body)) {
-      const answer = readAnswer(capture.step, body);
+      /* A number or an email is never stored from a capture (invariant 13, 28
+         Oct audit): it may be a person's, and the answer is written verbatim
+         to the share and to sms_captures. */
+      const answer = readAnswer(capture.step, maskContactDetails(body));
       if (answer.ok) {
         const value = "skipped" in answer ? null : answer.value;
         const saved = await saveAnswer(capture, value);
@@ -750,7 +754,13 @@ async function attachStep({ from, body, person }: { from: string; body: string; 
             othersQuestion: question,
             context: { awaiting_blast_reply: false, known_person: true },
           });
-          return reading.source === "model" && ["ask_recommendation", "ask_caregiver", "deep_dive"].includes(reading.intent);
+          /* An answer only when the model is sure of it (28 Oct audit): "Any good
+             toddler gymnastics classes in Pasadena?", from a recipient of a
+             swim Ask, came back answer_blast at 0.6 and was filed as her answer
+             — the topic guard sees both as activities. A question-shaped message
+             the model is unsure of is the parent's own, and is answered. */
+          if (reading.source !== "model") return false;
+          return !(reading.intent === "answer_blast" && reading.confidence >= 0.8);
         },
       });
   /* The reply is acknowledged once (25 Sep) — a follow-up appended to it is
@@ -1044,9 +1054,11 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
     const volunteered =
       unasked === "neighborhood" || (unasked === "child_age" && saysAChild) ? unasked : null;
     if (((open && pending && !aQuestion && longReply) || volunteered) && isClarifyingAnswer(body)) {
+      const exchange = await lastExchangeFor(from);
       early = await classifyIntent({
         text: body,
-        lastQuestion: await lastQuestionFor(from),
+        lastQuestion: exchange?.question ?? null,
+        lastAnswer: exchange?.answer ?? null,
         askedThem: open && pending ? CLARIFYING_COPY[pending] : null,
         context: { awaiting_blast_reply: false, known_person: !person.created },
       });
@@ -1227,11 +1239,14 @@ async function openQuestionStep({ from, body, person, attached, answeredSomethin
 async function routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean; clarified: boolean; early: Awaited<ReturnType<typeof classifyIntent>> | null; pending: Awaited<ReturnType<typeof openQuestion>> | null }): Promise<void> {
 
   /* Read once: a new request the clarifying step already read is that reading. */
+  const exchange = person && !attached.attached ? await lastExchangeFor(from) : null;
   const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
     text: body,
     recent: contextFor(pending),
-    /* What "compare these" points at (26 Oct): the question last answered. */
-    lastQuestion: person && !attached.attached ? await lastQuestionFor(from) : null,
+    /* What "compare these" points at (26 Oct): the question last answered —
+       and, since 28 Oct, the answer, so "the first one" has a name. */
+    lastQuestion: exchange?.question ?? null,
+    lastAnswer: exchange?.answer ?? null,
     context: {
       awaiting_blast_reply: attached.attached,
       /* Not hardcoded: `created` is true only for a number Pando had never seen,
@@ -1316,7 +1331,16 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * is the person, like `unreadable_question`, because there is no answer row.
    */
   if (reading.intent !== "ask_recommendation" && reading.intent !== "ask_caregiver") {
-    const urgent = escalateSensitivity(classifyDemand(body, null), reading.sensitive);
+    /* An offer the rules find ordinary is not escalated on the model's flag
+       alone (28 Oct audit): "Marisol watched our two kids for 3 years, highly
+       recommend her, text her at 626-…" was flagged sensitive as "a claim about
+       a named person", answered with 911 and 988, and stored with her number.
+       Praise is an offer and goes to the offer's path, which stores nothing;
+       an allegation or a health worry is caught by the rules, which still
+       decide first. */
+    const ruled = classifyDemand(body, null);
+    const urgent =
+      reading.intent === "contribute" && ruled === "ordinary" ? ruled : escalateSensitivity(ruled, reading.sensitive);
     if (urgent === "high_stakes" || urgent === "named_allegation") {
       if (person) {
         await withDb(async (db: Db) => {
@@ -1326,7 +1350,9 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
             subject_kind: "person",
             subject_id: person.person_id,
             person_id: person.person_id,
-            excerpt: body.slice(0, 500),
+            /* A phone number or an email in it is somebody's contact detail,
+               which is never stored (invariant 13, 28 Oct audit). */
+            excerpt: maskContactDetails(body).slice(0, 500),
           });
           return true;
         });
@@ -1495,12 +1521,46 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     console.info("[sms:inbound] exchange closed", { glued: !switched });
   }
 
+  /**
+   * The request as one complete question (28 Oct, the chat lab). A follow-up
+   * was answered on its own words: "what about for my 8 year old?" after swim
+   * lessons in Pasadena came back as a park, a camp and soccer; "is the first
+   * one good for a shy kid?" pointed at the wrong place; a Spanish question
+   * found none of the records it named; and an age said one message earlier
+   * was asked for again. The classifier now rewrites such a message with what
+   * it carries from the last exchange (`standalone`), and that is what the
+   * place, the ages, the topic and the search are read from — and what is
+   * stored, so the next follow-up chains from it.
+   *
+   * ⚠ **Never for anything sensitive.** A health, legal or safety question or a
+   * claim about a person goes on in the parent's own words, so a rewrite can
+   * never drop the word that holds it for a person. An open clarifying
+   * exchange keeps its own gluing, which already carries the question.
+   *
+   * ⚠ **Never on a held question either** (28 Oct audit). A follow-up to one
+   * that is with a person is not rewritten, and is held the way it was: "what
+   * about for my 2 year old" after a held nosebleed question went out as a
+   * swim list, built on the question before it — the 22 Oct rule for "any
+   * others?" (`priorAnswersFor`), applied to a follow-up.
+   */
+  const followsHeld = exchange?.held && reading.standalone ? exchange.held : null;
+  const rewritten =
+    !pending && !exchange?.held && reading.standalone && !reading.sensitive && classifyDemand(body, null) === "ordinary"
+      ? reading.standalone
+      : null;
+  console.info("[sms:inbound] request", { rewritten: rewritten !== null, follows_held: followsHeld !== null });
+
   await answerQuestion({
     from,
-    body: switched ? body : combined(pending, body),
+    body: rewritten ?? (switched ? body : combined(pending, body)),
+    /* The place from the parent's own words, never from the rewrite: it can
+       carry the town Pando's answer gave a listed record (28 Oct audit — "is
+       the first one good" became a question about South Pasadena, and "near
+       you" came back for a parent whose place nobody knows). */
+    ...(rewritten ? { placeFrom: [body, ...(exchange ? [exchange.question] : [])] } : {}),
     person,
-    caregiverIntent: reading.intent === "ask_caregiver",
-    sensitive: reading.sensitive,
+    caregiverIntent: reading.intent === "ask_caregiver" || followsHeld === "caregiver",
+    sensitive: reading.sensitive || followsHeld === "sensitive",
   });
 }
 
@@ -1735,6 +1795,11 @@ async function answerQuestion(input: {
    * report (`lib/server/deep-dive.ts`). Never for care or a sensitive question.
    */
   deep?: { id: string };
+  /**
+   * The parent's own words to read the place from, in order, when `body` is a
+   * rewrite (28 Oct): the first that names a place wins, else the profile.
+   */
+  placeFrom?: string[];
 }): Promise<void> {
   const { from, body, person } = input;
   const profile = person?.profile;
@@ -1841,7 +1906,11 @@ async function answerQuestion(input: {
    * the answer uses it: the parents' records, the search's place, the Network
    * Ask offer and, later, its pool. No place list in code decides any of it.
    */
-  const place = await placeForQuestion({ question: body, profile: profile ?? null, marketId: marketOf(person) });
+  let place = await placeForQuestion({ question: input.placeFrom?.[0] ?? body, profile: profile ?? null, marketId: marketOf(person) });
+  for (const words of input.placeFrom?.slice(1) ?? []) {
+    if (place.source === "question" || place.source === "geocoded") break;
+    place = await placeForQuestion({ question: words, profile: profile ?? null, marketId: marketOf(person) });
+  }
 
   const retrieved = await retrieveFor({
     marketId: marketOf(person),
@@ -2283,7 +2352,8 @@ async function answerQuestion(input: {
      care question, which is held for a person and not rewritten. */
   const voiceRoom = voiceConfigured() && !(wantsCare || retrieved.caregivers.length > 0);
   const composeWith = (headroom: boolean) => composeAnswer({
-    candidates,
+    /* Nowhere known: "on Pando", not "near you" (28 Oct, `place_unknown`). */
+    candidates: place.source === "none" ? candidates.map((c) => ({ ...c, place_unknown: true })) : candidates,
     has_question: true,
     /* Chooses which of a record's notes go out when not all fit (22 Oct). */
     question: body,

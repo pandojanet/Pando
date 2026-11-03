@@ -176,6 +176,16 @@ export async function requestIntroExplicitly(input: {
              and (not ${strict}
                   or lower(s.name) like '%' || ${named} || '%'
                   or ${named} like '%' || lower(s.name) || '%')
+             -- Naming no record, it means the newest answer and only that (28 Oct
+             -- audit): "introduce me to a parent who goes there", after a piano
+             -- answer with no parents' records, filed a request about AYSO soccer
+             -- from the answer before it — a record nobody named (21 Oct).
+             and (
+               (${named} <> '' and (lower(s.name) like '%' || ${named} || '%'
+                                    or ${named} like '%' || lower(s.name) || '%'))
+               or a.id = (select l.id from answers l
+                           where l.phone = ${input.phone} and l.status = 'sent'
+                           order by l.sent_at desc limit 1))
            order by
              -- The record they named first, either way round ("maestros" in
              -- "Little Maestros", or the whole name inside their sentence).

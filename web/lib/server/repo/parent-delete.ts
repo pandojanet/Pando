@@ -174,6 +174,26 @@ export async function deleteParentByPhone(
          them. */
       await tx.execute(sql`update introductions set note = null where other_parent_id = ${id}::uuid`);
 
+      /**
+       * ⚠ **And the questions they asked other parents** (28 Oct audit) — the
+       * 22 Oct reason, one table along. `blasts.asker_id` and
+       * `demand_signals.person_id` are SET NULL, so their Network Asks (still
+       * `active`) and their demand signals kept the question in their own words.
+       * An Ask nobody was sent goes; one that reached parents keeps its row,
+       * because those parents' gap, cap and response rate are counted from
+       * it (invariant 5), but not the question, and it is closed.
+       */
+      await tx.execute(sql`
+        delete from blasts b
+         where b.asker_id = ${id}::uuid and b.status in ('draft', 'pending_review')
+           and not exists (select 1 from blast_recipients r where r.blast_id = b.id and r.sent_at is not null)`);
+      await tx.execute(sql`
+        update blasts
+           set question_text = '[deleted]',
+               status = case when status in ('draft', 'pending_review', 'active') then 'cancelled' else status end
+         where asker_id = ${id}::uuid`);
+      await tx.execute(sql`delete from demand_signals where person_id = ${id}::uuid`);
+
       await tx.execute(sql`delete from people where id = ${id}::uuid`);
 
       return { status: "deleted" as const, contributions, caregiver, profile };

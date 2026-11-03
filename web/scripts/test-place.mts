@@ -86,7 +86,10 @@ console.log("\n=== the answer path reads it (source checks) ===");
 
   const retrieval = fs.readFileSync("lib/server/repo/retrieval.ts", "utf8");
   ok("shares are filtered to the near set",
-    has(retrieval, "nearList === null ? sql`` : sql`and s.neighborhoods && ${nearList}::text[]`"));
+    has(retrieval, "sql`and (s.neighborhoods && ${nearList}::text[]"));
+  /* 28 Oct audit: a tip with no place is the market's advice and passes the near filter. */
+  ok("a tip with no place passes the near filter; a tagged one does not",
+    has(retrieval, "or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))"));
   /* 26 Oct: except a record the question names by its first three words. Caregivers never are. */
   ok("a record the question names is in whatever its place and ages, by its first three whole words (never one word)",
     has(retrieval, "or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2")

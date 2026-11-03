@@ -377,7 +377,11 @@ const TOPIC_WORDS: readonly TopicWords[] = [
   {
     topic: "outings",
     general: ["outing\\w*", "day ?trip\\w*", "rainy ?day", "birthday part\\w+"],
-    subjects: [["park\\w*", "playground\\w*", "trail\\w*", "hike", "hiking"], ["librar\\w+"], ["museum\\w*"]],
+    /* "nature walk" and "hikes" (28 Oct, the chat lab): "nature walk ideas … in
+       Altadena" read no topic at all and missed Hahamongna Watershed Park, which
+       three parents had shared. Not a bare "walk": "within walking distance" of a
+       preschool is not an outing. */
+    subjects: [["park\\w*", "playground\\w*", "trail\\w*", "hike\\w*", "hiking", "nature", "nature walk\\w*"], ["librar\\w+"], ["museum\\w*"]],
   },
   { topic: "new_to_area_help", general: ["just moved", "new to (the )?area", "moving here", "relocat\\w+"] },
   { topic: "activities", general: ["class\\w*", "lesson\\w*", "activit\\w+", "club\\w*"] },

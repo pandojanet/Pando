@@ -114,6 +114,8 @@ export type ActionOutcome =
         | "hold_locked"
         /* 27 Oct — a caregiver merge that would delete her own decision. */
         | "merge_protected"
+        /* 28 Oct — her own sign-up said no to being seen, or to introductions. */
+        | "caregiver_declined"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
         | "share_name_taken"
         ;
@@ -125,6 +127,8 @@ const text = (v: unknown): string | null =>
   typeof v === "string" && v.trim() !== "" ? v.trim() : null;
 
 const id = (v: unknown): string => (typeof v === "string" ? v : "");
+/** Answers being sent right now, in this process — see `answer.send`. */
+const SENDING_ANSWERS = new Set<string>();
 
 const ids = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
@@ -780,10 +784,18 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     case "answer.send": {
       const target = id(b.id);
       if (!target) return { applied: false, reason: "not_implemented" };
+      /* Two presses at once (two tabs, two admins) both read "approved" and
+         texted the parent twice (28 Oct audit). One send per answer at a time
+         in this process, and the row locked for the rest of the transaction —
+         the pattern `sendBlast` uses (one container). */
+      if (SENDING_ANSWERS.has(target)) return { applied: false, reason: "answer_already_sent" };
+      SENDING_ANSWERS.add(target);
+      try {
 
       const rows = (await tx.execute(sql`
         select phone, question_text, answer_text, person_id, status, next_step
           from answers where id = ${target}::uuid
+           for update
       `)) as unknown as Array<Record<string, unknown>>;
       const row = rows[0];
       if (!row) return { applied: false, reason: "not_found" };
@@ -846,6 +858,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       return result.sent
         ? { applied: true, resource: "answer", resource_id: target }
         : { applied: false, reason: "answer_not_sent" };
+      } finally {
+        SENDING_ANSWERS.delete(target);
+      }
     }
 
     /* ── 7.6 / 7.9 Blast responses ───────────────────────────────────────── */
@@ -1170,6 +1185,24 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       if (b.discoverable === false) sets.push(sql`introducible = false`);
       else if (typeof b.introducible === "boolean")
         sets.push(sql`introducible = ${b.introducible}`);
+      /**
+       * Her own no outranks the admin's button (28 Oct audit). `claim.link`
+       * sets consent but never carried her G9 answers onto the caregiver, so a
+       * caregiver whose sign-up said "don't appear in answers" became
+       * discoverable on one click — the outcome invariant 1 says 2C supports.
+       * Read from the claim linked to her, each time, rather than copied.
+       */
+      const wantsSeen = b.discoverable === true;
+      const wantsIntro = b.discoverable !== false && b.introducible === true;
+      if (wantsSeen || wantsIntro) {
+        const declined = (await tx.execute(sql`
+          select 1 from caregiver_claims
+           where linked_caregiver_id = ${target}::uuid
+             and ((${wantsSeen} and appear_in_answers = false)
+                  or (${wantsIntro} and open_to_introductions = false))
+           limit 1`)) as unknown as unknown[];
+        if (declined.length > 0) return { applied: false, reason: "caregiver_declined" };
+      }
       if (sets.length > 0) {
         /**
          * The `and consent_status = 'consented'` is not redundant with the route

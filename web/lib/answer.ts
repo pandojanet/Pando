@@ -37,6 +37,13 @@ import type { FreshnessState, TrustLabels } from "./trust-labels";
 /** One record, already retrieved and labelled (5.5 → 5.6). */
 export interface AnswerCandidate {
   /**
+   * Nothing tells where the parent is (28 Oct): no place in the question and
+   * none on their profile. Their parents' records are then the market's, and
+   * the web search looks at the whole US (24 Sep), so "near you" would claim a
+   * nearness nobody knows — the record reads "on Pando" instead.
+   */
+  place_unknown?: boolean;
+  /**
    * The `shares` row this came from, when it came from one.
    *
    * **Never rendered** — it exists so the caller can record *which* records an
@@ -668,6 +675,7 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
      Elena V." read as though she were a class; the count is still the parents',
      which is the claim the approved labels make. */
   const verb = candidate.kind === "caregiver" ? "employed" : "used";
+  const where = candidate.place_unknown ? "on Pando" : "near you";
   const who =
     /* The client's own sentence, where it is true (10 Sep): one parent, and
        that parent turned their name on for this recommendation. `named` is
@@ -678,8 +686,8 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
       : n <= 0
       ? "A local parent has shared"
       : n === 1
-        ? `One parent near you has ${verb}`
-        : `${n} parents near you have ${verb}`;
+        ? `One parent ${where} has ${verb}`
+        : `${n} parents ${where} have ${verb}`;
   const when = candidate.last_confirmed
     ? `, last confirmed ${monthOf(candidate.last_confirmed)}`
     : "";
@@ -1287,8 +1295,8 @@ function composeCareChoice(
       count <= 0
         ? "Recommended by a local parent"
         : count === 1
-          ? "Employed by one parent near you"
-          : `Employed by ${count} parents near you`;
+          ? `Employed by one parent ${c.place_unknown ? "on Pando" : "near you"}`
+          : `Employed by ${count} parents ${c.place_unknown ? "on Pando" : "near you"}`;
     const when = c.last_confirmed ? `, last confirmed ${monthOf(c.last_confirmed)}` : "";
     const parts = [`${n}) ${c.name}${placeOf(c)}.`, `${by}${when}.`];
     if (c.fit && tier < 2) parts.push(`Fits: ${c.fit}.`);

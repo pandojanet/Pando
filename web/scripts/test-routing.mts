@@ -379,7 +379,12 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "a question-shaped message inside an Ask window is read by the classifier, told the other parent's question",
     src.includes("othersQuestion: question,") &&
       /if \(ownRequestNotAnAnswer\(body, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
-      /return reading\.source === "model" && \["ask_recommendation", "ask_caregiver", "deep_dive"\]\.includes\(reading\.intent\);/.test(src),
+      /if \(reading\.source !== "model"\) return false;/.test(src),
+  );
+  /* 28 Oct audit: "any good toddler gymnastics classes?" from a swim-Ask recipient came back answer_blast at 0.6. */
+  ok(
+    "a question-shaped message is the parent's own unless the model reads answer_blast at 0.8 or more",
+    /return !\(reading\.intent === "answer_blast" && reading\.confidence >= 0\.8\);/.test(src),
   );
   /* 27 Oct: the handler is a list of steps, and their order is the product's precedence (the comment above handleInboundMessageUntraced explains each place). */
   {
@@ -422,7 +427,11 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   /* The second recording: the model read an allegation as an offer, and the
      parent was asked for "ages, cost, whether you'd recommend it". */
   const nonQuestion = src.indexOf("const unreadable =");
-  const guard = src.lastIndexOf("escalateSensitivity(classifyDemand(body, null), reading.sensitive)", nonQuestion);
+  /* 28 Oct audit: an offer the rules find ordinary is not escalated on the model's flag alone. */
+  const guard = src.lastIndexOf(
+    'reading.intent === "contribute" && ruled === "ordinary" ? ruled : escalateSensitivity(ruled, reading.sensitive)',
+    nonQuestion,
+  );
   ok(
     "the words are read before a non-question is answered as an offer or small talk",
     guard > 0 && guard < nonQuestion && src.indexOf("SHARE_INVITE : SMALL_TALK") > nonQuestion,

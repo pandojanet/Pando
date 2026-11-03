@@ -13,6 +13,7 @@ import { findPersonByPhone } from "@/lib/server/repo/profile";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { notifyAdmins } from "@/lib/server/notify";
 import { isCaregiverInviteToken } from "@/lib/caregiver-invite";
+import { maskContactDetails } from "@/lib/contact-details";
 
 /**
  * POST /api/seed/save — one finished capture card (spec §16.1).
@@ -176,7 +177,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const fields = cleanFields(raw.submission.fields ?? {});
+  const cleaned = cleanFields(raw.submission.fields ?? {});
+  /* A caregiver's number or email typed into prose (28 Oct audit): "Text her at
+     626-…" in "up front" was stored as the note families see, and verbatim in
+     submissions.fields. Masked before either is written (invariant 13). */
+  const fields =
+    kind === "caregiver"
+      ? Object.fromEntries(
+          Object.entries(cleaned).map(([k, v]) => [k, typeof v === "string" ? maskContactDetails(v) : v]),
+        )
+      : cleaned;
 
   /* The caregiver invite's token (drizzle/0049). Shape-checked and nothing else:
      it names this card's own recommendation, so a client choosing its own can

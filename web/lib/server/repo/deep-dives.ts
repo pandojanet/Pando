@@ -265,19 +265,57 @@ export async function finishDeepDive(input: {
  */
 export async function lastQuestionFor(phone: string): Promise<string | null> {
   const r = await withDb(async (db) => {
+    /* The newest question, then the rule (28 Oct audit): filtering first
+       skipped a held question and built the report on the one before it. */
     const out = await rows(
       db,
       sql`
-        select question_text from answers
+        select question_text, status, hold_reason from answers
          where phone = ${phone} and created_at > now() - interval '3 days'
            and question_text is not null
-           and status = 'sent' and hold_reason = 'not_held'
          order by created_at desc limit 1
       `,
     );
+    if (out[0] && (out[0].status !== "sent" || out[0].hold_reason !== "not_held")) return null;
     const q = out[0]?.question_text ? String(out[0].question_text) : null;
     /* A follow-up is stored with a suffix (`withMoreSuffix`); the topic is the question before it. */
     return q ? baseQuestion(q).trim() || null : null;
+  });
+  return r.persisted ? (r.data ?? null) : null;
+}
+
+/**
+ * The last exchange — their question and the answer Pando sent — for reading a
+ * follow-up (28 Oct): "what about for my 8 year old?" keeps the topic and the
+ * place, and "the first one" is a name in that answer. Three days, as
+ * `lastQuestionFor`.
+ *
+ * ⚠ **The newest question, held or not** (28 Oct audit). Filtering on "sent and
+ * not held" first skipped a held one and returned the question before it: a
+ * follow-up to a held nosebleed question was rewritten as the swim question
+ * asked earlier and sent unread. `held` is why the newest one has not gone out
+ * on its own (`answers.hold_reason`, or "unsent"), and then its answer is not
+ * given — the caller must not build on it.
+ */
+export async function lastExchangeFor(
+  phone: string,
+): Promise<{ question: string; answer: string | null; held: string | null } | null> {
+  const r = await withDb(async (db) => {
+    const out = await rows(
+      db,
+      sql`
+        select question_text, answer_text, status, hold_reason from answers
+         where phone = ${phone} and created_at > now() - interval '3 days'
+           and question_text is not null
+         order by created_at desc limit 1
+      `,
+    );
+    const q = out[0]?.question_text ? baseQuestion(String(out[0].question_text)).trim() : "";
+    if (!q) return null;
+    const row = out[0]!;
+    const held =
+      row.hold_reason !== "not_held" ? String(row.hold_reason ?? "unsent") : row.status !== "sent" ? "unsent" : null;
+    return { question: q, answer: !held && row.answer_text ? String(row.answer_text) : null, held };
   });
   return r.persisted ? (r.data ?? null) : null;
 }

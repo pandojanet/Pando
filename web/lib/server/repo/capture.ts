@@ -140,7 +140,8 @@ export async function startCapture(
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       insert into sms_captures (person_id, step, is_test)
-      values (${personId}::uuid, ${first}, ${isTest})
+      values (${personId}::uuid, ${first},
+              ${isTest} or coalesce((select is_test from people where id = ${personId}::uuid), false))
       on conflict do nothing
       returning id::text as capture_id
     `)) as unknown as Array<Record<string, unknown>>;
@@ -240,17 +241,20 @@ export async function saveCapturedCard(
          where s.market_id = coalesce(p.market_id, ${DEFAULT_MARKET_ID})
            and s.kind = ${card.kind}::share_kind
            and lower(s.name) = lower(${card.name})
+           -- Test with test, real with real (28 Oct audit): a test person's text
+           -- landed as a real contribution on the real record of that name.
+           and s.is_test = p.is_test
          limit 1
       `)) as unknown as Array<Record<string, unknown>>;
 
       const created = existing[0]
         ? existing
         : ((await tx.execute(sql`
-        insert into shares (market_id, kind, name, neighborhoods, status, provenance)
+        insert into shares (market_id, kind, name, neighborhoods, status, provenance, is_test)
         select coalesce(p.market_id, ${DEFAULT_MARKET_ID}), ${card.kind}::share_kind, ${card.name},
                case when p.neighborhood is null then null
                     else array[p.neighborhood] end,
-               'pending_review', 'parent_submitted'
+               'pending_review', 'parent_submitted', p.is_test
           from people p
          where p.id = ${capture.person_id}::uuid
         returning id::text as share_id
@@ -291,9 +295,10 @@ export async function saveCapturedCard(
 
       await tx.execute(sql`
         insert into share_contributions
-          (share_id, person_id, firsthand, recommendation, what_makes_it_great, status)
-        values (${shareId}::uuid, ${capture.person_id}::uuid, ${card.firsthand},
-                ${card.recommendation}, ${card.detail}, 'pending_review')
+          (share_id, person_id, firsthand, recommendation, what_makes_it_great, status, is_test)
+        select ${shareId}::uuid, ${capture.person_id}::uuid, ${card.firsthand},
+               ${card.recommendation}, ${card.detail}, 'pending_review', p.is_test
+          from people p where p.id = ${capture.person_id}::uuid
       `);
 
       await tx.execute(sql`

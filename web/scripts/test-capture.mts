@@ -110,6 +110,19 @@ for (const word of ["nanny", "I want to recommend our sitter", "AU PAIR", "babys
   ok(`"${word}" is recognised as a caregiver`, c.mentionsCaregiver(word));
 }
 ok("and an ordinary class is not", !c.mentionsCaregiver("a swim class at the Y"));
+/* 28 Oct audit: care described without the word went through ADD as an activity named Marisol. */
+for (const said of ["She watched our two kids for 3 years", "Marisol looked after my daughter", "she took care of our twins"]) {
+  ok(`"${said}" is recognised as a caregiver`, c.mentionsCaregiver(said));
+}
+ok("and watching a game is not", !c.mentionsCaregiver("we watched the soccer game") && !c.mentionsCaregiver("Kidspace is great for the kids"));
+
+console.log("\n=== a contact detail is never stored (invariant 13) ===");
+const cd = (await import(`../lib/contact-details.ts?v=${Date.now()}`)) as typeof import("../lib/contact-details.ts");
+ok("a number and an email are masked, the rest kept",
+  cd.maskContactDetails("Text her at 626-555-7690 or marisol.r@example.com, class at 9:30, $120 a term, ages 3-5") ===
+    "Text her at [number] or [email], class at 9:30, $120 a term, ages 3-5");
+ok("any US format is a number", ["(626) 555 7692", "+16265557690", "626.555.7690"].every((n) => cd.maskContactDetails(n) === "[number]"));
+ok("fewer than ten digits is not", !cd.hasContactDetail("open 2026 10 28, ages 3 4 5 6 7"));
 const redirect = c.caregiverRedirectSms();
 ok("the redirect points at /share", redirect.includes("pando.is/share"));
 ok(

@@ -250,9 +250,14 @@ export function offersSomething(body: string): boolean {
   return OWN_CAREGIVER.test(text) && !NEEDS_ONE.test(text);
 }
 
+/* Care described without the word (28 Oct audit): "She watched our two kids
+   for 3 years" went through ADD and was stored as an activity named Marisol. */
+const CARE_PHRASE =
+  /\b(?:watch(?:ed|es)?|look(?:ed|s)? after|t(?:ook|akes?) care of|babysat|minded|cared for)\s+(?:our|my|the)\s+(?:\w+\s+)?(?:kids?|children|child|son|daughter|boys?|girls?|twins|toddlers?|baby|babies|little ones?)\b/i;
+
 export function mentionsCaregiver(body: string): boolean {
   const text = body.trim().toUpperCase();
-  return CAREGIVER_WORDS.some((word) => text.includes(word));
+  return CAREGIVER_WORDS.some((word) => text.includes(word)) || CARE_PHRASE.test(body);
 }
 
 /**

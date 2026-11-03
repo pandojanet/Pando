@@ -125,6 +125,18 @@ export interface IntentResult {
    * last question. Free text: never logged (invariant 7).
    */
   subject?: string | null;
+  /**
+   * For a request (`ask_recommendation`, `ask_caregiver`): the message as one
+   * complete request **in English**, when it only makes sense with the previous
+   * exchange or is not in English (28 Oct) — "what about for my 8 year old?"
+   * after a swim question is "swim lessons for my 8 year old in Pasadena";
+   * "is the first one good for a shy kid?" names the first place listed;
+   * "clases de música para mi hija de 3 años" is "music classes for my 3 year
+   * old daughter". Null when the message already stands on its own in English,
+   * and then nothing changes. The caller reads place, ages and topic from it;
+   * it is never sent to a parent and never logged (invariant 7).
+   */
+  standalone?: string | null;
 }
 
 /** The fallback's only Deep Dive reading: the words themselves, as on 21 Oct. */
@@ -365,6 +377,7 @@ export function applyThreshold(
     /** See `IntentResult.sensitive` — an escalation signal, never a clearance. */
     sensitive?: boolean;
     subject?: string | null;
+    standalone?: string | null;
   } | null,
   text: string,
   context: IntentContext,
@@ -415,5 +428,9 @@ export function applyThreshold(
     reason: model.reason?.slice(0, 200) ?? "",
     sensitive: model.sensitive === true,
     subject: model.subject?.trim() ? model.subject.trim().slice(0, 300) : null,
+    standalone:
+      (model.intent === "ask_recommendation" || model.intent === "ask_caregiver") && model.standalone?.trim()
+        ? model.standalone.trim().slice(0, 300)
+        : null,
   };
 }

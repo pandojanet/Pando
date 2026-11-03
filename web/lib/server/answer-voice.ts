@@ -41,7 +41,7 @@ const SYSTEM = [
   "Hard rules - break one and your rewrite is thrown away and the draft is sent instead:",
   "- Keep EVERY place name exactly as written, capitals included. Each place gets its own line,",
   "  and its evidence stays on that same line word for word: the whole phrase before the name",
-  "  ('2 parents near you have used', 'One parent near you has used', '{n1} has used', 'A local",
+  "  ('2 parents near you have used' or '2 parents on Pando have used', 'One parent near you has used', '{n1} has used', 'A local",
   "  parent has shared'), followed by the place name or 'it' - never another verb. In 'Also",
   "  nearby' the count ('2 parents', '1 parent') stays with its own place. Don't name a place in",
   "  your opening line.",

@@ -77,8 +77,10 @@ const LINK = /(https?:|www\.|\.com\b|\.org\b|@|\b\d{3}[\s.-]?\d{3}[\s.-]?\d{4}\b
 const FIRST_PERSON =
   /\b(i|we)\s*('ve|\s+have|\s+went|\s+tried|\s+took|\s+love\w*|\s+visited|\s+used)\b|\b(my|our)\s+(kid|kids|son|daughter|child|children|family|little one)\b|\bi've heard\b/i;
 /** Claims about parents. Allowed in the model's own words only as an attribution: "another parent said". */
+/* "others", "everyone", "folks" (28 Oct audit): "…and others have tried it and
+   keep going back" on a one-parent record was accepted. */
 const PARENT_CLAIM =
-  /\b(parent|parents|families|moms?|dads?|locals?|neighbou?rs?|people|community|recommend\w*|vouch\w*|validat\w*|swear|rave\w*|trusted|go[\s-]to|well[\s-]regarded|well[\s-]liked)\b/gi;
+  /\b(parent|parents|families|moms?|dads?|locals?|neighbou?rs?|people|community|others|everyone|everybody|folks|nobody|recommend\w*|vouch\w*|validat\w*|swear|rave\w*|trusted|go[\s-]to|well[\s-]regarded|well[\s-]liked)\b/gi;
 const ATTRIBUTION = /\b(one|a|another|the other|that)\s+parent\s+(said|says|mentioned|added|noted|wrote|put it)\b/gi;
 /**
  * "Here's what other parents passed along" — an opener that says where the
@@ -280,13 +282,14 @@ function evidenceIn(line: string, name: string): string | null {
   if (!also) {
     const clause = segment.match(
       new RegExp(
-        `\\b(\\d+ parents near you have \\w+|one parent near you has \\w+|\\{n\\d+\\} has \\w+|a local parent has shared) ${escapeRe(name)}`,
+        `\\b(\\d+ parents (?:near you|on Pando) have \\w+|one parent (?:near you|on Pando) has \\w+|\\{n\\d+\\} has \\w+|a local parent has shared) ${escapeRe(name)}`,
         "i",
       ),
     );
     if (clause) return clause[1];
   }
-  const lead = segment.match(/\b(\d+ parents near you|one parent near you|\{n\d+\} has)\b/i);
+  /* "on Pando" when nothing tells where the parent is (28 Oct, `place_unknown`). */
+  const lead = segment.match(/\b(\d+ parents (?:near you|on Pando)|one parent (?:near you|on Pando)|\{n\d+\} has)\b/i);
   if (lead) return lead[1];
   const bare = segment.match(/\b(\d+ parents?)\b/i);
   return bare ? bare[1] : null;
@@ -296,7 +299,8 @@ function evidenceIn(line: string, name: string): string | null {
 /* The withdrawal sentence whole, "One parent recently said…" included: kept only
    from "may no longer", the opening was left as the model's own words and the
    unchanged draft was refused for a parent claim (review, 21 Oct). */
-const CAUTION = /((?:one parent|\d+ parents) recently said it may no longer be worth it[^.]*\.|may no longer be worth it[^.]*\.|this one is old[^.]*\.|worth checking it hasn't changed\.|may be out of date[^.]*\.)/gi;
+/* "recently questioned" is the directory line's caution (28 Oct audit: dropped and accepted). */
+const CAUTION = /(recently questioned|(?:one parent|\d+ parents) recently said it may no longer be worth it[^.]*\.|may no longer be worth it[^.]*\.|this one is old[^.]*\.|worth checking it hasn't changed\.|may be out of date[^.]*\.)/gi;
 
 const PRICE = /\$[\d,.]+(?:\s*-\s*\$?[\d,.]+)?/g;
 const CONFIRMED = /last confirmed [A-Z][a-z]{2} \d{4}/g;
@@ -345,7 +349,11 @@ export function readVoiceInput(input: {
     const line = lines.find((l) => l.includes(c.name)) ?? "";
     /* A note the composer lower-cased or gave a full stop is still the
        parent's words: found case-insensitively, kept as the draft prints it. */
-    const notes = [c.notes?.great, c.notes?.caveat, c.notes?.who_for, c.notes?.tip]
+    /* The price as the parents gave it and what they made of it (28 Oct audit):
+       "pricey, not worth it" rewritten "pricey but worth it", "Under $25"
+       rewritten "over $25" and "Free." dropped were all accepted — only a
+       dollar figure was kept. */
+    const notes = [c.notes?.great, c.notes?.caveat, c.notes?.who_for, c.notes?.tip, c.price, c.worth]
       .filter((n): n is string => typeof n === "string" && n.trim().length > 0)
       .map((n) => {
         const core = n.trim().replace(/[.!]+$/, "");

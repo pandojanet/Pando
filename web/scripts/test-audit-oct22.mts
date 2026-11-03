@@ -23,8 +23,13 @@ console.log("\n=== caregivers: who counts behind her ===");
 const retrieval = read("../lib/server/repo/retrieval.ts");
 ok(
   "only an approved, unheld family counts as a parent who employed her",
-  /count\(n\.id\) filter \(where n\.worked_for_family and n\.status = 'approved'\s+and not n\.review_hold\)/.test(retrieval),
+  /count\(distinct coalesce\(n\.person_id::text, n\.id::text\)\)\s+filter \(where n\.worked_for_family and n\.status = 'approved'\s+and not n\.review_hold\)/.test(retrieval),
 );
+/* 28 Oct audit: parents, not rows — a merged duplicate or a second card by one parent is one parent. */
+ok("one parent is counted once, however many of their rows", /count\(distinct coalesce\(sc\.person_id::text, sc\.id::text\)\) filter \(where sc\.firsthand\)/.test(retrieval));
+const delSrc = read("../lib/server/repo/parent-delete.ts");
+ok("DELETE takes their Network Asks' questions and their demand signals too",
+  /set question_text = '\[deleted\]'/.test(delSrc) && /delete from demand_signals where person_id/.test(delSrc));
 ok("and only such a family can be the reference", /bool_or\(n\.reference_willing = 'yes' and n\.status = 'approved'\s+and not n\.review_hold\)/.test(retrieval));
 
 console.log("\n=== DELETE removes what they asked ===");

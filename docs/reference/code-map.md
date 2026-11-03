@@ -137,6 +137,8 @@
                        writes nothing — "could not check" is never "not found".
 `web/components/site/ShareQr.tsx` — the QR code that opens https://pando.is, as one
                        SVG path (no QR library); how to regenerate it is in its header.
+`web/lib/contact-details.ts` — 28 Oct. `maskContactDetails` / `hasContactDetail`: a phone number (ten or more digits, any US format) or an email typed into prose, masked as `[number]` / `[email]`. Used wherever text that may describe a person is written — the SMS capture's answers, a caregiver card's fields, a flag's excerpt (invariant 13). Pure; `test:capture` pins it.
+
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
                        thresholds, and measured against all 588 real records.
 `web/lib/seed-chat/scripts.ts` — the capture conversations.

@@ -601,7 +601,10 @@ async function writeCaregiver(
     benefits: strArray(f.benefits),
     caredForAges: strArray(f.cared_for_ages),
     strengths: strArray(f.strengths),
-    inTheirWords: str(f.in_their_words),
+    /* The chat asks it as `what_makes_special` ("Anything you'd add in your own
+       words?", 17 Sep); nothing sends `in_their_words`, so the answer reached
+       no screen (28 Oct audit). */
+    inTheirWords: str(f.in_their_words ?? f.what_makes_special),
     goodFitFor: strArray(f.good_fit_for),
     caveat: caveatText(f.know_first ?? f.caveat),
     hireAgain: validHireAgain,

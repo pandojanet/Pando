@@ -101,6 +101,18 @@ const SYSTEM = [
   "('I want to make a comparison of'). If you cannot tell what it is about, leave it empty.",
   "For every other intent leave subject empty.",
   "",
+  "For ask_recommendation and ask_caregiver, set standalone when the message only makes sense",
+  "with the previous exchange, or is not in English: rewrite it as ONE complete request in",
+  "English that a search could use on its own. Carry over from the previous question what this",
+  "message keeps and does not change - the topic, the place, the child's age - and let what this",
+  "message says replace it ('what about for my 8 year old?' after 'swim lessons for my 4 year old",
+  "in Pasadena' is 'swim lessons for my 8 year old in Pasadena'). A reference to something the",
+  "service listed ('the first one', 'that camp', 'the second place') becomes its name, taken from",
+  "the service's last answer, in the order the places appear there - its name only, never the",
+  "town the answer gives for it: a place comes only from what the parent wrote. Keep every age, place and",
+  "price the parent said. Do not add anything they did not say or carry. If the message already",
+  "stands on its own in English, leave standalone empty. For every other intent leave it empty.",
+  "",
   "Use unclear whenever you are not sure. It is routed to a person, which is the",
   "correct outcome for an ambiguous message — a confident wrong guess is worse",
   "than admitting you cannot tell.",
@@ -151,8 +163,13 @@ const SCHEMA = {
       type: "string",
       description: "deep_dive only: what to compare, as a standalone request. Otherwise empty.",
     },
+    standalone: {
+      type: "string",
+      description:
+        "ask_recommendation / ask_caregiver only: the message as one complete English request when it depends on the previous exchange or is not in English. Otherwise empty.",
+    },
   },
-  required: ["intent", "confidence", "reason", "sensitive", "subject"],
+  required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone"],
   additionalProperties: false,
 } as const;
 
@@ -178,6 +195,12 @@ async function classifyIntentUntraced(input: {
    * own words, sent to the same model already reading this message.
    */
   lastQuestion?: string | null;
+  /**
+   * The answer Pando sent to that question (28 Oct), so "the first one" or
+   * "that camp" can be resolved to a name. Pando's own text, capped, sent to
+   * the same model; never logged.
+   */
+  lastAnswer?: string | null;
   /**
    * What Pando's last message asked them, when it is still waiting for the
    * answer — "How old are your kids?" (26 Oct). A reply that answers it reads
@@ -219,7 +242,8 @@ async function classifyIntentUntraced(input: {
     const response = await anthropic.messages.create({
       model: MODEL,
       thinking: { type: "disabled" },
-      max_tokens: 256,
+      /* 400, not 256 (28 Oct): the reading now carries a rewritten request too. */
+      max_tokens: 400,
       system: SYSTEM,
       output_config: { format: { type: "json_schema", schema: SCHEMA } },
       messages: [
@@ -228,6 +252,9 @@ async function classifyIntentUntraced(input: {
           content: [
             input.lastQuestion
               ? `Their previous question, which the service already answered with a list:\n${input.lastQuestion.slice(0, 500)}`
+              : null,
+            input.lastAnswer
+              ? `The service's last answer to them, with the places in the order it listed them:\n${input.lastAnswer.slice(0, 1500)}`
               : null,
             input.askedThem
               ? `The service's last message asked them: "${input.askedThem.slice(0, 300)}". If this message answers that, the intent is answer_blast; if it is a new request instead, classify the request.`
@@ -246,7 +273,7 @@ async function classifyIntentUntraced(input: {
             .join("\n"),
         },
       ],
-    });
+    }, { timeout: INTENT_TIMEOUT_MS });
 
     /**
      * A refusal is a real outcome, not an error. It means the text tripped a
@@ -275,7 +302,7 @@ async function classifyIntentUntraced(input: {
     const status = (err as { status?: unknown })?.status;
     console.error("[intent] classification failed", {
       status: typeof status === "number" ? status : null,
-    }, { timeout: INTENT_TIMEOUT_MS });
+    });
     return applyThreshold(null, text, input.context);
   }
 }
@@ -288,6 +315,7 @@ function safeParse(
   reason?: string;
   sensitive?: boolean;
   subject?: string | null;
+  standalone?: string | null;
 } | null {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
@@ -319,6 +347,7 @@ function safeParse(
        */
       sensitive: value.sensitive === true,
       subject: typeof value.subject === "string" ? value.subject : null,
+      standalone: typeof value.standalone === "string" ? value.standalone : null,
     };
   } catch {
     return null;

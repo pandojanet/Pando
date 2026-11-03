@@ -396,7 +396,10 @@ export async function createBlastIn(
        'draft',
        ${spec.pool_target},
        ${expires.toISOString()},
-       false, ${input.isTest === true})
+       /* A test asker's Ask is a test Ask, whoever called (28 Oct audit: no
+          caller passed it, so a test person's "yes" made a real Ask). */
+       false, ${input.isTest === true}
+              or coalesce((select is_test from people where id = ${input.askerId}::uuid), false))
     returning id, expires_at
   `)) as unknown as Array<Record<string, unknown>>;
 
@@ -716,7 +719,22 @@ export interface DeliverResult {
  * monthly allowance is not spent on it — that ceiling is about how often Pando
  * *asks* them things, and this is them being answered.
  */
+/* One delivery per Ask at a time (28 Oct audit): two presses both read
+   `answers_sent_at` empty and texted the asker twice — `SENDING` above, for
+   the answers. */
+const DELIVERING = new Set<string>();
+
 export async function deliverBlastAnswers(blastId: string): Promise<DeliverResult> {
+  if (DELIVERING.has(blastId)) return { ok: false, reason: "already_sent" };
+  DELIVERING.add(blastId);
+  try {
+    return await deliverBlastAnswersOnce(blastId);
+  } finally {
+    DELIVERING.delete(blastId);
+  }
+}
+
+async function deliverBlastAnswersOnce(blastId: string): Promise<DeliverResult> {
   const loaded = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
       select b.answers_sent_at, p.phone, p.id::text as asker_id
@@ -815,6 +833,15 @@ async function phoneFor(personId: string): Promise<string | null> {
 const REPLY_GRACE_HOURS = 48;
 
 /**
+ * ⚠ The grace's reason above holds for a second **Ask** only: a ping, "did it
+ * help?" or an offer can reach the parent inside it (28 Oct audit), so a bare
+ * reply is not claimed when anything was sent after the Ask — see
+ * `attachResponse`.
+ */
+const BARE_REPLY =
+  /^(?:yes|y|yep|yeah|yup|sure|ok|okay|no|n|nope|nah|not really|pass)(?:\s+(?:please|thanks|thank you))?[\s.!]*$/i;
+
+/**
  * The Ask a reply from this number belongs to — **while one is genuinely open**.
  *
  * ⚠⚠ **This had no time bound at all until 14 Sep, and that is a bigger fault
@@ -881,6 +908,30 @@ export async function attachResponse(input: {
          limit 1`)) as unknown as Array<{ question_text: string | null }>;
       const question = ask[0]?.question_text;
       if (question && (await input.ownRequest(question))) return null;
+    }
+
+    /**
+     * A bare yes / no / pass answers the newest question, and that may not be
+     * the Ask (28 Oct audit). The grace below keeps an Ask claimable for 72
+     * hours from its creation, while a freshness ping, "did it help?" or the
+     * offer of a Network Ask can reach the same parent inside it: Sarah's YES
+     * to a ping was filed as her answer to another parent and the record was
+     * never refreshed; Rachel's "yes" to the offer filed the same way, and her
+     * Ask was never created. With anything sent to them after the Ask, a bare
+     * reply is left to the pipeline, which resolves it by time (1 Sep, 21 Oct).
+     * Words of their own still attach — they answer the question they name.
+     */
+    if (BARE_REPLY.test(input.text.trim())) {
+      const newer = (await db.execute(sql`
+        select 1 from people p
+          join blast_recipients b on b.person_id = p.id and b.blast_id = (${OPEN_FOR_SENDER})
+          join message_log m on m.person_id = p.id
+         where p.phone = ${input.phone}
+           and m.direction = 'out'
+           and m.sent_at > b.sent_at
+           and m.template is distinct from 'blast_request'
+         limit 1`)) as unknown as unknown[];
+      if (newer.length > 0) return null;
     }
     const rows = (await db.execute(sql`
       update blast_recipients br
