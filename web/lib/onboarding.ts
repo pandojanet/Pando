@@ -517,6 +517,17 @@ export function parseFirstName(text: string): string | null {
   ) {
     return null;
   }
+  /* A follow-up to the answer is not a name (review, 4 Nov): "cheaper ones",
+     "first one", "weekend ones", "something cheaper", "older kids", "top 3"
+     were saved as *Cheaper*, *First*, *Weekend*, *Something*, *Older*, *Top*. */
+  if (
+    /^(cheaper|cheapest|older|younger|closer|closest|nearer|bigger|smaller|better|best|first|second|third|last|next|other|another|any|anything|something|more|less|weekend|weekends|weekday|weekdays|morning|mornings|afternoon|evening|top|those|these|that|this|them|one|ones|free|indoor|outdoor|similar)$/i.test(
+      first,
+    ) ||
+    (words.length === 2 && /^(ones?|kids?|options?|times?|days?)$/i.test(words[1].replace(/[,.;:?!]+$/, "")))
+  ) {
+    return null;
+  }
   /* Two words where the second is what a question is about ("swim lessons",
      "camps near") are a question, not a first and last name. */
   if (

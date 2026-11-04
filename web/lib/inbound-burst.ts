@@ -40,6 +40,30 @@ export const BURST_MAX_MS = 20_000;
 /* The same order a single message's media is picked in (`inboundMediaFrom`): words first. */
 const MEDIA_RANK: Record<InboundMedia["kind"], number> = { voice: 0, image: 1, file: 2 };
 
+/** Lines that only thank or acknowledge — nothing to act on beside the rest. */
+export const ACKNOWLEDGEMENT =
+  /^(?:(?:thanks?|thank you|thx|ty|great|perfect|cool|ok(?:ay)?|sure|awesome|nice|got it|sounds good|appreciate it)[\s!.,]*)+$/i;
+
+/* A reply Pando matches whole: to a ping, a "did it help?", an offer, a read-back, a choice. */
+const BARE_REPLY = /^(?:yes|y|yep|yeah|yup|sure|no|nope|nah|n|pass|deep|intro|none|[123])[.!]*$/i;
+
+/**
+ * A burst, before it is one message (review, 4 Nov). Two things a burst used
+ * to break: a reply Pando matches whole ("yes" to a freshness ping, "2" to the
+ * participation question, "DEEP" to an offer) stopped matching once a
+ * question or a "thanks" was joined to it — the ping stayed open, the choice
+ * was lost — and a "thanks" after a reply did the same. So texts that only
+ * thank are set aside when there is anything else, and a bare reply leading
+ * the burst is its own turn, ahead of the rest.
+ */
+export function splitBurst(parts: BurstPart[]): { reply: BurstPart | null; rest: BurstPart[] } {
+  const said = parts.filter((p) => p.media || !ACKNOWLEDGEMENT.test(p.body.trim()));
+  const kept = said.length > 0 ? said : parts;
+  const [first, ...others] = kept;
+  if (first && !first.media && BARE_REPLY.test(first.body.trim()) && others.length > 0) return { reply: first, rest: others };
+  return { reply: null, rest: kept };
+}
+
 /**
  * A burst as the one message it is. The texts are its words — a picture's
  * caption, a voice note's lead — and of several media the one read is the one
@@ -57,15 +81,27 @@ export function combineBurst(parts: BurstPart[]): {
     .filter(Boolean)
     .join("\n");
   const media = parts.flatMap((p) => (p.media ? [p.media] : []));
-  const read = media.reduce<InboundMedia | undefined>(
-    (best, m) => (!best || MEDIA_RANK[m.kind] < MEDIA_RANK[best.kind] ? m : best),
-    undefined,
-  );
+  /* A picture Claude can open before one it cannot. */
+  const rank = (m: InboundMedia) => MEDIA_RANK[m.kind] + (m.unsupported ? 0.5 : 0);
+  const first = media.reduce<InboundMedia | undefined>((best, m) => (!best || rank(m) < rank(best) ? m : best), undefined);
+  /* Pictures sent one per message are read together, as if sent in one (review,
+     4 Nov: the second screenshot of a schedule was dropped). */
+  const together =
+    first && first.kind === "image" && !first.unsupported
+      ? media.filter((m) => m !== first && m.kind === "image" && !m.unsupported)
+      : [];
+  const also = [...(first?.also ?? []), ...together.flatMap((m) => [{ url: m.url, contentType: m.contentType }, ...(m.also ?? [])])];
+  const read = first ? { ...first, ...(also.length ? { also } : {}) } : undefined;
+  const left = media.filter((m) => m !== first && !together.includes(m));
   return {
     body,
     channel: parts.findLast((p) => p.channel)?.channel,
     media: read,
-    unused: media.filter((m) => m !== read).map((m) => m.url),
+    /* Everything not read, its own unread items included, to delete at Twilio. */
+    unused: [
+      ...left.flatMap((m) => [m.url, ...(m.also ?? []).map((x) => x.url), ...(m.unread ?? [])]),
+      ...together.flatMap((m) => m.unread ?? []),
+    ],
   };
 }
 

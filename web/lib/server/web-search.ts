@@ -338,6 +338,15 @@ function brief(input: {
      San Diego — see `searchPlacePhrase`. */
   const where = searchPlacePhrase({ label: bare, city: input.city, region: input.region });
   if (where) lines.push(`The question is about: ${where}`);
+  /* Nowhere known is still the market (review, 4 Nov, the SMS lab): "any good
+     camps around here?" from a number with no place came back with Oklahoma
+     City, Brooklyn and Tacoma — `user_location` is a hint the search did not
+     take. Pando only serves its markets, so the market's area is what "here"
+     means; the answer itself still says "on Pando", not "near you". */
+  else if (input.market && isMarketId(input.market)) {
+    const m = marketConfig(input.market);
+    lines.push(`The question is about: the ${m.label} area, ${m.stateName} (where the parent is exactly is not known)`);
+  }
 
   const phrases = (input.bands ?? [])
     .map((band) => BAND_PHRASE[band])

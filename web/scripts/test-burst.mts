@@ -71,14 +71,36 @@ console.log("\n=== what a burst becomes ===");
   const one = b.combineBurst([{ body: "Hi", channel: "rcs" }, { body: "  " }, { body: "swim lessons?", channel: "rcs" }]);
   ok("the texts, line by line, blanks dropped", one.body === "Hi\nswim lessons?" && one.channel === "rcs" && one.media === undefined);
   const captioned = b.combineBurst([{ body: "", media: picture }, { body: "is there something like this for a 3 year old?" }]);
-  ok("a picture and the text sent after it: the text is the picture's words",
-    captioned.media === picture && captioned.body === "is there something like this for a 3 year old?" && captioned.unused.length === 0);
+ok("a picture and the text sent after it: the text is the picture's words",
+    captioned.media?.url === picture.url && captioned.body === "is there something like this for a 3 year old?" && captioned.unused.length === 0);
   const before = b.combineBurst([{ body: "what do parents think of this place" }, { body: "", media: picture }]);
-  ok("and the text sent before it too", before.media === picture && before.body === "what do parents think of this place");
+ok("and the text sent before it too", before.media?.url === picture.url && before.body === "what do parents think of this place");
   const many = b.combineBurst([{ body: "", media: picture }, { body: "", media: voice }, { body: "", media: pdf }]);
-  ok("of several, a voice note is read first, as in one message", many.media === voice);
-  ok("and the others are handed back to be deleted at Twilio", many.unused.length === 2 && many.unused.includes(picture.url) && many.unused.includes(pdf.url));
-  ok("a picture before a PDF", b.combineBurst([{ body: "", media: pdf }, { body: "", media: picture }]).media === picture);
+ok("of several, a voice note is read first, as in one message", many.media?.url === voice.url);
+ok("and the others are handed back to be deleted at Twilio", many.unused.length === 2 && many.unused.includes(picture.url) && many.unused.includes(pdf.url));
+  const two = b.combineBurst([{ body: "", media: picture }, { body: "the schedule", media: { ...picture, url: "https://api.twilio.com/p2" } }]);
+  ok("pictures sent one per message are read together, not one dropped (review, 4 Nov)",
+    two.media?.url === picture.url && two.media?.also?.[0]?.url === "https://api.twilio.com/p2" && two.unused.length === 0);
+  const heic = { url: "https://api.twilio.com/h", contentType: "image/heic", kind: "image" as const, unsupported: true };
+  ok("a picture Claude can open is read before one it cannot", b.combineBurst([{ body: "", media: heic }, { body: "", media: picture }]).media?.url === picture.url);
+ok("a picture before a PDF", b.combineBurst([{ body: "", media: pdf }, { body: "", media: picture }]).media?.url === picture.url);
+
+console.log("\n=== a bare reply leading a burst, and texts that only thank (review, 4 Nov) ===");
+{
+  const s1 = b.splitBurst([{ body: "yes" }, { body: "also any swim lessons for my 4yo?" }]);
+  ok("a yes to a ping, then a question: the yes is its own turn, ahead of the question",
+    s1.reply?.body === "yes" && s1.rest.map((x) => x.body).join() === "also any swim lessons for my 4yo?");
+  const s2 = b.splitBurst([{ body: "2" }, { body: "any camps in Pasadena?" }]);
+  ok("'2' to the participation question, then a request", s2.reply?.body === "2" && s2.rest.length === 1);
+  const s3 = b.splitBurst([{ body: "DEEP" }, { body: "thanks!" }]);
+  ok("'DEEP' then 'thanks': the thanks is set aside and DEEP stays whole", s3.reply === null && s3.rest.map((x) => x.body).join() === "DEEP");
+  const s4 = b.splitBurst([{ body: "thanks" }]);
+  ok("a thanks alone is still a message", s4.rest.length === 1 && s4.rest[0].body === "thanks");
+  const s5 = b.splitBurst([{ body: "swim lessons" }, { body: "for my 4 year old" }]);
+  ok("an ordinary burst is untouched", s5.reply === null && s5.rest.length === 2);
+  const s6 = b.splitBurst([{ body: "yes", media: picture }, { body: "what about this" }]);
+  ok("a part with media is never a bare reply", s6.reply === null);
+}
 }
 
 console.log("\n=== one turn at a time per number ===");
@@ -140,7 +162,9 @@ ok("every other text is gathered, and only the closing one runs the pipeline",
 ok("media left out of a burst is deleted at Twilio, inside the number's turn",
   /await oneAtATime\(message\.from, async \(\) => \{\s+for \(const url of burst\.unused\) await deleteTwilioMedia\(url\);/.test(entry));
 ok("the burst's log line is counts and kinds only",
-  /console\.info\("\[sms:inbound\] burst", \{ messages: parts\.length, media: burst\.media\?\.kind \?\? null, unused: burst\.unused\.length \}\)/.test(entry));
+  /console\.info\("\[sms:inbound\] burst", \{ messages: parts\.length, media: burst\.media\?\.kind \?\? null, unused: burst\.unused\.length, reply_first: reply !== null \}\)/.test(entry));
+ok("a bare reply leading a burst runs first, in the same turn of the queue",
+  /if \(reply\) await handleOne\(\{ \.\.\.message, body: reply\.body/.test(entry) && /const \{ reply, rest \} = splitBurst\(parts\);/.test(entry));
 ok("the typing indicator starts once the burst is closed, not while it gathers",
   inbound.indexOf("const parts = await gatherBurst(") < inbound.indexOf('withTrace("sms_inbound"'));
 ok("the confirmed words of a voice note or picture are never a keyword or DELETE",
@@ -160,16 +184,22 @@ ok("twelve earlier questions over a week, only ones that went out",
   /EARLIER_EXCHANGES = 12/.test(dives) && /EARLIER_DAYS = 7/.test(dives) && /row\.status === "sent" && row\.hold_reason === "not_held"/.test(dives));
 ok("going back to an earlier question carries from that one; a new subject keeps only what the parent said that still applies",
   /carry over from THAT question/.test(intent) && /never the old topic\./.test(intent) && !/where they live\), never/.test(intent));
-ok("a rewritten follow-up's place comes from the parent's own words, the question it goes back to first",
+ok("a rewritten follow-up's place comes from the parent's own words: their last line first, then the question it goes back to",
   /placeFrom: placeSources\(body, rewritten, \[\.\.\.\(exchange \? \[exchange\.question\] : \[\]\), \.\.\.earlier\.map\(\(x\) => x\.question\)\.reverse\(\)\]\)/.test(inbound) &&
-    /return \[body, \.\.\.earlierWords\.filter\(carried\), \.\.\.earlierWords\.filter\(\(t\) => !carried\(t\)\)\];/.test(inbound));
+    /return \[\.\.\.\(lines\.length > 1 \? \[\.\.\.lines\]\.reverse\(\) : \[body\]\), \.\.\.earlierWords\.filter\(carried\), \.\.\.earlierWords\.filter\(\(t\) => !carried\(t\)\)\];/.test(inbound));
+ok("a message with a subject of its own never inherits a held question's hold",
+  /const followsHeld = exchange\?\.held && reading\.standalone && !ownSubject \? exchange\.held : null;/.test(inbound));
 ok("an answer to Pando's question that also asks for more is read as the request it refines",
   /If it answers that AND says more about what they want/.test(intent) &&
     /if \(newRequest && question && early\?\.standalone && !early\.sensitive\) \{/.test(inbound));
 ok("and keeps only the fact Pando asked for — never a town volunteered inside a request",
   /const kept = open && pending === question \? await saveFactsIn\(person, body, \{ saysAChild, only: question \}\) : \[\];/.test(inbound));
-ok("several short lines answering Pando's question are read by the model, a question among them too",
-  /\(longReply \|\| severalLines\)\) \|\| volunteered\) && \(isClarifyingAnswer\(body\) \|\| severalLines\)/.test(inbound));
+ok("several short lines, or a longer reply with a question in it, are read against the question asked",
+  /\(longReply \|\| severalLines\)\) \|\| volunteered\) && \(isClarifyingAnswer\(body\) \|\| severalLines \|\| longReply\)/.test(inbound));
+ok("an offer's yes or no yields to a clarifying question asked after it",
+  /const newerOffer = Math\.max\(deepOffer \? at\(deepOffer\.created_at\) : -1, introAt \? at\(introAt\) : -1, clarifyAt\);/.test(inbound));
+ok("an age reply must read as one: 'top 3' is not a three year old",
+  /if \(question && !newRequest && isClarifyingAnswer\(body\) && ageReads\)/.test(inbound));
 ok("one reply keeps every fact it carries, each tried on its own; never a name",
   /for \(const q of only \? \[only\] : \(\["child_age", "neighborhood"\] as const\)\)/.test(inbound) && /if \(!saved\) continue;/.test(inbound) &&
     /alsoKept\.reduce\(\(profile, q\) => withAnswer\(profile, q, body\)/.test(inbound));

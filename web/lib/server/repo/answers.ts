@@ -267,6 +267,11 @@ export async function pendingBlastOffer(phone: string): Promise<PendingOffer | n
          and a.next_step = 'offer_blast'
          and a.status = 'sent'
          and a.sent_at > now() - (${OFFER_WINDOW_HOURS} || ' hours')::interval
+         -- Only while it is the newest answer they were sent (review, 4 Nov): a
+         -- "yes" to the question under a later answer started an Ask for the
+         -- earlier one.
+         and not exists (select 1 from answers n
+                          where n.phone = a.phone and n.status = 'sent' and n.sent_at > a.sent_at)
        order by a.sent_at desc
        limit 1
     `)) as unknown as Array<Record<string, unknown>>;

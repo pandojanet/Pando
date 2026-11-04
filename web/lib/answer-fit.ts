@@ -77,3 +77,18 @@ export function unmetLine(want: string, question: string, parentsLeft: boolean, 
   const said = parentsLeft ? `has mentioned ${what ?? "exactly that"} yet. Here's what they did say:` : `has recommended ${what ?? "exactly that"} yet.`;
   return `${who} ${said}`;
 }
+
+/**
+ * A want that is a record's own name is no want (review, 4 Nov, the SMS lab):
+ * asked whether "the first one" suits a shy child, the judge returned "cheaper
+ * swim lessons" — the record's name — and the answer said nobody had
+ * mentioned it, right above the record. Compared on words, ignoring articles.
+ */
+export function wantIsARecord(want: string, names: readonly string[]): boolean {
+  const words = (t: string) => t.toLowerCase().replace(/^(a|an|the)\s+/, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const w = words(want);
+  return w.length > 0 && names.some((n) => {
+    const name = words(n);
+    return name.length > 0 && (name.includes(w) || w.includes(name));
+  });
+}

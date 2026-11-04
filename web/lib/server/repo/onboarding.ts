@@ -165,6 +165,32 @@ export async function pendingClarification(
 }
 
 /**
+ * When the last clarifying question went out (4 Nov), so a yes or no can be
+ * told apart from one meant for an older offer: "How old are your kids? ...
+ * reply NONE" under a later answer is newer than "Want me to ask a few nearby
+ * parents?" under an earlier one (review, 4 Nov).
+ */
+export async function pendingClarificationAt(
+  personId: string,
+): Promise<{ question: ClarifyingQuestion; sent_at: string } | null> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select template, sent_at::text as sent_at
+        from message_log
+       where person_id = ${personId}::uuid
+         and direction = 'out'
+         and template like 'clarify_%'
+         and sent_at > now() - interval '7 days'
+       order by sent_at desc
+       limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    const question = questionFromTemplate(rows[0]?.template ? String(rows[0].template) : null);
+    return question && rows[0]?.sent_at ? { question, sent_at: String(rows[0].sent_at) } : null;
+  });
+  return result.persisted ? (result.data ?? null) : null;
+}
+
+/**
  * 5.4 — save the answer back, and update the graph with it.
  *
  * "Quietly saves that answer back into the parent's profile **so future matching

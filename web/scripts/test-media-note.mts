@@ -37,19 +37,26 @@ ok(
     !m.isTwilioMediaUrl(url("c").replace("https:", "http:")) &&
     !m.isTwilioMediaUrl(`${url("c")}/../../x`),
 );
-ok(
-  "a voice note wins over a picture sent with it",
+ok("a voice note wins over a picture sent with it, and the picture is handed back to delete",
   JSON.stringify(
     m.inboundMediaFrom({ NumMedia: "2", MediaUrl0: url("d"), MediaContentType0: "image/jpeg", MediaUrl1: url("c"), MediaContentType1: "audio/amr" }),
-  ) === JSON.stringify({ url: url("c"), contentType: "audio/amr", kind: "voice" }),
-);
-ok(
-  "a picture alone is read as one",
+  ) === JSON.stringify({ url: url("c"), contentType: "audio/amr", kind: "voice", unread: [url("d")] }));
+ok("a picture alone is read as one",
   JSON.stringify(m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "image/png" })) ===
-    JSON.stringify({ url: url("d"), contentType: "image/png", kind: "image" }),
-);
-ok("a picture Claude cannot read (HEIC) is not taken",
-  m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "image/heic" }) === null);
+    JSON.stringify({ url: url("d"), contentType: "image/png", kind: "image" }));
+ok("'image/jpg' and 'image/pjpeg' are JPEG (review, 4 Nov: they were ignored)",
+  m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "image/jpg" })?.contentType === "image/jpeg" &&
+    m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "image/pjpeg" })?.contentType === "image/jpeg");
+ok("a picture Claude cannot read (HEIC) is answered as one it cannot open, never ignored",
+  m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "image/heic" })?.unsupported === true);
+ok("several pictures are read together, up to four; the rest are handed back to delete",
+  (() => {
+    const six = m.inboundMediaFrom({
+      NumMedia: "6",
+      ...Object.fromEntries(["a", "b", "c", "d", "e", "f"].flatMap((x, i) => [[`MediaUrl${i}`, url(x)], [`MediaContentType${i}`, "image/png"]])),
+    });
+    return six?.also?.length === 3 && six.unread?.length === 2 && m.mediaUrls(six).length === 6;
+  })());
 ok("a PDF is a file Claude reads, after any picture sent with it",
   m.inboundMediaFrom({ NumMedia: "1", MediaUrl0: url("d"), MediaContentType0: "application/pdf" })?.kind === "file" &&
     m.inboundMediaFrom({ NumMedia: "2", MediaUrl0: url("d"), MediaContentType0: "application/pdf", MediaUrl1: url("e"), MediaContentType1: "image/jpeg" })?.kind === "image");
@@ -64,25 +71,22 @@ ok("media at a URL that is not Twilio's is ignored",
 
 console.log("\n=== what is read back ===");
 const said = "Any good swim lessons for my 4 year old in Altadena?";
-ok("a voice note: what arrived, what was understood on its own line, then the question",
+ok("a voice note: what arrived, what was understood on its own line, then the question — a correction the easy way",
   m.mediaConfirmSms("voice", said) ===
     `Got your voice note. Here's what I understood:
 
 "${said}"
 
-Is that right? Reply YES to go ahead, or NO to type it instead.`);
-ok("a picture: the same, named as a picture",
-  m.mediaConfirmSms("image", said) ===
-    `Got your picture. Here's what I understood:
-
-"${said}"
-
-Is that right? Reply YES to go ahead, or NO to type it instead.`);
+Is that right? Reply YES, or tell me what to change.`);
+ok("two pictures are named as two", m.mediaConfirmSms("image", said, 2).startsWith("Got your 2 pictures. Here's what I understood:"));
+ok("a corrected reading says so", m.mediaConfirmSms("image", said, 1, true).startsWith("Thanks. Here's what I have now:"));
 ok("the read-back stays GSM-7, line breaks and all", seg.planSegments(m.mediaConfirmSms("voice", said)).encoding === "gsm7");
 ok("the card drops the reply instruction — Yes and No are buttons",
-  (["voice", "image"] as const).every((k) => !/Reply/.test(m.mediaConfirmCard(k, said)) && m.mediaConfirmCard(k, said).endsWith("Is that right?")));
+  (["voice", "image"] as const).every((k) => !/Reply/.test(m.mediaConfirmCard(k, said)) && m.mediaConfirmCard(k, said).endsWith("Is that right? Or tell me what to change.")));
 ok("curly quotes and dashes become GSM-7, so one character does not triple the cost",
   seg.planSegments(m.mediaConfirmSms("voice", "She said “it’s great” — truly…")).encoding === "gsm7");
+ok("a product label's ® ™ © and accents stay GSM-7 too (review, 4 Nov)",
+  seg.planSegments(m.mediaConfirmSms("image", "Is Tylenol® Infants’ like Pañales Suaves™ — or Crème Bébé©?")).encoding === "gsm7");
 const long = Array.from({ length: 120 }, (_, i) => `word${i}`).join(" ");
 const back = m.readBack(long);
 const opening = back.slice(0, -3);
@@ -91,6 +95,15 @@ ok("a long note is read back as its opening, cut at a word",
 ok("and fits in four segments", seg.planSegments(m.mediaConfirmSms("voice", long)).segments <= 4, String(seg.planSegments(m.mediaConfirmSms("voice", long)).segments));
 ok("the failure lines ask them to type, and are GSM-7",
   [m.MEDIA_UNREADABLE.voice, m.MEDIA_UNREADABLE.image, m.MEDIA_UNREADABLE.file, m.MEDIA_REJECTED].every((t) => /text|type it/.test(t) && seg.planSegments(t).encoding === "gsm7"));
+ok("each failure says why, truly (review, 4 Nov): too large, a kind it cannot open, not right now",
+  m.mediaFailureSms("image", "too_large").startsWith("That picture is too big") &&
+    m.mediaFailureSms("voice", "too_large").startsWith("That voice note is too long") &&
+    m.mediaFailureSms("image", "unsupported").startsWith("I can't open that kind of picture") &&
+    m.mediaFailureSms("file", "unavailable") === "Sorry, I can't open files right now. Could you tell me in a text what you'd like to know?" &&
+    m.mediaFailureReason("not_kept") === "unavailable" && m.mediaFailureReason("download_failed") === "unavailable" &&
+    m.mediaFailureReason("empty") === "unreadable" &&
+    (["voice", "image", "file"] as const).every((k) =>
+      (["unreadable", "too_large", "unsupported", "unavailable"] as const).every((f) => seg.planSegments(m.mediaFailureSms(k, f)).encoding === "gsm7")));
 ok("a tap on the card's buttons reads as the answer", thanks.yesOrNo("Yes") === true && thanks.yesOrNo("No") === false);
 
 console.log("\n=== what a tidied transcript may change (review, 4 Nov) ===");
@@ -113,7 +126,7 @@ ok("and the answer to a read-back is read before any other step too", replyAt > 
 ok("media ends the turn: nothing else runs on what was only read",
   /await mediaNoteStep\(\{[^}]*\}\);\s+return;/.test(inbound));
 ok("only a YES runs the words, as a message of their own",
-  /if \(said === true\) return note\.text;/.test(inbound) &&
+  /if \(said === true\) return first === true && rest && !ACKNOWLEDGEMENT\.test\(rest\) \?/.test(inbound) &&
     /handleInboundMessageUntraced\(\{ from, body: read, channel: input\.channel, confirmedMedia: true \}\)/.test(inbound));
 ok("and is not counted as a second inbound", /if \(!input\.confirmedMedia\) await recordInbound/.test(inbound));
 const steps = inbound.slice(inbound.indexOf("async function mediaNoteStep"), inbound.indexOf("async function mediaReplyStep") + 1500);
@@ -186,7 +199,12 @@ ok("and Google v1 is told to expect Pando and those places",
   /speechContexts: \[\{ phrases: \["Pando", \.\.\.places\]/.test(google));
 ok("the comparison line names each provider's count or reason, never their words",
   /console\.info\("\[media\] compared"/.test(server) && /r\.ok \? \{ chars: r\.text\.length, confidence: r\.confidence \} : \{ reason: r\.reason \}/.test(server));
-ok("a PDF goes to Claude as a document, not as a picture", /contentType === "application\/pdf"\s+\? \{\s+type: "document"/.test(server));
+ok("a PDF goes to Claude as a document, not as a picture — by its first bytes, not the type the phone declared",
+  /type === "application\/pdf"\s+\? \{ type: "document"/.test(server) && /function sniffType\(bytes: ArrayBuffer\)/.test(server) && /if \(blocks\.length === 0\) return \{ ok: false, reason: "unsupported" \};/.test(server));
+ok("a picture is read against what Pando is waiting on: the ADD step, else an open Network Ask",
+  /const asked = media\.kind === "voice" \? null : await askedOfThem\(from\);/.test(inbound) &&
+    /if \(step\) return CAPTURE_QUESTIONS\[step\]\.card \?\? CAPTURE_QUESTIONS\[step\]\.prompt;/.test(inbound) &&
+    /If Pando's last message asked them something and the picture answers it, write their answer/.test(server));
 
 console.log("\n=== the media is not kept ===");
 const repo = fs.readFileSync(new URL("../lib/server/repo/media-notes.ts", import.meta.url), "utf8");
@@ -203,7 +221,11 @@ ok("and every caller deletes the media it hands back",
   /for \(const url of ended\) await deleteTwilioMedia\(url\)/.test(inbound) &&
     /for \(const url of expired\) await deleteTwilioMedia\(url\)/.test(inbound) &&
     /for \(const url of saved\.superseded\) await deleteTwilioMedia\(url\)/.test(inbound));
-ok("media that fails is deleted at once", /if \(!read\.ok \|\| !saved\) \{\s+await deleteTwilioMedia\(media\.url\)/.test(inbound));
+ok("media that fails is deleted at once, every item of it, and the reason told truly",
+  /if \(!read\.ok \|\| !saved\) \{\s+for \(const url of mediaUrls\(media\)\) await deleteTwilioMedia\(url\);/.test(inbound) &&
+    /body: mediaFailureSms\(media\.kind, failure\)/.test(inbound));
+ok("the other pictures, read with it, are deleted as soon as it is read",
+  /for \(const url of mediaUrls\(media\)\.filter\(\(u\) => u !== media\.url\)\) await deleteTwilioMedia\(url\);/.test(inbound));
 ok("the table holds words and URL only while pending",
   /CHECK \(\(status = 'pending'\) = \(text IS NOT NULL\)\)/.test(migration) &&
     /CHECK \(status = 'pending' OR media_url IS NULL\)/.test(migration));
@@ -211,15 +233,17 @@ ok("and is closed to the public API", /ENABLE ROW LEVEL SECURITY/.test(migration
 
 console.log("\n=== a reply that corrects the reading (4 Nov) ===");
 const replyStep = inbound.slice(inbound.indexOf("async function mediaReplyStep"), inbound.indexOf("type InboundPerson ="));
-ok("neither yes nor no is read against the reading before anything else; a yes on the first of several lines is a yes",
-  /let said = yesOrNo\(body\) \?\? \(body\.includes\("\\n"\) \? yesOrNo\(body\.split\("\\n"\)\[0\] \?\? ""\) : null\);/.test(replyStep) &&
+ok("neither yes nor no is read against the reading before anything else; a yes or no first with only thanks after it is that answer",
+  /let said = yesOrNo\(body\) \?\? \(first !== null && ACKNOWLEDGEMENT\.test\(rest\) \? first : null\);/.test(replyStep) &&
     /if \(said === null\) \{\s+const read = await reviseReadBack\(note\.text, body\);/.test(replyStep) &&
     replyStep.indexOf("reviseReadBack(") < replyStep.indexOf("endMediaNote("));
+ok("a yes then something of their own runs the words and then the rest; a no then what they meant runs what they meant (review, 4 Nov)",
+  replyStep.includes("return first ? `${note.text}\\n${rest}` : rest;"));
 ok("a yes in other words or another language confirms it", /if \(read\?\.confirmed\) said = true;/.test(replyStep) &&
   /- confirmed: the reply says yes, in any words or language/.test(server));
 ok("a correction keeps that note waiting with the new words and reads them back, with the buttons",
   /reviseMediaNote\(person\.person_id, note\.id, revised\)/.test(replyStep) &&
-    /body: mediaConfirmSms\(note\.kind, revised\)/.test(replyStep) && /card: mediaConfirmCard\(note\.kind, revised\)/.test(replyStep) &&
+    /body: mediaConfirmSms\(note\.kind, revised, 1, true\)/.test(replyStep) && /card: mediaConfirmCard\(note\.kind, revised, 1, true\)/.test(replyStep) &&
     /return HANDLED;\s+\}\s+\}\s+const ended = await endMediaNote/.test(replyStep));
 ok("anything else still ends the note and goes on as a new message", /said === false \? "rejected" : "superseded"/.test(replyStep));
 ok("the reviser keeps what the reply does not change and adds nothing",

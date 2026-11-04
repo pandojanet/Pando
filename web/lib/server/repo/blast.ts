@@ -873,6 +873,23 @@ const OPEN_FOR_SENDER = sql`
    limit 1`;
 
 /**
+ * The question of the Network Ask this number was sent and has not yet
+ * answered or passed — what Pando is waiting on from them — or null (4 Nov:
+ * a picture sent in reply is read as their answer to it).
+ */
+export async function openAskQuestion(phone: string): Promise<string | null> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select bl.question_text from people p
+        join blasts bl on bl.id = (${OPEN_FOR_SENDER})
+       where p.phone = ${phone}
+       limit 1`)) as unknown as Array<{ question_text: string | null }>;
+    return rows[0]?.question_text ?? null;
+  });
+  return result.persisted ? (result.data ?? null) : null;
+}
+
+/**
  * M7.5 — attach an inbound reply to the blast it answers.
  *
  * The webhook already links a reply to the outbound message it responds to, which

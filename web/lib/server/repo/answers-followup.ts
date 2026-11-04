@@ -48,6 +48,18 @@ export interface PriorAnswers {
 
 export async function priorAnswersFor(phone: string): Promise<PriorAnswers | null> {
   const result = await withDb(async (db: Db) => {
+    /* The newest question first, sent or not (review, 4 Nov — the 28 Oct
+       `lastExchangeFor` rule, here too): "any others?" after a question still
+       with a person is not more of the one before it. */
+    const newest = (await db.execute(sql`
+      select status from answers
+       where phone = ${phone}
+         and not is_test
+         and created_at > now() - (${FOLLOW_UP_WINDOW_HOURS} || ' hours')::interval
+       order by created_at desc
+       limit 1
+    `)) as unknown as Array<Record<string, unknown>>;
+    if (newest[0] && newest[0].status !== "sent") return null;
     const latest = (await db.execute(sql`
       select question_text, hold_reason
         from answers

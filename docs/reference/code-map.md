@@ -212,7 +212,9 @@
 `web/lib/inbound-burst.ts` — 4 Nov. Texts sent in a row are one message: `gatherBurst`
                        (5 s of quiet, 20 s at most), `combineBurst` (lines joined, a
                        picture or voice note takes the texts as its words),
-                       `oneAtATime` (a number's turns in order). In the process's
+                       `oneAtATime` (a number's turns in order), `splitBurst` (a bare
+                       reply leading a burst is its own turn; thanks set aside),
+                       `endTurns` (DELETE/STOP). In the process's
                        memory — one web process. Wired in `handleInboundMessage`.
                        The conversation before the last exchange is
                        `earlierExchangesFor` (`repo/deep-dives.ts`, 12 over 7 days).

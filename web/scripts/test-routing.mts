@@ -380,7 +380,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "a longer reply to a clarifying question is read before it is stored, and a new request is not an answer",
     /const longReply = body\.trim\(\)\.split\(\/\\s\+\/\)\.length > 3;/.test(src) &&
       /askedThem: open && pending \? CLARIFYING_COPY\[pending\] : null/.test(src) &&
-      /if \(question && !newRequest && isClarifyingAnswer\(body\)\)/.test(src),
+      /if \(question && !newRequest && isClarifyingAnswer\(body\) && ageReads\)/.test(src),
   );
   ok(
     "ages or an area said without being asked are offered to that question's parser, never a first name",
@@ -401,7 +401,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   ok(
     "a question-shaped message inside an Ask window is read by the classifier, told the other parent's question",
     src.includes("othersQuestion: question,") &&
-      /if \(ownRequestNotAnAnswer\(body, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
+      /if \(ownRequestNotAnAnswer\(text, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
       /if \(reading\.source !== "model"\) return false;/.test(src),
   );
   /* 28 Oct audit: "any good toddler gymnastics classes?" from a swim-Ask recipient came back answer_blast at 0.6. */

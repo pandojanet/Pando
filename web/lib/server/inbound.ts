@@ -36,7 +36,7 @@ import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDee
 import { deepDiveFamily, earlierExchangesFor, finishDeepDive, lastExchangeFor, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
 import { judgeFit } from "@/lib/server/answer-fit";
-import { applyFit, unmetLine } from "@/lib/answer-fit";
+import { applyFit, unmetLine, wantIsARecord } from "@/lib/answer-fit";
 import { acceptsIntro, introOffer, introTarget } from "@/lib/introductions";
 import { introStep } from "@/lib/server/introductions";
 import { introCandidateCount, mayOfferIntro, recordIntroOffer } from "@/lib/server/repo/introductions";
@@ -116,15 +116,15 @@ import {
   settingsConfirmation,
   settingsPrompt,
 } from "@/lib/outreach-policy";
-import { askedRecently, attachResponse, createBlast, recordPass } from "@/lib/server/repo/blast";
+import { askedRecently, attachResponse, createBlast, openAskQuestion, recordPass } from "@/lib/server/repo/blast";
 import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
 import { mentionsName, sameName } from "@/lib/public-info";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 import { yesOrNo } from "@/lib/thanks";
-import { MEDIA_REJECTED, MEDIA_UNREADABLE, mediaConfirmCard, mediaConfirmSms, type InboundMedia } from "@/lib/media-note";
+import { MEDIA_REJECTED, mediaConfirmCard, mediaConfirmSms, mediaFailureReason, mediaFailureSms, mediaUrls, type InboundMedia } from "@/lib/media-note";
 import { deleteTwilioMedia, readInboundMedia, reviseReadBack } from "@/lib/server/media-note";
-import { burstOpen, combineBurst, endTurns, gatherBurst, oneAtATime } from "@/lib/inbound-burst";
+import { ACKNOWLEDGEMENT, burstOpen, combineBurst, endTurns, gatherBurst, oneAtATime, splitBurst } from "@/lib/inbound-burst";
 import { createMediaNote, endMediaNote, endMediaNotesWhere, pendingMediaNote, reviseMediaNote } from "@/lib/server/repo/media-notes";
 import { DIGEST_OFF_REPLY, DIGEST_ON_REPLY, digestCommand } from "@/lib/digest";
 import { setDigestConsent } from "@/lib/server/repo/digest";
@@ -160,6 +160,7 @@ import {
   ensureInboundPerson,
   marketAreas,
   pendingClarification,
+  pendingClarificationAt,
   saveClarification,
   setAllowance,
   type ColdPerson,
@@ -286,7 +287,9 @@ async function handleInboundMessageUntraced(input: {
   if ((await settingsStep({ from, body, person })) === HANDLED) return;
   if ((await captureStep({ from, body, person })) === HANDLED) return;
 
-  const { attached } = await attachStep({ from, body, person });
+  const { attached, remainder } = await attachStep({ from, body, person });
+  /* Their answer was filed; what else they said is a message of its own, already counted. */
+  if (remainder) return handleInboundMessageUntraced({ from, body: remainder, channel: input.channel, confirmedMedia: true });
 
   const afterReplies = await repliesStep({ from, body, person, attached });
   if (afterReplies === HANDLED) return;
@@ -342,12 +345,23 @@ async function mediaNoteStep({ from, body, media, person }: { from: string; body
     media.kind === "voice"
       ? { area: marketConfig(marketOf(person)).label, places: (await marketAreas(marketOf(person))).map((a) => a.label) }
       : undefined;
-  const read = await readInboundMedia(media, body, hints);
+  /* A picture is read against what Pando is waiting on (review, 4 Nov): a photo
+     of a sign at ADD's "what is it called?" is the name, not "what do parents
+     recommend about …", and a flyer sent to answer a Network Ask is the answer. */
+  const asked = media.kind === "voice" ? null : await askedOfThem(from);
+  const read = await readInboundMedia(
+    media,
+    body,
+    hints ?? { area: marketConfig(marketOf(person)).label, places: [] },
+    asked,
+  );
   console.info("[sms:inbound] media", {
     kind: media.kind,
     ok: read.ok,
     reason: read.ok ? null : read.reason,
     seconds: read.ok && read.durationSec !== null ? Math.round(read.durationSec) : null,
+    pictures: read.ok ? (read.pictures ?? null) : null,
+    asked: asked !== null,
   });
   const saved =
     read.ok && person
@@ -361,24 +375,29 @@ async function mediaNoteStep({ from, body, media, person }: { from: string; body
         })
       : null;
   if (!read.ok || !saved) {
-    await deleteTwilioMedia(media.url);
+    for (const url of mediaUrls(media)) await deleteTwilioMedia(url);
+    /* Why, in words that are true: read but not kept is "can't right now", not "couldn't make out". */
+    const failure = mediaFailureReason(read.ok ? "not_kept" : read.reason);
     await sendSms({
       to: from,
-      body: MEDIA_UNREADABLE[media.kind],
+      body: mediaFailureSms(media.kind, failure),
       category: "transactional",
       personId: person?.person_id,
-      template: `${media.kind}_unreadable`,
+      template: `${media.kind}_${failure}`,
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     return;
   }
   for (const url of saved.superseded) await deleteTwilioMedia(url);
+  /* The other pictures were read with it, and what was not read never will be: gone now. */
+  for (const url of mediaUrls(media).filter((u) => u !== media.url)) await deleteTwilioMedia(url);
+  const pictures = read.pictures ?? 1;
   await sendSms({
     to: from,
-    body: mediaConfirmSms(media.kind, read.text),
+    body: mediaConfirmSms(media.kind, read.text, pictures),
     category: "transactional",
     personId: person?.person_id,
-    rich: { kind: "yes_no", card: mediaConfirmCard(media.kind, read.text) },
+    rich: { kind: "yes_no", card: mediaConfirmCard(media.kind, read.text, pictures) },
     template: `${media.kind}_confirm`,
     templateVersion: SMS_TEMPLATE_VERSION,
   });
@@ -396,9 +415,14 @@ async function mediaReplyStep({ from, body, person }: { from: string; body: stri
   const { note, expired } = await pendingMediaNote(person.person_id);
   for (const url of expired) await deleteTwilioMedia(url);
   if (!note) return undefined;
-  /* A yes or no as the first line of several texts is still the answer
-     ("yes" / "thank you" — review, 4 Nov). */
-  let said = yesOrNo(body) ?? (body.includes("\n") ? yesOrNo(body.split("\n")[0] ?? "") : null);
+  /* A yes or no as the first line of several texts is the answer when the rest
+     is only thanks ("yes" / "thank you"); with more after it ("yes" / "but for
+     my 6 year old", "no" / "it's swim near Altadena") the whole is read below
+     (review, 4 Nov — the rest was dropped). */
+  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  const first = lines.length > 1 ? yesOrNo(lines[0]) : null;
+  const rest = lines.slice(1).join("\n");
+  let said = yesOrNo(body) ?? (first !== null && ACKNOWLEDGEMENT.test(rest) ? first : null);
   /* Neither yes nor no: read against the reading (4 Nov). A yes in other words
      or another language ("that's right", "так", "sí") confirms it; a
      correction is read back again, corrected, with the note still waiting;
@@ -406,15 +430,23 @@ async function mediaReplyStep({ from, body, person }: { from: string; body: stri
   if (said === null) {
     const read = await reviseReadBack(note.text, body);
     if (read?.confirmed) said = true;
+    /* "yes" and then something else of their own: the words, then the rest. "no"
+       and then what they meant: the note goes, the rest is their message. */
+    if (!read && first !== null && rest) {
+      const ended = await endMediaNote(person.person_id, first ? "confirmed" : "rejected");
+      for (const url of ended) await deleteTwilioMedia(url);
+      console.info("[sms:inbound] media read-back", { kind: note.kind, answer: first ? "yes_and_more" : "no_and_more" });
+      return first ? `${note.text}\n${rest}` : rest;
+    }
     const revised = read?.revised ?? null;
     if (revised && (await reviseMediaNote(person.person_id, note.id, revised))) {
       console.info("[sms:inbound] media read-back", { kind: note.kind, answer: "corrected" });
       await sendSms({
         to: from,
-        body: mediaConfirmSms(note.kind, revised),
+        body: mediaConfirmSms(note.kind, revised, 1, true),
         category: "transactional",
         personId: person.person_id,
-        rich: { kind: "yes_no", card: mediaConfirmCard(note.kind, revised) },
+        rich: { kind: "yes_no", card: mediaConfirmCard(note.kind, revised, 1, true) },
         template: `${note.kind}_confirm`,
         templateVersion: SMS_TEMPLATE_VERSION,
       });
@@ -424,7 +456,8 @@ async function mediaReplyStep({ from, body, person }: { from: string; body: stri
   const ended = await endMediaNote(person.person_id, said === true ? "confirmed" : said === false ? "rejected" : "superseded");
   for (const url of ended) await deleteTwilioMedia(url);
   console.info("[sms:inbound] media read-back", { kind: note.kind, answer: said === true ? "yes" : said === false ? "no" : "other" });
-  if (said === true) return note.text;
+  /* A yes with something of their own after it, however the yes was read: the words, then the rest (the SMS lab, 4 Nov). */
+  if (said === true) return first === true && rest && !ACKNOWLEDGEMENT.test(rest) ? `${note.text}\n${rest}` : note.text;
   if (said === false) {
     await sendSms({
       to: from,
@@ -437,6 +470,18 @@ async function mediaReplyStep({ from, body, person }: { from: string; body: stri
     return HANDLED;
   }
   return undefined;
+}
+
+/**
+ * What Pando is waiting on from this number, in words, for reading a picture
+ * against it (review, 4 Nov): the ADD step being answered, else the question
+ * of an open Network Ask they were sent. Null when nothing is waiting.
+ */
+async function askedOfThem(phone: string): Promise<string | null> {
+  const step = await openCaptureStep(phone);
+  if (step) return CAPTURE_QUESTIONS[step].card ?? CAPTURE_QUESTIONS[step].prompt;
+  const ask = await openAskQuestion(phone);
+  return ask ? `Another parent asked: ${ask} Can you help?` : null;
 }
 
 type InboundPerson = Awaited<ReturnType<typeof ensureInboundPerson>>;
@@ -850,7 +895,9 @@ async function captureStep({ from, body, person }: { from: string; body: string;
       /* A number or an email is never stored from a capture (invariant 13, 28
          Oct audit): it may be a person's, and the answer is written verbatim
          to the share and to sms_captures. */
-      const answer = readAnswer(capture.step, maskContactDetails(body));
+      /* A name is one line: "Little Gym" then "also any swim lessons?" in one
+         burst made the whole of it the record's name (review, 4 Nov). */
+      const answer = readAnswer(capture.step, maskContactDetails(capture.step === "name" ? (body.split("\n")[0] ?? body) : body));
       if (answer.ok) {
         const value = "skipped" in answer ? null : answer.value;
         const saved = await saveAnswer(capture, value);
@@ -923,43 +970,75 @@ async function captureStep({ from, body, person }: { from: string; body: string;
  */
 async function attachStep({ from, body, person }: { from: string; body: string; person: InboundPerson }) {
 
+  /* A request of their own on another subject, or about a child's health, is not their answer (26 Oct). */
+  const ownRequest = async (text: string, question: string) => {
+    const list = await focusOptions(marketOf(person));
+    if (ownRequestNotAnAnswer(text, question, (t) => focusInQuestion(t, list))) return true;
+    /**
+     * ⚠ **Read, not matched** (26 Oct, the SMS lab). The words above catch
+     * "we need…", "does anyone…" — and missed *"any good fencing classes for
+     * kids near Altadena?"*, sent by a parent holding a swim Ask: it was
+     * filed as her answer and thanked. A message shaped like a question is
+     * read by the classifier, told the Ask it would be filed under; a new
+     * request of their own is not an answer. A plain answer ("Rose Bowl,
+     * the water is warm") costs no call; "have you looked at the YMCA
+     * camp?" is read as the answer it is.
+     */
+    if (!/\?|\b(?:any|anyone|recommend|looking|need|where|which|who)\b/i.test(text)) return false;
+    const reading = await classifyIntent({
+      text,
+      othersQuestion: question,
+      context: { awaiting_blast_reply: false, known_person: true },
+    });
+    /* An answer only when the model is sure of it (28 Oct audit): "Any good
+       toddler gymnastics classes in Pasadena?", from a recipient of a
+       swim Ask, came back answer_blast at 0.6 and was filed as her answer
+       — the topic guard sees both as activities. A question-shaped message
+       the model is unsure of is the parent's own, and is answered. */
+    if (reading.source !== "model") return false;
+    return !(reading.intent === "answer_blast" && reading.confidence >= 0.8);
+  };
+
+  /**
+   * Their answer and a question of their own in one burst (review, 4 Nov, the
+   * SMS lab): "the city pools at Rose Bowl Aquatics are cheapest" then "also,
+   * does anyone know a good dentist for kids?" was judged whole, read as their
+   * own request, and both were lost — the answer never filed, the question
+   * never answered. Line by line, the answer lines are filed and the rest goes
+   * on as their own message (\`remainder\`).
+   */
+  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length > 1 && !isCommand(body)) {
+    const question = await openAskQuestion(from);
+    if (question) {
+      const own: string[] = [];
+      const answer: string[] = [];
+      for (const line of lines) ((await ownRequest(line, question)) ? own : answer).push(line);
+      if (own.length > 0 && answer.length > 0) {
+        const filed = await attachResponse({ phone: from, text: answer.join("\n") });
+        if (filed.attached) {
+          if (!filed.followUp) {
+            await sendSms({
+              to: from,
+              body: BLAST_REPLY_THANKS,
+              category: "transactional",
+              personId: person?.person_id,
+              template: "blast_reply_saved",
+            });
+          }
+          console.info("[sms:inbound] ask reply split", { answer_lines: answer.length, own_lines: own.length });
+          return { attached: filed, remainder: own.join("\n") };
+        }
+      }
+    }
+  }
+
   /* An exact INTRO or DEEP from somebody who is also a recipient of an open
      Network Ask is that command, not their answer to another parent's question
      (review, 21 Oct). */
   const attached = isCommand(body)
     ? { attached: false, followUp: false }
-    : await attachResponse({
-        phone: from,
-        text: body,
-        /* A request of their own on another subject, or about a child's health, is not their answer (26 Oct). */
-        ownRequest: async (question) => {
-          const list = await focusOptions(marketOf(person));
-          if (ownRequestNotAnAnswer(body, question, (t) => focusInQuestion(t, list))) return true;
-          /**
-           * ⚠ **Read, not matched** (26 Oct, the SMS lab). The words above catch
-           * "we need…", "does anyone…" — and missed *"any good fencing classes for
-           * kids near Altadena?"*, sent by a parent holding a swim Ask: it was
-           * filed as her answer and thanked. A message shaped like a question is
-           * read by the classifier, told the Ask it would be filed under; a new
-           * request of their own is not an answer. A plain answer ("Rose Bowl,
-           * the water is warm") costs no call; "have you looked at the YMCA
-           * camp?" is read as the answer it is.
-           */
-          if (!/\?|\b(?:any|anyone|recommend|looking|need|where|which|who)\b/i.test(body)) return false;
-          const reading = await classifyIntent({
-            text: body,
-            othersQuestion: question,
-            context: { awaiting_blast_reply: false, known_person: true },
-          });
-          /* An answer only when the model is sure of it (28 Oct audit): "Any good
-             toddler gymnastics classes in Pasadena?", from a recipient of a
-             swim Ask, came back answer_blast at 0.6 and was filed as her answer
-             — the topic guard sees both as activities. A question-shaped message
-             the model is unsure of is the parent's own, and is answered. */
-          if (reading.source !== "model") return false;
-          return !(reading.intent === "answer_blast" && reading.confidence >= 0.8);
-        },
-      });
+    : await attachResponse({ phone: from, text: body, ownRequest: (question) => ownRequest(body, question) });
   /* The reply is acknowledged once (25 Sep) — a follow-up appended to it is
      not, or two texts would earn two thank-yous. */
   if (attached.attached && !attached.followUp) {
@@ -971,7 +1050,7 @@ async function attachStep({ from, body, person }: { from: string; body: string; 
       template: "blast_reply_saved",
     });
   }
-  return { attached };
+  return { attached, remainder: null as string | null };
 }
 
 /**
@@ -1021,19 +1100,24 @@ async function repliesStep({ from, body, person, attached }: { from: string; bod
        offered an hour ago marked an older ping's record "no longer worth it"
        for every parent who reads it. Any reply this block could claim is
        checked against the newer offers first. */
-    const [deepOffer, introAt] = helpedReply !== null || pingReply !== "unclear"
+    const [deepOffer, introAt, clarifying] = helpedReply !== null || pingReply !== "unclear"
       ? await Promise.all([
           openDeepDiveOffer(person.person_id, DEEP_DIVE_OFFER_HOURS),
           openIntroOfferAt(person.person_id),
+          pendingClarificationAt(person.person_id),
         ])
-      : [null, null];
-    const newerOffer = Math.max(deepOffer ? at(deepOffer.created_at) : -1, introAt ? at(introAt) : -1);
+      : [null, null, null];
+    /* And a clarifying question still open (review, 4 Nov): "no" to "How old
+       are your kids? ... reply NONE" under the newest answer spent an older
+       offer and was answered with nothing. Open only while the fact is missing. */
+    const clarifyAt = clarifying && clarifying.question === nextQuestion(person.profile) ? at(clarifying.sent_at) : -1;
+    const newerOffer = Math.max(deepOffer ? at(deepOffer.created_at) : -1, introAt ? at(introAt) : -1, clarifyAt);
     const ours = latest > newerOffer;
 
     if (!ours) {
       /* Said only when there is a newer offer to leave it for: a yes to nothing
          at all was logged as this too (26 Oct, the SMS lab). */
-      if (newerOffer > -1) console.info("[sms:inbound] yes left for a newer offer", { deep: deepOffer !== null, intro: introAt !== null });
+      if (newerOffer > -1) console.info("[sms:inbound] yes left for a newer offer", { deep: deepOffer !== null, intro: introAt !== null, clarifying: clarifyAt > -1 });
     } else if (ping && asked(ping) === latest) {
       const outcome = await applyPingReply(ping, pingReply);
       /* Enums only — never the record's name or the parent's words. */
@@ -1254,7 +1338,8 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
        however short each is — and even with a "?" in them: "7" then "any
        science camps?" is an answer and a request (review, 4 Nov). */
     const severalLines = body.includes("\n");
-    if (((open && pending && !aQuestion && (longReply || severalLines)) || volunteered) && (isClarifyingAnswer(body) || severalLines)) {
+    /* A longer reply with a "?" too: "she's 7, any science camps?" answers and asks (review, 4 Nov). */
+    if (((open && pending && !aQuestion && (longReply || severalLines)) || volunteered) && (isClarifyingAnswer(body) || severalLines || longReply)) {
       const exchange = await lastExchangeFor(from);
       early = await classifyIntent({
         text: body,
@@ -1292,7 +1377,14 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
     /* ⚠ `isClarifyingAnswer` is what stops a new question being eaten by the
        age parser — see its own header. Without it, a question with a number in
        it stored the number and returned before answering anything. */
-    if (question && !newRequest && isClarifyingAnswer(body)) {
+    /* An age only when it reads as one (review, 4 Nov): a bare number or numbers,
+       an age said about a child, or "no kids" — "top 3" stored a 3 year old. */
+    const ageReads =
+      question !== "child_age" ||
+      BARE_AGES.test(body.split("\n")[0] ?? "") ||
+      (saysAChild && !DURATION.test(body)) ||
+      declinesChildren(body);
+    if (question && !newRequest && isClarifyingAnswer(body) && ageReads) {
       const saved = await saveClarification({
         personId: person.person_id,
         question,
@@ -1411,7 +1503,9 @@ function placeSources(body: string, rewritten: string, earlierWords: string[]): 
     const phrase = placePhraseIn(text);
     return phrase !== null && rewritten.toLowerCase().includes(phrase.toLowerCase());
   };
-  return [body, ...earlierWords.filter(carried), ...earlierWords.filter((t) => !carried(t))];
+  /* Several texts: the last line first, so "sorry, Arcadia" after "swim in Altadena" is Arcadia (review, 4 Nov). */
+  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  return [...(lines.length > 1 ? [...lines].reverse() : [body]), ...earlierWords.filter(carried), ...earlierWords.filter((t) => !carried(t))];
 }
 
 /**
@@ -1836,7 +1930,12 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * swim list, built on the question before it — the 22 Oct rule for "any
    * others?" (`priorAnswersFor`), applied to a follow-up.
    */
-  const followsHeld = exchange?.held && reading.standalone ? exchange.held : null;
+  /* Only a message with no subject of its own follows the held question (review,
+     4 Nov): "standalone" is set for every burst and every carried-over age, so
+     a day after a nosebleed question "hi / any swim lessons for my 4yo?" was
+     answered with the crisis numbers. A topic of its own is its own question. */
+  const ownSubject = exchange?.held ? focusInQuestion(body, await focusOptions(marketOf(person))) !== null : false;
+  const followsHeld = exchange?.held && reading.standalone && !ownSubject ? exchange.held : null;
   const rewritten =
     !pending && !exchange?.held && reading.standalone && !reading.sensitive && classifyDemand(body, null) === "ordinary"
       ? reading.standalone
@@ -2232,9 +2331,10 @@ async function answerQuestion(input: {
    * (`unmetLine`). Not for care, which a person reads before it goes, nor a
    * deep dive, which compares what it is given.
    */
-  const fit = !wantsCare && !input.deep
+  const judged = !wantsCare && !input.deep
     ? applyFit(retrievedAll.shares, await judgeFit(body, retrievedAll.shares), (share) => mentionsName(body, share.name))
     : { shares: retrievedAll.shares, unmet: null };
+  const fit = judged.unmet && wantIsARecord(judged.unmet, judged.shares.map((s) => s.name)) ? { ...judged, unmet: null } : judged;
   const retrieved = { ...retrievedAll, shares: fit.shares };
 
   /**
@@ -2672,7 +2772,13 @@ async function answerQuestion(input: {
     question: body,
     ...(headroom ? { headroom: VOICE_HEADROOM } : {}),
     ...(given
-      ? { opening: "A few more that may fit:", nothing_left: candidates.length === 0 }
+      ? {
+          /* "More" after "No parent near you has mentioned …" still says so (review, 4 Nov). */
+          opening: fit.unmet
+            ? `${unmetLine(fit.unmet, body, false, place.source !== "none")} A few more that may help:`
+            : "A few more that may fit:",
+          nothing_left: candidates.length === 0,
+        }
       : fit.unmet
         ? { opening: unmetLine(fit.unmet, body, candidates.some((c) => !c.trust.public_only), place.source !== "none") }
         : {}),
@@ -3074,12 +3180,15 @@ export async function handleInboundMessage(
   if (tap === true && !burstOpen(message.from)) return oneAtATime(message.from, () => handleOne(message));
   const parts = await gatherBurst(message.from, { body: message.body, channel: message.channel, media: message.media });
   if (!parts) return;
-  const burst = combineBurst(parts);
+  /* A bare reply leading the burst is its own turn; texts that only thank are set aside (`splitBurst`). */
+  const { reply, rest } = splitBurst(parts);
+  const burst = combineBurst(rest);
   /* Counts and kinds only (invariant 7). One burst is one inbound row: one thing said to Pando. */
-  if (parts.length > 1) console.info("[sms:inbound] burst", { messages: parts.length, media: burst.media?.kind ?? null, unused: burst.unused.length });
+  if (parts.length > 1) console.info("[sms:inbound] burst", { messages: parts.length, media: burst.media?.kind ?? null, unused: burst.unused.length, reply_first: reply !== null });
   /* After any turn of theirs still being answered, so a follow-up follows it. */
   await oneAtATime(message.from, async () => {
     for (const url of burst.unused) await deleteTwilioMedia(url);
+    if (reply) await handleOne({ ...message, body: reply.body, channel: reply.channel ?? message.channel, media: undefined });
     await handleOne({ ...message, body: burst.body, channel: burst.channel ?? message.channel, media: burst.media });
   });
 }

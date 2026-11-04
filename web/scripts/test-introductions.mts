@@ -150,7 +150,7 @@ ok(
   introRead.slice(0, 80),
 );
 const inboundNow = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
-ok("a 'no' is checked against a newer deep-dive or intro offer too, not only a 'yes'", inboundNow.includes('const [deepOffer, introAt] = helpedReply !== null || pingReply !== "unclear"'));
+ok("a 'no' is checked against a newer deep-dive or intro offer too, not only a 'yes'", inboundNow.includes('const [deepOffer, introAt, clarifying] = helpedReply !== null || pingReply !== "unclear"'));
 
 console.log("\n=== the answer offers it with one ask per message (source checks) ===");
 const inbound = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
