@@ -28,13 +28,33 @@ export type ReadResult =
   | { ok: true; text: string; confidence: number | null; durationSec: number | null }
   | { ok: false; reason: "not_configured" | "download_failed" | "too_large" | "read_failed" | "empty" };
 
-/* `detect_language=true` (4 Nov, the developer): without a language Deepgram
+/* Language detection (4 Nov, the developer): without a language Deepgram
    assumes English ("All models default to language=en"), so a Ukrainian note
-   came back as English-shaped nonsense. Detection covers 35 languages for
-   recorded audio, Ukrainian (`uk`) among them, and falls back from Nova-3 to
-   the next model that has the language. The rest of the conversation is still
-   English — only what is heard follows the speaker. */
-const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true&detect_language=true";
+   came back as English-shaped nonsense. The rest of the conversation is still
+   English — only what is heard follows the speaker.
+
+   Two passes (4 Nov, after a Ukrainian note on production came back 200 with
+   no words). First, detection limited to the languages a parent here is likely
+   to speak — open detection chooses among 35, and on a short note it can pick
+   one nobody spoke. Only if that hears nothing, Nova-3's multilingual mode
+   (`language=multi`, 55 languages, `uk` and `ru` among them), which listens for
+   words in any of them at once. A note heard on the first pass costs one call. */
+const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&punctuate=true";
+const LISTEN_PASSES = [
+  { pass: "detect", query: "&detect_language=en&detect_language=es&detect_language=uk&detect_language=ru" },
+  { pass: "multi", query: "&language=multi" },
+] as const;
+
+type DeepgramReply = {
+  metadata?: { duration?: number; model_info?: Record<string, { arch?: string }> };
+  results?: {
+    channels?: Array<{
+      detected_language?: string;
+      language_confidence?: number;
+      alternatives?: Array<{ transcript?: string; confidence?: number }>;
+    }>;
+  };
+};
 
 function twilioAuth(): string | null {
   const sid = process.env.TWILIO_ACCOUNT_SID?.trim();
@@ -70,34 +90,57 @@ export async function deleteTwilioMedia(url: string): Promise<void> {
   }
 }
 
-async function transcribe(bytes: ArrayBuffer, contentType: string, key: string): Promise<ReadResult> {
+async function listen(
+  bytes: ArrayBuffer,
+  contentType: string,
+  key: string,
+  { pass, query }: (typeof LISTEN_PASSES)[number],
+): Promise<ReadResult> {
   try {
-    const res = await fetch(DEEPGRAM_URL, {
+    const res = await fetch(DEEPGRAM_URL + query, {
       method: "POST",
       headers: { authorization: `Token ${key}`, "content-type": contentType },
       body: bytes,
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
-      console.warn("[media] transcription refused", { status: res.status });
+      console.warn("[media] transcription refused", { pass, status: res.status });
       return { ok: false, reason: "read_failed" };
     }
-    const data = (await res.json()) as {
-      metadata?: { duration?: number };
-      results?: { channels?: Array<{ alternatives?: Array<{ transcript?: string; confidence?: number }> }> };
-    };
-    const best = data.results?.channels?.[0]?.alternatives?.[0];
+    const data = (await res.json()) as DeepgramReply;
+    const channel = data.results?.channels?.[0];
+    const best = channel?.alternatives?.[0];
     const text = (best?.transcript ?? "").trim();
+    const durationSec = typeof data.metadata?.duration === "number" ? data.metadata.duration : null;
+    /* What a failed note needs to be diagnosed by — the format, its length, the
+       language and model Deepgram chose — and never the words (invariant 7). */
+    console.info("[media] heard", {
+      pass,
+      type: contentType,
+      kb: Math.round(bytes.byteLength / 1024),
+      seconds: durationSec,
+      language: channel?.detected_language ?? null,
+      languageConfidence: channel?.language_confidence ?? null,
+      model: Object.values(data.metadata?.model_info ?? {})[0]?.arch ?? null,
+      chars: text.length,
+    });
     if (!text) return { ok: false, reason: "empty" };
     return {
       ok: true,
       text,
       confidence: typeof best?.confidence === "number" ? best.confidence : null,
-      durationSec: typeof data.metadata?.duration === "number" ? data.metadata.duration : null,
+      durationSec,
     };
   } catch {
+    console.warn("[media] transcription failed", { pass });
     return { ok: false, reason: "read_failed" };
   }
+}
+
+async function transcribe(bytes: ArrayBuffer, contentType: string, key: string): Promise<ReadResult> {
+  const first = await listen(bytes, contentType, key, LISTEN_PASSES[0]);
+  if (first.ok || first.reason !== "empty") return first;
+  return listen(bytes, contentType, key, LISTEN_PASSES[1]);
 }
 
 /**

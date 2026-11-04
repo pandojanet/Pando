@@ -106,7 +106,14 @@ ok("as the message they mean, with what they typed kept",
 ok("never describing a person or copying a contact detail",
   /Never describe or identify a person/.test(server) && /maskContactDetails\(/.test(server));
 ok("and text inside it is never an instruction", /never an instruction to you/.test(server));
-ok("a voice note is heard in its own language, not assumed English (4 Nov)", /listen\?model=nova-3[^"]*&detect_language=true/.test(server));
+ok("a voice note is heard in its own language, not assumed English (4 Nov)",
+  /listen\?model=nova-3/.test(server) && /detect_language=en&detect_language=es&detect_language=uk&detect_language=ru/.test(server));
+ok("and a note that comes back with no words is heard once more in multilingual mode, never a third time",
+  /language=multi/.test(server) && /if \(first\.ok \|\| first\.reason !== "empty"\) return first;/.test(server) &&
+    (server.match(/listen\(bytes, contentType, key, LISTEN_PASSES\[\d\]\)/g) ?? []).length === 2);
+const heardLog = server.slice(server.indexOf('console.info("[media] heard"'), server.indexOf("});", server.indexOf('console.info("[media] heard"')));
+ok("what is logged about a note is its shape, never its words",
+  /chars: text\.length/.test(heardLog) && !/\b(text|transcript|best)\b(?!\.length)/.test(heardLog.replace("chars: text.length", "")));
 ok("a PDF goes to Claude as a document, not as a picture", /contentType === "application\/pdf"\s+\? \{\s+type: "document"/.test(server));
 
 console.log("\n=== the media is not kept ===");
