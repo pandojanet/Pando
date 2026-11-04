@@ -4,6 +4,7 @@ import { MODELS } from "@/lib/models";
 import { maskContactDetails } from "@/lib/contact-details";
 import { isTwilioMediaUrl, MEDIA_MAX_BYTES, type InboundMedia } from "@/lib/media-note";
 import { tracedFetch } from "@/lib/server/trace";
+import { googleSpeechConfigured, transcribeWithGoogle } from "@/lib/server/google-speech";
 
 /**
  * A voice note or a picture into words (3 Nov) — the network half. See
@@ -13,7 +14,9 @@ import { tracedFetch } from "@/lib/server/trace";
  *     only to them, and redirect to storage — the credentials are not carried
  *     across that redirect);
  *  2. a voice note — or a video, for its sound — goes to Deepgram (`nova-3`,
- *     `DEEPGRAM_API_KEY`) for its words; a picture or a PDF to Claude
+ *     `DEEPGRAM_API_KEY`) and, since 4 Nov, to Google (`chirp_3`,
+ *     `GOOGLE_SPEECH_CREDENTIALS`, `google-speech.ts`) at the same time, for
+ *     its words; a picture or a PDF to Claude
  *     (`MODELS.fast`), which writes the message the person most likely means;
  *  3. **delete it at Twilio once the person has answered** "is that right?"
  *     (`deleteTwilioMedia`, the developer, 3 Nov) — never copied to Pando, and
@@ -104,7 +107,7 @@ async function listen(
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
-      console.warn("[media] transcription refused", { pass, status: res.status });
+      console.warn("[media] transcription refused", { provider: "deepgram", pass, status: res.status });
       return { ok: false, reason: "read_failed" };
     }
     const data = (await res.json()) as DeepgramReply;
@@ -115,6 +118,7 @@ async function listen(
     /* What a failed note needs to be diagnosed by — the format, its length, the
        language and model Deepgram chose — and never the words (invariant 7). */
     console.info("[media] heard", {
+      provider: "deepgram",
       pass,
       type: contentType,
       kb: Math.round(bytes.byteLength / 1024),
@@ -132,7 +136,7 @@ async function listen(
       durationSec,
     };
   } catch {
-    console.warn("[media] transcription failed", { pass });
+    console.warn("[media] transcription failed", { provider: "deepgram", pass });
     return { ok: false, reason: "read_failed" };
   }
 }
@@ -141,6 +145,32 @@ async function transcribe(bytes: ArrayBuffer, contentType: string, key: string):
   const first = await listen(bytes, contentType, key, LISTEN_PASSES[0]);
   if (first.ok || first.reason !== "empty") return first;
   return listen(bytes, contentType, key, LISTEN_PASSES[1]);
+}
+
+const NOT_CONFIGURED: ReadResult = { ok: false, reason: "not_configured" };
+
+/**
+ * Deepgram and Google hear the same note at once (4 Nov, the developer: *"keep
+ * Deepgram, but add Google too, to compare"*). `SPEECH_PRIMARY` names whose
+ * words are read back — Deepgram unless it says `google` — and the other's are
+ * used when the first heard nothing. One line logs how each did, so the two
+ * can be compared on real notes without a word of either in the log.
+ */
+async function hear(bytes: ArrayBuffer, contentType: string, deepgramKey: string | undefined): Promise<ReadResult> {
+  const [deepgram, google] = await Promise.all([
+    deepgramKey ? transcribe(bytes, contentType, deepgramKey) : NOT_CONFIGURED,
+    googleSpeechConfigured() ? transcribeWithGoogle(bytes, contentType) : NOT_CONFIGURED,
+  ]);
+  const googleFirst = process.env.SPEECH_PRIMARY?.trim().toLowerCase() === "google";
+  const order = googleFirst ? [google, deepgram] : [deepgram, google];
+  const heard = order.find((r) => r.ok) ?? order.find((r) => !r.ok && r.reason !== "not_configured") ?? NOT_CONFIGURED;
+  const shape = (r: ReadResult) => (r.ok ? { chars: r.text.length, confidence: r.confidence } : { reason: r.reason });
+  console.info("[media] compared", {
+    deepgram: shape(deepgram),
+    google: shape(google),
+    used: !heard.ok ? null : heard === deepgram ? "deepgram" : "google",
+  });
+  return heard;
 }
 
 /**
@@ -221,8 +251,10 @@ async function readImage(bytes: ArrayBuffer, contentType: string, caption: strin
 /** The words a voice note or a picture carries; `caption` is anything typed with it. */
 export async function readInboundMedia(media: InboundMedia, caption: string): Promise<ReadResult> {
   const auth = twilioAuth();
-  const key = media.kind === "voice" ? process.env.DEEPGRAM_API_KEY?.trim() : process.env.ANTHROPIC_API_KEY?.trim();
-  if (!auth || !key) return { ok: false, reason: "not_configured" };
+  const deepgramKey = process.env.DEEPGRAM_API_KEY?.trim();
+  const configured =
+    media.kind === "voice" ? Boolean(deepgramKey) || googleSpeechConfigured() : Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+  if (!auth || !configured) return { ok: false, reason: "not_configured" };
   if (!isTwilioMediaUrl(media.url)) return { ok: false, reason: "download_failed" };
 
   const bytes = await download(media.url, auth);
@@ -230,7 +262,7 @@ export async function readInboundMedia(media: InboundMedia, caption: string): Pr
   if (!bytes) return { ok: false, reason: "download_failed" };
 
   if (media.kind !== "voice") return readImage(bytes, media.contentType, caption.trim());
-  const heard = await transcribe(bytes, media.contentType, key);
+  const heard = await hear(bytes, media.contentType, deepgramKey);
   /* A caption typed with a voice note leads its words. */
   return heard.ok && caption.trim() ? { ...heard, text: `${caption.trim()} ${heard.text}` } : heard;
 }

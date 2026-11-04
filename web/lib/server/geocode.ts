@@ -19,7 +19,8 @@ import {
 } from "@/lib/geo";
 
 /**
- * The **only** place Pando talks to Google.
+ * The **only** place Pando talks to Google Maps (since 4 Nov, speech goes to
+ * Google too — `google-speech.ts`, a different API with its own credentials).
  *
  * Same shape as `lib/server/stripe.ts`: one caller, plain `fetch`, no SDK. A
  * client library here would bring its own retry policy, its own timeout and its

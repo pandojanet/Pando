@@ -114,6 +114,24 @@ ok("and a note that comes back with no words is heard once more in multilingual 
 const heardLog = server.slice(server.indexOf('console.info("[media] heard"'), server.indexOf("});", server.indexOf('console.info("[media] heard"')));
 ok("what is logged about a note is its shape, never its words",
   /chars: text\.length/.test(heardLog) && !/\b(text|transcript|best)\b(?!\.length)/.test(heardLog.replace("chars: text.length", "")));
+const google = fs.readFileSync(new URL("../lib/server/google-speech.ts", import.meta.url), "utf8");
+ok("Google hears the same note, beside Deepgram and at the same time (4 Nov)",
+  /Promise\.all\(\[\s*deepgramKey \? transcribe\(/.test(server) && /googleSpeechConfigured\(\) \? transcribeWithGoogle\(/.test(server));
+ok("Deepgram's words are read back unless SPEECH_PRIMARY says google, and the other's when the first heard nothing",
+  /SPEECH_PRIMARY\?\.trim\(\)\.toLowerCase\(\) === "google"/.test(server) && /order\.find\(\(r\) => r\.ok\)/.test(server));
+ok("either provider alone is enough to hear a voice note",
+  /media\.kind === "voice" \? Boolean\(deepgramKey\) \|\| googleSpeechConfigured\(\)/.test(server));
+ok("Google: chirp_3 in the us region, among the same four languages",
+  /const MODEL = "chirp_3"/.test(google) && /const LOCATION = "us"/.test(google) &&
+    /\["en-US", "es-US", "uk-UA", "ru-RU"\]/.test(google) && /autoDecodingConfig: \{\}/.test(google));
+/* The calls' arguments, their message strings aside ("google token refused" names no token). */
+const googleLogs = (google.match(/console\.\w+\([\s\S]*?\);/g) ?? []).join("\n").replace(/"[^"]*"/g, '""');
+ok("and its logs carry the shape, never the words, the token or the key",
+  /chars: text\.length/.test(googleLogs) &&
+    !/\b(transcript|token|private_key|assertion|signature)\b/.test(googleLogs) &&
+    !/\btext\b(?!\.length)/.test(googleLogs));
+ok("the comparison line names each provider's count or reason, never their words",
+  /console\.info\("\[media\] compared"/.test(server) && /r\.ok \? \{ chars: r\.text\.length, confidence: r\.confidence \} : \{ reason: r\.reason \}/.test(server));
 ok("a PDF goes to Claude as a document, not as a picture", /contentType === "application\/pdf"\s+\? \{\s+type: "document"/.test(server));
 
 console.log("\n=== the media is not kept ===");

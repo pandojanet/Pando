@@ -15,7 +15,8 @@
                        type it**: `locality` cannot tell an incorporated city
                        from an unincorporated one, and 16 of her 52 places are
                        unincorporated. Pure, so `npm run test:geo` loads it.
-`web/lib/server/geocode.ts` — the **only** place Pando talks to Google, and since
+`web/lib/server/geocode.ts` — the **only** place Pando talks to Google Maps (speech
+                       is `google-speech.ts`), and since
                        16 Sep it makes **two** requests: Geocoding for a town or a
                        ZIP, Places Text Search for a named school, class, club or
                        place of worship. One caller, `fetch`, no SDK; the cost guard and the cache
@@ -140,6 +141,7 @@
 `web/lib/contact-details.ts` — 28 Oct. `maskContactDetails` / `hasContactDetail`: a phone number (ten or more digits, any US format) or an email typed into prose, masked as `[number]` / `[email]`. Used wherever text that may describe a person is written — the SMS capture's answers, a caregiver card's fields, a flag's excerpt (invariant 13). Pure; `test:capture` pins it.
 
 `web/lib/media-note.ts` + `web/lib/server/media-note.ts` + `web/lib/server/repo/media-notes.ts` — 3 Nov. A voice note, video, picture or PDF over MMS/RCS: `inboundMediaFrom` picks it from Twilio's webhook fields (Twilio URLs only; spoken words first, then a picture, then a PDF), `readInboundMedia` fetches it with the account credentials and reads it (Deepgram for speech, Claude for a picture or PDF), `mediaConfirmSms`/`mediaConfirmCard` read it back, `media_notes` (drizzle/0063) holds the words and the media URL until the person answers, and `deleteTwilioMedia` removes the media at Twilio then. Wired in `inbound.ts` (`mediaNoteStep`, `mediaReplyStep`) before every other step. `test:media`.
+`web/lib/server/google-speech.ts` — 4 Nov. Google Speech-to-Text v2 (`chirp_3`, `us`) hearing the same voice note as Deepgram, at the same time, for comparison: a service-account JWT traded for an OAuth token (cached), plain `fetch`, no SDK. `hear` in `media-note.ts` picks whose words are read back (`SPEECH_PRIMARY`, Deepgram by default; the other when the first heard nothing) and logs `[media] compared`.
 
 `erasePersonIn` in `web/lib/server/repo/parent-delete.ts` — 3 Nov. The one definition of erasing a person, inside the caller's transaction: the parent's DELETE keeps their recommendations, an admin's `person.reset` takes them and any place or caregiver nobody else has a word about. `profileErasedOnServer` / `joinAgainHref` in `web/lib/api-client.ts`: a device whose saved profile is gone on the server drops its copy. `test:reset`.
 
