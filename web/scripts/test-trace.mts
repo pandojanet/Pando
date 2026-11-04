@@ -171,7 +171,14 @@ console.log("\n=== each trace says what it was about and what it answered (29 Oc
       tr.replyFamily("opener") === "opener",
   );
   const all = JSON.stringify([read, stop, settings, job]);
-  ok("still nothing but enums and counts on the trace", !/Maya|555|\+1/.test(all));
+  /* The name and the phone in every form the suite uses — not a bare "555" or
+     "+1", which a random trace id or a duration contains often enough to fail
+     CI now and then (Deploy #139, 4 Nov; line 106 was fixed the same way on
+     28 Oct). */
+  ok(
+    "still nothing but enums and counts on the trace",
+    !["Maya", "6265550001", "626 555 0001", "555-0001"].some((p) => all.includes(p)),
+  );
 }
 
 {
