@@ -62,6 +62,11 @@ const SYSTEM = [
   "Answer only what the person wants. Do not answer their question, do not judge",
   "the message, and do not infer anything about the person.",
   "",
+  "The message may be several texts the parent sent in a row, one per line. Read them together",
+  "as one message: its intent is what the lines want as a whole, so a greeting followed by a",
+  "question is the question, and a later line can add to or correct an earlier one ('swim",
+  "lessons in Altadena' then 'sorry, Arcadia' is about Arcadia).",
+  "",
   "The intents:",
   "- ask_recommendation: looking for a class, camp, activity, place, product, a doctor, dentist or",
   "  other specialist, or general local advice",
@@ -104,7 +109,7 @@ const SYSTEM = [
   "For every other intent leave subject empty.",
   "",
   "For ask_recommendation and ask_caregiver, set standalone when the message only makes sense",
-  "with the previous exchange, or is not in English: rewrite it as ONE complete request in",
+  "with the previous exchange, is several texts in a row, or is not in English: rewrite it as ONE complete request in",
   "English that a search could use on its own. Carry over from the previous question what this",
   "message keeps and does not change - the topic, the place, the child's age - and let what this",
   "message says replace it ('what about for my 8 year old?' after 'swim lessons for my 4 year old",
@@ -114,6 +119,13 @@ const SYSTEM = [
   "town the answer gives for it: a place comes only from what the parent wrote. Keep every age, place and",
   "price the parent said. Do not add anything they did not say or carry. If the message already",
   "stands on its own in English, leave standalone empty. For every other intent leave it empty.",
+  "",
+  "The conversation can go further back than the previous question. When the message returns to",
+  "something from an earlier question ('going back to the swim lessons', 'the camp you mentioned",
+  "before', 'and for the art classes, which is closest?'), carry over from THAT question - its topic,",
+  "place and the child's age - and a name from THAT answer. When it plainly starts a new subject,",
+  "carry over only what the parent said earlier that still applies to the family (the child's age,",
+  "the place they asked about), never the old topic.",
   "",
   "Use unclear whenever you are not sure. It is routed to a person, which is the",
   "correct outcome for an ambiguous message — a confident wrong guess is worse",
@@ -168,7 +180,7 @@ const SCHEMA = {
     standalone: {
       type: "string",
       description:
-        "ask_recommendation / ask_caregiver only: the message as one complete English request when it depends on the previous exchange or is not in English. Otherwise empty.",
+        "ask_recommendation / ask_caregiver only: the message as one complete English request when it depends on the conversation before it, is several texts in a row, refines an answer to the service's question, or is not in English. Otherwise empty.",
     },
   },
   required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone"],
@@ -203,6 +215,13 @@ async function classifyIntentUntraced(input: {
    * the same model; never logged.
    */
   lastAnswer?: string | null;
+  /**
+   * The questions before that one, oldest first, each with the opening of its
+   * answer (4 Nov, `earlierExchangesFor`): the rest of the conversation, so a
+   * message can go back to something asked two questions ago. Sent to the same
+   * model; never logged.
+   */
+  earlier?: Array<{ question: string; answer: string }>;
   /**
    * What Pando's last message asked them, when it is still waiting for the
    * answer — "How old are your kids?" (26 Oct). A reply that answers it reads
@@ -252,6 +271,11 @@ async function classifyIntentUntraced(input: {
         {
           role: "user",
           content: [
+            input.earlier && input.earlier.length > 0
+              ? `Earlier questions in this conversation, oldest first, each with the opening of the service's answer:\n${input.earlier
+                  .map((x, i) => `${i + 1}. Q: ${x.question.slice(0, 300)}\n   A: ${x.answer.slice(0, 400)}`)
+                  .join("\n")}`
+              : null,
             input.lastQuestion
               ? `Their previous question, which the service already answered with a list:\n${input.lastQuestion.slice(0, 500)}`
               : null,
@@ -259,7 +283,7 @@ async function classifyIntentUntraced(input: {
               ? `The service's last answer to them, with the places in the order it listed them:\n${input.lastAnswer.slice(0, 1500)}`
               : null,
             input.askedThem
-              ? `The service's last message asked them: "${input.askedThem.slice(0, 300)}". If this message answers that, the intent is answer_blast; if it is a new request instead, classify the request.`
+              ? `The service's last message asked them: "${input.askedThem.slice(0, 300)}". If this message answers that, the intent is answer_blast; if it is a new request instead, classify the request. If it answers that AND says more about what they want - an interest, a day, a budget, a different kind of thing ('she's 7 and loves science') - it is ask_recommendation, with standalone set to their previous question rewritten with the answer and everything this message adds, as one request.`
               : null,
             input.othersQuestion
               ? `The service asked them to help ANOTHER parent, who asked: "${input.othersQuestion.slice(0, 300)}". A message suggesting, naming or asking about a place or option for that parent is answer_blast, even when it is put as a question ("have you tried X?", "maybe the 9am?"). Only a request for their OWN family about something else is a new request - classify that request.`

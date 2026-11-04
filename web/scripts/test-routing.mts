@@ -416,7 +416,10 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     const at = order.map((call) => main.indexOf(call));
     ok("the steps run in their fixed order: keywords, who it is, a voice note or picture and its read-back (3 Nov), settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
       at.every((i) => i > 0) && at.every((i, n) => n === 0 || i > at[n - 1]), order.filter((_, n) => at[n] <= 0).join(", "));
-    ok("a step that answered ends the turn", (main.match(/=== HANDLED\) return;/g) ?? []).length === 7);
+    /* The keyword step ends it in a block since 4 Nov: media sent with a keyword is deleted first. */
+    ok("a step that answered ends the turn",
+      (main.match(/=== HANDLED\) return;/g) ?? []).length === 6 &&
+        /keywordStep\(\{ from, body, keyword \}\)\) === HANDLED\) \{[\s\S]{0,200}?return;\s+\}/.test(main));
   }
   /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
   {

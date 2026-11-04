@@ -2,13 +2,15 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { DIGEST_CONSENT_TEXT_VERSION } from "@/lib/consent";
 import { DIGEST_AGENT_ATTEMPTS, editionOutcome, type DigestItem } from "@/lib/digest";
+import type { CohortProfile } from "@/lib/digest-cohorts";
 import type { MarketId } from "@/lib/types";
 import { findDigestItems } from "@/lib/server/digest-agent";
 import { withDb, type Db } from "@/lib/server/db";
 
 /**
  * The weekly digest's records (drizzle/0064): one edition per market per
- * Saturday, its items, who was sent it, and the separate yes.
+ * Saturday — and, since 4 Nov (drizzle/0065), per group of alike families
+ * (`lib/digest-cohorts.ts`) — its items, who was sent it, and the separate yes.
  */
 
 export interface DigestEdition {
@@ -18,10 +20,11 @@ export interface DigestEdition {
   items: DigestItem[];
 }
 
-async function readEdition(db: Db, marketId: string, editionDate: string, isTest: boolean): Promise<DigestEdition | null> {
+async function readEdition(db: Db, marketId: string, editionDate: string, isTest: boolean, cohortKey: string): Promise<DigestEdition | null> {
   const rows = (await db.execute(sql`
     select id, status, attempts from digest_editions
-     where market_id = ${marketId} and edition_date = ${editionDate}::date and is_test = ${isTest} limit 1
+     where market_id = ${marketId} and edition_date = ${editionDate}::date and is_test = ${isTest}
+       and cohort_key = ${cohortKey} limit 1
   `)) as unknown as Array<Record<string, unknown>>;
   if (!rows[0]) return null;
   const id = String(rows[0].id);
@@ -52,18 +55,26 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
  * its own edition, marked, so nothing it found is ever what a real Saturday
  * sends.
  */
-export async function digestEdition(marketId: MarketId, editionDate: string, isTest = false): Promise<DigestEdition | null> {
-  const existing = await withDb((db: Db) => readEdition(db, marketId, editionDate, isTest));
+export async function digestEdition(
+  marketId: MarketId,
+  editionDate: string,
+  cohort: CohortProfile,
+  isTest = false,
+): Promise<DigestEdition | null> {
+  const existing = await withDb((db: Db) => readEdition(db, marketId, editionDate, isTest, cohort.key));
   if (!existing.persisted) return null;
   const before = existing.data;
   if (before && before.status !== "failed") return before;
   if (before && before.attempts >= DIGEST_AGENT_ATTEMPTS) return null;
 
-  const run = await findDigestItems(marketId, editionDate);
+  const run = await findDigestItems(marketId, editionDate, cohort);
   const status = editionOutcome({ end: run.end, parsed: run.parsed, kept: run.items.length });
   console.info("[digest] agent", {
     market: marketId,
     test: isTest,
+    /* The group's size and shape, never who is in it (invariant 7). */
+    cohort_members: cohort.members,
+    cohort_stages: cohort.stages.length,
     end: run.end,
     status,
     attempt: (before?.attempts ?? 0) + 1,
@@ -80,9 +91,10 @@ export async function digestEdition(marketId: MarketId, editionDate: string, isT
   const stored = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
       const rows = (await tx.execute(sql`
-        insert into digest_editions (market_id, edition_date, status, is_test)
-        values (${marketId}, ${editionDate}::date, ${status}, ${isTest})
-        on conflict (market_id, edition_date, is_test) do update
+        insert into digest_editions (market_id, edition_date, status, is_test, cohort_key, cohort_label, cohort_profile)
+        values (${marketId}, ${editionDate}::date, ${status}, ${isTest},
+                ${cohort.key}, ${cohort.label}, ${JSON.stringify(cohort)}::jsonb)
+        on conflict (market_id, edition_date, is_test, cohort_key) do update
            set status = excluded.status, attempts = digest_editions.attempts + 1
          where digest_editions.status = 'failed'
         returning id
@@ -100,10 +112,28 @@ export async function digestEdition(marketId: MarketId, editionDate: string, isT
           `);
         }
       }
-      return readEdition(tx as unknown as Db, marketId, editionDate, isTest);
+      return readEdition(tx as unknown as Db, marketId, editionDate, isTest, cohort.key);
     }),
   );
   return stored.persisted && stored.data?.status === "ready" ? stored.data : null;
+}
+
+/**
+ * The groups already drawn for this Saturday, as their editions recorded them
+ * (`cohort_profile`), so a later hourly run keeps them (`joinDrawn`). The
+ * pre-group edition ('all') is not one.
+ */
+export async function drawnCohorts(marketId: MarketId, editionDate: string, isTest = false): Promise<CohortProfile[]> {
+  const result = await withDb(async (db: Db) =>
+    (await db.execute(sql`
+      select cohort_profile from digest_editions
+       where market_id = ${marketId} and edition_date = ${editionDate}::date and is_test = ${isTest}
+         and cohort_key <> 'all' and cohort_profile is not null
+       order by cohort_key
+    `)) as unknown as Array<Record<string, unknown>>,
+  );
+  if (!result.persisted || !result.data) return [];
+  return result.data.map((r) => r.cohort_profile as CohortProfile).filter((p) => p && typeof p.key === "string");
 }
 
 /**
@@ -130,18 +160,38 @@ export interface DigestRecipient {
   phone: string;
   /** Their children, by birth (or due) year and the month when given; empty for nobody listed. */
   children: Array<{ year: number; month: number | null }>;
+  /** What the graph knows, for grouping (4 Nov): the neighborhood and its town, the social edges, the logistics and budget answers. */
+  neighborhood: string | null;
+  area: string | null;
+  affinities: string[];
+  relevance: string[];
+  /** Already sent a digest this Saturday, from any group's edition. */
+  sent: boolean;
 }
 
 /**
- * Who gets this edition: a phone, the market, a newest `digest` consent that is
- * a yes, and no send for this edition yet. Opt-out (STOP) and quiet hours are
- * the send layer's to refuse, as for every message. A test edition goes to
- * test people only, and a real one never to them.
+ * Everybody this Saturday's digest is for: a phone, the market, a newest
+ * `digest` consent that is a yes — **sent or not**, because the groups are
+ * drawn over all of them, so every hourly run of the day draws the same ones
+ * (4 Nov); `sent` says who already has theirs, from any group's edition, so
+ * nobody is sent two. Opt-out (STOP) and quiet hours are the send layer's to
+ * refuse, as for every message. A test edition goes to test people only, and a
+ * real one never to them.
  */
-export async function digestRecipients(marketId: MarketId, editionId: string, isTest = false): Promise<DigestRecipient[]> {
+export async function digestAudience(marketId: MarketId, editionDate: string, isTest = false): Promise<DigestRecipient[]> {
   const result = await withDb(async (db: Db) =>
     (await db.execute(sql`
-      select p.id as person_id, p.phone,
+      select p.id as person_id, p.phone, p.neighborhood,
+             (select o.area from market_options o
+               where o.market_id = p.market_id and o.category = 'neighborhoods'
+                 and o.option_value = p.neighborhood limit 1) as area,
+             coalesce((select json_agg(a.affinity_type || ':' || a.affinity_value)
+                         from social_affinities a where a.person_id = p.id), '[]'::json) as affinities,
+             coalesce((select json_agg(l.dimension || ':' || l.value)
+                         from life_relevance l where l.person_id = p.id), '[]'::json) as relevance,
+             exists (select 1 from digest_sends s join digest_editions e on e.id = s.edition_id
+                      where s.person_id = p.id and e.market_id = p.market_id
+                        and e.edition_date = ${editionDate}::date and e.is_test = ${isTest}) as sent,
              coalesce((select json_agg(json_build_object(
                          'year', coalesce(c.birth_year, c.due_year),
                          'month', coalesce(c.birth_month, c.due_month)))
@@ -154,7 +204,7 @@ export async function digestRecipients(marketId: MarketId, editionId: string, is
          and (select k.status from consents k
                where k.person_id = p.id and k.scope = 'digest'
                order by k.captured_at desc limit 1) = 'opted_in'
-         and not exists (select 1 from digest_sends s where s.edition_id = ${editionId}::uuid and s.person_id = p.id)
+       order by p.id
     `)) as unknown as Array<Record<string, unknown>>,
   );
   if (!result.persisted || !result.data) return [];
@@ -165,6 +215,11 @@ export async function digestRecipients(marketId: MarketId, editionId: string, is
       year: Number(c.year),
       month: c.month === null || c.month === undefined ? null : Number(c.month),
     })),
+    neighborhood: r.neighborhood ? String(r.neighborhood) : null,
+    area: r.area ? String(r.area) : null,
+    affinities: ((r.affinities as string[] | null) ?? []).map(String),
+    relevance: ((r.relevance as string[] | null) ?? []).map(String),
+    sent: r.sent === true,
   }));
 }
 

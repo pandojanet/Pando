@@ -75,6 +75,22 @@ export function inboundMediaFrom(params: Record<string, string | undefined>): In
 /** MMS carries at most 5 MB, and so does a picture Claude reads; anything larger is not from a phone. */
 export const MEDIA_MAX_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Whether a tidied transcript may be read back instead of the words as heard
+ * (review, 4 Nov): it may lose fillers and stutters but keeps at least a third
+ * of itself, gains a fixed word or two but not a sentence, and keeps every
+ * number heard — an age, a time, a price is never changed or dropped.
+ */
+export function tidyKept(heard: string, tidied: string): boolean {
+  if (!tidied) return false;
+  if (tidied.length > Math.max(heard.length * 1.15, heard.length + 15)) return false;
+  /* A third is the floor: a polite opening and fillers can be most of a short note ("Hi, Pandu. I I wanted to kindly ask you, ..."). */
+  if (heard.length >= 40 && tidied.length < heard.length * 0.3) return false;
+  const numbers = (t: string) => t.match(/\d+/g) ?? [];
+  const after = new Set(numbers(tidied));
+  return numbers(heard).every((n) => after.has(n));
+}
+
 /** A pending read-back is answered within this, or it is dropped. */
 export const MEDIA_PENDING_HOURS = 24;
 

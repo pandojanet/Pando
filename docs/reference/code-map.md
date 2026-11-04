@@ -145,6 +145,7 @@
 
 `erasePersonIn` in `web/lib/server/repo/parent-delete.ts` — 3 Nov. The one definition of erasing a person, inside the caller's transaction: the parent's DELETE keeps their recommendations, an admin's `person.reset` takes them and any place or caregiver nobody else has a word about. `profileErasedOnServer` / `joinAgainHref` in `web/lib/api-client.ts`: a device whose saved profile is gone on the server drops its copy. `test:reset`.
 
+`web/lib/digest-cohorts.ts` — 4 Nov. The digest's groups: `familyFeatures`, `likeness` (weighted Jaccard), `groupFamilies` (the number of groups from the families), `cohortProfile` (what each group's search is told), `joinDrawn` (a later sign-up joins the day's drawn group it is like; `drawnCohorts` in `repo/digest.ts` reads them), `stageWithAges`. Read by `runWeeklyDigest` (`repo/jobs.ts`).
 `web/lib/digest.ts` + `web/lib/server/digest-agent.ts` + `web/lib/server/repo/digest.ts` — 3 Nov. The weekly digest: `digestDue` (Saturday 9–20 on a market clock), `readAgentItems` (what of the agent's findings may be sent — a link to a site its search returned, dates in the window), `ageFits` / `pickForPerson`, `composeDigest`, `digestCommand` (DIGEST / DIGEST OFF); `findDigestItems` is the agent; `digestEdition` / `digestRecipients` / `recordDigestSend` / `setDigestConsent` the records. The job body is `runWeeklyDigest(now, isTest)` in `repo/jobs.ts`. `test:digest`.
 
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
@@ -208,6 +209,17 @@
                        Since 27 Oct a list of steps in a fixed order (keywordStep …
                        routeStep); a new kind of text is a new step in that list,
                        and a step that answered returns HANDLED.
+`web/lib/inbound-burst.ts` — 4 Nov. Texts sent in a row are one message: `gatherBurst`
+                       (5 s of quiet, 20 s at most), `combineBurst` (lines joined, a
+                       picture or voice note takes the texts as its words),
+                       `oneAtATime` (a number's turns in order). In the process's
+                       memory — one web process. Wired in `handleInboundMessage`.
+                       The conversation before the last exchange is
+                       `earlierExchangesFor` (`repo/deep-dives.ts`, 12 over 7 days).
+`web/lib/answer-fit.ts` + `web/lib/server/answer-fit.ts` — 4 Nov. Whether each parent
+                       record serves the question (`judgeFit`: fits / unknown /
+                       mismatch, and the want), what an answer keeps (`applyFit`) and
+                       the line that says nobody has mentioned it (`unmetLine`).
 `web/lib/admin/action-names.ts` `ADMIN_ACTION_NAMES` · `isAdminActionName` — every admin
                        action's name; the route, `AdminAction` and admin-write's
                        switch are compiled against it. A new action starts here.

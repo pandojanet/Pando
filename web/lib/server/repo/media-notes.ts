@@ -39,6 +39,34 @@ async function endPending(db: Db, personId: string, status: MediaNoteEnd, onlySt
 }
 
 /**
+ * Read-backs nobody answered, for anyone (review, 4 Nov): the expiry ran only
+ * on that person's next text, so a note never answered kept its words and its
+ * media at Twilio for good. And every read-back of a number that sent DELETE,
+ * before the person and the note's row go with it. The media URLs to delete.
+ */
+export async function endMediaNotesWhere(scope: { stale: true } | { phone: string }): Promise<string[]> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      with ended as (
+        select n.id, n.media_url from media_notes n
+         where n.status = 'pending'
+           ${"stale" in scope
+             ? sql`and n.created_at < now() - make_interval(hours => ${MEDIA_PENDING_HOURS})`
+             : sql`and n.person_id in (select id from people where phone = ${scope.phone})`}
+           for update
+      )
+      update media_notes m
+         set status = ${"stale" in scope ? "expired" : "superseded"}, text = null, media_url = null, resolved_at = now()
+        from ended
+       where m.id = ended.id
+      returning ended.media_url
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows.map((r) => r.media_url).filter((u): u is string => typeof u === "string");
+  });
+  return result.persisted && result.data ? result.data : [];
+}
+
+/**
  * A new read-back. An older one still waiting is superseded first — the next
  * message answers the newest — and its media URLs come back for deletion.
  */
@@ -88,6 +116,24 @@ export async function pendingMediaNote(
     };
   });
   return result.persisted && result.data ? result.data : { note: null, expired: [] };
+}
+
+/**
+ * The words of a waiting read-back, corrected by the person's reply (4 Nov):
+ * it stays pending, with its media, for them to confirm the new reading — that
+ * note and no other (a newer one that arrived meanwhile is left alone), and
+ * its day to answer starts again, since a new reading was just sent.
+ */
+export async function reviseMediaNote(personId: string, noteId: string, text: string): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      update media_notes set text = ${text}, created_at = now()
+       where id = ${noteId}::uuid and person_id = ${personId}::uuid and status = 'pending'
+       returning id
+    `)) as unknown as Array<Record<string, unknown>>;
+    return rows.length > 0;
+  });
+  return result.persisted && result.data === true;
 }
 
 /** Ends a read-back the person answered; the media URL to delete, if any. */

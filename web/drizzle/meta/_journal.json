@@ -456,6 +456,13 @@
       "when": 1793710800000,
       "tag": "0064_weekly_digest",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1793797200000,
+      "tag": "0065_digest_cohorts",
+      "breakpoints": true
     }
   ]
 }

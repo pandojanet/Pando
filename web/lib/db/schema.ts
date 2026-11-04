@@ -1703,11 +1703,15 @@ export const digestEditions = pgTable(
     status: text("status").notNull().default("ready"),
     attempts: integer("attempts").notNull().default(1),
     isTest: boolean("is_test").notNull().default(false),
+    /* 4 Nov, drizzle/0065: one edition per group of alike families (`lib/digest-cohorts.ts`). */
+    cohortKey: text("cohort_key").notNull().default("all"),
+    cohortLabel: text("cohort_label"),
+    cohortProfile: jsonb("cohort_profile"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     check("digest_editions_status_check", sql`${t.status} in ('ready','empty','failed')`),
-    unique("digest_editions_one_per_week").on(t.marketId, t.editionDate, t.isTest),
+    unique("digest_editions_one_per_cohort").on(t.marketId, t.editionDate, t.isTest, t.cohortKey),
   ],
 );
 

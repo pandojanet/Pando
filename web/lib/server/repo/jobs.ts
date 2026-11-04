@@ -22,10 +22,12 @@ import {
 import { sendSms } from "@/lib/server/sms";
 import { MARKETS } from "@/lib/markets";
 import { ageOn, composeDigest, digestDue, localParts, pickForPerson } from "@/lib/digest";
+import { cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
 import {
   claimDigestSend,
+  digestAudience,
   digestEdition,
-  digestRecipients,
+  drawnCohorts,
   hasDigestRecipients,
   releaseDigestSend,
 } from "@/lib/server/repo/digest";
@@ -184,40 +186,86 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
     if (!editionDate) continue;
     /* Nobody signed up, no agent run (review, 3 Nov). */
     if (!(await hasDigestRecipients(market.id, isTest))) continue;
-    const edition = await digestEdition(market.id, editionDate, isTest);
-    if (!edition) continue;
     const today = localParts(now, market.timeZone).date;
-    for (const recipient of await digestRecipients(market.id, edition.id, isTest)) {
-      const picked = pickForPerson(
-        edition.items,
-        recipient.children.map((c) => ageOn(c.year, c.month, today)),
-      );
-      const { body, included } = composeDigest(picked);
-      /* Claimed before it is sent, so a write that fails afterwards can never
-         mean a second copy next hour (review, 3 Nov). Nothing that suits them is
-         a claim with no items: the hourly runs stop weighing them. */
-      if (!(await claimDigestSend(edition.id, recipient.person_id, included))) continue;
-      if (included === 0) {
-        skipped++;
-        continue;
-      }
-      const result = await sendSms({
-        to: recipient.phone,
-        body,
-        category: "digest",
-        personId: recipient.person_id,
-        template: "weekly_digest",
-        templateVersion: SMS_TEMPLATE_VERSION,
-      });
-      if (result.sent) {
-        processed++;
-      } else if (result.reason === "opted_out") {
-        /* STOP is final for the edition; the claim stays. */
-        skipped++;
-      } else {
-        /* Quiet hours, the provider: may pass — give the claim back for the next run. */
-        failed++;
-        await releaseDigestSend(edition.id, recipient.person_id);
+    /**
+     * Groups, not people (4 Nov, `lib/digest-cohorts.ts`): drawn over everyone
+     * this Saturday's digest is for, sent or not, so every hourly run draws the
+     * same ones; how many there are is what the families make it. Each group
+     * is one edition — one agent search — and one digest, the same text for
+     * every member.
+     */
+    const audience = await digestAudience(market.id, editionDate, isTest);
+    const families: FamilyFacts[] = audience.map((r) => ({
+      id: r.person_id,
+      ages: r.children.map((c) => ageOn(c.year, c.month, today)),
+      neighborhood: r.neighborhood,
+      area: r.area,
+      affinities: r.affinities,
+      relevance: r.relevance,
+    }));
+    /* Drawn once a Saturday (review, 4 Nov): the first run groups everyone;
+       later runs put whoever is not yet sent into the groups already drawn, and
+       group anew only those who fit none. */
+    const drawn = await drawnCohorts(market.id, editionDate, isTest);
+    const unsentAll = audience.map((r, i) => (r.sent ? -1 : i)).filter((i) => i >= 0);
+    const draw = (idx: number[]) =>
+      groupFamilies(idx.map((i) => families[i])).map((g) => ({
+        members: g.members.map((k) => idx[k]),
+        profile: cohortProfile(g.members.map((k) => families[idx[k]]), g.general),
+      }));
+    let plan: Array<{ members: number[]; profile: CohortProfile }>;
+    if (drawn.length === 0) {
+      plan = draw(audience.map((_, i) => i));
+    } else {
+      const { joined, rest } = joinDrawn(unsentAll.map((i) => families[i]), drawn);
+      plan = [
+        ...[...joined.entries()].map(([key, ks]) => ({ members: ks.map((k) => unsentAll[k]), profile: drawn.find((d) => d.key === key)! })),
+        ...(rest.length ? draw(rest.map((k) => unsentAll[k])) : []),
+      ];
+    }
+    /* Sizes only (invariant 7). */
+    console.info("[digest] groups", { market: market.id, test: isTest, families: families.length, groups: plan.length, sizes: plan.map((g) => g.members.length), kept: drawn.length > 0 });
+    for (const { members: group, profile } of plan) {
+      const unsent = group.filter((i) => !audience[i].sent);
+      if (unsent.length === 0) continue;
+      const edition = await digestEdition(market.id, editionDate, profile, isTest);
+      if (!edition) continue;
+      /**
+       * One search per group; what each family is sent is the group's items
+       * that suit their own children (review, 4 Nov). The same text for every
+       * member sent a family with no children, or only a toddler, the group's
+       * teen workshops: `ageFits` keeps a family with no children to what is
+       * for everyone.
+       */
+      for (const i of unsent) {
+        const recipient = audience[i];
+        const { body, included } = composeDigest(pickForPerson(edition.items, families[i].ages));
+        /* Claimed before it is sent, so a write that fails afterwards can never
+           mean a second copy next hour (review, 3 Nov). Nothing that suits them is
+           a claim with no items: the hourly runs stop weighing them. */
+        if (!(await claimDigestSend(edition.id, recipient.person_id, included))) continue;
+        if (included === 0) {
+          skipped++;
+          continue;
+        }
+        const result = await sendSms({
+          to: recipient.phone,
+          body,
+          category: "digest",
+          personId: recipient.person_id,
+          template: "weekly_digest",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+        if (result.sent) {
+          processed++;
+        } else if (result.reason === "opted_out") {
+          /* STOP is final for the edition; the claim stays. */
+          skipped++;
+        } else {
+          /* Quiet hours, the provider: may pass — give the claim back for the next run. */
+          failed++;
+          await releaseDigestSend(edition.id, recipient.person_id);
+        }
       }
     }
   }

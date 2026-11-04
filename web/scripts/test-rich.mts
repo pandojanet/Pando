@@ -444,7 +444,7 @@ console.log("\n=== \"Pando is typing…\" on RCS (lib/rcs-typing.ts) ===");
   const inboundSrc = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   ok("only for an ordinary text that came over RCS — never a keyword", inboundSrc.includes('input.channel === "rcs" && keywordOf(input.body) === null ? startTyping(input.from) : null'));
   const routeSrc = readFileSync(new URL("../app/api/sms/inbound/route.ts", import.meta.url), "utf8");
-  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel, media })"));
+  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel, media, tap: Boolean(params.ButtonPayload) })"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

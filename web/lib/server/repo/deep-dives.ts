@@ -320,6 +320,50 @@ export async function lastExchangeFor(
   return r.persisted ? (r.data ?? null) : null;
 }
 
+/** How far back the conversation is read, and how much of it (4 Nov). */
+export const EARLIER_EXCHANGES = 12;
+export const EARLIER_DAYS = 7;
+
+/**
+ * The conversation before the last exchange (4 Nov, the developer: *"the whole
+ * context of the conversation has to be understood, not only the pause"*):
+ * up to `limit` earlier questions with the opening of each answer, oldest
+ * first, from the last `EARLIER_DAYS` days — a week, wider than the last
+ * exchange's three (the developer: *"I'm not sure four messages will be
+ * enough"*), and twelve of them. "Going back to the swim lessons — which is
+ * cheapest?" two questions later, or "the camp you mentioned before", points
+ * here, not at the last exchange.
+ *
+ * Only what went out: a held or unsent question is left out, so a rewrite can
+ * never build on something a person has not yet read (the 28 Oct rule for the
+ * last exchange, kept for the ones before it).
+ */
+export async function earlierExchangesFor(
+  phone: string,
+  limit = EARLIER_EXCHANGES,
+): Promise<Array<{ question: string; answer: string }>> {
+  const r = await withDb(async (db) => {
+    const out = await rows(
+      db,
+      sql`
+        select question_text, answer_text, status, hold_reason from answers
+         where phone = ${phone} and created_at > now() - make_interval(days => ${EARLIER_DAYS}::int)
+           and question_text is not null
+         order by created_at desc
+         offset 1 limit ${limit * 3}
+      `,
+    );
+    return out
+      .filter((row) => row.status === "sent" && row.hold_reason === "not_held")
+      .map((row) => ({ q: baseQuestion(String(row.question_text ?? "")).trim(), a: row.answer_text ? String(row.answer_text) : "" }))
+      .filter((x) => x.q && x.a)
+      .slice(0, limit)
+      .reverse()
+      .map((x) => ({ question: x.q, answer: x.a.slice(0, 400) }));
+  });
+  return r.persisted ? (r.data ?? []) : [];
+}
+
 /**
  * What the family told Pando that a report should weigh (`questions.ts` ids):
  * travel time, budget preference, logistics. Read from `raw_answers`, where the
