@@ -3,7 +3,7 @@ import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 /* RCS quick replies (29 Oct): the card wording of each message that carries buttons. */
 import { askOfferRich, captureStepRich, type RichKind } from "@/lib/sms-rich";
 import { introOfferCard } from "@/lib/introductions";
-import { participationCard } from "@/lib/onboarding";
+import { childAgeCard, participationCard } from "@/lib/onboarding";
 import { settingsPromptCard } from "@/lib/outreach-policy";
 import { deepDiveOfferCard } from "@/lib/deep-dive";
 
@@ -65,7 +65,7 @@ import {
   mentionsCaregiver as answerMentionsCaregiver,
 } from "@/lib/answer-routing";
 import { TRUST_LABEL } from "@/lib/trust-labels";
-import { classifyDemand, escalateSensitivity } from "@/lib/demand";
+import { classifyDemand, escalateSensitivity, highStakesKind } from "@/lib/demand";
 import { maskContactDetails } from "@/lib/contact-details";
 import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
 import {
@@ -120,6 +120,11 @@ import { looksLikePerson } from "@/lib/named-person";
 import { mentionsName, sameName } from "@/lib/public-info";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 import { yesOrNo } from "@/lib/thanks";
+import { MEDIA_REJECTED, MEDIA_UNREADABLE, mediaConfirmCard, mediaConfirmSms, type InboundMedia } from "@/lib/media-note";
+import { deleteTwilioMedia, readInboundMedia } from "@/lib/server/media-note";
+import { createMediaNote, endMediaNote, pendingMediaNote } from "@/lib/server/repo/media-notes";
+import { DIGEST_OFF_REPLY, DIGEST_ON_REPLY, digestCommand } from "@/lib/digest";
+import { setDigestConsent } from "@/lib/server/repo/digest";
 import { readPingReply } from "@/lib/vouch";
 import { applyPingReply, pendingPing } from "@/lib/server/repo/vouch";
 import {
@@ -208,6 +213,10 @@ async function handleInboundMessageUntraced(input: {
   body: string;
   /** How it arrived, when the transport knows (Twilio's `ChannelMetadata`, 29 Oct). */
   channel?: "rcs" | "sms";
+  /** A voice note or a picture Twilio delivered with it (3 Nov, `lib/media-note.ts`). */
+  media?: InboundMedia;
+  /** These are the words of a voice note or picture the person just confirmed: already counted as an inbound. */
+  confirmedMedia?: boolean;
 }): Promise<void> {
   const { from, body } = input;
 
@@ -240,7 +249,28 @@ async function handleInboundMessageUntraced(input: {
   const person = await ensureInboundPerson({ phone: from });
   traceIdentify(person?.person_id);
 
-  await recordInbound({ phone: from, category: "outreach", keyword: null });
+  if (!input.confirmedMedia) await recordInbound({ phone: from, category: "outreach", keyword: null });
+
+  /**
+   * A voice note or a picture (3 Nov): read, read back, and **nothing else until
+   * the person says it was read right**. The next message answers the read-back
+   * first — a YES runs the whole pipeline on the words, as if they had typed
+   * them; a NO asks them to type; anything else is taken as that typed message.
+   * The media is deleted at Twilio as the read-back ends, whichever way.
+   */
+  if (input.media) {
+    await mediaNoteStep({ from, body, media: input.media, person });
+    return;
+  }
+  if (!input.confirmedMedia) {
+    const read = await mediaReplyStep({ from, body, person });
+    if (read === HANDLED) return;
+    if (typeof read === "string") {
+      return handleInboundMessageUntraced({ from, body: read, channel: input.channel, confirmedMedia: true });
+    }
+  }
+
+  if ((await digestStep({ from, body, person })) === HANDLED) return;
   if ((await settingsStep({ from, body, person })) === HANDLED) return;
   if ((await captureStep({ from, body, person })) === HANDLED) return;
 
@@ -269,6 +299,86 @@ async function handleInboundMessageUntraced(input: {
 
 /** A step has sent this message's reply, or decided none is due: the turn ends. */
 const HANDLED = Symbol("handled");
+
+/**
+ * A voice note or a picture in: read (Deepgram for words, Claude for what a
+ * picture asks), kept as a pending read-back, and read back with Yes / No (RCS)
+ * or "Reply YES, or NO" (SMS). Anything typed with it is part of what is read.
+ * Anything that fails — no key, no download, silence, nothing to make out, no
+ * database — is one honest line asking them to type, and the media is deleted
+ * at once. Counts and enums only in the log (invariant 7).
+ */
+async function mediaNoteStep({ from, body, media, person }: { from: string; body: string; media: InboundMedia; person: InboundPerson }): Promise<void> {
+  const read = await readInboundMedia(media, body);
+  console.info("[sms:inbound] media", {
+    kind: media.kind,
+    ok: read.ok,
+    reason: read.ok ? null : read.reason,
+    seconds: read.ok && read.durationSec !== null ? Math.round(read.durationSec) : null,
+  });
+  const saved =
+    read.ok && person
+      ? await createMediaNote({
+          personId: person.person_id,
+          kind: media.kind,
+          text: read.text,
+          mediaUrl: media.url,
+          durationSec: read.durationSec,
+          confidence: read.confidence,
+        })
+      : null;
+  if (!read.ok || !saved) {
+    await deleteTwilioMedia(media.url);
+    await sendSms({
+      to: from,
+      body: MEDIA_UNREADABLE[media.kind],
+      category: "transactional",
+      personId: person?.person_id,
+      template: `${media.kind}_unreadable`,
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    return;
+  }
+  for (const url of saved.superseded) await deleteTwilioMedia(url);
+  await sendSms({
+    to: from,
+    body: mediaConfirmSms(media.kind, read.text),
+    category: "transactional",
+    personId: person?.person_id,
+    rich: { kind: "yes_no", card: mediaConfirmCard(media.kind, read.text) },
+    template: `${media.kind}_confirm`,
+    templateVersion: SMS_TEMPLATE_VERSION,
+  });
+}
+
+/**
+ * The answer to a read-back, when one is waiting: the confirmed words (the
+ * caller runs them), HANDLED after a no, or undefined — no read-back waiting,
+ * or a message that is not an answer to it, which ends it and goes on as itself.
+ */
+async function mediaReplyStep({ from, body, person }: { from: string; body: string; person: InboundPerson }): Promise<string | typeof HANDLED | undefined> {
+  if (!person) return undefined;
+  const { note, expired } = await pendingMediaNote(person.person_id);
+  for (const url of expired) await deleteTwilioMedia(url);
+  if (!note) return undefined;
+  const said = yesOrNo(body);
+  const ended = await endMediaNote(person.person_id, said === true ? "confirmed" : said === false ? "rejected" : "superseded");
+  for (const url of ended) await deleteTwilioMedia(url);
+  console.info("[sms:inbound] media read-back", { kind: note.kind, answer: said === true ? "yes" : said === false ? "no" : "other" });
+  if (said === true) return note.text;
+  if (said === false) {
+    await sendSms({
+      to: from,
+      body: MEDIA_REJECTED,
+      category: "transactional",
+      personId: person.person_id,
+      template: `${note.kind}_rejected`,
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    return HANDLED;
+  }
+  return undefined;
+}
 
 type InboundPerson = Awaited<ReturnType<typeof ensureInboundPerson>>;
 type Attached = Exclude<Awaited<ReturnType<typeof attachStep>>, typeof HANDLED>["attached"];
@@ -471,6 +581,32 @@ async function keywordStep({ from, body, keyword }: { from: string; body: string
     return HANDLED;
   }
   return undefined;
+}
+
+/**
+ * DIGEST and DIGEST OFF (3 Nov, `lib/digest.ts`): the weekly digest's own yes,
+ * and its undo, over SMS — a consent row each, like the /join tick, and a
+ * one-line answer. Whole message only, so a question that mentions a digest is
+ * a question.
+ */
+async function digestStep({ from, body, person }: { from: string; body: string; person: InboundPerson }): Promise<typeof HANDLED | undefined> {
+  const command = digestCommand(body);
+  if (!command || !person) return undefined;
+  const saved = await setDigestConsent(person.person_id, command === "on");
+  console.info("[sms:inbound] digest", { command, saved });
+  await sendSms({
+    to: from,
+    body: saved
+      ? command === "on"
+        ? DIGEST_ON_REPLY
+        : DIGEST_OFF_REPLY
+      : "Sorry, I couldn't save that just now. Please try again in a minute.",
+    category: "transactional",
+    personId: person.person_id,
+    template: command === "on" ? "digest_on" : "digest_off",
+    templateVersion: SMS_TEMPLATE_VERSION,
+  });
+  return HANDLED;
 }
 
 /**
@@ -1108,14 +1244,20 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
           next,
           confirmed: choice ? settingsConfirmation(choice) : undefined,
         });
-        /* The participation question, when it is the one asked next, carries its three levels as buttons. */
+        /* The participation question, when it is the one asked next, carries its three levels as buttons;
+           the age question its "No kids" (3 Nov). */
         const card = participationCard(reply);
+        const ageCard = childAgeCard(reply);
         await sendSms({
           to: from,
           body: reply,
           category: "transactional",
           personId: person.person_id,
-          rich: card ? { kind: "settings_allowance", card } : undefined,
+          rich: card
+            ? { kind: "settings_allowance", card }
+            : ageCard
+              ? { kind: "child_age", card: ageCard }
+              : undefined,
           template: next ? clarifyTemplate(next) : "clarification_saved",
           templateVersion: SMS_TEMPLATE_VERSION,
         });
@@ -1360,7 +1502,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
       if (pending) await closeQuestion(pending.id, "resolved");
       await sendSms({
         to: from,
-        body: urgent === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis) : allegationReply(marketConfig(marketOf(person)).crisis),
+        body: urgent === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body)) : allegationReply(marketConfig(marketOf(person)).crisis),
         category: "transactional",
         personId: person?.person_id,
         template: urgent === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
@@ -2549,7 +2691,7 @@ async function answerQuestion(input: {
       }
       await sendSms({
         to: from,
-        body: sensitivity === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis) : allegationReply(marketConfig(marketOf(person)).crisis),
+        body: sensitivity === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body)) : allegationReply(marketConfig(marketOf(person)).crisis),
         category: "transactional",
         personId: person?.person_id,
         template: sensitivity === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
@@ -2664,7 +2806,7 @@ async function answerQuestion(input: {
         ? `${answerText}\n\n${clarifier}`
         : answerText
     : urgent === "high_stakes"
-      ? highStakesReply(marketConfig(marketOf(person)).crisis)
+      ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body))
       : urgent === "named_allegation"
         ? allegationReply(marketConfig(marketOf(person)).crisis)
         : heldReply(clarifier);
@@ -2675,6 +2817,8 @@ async function answerQuestion(input: {
      question wherever it rides (under an answer or a held reply), and the Network
      Ask offer only when the text still carries it. */
   const participation = participationCard(text);
+  /* 3 Nov: the age question carries "No kids", for a person with none. */
+  const childAge = childAgeCard(text);
   const rich: { kind: RichKind; card?: string } | undefined = urgent
     ? undefined
     : sending && offerDeep
@@ -2683,7 +2827,9 @@ async function answerQuestion(input: {
         ? { kind: "intro_offer", card: `${answerText}\n\n${introOfferCard(lead.name, introOthers)}` }
         : participation
           ? { kind: "settings_allowance", card: participation }
-          : sending
+          : childAge
+            ? { kind: "child_age", card: childAge }
+            : sending
             ? askOfferRich(nextStep, answerText)
             : undefined;
 

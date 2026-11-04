@@ -20,6 +20,15 @@ import {
   freshnessPingCard,
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
+import { MARKETS } from "@/lib/markets";
+import { ageOn, composeDigest, digestDue, localParts, pickForPerson } from "@/lib/digest";
+import {
+  claimDigestSend,
+  digestEdition,
+  digestRecipients,
+  hasDigestRecipients,
+  releaseDigestSend,
+} from "@/lib/server/repo/digest";
 import { runRetrySweep } from "@/lib/server/repo/retry";
 import { withTrace } from "@/lib/server/trace";
 
@@ -146,7 +155,74 @@ const BODIES: Record<JobName, () => Promise<JobResult>> = {
   thanks_prompt,
   thanks_delivery,
   retry_failed,
+  weekly_digest,
 };
+
+/**
+ * The weekly digest's body (3 Nov). Per market: not Saturday morning to
+ * evening there, nothing. Otherwise the edition (found once), then each parent
+ * who said yes gets what suits their household. Somebody it has nothing for, or
+ * who has texted STOP, is recorded with no items so the hourly runs stop
+ * weighing them; a send refused for a reason that can pass (quiet hours, the
+ * provider) is left for the next run. Counts only (invariant 7).
+ */
+async function weekly_digest(): Promise<JobResult> {
+  return runWeeklyDigest(new Date());
+}
+
+/**
+ * The body, with the clock passed in — so the lab can walk a Saturday on a
+ * Tuesday — and `isTest` for such a walk: its own edition, marked as a test,
+ * sent to test people only.
+ */
+export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobResult> {
+  let processed = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const market of Object.values(MARKETS)) {
+    const editionDate = digestDue(now, market.timeZone);
+    if (!editionDate) continue;
+    /* Nobody signed up, no agent run (review, 3 Nov). */
+    if (!(await hasDigestRecipients(market.id, isTest))) continue;
+    const edition = await digestEdition(market.id, editionDate, isTest);
+    if (!edition) continue;
+    const today = localParts(now, market.timeZone).date;
+    for (const recipient of await digestRecipients(market.id, edition.id, isTest)) {
+      const picked = pickForPerson(
+        edition.items,
+        recipient.children.map((c) => ageOn(c.year, c.month, today)),
+      );
+      const { body, included } = composeDigest(picked);
+      /* Claimed before it is sent, so a write that fails afterwards can never
+         mean a second copy next hour (review, 3 Nov). Nothing that suits them is
+         a claim with no items: the hourly runs stop weighing them. */
+      if (!(await claimDigestSend(edition.id, recipient.person_id, included))) continue;
+      if (included === 0) {
+        skipped++;
+        continue;
+      }
+      const result = await sendSms({
+        to: recipient.phone,
+        body,
+        category: "digest",
+        personId: recipient.person_id,
+        template: "weekly_digest",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      if (result.sent) {
+        processed++;
+      } else if (result.reason === "opted_out") {
+        /* STOP is final for the edition; the claim stays. */
+        skipped++;
+      } else {
+        /* Quiet hours, the provider: may pass — give the claim back for the next run. */
+        failed++;
+        await releaseDigestSend(edition.id, recipient.person_id);
+      }
+    }
+  }
+  return { outcome: outcomeFor({ processed, skipped, failed }), processed, skipped, failed };
+}
 
 /**
  * 13.4 — the retry sweep's body.

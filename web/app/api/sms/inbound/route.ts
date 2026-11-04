@@ -4,6 +4,7 @@ import { verifyTwilioSignature } from "@/lib/server/twilio-signature";
 import { handleInboundMessage } from "@/lib/server/inbound";
 import { tapText } from "@/lib/sms-rich";
 import { inboundChannel } from "@/lib/rcs-typing";
+import { inboundMediaFrom } from "@/lib/media-note";
 
 /**
  * M13.2 — the inbound webhook, and M12.3/12.4's precedence.
@@ -63,6 +64,8 @@ export async function POST(request: Request) {
   const body = tapText({ body: params.Body ?? "", buttonPayload: params.ButtonPayload });
   /* RCS or SMS, from Twilio's `ChannelMetadata` — RCS gets "typing…" (29 Oct, lib/rcs-typing.ts). */
   const channel = inboundChannel(params.ChannelMetadata);
+  /* A voice note or a picture (MMS or RCS) — read back before anything acts on it (3 Nov, lib/media-note.ts). */
+  const media = inboundMediaFrom(params) ?? undefined;
   if (!from) {
     console.warn("[sms:inbound] no usable sender");
     return twiml();
@@ -84,7 +87,7 @@ export async function POST(request: Request) {
    */
   after(async () => {
     try {
-      await handleInboundMessage({ from, body, channel });
+      await handleInboundMessage({ from, body, channel, media });
     } catch (err) {
       console.error("[sms:inbound] pipeline failed", {
         error: err instanceof Error ? err.name : "unknown",

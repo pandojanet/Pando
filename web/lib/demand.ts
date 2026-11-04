@@ -164,17 +164,66 @@ const HIGH_STAKES_TERMS = [
   "social services",
 
   /**
-   * Money decisions and hazards in the home (3 Nov). The 30 Oct brief puts
-   * financial advice behind a person; the Agent Playbook (28 Oct) names
-   * *"unsafe childcare, medical, financial/legal and home hazards"* as what
-   * escalates to a responsible human or a qualified professional.
-   *
-   * The same line as the medical words: **a decision or a danger, never a
-   * price.** "affordable", "cost", "budget" and "savings" are how a parent asks
-   * for a camp, so they are absent; so is "financial advisor", which asks for a
-   * name the way "pediatrician" does. Digits are stripped before matching, so
-   * "529" cannot be listed — "college savings" carries it.
+   * Hazards in the home (3 Nov). The Agent Playbook (28 Oct) names *"unsafe
+   * childcare, medical, financial/legal and home hazards"* as what escalates to
+   * a responsible human or a qualified professional. The ones that cannot wait
+   * are in `URGENT_TERMS` below.
    */
+  "exposed wire",
+  "exposed wires",
+  "sparking",
+  "mold",
+  "mould",
+  "lead paint",
+  "asbestos",
+  "radon",
+];
+
+/**
+ * Minutes, not today (3 Nov): what gets Poison Control and "call 911 now"
+ * instead of "reach someone qualified today". The care reply was the same for a
+ * swallowed battery as for a rash (technical-debt.md). Part of the high-stakes
+ * net as well — every one of these is escalated.
+ *
+ * ⚠ A seizure is here only as it happens ("having a seizure"): "he has had
+ * seizures before, is swimming safe?" is a question, owed the general reply.
+ */
+const URGENT_TERMS = [
+  "swallowed",
+  "choking",
+  "choked",
+  "not breathing",
+  "stopped breathing",
+  "trouble breathing",
+  "unconscious",
+  "unresponsive",
+  "passed out",
+  "having a seizure",
+  "drowning",
+  "overdose",
+  "poison",
+  "poisoning",
+  "poisoned",
+  "gas leak",
+  "smell gas",
+  "smells like gas",
+  "carbon monoxide",
+  "electric shock",
+  "electrocuted",
+];
+
+/**
+ * Money decisions (3 Nov). The 30 Oct brief puts financial advice behind a
+ * person, and it gets its own reply: 988 and a pediatrician's line are the
+ * wrong numbers for a question about a 529.
+ *
+ * The same line as the medical words: **a decision, never a price.**
+ * "affordable", "cost", "budget" and "savings" are how a parent asks for a
+ * camp, so they are absent; so is "financial advisor", which asks for a name
+ * the way "pediatrician" does. Digits are stripped before matching, so "529"
+ * cannot be listed — "college savings" carries it.
+ */
+const MONEY_TERMS = [
   "financial advice",
   "invest",
   "investing",
@@ -192,25 +241,22 @@ const HIGH_STAKES_TERMS = [
   "loans",
   "mortgage",
   "bankruptcy",
-  "gas leak",
-  "smell gas",
-  "smells like gas",
-  "carbon monoxide",
-  "exposed wire",
-  "exposed wires",
-  "sparking",
-  "electric shock",
-  "electrocuted",
-  "mold",
-  "mould",
-  "lead paint",
-  "asbestos",
-  "radon",
-  "poison",
-  "poisoning",
-  "poisoned",
-  "swallowed",
 ];
+
+/**
+ * Which of the three high-stakes replies a message is owed (3 Nov):
+ * `urgent` first, because a swallowed battery in a message that also mentions
+ * money is still a swallowed battery; `money` only when nothing else in the net
+ * matched, so "we can't afford his asthma medication" keeps the medical reply;
+ * `general` for the rest, and for a message the model flagged with no word here.
+ */
+export type HighStakesKind = "urgent" | "money" | "general";
+
+export function highStakesKind(text: string): HighStakesKind {
+  if (mentions(text, URGENT_TERMS)) return "urgent";
+  if (mentions(text, MONEY_TERMS) && !mentions(text, HIGH_STAKES_TERMS)) return "money";
+  return "general";
+}
 
 const PEER_SUPPORT_TERMS = [
   "alone",
@@ -346,7 +392,9 @@ export function classifyDemand(
     return "named_allegation";
   }
   if (chosen === "high_stakes") return "high_stakes";
-  if (mentions(text, HIGH_STAKES_TERMS)) return "high_stakes";
+  if (mentions(text, HIGH_STAKES_TERMS) || mentions(text, URGENT_TERMS) || mentions(text, MONEY_TERMS)) {
+    return "high_stakes";
+  }
   if (chosen === "peer_support") return "peer_support";
   if (mentions(text, PEER_SUPPORT_TERMS)) return "peer_support";
   return "ordinary";

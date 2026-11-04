@@ -25,7 +25,8 @@ export type JobName =
   | "impact_sync"
   | "thanks_prompt"
   | "thanks_delivery"
-  | "retry_failed";
+  | "retry_failed"
+  | "weekly_digest";
 
 export interface JobSpec {
   name: JobName;
@@ -45,6 +46,22 @@ export interface JobSpec {
 }
 
 export const JOBS: Record<JobName, JobSpec> = {
+  /**
+   * The weekly digest (3 Nov, `lib/digest.ts`). **Hourly, and it sends** — but
+   * only on Saturday between 9:00 and 20:00 on each market's clock
+   * (`digestDue`); every other hour it does nothing. The first due run finds
+   * the edition (the agent, once per market per Saturday); every run sends to
+   * whoever has said yes and has not had it, so a run that a quiet-hours or
+   * provider failure cut short is finished by the next one, and `digest_sends`
+   * stops anybody getting two.
+   */
+  weekly_digest: {
+    name: "weekly_digest",
+    min_interval_minutes: 55,
+    sends: true,
+    what: "On Saturday, text the parents who asked for it a few local events, camps and classes.",
+  },
+
   /**
    * 7.7 — the guarantee's clock.
    *

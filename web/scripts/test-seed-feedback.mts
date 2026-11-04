@@ -1039,7 +1039,8 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
        kind, because *first* is a property of the array. */
     const requiredFirst = (kind: "activity" | "place" | "tip" | "caregiver" | "doctor") => {
       const steps = built[kind].steps;
-      const firstOptional = steps.findIndex((x) => x.optional === true);
+      /* 3 Nov: the child's age is optional and keeps its place among the facts. */
+      const firstOptional = steps.findIndex((x) => x.optional === true && x.id !== "child_age");
       /* The fork is a choice about the rest of the card, not a question about the recommendation. */
       return steps.slice(firstOptional).filter((x) => !x.optional && !x.when && x.id !== "more_detail").length === 0;
     };
@@ -1047,9 +1048,22 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
       ok(`${kind}: every always-asked question without a skip comes before the first that has one`, requiredFirst(kind));
     const actSteps = built.activity.steps;
     const byId = (steps: typeof actSteps, id: string) => steps.find((x) => x.id === id);
-    ok("an activity's age, 'what makes it good' and what to know first cannot be skipped",
-      ["child_age", "what_makes_it_great", "caveat"].every(
+    ok("an activity's 'what makes it good' and what to know first cannot be skipped",
+      ["what_makes_it_great", "caveat"].every(
         (id) => byId(actSteps, id) && !byId(actSteps, id)?.optional && !byId(actSteps, id)?.skipLabel));
+    /* 3 Nov, open signup: the age is optional, and not asked of a parent with no
+       children speaking for themselves — still asked about a friend's child. */
+    const ageWhen = byId(actSteps, "child_age")?.when;
+    ok("the child's age is optional, hidden for no children, asked about a friend's child",
+      byId(actSteps, "child_age")?.optional === true &&
+        ageWhen?.({}) === true &&
+        ageWhen?.({ parent_no_children: "yes", firsthand: "yes" }) === false &&
+        ageWhen?.({ parent_no_children: "yes", firsthand: "secondhand" }) === true);
+    ok("and every card's age step carries the same gate",
+      (["activity", "place", "doctor"] as const).every((k) => {
+        const st = built[k].steps.find((x) => x.id === "child_age");
+        return st?.optional === true && st.when?.({ parent_no_children: "yes" }) === false;
+      }));
     const caveatAt = actSteps.findIndex((x) => x.id === "caveat");
     ok("and the caveat is asked of everyone, before the fork",
       caveatAt >= 0 && !actSteps[caveatAt].when &&
@@ -1121,7 +1135,7 @@ console.log("\n=== 16 Sep: the years reach 18, and the months follow the child =
     ok("her struck-out 'What do you value about them?' is not asked",
       !docSteps.some((x) => /value about them/i.test(x.prompt)));
     ok("the eight before the fork are required, the town is only asked when it is not known",
-      ["name", "firsthand", "child_age", "visit_reason", "freshness", "recommendation", "what_makes_it_great", "what_didnt_work", "caveat"]
+      ["name", "firsthand", "visit_reason", "freshness", "recommendation", "what_makes_it_great", "what_didnt_work", "caveat"]
         .every((id) => byId(docSteps, id) && !byId(docSteps, id)?.optional) &&
         byId(docSteps, "location")?.optional === true &&
         byId(docSteps, "location")?.when?.({ location: ["altadena"] }) === false);
@@ -1384,7 +1398,27 @@ ok(
   Object.keys(q.EMPTY_ANSWERS.child_months).length === 0,
   "the year is the required tap; the month is offered beside it",
 );
-ok("and the ages question stays the required one", schoolQ !== undefined && questionById("child_ages")?.required === true);
+/* 3 Nov, open signup: a person may have no children. */
+ok("and the ages question is optional now", schoolQ !== undefined && questionById("child_ages")?.required === false);
+{
+  const none = { ...q.EMPTY_ANSWERS, neighborhood: "altadena", child_ages: [], skipped: ["child_ages"] };
+  const notYet = { ...q.EMPTY_ANSWERS, neighborhood: "altadena", child_ages: [] };
+  ok("passing the ages screen empty is no children", q.childrenDeclined(none) && !q.childrenDeclined(notYet));
+  ok("and a child added after is a child", !q.childrenDeclined({ ...none, child_ages: [4] }));
+  ok("no children hides the school question, not reaching the screen yet does not",
+    !q.isQuestionVisible(schoolQ, none) && q.isQuestionVisible(schoolQ, notYet));
+  const fullNone = { ...none, wants_detail: true };
+  const perChildShown = q.SCREENS.flatMap((s) => q.visibleQuestions(s, fullNone)).filter((x) => x.perChild || x.showForBands);
+  ok("no question about a child is shown to somebody with none", perChildShown.length === 0, perChildShown.map((x) => x.id).join(","));
+  ok("and the depth bar does not count the ages question against them",
+    q.profileDepth(none).total < q.profileDepth(notYet).total);
+  const flowSrc3 = fs.readFileSync("components/seed/ProfileFlow.tsx", "utf8");
+  ok("Continue on an empty ages screen records it as skipped, like Skip",
+    /screen\.id === "child_ages" &&\s+s\.answers\.child_ages\.length === 0 &&\s+!s\.answers\.skipped\.includes/.test(flowSrc3));
+  const routeSrc = fs.readFileSync("app/api/seed/profile/route.ts", "utf8");
+  ok("the save route refuses unreadable ages, never no ages",
+    /agesUnreadable \? "child_ages"/.test(routeSrc) && !/childAges\.length === 0 \? "child_ages"/.test(routeSrc));
+}
 
 /* ── the tenure screen ─────────────────────────────────────────────────────── */
 
@@ -1650,12 +1684,14 @@ console.log("\n=== 9 Sep: fewer screens, and the long lists are boxes ===");
      Each of the three asks one required question and nothing else, which is
      the property that earns the exception; `home_zip` rides along on the
      first because it is that question's own follow-up. */
+  /* 3 Nov: the ages screen stays on the required path, on its own, and is
+     optional (open signup) — the other two are the required decisions. */
   ok(
-    "and the three that do are the three required decisions",
-    SINGLE_OK.every((id) =>
+    "and the three that do are the required path: the two required decisions and the children",
+    SINGLE_OK.filter((id) => id !== "child_ages").every((id) =>
       (screenById(id)?.questions ?? []).some((x) => x.required),
     ) &&
-      SINGLE_OK.length ===
+      SINGLE_OK.length - 1 ===
         q.SCREENS.filter((x) =>
           x.questions.some((y) => y.required),
         ).length,
@@ -2104,7 +2140,7 @@ console.log("\n=== 10 Sep: the fork, and the screens behind the ceiling (nine si
       .flatMap((s) => q.visibleQuestions(s, required))
       .filter((x) => x.required)
       .map((x) => x.id)
-      .join(",") === "neighborhood,child_ages,allowance",
+      .join(",") === "neighborhood,allowance",
     walked
       .flatMap((s) => q.visibleQuestions(s, required))
       .filter((x) => x.required)
@@ -2907,6 +2943,8 @@ console.log("\n=== 16-17 Sep: the invite motivates, and names nothing it cannot 
     t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const why = /export const WHY_INVITE =\s*"([^"]+)"/.exec(referralSrc)?.[1] ?? "";
   ok("there is a motivating line at all", why.length > 40, `${why.length} chars`);
+  /* 3 Nov, open signup: the reader may have no children. */
+  ok("and it assumes no children", !/children|kids/i.test(why), why);
   ok(
     "and it names the benefit rather than the mechanic",
     /answer/i.test(why),
@@ -3645,7 +3683,7 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   );
   ok(
     "the schema and the migration both allow the scope",
-    /'listening_ear','pilot_launch'\)/.test(fs.readFileSync("lib/db/schema.ts", "utf8")) &&
+    /'listening_ear','pilot_launch'(,'digest')?\)/.test(fs.readFileSync("lib/db/schema.ts", "utf8")) &&
       /'listening_ear','pilot_launch'\)\)/.test(fs.readFileSync("drizzle/0057_pilot_launch_consent.sql", "utf8")),
   );
 }

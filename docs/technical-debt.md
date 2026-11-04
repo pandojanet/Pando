@@ -62,14 +62,6 @@ applied count equals the journal's, then run `test:compliance` against it.
 
 **Then.** Give the web search the named place as its subject, and answer honestly when no parent has used it ("no one I know has used it; here is what its page says").
 
-## The care reply is the same for a swallowed battery as for a rash
-
-**Now.** "My 2 year old swallowed a battery and is drooling" gets `highStakesReply` (`lib/answer-routing.ts`): 911, an after-hours line, 988, legal help, and "please reach someone qualified **today**". It is correct and a person is flagged, but it names no Poison Control (1-800-222-1222) and says nothing about minutes. The copy is marked there as new user-facing copy on the list for the client, so it was not changed.
-
-**Due when** the next round of client copy.
-
-**Then.** Ask the client to approve a second wording for swallowing, choking and not breathing that says "now" and gives Poison Control; pick it in `highStakesReply` from the existing `HEALTH_HELP` words in `lib/intent.ts`.
-
 ## No cap on inbound texts per number
 
 **Now.** `/api/sms/inbound` checks Twilio's signature and nothing else, so a real number can send without limit and each text runs the classifier and may run a web search. The 27 Oct review left a throttle step and webhook replay for a decision (see its row in [decisions.md](decisions.md)); this is the same gap seen from the cost side.

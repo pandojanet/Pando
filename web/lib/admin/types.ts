@@ -362,12 +362,9 @@ export interface ContributorRow {
    * Founding's, which is still two approved contributions.
    *
    * `none` is the case the client asked to be able to see: arrived, left
-   * nothing. `missed_deadline` is new with the deadline — a parent who did
-   * everything and did it late is a different conversation from one who did
-   * not finish, and collapsing them into `started` would hide the only case
-   * where the answer is "yes, but the offer had closed".
+   * nothing. (`missed_deadline` went with the deadline, 3 Nov.)
    */
-  reward_status: "not_met" | "in_review" | "approved" | "missed_deadline";
+  reward_status: "not_met" | "in_review" | "approved";
   /**
    * When an admin recorded the reward as **paid** (30 Sep). `reward_status` says
    * whether it is owed; this says whether it has been settled, which the status
@@ -1257,6 +1254,8 @@ export type AdminAction =
   /** 22 Oct: a connection between two parents, recorded by an admin. */
   | { action: "person.link"; id: string; other_id: string; note?: string }
   | { action: "person.unlink"; id: string }
+  /** 3 Nov: erase a person and everything they shared, so the flow can be walked again. `confirm` must be "RESET". */
+  | { action: "person.reset"; id: string; confirm: string }
   /* Introductions — parent to parent (21 Oct) */
   | { action: "intro.approve"; id: string }
   | { action: "intro.reject"; id: string; reason: string }

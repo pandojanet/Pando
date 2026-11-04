@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { INBOUND_CONSENT_VERSION } from "@/lib/consent";
 import {
   clarifyTemplate,
+  declinesChildren,
   parseAges,
   parseFirstName,
   parseNeighborhood,
@@ -111,7 +112,8 @@ export async function ensureInboundPerson(input: {
                raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place,
                nullif(btrim(first_name), '')                    as first_name,
                (allowance_mode = 'as_relevant'
-                 or monthly_contact_allowance is not null)      as allowance_chosen
+                 or monthly_contact_allowance is not null)      as allowance_chosen,
+               coalesce(raw_answers -> 'skipped' @> '["child_ages"]'::jsonb, false) as children_declined
           from people where id = ${personId}::uuid
       `)) as unknown as Array<Record<string, unknown>>;
 
@@ -126,6 +128,7 @@ export async function ensureInboundPerson(input: {
           /* Both read so the SMS can ask them (21 Oct) — see `nextQuestion`. */
           first_name: (hood[0]?.first_name as string | null) ?? null,
           allowance_chosen: hood[0]?.allowance_chosen === true,
+          children_declined: hood[0]?.children_declined === true,
         },
       };
     }),
@@ -209,6 +212,24 @@ export async function saveClarification(input: {
   }
 
   if (input.question === "child_age") {
+    /* "No kids" (3 Nov, open signup): marked the way the web profile marks
+       passing the ages screen empty — `child_ages` in `raw_answers.skipped` —
+       so the question is not asked again and the ones after it are. */
+    if (declinesChildren(input.text)) {
+      const result = await withDb(async (db: Db) => {
+        await db.execute(sql`
+          update people
+             set raw_answers = jsonb_set(
+                   coalesce(raw_answers, '{}'::jsonb),
+                   '{skipped}',
+                   coalesce(raw_answers -> 'skipped', '[]'::jsonb) || '["child_ages"]'::jsonb)
+           where id = ${input.personId}::uuid
+             and not coalesce(raw_answers -> 'skipped' @> '["child_ages"]'::jsonb, false)
+        `);
+        return true;
+      });
+      return result.persisted === true;
+    }
     /* Every child in the reply (21 Oct) — "3 and 7" is two rows. */
     const ages = parseAges(input.text);
     if (ages.length === 0) return false;

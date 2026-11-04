@@ -12,7 +12,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { assistTurn, saveSubmission } from "@/lib/api-client";
+import { assistTurn, joinAgainHref, profileErasedOnServer, saveSubmission } from "@/lib/api-client";
 import { assessChatCard } from "@/lib/contribution-quality";
 import { FOUNDING_MIN_PROFILE_DEPTH, foundingProgressLine } from "@/lib/rewards";
 import {
@@ -64,8 +64,8 @@ import {
   newCaregiverInviteToken,
 } from "@/lib/caregiver-invite";
 import { ProfileReminder } from "@/components/seed/ProfileDepth";
-import { EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
-import { loadSession, newSession, saveSession } from "@/lib/storage";
+import { childrenDeclined, EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
+import { clearSession, loadSession, newSession, saveSession } from "@/lib/storage";
 import {
   ReferralDialog,
   ReferralHeaderInvite,
@@ -177,6 +177,15 @@ export function ChatSeeding() {
     const existing =
       loadSession() ??
       newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "direct" });
+
+    /* A profile erased on the server — an admin's reset or their own DELETE
+       (3 Nov): cards must not be added for nobody, so the device copy goes and
+       they start again at their invite link. */
+    void profileErasedOnServer(existing).then((erased) => {
+      if (!erased) return;
+      clearSession();
+      router.replace(joinAgainHref(existing));
+    });
 
     let chat: ChatState =
       existing.chat ??
@@ -440,13 +449,15 @@ export function ChatSeeding() {
 
   function startCard(kind: ShareKind) {
     const picked = scripts[kind];
-    const first = nextIndex(picked, {}, 0);
+    /* 3 Nov: a profile with no children never sees the child's-age step. */
+    const noChildren = session ? childrenDeclined(session.answers) : false;
+    const first = nextIndex(picked, newDraft(kind, noChildren).fields, 0);
     if (first < 0) return;
 
     patchChat((c) => ({
       ...c,
       mode: "card",
-      draft: newDraft(kind),
+      draft: newDraft(kind, noChildren),
       messages: [...c.messages, { id: uid(), role: "parent", text: picked.label }],
     }));
     track("seed_card_started", { kind });
@@ -456,7 +467,7 @@ export function ChatSeeding() {
         ...c,
         messages: [...c.messages, { id: uid(), role: "pando", text: picked.intro }],
       }));
-      withTyping(() => pushPrompt({ ...newDraft(kind), step_index: first }), 520);
+      withTyping(() => pushPrompt({ ...newDraft(kind, noChildren), step_index: first }), 520);
     });
   }
 
@@ -1040,7 +1051,7 @@ export function ChatSeeding() {
     const profileReady =
       session?.phone_verified === true &&
       Boolean(session?.answers.neighborhood) &&
-      (session?.answers.child_ages ?? []).length > 0 &&
+      /* No child required since 3 Nov (open signup). */
       profileDepth(session.answers).percent >= FOUNDING_MIN_PROFILE_DEPTH;
     return foundingProgressLine({ completed, justCompleted, profileReady });
   }

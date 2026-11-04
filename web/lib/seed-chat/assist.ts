@@ -253,7 +253,10 @@ export function candidateSteps(script: Script, fields: Fields): Step[] {
     open(s, fields) && !(WHY.has(s.id) && asksRecommendation && !("recommendation" in fields));
 
   const before = steps.filter((s, i) => (fork < 0 || i < fork) && s.id !== "extra_note" && ready(s));
-  const required = before.filter((s) => !s.optional);
+  /* The child's age is optional since 3 Nov (open signup) and still keeps its
+     place among the facts: an optional step would otherwise wait until every
+     required one was answered, the opinions included. */
+  const required = before.filter((s) => !s.optional || s.id === "child_age");
   /* The age before the opinions (12 Oct: asked last, it came out as "is he
      still that age?"). The prompt asks for facts first; this makes it so. */
   if (required.some((s) => s.id === "child_age")) {

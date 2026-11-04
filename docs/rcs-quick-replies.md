@@ -22,6 +22,7 @@ the same message arrives as the SMS it always was.
 | `capture_firsthand` | `pando_capture_firsthand` | Used, Heard | ADD, "did you use it yourself?" |
 | `capture_recommend` | `pando_capture_recommend` | Yes, Yes but, No | ADD, "would you recommend it?" |
 | `skip` | `pando_skip` | Skip | ADD, last step (the note is typed) |
+| `child_age` | `pando_child_age` | No kids | the age question wherever it is asked (3 Nov, open signup; the ages are typed) |
 
 Every other message is plain text, on RCS and on SMS alike.
 
@@ -180,6 +181,15 @@ careful form, as when they type the word.
 | Sample `{{2}}` | `Pando: last one, anything another parent should know? Reply with a sentence, or SKIP.` |
 | Env var | `TWILIO_RCS_CONTENT_SID_SKIP` |
 
+### 10. `pando_child_age` — new (3 Nov)
+
+| Field | Value |
+| --- | --- |
+| Buttons | **No kids** (`no_kids`) |
+| Sample `{{1}}` | `Mind if I ask one more thing so I can give you a better answer? How old are your kids? Like 3 and 7.` |
+| Sample `{{2}}` | `Mind if I ask one more thing so I can give you a better answer? How old are your kids? Like 3 and 7, or reply NONE if you don't have kids.` |
+| Env var | `TWILIO_RCS_CONTENT_SID_CHILD_AGE` |
+
 ## Switching it on
 
 1. **First edit the two existing templates** (fallback `{{1}}` → `{{2}}`). Until then, a
@@ -194,6 +204,7 @@ careful form, as when they type the word.
    TWILIO_RCS_CONTENT_SID_CAPTURE_FIRSTHAND=HX…
    TWILIO_RCS_CONTENT_SID_CAPTURE_RECOMMEND=HX…
    TWILIO_RCS_CONTENT_SID_SKIP=HX…
+   TWILIO_RCS_CONTENT_SID_CHILD_AGE=HX…
    ```
 
    A kind can be switched on alone; the others stay plain text.

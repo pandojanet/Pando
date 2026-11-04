@@ -250,6 +250,17 @@ export const PILOT_LAUNCH_CONSENT_TEXT_VERSION = "seed-pilot-launch-2026-10-14";
 export const PILOT_LAUNCH_CONSENT_TEXT = "Also text me when the pilot opens (optional).";
 
 /**
+ * The weekly digest's own yes (3 Nov, `lib/digest.ts`). The /join consent
+ * already *names* a weekly digest — that is the carrier's permission — and the
+ * developer's decision is that nobody gets one without saying yes to it as
+ * well. Optional like `PILOT_LAUNCH_CONSENT_TEXT`, stored only when ticked; over
+ * SMS the same yes is the word DIGEST, and DIGEST OFF records the undo.
+ */
+export const DIGEST_CONSENT_TEXT_VERSION = "digest-2026-11-03";
+
+export const DIGEST_CONSENT_TEXT = "Also text me a weekly digest of local events, camps and classes (optional).";
+
+/**
  * Opting in by text (2 Nov). The RCS application describes a text opt-in as well
  * as the web form, and the carrier reviewers look for it on `/join`, so the page
  * says it in the application's own words: "Text <number> to opt in."
@@ -376,6 +387,8 @@ export type ConsentScope =
   | "listening_ear"
   /** One text when the pilot opens — the optional second tick on /join (14 Oct). */
   | "pilot_launch"
+  /** The weekly digest, its own yes (3 Nov) — /join's optional tick or DIGEST over SMS. */
+  | "digest"
   /** Pando may introduce me to a parent asking about someone I nominated. */
   | "reference"
   /** 2C · G2 — the caregiver agrees Pando may hold their profile at all. */
@@ -414,6 +427,8 @@ export function buildConsentRecord(
           ? LISTENING_EAR_CONSENT_TEXT_VERSION
         : scope === "pilot_launch"
           ? PILOT_LAUNCH_CONSENT_TEXT_VERSION
+        : scope === "digest"
+          ? DIGEST_CONSENT_TEXT_VERSION
           : scope.startsWith("caregiver_")
             ? CAREGIVER_CONSENT_TEXT_VERSION
             : CONSENT_TEXT_VERSION,

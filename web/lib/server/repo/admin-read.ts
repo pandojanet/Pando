@@ -167,7 +167,6 @@ function meetsFoundingRequirements(completeCount: SQL): SQL {
   return sql`(
   fc.verified
   and fc.has_neighborhood
-  and fc.has_children
   and fc.profile_depth >= ${FOUNDING_MIN_PROFILE_DEPTH}
   and (${completeCount}) >= ${FOUNDING_MIN_APPROVED}
   and fc.longest_reason >= ${REASON_MIN_LENGTH}
@@ -539,7 +538,6 @@ async function contributors(db: Db): Promise<AdminResourceRows["contributors"]> 
       reward_status: rewardStatus({
         phone_verified: r.phone_verified === true,
         neighborhood_answered: Boolean(r.neighborhood),
-        children_answered: ((r.birth_years as number[]) ?? []).length > 0,
         profile_depth: Number(r.profile_depth ?? 0),
         /* Complete, not merely approved (5 Oct) — see `founding-count.ts`. */
         approved_contributions: complete.get(String(r.id)) ?? 0,
@@ -721,7 +719,6 @@ async function contributorDetail(db: Db, id: string): Promise<AdminResourceRows[
     reward_status: rewardStatus({
       phone_verified: checklist[0]?.verified === true,
       neighborhood_answered: Boolean(p.neighborhood),
-      children_answered: kids.some((y) => typeof y === "number"),
       profile_depth: Number(checklist[0]?.profile_depth ?? 0),
       approved_contributions: completeForPerson,
       /* A length, never the sentence — see the note on the list query. */

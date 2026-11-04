@@ -78,6 +78,13 @@ const subs = buildSubScripts("pasadena");
   const first = ids(ctx);
   ok("required questions come first", first.includes("freshness") && first.includes("recommendation") && !first.includes("location"), first.join(","));
   ok("a why waits for the recommendation", !first.includes("what_makes_it_great") && !first.includes("what_didnt_work"));
+  /* 3 Nov, open signup: optional, still asked first, and never of somebody with no children. */
+  const noAge = { name: "Splash", what_is_it: "swim lessons", firsthand: "yes" };
+  ok("an open child's age is still asked among the facts, before the opinions", ids(noAge)[0] === "child_age" && !ids(noAge).includes("caveat"), ids(noAge).join(","));
+  ok("and not at all when the profile says no children",
+    !ids({ ...noAge, parent_no_children: "yes" }).includes("child_age") && ids({ ...noAge, parent_no_children: "yes" }).includes("freshness"));
+  ok("but about a friend's child it is",
+    ids({ ...noAge, firsthand: "secondhand", parent_no_children: "yes" }).includes("child_age"));
   const afterRec = ids({ ...ctx, freshness: "current", recommendation: "no" });
   ok("after a No, the No's why is open and the Yes's is not", afterRec.includes("what_didnt_work") && !afterRec.includes("what_makes_it_great"), afterRec.join(","));
   const required = { ...ctx, freshness: "current", recommendation: "yes", what_makes_it_great: "a great teacher", caveat: "none" };
@@ -260,10 +267,12 @@ ok(
 }
 {
   /* The developer's rule for every card (5 Oct): what must be answered comes
-     first; nothing required and unconditional follows an optional step. */
+     first; nothing required and unconditional follows an optional step.
+     The child's age is the one exception (3 Nov): optional since open signup,
+     and still asked among the facts (`candidateSteps`). */
   const bad: string[] = [];
   for (const s of Object.values(subs)) {
-    const firstOptional = s.steps.findIndex((x) => x.optional);
+    const firstOptional = s.steps.findIndex((x) => x.optional && x.id !== "child_age");
     s.steps.forEach((x, i) => {
       if (firstOptional >= 0 && i > firstOptional && !x.optional && !x.when && x.id !== "more_detail") bad.push(`${s.subcategory}.${x.id}`);
     });

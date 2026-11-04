@@ -28,9 +28,10 @@ export interface SendRecord {
   /**
    * Constrained to the two the CHECK allows. An inbound reply to a blast is
    * `outreach` — it belongs to that conversation — and what marks it as an answer
-   * is `respondedTo`, not the category.
+   * is `respondedTo`, not the category. `digest` (3 Nov, drizzle/0064) is the
+   * weekly digest, kept out of every outreach counter by being its own.
    */
-  category: "transactional" | "outreach";
+  category: "transactional" | "outreach" | "digest";
   template: string | null;
   templateVersion: string | null;
   providerMessageId: string | null;

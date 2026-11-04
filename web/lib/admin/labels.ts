@@ -210,7 +210,7 @@ export function allowanceLabel(a: {
  * pending"** for every undecided row — almost the whole directory — when the
  * Founding queue lists only those who meet every requirement
  * (`meetsFoundingRequirements`, mirrored by `rewardStatus`: requirements met
- * and not yet decided reads `in_review`, or `missed_deadline` once late).
+ * and not yet decided reads `in_review`).
  *
  *  - `founding` → confirmed · `request_invite` → an admin said no;
  *  - undecided **and** meeting the requirements → `queued` (it is on the queue);
@@ -224,7 +224,7 @@ export function foundingStanding(a: {
 }): "confirmed" | "declined" | "queued" | "asked" | "none" {
   if (a.founding_status === "founding") return "confirmed";
   if (a.founding_status === "request_invite") return "declined";
-  if (a.reward_status === "in_review" || a.reward_status === "missed_deadline") return "queued";
+  if (a.reward_status === "in_review") return "queued";
   return a.founding_status === "pending_founding" ? "asked" : "none";
 }
 
@@ -492,6 +492,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   "contributor.reward_paid": "Recorded a thank-you as paid",
   "person.link": "Connected two parents",
   "person.unlink": "Removed a connection between two parents",
+  "person.reset": "Reset a profile: erased the person and everything they shared",
   "intro.approve": "Approved an introduction",
   "intro.reject": "Did not take an introduction forward",
   "intro.contacted": "Contacted a parent about an introduction",
@@ -651,6 +652,7 @@ const CONSENT_SCOPE: Record<string, string> = {
   blast: "Questions from other parents",
   listening_ear: "Answering a stranger's hard question",
   pilot_launch: "A text when the pilot opens (taken at /join)",
+  digest: "The weekly digest (taken at /join, or DIGEST by text)",
   reference: "Being a reference for a caregiver",
   caregiver_profile: "Caregiver: Pando may keep my profile",
   caregiver_listing: "Caregiver: may appear in an answer",
@@ -826,6 +828,18 @@ export const MESSAGE_LABEL: Record<string, string> = {
   clarify_first_name: "Asked their first name",
   clarify_participation: "Asked how often they may be asked",
   clarification_saved: "Thanked for an answer",
+  weekly_digest: "Sent the weekly digest",
+  digest_on: "Turned the weekly digest on",
+  digest_off: "Turned the weekly digest off",
+  voice_confirm: "Read back a voice note",
+  voice_unreadable: "Could not hear a voice note",
+  voice_rejected: "Voice note heard wrong: asked to type",
+  image_confirm: "Read back a picture",
+  image_unreadable: "Could not read a picture",
+  image_rejected: "Picture read wrong: asked to type",
+  file_confirm: "Read back a file",
+  file_unreadable: "Could not read a file",
+  file_rejected: "File read wrong: asked to type",
   ask_detail: "Asked what they meant",
   unclear_handover: "Handed to a person",
   small_talk: "Said what Pando is for",

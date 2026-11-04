@@ -40,6 +40,7 @@ import {
   buildConsentRecord,
   PANDO_TEXT_NUMBER,
   PILOT_LAUNCH_CONSENT_TEXT,
+  DIGEST_CONSENT_TEXT,
   SMS_CONSENT_AGREEMENT,
   SMS_CONSENT_TERMS,
 } from "@/lib/consent";
@@ -71,6 +72,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [smsConsent, setSmsConsent] = useState(false);
   /* The optional second tick (14 Oct, the mockup): one text when the pilot opens. */
   const [pilotLaunch, setPilotLaunch] = useState(false);
+  /* The weekly digest's own yes (3 Nov, lib/digest.ts) — optional, like the pilot tick. */
+  const [digest, setDigest] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
   /**
@@ -211,6 +214,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     if (existing?.phone) setPhone(formatPhone(existing.phone));
     if (existing?.sms_consent?.status === "opted_in") setSmsConsent(true);
     if (existing?.pilot_launch_consent?.status === "opted_in") setPilotLaunch(true);
+    if (existing?.digest_consent?.status === "opted_in") setDigest(true);
   }, []);
 
   /**
@@ -326,6 +330,8 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       pilot_launch_consent: pilotLaunch
         ? buildConsentRecord("pilot_launch", true, "seed_entry_phone_field")
         : null,
+      /* The same: only a tick is a record (3 Nov). */
+      digest_consent: digest ? buildConsentRecord("digest", true, "seed_entry_phone_field") : null,
       /* Whatever a resumed session claims, this is re-established by the step
          below — the server is the only thing that can say a number is confirmed. */
       phone_verified: mode === "resume" ? base.phone_verified : false,
@@ -777,6 +783,21 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               >
                 <span className="text-muted">{PILOT_LAUNCH_CONSENT_TEXT}</span>
               </Consent>
+              {/* The weekly digest's own yes (3 Nov): optional, and `canBegin` does not read it either.
+                  Not offered to somebody whose profile is already saved — their
+                  button only goes to /done, so the tick would record nothing
+                  (review, 3 Nov); for them it is DIGEST by text. */}
+              {!alreadySaved && (
+                <Consent
+                  id="weekly-digest"
+                  plain
+                  className="-mt-1 mb-3.5"
+                  checked={digest}
+                  onChange={setDigest}
+                >
+                  <span className="text-muted">{DIGEST_CONSENT_TEXT}</span>
+                </Consent>
+              )}
 
               {alreadySaved ? (
                 <button type="button" className={JOIN_BUTTON} onClick={() => router.push("/done")}>

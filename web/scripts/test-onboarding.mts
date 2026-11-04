@@ -41,6 +41,25 @@ ok(
   "somebody who gave the area but not the age is still asked the age",
   o.nextQuestion({ child_birth_years: [], neighborhood: "altadena" }) === "child_age",
 );
+/* 3 Nov, open signup: "no kids" is an answer, and the questions after it are asked. */
+ok(
+  "somebody with no children is not asked the age again, and is asked the area",
+  o.nextQuestion({ child_birth_years: [], neighborhood: null, children_declined: true }) === "neighborhood",
+);
+for (const said of ["no kids", "None", "I don't have any kids", "no children yet", "not a parent", "I'm a grandma", "rather not say", "nope"]) {
+  ok(`"${said}" answers the age question with no child`, o.declinesChildren(said));
+}
+for (const said of ["3 and 7", "no, just one, she's 4", "expecting in March", "my son is 6"]) {
+  ok(`"${said}" is a child, not a refusal`, !o.declinesChildren(said));
+}
+ok(
+  "and the profile after it moves on",
+  o.nextQuestion(o.withAnswer({ child_birth_years: [], neighborhood: null }, "child_age", "no kids")) === "neighborhood",
+);
+ok(
+  "the age question says the kids may not exist",
+  /reply NONE if you don't have kids/.test(o.CLARIFYING_COPY.child_age),
+);
 ok(
   "each question explains why it is being asked",
   Object.values(o.CLARIFYING_COPY).every((c) => c.length > 20 && /\?/.test(c)),

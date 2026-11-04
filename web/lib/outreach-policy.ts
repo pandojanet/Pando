@@ -198,14 +198,15 @@ export const ALLOWANCE_CHOICES = [
  * message into a Slack channel — a far louder failure than the hour.
  */
 export function quietHoursBlocks(input: {
-  category: "outreach" | "transactional";
+  category: "outreach" | "transactional" | "digest";
   /** A reply to something the parent just sent. */
   inReplyTo: boolean;
   /** From `isQuietHours()` — passed in so this stays clock-free. */
   quiet: boolean;
   transport: "sms" | "slack";
 }): boolean {
-  if (input.category !== "outreach") return false;
+  /* The digest is as proactive as an Ask (3 Nov): held in quiet hours too. */
+  if (input.category !== "outreach" && input.category !== "digest") return false;
   if (input.inReplyTo) return false;
   if (!input.quiet) return false;
   return input.transport !== "slack";

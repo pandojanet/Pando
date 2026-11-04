@@ -49,7 +49,6 @@ console.log("\n=== an activity ===");
 ok("everything answered, firsthand, with a real reason, qualifies", assessContribution(GOOD).status === "qualifies");
 ok("and says nothing is missing", assessContribution(GOOD).missing.length === 0);
 const gaps: Array<[string, Partial<QualityInput>, string]> = [
-  ["no child age", { has_child_age: false }, "how old their child was"],
   ["no 'when were you last there'", { last_there: false }, "when they were last there"],
   ["no reason at all", { why: null }, "what they liked about it"],
   ["a reason of two words", { why: "it's great" }, "more on what they liked about it"],
@@ -63,9 +62,11 @@ for (const [label, patch, word] of gaps) {
 }
 ok(
   "two gaps read as one line an admin can act on",
-  missingLine(assessContribution({ ...GOOD, has_child_age: false, caveat_answered: false })) ===
-    "Need how old their child was + whether there's a catch",
+  missingLine(assessContribution({ ...GOOD, last_there: false, caveat_answered: false })) ===
+    "Need when they were last there + whether there's a catch",
 );
+/* 3 Nov, open signup: the child's age is optional and gates nothing. */
+ok("no child age still qualifies", assessContribution({ ...GOOD, has_child_age: false }).status === "qualifies");
 ok("a friend's experience never qualifies, and says why", (() => {
   const q = assessContribution({ ...GOOD, firsthand: false });
   return q.status === "needs_follow_up" && /friend/.test(q.missing[0]);
@@ -224,7 +225,7 @@ const row = {
   created_at: "2026-10-05T00:00:00Z",
 } as unknown as ContributionRow;
 ok("approved and complete counts", countsTowardFounding(row) && qualityOf(row).status === "qualifies");
-ok("approved but missing the age does not — it stays in Pando", !countsTowardFounding({ ...row, child_age_at_time: [] }));
+ok("approved with no child's age counts too (3 Nov)", countsTowardFounding({ ...row, child_age_at_time: [] }));
 ok("complete but not yet approved does not", !countsTowardFounding({ ...row, status: "pending_review" }));
 ok("and a test row never does", !countsTowardFounding({ ...row, is_test: true }));
 
@@ -259,13 +260,14 @@ const counted = countCompletePerPerson({
   shares: [
     share("a"),
     share("a", { child_age_at_time: [] }),
+    share("a", { last_there: null }),
     share("b"),
     share("b", { what_makes_it_great: "good" }),
     share("c", { firsthand: false }),
   ],
   nominations: [nomination("a"), nomination("b", { hire_again: "no" }), nomination("c", { reference_willing: null })],
 });
-ok("a complete card, one with no age, and a complete caregiver: a counts two", counted.get("a") === 2, String(counted.get("a")));
+ok("a complete card, one with no age, one with no 'last there', and a complete caregiver: a counts three", counted.get("a") === 3, String(counted.get("a")));
 ok("a thin reason, and a caregiver the family would not recommend, do not count", counted.get("b") === 1, String(counted.get("b")));
 ok("a friend's experience, and a caregiver with no reference answer, count for nothing", !counted.has("c"));
 ok("an approved card that does not qualify stays out of the count, so it cannot earn Founding",
@@ -295,7 +297,7 @@ ok("a complete doctor card counts toward Founding", doctors.get("e") === 1, Stri
 ok("a friend's doctor (secondhand) never counts", !doctors.has("f"));
 ok("a doctor card without what they saw them for does not count", !doctors.has("g"));
 ok("a doctor card without whether they still see them does not count", !doctors.has("h"));
-ok("a doctor card without the child's age does not count", !doctors.has("i"));
+ok("a doctor card without the child's age counts (3 Nov)", doctors.get("i") === 1);
 const doctorGap = assessColumns(doctor("x", { visit_reason: null, last_there: null }));
 ok(
   "the admin's line names the doctor's gaps in the doctor's words",

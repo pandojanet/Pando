@@ -1,4 +1,4 @@
-import type { DemandSensitivity } from "./demand";
+import type { DemandSensitivity, HighStakesKind } from "./demand";
 import type { MarketConfig } from "./markets";
 
 /**
@@ -266,8 +266,31 @@ export function heldReply(clarifying: string | null): string {
  *
  * ⚠ New user-facing copy, on the list for the client.
  */
-/* 911, 211 and 988 are national; the legal line is the market's (lib/markets.ts, 27 Oct). */
-export function highStakesReply(crisis: MarketConfig["crisis"]): string {
+/* 911, 211 and 988 are national; the legal line is the market's (lib/markets.ts, 27 Oct).
+   Poison Control is national too, and sits in the registry with the rest.
+
+   Three replies, picked from the parent's own words (`highStakesKind`, 3 Nov):
+   one that says "now" and gives Poison Control for what cannot wait, one for a
+   money decision that does not hand out 988 and a pediatrician's line, and the
+   general one. ⚠ The first two are new copy, written for the client to approve.
+   The caller reads the kind: this module imports types only, so the gate's
+   suites can load it as it is. */
+export function highStakesReply(crisis: MarketConfig["crisis"], kind: HighStakesKind = "general"): string {
+  if (kind === "urgent") {
+    return (
+      "Please don't wait for Pando. If anyone is in danger right now, call 911. " +
+      "Swallowed or breathed in something harmful: " + crisis.poisonControl.name + ", " + crisis.poisonControl.phone + ", any hour. " +
+      "If you smell gas, get everyone outside first, then call. " +
+      "A person at Pando will also read your message."
+    );
+  }
+  if (kind === "money") {
+    return (
+      "Pando is a parent network, not a financial or tax advisor, so for a decision about investing, " +
+      "taxes, debt or a loan please talk to a licensed professional. " +
+      "A person at Pando will also read your message."
+    );
+  }
   return (
     "Pando is a parent network, not a professional service, so for this please reach someone qualified today. " +
     "Emergency: 911. Medical advice any hour: your pediatrician's after-hours line, or 211. " +

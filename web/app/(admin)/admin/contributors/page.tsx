@@ -308,11 +308,6 @@ export default function ContributorsPage() {
                   <Td>
                     {row.reward_status === "approved" ? (
                       <Badge tone="green">Approved</Badge>
-                    ) : row.reward_status === "missed_deadline" ? (
-                      /* Everything done, and done after Oct 31. Its own badge
-                         rather than "In review", which would put them in a
-                         queue nobody can clear. */
-                      <Badge tone="muted">After the deadline</Badge>
                     ) : row.reward_status === "in_review" ? (
                       /* Every requirement met, and the Founding queue is
                          where somebody says yes. The badge names whose move

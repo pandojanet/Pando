@@ -68,6 +68,8 @@ export interface MarketConfig {
     nurseLine: { name: string; phone: string };
     legalHelp: { name: string; phone: string };
     childProtection: { name: string; phone: string };
+    /** For what cannot wait (3 Nov, `highStakesReply`). National in the US, kept here with the rest. */
+    poisonControl: { name: string; phone: string };
   };
 }
 
@@ -90,6 +92,7 @@ export const MARKETS: Record<MarketId, MarketConfig> = {
       nurseLine: { name: "the LA County nurse line", phone: "211" },
       legalHelp: { name: "Neighborhood Legal Services of LA County", phone: "1-800-433-6251" },
       childProtection: { name: "LA County child protection", phone: "1-800-540-4000" },
+      poisonControl: { name: "Poison Control", phone: "1-800-222-1222" },
     },
   },
 };

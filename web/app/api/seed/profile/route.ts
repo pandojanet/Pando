@@ -18,6 +18,7 @@ import { invalidateInvites } from "@/lib/server/invite-cache";
 import {
   LISTENING_EAR_CONSENT_TEXT_VERSION,
   PILOT_LAUNCH_CONSENT_TEXT_VERSION,
+  DIGEST_CONSENT_TEXT_VERSION,
   RECURRING_MESSAGES_CONSENT_TEXT_VERSION,
   SMS_CONSENT_TEXT_VERSION,
 } from "@/lib/consent";
@@ -103,6 +104,7 @@ function normaliseSmsConsent(
  */
 function normalisePilotLaunchConsent(
   value: unknown,
+  fallbackVersion: string = PILOT_LAUNCH_CONSENT_TEXT_VERSION,
 ): { status: string; text_version: string; source?: string } | null {
   if (typeof value !== "object" || value === null) return null;
   const record = value as Record<string, unknown>;
@@ -112,7 +114,7 @@ function normalisePilotLaunchConsent(
     text_version:
       typeof record.text_version === "string" && record.text_version !== ""
         ? record.text_version
-        : PILOT_LAUNCH_CONSENT_TEXT_VERSION,
+        : fallbackVersion,
     source: typeof record.source === "string" ? record.source : undefined,
   };
 }
@@ -252,9 +254,11 @@ export async function POST(request: Request) {
     raw.inviter_relationship_other,
   );
 
-  const childAges = cleanAges(
-    raw.answers?.child_ages ?? raw.child_ages_at_capture,
-  );
+  const rawAges = raw.answers?.child_ages ?? raw.child_ages_at_capture;
+  const childAges = cleanAges(rawAges);
+  /* 3 Nov: no children is an answer (open signup). Only ages sent and none of
+     them recognisable is refused — that is a broken session, not "no kids". */
+  const agesUnreadable = Array.isArray(rawAges) && rawAges.length > 0 && childAges.length === 0;
 
   /**
    * A neighborhood the parent **typed** rather than tapped.
@@ -304,10 +308,10 @@ export async function POST(request: Request) {
    * offending value is deliberately **not** echoed, because it is a stored
    * answer and this response is a log line somewhere.
    */
-  if ((!neighborhood && !typedNeighborhood) || childAges.length === 0) {
+  if ((!neighborhood && !typedNeighborhood) || agesUnreadable) {
     const missing = [
       !neighborhood && !typedNeighborhood ? "neighborhood" : null,
-      childAges.length === 0 ? "child_ages" : null,
+      agesUnreadable ? "child_ages" : null,
     ].filter(Boolean);
     return NextResponse.json(
       {
@@ -531,6 +535,8 @@ export async function POST(request: Request) {
     phone_verified_at: gate.verified_at,
     sms_consent: normaliseSmsConsent(raw.sms_consent),
     pilot_launch_consent: normalisePilotLaunchConsent(raw.pilot_launch_consent),
+    /* The weekly digest's own yes (3 Nov): the same optional-tick shape. */
+    digest_consent: normalisePilotLaunchConsent(raw.digest_consent, DIGEST_CONSENT_TEXT_VERSION),
     listening_ear_consent: normaliseListeningEarConsent(raw.listening_ear_consent),
     /* ⚠ **Read and dropped since 10 Sep**, deliberately rather than removed
        from the payload type: the client folded this consent into the single
@@ -702,6 +708,7 @@ export async function POST(request: Request) {
     phone_verified: payload.phone_verified,
     sms_consent: payload.sms_consent?.status ?? "none",
     pilot_launch_consent: payload.pilot_launch_consent?.status ?? "none",
+    digest_consent: payload.digest_consent?.status ?? "none",
     listening_ear_consent: payload.listening_ear_consent?.status ?? "none",
     wants_founding: payload.wants_founding,
     children: payload.children.length,
@@ -727,6 +734,7 @@ export async function POST(request: Request) {
       phone_verified_at: payload.phone_verified_at,
       sms_consent: payload.sms_consent as ProfileConsent,
       pilot_launch_consent: payload.pilot_launch_consent as ProfileConsent,
+      digest_consent: payload.digest_consent as ProfileConsent,
       listening_ear_consent: payload.listening_ear_consent as ProfileConsent,
       recurring_messages_consent:
         payload.recurring_messages_consent as ProfileConsent,

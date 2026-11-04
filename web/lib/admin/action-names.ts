@@ -75,6 +75,7 @@ export const ADMIN_ACTION_NAMES = [
   "referral.void",
   "person.link",
   "person.unlink",
+  "person.reset",
   /* Introductions — parent to parent (21 Oct). */
   "intro.approve",
   "intro.reject",

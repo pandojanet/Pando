@@ -36,7 +36,15 @@ export type SmsCategory =
   /** The parent just asked for it (verification code). Quiet hours don't apply. */
   | "transactional"
   /** Pando initiated it (Network Ask, freshness ping). Quiet hours apply. */
-  | "outreach";
+  | "outreach"
+  /**
+   * The weekly digest (3 Nov, `lib/digest.ts`): proactive, so quiet hours and
+   * opt-out apply as to outreach — but it is not a request for anyone's help,
+   * and the developer's decision is that it does not count toward invariant
+   * 5's limits. Its own category is what keeps it out of them: every counter
+   * reads `category = 'outreach'`, and step 3 below is outreach only.
+   */
+  | "digest";
 
 export interface SendResult {
   sent: boolean;
@@ -411,7 +419,7 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
    */
   const transport = transportFor(input);
   /* Only a proactive message can be held, so only then is the parent's market read (27 Oct). */
-  const proactive = category === "outreach" && !input.inReplyTo;
+  const proactive = (category === "outreach" || category === "digest") && !input.inReplyTo;
   const marketId = proactive && input.personId ? await personMarketId(input.personId) : null;
   /* Unreadable or unknown market: quiet wherever any market is (fails closed, 27 Oct review). */
   const quiet = !proactive

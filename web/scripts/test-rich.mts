@@ -60,7 +60,7 @@ ok(
   r.RICH_ENV.yes_no === "TWILIO_RCS_CONTENT_SID_YES_NO" && r.RICH_ENV.settings_allowance === "TWILIO_RCS_CONTENT_SID_SETTINGS",
 );
 const envNames = Object.values(r.RICH_ENV);
-ok("every kind has its own variable", new Set(envNames).size === envNames.length && envNames.length === 9);
+ok("every kind has its own variable", new Set(envNames).size === envNames.length && envNames.length === 10);
 ok("every variable is a TWILIO_RCS_CONTENT_SID_ name", envNames.every((n) => /^TWILIO_RCS_CONTENT_SID_[A-Z_]+$/.test(n)));
 
 console.log("\n=== the two variables ===");
@@ -90,8 +90,9 @@ const TITLES: Record<string, string[]> = {
   capture_firsthand: ["Used", "Heard"],
   capture_recommend: ["Yes", "Yes but", "No"],
   skip: ["Skip"],
+  child_age: ["No kids"],
 };
-ok("exactly the nine kinds the runbook lists", JSON.stringify([...r.RICH_KINDS].sort()) === JSON.stringify(Object.keys(TITLES).sort()));
+ok("exactly the ten kinds the runbook lists", JSON.stringify([...r.RICH_KINDS].sort()) === JSON.stringify(Object.keys(TITLES).sort()));
 for (const kind of r.RICH_KINDS) {
   ok(`${kind}: the titles are ${TITLES[kind]?.join(", ")}`, JSON.stringify(r.RICH_BUTTONS[kind].map((x) => x.title)) === JSON.stringify(TITLES[kind]));
 }
@@ -114,6 +115,7 @@ const meaning: Record<string, (text: string) => unknown> = {
   capture_firsthand: (t) => JSON.stringify(capture.readAnswer("firsthand", t)),
   capture_recommend: (t) => JSON.stringify(capture.readAnswer("recommend", t)),
   skip: (t) => JSON.stringify(capture.readAnswer("detail", t)),
+  child_age: (t) => onboarding.declinesChildren(t),
 };
 const expected: Record<string, unknown[]> = {
   yes_no: ["true/still_good", "false/no_longer"],
@@ -135,6 +137,7 @@ const expected: Record<string, unknown[]> = {
   capture_firsthand: ['{"ok":true,"value":"yes"}', '{"ok":true,"value":"no"}'],
   capture_recommend: ['{"ok":true,"value":"yes"}', '{"ok":true,"value":"yes_with_caveats"}', '{"ok":true,"value":"no"}'],
   skip: ['{"ok":true,"skipped":true}'],
+  child_age: [true],
 };
 for (const kind of r.RICH_KINDS) {
   r.RICH_BUTTONS[kind].forEach((button, i) => {
@@ -213,6 +216,19 @@ ok(
     "Here you go.\n\nLast thing: how many questions from nearby parents could Pando send you? As relevant means up to 3 a week.",
 );
 ok("participation: a message that does not ask it has no card", onboarding.participationCard(onboarding.CLARIFYING_COPY.child_age) === null);
+/* 3 Nov, open signup: the age question's "reply NONE" becomes the No kids button. */
+ok("child age: the SMS says how to answer with no children", /reply NONE if you don't have kids/.test(onboarding.CLARIFYING_COPY.child_age));
+ok(
+  "child age: the card drops it, wherever the question rides",
+  onboarding.childAgeCard(`Here you go.
+
+${onboarding.CLARIFYING_COPY.child_age}`) === `Here you go.
+
+${onboarding.CHILD_AGE_CARD}` &&
+    !/NONE/.test(onboarding.CHILD_AGE_CARD),
+);
+ok("child age: a message that does not ask it has no card", onboarding.childAgeCard(onboarding.CLARIFYING_COPY.participation) === null);
+ok("child age: typing NONE is the same answer as the button", onboarding.declinesChildren("NONE"));
 
 console.log("\n=== a card never says more than its SMS ===");
 const pairs: Array<[string, string, string]> = [
@@ -225,6 +241,7 @@ const pairs: Array<[string, string, string]> = [
   ["Network Ask", tpl.blastRequestSms({ question: "Q?", because: "b" }), tpl.blastRequestCard({ question: "Q?", because: "b" })],
   ["deep footer", deep.DEEP_ASK_FOOTER, deep.DEEP_ASK_FOOTER_CARD],
   ["participation", onboarding.CLARIFYING_COPY.participation, onboarding.PARTICIPATION_CARD],
+  ["child age", onboarding.CLARIFYING_COPY.child_age, onboarding.CHILD_AGE_CARD],
   ...(["kind", "firsthand", "recommend", "detail"] as const).map(
     (s) => [`ADD ${s}`, capture.CAPTURE_QUESTIONS[s].prompt, capture.CAPTURE_QUESTIONS[s].card ?? ""] as [string, string, string],
   ),
@@ -427,7 +444,7 @@ console.log("\n=== \"Pando is typing…\" on RCS (lib/rcs-typing.ts) ===");
   const inboundSrc = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   ok("only for an ordinary text that came over RCS — never a keyword", inboundSrc.includes('input.channel === "rcs" && keywordOf(input.body) === null ? startTyping(input.from) : null'));
   const routeSrc = readFileSync(new URL("../app/api/sms/inbound/route.ts", import.meta.url), "utf8");
-  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel })"));
+  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel, media })"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

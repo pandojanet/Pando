@@ -165,8 +165,10 @@ function CopyLink({ code }: { code: string }) {
  * own §6 of 10 Sep is that the guaranteed $10 is *"the only launch incentive"* —
  * a second one is her decision to take, not ours.
  */
+/* 3 Nov: "with children the age of yours" is gone — open signup, and the
+   person reading it may have none (the developer's instruction). */
 export const WHY_INVITE =
-  "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you, with children the age of yours, whose experience can come back in an answer.";
+  "Pando answers with what local parents actually know, so who is in it is how good your answers are. Every parent you bring is one more near you whose experience can come back in an answer.";
 
 /**
  * The same link as a small box in a screen header — her instruction of 8 Sep:

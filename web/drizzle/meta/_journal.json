@@ -442,6 +442,20 @@
       "when": 1793188800000,
       "tag": "0062_rls_every_table",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1793707200000,
+      "tag": "0063_media_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1793710800000,
+      "tag": "0064_weekly_digest",
+      "breakpoints": true
     }
   ]
 }

@@ -356,7 +356,7 @@ export const consents = pgTable(
      */
     check(
       "consents_scope_check",
-      sql`${t.scope} in ('sms','sms_recurring','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear','pilot_launch')`,
+      sql`${t.scope} in ('sms','sms_recurring','follow_up','blast','reference','caregiver_profile','caregiver_listing','caregiver_introduction','caregiver_reference','listening_ear','pilot_launch','digest')`,
     ),
     check(
       "consents_status_check",
@@ -1452,7 +1452,7 @@ export const messageLog = pgTable(
     check("message_log_direction_check", sql`${t.direction} in ('out','in')`),
     check(
       "message_log_category_check",
-      sql`${t.category} in ('transactional','outreach')`,
+      sql`${t.category} in ('transactional','outreach','digest')`,
     ),
     index("message_log_person_idx").on(t.personId, sql`${t.sentAt} desc`),
   ],
@@ -1651,6 +1651,108 @@ export const personRelationships = pgTable(
     check("person_relationships_source_check", sql`${t.source} in ('invite','admin')`),
     index("person_relationships_related_idx").on(t.relatedPersonId),
   ],
+);
+
+/**
+ * 3 Nov, drizzle/0063. What Pando read from a voice note or a picture, and its
+ * Twilio media URL, held only while the person is asked "is that right?"
+ * (`lib/media-note.ts`); both are cleared when they answer, and the media is
+ * then deleted at Twilio.
+ */
+export const mediaNotes = pgTable(
+  "media_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    text: text("text"),
+    mediaUrl: text("media_url"),
+    status: text("status").notNull().default("pending"),
+    durationSec: numeric("duration_sec", { precision: 7, scale: 2 }),
+    confidence: numeric("confidence", { precision: 4, scale: 3 }),
+    isTest: boolean("is_test").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("media_notes_kind_check", sql`${t.kind} in ('voice','image','file')`),
+    check(
+      "media_notes_status_check",
+      sql`${t.status} in ('pending','confirmed','rejected','superseded','expired')`,
+    ),
+    check("media_notes_text_pending", sql`(${t.status} = 'pending') = (${t.text} is not null)`),
+    check("media_notes_media_pending", sql`${t.status} = 'pending' or ${t.mediaUrl} is null`),
+    check("media_notes_text_length", sql`${t.text} is null or char_length(${t.text}) between 1 and 8000`),
+  ],
+);
+
+/**
+ * 3 Nov, drizzle/0064. The weekly digest: what the agent found for a market and
+ * a Saturday (`digest_editions`, `digest_items`), and who was sent it
+ * (`digest_sends` — one row per person per edition, so a second run sends
+ * nothing twice). See `lib/digest.ts`.
+ */
+export const digestEditions = pgTable(
+  "digest_editions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    marketId: text("market_id").notNull(),
+    editionDate: date("edition_date").notNull(),
+    status: text("status").notNull().default("ready"),
+    attempts: integer("attempts").notNull().default(1),
+    isTest: boolean("is_test").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("digest_editions_status_check", sql`${t.status} in ('ready','empty','failed')`),
+    unique("digest_editions_one_per_week").on(t.marketId, t.editionDate, t.isTest),
+  ],
+);
+
+export const digestItems = pgTable(
+  "digest_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    editionId: uuid("edition_id")
+      .notNull()
+      .references(() => digestEditions.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    whenText: text("when_text").notNull(),
+    startsOn: date("starts_on"),
+    endsOn: date("ends_on"),
+    place: text("place"),
+    ageMin: integer("age_min"),
+    ageMax: integer("age_max"),
+    summary: text("summary").notNull(),
+    url: text("url").notNull(),
+  },
+  (t) => [
+    check("digest_items_kind_check", sql`${t.kind} in ('event','camp','class','opportunity')`),
+    check("digest_items_url_check", sql`${t.url} ~ '^https?://'`),
+    check(
+      "digest_items_ages_check",
+      sql`(${t.ageMin} is null or ${t.ageMin} between 0 and 99) and (${t.ageMax} is null or ${t.ageMax} between 0 and 99) and (${t.ageMin} is null or ${t.ageMax} is null or ${t.ageMin} <= ${t.ageMax})`,
+    ),
+  ],
+);
+
+export const digestSends = pgTable(
+  "digest_sends",
+  {
+    editionId: uuid("edition_id")
+      .notNull()
+      .references(() => digestEditions.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    itemCount: integer("item_count").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.editionId, t.personId] })],
 );
 
 export type ShareContribution = typeof shareContributions.$inferSelect;

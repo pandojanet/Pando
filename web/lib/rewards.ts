@@ -21,19 +21,10 @@
 /** The amount, in whole dollars. One number, used by every sentence below. */
 export const REWARD_AMOUNT_USD = 10;
 
-/**
- * The deadline — **none since 14 Oct** (the developer: *"remove 'by Oct 31,
- * 2026' — there is no deadline for this now"*).
- *
- * It was her 10 Sep hard deadline, `2026-10-31T23:59:59-07:00`, said in the
- * offer and enforced by `rewardStatus` as `missed_deadline`. Both halves went
- * together, deliberately: a sentence with no date over a check that still
- * refused a parent on 1 November would be a promise the code breaks.
- *
- * ⚠ Null rather than deleted, so bringing a deadline back is one value — and
- * then the sentence must name it again (`test:rewards` pins the pair).
- */
-export const REWARD_DEADLINE: string | null = null;
+/* There is no deadline. The 31 Oct one came out of the offer on 14 Oct and,
+   with the `missed_deadline` status and its admin badge, out of the code on
+   3 Nov (the developer). Bringing one back is a new decision: a date in the
+   sentence, a check in `rewardStatus`, and a status for the admin. */
 
 /**
  * **Her sentence**, used verbatim in both places she named — with its
@@ -203,9 +194,11 @@ export const FOUNDING_MIN_APPROVED = 2;
 export interface RewardInput {
   /** Invariant 11 — a server fact, never a field the client sets. */
   phone_verified: boolean;
-  /** §8.5's two: where they live and who their children are. */
+  /**
+   * Where they live. ⚠ Children are not a condition since 3 Nov (open signup:
+   * the ages question is optional), so there is no `children_answered` here.
+   */
   neighborhood_answered: boolean;
-  children_answered: boolean;
   /** `profileDepth` as a percentage, stored on the person by the profile write. */
   profile_depth: number;
   /** Contributions an admin approved — shares and caregiver nominations alike. */
@@ -214,19 +207,17 @@ export interface RewardInput {
   reason: string | null;
   /** The admin's decision. Once taken, nothing below can unmake it. */
   founding_approved: boolean;
-  /** When the judgement is being made. */
-  at?: Date;
 }
 
 /**
  * `approved` is a person's decision · `in_review` is the queue · `not_met` is
- * everything else · `missed_deadline` is everything done, and done too late.
+ * everything else.
  *
  * ⚠ The names changed with the meaning on 16 Sep. `eligible` / `started` /
  * `none` described a rule the app computed by itself; these describe a decision
  * somebody takes, which is what the Founding queue now is.
  */
-export type RewardStatus = "approved" | "in_review" | "missed_deadline" | "not_met";
+export type RewardStatus = "approved" | "in_review" | "not_met";
 
 /**
  * The shortest sentence that could be called a reason.
@@ -254,7 +245,6 @@ export function meetsFoundingRequirements(input: RewardInput): boolean {
   return (
     input.phone_verified &&
     input.neighborhood_answered &&
-    input.children_answered &&
     input.profile_depth >= FOUNDING_MIN_PROFILE_DEPTH &&
     input.approved_contributions >= FOUNDING_MIN_APPROVED &&
     hasReason(input.reason)
@@ -273,16 +263,6 @@ export function rewardStatus(input: RewardInput): RewardStatus {
   if (input.founding_approved) return "approved";
 
   if (!meetsFoundingRequirements(input)) return "not_met";
-
-  /* The deadline is checked **last**, so a parent who did everything and did it
-     late reads as `missed_deadline` rather than as `not_met` — the two are
-     different conversations, and only one of them is about the offer having
-     closed. With no deadline (14 Oct) it never fires; the status stays in the
-     type because the admin pages still render it. */
-  const at = input.at ?? new Date();
-  if (REWARD_DEADLINE && at.getTime() > new Date(REWARD_DEADLINE).getTime()) {
-    return "missed_deadline";
-  }
 
   return "in_review";
 }

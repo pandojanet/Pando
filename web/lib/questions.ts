@@ -1032,13 +1032,17 @@ export const ALL_SCREENS: Screen[] = [
     id: "child_ages",
     eyebrow: "Your kids",
     title: "Add each child's birth year.",
-    help: "So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional.",
+    help: "So we only ask you about stages you've actually lived. Birth years, never names — and the month is optional. No kids? Skip this one.",
     questions: [
       {
         id: "child_ages",
         label: "Birth years",
         kind: "ages",
-        required: true,
+        /* Optional since 3 Nov: open signup — a grandparent, a homeowner or a
+           traveller joins without a child (the 30 Oct brief, the Founder Bible).
+           Passing it empty is "no children" (`childrenDeclined`), and every
+           question about a child is then hidden. */
+        required: false,
         source: { type: "static", options: BIRTH_YEAR_OPTIONS },
         affinity: { type: "age_range", weight: 2 },
       },
@@ -1053,7 +1057,9 @@ export const ALL_SCREENS: Screen[] = [
    *
    * **What is required is two questions.** Where they live and who their
    * children are — the two §8.5 has always called required, and the two the
-   * matcher genuinely cannot run without. Everything else on the way to a first
+   * matcher genuinely cannot run without. ⚠ **Since 3 Nov the children are
+   * optional** (open signup: a person may have none), so only where they live
+   * is required here; the ages screen keeps its place. Everything else on the way to a first
    * recommendation is either a permission (the participation level and the
    * recurring-messages opt-in) or is behind this fork.
    *
@@ -2155,6 +2161,9 @@ export function isQuestionVisible(
    * the same mistake in the other direction.
    */
   if (question.perChild && !hasBornChild(answers)) return false;
+  /* 3 Nov: a parent who passed the ages screen with no child is asked nothing
+     about one — not the per-child questions, and not the ones gated on a band. */
+  if ((question.perChild || question.showForBands) && childrenDeclined(answers)) return false;
   if (!question.showForBands) return true;
   const bands = ageBandsOf(answers.child_ages);
   if (bands.length === 0) return true;
@@ -2469,6 +2478,17 @@ export function sameForAllChildren(
  */
 export function hasBornChild(answers: ProfileAnswers): boolean {
   return answers.child_ages.length === 0 || answerableChildren(answers).length > 0;
+}
+
+/**
+ * No children, said rather than not yet reached (3 Nov): the ages screen was
+ * passed — skipped, or Continue with nothing added (`ProfileFlow` records both
+ * in `skipped`) — and holds no child. Open signup lets a person join without a
+ * child, and the questions about one are then hidden, here and on the share
+ * cards. An empty list alone still means "has not reached the screen".
+ */
+export function childrenDeclined(answers: Pick<ProfileAnswers, "child_ages" | "skipped">): boolean {
+  return answers.child_ages.length === 0 && answers.skipped.includes("child_ages");
 }
 
 /**
@@ -3136,7 +3156,9 @@ export function profileDepth(answers: ProfileAnswers): ProfileDepth {
   const full: ProfileAnswers = { ...answers, wants_detail: true };
   const questions = visibleScreens(full)
     .filter((s) => !isStatementScreen(s))
-    .flatMap((s) => visibleQuestions(s, full));
+    .flatMap((s) => visibleQuestions(s, full))
+    /* "No children" is an answer, not a gap the bar should hold against them. */
+    .filter((q) => !(q.kind === "ages" && childrenDeclined(answers)));
 
   const total = questions.length;
   if (total === 0) return { answered: 0, total: 0, percent: 0 };

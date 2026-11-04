@@ -18,6 +18,7 @@ import { bandsForAge } from "@/lib/matching";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
+import { erasePersonIn } from "@/lib/server/repo/parent-delete";
 import {
   insertContributionImpact,
   insertImpact,
@@ -118,6 +119,8 @@ export type ActionOutcome =
         | "caregiver_declined"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
         | "share_name_taken"
+        /* 3 Nov — a reset sent without its typed confirmation. */
+        | "reset_not_confirmed"
         ;
     };
 
@@ -2084,6 +2087,46 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       `)) as unknown as Array<Record<string, unknown>>;
       if (gone.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "person_relationship", resource_id: target };
+    }
+
+    /**
+     * "Reset profile" (3 Nov) — the client's request: *"so Janet can walk the
+     * whole flow from scratch after each change instead of going back and
+     * editing step by step"*, admin only. The developer: everything goes,
+     * recommendations included, so Founding and the $10 can be walked again
+     * and test cards do not pile up.
+     *
+     * It is the person's own DELETE (`erasePersonIn`, one definition of "the
+     * person") plus what they shared. Refused unless `confirm` is "RESET",
+     * typed by the admin — the button cannot be pressed by accident, and a
+     * replayed request without it does nothing. The number may then go through
+     * `/join` as a stranger; the phone throws its old copy away on its own
+     * (`dropErasedSession`). Counts only in the audit row (invariant 7): the
+     * person's id is kept there, as every admin action keeps its target.
+     */
+    case "person.reset": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      if (text(b.confirm) !== "RESET") return { applied: false, reason: "reset_not_confirmed" };
+      const found = (await tx.execute(sql`
+        select p.phone,
+               (p.profile_captured_at is not null) as had_profile,
+               exists (select 1 from caregiver_claims cc where cc.person_id = p.id) as is_caregiver
+          from people p where p.id = ${target}::uuid
+      `)) as unknown as Array<Record<string, unknown>>;
+      const person = found[0];
+      if (!person) return { applied: false, reason: "not_found" };
+      const removed = await erasePersonIn(
+        tx,
+        { id: target, phone: String(person.phone ?? ""), caregiver: person.is_caregiver === true },
+        { withContributions: true },
+      );
+      return {
+        applied: true,
+        resource: "person",
+        resource_id: target,
+        before: { had_profile: person.had_profile === true, ...removed },
+      };
     }
 
     case "referral.void": {

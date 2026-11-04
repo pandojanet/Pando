@@ -124,6 +124,8 @@ const SENDING = [
    * answer, which `/admin/answers` already queues for a person).
    */
   "retry_failed",
+  /* 3 Nov: the weekly digest, on Saturdays, to the parents who said yes to it. */
+  "weekly_digest",
 ];
 ok(
   "and those are the only jobs that may text anybody",

@@ -139,6 +139,12 @@
                        SVG path (no QR library); how to regenerate it is in its header.
 `web/lib/contact-details.ts` — 28 Oct. `maskContactDetails` / `hasContactDetail`: a phone number (ten or more digits, any US format) or an email typed into prose, masked as `[number]` / `[email]`. Used wherever text that may describe a person is written — the SMS capture's answers, a caregiver card's fields, a flag's excerpt (invariant 13). Pure; `test:capture` pins it.
 
+`web/lib/media-note.ts` + `web/lib/server/media-note.ts` + `web/lib/server/repo/media-notes.ts` — 3 Nov. A voice note, video, picture or PDF over MMS/RCS: `inboundMediaFrom` picks it from Twilio's webhook fields (Twilio URLs only; spoken words first, then a picture, then a PDF), `readInboundMedia` fetches it with the account credentials and reads it (Deepgram for speech, Claude for a picture or PDF), `mediaConfirmSms`/`mediaConfirmCard` read it back, `media_notes` (drizzle/0063) holds the words and the media URL until the person answers, and `deleteTwilioMedia` removes the media at Twilio then. Wired in `inbound.ts` (`mediaNoteStep`, `mediaReplyStep`) before every other step. `test:media`.
+
+`erasePersonIn` in `web/lib/server/repo/parent-delete.ts` — 3 Nov. The one definition of erasing a person, inside the caller's transaction: the parent's DELETE keeps their recommendations, an admin's `person.reset` takes them and any place or caregiver nobody else has a word about. `profileErasedOnServer` / `joinAgainHref` in `web/lib/api-client.ts`: a device whose saved profile is gone on the server drops its copy. `test:reset`.
+
+`web/lib/digest.ts` + `web/lib/server/digest-agent.ts` + `web/lib/server/repo/digest.ts` — 3 Nov. The weekly digest: `digestDue` (Saturday 9–20 on a market clock), `readAgentItems` (what of the agent's findings may be sent — a link to a site its search returned, dates in the window), `ageFits` / `pickForPerson`, `composeDigest`, `digestCommand` (DIGEST / DIGEST OFF); `findDigestItems` is the agent; `digestEdition` / `digestRecipients` / `recordDigestSend` / `setDigestConsent` the records. The job body is `runWeeklyDigest(now, isTest)` in `repo/jobs.ts`. `test:digest`.
+
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
                        thresholds, and measured against all 588 real records.
 `web/lib/seed-chat/scripts.ts` — the capture conversations.

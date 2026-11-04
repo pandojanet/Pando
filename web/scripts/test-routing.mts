@@ -313,8 +313,15 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   const crisis = mk.marketConfig().crisis;
   const HIGH = r.highStakesReply(crisis);
   const ALLEGATION = r.allegationReply(crisis);
+  /* 3 Nov: two more, picked from the parent's words. */
+  const dm = (await import(`../lib/demand.ts?v=${Date.now()}`)) as typeof import("../lib/demand.ts");
+  const reply = (said: string) => r.highStakesReply(crisis, dm.highStakesKind(said));
+  const URGENT = reply("my 2 year old swallowed a battery and is drooling");
+  const MONEY = reply("should we put the money in college savings or pay off debt?");
   for (const [name, text] of [
     ["the health, legal or safety reply", HIGH],
+    ["the urgent reply", URGENT],
+    ["the money reply", MONEY],
     ["the claim-about-a-person reply", ALLEGATION],
   ] as const) {
     const plan = seg.planSegments(text);
@@ -325,6 +332,22 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   ok(
     "the high-stakes reply carries the same four resources as the web panel",
     ["911", "211", "988", "1-800-433-6251"].every((n) => HIGH.includes(n)),
+  );
+  ok(
+    "what cannot wait says now and gives Poison Control",
+    URGENT.includes("911") && URGENT.includes("1-800-222-1222") && /right now/.test(URGENT) && !URGENT.includes("today"),
+    URGENT,
+  );
+  ok(
+    "a money decision gets a licensed professional, not 988 or a pediatrician",
+    /financial or tax advisor/.test(MONEY) && !/988|211|pediatrician/.test(MONEY),
+    MONEY,
+  );
+  ok(
+    "a gas smell is urgent; a seizure history and a money worry about medication are not",
+    reply("I think I smell gas in the kitchen") === URGENT &&
+      reply("he has had seizures before, is swimming safe?") === HIGH &&
+      reply("we can't afford his asthma medication, any loans?") === HIGH,
   );
   ok(
     "another market's lines replace the pilot's, word for word otherwise",
@@ -343,7 +366,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   );
   ok(
     "inbound sends them instead of the held reply, and flags the answer",
-    src.includes("highStakesReply(marketConfig(marketOf(person)).crisis)") && src.includes("allegationReply(marketConfig(marketOf(person)).crisis)") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
+    src.includes("highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body))") && src.includes("allegationReply(marketConfig(marketOf(person)).crisis)") && /reason: urgent === "high_stakes" \? "high_stakes_demand" : "named_allegation"/.test(src),
   );
   ok(
     "and asks no clarifying question under one",
@@ -389,11 +412,11 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   /* 27 Oct: the handler is a list of steps, and their order is the product's precedence (the comment above handleInboundMessageUntraced explains each place). */
   {
     const main = src.slice(src.indexOf("async function handleInboundMessageUntraced("), src.indexOf("const HANDLED = Symbol("));
-    const order = ["await keywordStep(", "await ensureInboundPerson(", "await settingsStep(", "await captureStep(", "await attachStep(", "await repliesStep(", "await clarifyStep(", "await openQuestionStep(", "await routeStep("];
+    const order = ["await keywordStep(", "await ensureInboundPerson(", "await mediaNoteStep(", "await mediaReplyStep(", "await digestStep(", "await settingsStep(", "await captureStep(", "await attachStep(", "await repliesStep(", "await clarifyStep(", "await openQuestionStep(", "await routeStep("];
     const at = order.map((call) => main.indexOf(call));
-    ok("the steps run in their fixed order: keywords, who it is, settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
+    ok("the steps run in their fixed order: keywords, who it is, a voice note or picture and its read-back (3 Nov), settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
       at.every((i) => i > 0) && at.every((i, n) => n === 0 || i > at[n - 1]), order.filter((_, n) => at[n] <= 0).join(", "));
-    ok("a step that answered ends the turn", (main.match(/=== HANDLED\) return;/g) ?? []).length === 5);
+    ok("a step that answered ends the turn", (main.match(/=== HANDLED\) return;/g) ?? []).length === 7);
   }
   /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
   {

@@ -750,6 +750,8 @@ export interface SeedSession {
    * session saved by an older build still reads.
    */
   pilot_launch_consent?: import("./consent").ConsentRecord | null;
+  /** The weekly digest's own yes (3 Nov) — only an `opted_in` record or null; optional for older sessions. */
+  digest_consent?: import("./consent").ConsentRecord | null;
   /** E.164, optional at entry. Identity proper arrives with OTP in Phase 2. */
   phone: string | null;
   answers: ProfileAnswers;
@@ -851,6 +853,8 @@ export interface ProfilePayload {
   recurring_messages_consent: import("./consent").ConsentRecord | null;
   /** The optional "text me when the pilot opens" tick from /join (14 Oct). */
   pilot_launch_consent: import("./consent").ConsentRecord | null;
+  /** The optional weekly-digest tick from /join (3 Nov). */
+  digest_consent: import("./consent").ConsentRecord | null;
   /** False = the anonymous path: contributions welcome, no founding status. */
   wants_founding: boolean;
   neighborhood: string | null;

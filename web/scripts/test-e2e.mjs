@@ -1282,8 +1282,7 @@ head("2.1  the overview numbers hold together");
 const o = (await q("overview")).json.rows;
 /* The three states are `approved` / `in_review` / `not_met` since 16 Sep,
    when the reward became the Founding queue's decision rather than an
-   arithmetic. `missed_deadline` is deliberately absent from the overview:
-   the tile counts what is owed a decision, and an expired offer is not. */
+   arithmetic. (`missed_deadline` went with the deadline, 3 Nov.) */
 ok(
   "reward states add up to every contributor",
   o.reward.approved + o.reward.in_review + o.reward.not_met === o.contributors.total,
@@ -1706,13 +1705,10 @@ ok(
   "a phone reaches the admin whole, as E.164",
   founding.every((f) => f.phone === null || (f.phone.startsWith("+") && /^\d{7,15}$/.test(f.phone.slice(1)))),
 );
-/* `missed_deadline` is in the union here and not in the overview's three:
-   a parent who did everything late is a real row and a state nobody is
-   waiting on. */
 ok(
   "every contributor carries a reward state",
   people.every((r) =>
-    ["not_met", "in_review", "approved", "missed_deadline"].includes(r.reward_status),
+    ["not_met", "in_review", "approved"].includes(r.reward_status),
   ),
 );
 /* ⚠ The rule reaches the queue from SQL and the row from TypeScript, so the

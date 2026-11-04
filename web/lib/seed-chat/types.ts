@@ -36,6 +36,23 @@ export type FieldValue = string | string[] | number[];
 
 export type Fields = Record<string, FieldValue>;
 
+/**
+ * Written into a new card's fields when the parent's profile says no children
+ * (3 Nov, open signup — `childrenDeclined`). A field rather than a flag beside
+ * the draft, because the fields are what every reader of a card already gets:
+ * the step gates, the model's next-step pick, the saved submission.
+ */
+export const NO_CHILDREN_FIELD = "parent_no_children";
+
+/**
+ * Whether a card asks the child's age (3 Nov). Not for somebody with no
+ * children speaking for themselves; still asked about a friend's child, where
+ * the age is the friend's and not theirs.
+ */
+export function asksChildAge(fields: Fields): boolean {
+  return !(fields[NO_CHILDREN_FIELD] === "yes" && fields.firsthand !== "secondhand");
+}
+
 export interface Step {
   /** Also the field key written into the draft. */
   id: string;

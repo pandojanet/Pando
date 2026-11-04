@@ -71,6 +71,13 @@ export interface KnownProfile {
    * False asks; absent never asks, for the same reason as `first_name`.
    */
   allowance_chosen?: boolean;
+  /**
+   * They said they have no children, or would rather not say (3 Nov, open
+   * signup) — `raw_answers.skipped` holds `child_ages`, the web profile's own
+   * mark for passing the ages screen empty. The age question is then not asked
+   * again, and the questions after it are.
+   */
+  children_declined?: boolean;
 }
 
 /**
@@ -82,7 +89,7 @@ export interface KnownProfile {
  * and ignores the next has still made Pando better than it was.
  */
 export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
-  if (profile.child_birth_years.length === 0) return "child_age";
+  if (profile.child_birth_years.length === 0 && !profile.children_declined) return "child_age";
   if (!profile.neighborhood && !profile.pending_place) return "neighborhood";
   if (profile.first_name === null) return "first_name";
   if (profile.allowance_chosen === false) return "participation";
@@ -93,6 +100,7 @@ export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
 export function withAnswer(profile: KnownProfile, question: ClarifyingQuestion, text: string): KnownProfile {
   switch (question) {
     case "child_age": {
+      if (declinesChildren(text)) return { ...profile, children_declined: true };
       const year = new Date().getFullYear();
       return { ...profile, child_birth_years: parseAges(text).map((a) => year - Math.max(0, a)) };
     }
@@ -133,8 +141,11 @@ export function withAnswer(profile: KnownProfile, question: ClarifyingQuestion, 
 export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
   /* The client's own opening, on the two questions that do change an answer.
      Every child at once since 21 Oct — "3 and 7" is two children. */
+  /* 3 Nov, open signup: the way to say "none" is in the question, so a person
+     with no children has a clear answer to give. On RCS it is a button instead
+     (`CHILD_AGE_CARD`). */
   child_age:
-    "Mind if I ask one more thing so I can give you a better answer? How old are your kids? (Just the ages is fine, like 3 and 7.)",
+    "Mind if I ask one more thing so I can give you a better answer? How old are your kids? Like 3 and 7, or reply NONE if you don't have kids.",
   neighborhood:
     "Mind if I ask one more thing so I can give you a better answer? Roughly where do you live? I'll look for parents nearby rather than across town.",
   first_name: "Mind if I ask one more thing? What's your first name, so I know who I'm talking to?",
@@ -157,6 +168,18 @@ export const CLARIFYING_COPY: Record<ClarifyingQuestion, string> = {
  */
 export const PARTICIPATION_CARD =
   "Last thing: how many questions from nearby parents could Pando send you? As relevant means up to 3 a week.";
+
+/**
+ * The age question as an RCS card says it (3 Nov): the "No kids" button stands
+ * for "reply NONE", so that sentence goes and the ages stay typed.
+ */
+export const CHILD_AGE_CARD =
+  "Mind if I ask one more thing so I can give you a better answer? How old are your kids? Like 3 and 7.";
+
+/** A message that asks the age question, in the card's words — or null, and no button. */
+export function childAgeCard(text: string): string | null {
+  return text.includes(CLARIFYING_COPY.child_age) ? text.replace(CLARIFYING_COPY.child_age, CHILD_AGE_CARD) : null;
+}
 
 /**
  * A message that asks the participation question, with the card's wording in
@@ -323,6 +346,23 @@ export function parseAge(text: string): number | null {
  * answer (10 Sep), and "twins, both 2" says two of them once. Nothing readable
  * is `[]`, which stores nothing.
  */
+/**
+ * "No kids", "none", "not a parent", "rather not" — a reply to the age question
+ * that answers it with no child (3 Nov, open signup). Checked before
+ * `parseAges`, and only on a reply that carries no age at all, so "no, just one,
+ * she's 4" is still a child.
+ */
+export function declinesChildren(text: string): boolean {
+  const body = text.trim().toLowerCase().replace(/[’]/g, "'").replace(/[.!]+$/, "");
+  if (parseAges(body).length > 0) return false;
+  return (
+    /^(no|nope|nah|none|zero|n\/a|skip|pass|rather not|prefer not|i'd rather not|not yet)\b/.test(body) ||
+    /\b(no|don'?t have|do not have|haven'?t got|without)\s+(any\s+)?(kids|children|child)\b/.test(body) ||
+    /\bnot (a )?(parent|mom|mum|dad)\b/.test(body) ||
+    /\b(i'?m a |i am a )?(grandparent|grandma|grandmother|grandpa|grandfather)\b/.test(body)
+  );
+}
+
 export function parseAges(text: string): number[] {
   let body = text.trim().toLowerCase().replace(/[’]/g, "'");
   const ages: Array<{ at: number; age: number; atLeast: number }> = [];

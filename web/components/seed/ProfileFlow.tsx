@@ -37,6 +37,7 @@ import {
 import { track, trackAbandonOnHide } from "@/lib/analytics";
 import {
   fetchMe,
+  joinAgainHref,
   saveProfile,
 } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
@@ -73,6 +74,7 @@ import {
   visibleScreens,
 } from "@/lib/questions";
 import {
+  clearSession,
   loadSession,
   newSession,
   normaliseAnswers,
@@ -231,6 +233,13 @@ export function ProfileFlow() {
      */
     void (async () => {
       const me = await fetchMe();
+      /* Erased on the server — an admin's reset or their own DELETE (3 Nov):
+         the device copy goes and they start again at their invite link. */
+      if (me.ok && !me.found) {
+        clearSession();
+        router.replace(joinAgainHref(existing));
+        return;
+      }
       if (!me.ok || !me.found || !me.profile_saved) return;
       setSession((prev) =>
         prev
@@ -971,7 +980,22 @@ export function ProfileFlow() {
     setDirection(1);
     track("seed_screen_advanced", { screen: screen.id, screen_index: index });
     setMissingNote(null);
-    update((s) => ({ ...s, screen_index: index + 1 }));
+    /* 3 Nov: Continue on the ages screen with no child added says the same as
+       Skip — "no children" (`childrenDeclined`) — so it is recorded the same way,
+       and the questions about a child are not asked next. */
+    /* Read from the state being updated: Skip calls this too, after its own
+       update, and the render's `answers` does not have that one yet. */
+    update((s) => {
+      const noChildren =
+        screen.id === "child_ages" &&
+        s.answers.child_ages.length === 0 &&
+        !s.answers.skipped.includes(screen.id);
+      return {
+        ...s,
+        screen_index: index + 1,
+        answers: noChildren ? { ...s.answers, skipped: [...s.answers.skipped, screen.id] } : s.answers,
+      };
+    });
   }
 
   function goBack() {

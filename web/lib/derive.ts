@@ -398,6 +398,7 @@ export function buildProfilePayload(session: SeedSession): ProfilePayload {
     /* Taken at /join beside `sms_consent` and carried on the session the same way
        (14 Oct). Null when the optional box was left alone. */
     pilot_launch_consent: session.pilot_launch_consent ?? null,
+    digest_consent: session.digest_consent ?? null,
     inviter_relationship: session.inviter_relationship ?? null,
     inviter_relationship_other: session.inviter_relationship_other ?? null,
     /**

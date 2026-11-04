@@ -11,7 +11,7 @@ import {
   wantsWeekdays,
 } from "@/lib/caregiver-options";
 import type { MarketId, Option } from "../types";
-import type { Fields, Script, ShareKind, Step, Subcategory } from "./types";
+import { asksChildAge, type Fields, type Script, type ShareKind, type Step, type Subcategory } from "./types";
 
 /**
  * The capture conversations.
@@ -514,6 +514,9 @@ export function buildScripts(
           friendPrompt: "How old was your friend's child at the time?",
           aside: "Tap every age that applies.",
           widget: "ages",
+          /* Optional, and not asked of somebody with no children (3 Nov, open signup). */
+          optional: true,
+          when: asksChildAge,
         },
         {
           id: "freshness",
@@ -1088,6 +1091,9 @@ export function buildScripts(
           friendPrompt: "How old was your friend's child when they went?",
           aside: "Tap every age that applies.",
           widget: "ages",
+          /* Optional, and not asked of somebody with no children (3 Nov, open signup). */
+          optional: true,
+          when: asksChildAge,
         },
         {
           id: "freshness",
@@ -1278,6 +1284,9 @@ export function buildScripts(
           friendPrompt: "How old was your friend's child at the time?",
           aside: "Tap every age that applies.",
           widget: "ages",
+          /* Optional, and not asked of somebody with no children (3 Nov, open signup). */
+          optional: true,
+          when: asksChildAge,
         },
         {
           id: "visit_reason",
@@ -1551,6 +1560,9 @@ function childAgeStep(prompt: string): Step {
     friendPrompt: "How old was your friend's child at the time?",
     aside: "Tap every age that applies.",
     widget: "ages",
+    /* Optional, and not asked of somebody with no children (3 Nov, open signup). */
+    optional: true,
+    when: asksChildAge,
   };
 }
 

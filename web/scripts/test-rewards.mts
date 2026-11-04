@@ -25,22 +25,20 @@ const ok = (label: string, cond: boolean, detail = "") => {
   }
 };
 
-/** Every requirement met, nobody has decided yet, well before the deadline. */
+/** Every requirement met, nobody has decided yet. */
 const qualified = {
   phone_verified: true,
   neighborhood_answered: true,
-  children_answered: true,
   profile_depth: 100,
   approved_contributions: 2,
   reason: "Small groups and a very patient teacher.",
   founding_approved: false,
-  at: new Date("2026-10-01T12:00:00-07:00"),
 };
 
 console.log("\n=== the offer is one sentence, said the same way twice ===");
 ok("it names the amount", /\$10 reward/.test(r.REWARD_OFFER), r.REWARD_OFFER);
 /* 14 Oct, the developer: there is no deadline now — so the sentence names none. */
-ok("and no deadline", r.REWARD_DEADLINE === null && !/\bby (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|20\d\d/.test(r.REWARD_OFFER), r.REWARD_OFFER);
+ok("and no deadline", !("REWARD_DEADLINE" in r) && !/\bby (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|20\d\d/.test(r.REWARD_OFFER), r.REWARD_OFFER);
 /* 14 Oct, the developer: the sentence says what is paid for — a complete
    profile and two recommendations, approved — not the one it used to name. */
 ok("and the profile", /complete your profile/.test(r.REWARD_OFFER));
@@ -61,15 +59,6 @@ ok(
   !/Terms/.test(r.REWARD_OFFER),
   r.REWARD_OFFER,
 );
-/**
- * ⚠ **Read in Pacific, never in UTC** — and the first version of this check
- * got it wrong, which is the point of keeping it. The deadline is the last
- * second of 31 October *in Pasadena*, which is already 1 November in UTC, so
- * `getUTCMonth()` reports November and a reader concludes the label is a day
- * out. It is not; the timezone is.
- */
-/* (The Pacific-time label check went with the deadline on 14 Oct. If a
-   deadline comes back, so must a label in the sentence, and this check.) */
 /**
  * The chat's Founding progress (5 Oct), the client's own sentences. Read from
  * FOUNDING_MIN_APPROVED, and none of them promises a payment date: the last
@@ -121,7 +110,8 @@ const without = (
 
 without({ phone_verified: false }, "an unverified number does not qualify");
 without({ neighborhood_answered: false }, "no neighborhood does not qualify");
-without({ children_answered: false }, "no children answered does not qualify");
+/* 3 Nov, open signup: no child is not a reason to miss Founding. */
+ok("having no children is not a condition", !("children_answered" in qualified) && r.meetsFoundingRequirements(qualified));
 without({ reason: null }, "no reason on any contribution does not qualify");
 
 /**
@@ -196,36 +186,19 @@ ok(
   String(r.REASON_MIN_LENGTH),
 );
 
-console.log("\n=== no deadline (14 Oct) ===");
-ok(
-  "everything done, after the old Oct 31 deadline, still goes to review",
-  r.rewardStatus({ ...qualified, at: new Date("2026-11-01T09:00:00-07:00") }) === "in_review",
-  r.rewardStatus({ ...qualified, at: new Date("2026-11-01T09:00:00-07:00") }),
-);
-ok(
-  "and a year later too",
-  r.rewardStatus({ ...qualified, at: new Date("2027-11-01T09:00:00-07:00") }) === "in_review",
-);
-/* Unfinished and late is unfinished — the offer closing is not the reason they
-   are not being paid, and saying so would be the wrong conversation. */
-ok(
-  "but somebody who never finished is `not_met`, deadline or no deadline",
-  r.rewardStatus({
-    ...qualified,
-    reason: null,
-    at: new Date("2026-12-01T09:00:00-07:00"),
-  }) === "not_met",
-);
-/* And an admin who approves somebody late has still approved them: the
-   deadline is about the offer, never about a decision already taken. */
-ok(
-  "an approval after the deadline is still an approval",
-  r.rewardStatus({
-    ...qualified,
-    founding_approved: true,
-    at: new Date("2026-12-01T09:00:00-07:00"),
-  }) === "approved",
-);
+console.log("\n=== no deadline (14 Oct; the status went on 3 Nov) ===");
+ok("everything done goes to review", r.rewardStatus(qualified) === "in_review", r.rewardStatus(qualified));
+ok("somebody who never finished is `not_met`", r.rewardStatus({ ...qualified, reason: null }) === "not_met");
+ok("an approval is an approval", r.rewardStatus({ ...qualified, founding_approved: true }) === "approved");
+{
+  const fsm = await import("node:fs");
+  ok(
+    "and no status says the offer closed",
+    !/"missed_deadline"/.test(fsm.readFileSync(new URL("../lib/rewards.ts", import.meta.url), "utf8")) &&
+      !/After the deadline/.test(fsm.readFileSync(new URL("../app/(admin)/admin/contributors/page.tsx", import.meta.url), "utf8")) &&
+      !/After the deadline/.test(fsm.readFileSync(new URL("../app/(admin)/admin/contributors/[id]/page.tsx", import.meta.url), "utf8")),
+  );
+}
 
 /* 4 Oct — a parent who never reached the last screen is still owed a decision.
    Only `/done/ask` writes pending_founding, and the one parent who met every
@@ -233,6 +206,11 @@ ok(
 {
   const fs = await import("node:fs");
   const read = fs.readFileSync(new URL("../lib/server/repo/admin-read.ts", import.meta.url), "utf8");
+  /* 3 Nov: the SQL copy of the rule lost the children condition with the TypeScript one. */
+  ok(
+    "the queue's SQL does not require a child either",
+    !/and fc\.has_children/.test(read),
+  );
   ok(
     "the Founding queue takes 'none' as well as 'pending_founding'",
     /AWAITING_FOUNDING_DECISION = sql`fc\.founding in \('none', 'pending_founding'\)`/.test(read),

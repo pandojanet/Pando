@@ -11,6 +11,7 @@ import type {
   Subcategory,
   Submission,
 } from "./types";
+import { NO_CHILDREN_FIELD } from "./types";
 
 /**
  * Pure conversation logic: which step comes next, what the parent's answer reads
@@ -18,11 +19,12 @@ import type {
  * drive it later (it decides the next step; the UI just renders it).
  */
 
-export function newDraft(kind: ShareKind): ChatDraft {
+/** `noChildren`: the profile says no children (3 Nov) — see `NO_CHILDREN_FIELD`. */
+export function newDraft(kind: ShareKind, noChildren = false): ChatDraft {
   return {
     id: `${kind}-${Date.now().toString(36)}`,
     kind,
-    fields: {},
+    fields: noChildren ? { [NO_CHILDREN_FIELD]: "yes" } : {},
     step_index: 0,
   };
 }

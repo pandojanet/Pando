@@ -189,6 +189,29 @@ export async function fetchMe(): Promise<MeResult> {
   }
 }
 
+/**
+ * Was this device's saved profile erased on the server (3 Nov)? An admin's
+ * "Reset profile" or the parent's own DELETE removes the person, but the phone
+ * still holds the session it autosaved — so without this, the next `/profile`
+ * would show a review of answers that no longer exist, and `/share` would add
+ * cards for nobody.
+ *
+ * True only on a definite answer: the device says its profile was saved, and
+ * the server — reached, with a valid confirmation — says there is nobody on
+ * this number. No cookie, no database, a network error: false, and the device
+ * copy stays, because a check that fails must never wipe a parent's session.
+ */
+export async function profileErasedOnServer(session: { profile_saved_at: string | null } | null): Promise<boolean> {
+  if (!session?.profile_saved_at) return false;
+  const me = await fetchMe();
+  return me.ok && !me.found;
+}
+
+/** Where a parent whose profile was erased starts again: their own invite link, kept on the device. */
+export function joinAgainHref(session: { invite_code: string | null } | null): string {
+  return session?.invite_code ? `/join?i=${encodeURIComponent(session.invite_code)}` : "/join";
+}
+
 export interface SaveProfileResult {
   ok: true;
   contributor_id: string | null;

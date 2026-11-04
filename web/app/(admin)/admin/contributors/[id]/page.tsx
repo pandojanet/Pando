@@ -23,6 +23,7 @@ import {
 } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { RewardPaid } from "@/components/admin/RewardPaid";
+import { ResetProfile } from "@/components/admin/ResetProfile";
 import {
   AFFILIATION_KIND,
   allowanceLabel,
@@ -245,8 +246,7 @@ export default function ContributorDetailPage({
                 * `approved` is the same fact as the green Founding badge said
                 * two lines up, so it is suppressed rather than printed twice;
                 * what is worth a second badge is *in review* (every
-                * requirement met, waiting on a person) and *not met* — and,
-                * rarely, a parent who did everything after the deadline.
+                * requirement met, waiting on a person) and *not met*.
                 */}
               {/* Whether the reward has actually been paid: the status above
                   says it was earned and nothing said it was settled (30 Sep). */}
@@ -261,8 +261,6 @@ export default function ContributorDetailPage({
               {c.founding_status !== "founding" &&
                 (c.reward_status === "in_review" ? (
                   <Badge tone="gold">Reward in review</Badge>
-                ) : c.reward_status === "missed_deadline" ? (
-                  <Badge tone="muted">After the deadline</Badge>
                 ) : (
                   <Badge tone="muted">Reward requirements not met</Badge>
                 ))}
@@ -727,6 +725,9 @@ export default function ContributorDetailPage({
                 {linkMessage && <p className="mt-2 text-[12.5px] text-muted">{linkMessage}</p>}
               </div>
             </Card>
+
+            {/* 3 Nov: last on the page, so it is never the first thing reached for. */}
+            <ResetProfile id={id} name={c.name ?? null} />
 
             {/* The "Not editable here" card that used to sit at the bottom is
                 gone. It explained the data model to somebody who never asked —

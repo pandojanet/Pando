@@ -49,7 +49,8 @@ export type RichKind =
   | "capture_kind"
   | "capture_firsthand"
   | "capture_recommend"
-  | "skip";
+  | "skip"
+  | "child_age";
 
 /** One quick reply: what the person sees, and the id Twilio returns as `ButtonPayload`. */
 export interface RichButton {
@@ -100,6 +101,9 @@ export const RICH_BUTTONS: Record<RichKind, readonly RichButton[]> = {
   capture_recommend: [b("Yes", "yes"), b("Yes but", "yes_but"), b("No", "no")],
   /* ADD's last step: the note is typed; skipping is one tap. */
   skip: [b("Skip", "skip")],
+  /* The age question (3 Nov, open signup): the ages are typed; having none is one
+     tap. `declinesChildren` reads "No kids". */
+  child_age: [b("No kids", "no_kids")],
 };
 
 /**
@@ -118,6 +122,7 @@ export const RICH_ENV: Record<RichKind, string> = {
   capture_firsthand: "TWILIO_RCS_CONTENT_SID_CAPTURE_FIRSTHAND",
   capture_recommend: "TWILIO_RCS_CONTENT_SID_CAPTURE_RECOMMEND",
   skip: "TWILIO_RCS_CONTENT_SID_SKIP",
+  child_age: "TWILIO_RCS_CONTENT_SID_CHILD_AGE",
 };
 
 export const RICH_KINDS = Object.keys(RICH_BUTTONS) as RichKind[];

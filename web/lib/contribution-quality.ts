@@ -66,8 +66,9 @@ export function choosesWhyByRecommendation(kind: string, subcategory?: string | 
  * — since 9 Oct — its sub-category. One table, so the chat, the admin and the
  * Founding count read the same rule.
  *
- *  - the child's age: every activity, a school, a doctor (and a general Specialists
- *    card); a specialist asks it "if relevant", so it does not gate;
+ *  - the child's age: **gates nothing since 3 Nov.** Open signup — a person
+ *    with no children shares too, and the card does not ask them; for everyone
+ *    else the step is optional. It is still asked and stored where a card has it;
  *  - when they were last there: the same, plus a specialist — a restaurant, a
  *    party vendor and a product are not asked it;
  *  - what they saw them for (`visit_reason`): a doctor only.
@@ -77,7 +78,6 @@ export function requirements(kind: string, subcategory?: string | null) {
   const activity = kind === "activity";
   const doctor = kind === "doctor" && (sub === null || sub === "doctors");
   return {
-    childAge: activity || doctor || sub === "schools",
     lastThere: activity || doctor || sub === "schools" || sub === "specialists",
     visitReason: doctor,
     /* A tip is its advice; a product, though under the tip button, is a named thing. */
@@ -242,7 +242,6 @@ export function assessContribution(input: QualityInput): Quality {
   /* A doctor card (8 Oct) asks the activity card's two, worded for a doctor,
      and what the family saw them for; since 9 Oct which a card asks follows its
      sub-category (`requirements`). */
-  if (need.childAge && !input.has_child_age) missing.push("how old their child was");
   if (need.lastThere && !input.last_there)
     missing.push(
       input.kind === "doctor" ? "whether they still see them" : "when they were last there",

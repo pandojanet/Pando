@@ -620,9 +620,9 @@ a click.
 - **The reward and Founding are now one decision, not two bars.** Since 16 Sep the
   reward is what the Founding queue grants: `approved` is read off
   `people.founding`, `in_review` means every requirement holds and a person has
-  not decided, `not_met` is everything else. `missed_deadline` exists for a parent
-  who did everything after 31 Oct and is deliberately absent from the overview
-  tile, which counts what is owed a decision.
+  not decided, `not_met` is everything else. There is no deadline: the 31 Oct
+  date left the offer on 14 Oct, and the `missed_deadline` status and its
+  "After the deadline" badge left the code on 3 Nov.
 - **Two profile numbers on the detail page, and they differ on purpose.**
   *Profile complete* is `profile_completeness` (the screens this parent was
   shown); *Profile filled in* is `profile_depth` (the whole questionnaire), and
