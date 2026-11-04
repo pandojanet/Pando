@@ -140,7 +140,7 @@ type V1Reply = {
   error?: { status?: string };
 };
 
-async function transcribeV1(bytes: ArrayBuffer, contentType: string, key: string): Promise<ReadResult> {
+async function transcribeV1(bytes: ArrayBuffer, contentType: string, key: string, places: string[]): Promise<ReadResult> {
   const type = contentType.split(";")[0].trim().toLowerCase();
   const decoding = V1_ENCODINGS[type];
   if (!decoding) {
@@ -160,6 +160,9 @@ async function transcribeV1(bytes: ArrayBuffer, contentType: string, key: string
           languageCode: LANGUAGES[0],
           alternativeLanguageCodes: LANGUAGES.slice(1),
           enableAutomaticPunctuation: true,
+          /* Words it should expect: the service's name ("Hi, Pandu" otherwise)
+             and the market's places. Phrases bias the hearing, never force it. */
+          speechContexts: [{ phrases: ["Pando", ...places].slice(0, 500) }],
         },
         audio: { content: Buffer.from(bytes).toString("base64") },
       }),
@@ -207,11 +210,11 @@ function heardFrom<R extends { alternatives?: Array<{ transcript?: string; confi
   return { ok: true, text, confidence: confidence ? confidence : null, durationSec };
 }
 
-export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: string): Promise<ReadResult> {
+export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: string, places: string[] = []): Promise<ReadResult> {
   const account = serviceAccount();
   if (!account) {
     const key = apiKey();
-    return key ? transcribeV1(bytes, contentType, key) : { ok: false, reason: "not_configured" };
+    return key ? transcribeV1(bytes, contentType, key, places) : { ok: false, reason: "not_configured" };
   }
   const token = await accessToken(account);
   if (!token) return { ok: false, reason: "read_failed" };

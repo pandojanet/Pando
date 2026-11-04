@@ -309,7 +309,12 @@ const HANDLED = Symbol("handled");
  * at once. Counts and enums only in the log (invariant 7).
  */
 async function mediaNoteStep({ from, body, media, person }: { from: string; body: string; media: InboundMedia; person: InboundPerson }): Promise<void> {
-  const read = await readInboundMedia(media, body);
+  /* A voice note is heard and tidied knowing the market's places (4 Nov). */
+  const hints =
+    media.kind === "voice"
+      ? { area: marketConfig(marketOf(person)).label, places: (await marketAreas(marketOf(person))).map((a) => a.label) }
+      : undefined;
+  const read = await readInboundMedia(media, body, hints);
   console.info("[sms:inbound] media", {
     kind: media.kind,
     ok: read.ok,

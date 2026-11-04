@@ -104,20 +104,29 @@ export function readBack(text: string): string {
   return `${(atWord > READBACK_MAX / 2 ? cut.slice(0, atWord) : cut).replace(/[\s,.;:-]+$/, "")}...`;
 }
 
+/* The read-back on lines of its own (4 Nov, the developer: one run-on line
+   "looks raw"): what arrived, what Pando understood, set apart, then the
+   question. Line breaks are GSM-7; no emoji, which would not be. */
 const LEAD: Record<MediaKind, string> = {
-  voice: "I heard:",
-  image: "I read your picture as:",
-  file: "I read your file as:",
+  voice: "Got your voice note. Here's what I understood:",
+  image: "Got your picture. Here's what I understood:",
+  file: "Got your file. Here's what I understood:",
 };
+
+const quoted = (kind: MediaKind, text: string) => `${LEAD[kind]}
+
+"${readBack(text)}"
+
+`;
 
 /** The confirmation as an SMS: what to reply is in it. */
 export function mediaConfirmSms(kind: MediaKind, text: string): string {
-  return `${LEAD[kind]} "${readBack(text)}" Is that right? Reply YES, or NO to type it instead.`;
+  return `${quoted(kind, text)}Is that right? Reply YES to go ahead, or NO to type it instead.`;
 }
 
 /** The same on an RCS card, where Yes and No are buttons (`yes_no`). */
 export function mediaConfirmCard(kind: MediaKind, text: string): string {
-  return `${LEAD[kind]} "${readBack(text)}" Is that right?`;
+  return `${quoted(kind, text)}Is that right?`;
 }
 
 /** Nothing usable came back — no key, a failed fetch, silence, a picture with nothing to read. */
