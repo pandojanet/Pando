@@ -13,6 +13,9 @@ import type { ReadResult } from "@/lib/server/media-note";
  * takes no API key — its reference names only an OAuth token with the
  * `cloud-platform` scope — so the service account's key signs a JWT here and
  * trades it for a token, which is kept until shortly before it expires.
+ * Without a service account, a plain console key (`GOOGLE_SPEECH_API_KEY`)
+ * reaches the older v1 API instead (`transcribeV1`): an older model, and only
+ * the encodings v1 names.
  *
  * Limits (Google's sync-recognize page): under 60 seconds and 10 MB per
  * request. A longer note is refused by Google and Deepgram's reading stands.
@@ -43,8 +46,19 @@ function serviceAccount(): ServiceAccount | null {
   }
 }
 
+/**
+ * `GOOGLE_SPEECH_API_KEY` (4 Nov, the developer: *"use the older API for now,
+ * and improve it later if needed"*): a plain key from the console, for the v1
+ * API. Google's Speech docs name only OAuth for v1 too, so a key is
+ * undocumented — the first request says whether it is taken (a 401/403 in the
+ * log). The service account wins when both are set.
+ */
+function apiKey(): string | null {
+  return process.env.GOOGLE_SPEECH_API_KEY?.trim() || null;
+}
+
 export function googleSpeechConfigured(): boolean {
-  return serviceAccount() !== null;
+  return serviceAccount() !== null || apiKey() !== null;
 }
 
 let cached: { token: string; until: number } | null = null;
@@ -97,9 +111,108 @@ const seconds = (offset: string | undefined): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/**
+ * v1 decodes only what it is told, and a phone's voice note is told by its
+ * content type. Encoding and sample rate are required for all but FLAC and
+ * WAV; AMR is 8000 Hz and AMR-WB 16000 by definition, and Opus is 48000 inside
+ * its container. v1 has no MP4, M4A, AAC or 3GP encoding at all, and MP3 only
+ * in v1p1beta1 — those are refused here, and Deepgram's reading stands.
+ */
+const V1_ENCODINGS: Record<string, { encoding?: string; sampleRateHertz?: number }> = {
+  "audio/amr": { encoding: "AMR", sampleRateHertz: 8000 },
+  "audio/amr-wb": { encoding: "AMR_WB", sampleRateHertz: 16000 },
+  "audio/ogg": { encoding: "OGG_OPUS", sampleRateHertz: 48000 },
+  "audio/opus": { encoding: "OGG_OPUS", sampleRateHertz: 48000 },
+  "audio/webm": { encoding: "WEBM_OPUS", sampleRateHertz: 48000 },
+  "audio/wav": {},
+  "audio/x-wav": {},
+  "audio/wave": {},
+  "audio/flac": {},
+  "audio/x-flac": {},
+};
+
+type V1Reply = {
+  results?: Array<{
+    alternatives?: Array<{ transcript?: string; confidence?: number }>;
+    resultEndTime?: string;
+    languageCode?: string;
+  }>;
+  error?: { status?: string };
+};
+
+async function transcribeV1(bytes: ArrayBuffer, contentType: string, key: string): Promise<ReadResult> {
+  const type = contentType.split(";")[0].trim().toLowerCase();
+  const decoding = V1_ENCODINGS[type];
+  if (!decoding) {
+    console.warn("[media] google v1 cannot decode", { type });
+    return { ok: false, reason: "read_failed" };
+  }
+  try {
+    const res = await fetch("https://speech.googleapis.com/v1/speech:recognize", {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "content-type": "application/json" },
+      body: JSON.stringify({
+        config: {
+          ...decoding,
+          /* Up to three alternatives beside the main language; the result is
+             in the most likely of the four. No `model`: the default one, which
+             Google's docs put no restriction on for alternative languages. */
+          languageCode: LANGUAGES[0],
+          alternativeLanguageCodes: LANGUAGES.slice(1),
+          enableAutomaticPunctuation: true,
+        },
+        audio: { content: Buffer.from(bytes).toString("base64") },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const data = (await res.json().catch(() => ({}))) as V1Reply;
+    if (!res.ok) {
+      console.warn("[media] transcription refused", { provider: "google-v1", status: res.status, reason: data.error?.status ?? null });
+      return { ok: false, reason: "read_failed" };
+    }
+    return heardFrom("google-v1", data.results ?? [], (r) => r.resultEndTime, bytes, type);
+  } catch {
+    console.warn("[media] transcription failed", { provider: "google-v1" });
+    return { ok: false, reason: "read_failed" };
+  }
+}
+
+/** The words of either version's results, and the one log line about them. */
+function heardFrom<R extends { alternatives?: Array<{ transcript?: string; confidence?: number }>; languageCode?: string }>(
+  provider: "google" | "google-v1",
+  results: R[],
+  endOf: (r: R) => string | undefined,
+  bytes: ArrayBuffer,
+  contentType: string,
+): ReadResult {
+  const text = results
+    .map((r) => (r.alternatives?.[0]?.transcript ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+  const confidence = results[0]?.alternatives?.[0]?.confidence;
+  const last = results.at(-1);
+  const durationSec = seconds(last ? endOf(last) : undefined);
+  /* The shape, never the words (invariant 7). */
+  console.info("[media] heard", {
+    provider,
+    type: contentType,
+    kb: Math.round(bytes.byteLength / 1024),
+    seconds: durationSec,
+    language: results.find((r) => r.languageCode)?.languageCode ?? null,
+    model: provider === "google" ? MODEL : "default",
+    chars: text.length,
+  });
+  if (!text) return { ok: false, reason: "empty" };
+  /* 0 is Google's "not set", not a confidence. */
+  return { ok: true, text, confidence: confidence ? confidence : null, durationSec };
+}
+
 export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: string): Promise<ReadResult> {
   const account = serviceAccount();
-  if (!account) return { ok: false, reason: "not_configured" };
+  if (!account) {
+    const key = apiKey();
+    return key ? transcribeV1(bytes, contentType, key) : { ok: false, reason: "not_configured" };
+  }
   const token = await accessToken(account);
   if (!token) return { ok: false, reason: "read_failed" };
   try {
@@ -125,26 +238,7 @@ export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: stri
       console.warn("[media] transcription refused", { provider: "google", status: res.status, reason: data.error?.status ?? null });
       return { ok: false, reason: "read_failed" };
     }
-    const results = data.results ?? [];
-    const text = results
-      .map((r) => (r.alternatives?.[0]?.transcript ?? "").trim())
-      .filter(Boolean)
-      .join(" ");
-    const confidence = results[0]?.alternatives?.[0]?.confidence;
-    const durationSec = seconds(results.at(-1)?.resultEndOffset);
-    /* The shape, never the words (invariant 7). */
-    console.info("[media] heard", {
-      provider: "google",
-      type: contentType,
-      kb: Math.round(bytes.byteLength / 1024),
-      seconds: durationSec,
-      language: results.find((r) => r.languageCode)?.languageCode ?? null,
-      model: MODEL,
-      chars: text.length,
-    });
-    if (!text) return { ok: false, reason: "empty" };
-    /* 0 is Google's "not set", not a confidence. */
-    return { ok: true, text, confidence: confidence ? confidence : null, durationSec };
+    return heardFrom("google", data.results ?? [], (r) => r.resultEndOffset, bytes, contentType);
   } catch {
     console.warn("[media] transcription failed", { provider: "google" });
     return { ok: false, reason: "read_failed" };

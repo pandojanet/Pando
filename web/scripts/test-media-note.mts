@@ -128,8 +128,19 @@ ok("Google: chirp_3 in the us region, among the same four languages",
 const googleLogs = (google.match(/console\.\w+\([\s\S]*?\);/g) ?? []).join("\n").replace(/"[^"]*"/g, '""');
 ok("and its logs carry the shape, never the words, the token or the key",
   /chars: text\.length/.test(googleLogs) &&
-    !/\b(transcript|token|private_key|assertion|signature)\b/.test(googleLogs) &&
+    !/\b(transcript|token|key|private_key|assertion|signature)\b/.test(googleLogs) &&
     !/\btext\b(?!\.length)/.test(googleLogs));
+ok("without a service account, a console key reaches v1 instead; the service account wins when both are set",
+  /if \(!account\) \{\s+const key = apiKey\(\);\s+return key \? transcribeV1\(/.test(google) &&
+    /serviceAccount\(\) !== null \|\| apiKey\(\) !== null/.test(google));
+ok("v1 is told the encoding a phone's note carries: AMR at 8000 Hz, AMR-WB at 16000, Opus at 48000",
+  /"audio\/amr": \{ encoding: "AMR", sampleRateHertz: 8000 \}/.test(google) &&
+    /"audio\/amr-wb": \{ encoding: "AMR_WB", sampleRateHertz: 16000 \}/.test(google) &&
+    /"audio\/ogg": \{ encoding: "OGG_OPUS", sampleRateHertz: 48000 \}/.test(google));
+ok("and a type v1 has no encoding for (MP4, AAC, 3GP, MP3) is not sent at all",
+  !/"audio\/(mp4|aac|3gpp|mpeg)"/.test(google) && /if \(!decoding\) \{/.test(google));
+ok("v1 listens for the same four languages, English first",
+  /languageCode: LANGUAGES\[0\],\s+alternativeLanguageCodes: LANGUAGES\.slice\(1\)/.test(google));
 ok("the comparison line names each provider's count or reason, never their words",
   /console\.info\("\[media\] compared"/.test(server) && /r\.ok \? \{ chars: r\.text\.length, confidence: r\.confidence \} : \{ reason: r\.reason \}/.test(server));
 ok("a PDF goes to Claude as a document, not as a picture", /contentType === "application\/pdf"\s+\? \{\s+type: "document"/.test(server));
