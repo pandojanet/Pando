@@ -117,8 +117,21 @@ const SYSTEM = [
   "service listed ('the first one', 'that camp', 'the second place') becomes its name, taken from",
   "the service's last answer, in the order the places appear there - its name only, never the",
   "town the answer gives for it: a place comes only from what the parent wrote. Keep every age, place and",
-  "price the parent said. Do not add anything they did not say or carry. If the message already",
+  "price the parent said. Do not add anything they did not say or carry.",
+  "A message that only corrects or adds one fact ('actually she's 7', 'sorry, Arcadia', 'only on",
+  "weekends', 'my daughter is 6 btw') re-asks their latest request with that fact replaced and",
+  "every other condition it had kept. A lookup about one place (where it is, what it costs, its",
+  "hours) is not a request to re-ask - go to the one before it: after 'cheaper swim lessons for a",
+  "5 year old on weekends' and",
+  "'where is Swim ATCC?', 'actually she's 7 now' is 'cheaper swim lessons for a 7 year old on",
+  "weekends'. A question about one place the service listed ('where is the second one?', 'how",
+  "much is it?') asks about that place by its name, never for a new list. If the message already",
   "stands on its own in English, leave standalone empty. For every other intent leave it empty.",
+  "",
+  "Set heard only when the message corrects or adds one fact to an earlier request (an age, a",
+  "place, a day, a price): that fact said back in under 8 words, one plain sentence, so the",
+  "parent sees it was heard - 'A 7 year old, then.', 'Arcadia instead.', 'Weekends only.'. Use",
+  "only what the message says. Otherwise leave heard empty.",
   "",
   "The conversation can go further back than the previous question. When the message returns to",
   "something from an earlier question ('going back to the swim lessons', 'the camp you mentioned",
@@ -177,13 +190,17 @@ const SCHEMA = {
       type: "string",
       description: "deep_dive only: what to compare, as a standalone request. Otherwise empty.",
     },
+    heard: {
+      type: "string",
+      description: "Only when the message corrects or adds one fact to an earlier request: that fact said back in under 8 words. Otherwise empty.",
+    },
     standalone: {
       type: "string",
       description:
         "ask_recommendation / ask_caregiver only: the message as one complete English request when it depends on the conversation before it, is several texts in a row, refines an answer to the service's question, or is not in English. Otherwise empty.",
     },
   },
-  required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone"],
+  required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone", "heard"],
   additionalProperties: false,
 } as const;
 
@@ -342,6 +359,7 @@ function safeParse(
   sensitive?: boolean;
   subject?: string | null;
   standalone?: string | null;
+  heard?: string | null;
 } | null {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
@@ -374,6 +392,7 @@ function safeParse(
       sensitive: value.sensitive === true,
       subject: typeof value.subject === "string" ? value.subject : null,
       standalone: typeof value.standalone === "string" ? value.standalone : null,
+      heard: typeof value.heard === "string" ? value.heard : null,
     };
   } catch {
     return null;

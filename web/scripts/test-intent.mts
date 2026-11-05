@@ -480,5 +480,21 @@ ok(
   ok("an Ask whose topic cannot be read takes any non-health request as the answer", !m.ownRequestNotAnAnswer("we need a nanny", "Anything good near us?", topic));
 }
 
+console.log("\n=== a correction said back (heard, 5 Nov) ===");
+{
+  ok("a short line with the parent's own number is kept", m.acceptHeard("A 7 year old, then.", "Actually she's 7 now") === "A 7 year old, then.");
+  ok("and one with no number", m.acceptHeard("Weekends only.", "what about on weekends?") === "Weekends only.");
+  ok("never a number the parent did not write", m.acceptHeard("A 6 year old, then.", "actually she's 7 now") === null);
+  ok("never two sentences, a question, or a long line",
+    m.acceptHeard("Got it. A 7 year old.", "she's 7") === null &&
+      m.acceptHeard("A 7 year old?", "she's 7") === null &&
+      m.acceptHeard("A seven year old who loves the water and swims every single weekend.", "she's 7") === null);
+  ok("never an emoji or a stray symbol", m.acceptHeard("A 7 year old, then 🎉.", "she's 7") === null);
+  ok("empty is nothing", m.acceptHeard("", "hi") === null && m.acceptHeard(null, "hi") === null);
+  const heard = (h: string) => ({ intent: "ask_recommendation", confidence: 0.9, standalone: "swim lessons for a 7 year old", heard: h });
+  ok("the reading carries it for a request", m.applyThreshold(heard("A 7 year old, then."), "actually she's 7", ctx()).heard === "A 7 year old, then.");
+  ok("and not for any other intent", m.applyThreshold({ ...heard("A 7 year old, then."), intent: "chitchat" }, "actually she's 7", ctx()).heard === null);
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

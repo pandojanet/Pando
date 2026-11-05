@@ -668,6 +668,16 @@ ok(
   pi.normaliseName("Kidspace Children's Museum") === pi.normaliseName("Kidspace Museum"),
 );
 ok(
+  "one or many is the same place (5 Nov: 'Tom Sawyer camp' did not name 'Tom Sawyer Camps')",
+  pi.mentionsName("what about Tom Sawyer camp?", "Tom Sawyer Camps") &&
+    pi.sameName("Tom Sawyer Camp", "Tom Sawyer Camps") &&
+    pi.normaliseName("Rose Bowl Aquatics") === pi.normaliseName("Rose Bowl Aquatic"),
+);
+ok(
+  "a word ending in a double s keeps it",
+  pi.normaliseName("Bass Lessons") === "bass lesson" && !pi.sameName("Bass Lessons", "Ba Lessons"),
+);
+ok(
   "an accent is not a different place",
   pi.normaliseName("Café Con Leche") === pi.normaliseName("Cafe Con Leche"),
   "NFKD leaves a combining mark, and the alphanumeric pass would otherwise turn it into a space",

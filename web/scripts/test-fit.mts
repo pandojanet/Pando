@@ -98,9 +98,9 @@ ok("and is not rewritten warmly, whose opening would read as though it were met"
   /&& fit\.unmet === null;/.test(inbound) && /composed\.parent_used > 0 && fit\.unmet === null/.test(inbound));
 ok("another activity inside one family of things, other ages, or a stated condition broken is a mismatch (5 Nov)",
   /a toddler music class for 'piano teachers' or for 'art classes'/.test(server) && /classes Monday to Thursday for 'weekends only'/.test(server));
-ok("the web's findings are judged the same way, and a mismatch dropped from the public half",
+ok("the web's findings are judged the same way, and a mismatch dropped from the public half - never the place the question names (5 Nov)",
   /const publicVerdicts = !wantsCare && !deep && publicFound\.findings\.length > 0 \? await judgeFindings\(body, publicFound\.findings\) : null;/.test(inbound) &&
-    /findings: publicFound\.findings\.filter\(\(_, i\) => publicVerdicts\[i\] !== "mismatch"\)/.test(inbound) &&
+    /findings: publicFound\.findings\.filter\(\(f, i\) => publicVerdicts\[i\] !== "mismatch" \|\| mentionsName\(body, f\.name\)\)/.test(inbound) &&
     /export async function judgeFindings\(question: string, findings: PublicFinding\[\]\)/.test(server));
 ok("records left out are still kept out of the web's half",
   /\.\.\.retrievedAll\.shares\s+\.filter\(\(share\) => share !== retrieved\.shares\[0\]\)/.test(inbound));

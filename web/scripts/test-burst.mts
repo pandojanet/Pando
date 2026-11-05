@@ -226,6 +226,11 @@ console.log("\n=== a yes or no with a few words after it (5 Nov) ===");
     b.splitBurst([{ body: "no, we never went" }, { body: "any basketball for a 9 year old?" }]).reply?.body === "no, we never went" &&
       b.splitBurst([{ body: "yes, but for my 6 year old" }, { body: "any swim lessons?" }]).reply === null);
   ok("did-it-help reads it", /const helpedReply = leadingYesOrNo\(body\);/.test(inbound));
+  ok("a no that corrects the question is not a no to the offer (5 Nov: 'no I meant ballet' was silence)",
+    thanksMod.leadingYesOrNo("no I meant ballet specifically") === null &&
+      thanksMod.leadingYesOrNo("no, actually swim lessons") === null &&
+      thanksMod.leadingYesOrNo("nope, what about piano") === null &&
+      thanksMod.leadingYesOrNo("no thanks") === false);
 }
 
 console.log("\n=== a thanks from somebody Pando knows (5 Nov) ===");

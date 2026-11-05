@@ -94,6 +94,9 @@ const SYSTEM = [
   "  Never describe their child with anything from the draft: 'Best for', 'it suits' and a parent's",
   "  words say who a place suits, not what THIS child is like ('a 5 year old who isn't sporty yet'",
   "  when they never said so is thrown away).",
+  "  When they_just_said only corrects or adds one thing to what they asked before ('actually she's",
+  "  7', 'only weekends', 'sorry, Arcadia'), the opening takes that up in a few words, so they see",
+  "  it was heard: 'A 7 year old, then - here is what fits.'",
   "- No number words of your own (one, two, all, most, every, few) - not even 'this one'.",
   "",
   "- 'Also nearby' places: keep each on its own line with its count, but say it like a person",
@@ -180,6 +183,8 @@ export function voiceInputFor(input: {
  */
 async function voiceAnswerUntraced(input: {
   question: string;
+  /** Their own latest message, when `question` is a rewrite of it (5 Nov): the opening takes up a correction. */
+  said?: string | null;
   text: string;
   candidates: AnswerCandidate[];
   budget: number;
@@ -227,6 +232,7 @@ async function voiceAnswerUntraced(input: {
             role: "user",
             content: JSON.stringify({
               question: input.question.slice(0, 600),
+              ...(input.said && input.said !== input.question ? { they_just_said: input.said.slice(0, 300) } : {}),
               draft: body,
               draft_characters: body.length,
               max_characters: check.max,

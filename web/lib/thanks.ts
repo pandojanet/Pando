@@ -190,7 +190,10 @@ export function yesOrNo(body: string): boolean | null {
  * never went" to "did it help?" was not read at all, so the answer stayed
  * ungraded and nobody was told. Only a short clause after the yes or no, with
  * no question in it and no "but" — "yes, but for my 6 year old" changes what
- * was asked, and is not a plain yes. Null otherwise, as `yesOrNo`.
+ * was asked, and is not a plain yes. Nor a correction: "no I meant ballet
+ * specifically", after an answer that ended "Want me to ask a few nearby
+ * parents?", declined the offer and was never read again - silence (5 Nov, the
+ * SMS lab). Null otherwise, as `yesOrNo`.
  */
 export function leadingYesOrNo(body: string): boolean | null {
   const whole = yesOrNo(body);
@@ -199,6 +202,7 @@ export function leadingYesOrNo(body: string): boolean | null {
   if (!match) return null;
   const rest = match[2];
   if (/\?|\bbut\b|\bthough\b|\bexcept\b/i.test(rest) || rest.trim().split(/\s+/).length > 6) return null;
+  if (/\b(meant|mean|actually|instead|rather|specifically|what about|how about|looking for|i want|i need)\b/i.test(rest)) return null;
   return /^(yes|yeah|yep|yup)$/i.test(match[1]);
 }
 

@@ -446,7 +446,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "an answer's verdict, next step and offers come from the draft that is sent",
     src.includes("await planFor(composedFull)") &&
       /const \{ draft: sent, verdict, offerDeepEligible, nextStep, lead, introOthers, offerIntroEligible \} = plan;/.test(src) &&
-      /answerText = voiced \?\? plan\.draftText/.test(src) &&
+      /answerText = voiced \?\? \(heardLine \? `\$\{heardLine\}\\n\$\{plan\.draftText\}` : plan\.draftText\)/.test(src) &&
       /labels: sent\.labels,\s+publicOnly: sent\.public_only,[\s\S]{0,80}shareIds: sent\.used_ids/.test(src) &&
       !/next_step: composed\.next_step,\s+\}\);/.test(src),
   );
@@ -462,6 +462,26 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "the words are read before a non-question is answered as an offer or small talk",
     guard > 0 && guard < nonQuestion && src.indexOf("SHARE_INVITE : thanks ? THANKS_REPLY : SMALL_TALK") > nonQuestion,
   );
+}
+
+console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS lab) ===");
+{
+  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("a named record is found anywhere in the market, unless the place is one the market does not hold",
+    src.includes("namedAnywhere: place.near === null || place.near.length > 0,"));
+  ok("the web's verdict never drops the place the question names",
+    src.includes(`publicVerdicts[i] !== "mismatch" || mentionsName(body, f.name)`));
+  ok("and the named place is the first public line", src.includes("publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body)"));
+  ok("a record the last answer gave is ranked after new ones and not quoted again",
+    src.includes("rank: mentionsName(body, share.name) ? -1 : sentJustNow(share.name) ? 1000 + i : i,") &&
+      src.includes("notes: sentJustNow(share.name) ? undefined : {"));
+  ok("beside a question about one place, it is left out", src.includes("!(namesAPlace && sentJustNow(share.name))"));
+  ok("no deep dive offered after a question about one place", src.includes("!namesAPlace &&\n      deepDiveWorthOffering"));
+  ok("a follow-up carries the last answer, what they said and the heard line",
+    src.includes("lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,") &&
+      src.includes("said: rewritten ? body : null,") && src.includes("heard: rewritten ? reading.heard ?? null : null,"));
+  ok("the heard line goes first only when the warm rewrite did not run, and only within the budget",
+    src.includes("const heardLine = !voiced && input.heard && plan.draftText.length + input.heard.length + 1 <= SMS_BUDGET ? input.heard : null;"));
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

@@ -548,10 +548,13 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
                    a parent's tip on exactly that. */
                 sql`and (s.neighborhoods && ${nearList}::text[]
                          or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))`})
+          -- One for many on both sides (5 Nov): "Tom Sawyer camp" names "Tom
+          -- Sawyer Camps". The same rule as normaliseName in public-info.ts - a
+          -- plural s off a word of four letters or more, never after another s.
           ${question.namedAnywhere
             ? sql`or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2
-              and strpos(' ' || regexp_replace(lower(${question.question ?? ""}), '[^a-z0-9&]+', ' ', 'g') || ' ',
-                         ' ' || array_to_string((regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '))[1:3], ' ') || ' ') > 0)`
+              and strpos(' ' || regexp_replace(regexp_replace(lower(${question.question ?? ""}), '[^a-z0-9&]+', ' ', 'g'), '([a-z]{2,}[a-rt-z])s(\\s|$)', '\\1\\2', 'g') || ' ',
+                         ' ' || regexp_replace(array_to_string((regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '))[1:3], ' '), '([a-z]{2,}[a-rt-z])s(\\s|$)', '\\1\\2', 'g') || ' ') > 0)`
             : sql``})
       group by s.id
       -- Not a record the parents advised against (28 Oct audit). Since 8 Oct a

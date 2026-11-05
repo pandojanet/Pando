@@ -209,6 +209,11 @@ export function normaliseName(value: string): string {
       /\b(the|a|an|of|at|in|inc|llc|ltd|co|corp|company|center|centre|studio|studios|academy|school|schools|program|programs|programme|class|classes|club|kids|children|childrens|and)\b/g,
       " ",
     )
+    /* One for many (5 Nov, the SMS lab): "what about Tom Sawyer camp?" did not
+       name "Tom Sawyer Camps", so neither parent who had used it was found. A
+       plural "s" comes off a word of four letters or more, never after another
+       "s" ("class", "Bass"), on both sides of every comparison. */
+    .replace(/\b([a-z]{2,}[a-rt-z])s\b/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
 

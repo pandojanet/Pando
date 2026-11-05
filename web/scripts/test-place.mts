@@ -93,10 +93,12 @@ console.log("\n=== the answer path reads it (source checks) ===");
   /* 26 Oct: except a record the question names by its first three words. Caregivers never are. */
   ok("a record the question names is in whatever its place and ages, by its first three whole words (never one word)",
     has(retrieval, "or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2")
-      && has(retrieval, "[1:3], ' ') || ' ') > 0)"));
-  ok("but only when the question names no place of its own",
+      /* 5 Nov: one for many — a plural s off both sides before the match. */
+      && has(retrieval, String.raw`[1:3], ' '), '([a-z]{2,}[a-rt-z])s(\\s|$)', '\\1\\2', 'g') || ' ') > 0)`));
+  /* 5 Nov: a place the market holds no longer turns it off ("Tom Sawyer camp in Pasadena" found nothing). */
+  ok("but only when the question's place is one the market holds",
     has(retrieval, "${question.namedAnywhere ? sql`or (")
-      && has(inbound, "namedAnywhere: place.source === \"profile\" || place.source === \"pending_profile\" || place.source === \"none\","));
+      && has(inbound, "namedAnywhere: place.near === null || place.near.length > 0,"));
   ok("caregivers too",
     has(retrieval, "nearList === null ? sql`` : sql`and cp.areas_served && ${nearList}::text[]`"));
 

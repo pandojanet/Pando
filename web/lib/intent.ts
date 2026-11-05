@@ -137,6 +137,27 @@ export interface IntentResult {
    * it is never sent to a parent and never logged (invariant 7).
    */
   standalone?: string | null;
+  /**
+   * What the message changed, said back in a few words ("A 7 year old, then.")
+   * when it only corrects or adds a fact to an earlier request (5 Nov, the SMS
+   * lab: "actually she's 7 now" was answered with no sign it was heard). Only
+   * through `acceptHeard`; null otherwise.
+   */
+  heard?: string | null;
+}
+
+/**
+ * A `heard` line Pando may send (5 Nov): short, one sentence, plain text, and
+ * no number the parent did not write. Null when any of that fails.
+ */
+export function acceptHeard(heard: string | null | undefined, said: string): string | null {
+  const line = (heard ?? "").trim().replace(/\s+/g, " ");
+  if (!line || line.length > 60 || !/^[A-Za-z0-9 ,.'-]+$/.test(line) || !/\.$/.test(line)) return null;
+  /* One sentence: the full stop that ends it is the only one. */
+  if (line.slice(0, -1).includes(".")) return null;
+  const saidNumbers = new Set(said.match(/\d+/g) ?? []);
+  if ((line.match(/\d+/g) ?? []).some((d) => !saidNumbers.has(d))) return null;
+  return line;
 }
 
 /** The fallback's only Deep Dive reading: the words themselves, as on 21 Oct. */
@@ -378,6 +399,7 @@ export function applyThreshold(
     sensitive?: boolean;
     subject?: string | null;
     standalone?: string | null;
+    heard?: string | null;
   } | null,
   text: string,
   context: IntentContext,
@@ -432,5 +454,7 @@ export function applyThreshold(
       (model.intent === "ask_recommendation" || model.intent === "ask_caregiver") && model.standalone?.trim()
         ? model.standalone.trim().slice(0, 300)
         : null,
+    heard:
+      (model.intent === "ask_recommendation" || model.intent === "ask_caregiver") ? acceptHeard(model.heard, text) : null,
   };
 }

@@ -1956,6 +1956,10 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
        the first one good" became a question about South Pasadena, and "near
        you" came back for a parent whose place nobody knows). */
     ...(rewritten ? { placeFrom: placeSources(body, rewritten, [...(exchange ? [exchange.question] : []), ...earlier.map((x) => x.question).reverse()]) } : {}),
+    /* A follow-up: what they were just sent, so it is not sent again in full. */
+    lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,
+    said: rewritten ? body : null,
+    heard: rewritten ? reading.heard ?? null : null,
     person,
     caregiverIntent: reading.intent === "ask_caregiver" || followsHeld === "caregiver",
     sensitive: reading.sensitive || followsHeld === "sensitive",
@@ -2140,6 +2144,7 @@ function sendableNote(text: string | null): string | null {
 function publicSlots(
   parentBacked: number,
   info: { findings: PublicFinding[] },
+  question = "",
 ): PublicFinding[] {
   /**
    * ⚠ **Two at minimum, and up to four when the parents are thin** (9 Sep,
@@ -2163,11 +2168,17 @@ function publicSlots(
      twin, while the findings with ages, ratios and a heated pool came third and
      fourth and were never read. Search order otherwise. */
   const withFacts = [...info.findings].sort((a, b) => Number(!a.detail) - Number(!b.detail));
+  /* The place the question names comes first and is never the one cut (5 Nov,
+     the SMS lab): "is Kidspace good for toddlers?" was answered with two of its
+     corners, while "Kidspace Children's Museum" itself, whose page stated no
+     detail, lost its slot to them. */
+  const named = withFacts.filter((f) => mentionsName(question, f.name));
   /* A line that states nothing ("Rose Bowl Aquatics Center, toddler swim
      lessons in Pasadena.") takes a slot only when fewer than two say something
      (26 Oct, the SMS lab). */
-  const stating = withFacts.filter((f) => f.detail);
-  return (stating.length >= 2 ? stating : withFacts).slice(0, 4);
+  const stating = withFacts.filter((f) => f.detail && !named.includes(f));
+  const rest = stating.length >= 2 ? stating : withFacts.filter((f) => !named.includes(f));
+  return [...named, ...rest].slice(0, 4);
 }
 
 /** The focus topics that mean a person is being asked about. See `answerQuestion`. */
@@ -2198,6 +2209,17 @@ async function answerQuestion(input: {
    * rewrite (28 Oct): the first that names a place wins, else the profile.
    */
   placeFrom?: string[];
+  /**
+   * The answer they were sent just before, when this question follows it (5 Nov,
+   * the SMS lab): "what about on weekends?", "cheaper ones?" and "actually she's
+   * 7" each sent the same parent's tip in full again, four times in a row. A
+   * record that answer already gave is said briefly and after any new one.
+   */
+  lastAnswer?: string | null;
+  /** What they actually wrote, when `body` is a rewrite of it (5 Nov). */
+  said?: string | null;
+  /** A correction said back ("A 7 year old, then."), through `acceptHeard` (5 Nov). */
+  heard?: string | null;
 }): Promise<void> {
   const { from, body, person } = input;
   const profile = person?.profile;
@@ -2319,7 +2341,12 @@ async function answerQuestion(input: {
     /* What was asked, so a record that names another thing inside the same
        topic ("AYSO soccer" for a swim question) is not offered (26 Oct). */
     question: body,
-    namedAnywhere: place.source === "profile" || place.source === "pending_profile" || place.source === "none",
+    /* A named record is found anywhere in the market unless the question is
+       about a place the market does not hold (5 Nov, the SMS lab): "what about
+       Tom Sawyer camp?" was rewritten "...in Pasadena", which turned the name
+       match off and left both parents who had used it out. "Music Together in
+       Brooklyn" still never reaches Pasadena's (`near` is [] there). */
+    namedAnywhere: place.near === null || place.near.length > 0,
     shares: !wantsCare,
     caregivers: wantsCare,
     /* Deeper for a follow-up: the first answer took the best few, and "any
@@ -2468,7 +2495,10 @@ async function answerQuestion(input: {
    */
   const publicVerdicts = !wantsCare && !deep && publicFound.findings.length > 0 ? await judgeFindings(body, publicFound.findings) : null;
   const publicInfo: PublicSearchResult = publicVerdicts
-    ? { ...publicFound, findings: publicFound.findings.filter((_, i) => publicVerdicts[i] !== "mismatch") }
+    ? /* Never the place the question names (5 Nov, the SMS lab): "what about Tom Sawyer camp?"
+         from a toddler's parent found its Pre Camp (ages 3-5), judged it a mismatch and answered
+         "nothing from local parents". Asked about by name, it is shown, and its page says who it takes. */
+      { ...publicFound, findings: publicFound.findings.filter((f, i) => publicVerdicts[i] !== "mismatch" || mentionsName(body, f.name)) }
     : publicFound;
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
@@ -2539,8 +2569,17 @@ async function answerQuestion(input: {
     /* Stable, so ties keep retrieval's own order: most families first. */
     .sort((a, b) => b.fit.score - a.fit.score || a.index - b.index);
 
+  /* Already in the answer before this one, and not what this question names. */
+  const sentJustNow = (name: string): boolean =>
+    !!input.lastAnswer && !mentionsName(body, name) &&
+    (mentionsName(input.lastAnswer, name) || input.lastAnswer.toLowerCase().includes(name.toLowerCase()));
+  /* A question about one place the answer has ("where is the second one?") is
+     about that place: what they were sent just before is not sent again beside it. */
+  const namesAPlace =
+    retrieved.shares.some((share) => mentionsName(body, share.name)) ||
+    publicInfo.findings.some((finding) => mentionsName(body, finding.name));
   const allCandidates: AnswerCandidate[] = [
-    ...retrieved.shares.map((share, i) => ({
+    ...retrieved.shares.filter((share) => !(namesAPlace && sentJustNow(share.name))).map((share, i) => ({
       /* Where retrieval put it. See AnswerCandidate.rank: without this the topic
          and the area it ranked by were computed and then thrown away, and a
          question about schools came back with a park (8 Sep). */
@@ -2549,7 +2588,7 @@ async function answerQuestion(input: {
          Kidspace, because the topic ranked it higher, and the camp asked about
          was one clause in "Also nearby". `mentionsName` needs two words, so a
          record called "Test" cannot promote itself out of any sentence. */
-      rank: mentionsName(body, share.name) ? -1 : i,
+      rank: mentionsName(body, share.name) ? -1 : sentJustNow(share.name) ? 1000 + i : i,
       /* Not rendered — this is what `answers.share_ids` is written from, and
          therefore the only path by which 9.2 can ever find the contributors
          behind an answer that helped. */
@@ -2586,7 +2625,8 @@ async function answerQuestion(input: {
        * the asker paid $15 for those exact words and the segments are the cost
        * of the thing they bought. Here Pando is paying, on every answer.
        */
-      notes: {
+      /* Their words once: a record the last answer gave is named again, not quoted again. */
+      notes: sentJustNow(share.name) ? undefined : {
         great: sendableNote(share.note_great),
         caveat: sendableNote(share.note_caveat),
         who_for: sendableNote(share.note_who_for),
@@ -2665,7 +2705,7 @@ async function answerQuestion(input: {
      * date for records that carry one, so this adds no claim.
      */
     /* A deep dive weighs every finding its deeper search returned; an answer shows two to four. */
-    ...(deep ? publicInfo.findings : publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo))
+    ...(deep ? publicInfo.findings : publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body))
       /* A name GSM-7 cannot carry at all drops the finding (review, 21 Oct): see sendableNote. */
       .filter((finding) => sendableNote(finding.name) !== null)
       .map((finding) => ({
@@ -2884,6 +2924,9 @@ async function answerQuestion(input: {
       person !== null &&
       !draft.text.replace(askLine, "").includes("Want me to ask") &&
       deepDiveConfigured() &&
+      /* Not after a question about one place (5 Nov): "where is the second one?"
+         was answered with its address and "I'll rank these for your family". */
+      !namesAPlace &&
       deepDiveWorthOffering(body, { more: Boolean(input.more) }) &&
       (await mayOfferDeepDive(person.person_id));
     const draftText = offerDeepEligible ? draft.text.replace(askLine, "") : draft.text;
@@ -2933,12 +2976,15 @@ async function answerQuestion(input: {
   const first = await planFor(composed);
   const voiced =
     !first.verdict.hold && !caregiverRelated && composed.parent_used > 0 && fit.unmet === null
-      ? await voiceAnswer({ question: body, text: first.draftText, candidates, budget: SMS_BUDGET })
+      ? await voiceAnswer({ question: body, said: input.said ?? null, text: first.draftText, candidates, budget: SMS_BUDGET })
       : null;
   /* Refused or not run: the full-budget draft, planned on its own. */
   const plan = voiced === null && composedFull !== composed ? await planFor(composedFull) : first;
   const { draft: sent, verdict, offerDeepEligible, nextStep, lead, introOthers, offerIntroEligible } = plan;
-  const answerText = voiced ?? plan.draftText;
+  /* A correction is answered as one (5 Nov): the warm rewrite takes it up in
+     its opening; without one, the classifier's few words go first, room allowing. */
+  const heardLine = !voiced && input.heard && plan.draftText.length + input.heard.length + 1 <= SMS_BUDGET ? input.heard : null;
+  const answerText = voiced ?? (heardLine ? `${heardLine}\n${plan.draftText}` : plan.draftText);
 
   const answerId = await queueAnswer({
     personId: person?.person_id ?? null,
