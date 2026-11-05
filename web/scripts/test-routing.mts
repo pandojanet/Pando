@@ -460,7 +460,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   );
   ok(
     "the words are read before a non-question is answered as an offer or small talk",
-    guard > 0 && guard < nonQuestion && src.indexOf("SHARE_INVITE : SMALL_TALK") > nonQuestion,
+    guard > 0 && guard < nonQuestion && src.indexOf("SHARE_INVITE : thanks ? THANKS_REPLY : SMALL_TALK") > nonQuestion,
   );
 }
 

@@ -94,6 +94,8 @@ const SOURCE_LINE =
 const QUALITY = /\b(love|loved|loves|amazing|best|perfect|favou?rite|wonderful|fantastic|great|awesome|excellent|beloved|popular|highly|must[\s-]try|gem)\b/gi;
 /** Who the child is — age and temperament — which only the parent may say (26 Oct). */
 const CHILD_WORDS = /\b(little ones?|kiddos?|toddlers?|bab(?:y|ies)|infants?|newborns?|preschoolers?|tweens?|teens?|teenagers?|sons?|daughters?|boys?|girls?|twins|shy|gentle|cautious|nervous|anxious|timid|sensitive|energetic|sporty|creative|curious)\b/gi;
+/* The words for what a child is like: licensed by the question alone. */
+const TEMPERAMENT = /^(shy|gentle|cautious|nervous|anxious|timid|sensitive|energetic|sporty|creative|curious)$/;
 const NUMBER_WORDS =
   /\b(one|two|three|four|five|six|seven|eight|nine|ten|dozens?|several|many|most|few|couple|all|every|hundreds?|multiple|lots|plenty|numerous|tons|bunch)\b/gi;
 const STARTERS = new Set(
@@ -569,10 +571,16 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
      art with a little one"* — an age and a temperament nobody gave. Words that
      describe the child stand only where the question or the draft holds them. */
   const said = lc(`${draft}\n${input.question}`);
+  const asked = lc(input.question);
   for (const word of own.match(CHILD_WORDS) ?? []) {
     const w = lc(word);
     const stem = w.replace(/(ies)$/, "y").replace(/s$/, "");
     if (!said.includes(w) && !said.includes(stem)) return null;
+    /* ⚠ A temperament only from the parent's own words (the SMS lab, 5 Nov):
+       "A 5 year old who isn't sporty yet - AYSO…" took a record's "best for"
+       and put it on their child. The draft holds a record's words, which say
+       who the record suits, never what this child is like. */
+    if (TEMPERAMENT.test(w) && !asked.includes(stem)) return null;
   }
   for (const sentence of own.split(/(?<=[.!:])\s+|\n|\s*\|\s*/)) {
     const words = sentence.match(/[A-Za-z][A-Za-z'&-]*/g) ?? [];

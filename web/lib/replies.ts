@@ -67,6 +67,13 @@ export const SMALL_TALK =
   "Pando: ask me about local classes, camps, activities or childcare and I'll tell you what nearby parents recommend. Reply STOP to opt out, HELP for help.";
 
 /**
+ * To a thanks from somebody Pando already knows (the SMS lab, 5 Nov): the
+ * SMALL_TALK introduction above, sent after a deep dive or a "glad it helped",
+ * read as though Pando had forgotten them. GSM-7, one segment.
+ */
+export const THANKS_REPLY = "You're welcome. Text me anytime you need something local.";
+
+/**
  * To "Can I ask a question?" and its kin (30 Sep) - a message that asks to ask
  * and asks nothing.
  *

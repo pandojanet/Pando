@@ -45,6 +45,13 @@ export const ACKNOWLEDGEMENT =
   /^(?:(?:thanks?|thank you|thx|ty|great|perfect|cool|ok(?:ay)?|sure|awesome|nice|got it|sounds good|appreciate it)[\s!.,]*)+$/i;
 
 /* A reply Pando matches whole: to a ping, a "did it help?", an offer, a read-back, a choice. */
+/* And a yes or no with a short clause after it — "no, we never went" — that asks nothing (5 Nov). */
+function shortReply(text: string): boolean {
+  const match = /^(?:yes|yeah|yep|yup|no|nope|nah)\b[\s,.!-]+(.+)$/i.exec(text);
+  if (!match) return false;
+  const rest = match[1];
+  return !/\?|\bbut\b|\bthough\b|\bexcept\b/i.test(rest) && rest.trim().split(/\s+/).length <= 6;
+}
 const BARE_REPLY = /^(?:yes|y|yep|yeah|yup|sure|no|nope|nah|n|pass|deep|intro|none|[123])[.!]*$/i;
 
 /**
@@ -60,7 +67,9 @@ export function splitBurst(parts: BurstPart[]): { reply: BurstPart | null; rest:
   const said = parts.filter((p) => p.media || !ACKNOWLEDGEMENT.test(p.body.trim()));
   const kept = said.length > 0 ? said : parts;
   const [first, ...others] = kept;
-  if (first && !first.media && BARE_REPLY.test(first.body.trim()) && others.length > 0) return { reply: first, rest: others };
+  if (first && !first.media && (BARE_REPLY.test(first.body.trim()) || shortReply(first.body.trim())) && others.length > 0) {
+    return { reply: first, rest: others };
+  }
   return { reply: null, rest: kept };
 }
 

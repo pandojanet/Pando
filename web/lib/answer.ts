@@ -563,6 +563,9 @@ const PRACTICE_NAME =
 
 function kindWordOf(candidate: AnswerCandidate): string {
   const word = candidate.kind_word ?? KIND_WORD[candidate.kind] ?? candidate.kind;
+  /* A camp is a camp, whatever card it came in on (the SMS lab, 5 Nov: "Tom
+     Sawyer Camps, a class in Altadena" in every camp answer). */
+  if (word === "class" && /\bcamps?\b/i.test(candidate.name)) return "camp";
   return word === "doctor" && PRACTICE_NAME.test(candidate.name) ? "practice" : word;
 }
 
@@ -674,8 +677,11 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
   /* A person is employed, not used (29 Sep). "2 parents near you have used
      Elena V." read as though she were a class; the count is still the parents',
      which is the claim the approved labels make. */
-  const verb = candidate.kind === "caregiver" ? "employed" : "used";
-  const where = candidate.place_unknown ? "on Pando" : "near you";
+  /* And a tip is shared, not used (the SMS lab, 5 Nov): "2 parents near you have
+     used Cheaper swim lessons, a tip". A tip with no place of its own is the
+     market's advice — "on Pando", not "near you", to a parent in Arcadia. */
+  const verb = candidate.kind === "caregiver" ? "employed" : candidate.kind === "tip" ? "shared" : "used";
+  const where = candidate.place_unknown || (candidate.kind === "tip" && !candidate.area) ? "on Pando" : "near you";
   const who =
     /* The client's own sentence, where it is true (10 Sep): one parent, and
        that parent turned their name on for this recommendation. `named` is

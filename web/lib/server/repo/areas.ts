@@ -71,7 +71,14 @@ async function loadAreas(marketId: string) {
 
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      select option_value, coalesce(area_slug, option_value) as city
+      -- The city from its slug, else from the city's own name (5 Nov): a
+      -- district row with area "Pasadena" and no area_slug (the lab's seed)
+      -- was an island, so "toddler swim lessons in Pasadena?" never reached a
+      -- record tagged Old Pasadena. A slug, where set, still decides.
+      select option_value,
+             coalesce(area_slug,
+                      nullif(trim(both '-' from lower(regexp_replace(coalesce(area, ''), '[^A-Za-z0-9]+', '-', 'g'))), ''),
+                      option_value) as city
         from market_options
        where market_id = ${marketId}
          and category = 'neighborhoods'

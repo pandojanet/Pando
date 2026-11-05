@@ -55,6 +55,18 @@ const publicRecord = (over: Partial<AnswerCandidate> = {}): AnswerCandidate =>
 const compose = (candidates: AnswerCandidate[], over = {}) =>
   a.composeAnswer({ candidates, has_question: true, ...over });
 
+console.log("\n=== a tip is shared, a camp is a camp (the SMS lab, 5 Nov) ===");
+{
+  const tip = compose([parent({ name: "Cheaper swim lessons", kind: "tip", area: null })]).text;
+  ok("a tip is shared, not used, and with no place of its own it is 'on Pando'",
+    tip.includes("2 parents on Pando have shared Cheaper swim lessons") && !/have used Cheaper swim lessons/.test(tip), tip.slice(0, 120));
+  const placed = compose([parent({ name: "Waitlist trick", kind: "tip", area: "altadena" })]).text;
+  ok("a tip with a place is near you", placed.includes("2 parents near you have shared Waitlist trick"), placed.slice(0, 120));
+  const camp = compose([parent({ name: "Tom Sawyer Camps", area: "altadena" })]).text;
+  ok("a camp is called a camp, not a class", camp.includes("Tom Sawyer Camps, a camp in Altadena"), camp.slice(0, 120));
+  ok("and 'Campbell Hall swim' is still a class", compose([parent({ name: "Campbell Hall swim", area: "altadena" })]).text.includes("a class in Altadena"));
+}
+
 console.log("\n=== the labels this suite checks for are the approved ones ===");
 /**
  * `PARENT_LABELS` is written out above so that `answer.ts` can stay free of
@@ -941,6 +953,13 @@ console.log("\n=== the M5/M6 relay walk (25 Sep) ===");
     !pi.inAnotherState({ name: "Swim Kids", area: "Pasadena", detail: "Small groups, OK for beginners" }, "California")
       && !pi.inAnotherState({ name: "Art Lab", area: "Pasadena", detail: "Open daily, IN person only" }, "California")
       && !pi.inAnotherState({ name: "AYSO", area: "Pasadena", detail: "Saturday games in Washington Park" }, "California"));
+  ok("a town and its code inside a title, and a Texas school district, are another state (the SMS lab, 5 Nov)",
+    pi.inAnotherState({ name: "Pasadena, TX Parent & Child 1 swim lessons", area: null }, "California") &&
+      pi.inAnotherState({ name: "Pasadena ISD chess program", area: null, detail: "45 campuses" }, "California") &&
+      !pi.inAnotherState({ name: "Swim club", area: null, detail: "Small groups, OK for beginners" }, "California") &&
+      pi.inAnotherState({ name: "Aqua-Tots Pasadena (Texas) Parent & Tot classes", area: null }, "California") &&
+      !pi.inAnotherState({ name: "Kids (ages 3-5) class", area: null }, "California") &&
+      !pi.inAnotherState({ name: "Rose Bowl Aquatics, Pasadena, CA lessons", area: null }, "California"));
   ok("one in the right state, or saying none, is not",!pi.inAnotherState({ name: "Rose Bowl Aquatics", area: "Pasadena, CA" }, "California") && !pi.inAnotherState({ name: "Rose Bowl Aquatics", area: "Pasadena" }, "California") && !pi.inAnotherState({ name: "Washington Park", area: "Pasadena" }, "California"));
   /* 26 Oct, the chat lab: the record asked about and its own page, said as one place. */
   const same = compose([parent({ name: "Tom Sawyer Camps", rank: 0 }), publicRecord({ name: "Tom Sawyer Camps", same_as: "Tom Sawyer Camps", detail: "Ages 3 to 14; running since 1926" })]).text;
@@ -1011,6 +1030,14 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   }
   /* 26 Oct, the SMS lab: "a gentle start ... with a little one" for a question that said neither. */
   ok("voice: the child described in words nobody said is refused", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "A gentle start for your little one around Altadena - here you go."), input(true)) === null);
+  /* 5 Nov, the SMS lab: "A 5 year old who isn't sporty yet - AYSO…" — a record's "best for" put on the child. */
+  const sportyDraft = { ...input(true), draft: input(true).draft.replace("toddlers who climb everything", "a toddler who is not sporty yet") };
+  ok("voice: a temperament taken from a record's words and put on their child is refused",
+    v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "Not sporty yet and around Altadena - here you go.").replace("toddlers who climb everything", "a toddler who is not sporty yet"),
+      { ...sportyDraft, parents: sportyDraft.parents.map((p) => p.name === "Tiny Tots Gym" ? { ...p, keep: p.keep.map((k) => k === "toddlers who climb everything" ? "a toddler who is not sporty yet" : k) } : p) }) === null);
+  ok("voice: the same word is fine when the parent said it",
+    v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "Not sporty yet and around Altadena - here you go.").replace("toddlers who climb everything", "a toddler who is not sporty yet"),
+      { ...sportyDraft, question: "toddler classes near altadena? he is not sporty", parents: sportyDraft.parents.map((p) => p.name === "Tiny Tots Gym" ? { ...p, keep: p.keep.map((k) => k === "toddlers who climb everything" ? "a toddler who is not sporty yet" : k) } : p) }) !== null);
   ok("voice: the child described in the question's or draft's own words is fine", v.acceptVoice(good.replace("Toddler classes around Altadena - here you go.", "Classes for toddlers around Altadena - here you go."), input(true)) !== null);
 
   /* (3) With one parent place, the parent's words never give way to the web's facts. */

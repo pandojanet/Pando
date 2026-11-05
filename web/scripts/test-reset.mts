@@ -55,6 +55,19 @@ ok("a caregiver only when nobody else nominated them and they have not claimed t
 ok("the audit row carries counts, never the number", /before: \{ had_profile: person\.had_profile === true, \.\.\.removed \}/.test(write) &&
   !/before: \{[^}]*phone/.test(write.slice(write.indexOf('case "person.reset"'), write.indexOf('case "referral.void"'))));
 
+console.log("\n=== what the review found left behind (5 Nov) ===");
+ok("their flags go: their own, their questions', their demand signals', and on what of theirs is deleted",
+  /delete from flags f\s+where f\.person_id = \$\{id\}::uuid[\s\S]{0,400}subject_kind = 'answer' and f\.subject_id in \(select a\.id from answers a where a\.phone = \$\{phone\}\)/.test(erase) &&
+    /subject_kind = 'share_contribution'/.test(erase) && /delete from flags where subject_kind = 'share'/.test(erase) &&
+    erase.indexOf("delete from flags f") < erase.indexOf("delete from answers where phone"));
+ok("a pending read-back's media is deleted at Twilio before the note cascades away",
+  /update media_notes m\s+set status = 'superseded', text = null, media_url = null/.test(erase) &&
+    /for \(const r of pendingMedia\) if \(typeof r\.media_url === "string"\) await deleteTwilioMedia\(r\.media_url\);/.test(erase));
+ok("a burst gathering or a turn queued for the number is ended, its media deleted",
+  /for \(const url of endTurns\(phone\)\) await deleteTwilioMedia\(url\);/.test(erase));
+const blast = fs.readFileSync(new URL("../lib/server/repo/blast.ts", import.meta.url), "utf8");
+ok("a cancelled Ask (its asker erased) takes no more replies", /and bl\.status <> 'cancelled'/.test(blast.slice(blast.indexOf("const OPEN_FOR_SENDER"))));
+
 console.log("\n=== the phone starts over ===");
 ok("only on a definite answer: a saved profile on the device, and nobody on the server",
   /if \(!session\?\.profile_saved_at\) return false;[\s\S]{0,80}return me\.ok && !me\.found;/.test(client));

@@ -3,6 +3,8 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { withDb, type Db } from "@/lib/server/db";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
+import { deleteTwilioMedia } from "@/lib/server/media-note";
+import { endTurns } from "@/lib/inbound-burst";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -174,6 +176,44 @@ export async function erasePersonIn(
   const { id, phone, caregiver } = person;
   let removed = { contributions: 0, nominations: 0, shares: 0, caregivers: 0 };
 
+  /* Nothing of theirs still in hand in this process: a burst gathering, a turn
+     queued (review, 5 Nov — a reset during a turn left the question unanswered
+     against a deleted person). Their media goes with it. */
+  for (const url of endTurns(phone)) await deleteTwilioMedia(url);
+
+  /**
+   * ⚠ **Their flags go too** (review, 5 Nov). `flags.person_id` is SET NULL,
+   * so an open flag kept the excerpt of their own words — "my 5 year old
+   * daughter keeps having seizures at night…" — beside an answer that no longer
+   * existed. Read before the rows they point at go: their own, their questions'
+   * and their demand signals'.
+   */
+  await tx.execute(sql`
+    delete from flags f
+     where f.person_id = ${id}::uuid
+        or (f.subject_kind = 'person' and f.subject_id = ${id}::uuid)
+        or (f.subject_kind = 'answer' and f.subject_id in (select a.id from answers a where a.phone = ${phone}))
+        or (f.subject_kind = 'demand_signal' and f.subject_id in (select d.id from demand_signals d where d.person_id = ${id}::uuid))`);
+
+  /**
+   * ⚠ **And a read-back's media at Twilio** (review, 5 Nov). The pending note
+   * cascades with the person, and with it the only record of its URL — so the
+   * hourly sweep could never find it. Ended here first; the SMS DELETE did
+   * this already, the admin reset and the web delete did not.
+   */
+  const pendingMedia = (await tx.execute(sql`
+    with ended as (
+      select id, media_url from media_notes
+       where person_id = ${id}::uuid and status = 'pending'
+         for update
+    )
+    update media_notes m
+       set status = 'superseded', text = null, media_url = null, resolved_at = now()
+      from ended
+     where m.id = ended.id
+    returning ended.media_url`)) as unknown as Array<Record<string, unknown>>;
+  for (const r of pendingMedia) if (typeof r.media_url === "string") await deleteTwilioMedia(r.media_url);
+
   if (opts.withContributions) {
     /* The places and caregivers they spoke about, read before their words go,
        so only those left with nobody else's word are removed — a place other
@@ -187,7 +227,12 @@ export async function erasePersonIn(
 
     const contributions = (await tx.execute(sql`
       delete from share_contributions where person_id = ${id}::uuid returning id
-    `)) as unknown as unknown[];
+    `)) as unknown as Array<Record<string, unknown>>;
+    if (contributions.length) {
+      await tx.execute(sql`
+        delete from flags where subject_kind = 'share_contribution'
+           and subject_id in (${uuidList(contributions.map((r) => String(r.id)))})`);
+    }
     const nominations = (await tx.execute(sql`
       delete from caregiver_nominations where person_id = ${id}::uuid returning id
     `)) as unknown as unknown[];
@@ -198,8 +243,12 @@ export async function erasePersonIn(
            where s.id in (${uuidList(shareIds)})
              and not exists (select 1 from share_contributions sc where sc.share_id = s.id)
           returning s.id
-        `)) as unknown as unknown[])
+        `)) as unknown as Array<Record<string, unknown>>)
       : [];
+    if (shares.length) {
+      await tx.execute(sql`
+        delete from flags where subject_kind = 'share' and subject_id in (${uuidList(shares.map((r) => String(r.id)))})`);
+    }
     /* A caregiver goes only when nobody else nominated them and they have not
        claimed the listing themselves — a claim is the caregiver's own consent,
        which no parent's reset can take back. */

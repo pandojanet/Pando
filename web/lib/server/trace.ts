@@ -1,5 +1,6 @@
 import "server-only";
 import { MODEL_PRICES, WEB_SEARCH_USD } from "@/lib/models";
+import { maskContactDetails } from "@/lib/contact-details";
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -15,15 +16,25 @@ import { createHash, randomUUID } from "node:crypto";
  * and draws the tree; the same `trace_id` prefixes every log line written
  * inside the trace, so `docker logs | grep <id>` gives the same story.
  *
- * ## What never leaves (invariant 7)
+ * ## What leaves (invariant 7, and its one exception since 5 Nov)
  *
- * No phone number, no name, no free text — **ever**, not even "just for
- * debugging". A generation carries counts only (no `$ai_input` / `$ai_output`);
- * a person is a one-way hash of their id, never their phone; every property
- * passes `safeProps`, which keeps numbers and booleans and only short
- * identifier-shaped strings, and drops anything carrying a run of digits. The
- * log lines it forwards are already enums and counts by the same invariant —
- * this is the second net, not the first.
+ * Every ordinary property passes `safeProps`, which keeps numbers and
+ * booleans and only short identifier-shaped strings, and drops anything
+ * carrying a run of digits; a person is a one-way hash of their id, never
+ * their phone. The log lines it forwards are already enums and counts.
+ *
+ * **The content of the conversation is the one exception**, the developer's
+ * approved decision of 5 Nov (*"add input and output to PostHog — the decision
+ * is approved, all the information is needed in PostHog"*): a generation
+ * carries what the model was sent and what it answered (`$ai_input`,
+ * `$ai_output_choices`), and a trace what the parent said and what Pando
+ * sent back (`$ai_input_state`, `$ai_output_state`). Only those four keys,
+ * only through `cleanContent`: phone numbers and emails masked
+ * (`maskContactDetails`), pictures, PDFs and audio replaced by a marker,
+ * signatures and encrypted search payloads dropped, each field capped at
+ * `CONTENT_MAX`. `POSTHOG_TRACE_CONTENT=off` turns it off without a deploy
+ * of code. Nothing else changes: no phone as a property, no content in a log
+ * line.
  *
  * ## Switched off unless configured
  *
@@ -37,7 +48,8 @@ type Props = Record<string, Prop>;
 
 interface Captured {
   event: string;
-  properties: Props;
+  /* Props, and the content keys (`CONTENT_KEYS`), which carry JSON. */
+  properties: Props & Record<string, unknown>;
   timestamp: string;
 }
 
@@ -51,6 +63,9 @@ interface Trace {
   out: Captured[];
   /** What the trace was about and what it answered with, lifted onto `$ai_trace` (see `summarise`). */
   summary: { intent: string | null; intentSource: string | null; keyword: string | null; replyTemplate: string | null; replies: number };
+  /** What the parent said and what Pando sent, for `$ai_input_state` / `$ai_output_state` (5 Nov). */
+  said: string[];
+  sent: string[];
 }
 
 const store = new AsyncLocalStorage<Trace>();
@@ -98,6 +113,52 @@ export function safeProps(input: Record<string, unknown>): { props: Props; dropp
   return { props, dropped };
 }
 
+/* ----------------------------------------------------------------- content */
+
+/** The keys that carry the conversation itself (5 Nov) — and nothing else does. */
+const CONTENT_KEYS = ["$ai_input", "$ai_output_choices", "$ai_input_state", "$ai_output_state"] as const;
+/** Characters per content field, as JSON; past it the field is cut and says so. */
+export const CONTENT_MAX = 60_000;
+
+export function isContentTracingOn(): boolean {
+  return (process.env.POSTHOG_TRACE_CONTENT?.trim().toLowerCase() ?? "") !== "off";
+}
+
+/* Keys that are never content a person reads: a signature, an encrypted search payload, base64. */
+const OPAQUE_KEYS = new Set(["signature", "encrypted_content", "encrypted_index", "data"]);
+
+/**
+ * The conversation as PostHog may hold it: every string with phone numbers and
+ * emails masked, a picture / PDF / audio block replaced by a marker (never its
+ * bytes), opaque payloads dropped, and the whole capped at `CONTENT_MAX`.
+ */
+export function cleanContent(value: unknown): unknown {
+  const walk = (v: unknown, depth: number): unknown => {
+    if (depth > 12) return "[…]";
+    if (typeof v === "string") return maskContactDetails(v);
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
+    if (v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      if (o.type === "image" || o.type === "document" || o.type === "audio") return { type: o.type, note: `[${o.type} omitted]` };
+      const out: Record<string, unknown> = {};
+      for (const [k, x] of Object.entries(o)) if (!OPAQUE_KEYS.has(k)) out[k] = walk(x, depth + 1);
+      return out;
+    }
+    return v;
+  };
+  const cleaned = walk(value, 0);
+  const json = JSON.stringify(cleaned) ?? "";
+  return json.length <= CONTENT_MAX ? cleaned : `${json.slice(0, CONTENT_MAX)}… [cut at ${CONTENT_MAX} of ${json.length} characters]`;
+}
+
+/** What the parent said (a text, a confirmed voice note) or what Pando sent, onto the trace in hand. */
+export function traceContent(part: { said?: string; sent?: string }): void {
+  const t = store.getStore();
+  if (!t) return;
+  if (part.said) t.said.push(part.said);
+  if (part.sent) t.sent.push(part.sent);
+}
+
 /** A person, as PostHog sees them: a one-way hash of the id, never the phone. */
 export function personKey(personId: string): string {
   return "p_" + createHash("sha256").update(`pando:${personId}`).digest("hex").slice(0, 24);
@@ -117,9 +178,20 @@ function capture(t: Trace | undefined, event: string, input: Record<string, unkn
     delete raw[k];
     if (typeof v === "string" && UUID.test(v)) ids[k] = v;
   }
+  /* The conversation, kept out of `safeProps` and through `cleanContent` (5 Nov). */
+  /* Switched off, these keys go through `safeProps` like any other: the trace's enums still pass, words do not. */
+  const content: Record<string, unknown> = {};
+  if (isContentTracingOn()) {
+    for (const k of CONTENT_KEYS) {
+      if (!(k in raw)) continue;
+      content[k] = raw[k] === undefined || raw[k] === null ? null : cleanContent(raw[k]);
+      delete raw[k];
+    }
+  }
   const { props, dropped } = safeProps(raw);
-  const properties: Props = {
+  const properties: Props & Record<string, unknown> = {
     ...props,
+    ...content,
     ...ids,
     ...(dropped ? { props_dropped: dropped } : {}),
     $ai_trace_id: t?.id ?? null,
@@ -205,6 +277,8 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
     spans: [],
     out: [],
     summary: { intent: null, intentSource: null, keyword: null, replyTemplate: null, replies: 0 },
+    said: [],
+    sent: [],
   };
   t.distinctId = `trace_${t.id}`;
   let outcome = "ok";
@@ -222,6 +296,8 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
       generations: t.out.filter((e) => e.event === "$ai_generation").length,
       spans: t.out.filter((e) => e.event === "$ai_span").length,
       ...traceSummary(name, t.summary),
+      ...(t.said.length ? { $ai_input_state: t.said.length === 1 ? t.said[0] : t.said } : {}),
+      ...(t.sent.length ? { $ai_output_state: t.sent.length === 1 ? t.sent[0] : t.sent } : {}),
     });
     await send(t.out, t.distinctId, t.personKnown);
   }
@@ -300,9 +376,10 @@ export function costOf(model: string, u: {
 /**
  * A `fetch` for the Anthropic client that records every Messages call as a
  * `$ai_generation`: model, tokens, cost, latency, stop reason, the step it was
- * for. It reads the response's `usage` from a clone and never the content, and
- * hands the original response back untouched — the caller's parsing does not
- * know it is there.
+ * for — and, since 5 Nov, what it was sent and what it answered
+ * (`$ai_input`, `$ai_output_choices`, through `cleanContent`). It reads a
+ * clone and hands the original response back untouched — the caller's parsing
+ * does not know it is there.
  *
  *     new Anthropic({ apiKey, fetch: tracedFetch("intent") })
  */
@@ -331,6 +408,7 @@ export function tracedFetch(purpose: string): typeof fetch {
       const body = (await res.clone().json()) as {
         model?: string;
         stop_reason?: string;
+        content?: unknown[];
         usage?: {
           input_tokens?: number; output_tokens?: number;
           cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
@@ -355,12 +433,30 @@ export function tracedFetch(purpose: string): typeof fetch {
         stop_reason: body.stop_reason ?? null,
         web_searches: u.server_tool_use?.web_search_requests ?? 0,
         web_fetches: u.server_tool_use?.web_fetch_requests ?? 0,
+        ...contentOf(init?.body, body.content),
       });
     } catch {
       /* A body we cannot read is still the caller's to handle; nothing is recorded. */
     }
     return res;
   }) as typeof fetch;
+}
+
+/** What a Messages call was sent and answered, as PostHog's LLM analytics reads it: the system prompt and the turns, then the reply's blocks. */
+function contentOf(requestBody: unknown, reply: unknown[] | undefined): Record<string, unknown> {
+  if (!isContentTracingOn()) return {};
+  type Request = { system?: unknown; messages?: unknown[] };
+  const request = ((): Request | null => {
+    try {
+      return typeof requestBody === "string" ? (JSON.parse(requestBody) as Request) : null;
+    } catch {
+      return null;
+    }
+  })();
+  return {
+    ...(request ? { $ai_input: [...(request.system ? [{ role: "system", content: request.system }] : []), ...(request.messages ?? [])] } : {}),
+    ...(reply ? { $ai_output_choices: [{ role: "assistant", content: reply }] } : {}),
+  };
 }
 
 /* -------------------------------------------------------------------- logs */

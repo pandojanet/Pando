@@ -843,6 +843,7 @@ export const MESSAGE_LABEL: Record<string, string> = {
   ask_detail: "Asked what they meant",
   unclear_handover: "Handed to a person",
   small_talk: "Said what Pando is for",
+  thanks_reply: "Said you're welcome",
   share_invite: "Sent the link to share",
   settings_menu: "Sent the settings menu",
   settings_confirmed: "Confirmed a settings change",

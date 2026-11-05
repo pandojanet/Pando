@@ -214,5 +214,28 @@ ok("a duration is not an age: 'a camp for 5 days', 'a 2 week camp', '3 sessions'
 ok("a bare answer to the age question is: '7', '3 and 7', '4, 6'", ["7", "3 and 7", "4, 6", " 10 "].every((t) => BARE.test(t)) && !BARE.test("top 5 schools"));
 ok("and 'no' in a request is never 'no kids'", /&& !declinesChildren\(body\) && !DURATION\.test\(body\)/.test(inbound));
 
+console.log("\n=== a yes or no with a few words after it (5 Nov) ===");
+{
+  const thanksMod = (await import(`../lib/thanks.ts?v=${Date.now()}`)) as typeof import("../lib/thanks.ts");
+  ok("'no, we never went' to did-it-help is a no; 'yes it was great!' a yes",
+    thanksMod.leadingYesOrNo("no, we never went") === false && thanksMod.leadingYesOrNo("yes it was great!") === true);
+  ok("never with a 'but', a question or a long clause after it",
+    thanksMod.leadingYesOrNo("yes, but for my 6 year old") === null && thanksMod.leadingYesOrNo("no, is there a cheaper one?") === null &&
+      thanksMod.leadingYesOrNo("yeah we loved it a lot really so much fun there") === null);
+  ok("and leading a burst it is its own turn, ahead of the question",
+    b.splitBurst([{ body: "no, we never went" }, { body: "any basketball for a 9 year old?" }]).reply?.body === "no, we never went" &&
+      b.splitBurst([{ body: "yes, but for my 6 year old" }, { body: "any swim lessons?" }]).reply === null);
+  ok("did-it-help reads it", /const helpedReply = leadingYesOrNo\(body\);/.test(inbound));
+}
+
+console.log("\n=== a thanks from somebody Pando knows (5 Nov) ===");
+{
+  const replies = fs.readFileSync(new URL("../lib/replies.ts", import.meta.url), "utf8");
+  ok("is answered as a thanks, not with the introduction a stranger gets",
+    /const thanks = !sharing && person !== null && !person\.created && ACKNOWLEDGEMENT\.test\(body\.trim\(\)\);/.test(inbound) &&
+      /body: sharing \? SHARE_INVITE : thanks \? THANKS_REPLY : SMALL_TALK/.test(inbound) &&
+      /export const THANKS_REPLY = "You're welcome\. Text me anytime you need something local\.";/.test(replies));
+}
+
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

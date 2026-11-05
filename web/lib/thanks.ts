@@ -186,6 +186,23 @@ export function yesOrNo(body: string): boolean | null {
 }
 
 /**
+ * A yes or a no said with a few words after it (the SMS lab, 5 Nov): "no, we
+ * never went" to "did it help?" was not read at all, so the answer stayed
+ * ungraded and nobody was told. Only a short clause after the yes or no, with
+ * no question in it and no "but" — "yes, but for my 6 year old" changes what
+ * was asked, and is not a plain yes. Null otherwise, as `yesOrNo`.
+ */
+export function leadingYesOrNo(body: string): boolean | null {
+  const whole = yesOrNo(body);
+  if (whole !== null) return whole;
+  const match = /^\s*(yes|yeah|yep|yup|no|nope|nah)\b[\s,.!-]+(.+)$/i.exec(body.trim());
+  if (!match) return null;
+  const rest = match[2];
+  if (/\?|\bbut\b|\bthough\b|\bexcept\b/i.test(rest) || rest.trim().split(/\s+/).length > 6) return null;
+  return /^(yes|yeah|yep|yup)$/i.test(match[1]);
+}
+
+/**
  * The list, as one clause.
  *
  * Never a bare count: "3 recommendations" tells a contributor nothing about what

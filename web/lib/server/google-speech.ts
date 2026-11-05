@@ -29,7 +29,7 @@ type ServiceAccount = { client_email: string; private_key: string; project_id: s
 const LOCATION = "us";
 const MODEL = "chirp_3";
 /* The languages a parent here is likely to speak — the same four Deepgram's
-   first pass detects among. Chirp 3 picks the most prevalent one. */
+   first pass detects among. v1 is told them; Chirp 3 detects on its own ("auto"). */
 const LANGUAGES = ["en-US", "es-US", "uk-UA", "ru-RU"];
 
 /** `GOOGLE_SPEECH_CREDENTIALS`: the service account's JSON key, as JSON or base64 of it. */
@@ -102,7 +102,7 @@ type RecognizeReply = {
     resultEndOffset?: string;
     languageCode?: string;
   }>;
-  error?: { status?: string };
+  error?: { status?: string; message?: string; details?: Array<{ fieldViolations?: Array<{ field?: string; description?: string }> }> };
 };
 
 /** "3.500s" → 3.5 */
@@ -137,7 +137,7 @@ type V1Reply = {
     resultEndTime?: string;
     languageCode?: string;
   }>;
-  error?: { status?: string };
+  error?: { status?: string; message?: string; details?: Array<{ fieldViolations?: Array<{ field?: string; description?: string }> }> };
 };
 
 async function transcribeV1(bytes: ArrayBuffer, contentType: string, key: string, places: string[]): Promise<ReadResult> {
@@ -228,7 +228,12 @@ export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: stri
           config: {
             autoDecodingConfig: {},
             model: MODEL,
-            languageCodes: LANGUAGES,
+            /* "auto": Chirp 3 detects the language itself, among all it knows (5 Nov). A list
+               was refused: four by name ("Maximum number of allowed language codes is 3"),
+               and any three with a bare INVALID_ARGUMENT — probed one at a time, only one or
+               two codes pass. Two would drop Ukrainian or Russian; "auto" keeps all four.
+               v1 still takes a main + three (`transcribeV1`). */
+            languageCodes: ["auto"],
             features: { enableAutomaticPunctuation: true },
           },
           content: Buffer.from(bytes).toString("base64"),
@@ -238,7 +243,8 @@ export async function transcribeWithGoogle(bytes: ArrayBuffer, contentType: stri
     );
     const data = (await res.json().catch(() => ({}))) as RecognizeReply;
     if (!res.ok) {
-      console.warn("[media] transcription refused", { provider: "google", status: res.status, reason: data.error?.status ?? null });
+      /* Google's own message too: it names the field it refused, never anything the parent said. */
+      console.warn("[media] transcription refused", { provider: "google", status: res.status, reason: data.error?.status ?? null, detail: data.error?.message?.slice(0, 300) ?? null, fields: (data.error?.details ?? []).flatMap((d) => d.fieldViolations ?? []).map((v) => `${v.field}: ${v.description}`.slice(0, 200)), details: JSON.stringify(data.error?.details ?? []).slice(0, 400) });
       return { ok: false, reason: "read_failed" };
     }
     return heardFrom("google", data.results ?? [], (r) => r.resultEndOffset, bytes, contentType);

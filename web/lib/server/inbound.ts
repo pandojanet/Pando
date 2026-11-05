@@ -35,7 +35,7 @@ import { openIntroOfferAt } from "@/lib/server/repo/introductions";
 import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDeepDive, type DeepDiveStep } from "@/lib/server/deep-dive";
 import { deepDiveFamily, earlierExchangesFor, finishDeepDive, lastExchangeFor, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
-import { judgeFit } from "@/lib/server/answer-fit";
+import { judgeFindings, judgeFit } from "@/lib/server/answer-fit";
 import { applyFit, unmetLine, wantIsARecord } from "@/lib/answer-fit";
 import { acceptsIntro, introOffer, introTarget } from "@/lib/introductions";
 import { introStep } from "@/lib/server/introductions";
@@ -58,6 +58,7 @@ import {
   PING_STILL_GOOD,
   SHARE_INVITE,
   SMALL_TALK,
+  THANKS_REPLY,
 } from "@/lib/replies";
 import {
   allegationReply,
@@ -121,7 +122,7 @@ import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
 import { mentionsName, sameName } from "@/lib/public-info";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
-import { yesOrNo } from "@/lib/thanks";
+import { leadingYesOrNo, yesOrNo } from "@/lib/thanks";
 import { MEDIA_REJECTED, mediaConfirmCard, mediaConfirmSms, mediaFailureReason, mediaFailureSms, mediaUrls, type InboundMedia } from "@/lib/media-note";
 import { deleteTwilioMedia, readInboundMedia, reviseReadBack } from "@/lib/server/media-note";
 import { ACKNOWLEDGEMENT, burstOpen, combineBurst, endTurns, gatherBurst, oneAtATime, splitBurst } from "@/lib/inbound-burst";
@@ -171,7 +172,7 @@ import { TYPING_DEEP_MAX_MS } from "@/lib/rcs-typing";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
-import { withTrace, traceIdentify } from "@/lib/server/trace";
+import { withTrace, traceContent, traceIdentify } from "@/lib/server/trace";
 
 /**
  * What Pando does with an inbound message, whatever carried it.
@@ -279,6 +280,8 @@ async function handleInboundMessageUntraced(input: {
     const read = await mediaReplyStep({ from, body, person });
     if (read === HANDLED) return;
     if (typeof read === "string") {
+      /* The words they confirmed are what the rest of the turn answers: on the trace too. */
+      traceContent({ said: read });
       return handleInboundMessageUntraced({ from, body: read, channel: input.channel, confirmedMedia: true });
     }
   }
@@ -1077,7 +1080,8 @@ async function repliesStep({ from, body, person, attached }: { from: string; bod
    * beats a prompt from four days ago.
    */
   const pingReply = readPingReply(body);
-  const helpedReply = yesOrNo(body);
+  /* A yes or no with a few words after it counts too ("no, we never went" — 5 Nov). */
+  const helpedReply = leadingYesOrNo(body);
   let answeredSomething = false;
 
   if (person && !attached.attached && (pingReply !== "unclear" || helpedReply !== null)) {
@@ -1858,12 +1862,14 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     reading.intent === "contribute" || (reading.intent === "answer_blast" && (await askedRecently(from)));
   /* An answer_blast reading from somebody never asked is small talk, not silence (26 Oct). */
   if (sharing || reading.intent === "chitchat" || reading.intent === "answer_blast") {
+    /* A thanks from somebody Pando knows is answered as one, not with the introduction (5 Nov). */
+    const thanks = !sharing && person !== null && !person.created && ACKNOWLEDGEMENT.test(body.trim());
     await sendSms({
       to: from,
-      body: sharing ? SHARE_INVITE : SMALL_TALK,
+      body: sharing ? SHARE_INVITE : thanks ? THANKS_REPLY : SMALL_TALK,
       category: "transactional",
       personId: person?.person_id,
-      template: sharing ? "share_invite" : "small_talk",
+      template: sharing ? "share_invite" : thanks ? "thanks_reply" : "small_talk",
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     console.info("[sms:inbound] answered a non-question", { intent: reading.intent });
@@ -2373,7 +2379,7 @@ async function answerQuestion(input: {
     deep = null;
   }
 
-  const publicInfo: PublicSearchResult = wantsCare || ownsAPerson
+  const publicFound: PublicSearchResult = wantsCare || ownsAPerson
     ? /* Never for a question about care. A page saying somebody is a wonderful
          nanny has cleared none of what invariants 1, 2, 12 and 13 require, and a
          name is the one thing that must not arrive from the open web.
@@ -2452,6 +2458,18 @@ async function answerQuestion(input: {
            about them sits beside what parents said, matched by name. */
         ...(deep ? { enrich: retrieved.shares.slice(0, 6).map((share) => share.name) } : {}),
       });
+
+  /**
+   * The web's findings judged as the parents' records are (5 Nov, the SMS lab):
+   * "any swim lessons for a 4 year old, weekends only?" listed a class that
+   * runs Monday to Thursday, and "any piano teachers?" a toddler music class.
+   * A mismatch is dropped; what cannot be told stays. Not for care or a deep
+   * dive, as above; a check that cannot run keeps every finding.
+   */
+  const publicVerdicts = !wantsCare && !deep && publicFound.findings.length > 0 ? await judgeFindings(body, publicFound.findings) : null;
+  const publicInfo: PublicSearchResult = publicVerdicts
+    ? { ...publicFound, findings: publicFound.findings.filter((_, i) => publicVerdicts[i] !== "mismatch") }
+    : publicFound;
 
   /* No database is not an empty answer. Saying "nothing from local parents yet"
      when the truth is that Pando could not look is the `persisted: false` rule
@@ -3195,6 +3213,8 @@ export async function handleInboundMessage(
 
 async function handleOne(input: Parameters<typeof handleInboundMessageUntraced>[0]): ReturnType<typeof handleInboundMessageUntraced> {
   return withTrace("sms_inbound", async () => {
+    /* What the parent sent, onto the trace's input (5 Nov, `traceContent`): the text, and what media came with it. */
+    traceContent({ said: [input.media ? `[${input.media.kind}${input.media.also?.length ? ` x${input.media.also.length + 1}` : ""}]` : "", input.body].filter(Boolean).join(" ") });
     /* "Pando is typing…" while an ordinary text over RCS is answered (29 Oct,
        lib/rcs-typing.ts). Not for a keyword: Twilio or the keyword step answers
        those at once. The first reply sent stops it; so does the end of the run. */

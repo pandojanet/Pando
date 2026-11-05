@@ -82,7 +82,13 @@ console.log("\n=== one inbound text, end to end ===");
     tr.traceIdentify("8873c507-ef17-4e6f-864f-43e48a7f0ed5");
     await tr.span("classify", async () => {
       const f = tr.tracedFetch("intent");
-      const res = await f("https://api.anthropic.com/v1/messages", { method: "POST", body: "{}" });
+      const res = await f("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify({
+          system: "You classify a single SMS.",
+          messages: [{ role: "user", content: [{ type: "text", text: "swim for Maya? call me at (626) 555-0001" }, { type: "image", source: { type: "base64", media_type: "image/png", data: "QUFBQUFBQUFB" } }] }],
+        }),
+      });
       const body = (await res.json()) as { content: Array<{ text: string }> };
       ok("the caller still reads the model's answer untouched", body.content[0].text.startsWith("Maya said"));
       return { intent: "ask_recommendation" };
@@ -100,11 +106,42 @@ console.log("\n=== one inbound text, end to end ===");
   const gen = by("$ai_generation")[0]?.properties ?? {};
   ok("the span hangs off the trace and the model call off the span (ids are whole UUIDs)", span.$ai_parent_id === traceId && gen.$ai_parent_id === span.$ai_span_id && typeof span.$ai_span_id === "string");
   ok("the generation has model, tokens, cost and the step", gen.$ai_model === "claude-haiku-5-5" && gen.$ai_input_tokens === 1000 && gen.$ai_output_tokens === 200 && gen.$ai_span_name === "intent" && Math.abs(Number(gen.$ai_total_cost_usd) - (1000 * 0.1 + 200 * 0.5) / 1e6 - 0.02) < 1e-9);
-  ok("and never the model's input or output", !("$ai_input" in gen) && !("$ai_output_choices" in gen) && !("$ai_output" in gen));
+  /* Since 5 Nov, the developer's approved decision: the conversation, masked (invariant 7's one exception). */
+  const input = JSON.stringify(gen.$ai_input ?? null);
+  const output = JSON.stringify(gen.$ai_output_choices ?? null);
+  ok("the model's input: the system prompt and the turns", input.includes("You classify a single SMS.") && input.includes("swim for Maya?"));
+  ok("with phone numbers masked and a picture replaced by a marker, never its bytes",
+    input.includes("[number]") && !input.includes("555-0001") && input.includes("[image omitted]") && !input.includes("QUFBQUFBQUFB"));
+  ok("the model's output, masked the same way", output.includes("Maya said the teacher at Little Maestros") && output.includes("[number]") && !output.includes("555 0001"));
   ok("the person is the hash, on every event, once known", ev.every((e) => e.properties.distinct_id === tr.personKey("8873c507-ef17-4e6f-864f-43e48a7f0ed5")) && ev.every((e) => !("$process_person_profile" in e.properties)));
   const json = JSON.stringify(batches);
-  ok("nothing the model wrote and no phone is anywhere in what was sent", !json.includes("Maya") && /* The phone in every form it was given — not a bare "555", which a random id or hash contains often enough to fail now and then (28 Oct). */ !["6265550001", "626 555 0001", "555-0001"].some((p) => json.includes(p)) && !json.includes("Little Maestros"));
+  ok("no phone is anywhere in what was sent", !["6265550001", "626 555 0001", "555-0001"].some((p) => json.includes(p)));
+  const CONTENT = ["$ai_input", "$ai_output_choices", "$ai_input_state", "$ai_output_state"];
+  ok("words appear only under the four content keys", ev.every((e) => Object.entries(e.properties).every(([k, v]) => CONTENT.includes(k) || !JSON.stringify(v ?? "").includes("Maya"))));
   ok("the log line became an event with its enums", by("pando_log")[0]?.properties.tag === "sms:inbound" && by("pando_log")[0]?.properties.keyword === "text");
+}
+
+console.log("\n=== the conversation, and its switch (5 Nov) ===");
+{
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => {
+    tr.traceContent({ said: "any swim lessons? text me at 626-555-0001" });
+    tr.traceContent({ sent: "2 parents near you have used Rose Bowl Aquatics" });
+  });
+  const t = batches[0]?.batch.find((e) => e.event === "$ai_trace")?.properties ?? {};
+  ok("the trace carries what the parent said and what Pando sent",
+    t.$ai_input_state === "any swim lessons? text me at [number]" && t.$ai_output_state === "2 parents near you have used Rose Bowl Aquatics");
+  ok("a field past the cap is cut and says so", String(tr.cleanContent("x".repeat(tr.CONTENT_MAX + 10))).includes("[cut at"));
+  process.env.POSTHOG_TRACE_CONTENT = "off";
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => {
+    tr.traceContent({ said: "any swim lessons?" });
+    const f = tr.tracedFetch("intent");
+    await f("https://api.anthropic.com/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "hello Maya" }] }) });
+  });
+  const offJson = JSON.stringify(batches);
+  ok("POSTHOG_TRACE_CONTENT=off sends no words at all", !offJson.includes("swim lessons") && !offJson.includes("hello Maya") && !offJson.includes('"$ai_input"'));
+  delete process.env.POSTHOG_TRACE_CONTENT;
 }
 
 console.log("\n=== a trace with nobody named ===");

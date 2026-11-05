@@ -867,6 +867,9 @@ const OPEN_FOR_SENDER = sql`
      and b.sent_at is not null
      and b.responded_at is null
      and b.passed_at is null
+     -- An Ask cancelled (its asker erased, or an admin's) takes no more replies:
+     -- one sent to it could never be passed on (review, 5 Nov).
+     and bl.status <> 'cancelled'
      and (bl.expires_at is null
           or bl.expires_at > now() - (${REPLY_GRACE_HOURS} || ' hours')::interval)
    order by b.sent_at desc

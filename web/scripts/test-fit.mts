@@ -88,7 +88,7 @@ ok("verdicts come by record number, and a reading that does not cover every reco
 ok("the judge sees the price, value and ages the answer shows",
   /price: \$\{share\.price_band\}/.test(server) && /ages: \$\{share\.age_bands/.test(server));
 ok("its log line is counts only, never the want or a record's words",
-  /console\.info\("\[answer\] fit", \{\s+records: shares\.length,[\s\S]{0,260}want: Boolean\(parsed\.want\?\.trim\(\)\),\s+\}\)/.test(server));
+  /console\.info\("\[answer\] fit", \{\s+of: purpose === "answer_fit" \? "parents" : "web",\s+records: shares\.length,[\s\S]{0,260}want: Boolean\(parsed\.want\?\.trim\(\)\),\s+\}\)/.test(server));
 ok("every answer about a place or class is judged, a named record kept; care and a deep dive are not judged",
   /const judged = !wantsCare && !input\.deep\s+\? applyFit\(retrievedAll\.shares, await judgeFit\(body, retrievedAll\.shares\), \(share\) => mentionsName\(body, share\.name\)\)/.test(inbound) &&
     /const retrieved = \{ \.\.\.retrievedAll, shares: fit\.shares \};/.test(inbound));
@@ -96,6 +96,12 @@ ok("the answer opens on what nobody near them has mentioned",
   /: fit\.unmet\s+\? \{ opening: unmetLine\(fit\.unmet, body, candidates\.some\(\(c\) => !c\.trust\.public_only\), place\.source !== "none"\) \}/.test(inbound));
 ok("and is not rewritten warmly, whose opening would read as though it were met",
   /&& fit\.unmet === null;/.test(inbound) && /composed\.parent_used > 0 && fit\.unmet === null/.test(inbound));
+ok("another activity inside one family of things, other ages, or a stated condition broken is a mismatch (5 Nov)",
+  /a toddler music class for 'piano teachers' or for 'art classes'/.test(server) && /classes Monday to Thursday for 'weekends only'/.test(server));
+ok("the web's findings are judged the same way, and a mismatch dropped from the public half",
+  /const publicVerdicts = !wantsCare && !deep && publicFound\.findings\.length > 0 \? await judgeFindings\(body, publicFound\.findings\) : null;/.test(inbound) &&
+    /findings: publicFound\.findings\.filter\(\(_, i\) => publicVerdicts\[i\] !== "mismatch"\)/.test(inbound) &&
+    /export async function judgeFindings\(question: string, findings: PublicFinding\[\]\)/.test(server));
 ok("records left out are still kept out of the web's half",
   /\.\.\.retrievedAll\.shares\s+\.filter\(\(share\) => share !== retrieved\.shares\[0\]\)/.test(inbound));
 

@@ -66,6 +66,16 @@ path-scoped rule loads only when a matching file is opened with Read. -->
    order. No raw Twilio calls anywhere, and always via the Messaging
    Service SID.
 7. Never log phone numbers, names or free text. Counts and enums only.
+
+   **One exception, approved 5 Nov: PostHog's LLM traces carry the
+   conversation** — what each model call was sent and answered
+   (`$ai_input`, `$ai_output_choices`) and what the parent said and Pando
+   sent (`$ai_input_state`, `$ai_output_state`). Only those four keys, only
+   through `cleanContent` in `lib/server/trace.ts`: phone numbers and emails
+   masked, pictures/PDFs/audio replaced by a marker, opaque payloads dropped,
+   each field capped. `POSTHOG_TRACE_CONTENT=off` switches it off. Log lines,
+   every other trace property and every other destination stay counts and
+   enums; a phone is never a property anywhere.
 8. Free text about a named person is never published verbatim without human review.
 9. "Other" answers are not matchable until an admin promotes them into
    `market_options`.

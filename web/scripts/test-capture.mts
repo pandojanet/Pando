@@ -147,6 +147,15 @@ ok("STOP and HELP last, as registered", /Reply STOP to opt out, HELP for help\.$
 
 console.log("\n=== firsthand is asked, never assumed ===");
 ok("USED is firsthand", c.readAnswer("firsthand", "used").ok);
+const fh = (t: string) => {
+  const a = c.readAnswer("firsthand", t);
+  return a.ok && "value" in a ? a.value : null;
+};
+ok("a sentence that says it plainly is read (the SMS lab, 5 Nov): we went, yes, my daughter goes",
+  fh("we went ourselves") === "yes" && fh("Yes, the teacher is patient with shy kids") === "yes" && fh("my daughter goes there every Saturday") === "yes");
+ok("heard-from-someone wins over a 'we' — secondhand is never filed as firsthand",
+  fh("a friend told me about it") === "no" && fh("we heard about it from a neighbor") === "no" && fh("haven't tried it yet") === "no");
+ok("and anything unclear is still asked again", fh("maybe") === null && fh("the pool is nice") === null);
 ok(
   "HEARD is stored as secondhand rather than refused",
   (c.readAnswer("firsthand", "heard") as { value: string }).value === "no",

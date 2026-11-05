@@ -12,7 +12,7 @@ import {
   recipientLabel,
 } from "@/lib/server/slack";
 import { relayTargetFor } from "@/lib/server/repo/relay";
-import { span } from "@/lib/server/trace";
+import { span, traceContent } from "@/lib/server/trace";
 
 /**
  * The single outbound SMS layer (invariant 6 — spec §14, §21).
@@ -654,5 +654,8 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
 
 /** sendSms, as one step of the trace (27 Oct, lib/server/trace.ts). */
 export async function sendSms(input: Parameters<typeof sendSmsUntraced>[0]): ReturnType<typeof sendSmsUntraced> {
-  return span("send", () => sendSmsUntraced(input), (r) => ({ category: input.category, template: input.template ?? null, sent: r.sent, reason: (r as { reason?: string }).reason ?? null }));
+  const result = await span("send", () => sendSmsUntraced(input), (r) => ({ category: input.category, template: input.template ?? null, sent: r.sent, reason: (r as { reason?: string }).reason ?? null }));
+  /* What went out, onto the trace's output (5 Nov, `traceContent`): the text, as the parent read it. */
+  if (result.sent) traceContent({ sent: input.body });
+  return result;
 }

@@ -666,6 +666,9 @@ export function inAnotherState(
   const want = US_STATES.find(([code, name]) => name.toLowerCase() === region.toLowerCase() || code === region.toUpperCase());
   if (!want) return false;
   const text = [f.name, f.area ?? "", f.detail ?? "", f.what ?? ""].join(" | ");
+  /* "Pasadena ISD" is Texas's school district: an Independent School District
+     is a Texas (and Minnesota) name no California page uses (the SMS lab, 5 Nov). */
+  if (want[0] !== "TX" && want[0] !== "MN" && /\bISD\b/.test(text)) return true;
   return US_STATES.some(([code, name]) => {
     if (code === want[0]) return false;
     /* A code only as an address ends: "Pasadena, TX" or "Pasadena, TX 77506" — never
@@ -677,7 +680,13 @@ export function inAnotherState(
       `(?:,|\\bin)\\s+${name}\\b(?!\\s+(?:park|st|street|ave|avenue|blvd|boulevard|road|rd|drive|dr|school|elementary|middle|high|pool|center|centre|square|heights|hall|library|field|fields|plaza|place|way))`,
       "i",
     );
-    return asCode.test(text) || asName.test(text);
+    /* And a town and its state code run into the rest of a title: "Pasadena, TX
+       Parent & Child 1 swim lessons" (the SMS lab, 5 Nov). Only after a
+       capitalised word, so "Small groups, OK for beginners" stays a sentence. */
+    const afterTown = new RegExp(`\\b[A-Z][A-Za-z.'-]+,\\s*${code}\\b(?![a-z])`);
+    /* Or the state in brackets after the town: "Aqua-Tots Pasadena (Texas)". */
+    const bracketed = new RegExp(`\\(\\s*(?:${name}|${code})\\s*\\)`, "i");
+    return asCode.test(text) || asName.test(text) || afterTown.test(text) || bracketed.test(text);
   });
 }
 

@@ -311,6 +311,23 @@ export function readsAsSkip(step: CaptureStep, body: string): boolean {
   return Boolean(CAPTURE_QUESTIONS[step].skippable) && isSkipWord(body);
 }
 
+/**
+ * "Did you use it yourself, or hear about it?" answered in a sentence (review,
+ * 5 Nov, the SMS lab): "we went ourselves" and "Yes, the teacher is patient…"
+ * were asked again until the parent typed MYSELF. A sentence is read only when
+ * it says one of the two plainly — heard-from-someone wins over a "we", since a
+ * secondhand record must never be filed as firsthand (invariant 4) — and
+ * anything else is still asked again.
+ */
+function readFirsthand(text: string): "yes" | "no" | null {
+  const t = text.toLowerCase();
+  if (/\b(heard|told me|a friend|my friend|friends|neighbou?rs?|someone|somebody|read about|saw (it|a post)|online|secondhand|second-hand|not (myself|personally|yet)|haven'?t (been|gone|tried|used))\b/.test(t)) return "no";
+  if (/^\s*no\b/.test(t)) return "no";
+  if (/^\s*(yes|yeah|yep|yup)\b/.test(t)) return "yes";
+  if (/\b(we|i)\s+(went|go|used|use|tried|did|took|take|attended|attend|do|have been|'ve been|been going)\b|\bourselves\b|\bmyself\b|\bfirsthand\b|\bmy (son|daughter|kids?|child|children|toddler|baby|boy|girl)s?\s+(go|goes|went|did|does|attended|attends|loved|loves)\b/.test(t)) return "yes";
+  return null;
+}
+
 export function readAnswer(step: CaptureStep, body: string): CaptureAnswer {
   const question = CAPTURE_QUESTIONS[step];
   const trimmed = body.trim();
@@ -321,6 +338,10 @@ export function readAnswer(step: CaptureStep, body: string): CaptureAnswer {
   if (question.options) {
     for (const option of question.options) {
       if (option.words.includes(word)) return { ok: true, value: option.value };
+    }
+    if (step === "firsthand") {
+      const said = readFirsthand(trimmed);
+      if (said) return { ok: true, value: said };
     }
     return { ok: false };
   }

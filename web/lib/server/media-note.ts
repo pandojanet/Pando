@@ -260,7 +260,8 @@ async function readImage(files: ArrayBuffer[], caption: string, context: Picture
                 type: "text" as const,
                 text: [
                   blocks.length > 1 ? `They sent ${blocks.length} pictures together; read them as one.` : null,
-                  context.area ? `They live in ${context.area}.` : null,
+                  /* The market, not their home (5 Nov, the lab: "…We live in Pasadena." was written for them). */
+                  context.area ? `Pando serves the ${context.area} area. Do not say where they live unless they did.` : null,
                   context.asked ? `Pando's last message to them asked: "${context.asked.slice(0, 400)}"` : null,
                   caption ? `Their words with it: ${caption.slice(0, 500)}` : "They sent it with no words.",
                 ]
