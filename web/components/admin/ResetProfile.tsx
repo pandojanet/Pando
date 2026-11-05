@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Field, inputClass, TextLink } from "@/components/admin/ui";
+import { Button, Card, Field, inputClass } from "@/components/admin/ui";
 import { adminAction } from "@/lib/admin/client";
 
 /**
@@ -43,9 +43,11 @@ export function ResetProfile({ id, name }: { id: string; name: string | null }) 
           as a new parent. Their phone starts over on its own at the invite link. This cannot be undone.
         </p>
         {!open ? (
-          <TextLink className="text-[12.5px]" onClick={() => setOpen(true)}>
-            Reset this profile…
-          </TextLink>
+          /* 5 Nov: a real button — the developer, of the underlined link it was: "a micro option".
+             Still two steps (this opens it, RESET sends it), as the 3 Nov decision says. */
+          <Button tone="danger" onClick={() => setOpen(true)}>
+            Reset profile…
+          </Button>
         ) : (
           <div className="space-y-2.5">
             <Field label="Type RESET to confirm">
