@@ -160,5 +160,25 @@ ok(
   ),
 );
 
+console.log("\n=== a sentence in reply to a ping (6 Nov) ===");
+{
+  ok("the model's four readings pass, anything else is other",
+    v.pingReadingOf({ reading: "still_good" }) === "still_good" && v.pingReadingOf({ reading: "no_longer" }) === "no_longer" &&
+      v.pingReadingOf({ reading: "not_sure" }) === "not_sure" && v.pingReadingOf({ reading: "withdraw" }) === "other" &&
+      v.pingReadingOf(null) === "other" && v.pingReadingOf("still_good") === "other");
+  ok("the exact words stay the first reader: a sentence is still unclear to them",
+    v.readPingReply("yes but prices went up a lot this year") === "unclear" && v.readPingReply("it closed I think") === "unclear");
+  const { readFileSync } = await import("node:fs");
+  const inbound = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  const reader = readFileSync(new URL("../lib/server/ping-read.ts", import.meta.url), "utf8");
+  ok("a sentence is read only while a ping waits and is the newest thing waiting on a yes or no",
+    inbound.includes('if (person && !attached.attached && pingReply === "unclear" && body.length <= 400) {') && inbound.includes("if (waiting && when(waiting) >= Math.max(when(prompt), when(offer))) {") &&
+      inbound.includes("pendingPing(from),"));
+  ok("still good and no longer take the YES and NO path; not sure is thanked and changes nothing",
+    inbound.includes('if (reading === "still_good" || reading === "no_longer") {') && inbound.includes("body: PING_NOT_SURE,"));
+  ok("the reader never throws and says 'stopped going' is not a verdict by itself",
+    /catch \{/.test(reader) && reader.includes("Stopping going themselves is not a verdict on the place"));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

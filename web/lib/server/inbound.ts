@@ -55,6 +55,7 @@ import {
   HELPED_YES,
   OPENER_REPLY,
   PING_NO_LONGER,
+  PING_NOT_SURE,
   PING_STILL_GOOD,
   SHARE_INVITE,
   SMALL_TALK,
@@ -131,6 +132,7 @@ import { DIGEST_OFF_REPLY, DIGEST_ON_REPLY, digestCommand } from "@/lib/digest";
 import { setDigestConsent } from "@/lib/server/repo/digest";
 import { readPingReply } from "@/lib/vouch";
 import { applyPingReply, pendingPing } from "@/lib/server/repo/vouch";
+import { readPingReplyByModel } from "@/lib/server/ping-read";
 import {
   CAPTURE_QUESTIONS,
   captureCancelledSms,
@@ -1085,12 +1087,47 @@ async function repliesStep({ from, body, person, attached }: { from: string; bod
    * out of the timestamp rather than being asserted: a ping sent this morning
    * beats a prompt from four days ago.
    */
-  const pingReply = readPingReply(body);
+  let pingReply = readPingReply(body);
   /* A yes or no with a few words after it counts too ("no, we never went" — 5 Nov). */
   const helpedReply = leadingYesOrNo(body);
   let answeredSomething = false;
 
-  if (person && !attached.attached && (pingReply !== "unclear" || helpedReply !== null)) {
+  /**
+   * A sentence in reply to a freshness ping (6 Nov, `lib/server/ping-read.ts`):
+   * read by the model against the record it asked about, only while a ping is
+   * waiting and nothing else could claim the words. "Still good" and "no longer"
+   * then take the same path as YES and NO; "not sure" is thanked and changes
+   * nothing; anything else goes on to ordinary handling as before.
+   */
+  if (person && !attached.attached && pingReply === "unclear" && body.length <= 400) {
+    /* "no, we stopped going, the coach left" reads as a leading no too: the ping
+       has it when the ping is the newest thing waiting on a yes or no. */
+    const [waiting, prompt, offer] = await Promise.all([
+      pendingPing(from),
+      helpedReply === null ? Promise.resolve(null) : pendingHelpedAnswer(from),
+      helpedReply === null ? Promise.resolve(null) : pendingBlastOffer(from),
+    ]);
+    const when = (c: { asked_at: string | null } | null) => (c?.asked_at ? new Date(c.asked_at).getTime() : -1);
+    if (waiting && when(waiting) >= Math.max(when(prompt), when(offer))) {
+      const reading = await readPingReplyByModel(waiting.share_name, body);
+      console.info("[sms:inbound] freshness read", { reading });
+      if (reading === "still_good" || reading === "no_longer") {
+        pingReply = reading;
+      } else if (reading === "not_sure") {
+        await sendSms({
+          to: from,
+          body: PING_NOT_SURE,
+          category: "transactional",
+          personId: person.person_id,
+          template: "ping_not_sure",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+        answeredSomething = true;
+      }
+    }
+  }
+
+  if (person && !attached.attached && !answeredSomething && (pingReply !== "unclear" || helpedReply !== null)) {
     const [ping, prompt, offer] = await Promise.all([
       pingReply === "unclear" ? Promise.resolve(null) : pendingPing(from),
       helpedReply === null ? Promise.resolve(null) : pendingHelpedAnswer(from),

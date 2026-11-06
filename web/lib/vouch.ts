@@ -73,6 +73,15 @@ const STILL_GOOD = [
 
 const NO_LONGER = ["NO", "N", "NOPE", "NOT ANY MORE", "NOT ANYMORE", "NO LONGER"];
 
+/** What the model may read a sentence reply as (6 Nov, `lib/server/ping-read.ts`). */
+export type PingReading = "still_good" | "no_longer" | "not_sure" | "other";
+
+/** The model's reading, or `other` for anything that is not one of the four. */
+export function pingReadingOf(raw: unknown): PingReading {
+  const r = (raw as { reading?: unknown } | null)?.reading;
+  return r === "still_good" || r === "no_longer" || r === "not_sure" ? r : "other";
+}
+
 export function readPingReply(body: string): PingReply {
   const word = body.trim().toUpperCase().replace(/[.!,]+$/, "");
   if (STILL_GOOD.includes(word)) return "still_good";

@@ -157,6 +157,9 @@ export const BLAST_REPLY_THANKS =
 
 export const PING_STILL_GOOD =
   "Pando: thanks - noted that it's still worth recommending. Reply STOP to opt out, HELP for help.";
+/** A reply the model read as "can't say" (6 Nov): nothing recorded, nothing asked again. */
+export const PING_NOT_SURE =
+  "Pando: no problem - thanks for letting me know. Reply STOP to opt out, HELP for help.";
 export const PING_NO_LONGER =
   "Pando: thanks for telling us - a person will take another look at it. Reply STOP to opt out, HELP for help.";
 export const HELPED_YES =

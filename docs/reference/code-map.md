@@ -218,6 +218,7 @@
                        memory — one web process. Wired in `handleInboundMessage`.
                        The conversation before the last exchange is
                        `earlierExchangesFor` (`repo/deep-dives.ts`, 12 over 7 days).
+`web/lib/server/ping-read.ts` — 6 Nov. `readPingReplyByModel`: a sentence in reply to a freshness ping read as still_good / no_longer / not_sure / other (`PingReading`, `pingReadingOf` in `lib/vouch.ts`); the exact words of `readPingReply` are read first.
 `web/lib/answer-fit.ts` + `web/lib/server/answer-fit.ts` — 4 Nov. Whether each parent
                        record serves the question (`judgeFit`: fits / unknown /
                        mismatch, and the want), what an answer keeps (`applyFit`) and

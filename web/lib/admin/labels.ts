@@ -868,6 +868,7 @@ export const MESSAGE_LABEL: Record<string, string> = {
   // Freshness and thanks.
   freshness_ping: "Asked if a record still holds",
   freshness_reply_saved: "Thanked for a freshness reply",
+  ping_not_sure: "Thanked for a freshness reply it could not judge",
   thanks_prompt: "Asked if an answer helped",
   helped_reply_saved: "Thanked for saying if it helped",
   thanks: "Thanked for a recommendation",
