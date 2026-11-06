@@ -278,6 +278,18 @@ const HEALTH_HELP =
 const OWN_CHILD =
   /\b(?:my|our)\s+(?:son|daughter|kid|kids|child|toddler|baby|boy|girl|little one|twins)\b|\b(?:she|he)(?:'s| is| has| had| keeps| got)\b/i;
 
+/**
+ * "No idea, sorry" to another parent's question is a PASS in words (6 Nov, the
+ * SMS lab): it was filed as an answer for a person to review and thanked with
+ * "Someone at Pando reads each reply before it's passed on". Only a short
+ * message that says nothing but "I can't help": no place, no suggestion.
+ */
+export function declinesToAnswer(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[’]/g, "'");
+  if (t.length === 0 || t.split(/\s+/).length > 9 || /\?/.test(t)) return false;
+  return /^(sorry[,.!]*\s*)?(no idea|no clue|not sure|i'?m not sure|(i )?(don'?t|do not|dont) know|(i )?(can'?t|cannot) help|(we )?(haven'?t|never) (tried|done|been to|used) (it|that|one|any|those)|nothing comes to mind|pass)([,.!]*\s*(sorry|soz|unfortunately|sadly|here|either|on this one|for that))*[.!]*$/.test(t);
+}
+
 export function ownRequestNotAnAnswer(
   text: string,
   askQuestion: string,

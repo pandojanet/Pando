@@ -850,6 +850,7 @@ export const MESSAGE_LABEL: Record<string, string> = {
   // Network Asks.
   blast_request: "Asked to help another parent",
   blast_reply_saved: "Thanked for an Ask reply",
+  blast_reply_declined: "Thanked for saying they could not help with an Ask",
   ask_started: "Told the network is being asked",
   ask_not_started: "Told the network could not be asked",
   // Deep dives.

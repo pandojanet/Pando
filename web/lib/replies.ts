@@ -152,6 +152,8 @@ export const ASK_NOT_STARTED =
  *
  * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment.
  */
+/** A decline in words to another parent's question (6 Nov): no review, the seat freed as PASS does. */
+export const BLAST_DECLINE_THANKS = "Pando: no problem - thanks anyway. Reply STOP to opt out, HELP for help.";
 export const BLAST_REPLY_THANKS =
   "Pando: thank you! Someone at Pando reads each reply before it's passed on. Reply STOP to opt out, HELP for help.";
 

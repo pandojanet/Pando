@@ -16,8 +16,8 @@ import {
   deleteFailedSms,
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
-import { classifyIntent } from "@/lib/server/intent";
-import { familyLine, isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
+import { classifyIntent, isIntentConfigured } from "@/lib/server/intent";
+import { declinesToAnswer, familyLine, isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
 import { composeAnswer, SMS_BUDGET, subcategoryWord, VOICE_HEADROOM, type AnswerCandidate } from "@/lib/answer";
 import {
   acceptsDeepDive,
@@ -50,6 +50,7 @@ import { planSegments, toGsm7 } from "@/lib/sms-segments";
 import {
   ASK_STARTED,
   ASK_NOT_STARTED,
+  BLAST_DECLINE_THANKS,
   BLAST_REPLY_THANKS,
   HELPED_NO,
   HELPED_YES,
@@ -292,7 +293,9 @@ async function handleInboundMessageUntraced(input: {
   if ((await settingsStep({ from, body, person })) === HANDLED) return;
   if ((await captureStep({ from, body, person })) === HANDLED) return;
 
-  const { attached, remainder } = await attachStep({ from, body, person });
+  const afterAttach = await attachStep({ from, body, person });
+  if (afterAttach === HANDLED) return;
+  const { attached, remainder } = afterAttach;
   /* Their answer was filed; what else they said is a message of its own, already counted. */
   if (remainder) return handleInboundMessageUntraced({ from, body: remainder, channel: input.channel, confirmedMedia: true });
 
@@ -981,6 +984,23 @@ async function beginCapture(from: string, personId: string): Promise<boolean> {
  */
 async function attachStep({ from, body, person }: { from: string; body: string; person: InboundPerson }) {
 
+  /* "No idea, sorry" to an open Ask is a PASS in words (6 Nov): the seat freed, nothing for a person to review. */
+  if (person && declinesToAnswer(body) && (await openAskQuestion(from))) {
+    const passed = await recordPass({ phone: from });
+    if (passed.passed) {
+      await sendSms({
+        to: from,
+        body: BLAST_DECLINE_THANKS,
+        category: "transactional",
+        personId: person.person_id,
+        template: "blast_reply_declined",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      console.info("[sms:inbound] ask declined in words");
+      return HANDLED;
+    }
+  }
+
   /* A request of their own on another subject, or about a child's health, is not their answer (26 Oct). */
   const ownRequest = async (text: string, question: string) => {
     const list = await focusOptions(marketOf(person));
@@ -1006,8 +1026,12 @@ async function attachStep({ from, body, person }: { from: string; body: string; 
        swim Ask, came back answer_blast at 0.6 and was filed as her answer
        — the topic guard sees both as activities. A question-shaped message
        the model is unsure of is the parent's own, and is answered. */
-    if (reading.source !== "model") return false;
-    return !(reading.intent === "answer_blast" && reading.confidence >= 0.8);
+    /* No model at all: an answer, as before. A model that ran and fell under the
+       floor (source "fallback") is the unsure case the line above means (6 Nov,
+       the SMS lab: "also does anyone know a good dentist for kids?" came back at
+       0.65, was counted an answer, and the dentist question was never answered). */
+    if (!isIntentConfigured()) return false;
+    return !(reading.source === "model" && reading.intent === "answer_blast" && reading.confidence >= 0.8);
   };
 
   /**
@@ -1018,7 +1042,14 @@ async function attachStep({ from, body, person }: { from: string; body: string; 
    * never answered. Line by line, the answer lines are filed and the rest goes
    * on as their own message (\`remainder\`).
    */
-  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  /* Sentence by sentence too (6 Nov, the SMS lab): "not fencing but have you tried the
+     gymnastics at Arroyo? also does anyone know a good dentist for kids?" was one line,
+     filed whole as her answer, and the dentist question was never answered. */
+  const lines = body
+    .split("\n")
+    .flatMap((l) => l.split(/(?<=[?!.])\s+(?=[A-Za-z])/))
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (lines.length > 1 && !isCommand(body)) {
     const question = await openAskQuestion(from);
     if (question) {

@@ -480,6 +480,16 @@ ok(
   ok("an Ask whose topic cannot be read takes any non-health request as the answer", !m.ownRequestNotAnAnswer("we need a nanny", "Anything good near us?", topic));
 }
 
+console.log("\n=== a decline in words to another parent's question (6 Nov) ===");
+{
+  for (const no of ["no idea sorry", "Sorry, no idea", "not sure", "I don't know, sorry", "never tried it", "we haven't been to any", "can't help on this one", "no clue!"]) {
+    ok(`a decline: "${no}"`, m.declinesToAnswer(no));
+  }
+  for (const yes of ["not sure but try Swords Fencing", "no idea about fencing but the Y has gymnastics", "sorry, try Rose Bowl Aquatics", "not sure, is it in Pasadena?", "Swords Fencing Studio", "we never tried fencing but Sabre Escrime in Montrose has kids classes on Saturdays"]) {
+    ok(`an answer stays an answer: "${yes}"`, !m.declinesToAnswer(yes));
+  }
+}
+
 console.log("\n=== their children, told to the classifier (6 Nov) ===");
 {
   ok("oldest first, with the age each makes this year, and no name",

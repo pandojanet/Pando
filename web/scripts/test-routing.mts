@@ -402,12 +402,14 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "a question-shaped message inside an Ask window is read by the classifier, told the other parent's question",
     src.includes("othersQuestion: question,") &&
       /if \(ownRequestNotAnAnswer\(text, question, \(t\) => focusInQuestion\(t, list\)\)\) return true;/.test(src) &&
-      /if \(reading\.source !== "model"\) return false;/.test(src),
+      /* 6 Nov: no model is an answer; a model under its floor is the unsure case, the parent's own. */
+      src.includes("if (!isIntentConfigured()) return false;") &&
+      src.includes('return !(reading.source === "model" && reading.intent === "answer_blast" && reading.confidence >= 0.8);'),
   );
   /* 28 Oct audit: "any good toddler gymnastics classes?" from a swim-Ask recipient came back answer_blast at 0.6. */
   ok(
     "a question-shaped message is the parent's own unless the model reads answer_blast at 0.8 or more",
-    /return !\(reading\.intent === "answer_blast" && reading\.confidence >= 0\.8\);/.test(src),
+    /return !\(reading\.source === "model" && reading\.intent === "answer_blast" && reading\.confidence >= 0\.8\);/.test(src),
   );
   /* 27 Oct: the handler is a list of steps, and their order is the product's precedence (the comment above handleInboundMessageUntraced explains each place). */
   {
@@ -416,9 +418,10 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     const at = order.map((call) => main.indexOf(call));
     ok("the steps run in their fixed order: keywords, who it is, a voice note or picture and its read-back (3 Nov), settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
       at.every((i) => i > 0) && at.every((i, n) => n === 0 || i > at[n - 1]), order.filter((_, n) => at[n] <= 0).join(", "));
-    /* The keyword step ends it in a block since 4 Nov: media sent with a keyword is deleted first. */
+    /* The keyword step ends it in a block since 4 Nov: media sent with a keyword is deleted first.
+       Seven since 6 Nov: an Ask declined in words ends it at the attach step. */
     ok("a step that answered ends the turn",
-      (main.match(/=== HANDLED\) return;/g) ?? []).length === 6 &&
+      (main.match(/=== HANDLED\) return;/g) ?? []).length === 7 &&
         /keywordStep\(\{ from, body, keyword \}\)\) === HANDLED\) \{[\s\S]{0,200}?return;\s+\}/.test(main));
   }
   /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
@@ -480,6 +483,12 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
   ok("a follow-up carries the last answer, what they said and the heard line",
     src.includes("lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,") &&
       src.includes("said: rewritten ? body : null,") && src.includes("heard: rewritten ? reading.heard ?? null : null,"));
+  ok("a decline in words to an open Ask is a PASS: the seat freed, a short thanks, nothing to review (6 Nov)",
+    src.includes("if (person && declinesToAnswer(body) && (await openAskQuestion(from))) {") &&
+      src.includes("const passed = await recordPass({ phone: from });") && src.includes("body: BLAST_DECLINE_THANKS,") &&
+      src.includes("if (afterAttach === HANDLED) return;"));
+  ok("an Ask reply is split sentence by sentence as well as line by line (6 Nov)",
+    src.includes(".flatMap((l) => l.split(/(?<=[?!.])\\s+(?=[A-Za-z])/))"));
   ok("a recommendation offered in words starts the questions at once, by the same helper ADD uses (6 Nov)",
     src.includes(`if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id))) {`) &&
       src.includes("if (isCaptureStart(body) && (await beginCapture(from, person.person_id))) return HANDLED;") &&
