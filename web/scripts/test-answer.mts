@@ -675,6 +675,20 @@ ok(
     pi.normaliseName("Rose Bowl Aquatics") === pi.normaliseName("Rose Bowl Aquatic"),
 );
 ok(
+  "two branches in brackets are one place, a bracket cut off too (6 Nov)",
+  pi.sameName("Little Crown Pediatric Dentistry & Orthodontics (Mission St)", "Little Crown Pediatric Dentistry & Orthodontics (Fair Oaks") &&
+    !pi.sameName("Little Crown Pediatric Dentistry (Mission St)", "Little Gym (Mission St)"),
+);
+ok(
+  "a finding's name cut inside a bracket loses the bracket",
+  JSON.stringify(
+    pi.readFindings(
+      JSON.stringify({ findings: [{ name: "Little Crown Pediatric Dentistry & Orthodontics (Fair Oaks Avenue)", what: "pediatric dentist", area: "Pasadena", detail: null }] }),
+      () => ({ person: false }),
+    ),
+  ).includes('"Little Crown Pediatric Dentistry & Orthodontics"'),
+);
+ok(
   "a word ending in a double s keeps it",
   pi.normaliseName("Bass Lessons") === "bass lesson" && !pi.sameName("Bass Lessons", "Ba Lessons"),
 );

@@ -102,7 +102,9 @@ export function readFindings(
 
   for (const row of list) {
     if (typeof row !== "object" || row === null) continue;
-    const name = clean((row as Record<string, unknown>).name, 60);
+    /* A branch in brackets cut by the 60-character limit loses the bracket whole
+       (6 Nov, the SMS lab: "Little Crown Pediatric Dentistry & Orthodontics (Fair Oaks"). */
+    const name = clean((row as Record<string, unknown>).name, 60)?.replace(/\s*\([^)]*$/, "").trim() || null;
     const what = clean((row as Record<string, unknown>).what, 40);
     if (!name || !what) continue;
 
@@ -201,6 +203,10 @@ export function normaliseName(value: string): string {
     .replace(/&/g, " and ")
     /* Everything after a dash or a comma: "Rose Bowl Aquatics - Pasadena". */
     .replace(/\s+[-–—,|/].*$/, "")
+    /* A branch in brackets, closed or cut off (6 Nov, the SMS lab): "Little Crown
+       Pediatric Dentistry (Mission St)" and "(Fair Oaks Ave)" took two of four
+       lines as two places. */
+    .replace(/\s*\([^)]*(\)|$)/g, " ")
     /* The possessive, before the pass below splits it into a stray "s" —
        "Children's" would otherwise survive the stop-word cut as one letter. */
     .replace(/['’´]s\b/g, "")
