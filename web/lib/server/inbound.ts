@@ -949,23 +949,29 @@ async function captureStep({ from, body, person }: { from: string; body: string;
       }
     }
 
-    if (isCaptureStart(body)) {
-      const started = await startCapture(person.person_id);
-      if (started) {
-        await sendSms({
-          to: from,
-          body: CAPTURE_QUESTIONS[started.step].prompt,
-          category: "transactional",
-          personId: person.person_id,
-          rich: captureStepRich(started.step, CAPTURE_QUESTIONS[started.step].card),
-          template: `capture_${started.step}`,
-          templateVersion: SMS_TEMPLATE_VERSION,
-        });
-        return HANDLED;
-      }
-    }
+    if (isCaptureStart(body) && (await beginCapture(from, person.person_id))) return HANDLED;
   }
   return undefined;
+}
+
+/**
+ * Open a capture and ask its first question — ADD, and since 6 Nov a message
+ * the classifier reads as offering a recommendation. False when none could be
+ * opened (no database).
+ */
+async function beginCapture(from: string, personId: string): Promise<boolean> {
+  const started = await startCapture(personId);
+  if (!started) return false;
+  await sendSms({
+    to: from,
+    body: CAPTURE_QUESTIONS[started.step].prompt,
+    category: "transactional",
+    personId,
+    rich: captureStepRich(started.step, CAPTURE_QUESTIONS[started.step].card),
+    template: `capture_${started.step}`,
+    templateVersion: SMS_TEMPLATE_VERSION,
+  });
+  return true;
 }
 
 /**
@@ -1858,6 +1864,18 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
   /* A reply to a Network Ask that has closed (the model read `answer_blast`
      and nothing attached) was met with silence (22 Oct audit); what it holds
      is still worth sharing, so it is answered as a contribution. */
+  /**
+   * A recommendation offered in their own words starts the questions at once
+   * (6 Nov, the SMS lab): "I want to recommend Rose Bowl Aquatics, my kids loved
+   * the swim lessons there" was told to text ADD; the next text, "both of them,
+   * 6 and 9", was then read as a question about the music classes asked days
+   * before, and the "yes" after it started a Network Ask. A caregiver offered
+   * never gets here - `captureStep` hands it to the careful form first.
+   */
+  if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id))) {
+    console.info("[sms:inbound] capture started from a model reading");
+    return;
+  }
   const sharing =
     reading.intent === "contribute" || (reading.intent === "answer_blast" && (await askedRecently(from)));
   /* An answer_blast reading from somebody never asked is small talk, not silence (26 Oct). */

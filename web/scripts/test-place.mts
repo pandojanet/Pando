@@ -90,6 +90,10 @@ console.log("\n=== the answer path reads it (source checks) ===");
   /* 28 Oct audit: a tip with no place is the market's advice and passes the near filter. */
   ok("a tip with no place passes the near filter; a tagged one does not",
     has(retrieval, "or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))"));
+  /* 6 Nov: "swim lessons in Brooklyn?" got this market's city-pool tip. */
+  ok("but not for a place the market does not hold",
+    has(retrieval, "question.near && question.near.length > 0 ? sql`and (s.neighborhoods && ${nearList}::text[]") &&
+      has(retrieval, ": sql`and s.neighborhoods && ${nearList}::text[]`"));
   /* 26 Oct: except a record the question names by its first three words. Caregivers never are. */
   ok("a record the question names is in whatever its place and ages, by its first three whole words (never one word)",
     has(retrieval, "or (array_length(regexp_split_to_array(trim(regexp_replace(lower(s.name), '[^a-z0-9&]+', ' ', 'g')), ' '), 1) >= 2")

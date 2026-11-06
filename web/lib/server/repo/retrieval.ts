@@ -546,8 +546,14 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
                    with a place — "how early for preschool waitlists in
                    Altadena?" got "nothing from parents near Altadena" beside
                    a parent's tip on exactly that. */
-                sql`and (s.neighborhoods && ${nearList}::text[]
-                         or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))`})
+                /* ...and only for a place the market holds (6 Nov, the SMS lab):
+                   "swim lessons in Brooklyn?" was answered with a tip about this
+                   market's city pools. A place it does not hold has an empty near
+                   list, and the market's advice is not advice there. */
+                question.near && question.near.length > 0
+                  ? sql`and (s.neighborhoods && ${nearList}::text[]
+                         or (s.kind::text = 'tip' and coalesce(cardinality(s.neighborhoods), 0) = 0))`
+                  : sql`and s.neighborhoods && ${nearList}::text[]`})
           -- One for many on both sides (5 Nov): "Tom Sawyer camp" names "Tom
           -- Sawyer Camps". The same rule as normaliseName in public-info.ts - a
           -- plural s off a word of four letters or more, never after another s.

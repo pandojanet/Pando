@@ -480,6 +480,10 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
   ok("a follow-up carries the last answer, what they said and the heard line",
     src.includes("lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,") &&
       src.includes("said: rewritten ? body : null,") && src.includes("heard: rewritten ? reading.heard ?? null : null,"));
+  ok("a recommendation offered in words starts the questions at once, by the same helper ADD uses (6 Nov)",
+    src.includes(`if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id))) {`) &&
+      src.includes("if (isCaptureStart(body) && (await beginCapture(from, person.person_id))) return HANDLED;") &&
+      src.indexOf("await beginCapture(from, person.person_id))) {") < src.indexOf("const sharing ="));
   ok("the heard line goes first only when the warm rewrite did not run, and only within the budget",
     src.includes("const heardLine = !voiced && input.heard && plan.draftText.length + input.heard.length + 1 <= SMS_BUDGET ? input.heard : null;"));
 }
