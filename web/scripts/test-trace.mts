@@ -144,6 +144,28 @@ console.log("\n=== the conversation, and its switch (5 Nov) ===");
   delete process.env.POSTHOG_TRACE_CONTENT;
 }
 
+console.log("\n=== each decision between model calls, readable (6 Nov) ===");
+{
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => {
+    await tr.span("retrieve", async () => {
+      tr.traceState("answer_plan", { question: "swim lessons for a 7 year old, call 626-555-0001" }, { parents_found: ["Rose Bowl Aquatics"], web_dropped_not_fitting: ["Little Gym"] });
+    });
+  });
+  const ev = batches[0]?.batch ?? [];
+  const retrieve = ev.find((e) => e.event === "$ai_span" && e.properties.$ai_span_name === "retrieve")?.properties ?? {};
+  const plan = ev.find((e) => e.event === "$ai_span" && e.properties.$ai_span_name === "answer_plan")?.properties ?? {};
+  ok("a decision is a span under the step in hand", plan.$ai_parent_id === retrieve.$ai_span_id && typeof plan.$ai_span_id === "string");
+  ok("carrying what it was given and what it chose, masked",
+    JSON.stringify(plan.$ai_input_state).includes("swim lessons for a 7 year old, call [number]") &&
+      JSON.stringify(plan.$ai_output_state).includes("Rose Bowl Aquatics") && JSON.stringify(plan.$ai_output_state).includes("Little Gym"));
+  process.env.POSTHOG_TRACE_CONTENT = "off";
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => tr.traceState("answer_plan", { question: "swim lessons" }, { parents_found: ["Rose Bowl Aquatics"] }));
+  ok("and nothing of it with the switch off", !JSON.stringify(batches).includes("swim lessons") && !JSON.stringify(batches).includes("Rose Bowl"));
+  delete process.env.POSTHOG_TRACE_CONTENT;
+}
+
 console.log("\n=== a trace with nobody named ===");
 {
   batches.length = 0;

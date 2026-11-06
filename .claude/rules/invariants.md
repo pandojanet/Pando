@@ -70,7 +70,10 @@ path-scoped rule loads only when a matching file is opened with Read. -->
    **One exception, approved 5 Nov: PostHog's LLM traces carry the
    conversation** — what each model call was sent and answered
    (`$ai_input`, `$ai_output_choices`) and what the parent said and Pando
-   sent (`$ai_input_state`, `$ai_output_state`). Only those four keys, only
+   sent (`$ai_input_state`, `$ai_output_state`). Since 6 Nov a step's span
+   carries its decision under the same two state keys (`traceState`): the
+   rewritten question, the records and web findings found and dropped, the
+   draft — a caregiver only as a count. Only those four keys, only
    through `cleanContent` in `lib/server/trace.ts`: phone numbers and emails
    masked, pictures/PDFs/audio replaced by a marker, opaque payloads dropped,
    each field capped. `POSTHOG_TRACE_CONTENT=off` switches it off. Log lines,

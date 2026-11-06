@@ -798,5 +798,10 @@ async function retrieveForUntraced(question: QuestionContext): Promise<Retrieved
 
 /** retrieveFor, as one step of the trace (27 Oct, lib/server/trace.ts). */
 export async function retrieveFor(input: Parameters<typeof retrieveForUntraced>[0]): ReturnType<typeof retrieveForUntraced> {
-  return span("retrieve", () => retrieveForUntraced(input), (r) => ({ configured: r.configured, shares: r.shares.length, caregivers: r.caregivers.length }));
+  return span("retrieve", () => retrieveForUntraced(input), (r) => ({
+    configured: r.configured, shares: r.shares.length, caregivers: r.caregivers.length,
+    /* What was searched and what came back (6 Nov): records by name, label and area; a caregiver only as a count. */
+    $ai_input_state: { question: input.question ?? null, area: input.area ?? null, near: input.near ?? null, bands: input.bands ?? null, focus: input.focus ?? null, named_anywhere: input.namedAnywhere ?? false },
+    $ai_output_state: { shares: r.shares.map((s) => `${s.name} - ${s.kind}${s.neighborhoods[0] ? `, ${s.neighborhoods[0]}` : ""} - ${s.trust.labels.join(" / ")}`), caregivers: r.caregivers.length },
+  }));
 }

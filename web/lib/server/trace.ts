@@ -358,6 +358,28 @@ export async function span<T>(
   }
 }
 
+/**
+ * A decision between model calls, with what it was given and what it chose
+ * (6 Nov, the developer: "it is not clear how the model works and thinks - there
+ * is only the type of message"): the rewritten question, what the database and
+ * the web found, what was dropped as not fitting and what was sent. One
+ * `$ai_span` under the step in hand, its states through `cleanContent` like
+ * every other content key, and gone with `POSTHOG_TRACE_CONTENT=off`.
+ */
+export function traceState(name: string, input: unknown, output: unknown): void {
+  const t = store.getStore();
+  if (!t) return;
+  capture(t, "$ai_span", {
+    $ai_span_id: randomUUID(),
+    $ai_parent_id: t.spans[t.spans.length - 1] ?? t.id,
+    $ai_span_name: name,
+    $ai_latency: 0,
+    $ai_is_error: false,
+    $ai_input_state: input,
+    $ai_output_state: output,
+  });
+}
+
 /* ------------------------------------------------------------- generations */
 
 /* The prices live beside the model ids (lib/models.ts), so a model and its price move together. */

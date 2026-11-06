@@ -401,5 +401,10 @@ function safeParse(
 
 /** classifyIntent, as one step of the trace (27 Oct, lib/server/trace.ts). */
 export async function classifyIntent(input: Parameters<typeof classifyIntentUntraced>[0]): ReturnType<typeof classifyIntentUntraced> {
-  return span("classify", () => classifyIntentUntraced(input), (r) => ({ intent: r.intent, source: r.source, sensitive: r.sensitive, confidence: r.confidence }));
+  return span("classify", () => classifyIntentUntraced(input), (r) => ({
+    intent: r.intent, source: r.source, sensitive: r.sensitive, confidence: r.confidence,
+    /* The reading itself (6 Nov): what the message was taken to ask, as the trace's content. */
+    $ai_input_state: input.text,
+    $ai_output_state: { intent: r.intent, source: r.source, confidence: r.confidence, sensitive: r.sensitive, reason: r.reason, standalone: r.standalone ?? null, heard: r.heard ?? null, subject: r.subject ?? null },
+  }));
 }

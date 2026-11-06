@@ -172,7 +172,7 @@ import { TYPING_DEEP_MAX_MS } from "@/lib/rcs-typing";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
-import { withTrace, traceContent, traceIdentify } from "@/lib/server/trace";
+import { withTrace, traceContent, traceIdentify, traceState } from "@/lib/server/trace";
 
 /**
  * What Pando does with an inbound message, whatever carried it.
@@ -2578,6 +2578,22 @@ async function answerQuestion(input: {
   const namesAPlace =
     retrieved.shares.some((share) => mentionsName(body, share.name)) ||
     publicInfo.findings.some((finding) => mentionsName(body, finding.name));
+  /* The answer's plan, readable in the trace (6 Nov): what was asked, what each
+     half found, what was dropped as not fitting and what repeats the last answer. */
+  traceState(
+    "answer_plan",
+    { question: body, they_said: input.said ?? null, heard: input.heard ?? null, place: place.label, place_source: place.source, follows_last_answer: Boolean(input.lastAnswer), more: Boolean(input.more), deep: Boolean(deep) },
+    {
+      parents_found: retrievedAll.shares.map((s) => s.name),
+      parents_dropped_not_fitting: retrievedAll.shares.filter((s) => !retrieved.shares.includes(s)).map((s) => s.name),
+      unmet: fit.unmet,
+      repeated_from_last_answer: retrieved.shares.filter((s) => sentJustNow(s.name)).map((s) => s.name),
+      names_a_place: namesAPlace,
+      web_found: publicFound.findings.map((f) => f.name),
+      web_dropped_not_fitting: publicFound.findings.filter((f) => !publicInfo.findings.includes(f)).map((f) => f.name),
+      caregivers: retrieved.caregivers.length,
+    },
+  );
   const allCandidates: AnswerCandidate[] = [
     ...retrieved.shares.filter((share) => !(namesAPlace && sentJustNow(share.name))).map((share, i) => ({
       /* Where retrieval put it. See AnswerCandidate.rank: without this the topic
@@ -2985,6 +3001,7 @@ async function answerQuestion(input: {
      its opening; without one, the classifier's few words go first, room allowing. */
   const heardLine = !voiced && input.heard && plan.draftText.length + input.heard.length + 1 <= SMS_BUDGET ? input.heard : null;
   const answerText = voiced ?? (heardLine ? `${heardLine}\n${plan.draftText}` : plan.draftText);
+  traceState("answer_text", { draft: plan.draftText }, { text: answerText, warm_rewrite: voiced !== null, heard: heardLine, held: verdict.hold ? verdict.reason : null, next_step: nextStep });
 
   const answerId = await queueAnswer({
     personId: person?.person_id ?? null,

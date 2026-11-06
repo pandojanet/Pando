@@ -822,5 +822,10 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
 
 /** searchPublicInformation, as one step of the trace (27 Oct, lib/server/trace.ts). */
 export async function searchPublicInformation(input: Parameters<typeof searchPublicInformationUntraced>[0]): ReturnType<typeof searchPublicInformationUntraced> {
-  return span("web_search", () => searchPublicInformationUntraced(input), (r) => ({ configured: r.configured, findings: r.findings.length, deep: Array.isArray((r as { deep?: unknown[] }).deep) }));
+  return span("web_search", () => searchPublicInformationUntraced(input), (r) => ({
+    configured: r.configured, findings: r.findings.length, deep: Array.isArray((r as { deep?: unknown[] }).deep),
+    /* What was looked for and what the web gave back (6 Nov). */
+    $ai_input_state: { question: input.question, place: input.placeLabel ?? input.area ?? null, bands: input.bands ?? null, focus: input.focus ?? null, exclude: input.exclude ?? [], must_find: input.mustFind ?? false },
+    $ai_output_state: r.findings.map((f) => [f.name, f.what, f.area, f.detail].filter(Boolean).join(" | ")),
+  }));
 }
