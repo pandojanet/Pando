@@ -98,6 +98,40 @@ const CHILD_WORDS = /\b(little ones?|kiddos?|toddlers?|bab(?:y|ies)|infants?|new
 const TEMPERAMENT = /^(shy|gentle|cautious|nervous|anxious|timid|sensitive|energetic|sporty|creative|curious)$/;
 const NUMBER_WORDS =
   /\b(one|two|three|four|five|six|seven|eight|nine|ten|dozens?|several|many|most|few|couple|all|every|hundreds?|multiple|lots|plenty|numerous|tons|bunch)\b/gi;
+const NUMERALS: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9", ten: "10" };
+
+/**
+ * What to tell the model when its rewrite was refused (6 Nov): one second try,
+ * told which rule it broke. In the SMS lab three of seven rewrites were refused
+ * for a single phrase each ("here is what parents around you have seen", "they
+ * said it's great value") with the rest of the text right. A rule with no hint
+ * here is not retried: the fault is the whole text, not a phrase.
+ */
+export const VOICE_RETRY_HINTS: Record<string, string> = {
+  parent_claim:
+    "It said something about parents, families, locals or others in your own words (for example 'what parents around you have seen'). Say nothing about parents except right before one of the draft's quotes ('one said:'). 'Here is what parents passed along' is the only allowed opener of that kind.",
+  unquoted_attribution:
+    "It reported what a parent or 'they' said without a quote right after it (for example 'they said it's great value'). Keep the draft's own words for ratings and prices ('Great value.') and use 'said' only right before one of the draft's quotes.",
+  number_word:
+    "It used a count word (several, many, most, a few...) that the draft and question do not hold. Use only the draft's numbers.",
+  praise:
+    "It used a praise word (great, best, perfect, loved...) that the draft and question do not hold. Use only the draft's own judgements.",
+  new_name:
+    "It used a capitalised name or word that is not in the draft or the question. Use only the draft's names.",
+  child_word:
+    "It described their child with a word the parent did not use (toddler, shy, sporty...). Describe the child only in the question's words.",
+  temperament:
+    "It described their child's temperament (shy, sporty, gentle...) from a record's words. Only the parent's own question may say what their child is like.",
+  question_mark: "It asked a question. Write no questions.",
+  link_or_first_person: "It wrote a link, a phone number or 'I/we' as if Pando had been there. Remove them.",
+  length: "It was too long or too short. Stay under max_characters.",
+  quote_changed: "It changed the words inside a quote. Every quote stays exactly as in the draft.",
+  quote_unquoted: "It removed the quote marks from a parent's words. Every quote in the draft stays in quote marks.",
+  quote_added: "It added a quote the draft does not have. Use only the draft's quotes.",
+  must_keep: "It left out or changed one of the keep_word_for_word strings. Every one must appear exactly.",
+  must_contain: "It left out one of the draft's required lines. Keep every keep_word_for_word string.",
+};
+
 const STARTERS = new Set(
   "a also an and another arrive as ask at aim book both bring but by call check close closer definitely either expect for from get go going good got handy happy heads here hey hi honestly hope hours if in it it'll it's its just keep last let look nice not note of oh ok on one only open or parking plan plus quick quite really same short since so some still sure thanks that that's the their there there's these they they're this those though to try tuition under well what when where whether which while who why with worth yes you you'd you'll you're your".split(
     " ",
@@ -450,47 +484,59 @@ function evidenceHolds(home: string, region: string, r: VoiceRecord): boolean {
 
 /** The rewrite, accepted, or null. Pure; every rule refuses rather than repairs (but see `ownLines`). */
 export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
-  if (typeof raw !== "string") return null;
+  const verdict = voiceVerdict(raw, input);
+  return verdict.ok ? verdict.text : null;
+}
+
+/**
+ * `acceptVoice` with the rule that refused it named (6 Nov): 14 of 24 rewrites
+ * in the SMS lab were refused and the log said only `accepted: false`, so
+ * nobody could tell which rule, or whether the prompt or the rule was wrong.
+ * The names are enums for the log (invariant 7), never the text.
+ */
+export function voiceVerdict(raw: unknown, input: VoiceInput): { ok: true; text: string } | { ok: false; reason: string } {
+  const no = (reason: string) => ({ ok: false as const, reason });
+  if (typeof raw !== "string") return no("not_text");
   const text = ownLines(plainLines(raw), input);
   const draft = plainLines(input.draft);
-  if (text.length < 20 || text.length > input.max) return null;
-  if (/[^\x20-\x7E\n]|[`[\]|^~\\]/.test(text.replace(/\{n\d+\}/g, ""))) return null;
+  if (text.length < 20 || text.length > input.max) return no("length");
+  if (/[^\x20-\x7E\n]|[`[\]|^~\\]/.test(text.replace(/\{n\d+\}/g, ""))) return no("characters");
   /* LINK and FIRST_PERSON are read on the model's own words below, not on the
      parents' verbatim quotes: "My kids loved it" in a quote refused every
      rewrite, the unchanged draft included (review, 21 Oct). */
 
-  for (const line of input.mustKeep) if (!text.includes(plainLines(line))) return null;
-  for (const phrase of input.mustContain) if (find(text, phrase) < 0) return null;
-  for (const name of input.publicNames) if (!text.includes(name)) return null;
+  for (const line of input.mustKeep) if (!text.includes(plainLines(line))) return no("must_keep");
+  for (const phrase of input.mustContain) if (find(text, phrase) < 0) return no("must_contain");
+  for (const name of input.publicNames) if (!text.includes(name)) return no("public_name_missing");
 
   /* Every parent record: present, on its own line with its evidence, its
      sentences and tokens inside its own span. */
   const lines = text.split("\n");
   const starts = input.parents.map((r) => text.indexOf(r.name));
-  if (starts.some((s) => s < 0)) return null;
+  if (starts.some((s) => s < 0)) return no("parent_missing");
   const heading = text.indexOf(PUBLIC_HEADING);
   const regionStarts = spanStarts(text, starts);
   for (let i = 0; i < input.parents.length; i++) {
     const r = input.parents[i];
     const start = starts[i];
-    if (heading >= 0 && start > heading) return null;
+    if (heading >= 0 && start > heading) return no("parent_after_public");
     const later = starts.filter((s) => s > start);
     const end = Math.min(...later, heading >= 0 ? heading : text.length, text.length);
     const span = text.slice(start, end);
-    for (const k of r.keep) if (find(span, k) < 0) return null;
+    for (const k of r.keep) if (find(span, k) < 0) return no("parent_keep_moved");
     for (const t of r.tokens) {
       for (let at = text.indexOf(t); at >= 0; at = text.indexOf(t, at + 1)) {
-        if (at < start - 40 || at >= end) return null;
+        if (at < start - 40 || at >= end) return no("token_moved");
       }
     }
     const home = lines.find((l) => l.includes(r.name)) ?? "";
-    if (input.parents.some((o) => o !== r && home.includes(o.name))) return null;
+    if (input.parents.some((o) => o !== r && home.includes(o.name))) return no("records_merged");
     const lineStart = text.lastIndexOf("\n", start - 1) + 1;
     const region = text.slice(lineStart, spanEnd(regionStarts, i, heading >= 0 ? heading : text.length));
-    if (!evidenceHolds(home, region, r)) return null;
+    if (!evidenceHolds(home, region, r)) return no("evidence");
   }
 
-  if (!factsStayHome(text, draft, input, starts, heading)) return null;
+  if (!factsStayHome(text, draft, input, starts, heading)) return no("facts_moved");
 
   /* Quotes: each one is the draft's, exactly, and none is new. */
   /* Compared without the closing punctuation a writer moves inside the marks
@@ -498,19 +544,19 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
   const bareQuote = (q: string) => q.replace(/[.,!;:]+"$/, '"');
   const draftQuotes: string[] = (draft.match(/"[^"]*"/g) ?? []).map(bareQuote);
   const quotes: string[] = (text.match(/"[^"]*"/g) ?? []).map(bareQuote);
-  if (quotes.length > draftQuotes.length) return null;
-  for (const q of quotes) if (!draftQuotes.includes(q)) return null;
+  if (quotes.length > draftQuotes.length) return no("quote_added");
+  for (const q of quotes) if (!draftQuotes.includes(q)) return no("quote_changed");
   /* ⚠ …and none is unquoted (26 Oct, the chat lab). A parent's words survived
      word for word with the marks gone - "the water is genuinely warm ... we tried
      two others where he screamed the entire time" - and read as Pando's own
      experience. Every quote the draft holds stays a quote. */
-  for (const q of draftQuotes) if (!quotes.includes(q)) return null;
+  for (const q of draftQuotes) if (!quotes.includes(q)) return no("quote_unquoted");
 
   /* The public block is the draft's: heading, then its lines unchanged. */
   const headingInDraft = draft.indexOf(PUBLIC_HEADING);
-  if ((headingInDraft >= 0) !== (heading >= 0)) return null;
+  if ((headingInDraft >= 0) !== (heading >= 0)) return no("public_heading");
   if (heading >= 0) {
-    for (const name of input.publicNames) if (text.indexOf(name) < heading) return null;
+    for (const name of input.publicNames) if (text.indexOf(name) < heading) return no("public_order");
   }
 
   /* What is left once everything kept is taken out is the model's own. */
@@ -535,8 +581,8 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
     }
   }
   own = own.replace(/"[^"]*"/g, " | ").replace(/\{n\d+\}/g, " ").replace(SOURCE_LINE, " | ");
-  if (LINK.test(own) || FIRST_PERSON.test(own)) return null;
-  if (own.includes("?")) return null;
+  if (LINK.test(own) || FIRST_PERSON.test(own)) return no("link_or_first_person");
+  if (own.includes("?")) return no("question_mark");
   /**
    * ⚠ An attribution licenses a parent word only when **a draft quote follows
    * it** — "another parent said the coaches are patient" put invented words in
@@ -549,23 +595,29 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
     /^\s*[:,]?\s*"/.test(text.slice((m.index ?? 0) + m[0].length)),
   ).length;
   if (/(\{n\d+\}|\b(parent|parents|mom|dad|she|he|they|one|another)\b)\s+(said|says|mentioned|told|tells|thinks|thought|found|noted|added|wrote|swears)\b(?!\s*[:,]?\s*")/i.test(text.replace(SOURCE_LINE, " "))) {
-    return null;
+    return no("unquoted_attribution");
   }
   const claims = (own.match(PARENT_CLAIM) ?? []).length;
-  if (claims > quotedAttributions) return null;
+  if (claims > quotedAttributions) return no("parent_claim");
 
   /* Nothing the draft does not hold: numbers, number words, praise, names. */
   const source = tokensOf(`${draft}\n${input.question}`);
-  for (const digits of own.match(/\d+(?:[.,]\d+)?/g) ?? []) if (!source.has(digits)) return null;
+  for (const digits of own.match(/\d+(?:[.,]\d+)?/g) ?? []) if (!source.has(digits)) return no("new_number");
   /* "A few options" counts nothing anybody did — the rule is for "many families",
      "dozens of parents" (22 Oct live run: three openers of four refused for it). */
   const counted = own.replace(/\b(a few|a couple of|some) (good |solid |nice |different )?(options|places|choices|ideas|spots|picks)\b/gi, " ");
-  for (const word of counted.match(NUMBER_WORDS) ?? []) if (!source.has(lc(word))) return null;
+  /* A number word for a numeral the draft or question holds says nothing new (6 Nov, the SMS lab:
+     "two options nearby" over a draft of two records with "2 parents" was refused). */
+  for (const word of counted.match(NUMBER_WORDS) ?? []) {
+    const w = lc(word);
+    if (source.has(w) || (NUMERALS[w] && source.has(NUMERALS[w]))) continue;
+    return no("number_word");
+  }
   /* "Best for:" is the composer's label, not praise, so it never licenses "the best one".
      The parent's own question does: "a 7 year old who loves animals" echoed
      back is their words, not Pando praising a place (22 Oct live run). */
   const praise = tokensOf(`${draft.replace(/Best for:/gi, " ")}\n${input.question}`);
-  for (const word of own.match(QUALITY) ?? []) if (!praise.has(lc(word))) return null;
+  for (const word of own.match(QUALITY) ?? []) if (!praise.has(lc(word))) return no("praise");
   /* Nothing about their child the parent did not say (26 Oct, the SMS lab):
      "any good art classes near Pasadena" opened *"Looking for a gentle start in
      art with a little one"* — an age and a temperament nobody gave. Words that
@@ -575,12 +627,12 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
   for (const word of own.match(CHILD_WORDS) ?? []) {
     const w = lc(word);
     const stem = w.replace(/(ies)$/, "y").replace(/s$/, "");
-    if (!said.includes(w) && !said.includes(stem)) return null;
+    if (!said.includes(w) && !said.includes(stem)) return no("child_word");
     /* ⚠ A temperament only from the parent's own words (the SMS lab, 5 Nov):
        "A 5 year old who isn't sporty yet - AYSO…" took a record's "best for"
        and put it on their child. The draft holds a record's words, which say
        who the record suits, never what this child is like. */
-    if (TEMPERAMENT.test(w) && !asked.includes(stem)) return null;
+    if (TEMPERAMENT.test(w) && !asked.includes(stem)) return no("temperament");
   }
   for (const sentence of own.split(/(?<=[.!:])\s+|\n|\s*\|\s*/)) {
     const words = sentence.match(/[A-Za-z][A-Za-z'&-]*/g) ?? [];
@@ -595,8 +647,8 @@ export function acceptVoice(raw: unknown, input: VoiceInput): string | null {
       /* A gerund opening a sentence ("Looking for…", "Planning a…") is never a name (22 Oct live run). */
       if (i === 0 && /^[a-z]{3,}ing$/.test(lower)) continue;
       if (/^I('m|'d|'ll)?$/.test(word) || word === "Pando") continue;
-      return null;
+      return no("new_name");
     }
   }
-  return text;
+  return { ok: true, text };
 }

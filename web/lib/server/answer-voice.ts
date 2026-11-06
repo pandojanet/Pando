@@ -4,7 +4,7 @@ import { MODELS } from "@/lib/models";
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
 import { SHARE_LINE, type AnswerCandidate } from "@/lib/answer";
-import { acceptVoice, readVoiceInput, type VoiceInput } from "@/lib/answer-voice";
+import { readVoiceInput, voiceVerdict, VOICE_RETRY_HINTS, type VoiceInput } from "@/lib/answer-voice";
 import { TRUST_LABEL } from "@/lib/trust-labels";
 
 /**
@@ -220,45 +220,60 @@ async function voiceAnswerUntraced(input: {
   if (check.parents.length === 0) return null;
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0, fetch: tracedFetch("answer_voice") });
-    const response = await anthropic.messages.create(
+    const messages: Anthropic.MessageParam[] = [
       {
-        model: MODEL,
-        thinking: { type: "disabled" },
-        max_tokens: 900,
-        system: systemFor(check.max, body.length),
-        output_config: { format: { type: "json_schema", schema: SCHEMA } },
-        messages: [
-          {
-            role: "user",
-            content: JSON.stringify({
-              question: input.question.slice(0, 600),
-              ...(input.said && input.said !== input.question ? { they_just_said: input.said.slice(0, 300) } : {}),
-              draft: body,
-              draft_characters: body.length,
-              max_characters: check.max,
-              /* The exact strings the check will look for, so the model knows which
-                 words are frozen (22 Oct: most refusals were a "so" put inside a
-                 parent's heads-up). Read from the draft; nothing new. */
-              keep_word_for_word: [
-                ...new Set([
-                  ...check.parents.flatMap((r) => [...(r.evidence ? [r.evidence] : []), ...r.keep]),
-                  ...check.mustKeep,
-                ]),
-              ],
-            }),
-          },
-        ],
+        role: "user",
+        content: JSON.stringify({
+          question: input.question.slice(0, 600),
+          ...(input.said && input.said !== input.question ? { they_just_said: input.said.slice(0, 300) } : {}),
+          draft: body,
+          draft_characters: body.length,
+          max_characters: check.max,
+          /* The exact strings the check will look for, so the model knows which
+             words are frozen (22 Oct: most refusals were a "so" put inside a
+             parent's heads-up). Read from the draft; nothing new. */
+          keep_word_for_word: [
+            ...new Set([
+              ...check.parents.flatMap((r) => [...(r.evidence ? [r.evidence] : []), ...r.keep]),
+              ...check.mustKeep,
+            ]),
+          ],
+        }),
       },
-      { timeout: TIMEOUT_MS },
-    );
-    if (response.stop_reason === "refusal") return null;
-    const block = response.content.find((c) => c.type === "text");
-    if (!block || !("text" in block)) return null;
-    const parsed = JSON.parse(block.text) as { text?: unknown };
-    const accepted = acceptVoice(parsed.text, check);
-    /* A boolean, never the text (invariant 7). */
-    console.info("[answer-voice]", { accepted: accepted !== null });
-    if (!accepted) return null;
+    ];
+    /* One more try when a single rule refused it and can say how to fix it (6 Nov, VOICE_RETRY_HINTS). */
+    let accepted: string | null = null;
+    for (let attempt = 1; attempt <= 2 && accepted === null; attempt++) {
+      const response = await anthropic.messages.create(
+        {
+          model: MODEL,
+          thinking: { type: "disabled" },
+          max_tokens: 900,
+          system: systemFor(check.max, body.length),
+          output_config: { format: { type: "json_schema", schema: SCHEMA } },
+          messages,
+        },
+        { timeout: TIMEOUT_MS },
+      );
+      if (response.stop_reason === "refusal") return null;
+      const block = response.content.find((c) => c.type === "text");
+      if (!block || !("text" in block)) return null;
+      const parsed = JSON.parse(block.text) as { text?: unknown };
+      const verdict = voiceVerdict(parsed.text, check);
+      /* A boolean and the rule that refused it, never the text (invariant 7). */
+      console.info("[answer-voice]", { accepted: verdict.ok, attempt, ...(verdict.ok ? {} : { refused: verdict.reason }) });
+      if (verdict.ok) {
+        accepted = verdict.text;
+        break;
+      }
+      const hint = VOICE_RETRY_HINTS[verdict.reason];
+      if (!hint) return null;
+      messages.push(
+        { role: "assistant", content: block.text },
+        { role: "user", content: `That rewrite was refused. ${hint} Write it again with only that fixed, everything else as it was.` },
+      );
+    }
+    if (accepted === null) return null;
     const restored = names.reduce((acc, n, i) => acc.split(token(i)).join(n), accepted);
     /* A token the model invented, or one left over, means the rewrite is not the draft's. */
     if (/\{n\d+\}/.test(restored) || restored.length + tail.length > input.budget) return null;

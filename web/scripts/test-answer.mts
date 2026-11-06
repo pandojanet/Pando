@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { AnswerCandidate } from "../lib/answer.ts";
 
 /**
@@ -1029,6 +1030,19 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
   ok("voice: one record's price moved onto another is refused, by its keep-item", v.acceptVoice(movedPrice, input(true)) === null);
   ok("voice: and by the span rule alone, without the keep-item", v.acceptVoice(movedPrice, input(false)) === null);
   ok("voice: a dropped 'last confirmed' date is refused", v.acceptVoice(good.replace(", last confirmed Sep 2026", ""), input(true)) === null);
+  /* 6 Nov: every refusal names its rule, so the log can say which one. */
+  const refusedFor = (text: unknown) => { const r = v.voiceVerdict(text, input(true)); return r.ok ? "ok" : r.reason; };
+  ok("voice: a refusal names its rule",
+    refusedFor(good) === "ok" && refusedFor(42) === "not_text" && refusedFor(pageFacts) !== "ok" &&
+      refusedFor(good.replace("here you go.", "here is what parents around you have seen.")) === "parent_claim" &&
+      refusedFor(good.replace("so book early.", "and they said it's great value.")) === "unquoted_attribution");
+  ok("voice: a number word for a numeral the draft holds is no new count",
+    refusedFor(good.replace("here you go.", "two places to start.")) === "ok" &&
+      refusedFor(good.replace("here you go.", "several places to start.")) === "number_word");
+  {
+    const src = readFileSync(new URL("../lib/answer-voice.ts", import.meta.url), "utf8");
+    ok("voice: every retry hint is a rule that exists", Object.keys(v.VOICE_RETRY_HINTS).every((k) => src.includes(`no("${k}")`)));
+  }
   {
     /* 26 Oct, the chat lab: a parent's words went out with the quotation marks gone, in Pando's voice. */
     const said = "The water is genuinely warm - we tried two others where he screamed";
