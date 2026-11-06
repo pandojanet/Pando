@@ -110,6 +110,27 @@ export function withoutAsides(summary: string): string {
 }
 
 /**
+ * A page that lists many things rather than being one (6 Nov, the lab walk: an
+ * Arcadia flea market was linked to Eventbrite's "community events in Arcadia"
+ * browse page). Only the shapes that are never an item's own page: Eventbrite's
+ * browse and discover paths, allevents.in, Meetup's find pages. A venue's own
+ * calendar stays - it is often where the item is listed.
+ */
+export function isListingUrl(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  if (/(^|\.)eventbrite\.[a-z.]+$/.test(host)) return /^\/(b|d)\//.test(u.pathname);
+  if (host === "allevents.in" || host.endsWith(".allevents.in")) return true;
+  if (host === "meetup.com") return /^\/find\b/.test(u.pathname);
+  return false;
+}
+
+/**
  * A link as it is stored and sent: parsed, the scheme lower-case, no fragment.
  * Null for anything that is not an http(s) URL. Storing this rather than the
  * model's string is what keeps an `HTTPS://` from failing the table's CHECK
@@ -196,6 +217,10 @@ export function readAgentItems(
       drop("unseen_url");
       continue;
     }
+    if (isListingUrl(url)) {
+      drop("listing_page");
+      continue;
+    }
 
     const starts_on = isoOrNull(r.starts_on);
     const ends_on = isoOrNull(r.ends_on);
@@ -207,6 +232,13 @@ export function readAgentItems(
     if (kind === "event") {
       if (!starts_on && !ends_on) {
         drop("undated_event");
+        continue;
+      }
+      /* Read on the day it is sent (6 Nov, the lab walk): a ceremony at 10am went
+         out in a digest sent at 10am. An event that is only today is gone by the
+         time most read it; one running for days through today stays. */
+      if (last === ctx.editionDate) {
+        drop("today_only");
         continue;
       }
       if ((starts_on ?? ends_on)! > addDays(ctx.editionDate, DIGEST_EVENT_DAYS)) {
@@ -266,9 +298,14 @@ export function ageOn(birthYear: number, birthMonth: number | null, today: strin
 /** What one parent gets: what suits their household, events first by date, at most `DIGEST_MAX_ITEMS`. */
 export function pickForPerson(items: readonly DigestItem[], childAges: readonly number[]): DigestItem[] {
   const fits = items.filter((item) => ageFits(item, childAges));
+  /* Made for their children first (6 Nov, the lab walk: a teen group was sent a
+     flea market and an e-bike hub opening ahead of anything for teens): an item
+     whose ages hold one of theirs, then one with no ages; events before the rest
+     within each. */
+  const forThem = (item: DigestItem) => (childAges.length > 0 && (item.age_min !== null || item.age_max !== null) ? 0 : 1);
   const order = (item: DigestItem) => (item.kind === "event" ? 0 : 1);
   return [...fits]
-    .sort((a, b) => order(a) - order(b) || (a.starts_on ?? "9999").localeCompare(b.starts_on ?? "9999"))
+    .sort((a, b) => forThem(a) - forThem(b) || order(a) - order(b) || (a.starts_on ?? "9999").localeCompare(b.starts_on ?? "9999"))
     .slice(0, DIGEST_MAX_ITEMS);
 }
 

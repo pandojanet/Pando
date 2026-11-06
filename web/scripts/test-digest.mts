@@ -49,9 +49,9 @@ console.log("\n=== what of the agent's findings may be sent ===");
 const good = {
   kind: "event",
   title: "Dia de los Muertos family day",
-  when_text: "Sat Nov 7, 10am-3pm",
-  starts_on: "2026-11-07",
-  ends_on: "2026-11-07",
+  when_text: "Sun Nov 8, 10am-3pm",
+  starts_on: "2026-11-08",
+  ends_on: "2026-11-08",
   place: "Pasadena",
   age_min: 2,
   age_max: 10,
@@ -73,6 +73,23 @@ ok("a kind the digest does not carry is dropped", d.readAgentItems([{ ...good, k
 ok("one per title", d.readAgentItems([good, { ...good }], ctx).length === 1);
 ok("but a week's roundup page may carry several events",
   d.readAgentItems([good, { ...good, title: "Story time at the library" }], ctx).length === 2);
+ok("an event that is only today is dropped: the digest is read today (6 Nov)",
+  d.readAgentItems([{ ...good, starts_on: "2026-11-07", ends_on: "2026-11-07" }], ctx).length === 0 &&
+    d.readAgentItems([{ ...good, starts_on: "2026-11-07", ends_on: null }], ctx).length === 0);
+ok("one running for days through today stays",
+  d.readAgentItems([{ ...good, starts_on: "2026-11-06", ends_on: "2027-01-10" }], ctx).length === 1);
+ok("an aggregator's listing page is never an item's link (6 Nov)",
+  d.isListingUrl("https://www.eventbrite.com/b/ca--arcadia/community/") && d.isListingUrl("https://www.eventbrite.co.uk/d/ca--pasadena/kids/") &&
+    d.isListingUrl("https://allevents.in/pasadena/kids") && d.isListingUrl("https://www.meetup.com/find/?location=pasadena"));
+ok("an event's own page, and a venue's calendar, are fine",
+  !d.isListingUrl("https://www.eventbrite.com/e/turkey-trot-tickets-123") && !d.isListingUrl("https://kidspacemuseum.org/calendar/") &&
+    !d.isListingUrl("https://www.meetup.com/pasadena-parents/events/123/") && !d.isListingUrl("not a url"));
+{
+  const listing = "https://www.eventbrite.com/b/ca--arcadia/community/";
+  const seenListing = new Set([...seen, d.urlKey(listing)!]);
+  ok("and it is dropped even when the agent saw it",
+    d.readAgentItems([{ ...good, url: listing }], { editionDate: ctx.editionDate, seenUrls: seenListing }).length === 0);
+}
 ok("ages the wrong way round are put right", d.readAgentItems([{ ...good, age_min: 10, age_max: 2 }], ctx)[0]?.age_min === 2);
 ok("the link is stored clean", d.readAgentItems([{ ...good, url: "HTTPS://www.kidspacemuseum.org/events/dia#x" }], ctx)[0]?.url === "https://www.kidspacemuseum.org/events/dia");
 ok("the agent's own notes never reach a parent",
@@ -112,6 +129,14 @@ const picked = d.pickForPerson(many, [4]);
 ok(`at most ${d.DIGEST_MAX_ITEMS}, events first by date`,
   picked.length === d.DIGEST_MAX_ITEMS && picked[0].kind === "event" &&
     picked.filter((p) => p.kind === "event").every((p, i, a) => i === 0 || a[i - 1].starts_on! <= p.starts_on!));
+
+{
+  const forTeens = item({ title: "Teen robotics workshop", kind: "event", starts_on: "2026-11-14", age_min: 12, age_max: 17, url: "https://cityofpasadena.net/teens" });
+  const general = item({ title: "Flea market", kind: "event", starts_on: "2026-11-08", age_min: null, age_max: null, url: "https://cityofpasadena.net/flea" });
+  const forKids = d.pickForPerson([general, forTeens], [14]);
+  ok("made for their children first, ahead of an earlier all-ages one (6 Nov)", forKids[0]?.title === "Teen robotics workshop" && forKids[1]?.title === "Flea market");
+  ok("with no children, only what has no ages", d.pickForPerson([general, forTeens], []).map((p) => p.title).join() === "Flea market");
+}
 
 console.log("\n=== what it says ===");
 const two = d.composeDigest([good as Item, item({ title: "Library “story time” — toddlers", url: "https://cityofpasadena.net/story" })]);
