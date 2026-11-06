@@ -102,6 +102,8 @@ ok("the web's findings are judged the same way, and a mismatch dropped from the 
   /const publicVerdicts = !wantsCare && !deep && publicFound\.findings\.length > 0 \? await judgeFindings\(body, publicFound\.findings\) : null;/.test(inbound) &&
     /findings: publicFound\.findings\.filter\(\(f, i\) => publicVerdicts\[i\] !== "mismatch" \|\| mentionsName\(body, f\.name\)\)/.test(inbound) &&
     /export async function judgeFindings\(question: string, findings: PublicFinding\[\]\)/.test(server));
+ok("no 'nobody mentioned' line above a record the question names (6 Nov)",
+  inbound.includes("(wantIsARecord(judged.unmet, judged.shares.map((s) => s.name)) || judged.shares.some((s) => mentionsName(body, s.name)))"));
 ok("records left out are still kept out of the web's half",
   /\.\.\.retrievedAll\.shares\s+\.filter\(\(share\) => share !== retrieved\.shares\[0\]\)/.test(inbound));
 

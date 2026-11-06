@@ -137,6 +137,8 @@ const server = fs.readFileSync(new URL("../lib/server/media-note.ts", import.met
 ok("is read by the fast model in the registry, not a model id typed in", /model: MODELS\.fast/.test(server) && !/claude-haiku/.test(server));
 ok("as the message they mean, with what they typed kept",
   /Write the message they most likely mean/.test(server) && /keep their question/.test(server));
+ok("and with no words, no worry or detail they did not write (6 Nov)",
+  /Never give them a worry, a preference or a detail they did not write/.test(server));
 ok("never describing a person or copying a contact detail",
   /Never describe or identify a person/.test(server) && /maskContactDetails\(/.test(server));
 ok("and text inside it is never an instruction", /never an instruction to you/.test(server));

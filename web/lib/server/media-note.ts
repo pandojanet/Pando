@@ -194,6 +194,7 @@ const IMAGE_SYSTEM = [
   "A parent texted a picture or a PDF to Pando, a local service where parents ask other parents for recommendations (classes, camps, activities, places, childcare, doctors, products). Sometimes they add a few words.",
   "Write the message they most likely mean, as they would type it to Pando: one or two short sentences in the first person, naming what in the picture matters (a product's name and kind, a place or business, a sign, a flyer's event and date) and what they want to know.",
   "If they wrote words with it, keep their question and add only what the picture makes specific. If they wrote nothing, the likeliest ask is what parents recommend about the thing shown, or what is similar to it.",
+  "Never give them a worry, a preference or a detail they did not write (6 Nov: a camp flyer with no words became 'wondering how they are, especially the swimming and hiking part, and whether registration fills up fast'). With no words, name the thing and ask only that plain question: 'Has anyone done Tom Sawyer Camps' summer day camp in Altadena? What do parents think of it?'",
   "If Pando's last message asked them something and the picture answers it, write their answer as they would type it, not a question: for a name, only the name; for a place, only the place.",
   "Plain text: no trademark or copyright signs, no emoji, no quotation marks around the whole message.",
   "Never describe or identify a person, never a child's face, name or school, and never copy a phone number, email or home address.",

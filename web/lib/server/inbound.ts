@@ -2386,7 +2386,14 @@ async function answerQuestion(input: {
   const judged = !wantsCare && !input.deep
     ? applyFit(retrievedAll.shares, await judgeFit(body, retrievedAll.shares), (share) => mentionsName(body, share.name))
     : { shares: retrievedAll.shares, unmet: null };
-  const fit = judged.unmet && wantIsARecord(judged.unmet, judged.shares.map((s) => s.name)) ? { ...judged, unmet: null } : judged;
+  /* Nor when the question names a record the answer shows (6 Nov, the SMS lab): a camp flyer's
+     "is this any good for my 5 year old?" opened "No parent near you has mentioned a day camp for
+     a 5 year old yet" above the two parents who had used that very camp. */
+  const fit =
+    judged.unmet &&
+    (wantIsARecord(judged.unmet, judged.shares.map((s) => s.name)) || judged.shares.some((s) => mentionsName(body, s.name)))
+      ? { ...judged, unmet: null }
+      : judged;
   const retrieved = { ...retrievedAll, shares: fit.shares };
 
   /**
