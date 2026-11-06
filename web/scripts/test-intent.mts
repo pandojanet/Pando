@@ -480,6 +480,14 @@ ok(
   ok("an Ask whose topic cannot be read takes any non-health request as the answer", !m.ownRequestNotAnAnswer("we need a nanny", "Anything good near us?", topic));
 }
 
+console.log("\n=== their children, told to the classifier (6 Nov) ===");
+{
+  ok("oldest first, with the age each makes this year, and no name",
+    m.familyLine([2017, 2014], 2026) === "Their children, from their profile, oldest first: one born 2014 (about 12), one born 2017 (about 9).");
+  ok("a year ahead is a baby on the way", m.familyLine([2027], 2026)?.includes("a baby on the way") === true);
+  ok("nobody listed is nothing", m.familyLine([], 2026) === null);
+}
+
 console.log("\n=== a correction said back (heard, 5 Nov) ===");
 {
   ok("a short line with the parent's own number is kept", m.acceptHeard("A 7 year old, then.", "Actually she's 7 now") === "A 7 year old, then.");

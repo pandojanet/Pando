@@ -160,6 +160,20 @@ export function acceptHeard(heard: string | null | undefined, said: string): str
   return line;
 }
 
+/**
+ * Who their children are, for the classifier (6 Nov, the SMS lab): "camps?"
+ * then "the younger one", from a parent of a 12 and a 9 year old, was read as
+ * "the younger-age camp in the list" - the model had never been told the family.
+ * Birth years and the age they make this year, youngest last, never a name; a
+ * year ahead is a baby on the way. Null for nobody listed.
+ */
+export function familyLine(birthYears: readonly number[], year: number): string | null {
+  const years = [...birthYears].filter((y) => Number.isInteger(y)).sort((a, b) => a - b);
+  if (years.length === 0) return null;
+  const said = years.map((y) => (y > year ? "a baby on the way" : y === year ? "a baby born this year" : `one born ${y} (about ${year - y})`));
+  return `Their children, from their profile, oldest first: ${said.join(", ")}.`;
+}
+
 /** The fallback's only Deep Dive reading: the words themselves, as on 21 Oct. */
 const DEEP_DIVE_WORDS = /\bdeep[\s-]?dive\b/i;
 

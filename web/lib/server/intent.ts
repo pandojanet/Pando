@@ -133,6 +133,10 @@ const SYSTEM = [
   "parent sees it was heard - 'A 7 year old, then.', 'Arcadia instead.', 'Weekends only.'. Use",
   "only what the message says. Otherwise leave heard empty.",
   "",
+  "A reference to one of their own children ('the younger one', 'my oldest', 'for her brother', 'both') uses",
+  "that child's age from the line about their children: 'the younger one' after 'camps?' from a parent of",
+  "a 12 and a 9 year old is 'camps for my 9 year old'. Never read it as a place in the service's list.",
+  "",
   "The conversation can go further back than the previous question. When the message returns to",
   "something from an earlier question ('going back to the swim lessons', 'the camp you mentioned",
   "before', 'and for the art classes, which is closest?'), carry over from THAT question - its topic,",
@@ -226,6 +230,8 @@ async function classifyIntentUntraced(input: {
    * own words, sent to the same model already reading this message.
    */
   lastQuestion?: string | null;
+  /** Their children as `familyLine` says them (6 Nov): "the younger one" is a child, not a list item. */
+  family?: string | null;
   /**
    * The answer Pando sent to that question (28 Oct), so "the first one" or
    * "that camp" can be resolved to a name. Pando's own text, capped, sent to
@@ -308,6 +314,7 @@ async function classifyIntentUntraced(input: {
             input.recent && input.recent.length > 0
               ? `Earlier in this conversation:\n${input.recent.slice(-3).join("\n")}`
               : null,
+            input.family ?? null,
             "",
             "The message to classify:",
             text.slice(0, 1000),

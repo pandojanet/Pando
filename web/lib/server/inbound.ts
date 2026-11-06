@@ -17,7 +17,7 @@ import {
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
 import { classifyIntent } from "@/lib/server/intent";
-import { isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
+import { familyLine, isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
 import { composeAnswer, SMS_BUDGET, subcategoryWord, VOICE_HEADROOM, type AnswerCandidate } from "@/lib/answer";
 import {
   acceptsDeepDive,
@@ -1644,6 +1644,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     lastQuestion: exchange?.question ?? null,
     lastAnswer: exchange?.answer ?? null,
     earlier,
+    family: familyLine(person?.profile.child_birth_years ?? [], new Date().getFullYear()),
     context: {
       awaiting_blast_reply: attached.attached,
       /* Not hardcoded: `created` is true only for a number Pando had never seen,
