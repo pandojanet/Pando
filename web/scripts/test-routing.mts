@@ -483,6 +483,10 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
   ok("a follow-up carries the last answer, what they said and the heard line",
     src.includes("lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,") &&
       src.includes("said: rewritten ? body : null,") && src.includes("heard: rewritten ? reading.heard ?? null : null,"));
+  ok("a deep dive's records are judged as an answer's are: no mismatch is compared (6 Nov)",
+    src.includes("const judged = !wantsCare\n    ? applyFit(") && !src.includes("const judged = !wantsCare && !input.deep"));
+  ok("words with no age or place left open are not glued onto a question of its own (6 Nov)",
+    src.includes("(text) => bandsInQuestion(text).length > 0 || placePhraseIn(text) !== null,"));
   ok("a decline in words to an open Ask is a PASS: the seat freed, a short thanks, nothing to review (6 Nov)",
     src.includes("if (person && declinesToAnswer(body) && (await openAskQuestion(from))) {") &&
       src.includes("const passed = await recordPass({ phone: from });") && src.includes("body: BLAST_DECLINE_THANKS,") &&

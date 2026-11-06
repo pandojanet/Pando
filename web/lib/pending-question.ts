@@ -134,14 +134,23 @@ export function changedSubject(
   pending: PendingQuestion | null,
   latest: string,
   topicOf: (text: string) => string | null,
+  /** Whether words carry a fact worth keeping (an age, a place). Absent: always, as before. */
+  carriesFacts?: (text: string) => boolean,
 ): boolean {
   if (!pending || pending.turns.length === 0) return false;
 
   const body = latest.trim().toLowerCase();
   if (DROPPED.some((word) => body.includes(word))) return true;
 
-  const before = topicOf(pending.turns.join(" "));
+  const earlier = pending.turns.join(" ");
+  const before = topicOf(earlier);
   const now = topicOf(latest);
+  /* Nothing to keep from before, and a subject of its own now (6 Nov, the SMS
+     lab): "yes but prices went up a lot this year" (a freshness reply left
+     open) was glued to "art classes for my 10 year old…", and the deep dive it
+     led to was about "a price-wary family". "she's 7, Altadena" then "swim
+     lessons?" still glues: the earlier words carry facts. */
+  if (before === null && now !== null && carriesFacts && !carriesFacts(earlier)) return true;
   return before !== null && now !== null && before !== now;
 }
 

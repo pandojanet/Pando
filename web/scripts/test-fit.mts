@@ -89,8 +89,8 @@ ok("the judge sees the price, value and ages the answer shows",
   /price: \$\{share\.price_band\}/.test(server) && /ages: \$\{share\.age_bands/.test(server));
 ok("its log line is counts only, never the want or a record's words",
   /console\.info\("\[answer\] fit", \{\s+of: purpose === "answer_fit" \? "parents" : "web",\s+records: shares\.length,[\s\S]{0,260}want: Boolean\(parsed\.want\?\.trim\(\)\),\s+\}\)/.test(server));
-ok("every answer about a place or class is judged, a named record kept; care and a deep dive are not judged",
-  /const judged = !wantsCare && !input\.deep\s+\? applyFit\(retrievedAll\.shares, await judgeFit\(body, retrievedAll\.shares\), \(share\) => mentionsName\(body, share\.name\)\)/.test(inbound) &&
+ok("every answer about a place or class is judged, a deep dive too since 6 Nov, a named record kept; care is not judged",
+  /const judged = !wantsCare\s+\? applyFit\(retrievedAll\.shares, await judgeFit\(body, retrievedAll\.shares\), \(share\) => mentionsName\(body, share\.name\)\)/.test(inbound) &&
     /const retrieved = \{ \.\.\.retrievedAll, shares: fit\.shares \};/.test(inbound));
 ok("the answer opens on what nobody near them has mentioned",
   /: fit\.unmet\s+\? \{ opening: unmetLine\(fit\.unmet, body, candidates\.some\(\(c\) => !c\.trust\.public_only\), place\.source !== "none"\) \}/.test(inbound));

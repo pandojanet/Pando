@@ -362,6 +362,20 @@ console.log("\n=== a change of subject is not a continuation (14 Sep) ===");
     "the parent saying so is enough on its own",
     pq.changedSubject(open("camps"), "never mind, what about preschools", topic),
   );
+  /* 6 Nov: a freshness reply left open was glued onto a new question. */
+  const facts = (text: string) => /\b\d+\b|altadena|pasadena/i.test(text);
+  ok(
+    "words with no subject and no fact are not glued to a question of its own",
+    pq.changedSubject(open("yes but prices went up a lot this year"), "art classes for my 10 year old?", (t) => (/art/.test(t) ? "arts_music" : topic(t)), facts),
+  );
+  ok(
+    "but an age or a place said before is kept",
+    !pq.changedSubject(open("she's 7, we're in Altadena"), "any good summer camps?", topic, facts),
+  );
+  ok(
+    "and without the fact reader nothing changes",
+    !pq.changedSubject(open("yes but prices went up a lot this year"), "any good summer camps?", topic),
+  );
   /**
    * The two words deliberately left out of `DROPPED`, and this is what would
    * break if somebody added them: both are ordinary inside a real answer, and a

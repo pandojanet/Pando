@@ -1993,8 +1993,12 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
      cache's, so this costs nothing on the common path and nothing at all when
      no question is open. */
   const focusList = pending ? await focusOptions(marketOf(person)) : [];
-  const switched = changedSubject(pending, body, (text) =>
-    focusInQuestion(text, focusList),
+  const switched = changedSubject(
+    pending,
+    body,
+    (text) => focusInQuestion(text, focusList),
+    /* An age or a place is worth gluing on; words with neither are not (6 Nov). */
+    (text) => bandsInQuestion(text).length > 0 || placePhraseIn(text) !== null,
   );
   if (pending) {
     await closeQuestion(pending.id, "resolved");
@@ -2448,10 +2452,14 @@ async function answerQuestion(input: {
    * have used" — the developer: *"we must not deceive parents"*. A record that
    * plainly does not serve the question is not offered, and when something
    * particular was asked that no record shows, the answer says so first
-   * (`unmetLine`). Not for care, which a person reads before it goes, nor a
-   * deep dive, which compares what it is given.
+   * (`unmetLine`). Not for care, which a person reads before it goes. A deep
+   * dive is judged too since 6 Nov (below); its unmet line is never used.
    */
-  const judged = !wantsCare && !input.deep
+  /* A deep dive is judged too (6 Nov, the SMS lab): "compare these" about comic
+     drawing classes put a music school third, only to say it "does not answer
+     your question about comics". Its records are what it compares; a mismatch
+     is not one of them. */
+  const judged = !wantsCare
     ? applyFit(retrievedAll.shares, await judgeFit(body, retrievedAll.shares), (share) => mentionsName(body, share.name))
     : { shares: retrievedAll.shares, unmet: null };
   /* Nor when the question names a record the answer shows (6 Nov, the SMS lab): a camp flyer's
