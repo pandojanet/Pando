@@ -43,6 +43,7 @@ import {
   DIGEST_CONSENT_TEXT,
   SMS_CONSENT_AGREEMENT,
   SMS_CONSENT_TERMS,
+  TEXT_OPT_IN_DISCLOSURE,
 } from "@/lib/consent";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import {
@@ -861,6 +862,17 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                         {formatPhone(PANDO_TEXT_NUMBER)}
                       </InlineAction>{" "}
                       to opt in.
+                    </p>
+                    <p className="mt-2 leading-relaxed text-muted text-help">
+                      {TEXT_OPT_IN_DISCLOSURE}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-4 leading-relaxed text-help">
+                      <InlineAction href="/terms" external tone="green">
+                        Terms
+                      </InlineAction>
+                      <InlineAction href="/privacy" external tone="green">
+                        Privacy
+                      </InlineAction>
                     </p>
                   </div>
                 </div>

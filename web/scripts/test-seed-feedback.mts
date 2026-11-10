@@ -2642,6 +2642,18 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   );
   ok("and it is the quiet panel, not a second tick", /<Panel tone="quiet" size="inset"/.test(join));
   ok("and the line names no keyword", !/TEXT_OPT_IN_KEYWORD/.test(join) && !("TEXT_OPT_IN_KEYWORD" in c));
+  /* 10 Nov: the box needs its own disclosure or carriers may reject the text
+     method — her words verbatim, with Terms and Privacy as links beside it. */
+  ok(
+    "the text opt-in carries her disclosure, verbatim",
+    c.TEXT_OPT_IN_DISCLOSURE ===
+      "By texting, you agree to receive messages from Pando Systems, Inc. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.",
+    c.TEXT_OPT_IN_DISCLOSURE,
+  );
+  ok(
+    "and /join shows it inside the box, with Terms and Privacy links",
+    /to opt in\.[\s\S]{0,200}\{TEXT_OPT_IN_DISCLOSURE\}[\s\S]{0,300}href="\/terms"[\s\S]{0,200}href="\/privacy"/.test(join),
+  );
   /* The split is derived, so the label can never carry the carrier disclosure
      — a tap anywhere in a label toggles its checkbox. */
   ok(

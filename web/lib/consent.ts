@@ -278,6 +278,15 @@ export const DIGEST_CONSENT_TEXT = "Also text me a weekly digest of local events
 export const PANDO_TEXT_NUMBER = "+16267263424";
 
 /**
+ * The text opt-in's own disclosure (10 Nov, the client, verbatim): without it the
+ * carriers may reject the text method. Her "[Terms] [Privacy]" are links, not
+ * language, so they are rendered beside it — the `RECURRING_MESSAGES_CONSENT_TEXT`
+ * rule. Not a stored consent: the defence for a text opt-in is the inbound message.
+ */
+export const TEXT_OPT_IN_DISCLOSURE =
+  "By texting, you agree to receive messages from Pando Systems, Inc. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
+
+/**
  * 2C — the caregiver's own permissions (G2, G8–G10).
  *
  * Four decisions, asked and stored separately, because they are four different
