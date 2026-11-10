@@ -62,9 +62,13 @@ export const SHARE_INVITE =
  * onboarding and fires on its own schedule; asking a second thing here would
  * make the next reply ambiguous, which is exactly what that design exists to
  * prevent.
+ *
+ * ⚠ **Two segments, the one reply here that is** (10 Nov): it is the automatic
+ * reply to a text opt-in, and the client asked for "Msg & data rates may apply"
+ * in it for the carriers; the developer kept the full sentence over one segment.
  */
 export const SMALL_TALK =
-  "Pando: ask me about local classes, camps, activities or childcare and I'll tell you what nearby parents recommend. Reply STOP to opt out, HELP for help.";
+  "Pando: ask me about local classes, camps, activities or childcare and I'll tell you what nearby parents recommend. Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
 
 /**
  * To a thanks from somebody Pando already knows (the SMS lab, 5 Nov): the

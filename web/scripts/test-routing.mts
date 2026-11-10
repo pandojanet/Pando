@@ -217,17 +217,19 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
     `../lib/sms-segments.ts?v=${Date.now()}`
   )) as typeof import("../lib/sms-segments.ts");
 
-  for (const [name, text] of [
-    ["the share invite", r.SHARE_INVITE],
-    ["the small-talk reply", r.SMALL_TALK],
-    ["the opener reply", r.OPENER_REPLY],
-    ["the Ask acknowledgement", r.ASK_STARTED],
-    ["the Ask failure reply", r.ASK_NOT_STARTED],
-    ["the still-good acknowledgement", r.PING_STILL_GOOD],
-    ["the withdrawal acknowledgement", r.PING_NO_LONGER],
-    ["the helped-yes acknowledgement", r.HELPED_YES],
-    ["the helped-no acknowledgement", r.HELPED_NO],
-    ["the Ask-reply acknowledgement", r.BLAST_REPLY_THANKS],
+  /* The small-talk reply is the automatic reply to a text opt-in, so it carries
+     "Msg & data rates may apply" for the carriers (10 Nov) and is two segments. */
+  for (const [name, text, segments] of [
+    ["the share invite", r.SHARE_INVITE, 1],
+    ["the small-talk reply", r.SMALL_TALK, 2],
+    ["the opener reply", r.OPENER_REPLY, 1],
+    ["the Ask acknowledgement", r.ASK_STARTED, 1],
+    ["the Ask failure reply", r.ASK_NOT_STARTED, 1],
+    ["the still-good acknowledgement", r.PING_STILL_GOOD, 1],
+    ["the withdrawal acknowledgement", r.PING_NO_LONGER, 1],
+    ["the helped-yes acknowledgement", r.HELPED_YES, 1],
+    ["the helped-no acknowledgement", r.HELPED_NO, 1],
+    ["the Ask-reply acknowledgement", r.BLAST_REPLY_THANKS, 1],
   ] as const) {
     const plan = s.planSegments(text);
     ok(
@@ -236,8 +238,8 @@ console.log("\n=== 9 Sep: a message that is not a question is answered, not igno
       plan.offenders?.join("") ?? "",
     );
     ok(
-      `${name} is one segment`,
-      plan.segments === 1,
+      `${name} is ${segments === 1 ? "one segment" : `${segments} segments`}`,
+      plan.segments === segments,
       `${text.length} chars, ${plan.segments} segments`,
     );
     ok(
