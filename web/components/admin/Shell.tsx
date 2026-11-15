@@ -15,6 +15,7 @@ import {
   Layers,
   Link2,
   ListChecks,
+  Newspaper,
   MessageSquareReply,
   Send,
   ScrollText,
@@ -24,9 +25,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { HintProvider } from "@/components/admin/kit";
+import { AccountMenu, HintProvider } from "@/components/admin/kit";
 import { PandoMark } from "@/components/ui/Logo";
-import { Button, useEdgeFade } from "@/components/admin/ui";
+import { useEdgeFade } from "@/components/admin/ui";
 import { ADMIN_WRITE_EVENT, signOut } from "@/lib/admin/client";
 import { QuickFind } from "./QuickFind";
 import type { Overview } from "@/lib/admin/types";
@@ -285,6 +286,12 @@ const NAV: NavSection[] = [
         label: "Deep dives",
       },
       {
+        /* 12 Nov. No count: the digest goes out without review (3 Nov); this is to read it. */
+        href: "/admin/digests",
+        icon: Newspaper,
+        label: "Weekly digests",
+      },
+      {
         /* 21 Oct. A count: every request waits for a person to move it. */
         href: "/admin/introductions",
         icon: Handshake,
@@ -460,7 +467,7 @@ function NavGroup({
             type="button"
             onClick={() => setOverride(!shown)}
             aria-expanded={shown}
-            className="hidden w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[11px] font-semibold uppercase tracking-[0.09em] text-muted hover:text-ink-soft md:flex"
+            className="hidden w-full items-center gap-1 rounded-lg px-3 pb-1 pt-2 text-left text-[12.5px] font-medium text-muted hover:text-ink-soft md:flex"
           >
             {/* The same chevron the page-level `Disclosure` turns — it cannot
                 be a `<details>` here, because on a phone this nav is a
@@ -576,6 +583,10 @@ export function AdminShell({
                 Pando admin
               </span>
             </Link>
+            {/* On a phone the account sits here, beside the wordmark; from `md` at the foot of the sidebar. */}
+            <div className="md:hidden">
+              <AccountMenu compact user={user} onSignOut={() => void signOut()} />
+            </div>
           </div>
 
           {/* Above the nav rather than in the header row: at 16rem a control
@@ -600,28 +611,10 @@ export function AdminShell({
             ))}
           </nav>
 
-          <div className="hidden border-t border-bark/70 px-4 py-3 md:block">
-            <p className="text-[12px] text-muted">Signed in as</p>
-            <p className="text-[13.5px] font-semibold">{user}</p>
-            {/*
-              Two real buttons, not two underlined words. They were hand-written
-              because `Button` could only render a `<button>` and "Change
-              password" is a navigation — which is exactly the drift `TextAction`
-              was extracted to end in the parent flow; `Button` takes an `href`
-              now, so both come out of one box.
-
-              Stacked and stretched, which is a measurement rather than a
-              preference: side by side the pair came to 225px inside a 224px
-              column and wrapped by **one pixel**, leaving a wide button above a
-              narrow one. Made equal width, they read as a deliberate pair, and
-              nothing about them depends on a label staying short.
-            */}
-            <div className="mt-2 flex flex-col items-stretch gap-1.5">
-              <Button href="/admin/account">Change password</Button>
-              <Button onClick={() => void signOut()}>
-                Sign out
-              </Button>
-            </div>
+          {/* Who is signed in, Change password and Sign out behind one button (12 Nov) — two stacked
+              buttons under a line naming the user before it. */}
+          <div className="hidden border-t border-bark/70 p-2 md:block">
+            <AccountMenu user={user} onSignOut={() => void signOut()} />
           </div>
         </aside>
 
@@ -641,15 +634,6 @@ export function AdminShell({
             a sidebar with no badges on it says the same thing continuously.
           */}
             {children}
-          </div>
-          <div className="mt-8 flex flex-wrap items-center gap-3 md:hidden">
-            <span className="text-[12.5px] text-muted">
-              Signed in as {user}
-            </span>
-            <Button href="/admin/account">Change password</Button>
-            <Button onClick={() => void signOut()}>
-              Sign out
-            </Button>
           </div>
         </main>
       </div>

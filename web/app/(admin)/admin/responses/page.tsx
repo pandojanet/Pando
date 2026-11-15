@@ -19,6 +19,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { Select } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { BlastResponseRow } from "@/lib/admin/types";
 
@@ -105,7 +106,7 @@ function ResponseCard({
     <li className="px-4 py-4">
       {/* What was asked, so the reply can be judged against it rather than on
           its own merits. A good answer to a different question is not one. */}
-      <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <p className="text-[12.5px] font-medium text-muted">
         They were asked
       </p>
       <p className="mt-0.5 text-[13.5px] leading-relaxed text-ink-soft">
@@ -167,8 +168,8 @@ function ResponseCard({
           </Badge>
           <span>
             {row.review_status === "approved"
-              ? "This reply has been read. Anything it named is in the contributions queue."
-              : "This reply has been read and nothing was added."}
+              ? /* copy: state */ "This reply has been read. Anything it named is in the contributions queue."
+              : /* copy: state */ "This reply has been read and nothing was added."}
           </span>
         </p>
       ) : (
@@ -179,7 +180,7 @@ function ResponseCard({
       <div className="mt-3">
         <p
           id={`rate-${k}`}
-          className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+          className="text-[12.5px] font-medium text-muted"
         >
           How useful was it?
         </p>
@@ -220,7 +221,7 @@ function ResponseCard({
           validation rather than a duplicate. */}
       {row.merge_candidates.length > 0 && (
         <div className="mt-3">
-          <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+          <p className="text-[12.5px] font-medium text-muted">
             Pando may already know this one
           </p>
           <div className="mt-1 flex flex-wrap gap-1.5">
@@ -260,7 +261,7 @@ function ResponseCard({
       <div className="mt-3">
         <label
           htmlFor={`name-${k}`}
-          className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+          className="block text-[12.5px] font-medium text-muted"
         >
           Or add it as something new
         </label>
@@ -275,18 +276,12 @@ function ResponseCard({
             placeholder="What they recommended, as it should be listed"
           />
           {typed.trim() && (
-            <select
-              aria-label={`What kind of record ${typed.trim()} is`}
-              className={controlClass}
+            <Select
+              label={`What kind of record ${typed.trim()} is`}
               value={kind}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              {NEW_RECORD_KINDS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setKind}
+              options={NEW_RECORD_KINDS.map((o) => ({ id: o.id, label: o.label }))}
+            />
           )}
           <Button
             tone="primary"
@@ -295,8 +290,8 @@ function ResponseCard({
             onClick={() =>
               void run(
                 typed.trim()
-                  ? "Added — it goes to the contributions queue next."
-                  : "Marked as read. Nothing added to the graph.",
+                  ? "Added to the contributions queue."
+                  : /* copy: state */ "Marked as read. Nothing added to the graph.",
                 async () =>
                   adminAction({
                     action: "blast_response.approve",

@@ -169,7 +169,7 @@ export function QuickFind() {
             {/* Three different silences, and only one of them means "not
                 found" — the `persisted: false` honesty rule, in a search box. */}
             {!configured
-              ? "No database is connected, so there is nobody to look for."
+              ? /* copy: state */ "No database is connected, so there is nobody to look for."
               : query.trim() === ""
                 ? "Nobody has come through yet."
                 : "Nothing matching that."}

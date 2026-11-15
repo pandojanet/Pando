@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  rowLinkClass,
   Badge,
   Card,
   controlClass,
@@ -22,7 +23,7 @@ import {
   yearList,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { SegmentedTabs, Select } from "@/components/admin/kit";
+import { Checkbox, SegmentedTabs, Select } from "@/components/admin/kit";
 import { ConsentRecords } from "@/components/admin/ConsentRecords";
 import { Standing } from "@/components/admin/Standing";
 import { RewardPaid } from "@/components/admin/RewardPaid";
@@ -175,14 +176,7 @@ export default function ContributorsPage() {
               ]}
             />
             {testCount > 0 && (
-              <label className="flex items-center gap-2 text-[13px] text-muted">
-                <input
-                  type="checkbox"
-                  checked={hideTest}
-                  onChange={(e) => setHideTest(e.target.checked)}
-                />
-                Hide {testCount} test
-              </label>
+              <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide {testCount} test</Checkbox>
             )}
             <span className="text-[12.5px] tabular-nums text-muted">
               {filtered.length} shown
@@ -264,9 +258,9 @@ export default function ContributorsPage() {
             </thead>
             <tbody>
               {shown.map((row) => (
-                <tr key={row.id} className="hover:bg-paper/70">
+                <tr key={row.id}>
                   <Td>
-                    <TextLink href={`/admin/contributors/${row.id}`}>
+                    <TextLink href={`/admin/contributors/${row.id}`} className={rowLinkClass}>
                       {row.name ?? "Unknown"}
                     </TextLink>
                     <span className="mt-0.5 block text-[12.5px] text-muted">

@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Heading, HeadingLevel, useHeadingLevel } from "@/components/admin/ui";
+import { actionsClass, Heading, HeadingLevel, useHeadingLevel } from "@/components/admin/ui";
 import { cn } from "@/lib/cn";
 
 /**
@@ -129,7 +129,7 @@ export function RecordCard({
           <Heading className="font-display text-[1.05rem] font-semibold leading-snug tracking-[-0.01em]">
             {title}
             {kind && (
-              <span className="ml-2 align-middle text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+              <span className="ml-2 align-middle text-[12.5px] font-medium text-muted">
                 {kind}
               </span>
             )}
@@ -150,7 +150,7 @@ export function RecordCard({
       {children && <div className="mt-3.5">{children}</div>}
 
       {actions && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">{actions}</div>
+        <div className={cn(actionsClass, "mt-4")}>{actions}</div>
       )}
     </article>
   );
@@ -193,11 +193,11 @@ export function FactGrid({
   return (
     <>
       {title && (
-        <p className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted first:mt-0">
+        <p className="mb-1.5 mt-5 text-[13px] font-semibold text-ink-soft first:mt-0">
           {title}
         </p>
       )}
-      <dl className="grid gap-x-6 gap-y-3 [grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))]">
+      <dl className="grid gap-x-5 gap-y-2.5 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
         {children}
       </dl>
     </>
@@ -252,7 +252,7 @@ export function FactInline({
   const empty = children === null || children === undefined || children === "";
   return (
     <div className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <dt className="text-[12.5px] font-medium text-muted">
         {label}
       </dt>
       <dd className="min-w-0">{empty ? <span className="text-muted">—</span> : children}</dd>
@@ -280,7 +280,7 @@ export function Fact({
   const empty = children === null || children === undefined || children === "";
   return (
     <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <dt className="text-[12.5px] font-medium text-muted">
         {label}
       </dt>
       <dd className="mt-0.5 text-[13.5px] leading-snug text-ink">
@@ -315,7 +315,7 @@ export function Spec({ label, children }: { label: string; children?: ReactNode 
   const empty = children === null || children === undefined || children === "";
   return (
     <div className="flex gap-2">
-      <dt className="w-[9.5rem] shrink-0 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <dt className="w-[9.5rem] shrink-0 text-[12.5px] font-medium text-muted">
         {label}
       </dt>
       <dd className="min-w-0">
@@ -345,7 +345,7 @@ export function Quote({
   return (
     <figure className="border-l-2 border-green/30 pl-3">
       {label && (
-        <figcaption className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <figcaption className="text-[12.5px] font-medium text-muted">
           {label}
         </figcaption>
       )}
@@ -379,9 +379,9 @@ export function RecordDrawer({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-4 rounded-xl border border-bark bg-paper/70 p-3.5">
+    <div className="mt-4 rounded-lg bg-paper/80 p-3.5">
       {title && (
-        <p className="mb-2.5 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <p className="mb-2.5 text-[13px] font-semibold text-ink-soft">
           {title}
         </p>
       )}

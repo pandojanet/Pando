@@ -402,7 +402,7 @@ export default function ContributionsPage() {
                           disabled={busy === row.id}
                           subject={row.share.name}
                           onClick={() =>
-                            void run(row.id, "Checked — the result is on the card.", async () => {
+                            void run(row.id, "Checked.", async () => {
                               await recheckProvider(row.share.id);
                               return { persisted: true };
                             })
@@ -461,7 +461,7 @@ export default function ContributionsPage() {
                         */}
                       <RecordDrawer title="Rename the record">
                         <p className="mb-3 text-[12.5px] text-muted">
-                          Renames it for everyone who shared it.
+                          {/* copy: kept — what the action does to other parents' records */}Renames it for everyone who shared it.
                         </p>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Field label="Name">

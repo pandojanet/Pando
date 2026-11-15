@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -19,6 +20,7 @@ import {
   TextLink,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { Quote, RecordGroup } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { FIELD_LABEL, flagTitle, sentence } from "@/lib/admin/labels";
@@ -183,11 +185,11 @@ function FlagCard({
         </div>
       ) : isRecord ? (
         <p className="mt-2 text-[13px] text-muted">
-          About the record&apos;s name — nothing a parent wrote is attached.
+          {/* copy: state */}About the record&apos;s name — nothing a parent wrote is attached.
         </p>
       ) : (
         <p className="mt-2 text-[13px] text-muted">
-          They wrote nothing — this came from what they tapped
+          {/* copy: state */}They wrote nothing — this came from what they tapped
           {flag.field
             ? `, on ${FIELD_LABEL[flag.field] ?? sentence(flag.field)}`
             : ""}
@@ -218,11 +220,11 @@ function FlagCard({
       <div className="mt-3">
         <label
           htmlFor={`note-${flag.id}`}
-          className="block text-[11px] font-semibold uppercase tracking-[0.07em] text-muted"
+          className="block text-[12.5px] font-medium text-muted"
         >
           Admin comment
         </label>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
+        <div className={cn(actionsClass, "mt-1")}>
           <input
             id={`note-${flag.id}`}
             className={`${inputClass} min-w-[12rem] flex-1`}

@@ -44,7 +44,9 @@ numbers; `test:blast` and `test:relay` cover the Ask and the relay.
 [phase-2-test-plan](../phase-2-test-plan.md) is the walk through the Slack relay.
 
 **Hooks and guards** (`.claude/hooks`, `.githooks`). `test:hooks` and `test:githooks`
-check the logic and the wiring. A guard counts as working only after a real attempt it
+check the logic and the wiring (`no-explainers` also scans the admin and wants 0).
+Project hooks load only in a session opened in the repo root (`pando/`), not in a
+folder above it. A guard counts as working only after a real attempt it
 blocked in a session — with input that would otherwise succeed, because Edit validates
 its input before a PreToolUse hook runs, so an invalid probe never reaches the hook.
 

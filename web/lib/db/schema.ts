@@ -1755,8 +1755,66 @@ export const digestSends = pgTable(
       .references(() => people.id, { onDelete: "cascade" }),
     itemCount: integer("item_count").notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    /** 11 Nov (drizzle/0067): the items sent, in their numbers' order — what a reply of "2" means. */
+    itemIds: uuid("item_ids").array().notNull().default(sql`'{}'::uuid[]`),
   },
   (t) => [primaryKey({ columns: [t.editionId, t.personId] })],
+);
+
+/**
+ * 11 Nov (drizzle/0067): a digest item a family picked — the reminder they
+ * asked for and the feedback button they tapped (`lib/digest-followup.ts`).
+ * Never free text.
+ */
+export const digestInterests = pgTable(
+  "digest_interests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => people.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id")
+      .notNull()
+      .references(() => digestItems.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("picked"),
+    remindOn: date("remind_on"),
+    remindAt: timestamp("remind_at", { withTimezone: true }),
+    remindedAt: timestamp("reminded_at", { withTimezone: true }),
+    askAt: timestamp("ask_at", { withTimezone: true }),
+    feedbackAskedAt: timestamp("feedback_asked_at", { withTimezone: true }),
+    feedback: text("feedback"),
+    feedbackAt: timestamp("feedback_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("digest_interests_status_check", sql`${t.status} in ('picked','going','declined')`),
+    check("digest_interests_feedback_check", sql`${t.feedback} is null or ${t.feedback} in ('loved','ok','didnt_go')`),
+    unique("digest_interests_once").on(t.personId, t.itemId),
+    index("digest_interests_remind_idx").on(t.remindAt).where(sql`reminded_at is null and status = 'going'`),
+    index("digest_interests_feedback_idx").on(t.askAt).where(sql`feedback_asked_at is null and status = 'going'`),
+  ],
+);
+
+/**
+ * 12 Nov (drizzle/0066): a parent's older SMS exchanges as a structured
+ * memory — fixed lists only, no names, no free text (`lib/conversation-memory.ts`).
+ */
+export const conversationSummaries = pgTable(
+  "conversation_summaries",
+  {
+    personId: uuid("person_id")
+      .primaryKey()
+      .references(() => people.id, { onDelete: "cascade" }),
+    asks: jsonb("asks").notNull().default(sql`'[]'::jsonb`),
+    coversThrough: timestamp("covers_through", { withTimezone: true }).notNull(),
+    model: text("model").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("conversation_summaries_asks_check", sql`jsonb_typeof(${t.asks}) = 'array' and jsonb_array_length(${t.asks}) <= 30`),
+    index("conversation_summaries_updated_at_idx").on(t.updatedAt),
+  ],
 );
 
 export type ShareContribution = typeof shareContributions.$inferSelect;

@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -17,6 +18,7 @@ import {
   Toolbar,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import {
   Fact,
@@ -27,6 +29,7 @@ import {
 } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { FreshnessOutcomeRow } from "@/lib/admin/types";
+import { Checkbox } from "@/components/admin/kit";
 
 /**
  * Estimate 14.9 — records a contributor said are no longer worth recommending.
@@ -142,14 +145,7 @@ export default function FreshnessPage() {
           className={`${inputClass} w-[12rem]`}
         />
         {testCount > 0 && (
-          <label className="flex items-center gap-1.5 text-[13px] text-muted">
-            <input
-              type="checkbox"
-              checked={hideTest}
-              onChange={(e) => setHideTest(e.target.checked)}
-            />
-            Hide test ({testCount})
-          </label>
+          <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
         )}
       </Toolbar>
 
@@ -274,7 +270,7 @@ export default function FreshnessPage() {
         >
           <label
             htmlFor={reasonId}
-            className="block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted"
+            className="block text-[12.5px] font-medium text-muted"
           >
             Why
           </label>
@@ -295,7 +291,7 @@ export default function FreshnessPage() {
             }
           />
           <p className="mt-1 text-[12.5px] text-muted">Required.</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className={cn(actionsClass, "mt-3")}>
             <Button
               onClick={decide}
               disabled={busy || reason.trim().length < 3}

@@ -11,6 +11,7 @@ import {
   PageHead,
   SampleBanner,
   Stat,
+  StatStrip,
   TextLink,
 } from "@/components/admin/ui";
 import { useAdminRows } from "@/lib/admin/client";
@@ -223,7 +224,7 @@ export default function AdminOverviewPage() {
           >
             {todo.length === 0 ? (
               <p className="px-4 py-4 text-[14px] text-ink-soft">
-                Nothing right now — every queue is clear.
+                {/* copy: state */}Nothing right now — every queue is clear.
               </p>
             ) : (
               /**
@@ -324,7 +325,7 @@ export default function AdminOverviewPage() {
               of them chosen. This is the only fold left in the admin. */}
           <Disclosure title="Show the numbers" flush>
             <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatStrip>
             <Stat
               label="Contributors"
               value={o.contributors.total}
@@ -347,7 +348,7 @@ export default function AdminOverviewPage() {
               hint={`${o.reward.in_review} waiting on you`}
               tone={o.reward.in_review > 0 ? "warn" : "plain"}
             />
-          </div>
+          </StatStrip>
 
           {/* What has come in — one line rather than tiles, because these
               numbers are only ever read against each other. Five since the

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { when } from "@/components/admin/ui";
 import { adminAction } from "@/lib/admin/client";
 import type { ContributorRow } from "@/lib/admin/types";
+import { Checkbox } from "@/components/admin/kit";
 
 /**
  * "Reward paid" — one box, on the list and on the person's page (30 Sep).
@@ -62,18 +63,16 @@ export function RewardPaid({
     <div>
       {/* The box, the date once it is ticked, and — only where no column heading
           names the field — its label (30 Sep). No status sentence. */}
-      <label className="flex min-h-9 cursor-pointer items-center gap-2 text-[13.5px]">
-        <input
-          type="checkbox"
-          checked={paid}
-          disabled={busy}
-          onChange={(e) => void toggle(e.target.checked)}
-          aria-label={`Reward paid to ${name ?? "this contributor"}${paid ? `, on ${when(paidAt)}` : ""}`}
-          className="size-4 accent-[var(--color-green-deep)]"
-        />
+      <Checkbox
+        checked={paid}
+        disabled={busy}
+        onChange={(c) => void toggle(c)}
+        label={`Reward paid to ${name ?? "this contributor"}${paid ? `, on ${when(paidAt)}` : ""}`}
+        className="text-[13.5px]"
+      >
         {labelled && <span className="font-medium">Reward paid</span>}
         {paid && <span className="text-muted">{when(paidAt)}</span>}
-      </label>
+      </Checkbox>
       {error && (
         <p role="alert" className="mt-0.5 text-[12.5px] text-alert">
           {error}

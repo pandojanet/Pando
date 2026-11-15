@@ -146,7 +146,7 @@ interface SendInput {
    * when that kind has no content SID set, on the Slack relay, and when either
    * text is too long for its type.
    */
-  rich?: { kind: RichKind; card?: string };
+  rich?: { kind: RichKind; card?: string; edition?: string };
 }
 
 function provisioning(marketId?: string | null) {
@@ -517,7 +517,7 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
    */
   const contentSid = input.rich ? richContentSid(input.rich.kind) : null;
   /* The card alone is formatted (`cardFormat`); the SMS text goes exactly as written. */
-  const variables = contentSid && input.rich ? richVariables(cardFormat(input.rich.card ?? body), body) : null;
+  const variables = contentSid && input.rich ? richVariables(cardFormat(input.rich.card ?? body), body, input.rich.edition) : null;
   const richParams =
     contentSid && variables
       ? new URLSearchParams({

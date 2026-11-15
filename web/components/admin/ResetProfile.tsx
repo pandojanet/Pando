@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Field, inputClass } from "@/components/admin/ui";
+import { actionsClass, Button, Card, Field, inputClass } from "@/components/admin/ui";
 import { adminAction } from "@/lib/admin/client";
 
 /**
@@ -60,7 +60,7 @@ export function ResetProfile({ id, name }: { id: string; name: string | null }) 
                 onChange={(e) => setTyped(e.target.value)}
               />
             </Field>
-            <div className="flex gap-2">
+            <div className={actionsClass}>
               <Button tone="danger" disabled={busy || typed.trim() !== "RESET"} onClick={() => void reset()}>
                 {busy ? "Resetting…" : "Reset profile"}
               </Button>

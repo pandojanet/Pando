@@ -697,6 +697,12 @@ function evidenceSentence(candidate: AnswerCandidate, named: string | null): str
   const when = candidate.last_confirmed
     ? `, last confirmed ${monthOf(candidate.last_confirmed)}`
     : "";
+  /* A tip's name is its advice, not a place (13 Nov, a parent-eyes review): "2 parents on Pando have shared
+     Cheaper swim lessons, a tip" read as a record title with its type stuck on. The kind still leads (4 Sep). */
+  if (candidate.kind === "tip" && !candidate.care) {
+    const where = candidate.area ? ` in ${areaWords(candidate.area)}` : "";
+    return `${who} a tip${where}: ${lowerFirst(candidate.name)}${when}.`;
+  }
   return `${who} ${candidate.name}${placeOf(candidate)}${when}.`;
 }
 

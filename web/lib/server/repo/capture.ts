@@ -130,17 +130,19 @@ export async function openCaptureStep(phone: string): Promise<CaptureStep | null
 export async function startCapture(
   personId: string,
   isTest = false,
+  /** What the starting sentence already answered — its kind (13 Nov). */
+  known: Record<string, unknown> = {},
 ): Promise<OpenCapture | null> {
   const existing = await openCapture(personId);
   if (existing) return existing;
 
-  const first = nextStep({});
+  const first = nextStep(known);
   if (!first) return null;
 
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      insert into sms_captures (person_id, step, is_test)
-      values (${personId}::uuid, ${first},
+      insert into sms_captures (person_id, step, answers, is_test)
+      values (${personId}::uuid, ${first}, ${JSON.stringify(known)}::jsonb,
               ${isTest} or coalesce((select is_test from people where id = ${personId}::uuid), false))
       on conflict do nothing
       returning id::text as capture_id
@@ -149,7 +151,7 @@ export async function startCapture(
   });
 
   if (!result.persisted || !result.data) return null;
-  return { capture_id: result.data, person_id: personId, step: first, answers: {} };
+  return { capture_id: result.data, person_id: personId, step: first, answers: known };
 }
 
 /**

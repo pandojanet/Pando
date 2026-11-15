@@ -3,6 +3,7 @@ import { MODELS } from "@/lib/models";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { tracedFetch, span } from "@/lib/server/trace";
+import { memoryLine, type MemoryAsk } from "@/lib/conversation-memory";
 import {
   INTENTS,
   applyThreshold,
@@ -246,6 +247,12 @@ async function classifyIntentUntraced(input: {
    */
   earlier?: Array<{ question: string; answer: string }>;
   /**
+   * What the exchanges before `earlier` were about (12 Nov,
+   * `lib/conversation-memory.ts`): topics, areas and places from fixed lists,
+   * never the parent's words. Sent to the same model; never logged.
+   */
+  memory?: readonly MemoryAsk[];
+  /**
    * What Pando's last message asked them, when it is still waiting for the
    * answer — "How old are your kids?" (26 Oct). A reply that answers it reads
    * `answer_blast`; a new request does not, whatever number is in it.
@@ -294,6 +301,7 @@ async function classifyIntentUntraced(input: {
         {
           role: "user",
           content: [
+            memoryLine(input.memory),
             input.earlier && input.earlier.length > 0
               ? `Earlier questions in this conversation, oldest first, each with the opening of the service's answer:\n${input.earlier
                   .map((x, i) => `${i + 1}. Q: ${x.question.slice(0, 300)}\n   A: ${x.answer.slice(0, 400)}`)

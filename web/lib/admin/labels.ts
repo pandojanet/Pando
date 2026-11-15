@@ -727,6 +727,21 @@ export const RELATIONSHIP: Record<string, string> = {
  * Deep dives and introductions, as an admin reads them (22 Oct): the words and
  * the badge tone in one place, as every other stored id on this surface.
  */
+/** A digest edition, one group's search for one Saturday (12 Nov, `/admin/digests`). */
+export const DIGEST_EDITION_STATUS: Record<string, { label: string; tone: "green" | "gold" | "neutral" | "muted" | "red" }> = {
+  ready: { label: "Found", tone: "green" },
+  empty: { label: "Nothing found", tone: "muted" },
+  failed: { label: "Search failed", tone: "red" },
+};
+
+/** What a digest item is, as the agent filed it. */
+export const DIGEST_ITEM_KIND: Record<string, string> = {
+  event: "Event",
+  camp: "Camp",
+  class: "Class",
+  opportunity: "Opportunity",
+};
+
 export const DEEP_DIVE_STATUS: Record<string, { label: string; tone: "green" | "gold" | "neutral" | "muted" }> = {
   offered: { label: "Offered", tone: "neutral" },
   awaiting_topic: { label: "Asked what about", tone: "gold" },
@@ -822,6 +837,8 @@ export const MESSAGE_LABEL: Record<string, string> = {
   answer_deep_offer: "Answer, with a deep-dive offer",
   answer_intro_offer: "Answer, with an introduction offer",
   opener: "Answered a hello",
+  who_reply: "Said who Pando is",
+  deep_dive_nothing: "Said what DEEP is",
   // Onboarding and conversation.
   clarify_child_age: "Asked the child's age",
   clarify_neighborhood: "Asked where they live",
@@ -829,6 +846,14 @@ export const MESSAGE_LABEL: Record<string, string> = {
   clarify_participation: "Asked how often they may be asked",
   clarification_saved: "Thanked for an answer",
   weekly_digest: "Sent the weekly digest",
+  digest_pick_set: "Set or took off reminders for the digest items they picked",
+  digest_details: "Sent details of the digest items they picked",
+  digest_pick_range: "Told them which numbers the digest had",
+  digest_pick_off: "Told them their digest is off, so no reminder",
+  digest_reminder_set: "Answered their reminder yes or no",
+  digest_reminder: "Reminded them of a picked event, on the day",
+  digest_feedback_ask: "Asked how a picked event was",
+  digest_feedback_thanks: "Thanked them for their feedback on an event",
   digest_on: "Turned the weekly digest on",
   digest_off: "Turned the weekly digest off",
   voice_confirm: "Read back a voice note",

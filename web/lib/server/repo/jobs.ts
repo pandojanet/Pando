@@ -21,13 +21,18 @@ import {
 } from "@/lib/sms-templates";
 import { sendSms } from "@/lib/server/sms";
 import { MARKETS } from "@/lib/markets";
-import { ageOn, composeDigest, digestDue, localParts, pickForPerson } from "@/lib/digest";
+import { editionVariable } from "@/lib/sms-rich";
+import { expireMemory } from "@/lib/server/repo/conversation-memory";
+import { feedbackAskCard, feedbackAskSms, reminderSms } from "@/lib/digest-followup";
+import { claimFollowup, dueFeedback, dueReminders, releaseFollowup } from "@/lib/server/repo/digest-followup";
+import { ageOn, composeDigest, digestDue, localParts, pickForPerson, poolForFamily } from "@/lib/digest";
 import { cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
 import {
   claimDigestSend,
   digestAudience,
   digestEdition,
   drawnCohorts,
+  readyEditionsOfDay,
   hasDigestRecipients,
   releaseDigestSend,
 } from "@/lib/server/repo/digest";
@@ -70,13 +75,29 @@ async function runJobUntraced(name: JobName): Promise<RunOutcome> {
     const history = (await db.execute(sql`
       select
         max(started_at)                                          as last_started,
-        bool_or(finished_at is null)                             as in_flight
+        bool_or(finished_at is null)                             as in_flight,
+        bool_or(finished_at is null and started_at < now() - make_interval(mins => ${spec.take_over_after_minutes ?? 0}))
+                                                                 as stale
       from job_runs where job = ${name}
     `)) as unknown as Array<Record<string, unknown>>;
 
+    let inFlight = history[0]?.in_flight === true;
+    /* A job allowed to take over (the digest sweeps): a run open past its limit
+       was a crash or a deploy, not a run still working — closed, counted as an
+       error, and this one goes ahead (review, 11 Nov). */
+    if (inFlight && spec.take_over_after_minutes && history[0]?.stale === true) {
+      await db.execute(sql`
+        update job_runs set finished_at = now(), outcome = 'error', note = 'taken_over'
+         where job = ${name} and finished_at is null
+           and started_at < now() - make_interval(mins => ${spec.take_over_after_minutes})
+      `);
+      console.warn("[job] took over a run left open", { job: name });
+      inFlight = false;
+    }
+
     const verdict = isDue(spec, {
       last_started_at: (history[0]?.last_started as string | null) ?? null,
-      in_flight: history[0]?.in_flight === true,
+      in_flight: inFlight,
     });
     if (!verdict.due) return { claimed: false as const, verdict };
 
@@ -158,7 +179,57 @@ const BODIES: Record<JobName, () => Promise<JobResult>> = {
   thanks_delivery,
   retry_failed,
   weekly_digest,
+  expire_memory,
+  digest_reminders: () => runDigestReminders(new Date()),
+  digest_feedback: () => runDigestFeedback(new Date()),
 };
+
+/**
+ * The digest's follow-ups (11 Nov, lib/digest-followup.ts), with the clock
+ * passed in so the lab can walk an event's day. Claimed before each send, as
+ * the digest is; a send that may pass later gives its claim back.
+ */
+async function runDigestFollowups(now: Date, kind: "remind" | "feedback"): Promise<JobResult> {
+  let processed = 0;
+  let skipped = 0;
+  let failed = 0;
+  /* Each row carries its own moment (set on the market's clock when it was picked), so the sweep only asks what is due now. */
+  const due = kind === "remind" ? await dueReminders(now) : await dueFeedback(now);
+  /* One feedback question per family a run, so a tap answers the one they were asked (review, 11 Nov). */
+  const asked = new Set<string>();
+  for (const item of due) {
+    if (kind === "feedback" && asked.has(item.personId)) continue;
+    if (!(await claimFollowup(kind, item.interestId, now))) continue;
+    asked.add(item.personId);
+    const result = await sendSms({
+      to: item.phone,
+      body: kind === "remind" ? reminderSms(item) : feedbackAskSms(item),
+      category: "digest",
+      personId: item.personId,
+      template: kind === "remind" ? "digest_reminder" : "digest_feedback_ask",
+      templateVersion: SMS_TEMPLATE_VERSION,
+      rich: kind === "feedback" ? { kind: "digest_feedback", card: feedbackAskCard(item) } : undefined,
+    });
+    if (result.sent) processed++;
+    else if (result.reason === "opted_out") skipped++;
+    else {
+      failed++;
+      await releaseFollowup(kind, item.interestId);
+    }
+  }
+  console.info("[digest] followups", { kind, processed, skipped, failed });
+  return { outcome: outcomeFor({ processed, skipped, failed }), processed, skipped, failed };
+}
+
+export const runDigestReminders = (now: Date) => runDigestFollowups(now, "remind");
+export const runDigestFeedback = (now: Date) => runDigestFollowups(now, "feedback");
+
+/** 12 Nov: the conversation summaries nobody has added to for 90 days (`lib/conversation-memory.ts`). */
+async function expire_memory(): Promise<JobResult> {
+  const deleted = await expireMemory();
+  if (deleted === null) return { outcome: "error", processed: 0, skipped: 0, failed: 1 };
+  return { outcome: outcomeFor({ processed: deleted, skipped: 0, failed: 0 }), processed: deleted, skipped: 0, failed: 0 };
+}
 
 /**
  * The weekly digest's body (3 Nov). Per market: not Saturday morning to
@@ -225,11 +296,24 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
     }
     /* Sizes only (invariant 7). */
     console.info("[digest] groups", { market: market.id, test: isTest, families: families.length, groups: plan.length, sizes: plan.map((g) => g.members.length), kept: drawn.length > 0 });
+    /* Every group's edition first, then the sends (11 Nov): a family whose
+       children span more than one group's ages is also sent what the other
+       groups' editions made for those ages (`poolForFamily`). The cost, named
+       by the review: the first text waits for every group's search (up to
+       COHORT_MAX x 3 minutes in the worst case, early in an 11-hour window),
+       and a family is sent from the editions ready at that hour — one that
+       turns ready later is not sent again. Editions are stored as they are
+       found, so a run cut off mid-way loses no search. */
+    const editions: Array<{ unsent: number[]; profile: CohortProfile; edition: NonNullable<Awaited<ReturnType<typeof digestEdition>>> }> = [];
     for (const { members: group, profile } of plan) {
       const unsent = group.filter((i) => !audience[i].sent);
       if (unsent.length === 0) continue;
       const edition = await digestEdition(market.id, editionDate, profile, isTest);
-      if (!edition) continue;
+      if (edition) editions.push({ unsent, profile, edition });
+    }
+    const ofDay = editions.length ? await readyEditionsOfDay(market.id, editionDate, isTest) : [];
+    for (const { unsent, profile, edition } of editions) {
+      const others = ofDay.filter((e) => e.key !== profile.key).map((e) => e.items);
       /**
        * One search per group; what each family is sent is the group's items
        * that suit their own children (review, 4 Nov). The same text for every
@@ -239,11 +323,15 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
        */
       for (const i of unsent) {
         const recipient = audience[i];
-        const { body, included } = composeDigest(pickForPerson(edition.items, families[i].ages));
+        const { body, card, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, families[i].ages), families[i].ages));
         /* Claimed before it is sent, so a write that fails afterwards can never
            mean a second copy next hour (review, 3 Nov). Nothing that suits them is
-           a claim with no items: the hourly runs stop weighing them. */
-        if (!(await claimDigestSend(edition.id, recipient.person_id, included))) continue;
+           a claim with no items: the hourly runs stop weighing them. The claim
+           keeps what was sent, in its numbers' order (11 Nov). */
+        /* The ids in their numbers' order; with any missing the text is not read as picks at all, never shifted (review, 11 Nov). */
+        const ids = sentItems.map((x) => x.id);
+        const sentIds = ids.every((id): id is string => typeof id === "string") ? ids : [];
+        if (!(await claimDigestSend(edition.id, recipient.person_id, included, sentIds))) continue;
         if (included === 0) {
           skipped++;
           continue;
@@ -255,6 +343,9 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
           personId: recipient.person_id,
           template: "weekly_digest",
           templateVersion: SMS_TEMPLATE_VERSION,
+          /* On RCS, buttons "1" to "4" inside the card (11 Nov, `digest_pick`); off until its template's SID is set. */
+          /* `{{3}}`: the edition, in each button's id — a tap on an old card picks from its own week (11 Nov). */
+          rich: { kind: "digest_pick", card, edition: editionVariable(editionDate) },
         });
         if (result.sent) {
           processed++;

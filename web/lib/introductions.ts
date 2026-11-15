@@ -134,14 +134,22 @@ function gsmLetter(c: string): string {
 export function introOffer(place: string, others: number): string {
   /* "Used", which fits a doctor and a product as well as a place; and not "near
      you" - nothing checks where they live (review, 21 Oct). */
-  const who = others === 1 ? "a parent Pando knows has" : others === 2 ? "a couple of parents Pando knows have" : `${others} parents Pando knows have`;
+  /* "A parent Pando knows" read as a rolodex (13 Nov, a parent-eyes review); and say that nothing is shared
+     without their yes, which is the rule the request follows anyway. */
+  const who = others === 1 ? "a local parent has" : others === 2 ? "a couple of local parents have" : `${others} local parents have`;
   const name = gsmSafe(place);
-  return `By the way, ${who} used ${name || "it"}. Want an introduction? Reply INTRO and someone at Pando will ask them first.`;
+  return `By the way, ${who} used ${name || "it"}. Want an introduction? Reply INTRO and someone at Pando will ask them first - nothing is shared unless they say yes.`;
 }
 
 /** The offer as an RCS card says it, under an "Intro" button (29 Oct): only "Reply INTRO and" goes. */
 export function introOfferCard(place: string, others: number): string {
   return introOffer(place, others).replace("Reply INTRO and someone", "Someone");
+}
+
+/** INTRO taken, naming the record (13 Nov, a parent-eyes review: "ask a parent who's used it" — used what?). */
+export function introRequested(name: string | null): string {
+  const what = name ? gsmSafe(name) : "";
+  return what ? `Thanks. Someone at Pando will ask a parent who's used ${what}, and put you two in touch only if they say yes.` : INTRO_REQUESTED;
 }
 
 export const INTRO_REQUESTED =

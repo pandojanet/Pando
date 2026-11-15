@@ -23,6 +23,7 @@ import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { RELEVANCE_STEP } from "@/lib/matching";
 import { affinityLabel, matchReason, matchReasonValue } from "@/lib/admin/labels";
 import type { MatchCandidateRow } from "@/lib/admin/types";
+import { NumberField } from "@/components/admin/kit";
 
 /**
  * Estimate 6.7 — the matching harness.
@@ -128,19 +129,20 @@ export default function MatchingPage() {
           <div>
             <label
               htmlFor="wanted"
-              className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+              className="block text-[12.5px] font-medium text-muted"
             >
               Parents wanted
             </label>
-            <input
-              id="wanted"
-              type="number"
-              min={1}
-              max={20}
-              className={`${controlClass} mt-1 w-28`}
-              value={wanted}
-              onChange={(e) => setWanted(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-            />
+            <span className="mt-1 flex w-36">
+              <NumberField
+                id="wanted"
+                min={1}
+                max={20}
+                className={controlClass}
+                value={wanted}
+                onChange={(v) => setWanted(Math.min(20, Math.max(1, Number(v) || 1)))}
+              />
+            </span>
             {/* On the page, not in the header's tooltip: the number only means
                 something if you know what a real Ask would want. */}
           </div>
@@ -170,9 +172,7 @@ export default function MatchingPage() {
              */}
             {data.asker.relevance === 0 && (
               <p className="mt-1 text-gold-ink">
-                They haven&apos;t answered any of the context questions yet, so every
-                score below is shared connections alone — the zero context is a gap
-                in their own profile, not a judgement on the candidates.
+                {/* copy: state */}They haven&apos;t answered any of the context questions yet.
               </p>
             )}
           </div>
@@ -460,9 +460,9 @@ function WeightsCard({
       setNote(
         pending === 1
           ? stepChanged
-            ? `Saved. Similar context is now worth ${shownStep} a dimension — the next ranking uses it.`
-            : `Saved. ${affinityLabel(changed[0].affinity_type)} is now ${shown(changed[0])} — the next ranking uses it.`
-          : `Saved ${pending} changes. The next ranking uses them.`,
+            ? /* copy: state */ `Saved. Similar context is now worth ${shownStep} a dimension.`
+            : `Saved. ${affinityLabel(changed[0].affinity_type)} is now ${shown(changed[0])}.`
+          : `Saved ${pending} changes.`,
       );
       setDraft({});
       setStepDraft(null);
@@ -535,16 +535,14 @@ function WeightsCard({
           Any kind of similar context
         </label>
         {stepEditable ? (
-          <input
+          <NumberField
             id="relevance-step"
-            type="number"
             min={0}
             max={5}
             /* 0.05, matching the route and `numeric(4,2)`: a finer value would
                be **rounded** by Postgres rather than refused, and the page
                would come back showing a number nobody typed. */
             step={0.05}
-            inputMode="decimal"
             disabled={busy}
             aria-invalid={stepBad}
             aria-describedby="step-scale"
@@ -552,7 +550,7 @@ function WeightsCard({
               stepBad ? "ring-1 ring-alert-line" : ""
             }`}
             value={shownStep}
-            onChange={(e) => setStepDraft(e.target.value)}
+            onChange={setStepDraft}
             onKeyDown={(e) => {
               if (e.key === "Enter" && pending > 0 && !blocked) void save();
             }}
@@ -659,13 +657,11 @@ function WeightsCard({
                       >
                         {affinityLabel(w.affinity_type)}
                       </label>
-                      <input
+                      <NumberField
                         id={`weight-${w.affinity_type}`}
-                        type="number"
                         min={1}
                         max={20}
                         step={1}
-                        inputMode="numeric"
                         disabled={busy}
                         aria-invalid={!ok}
                         aria-describedby="weight-scale"
@@ -679,9 +675,7 @@ function WeightsCard({
                           ok ? "" : "ring-1 ring-alert-line"
                         }`}
                         value={value}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...d, [w.affinity_type]: e.target.value }))
-                        }
+                        onChange={(v) => setDraft((d) => ({ ...d, [w.affinity_type]: v }))}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && pending > 0 && !blocked) void save();
                         }}
@@ -743,7 +737,7 @@ function WeightsCard({
               id="weight-scale"
               className={`text-[12.5px] ${bad.length > 0 ? "text-alert" : "text-muted"}`}
             >
-              A weight is a whole number from 1 to 20.
+              {/* copy: kept — the field's own rule: aria-describedby, and it turns red when broken */}A weight is a whole number from 1 to 20.
             </span>
             {/* The context step's own rule, here rather than in its row: in a
                 column the third cell is ~5rem and this wrapped to three lines
@@ -759,7 +753,7 @@ function WeightsCard({
               className={`text-[12.5px] ${stepBad ? "text-alert" : "text-muted"}`}
             >
               {stepEditable
-                ? `Similar context: 0 to 5 per dimension, in steps of 0.05.`
+                ? /* copy: kept — the field's own rule, like the weight's */ `Similar context: 0 to 5 per dimension, in steps of 0.05.`
                 : "Similar context is set in code."}
             </span>
             {note && <ResultNote inline>{note}</ResultNote>}
@@ -837,7 +831,8 @@ const WEIGHT_GRID =
      pair: unconstrained, the 1fr label column stretched to the full content
      width and put ~500px of empty paper between "Same school" and the 5 that
      belongs to it at 1440px. */
-  "grid max-w-[30rem] grid-cols-[minmax(0,1fr)_4.5rem] items-center content-start gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,1fr)_4.5rem_minmax(2.5rem,5rem)]";
+  /* 8.5rem: the field is −, the number and + since 12 Nov, and at 4.5rem the two buttons left the number no room. */
+  "grid max-w-[34rem] grid-cols-[minmax(0,1fr)_8.5rem] items-center content-start gap-x-4 gap-y-2.5 md:grid-cols-[minmax(0,1fr)_8.5rem_minmax(2.5rem,5rem)]";
 
 /**
  * By the label a reader can see, not by the slug underneath it.
@@ -926,7 +921,7 @@ function shortfall(found: number, wanted: number): string {
 
 /** The flat-tail line — one string, for the whitespace reason above. */
 function tiedTail(count: number): string {
-  return `The last ${count} rows score exactly the same — their order is a tiebreaker, not a ranking.`;
+  return /* copy: state */ `The last ${count} rows score exactly the same.`;
 }
 
 /** 7.5 rather than 7.5000000001, and 7 rather than 7.0. */

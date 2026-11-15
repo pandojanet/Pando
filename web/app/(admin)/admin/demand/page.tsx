@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -22,6 +23,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter, SegmentedTabs } from "@/components/admin/kit";
 import {
@@ -185,16 +187,11 @@ export default function DemandPage() {
     <>
       {/* 27 Oct: this page reads `demand_signals`, which only the Seed Tool's
           "what are you looking for" writes. A question texted to Pando is an
-          `answers` row and lives on /admin/answers — said here, so an empty
-          queue is not read as nobody asking. */}
+          `answers` row and lives on /admin/answers — a link beside the title, so an
+          empty queue is not read as nobody asking (12 Nov: no sentence on the page). */}
       <PageHead
         title="What parents asked for"
-        intro={
-          <>
-            Questions parents left in the Seed Tool. Questions texted to Pando are
-            on <TextLink href="/admin/answers">Answers to send</TextLink>.
-          </>
-        }
+        right={<TextLink href="/admin/answers">Texted questions →</TextLink>}
       />
 
       {/* Banners above the filter — see `/admin/activities` for why: a wrapped
@@ -302,8 +299,8 @@ export default function DemandPage() {
             <div className="mb-2 rounded-xl border border-alert-line bg-alert-wash px-4 py-2.5">
               <p className="text-[13.5px] font-semibold text-alert">
                 {counts.allegation === 1
-                  ? "One parent made a claim about a named person."
-                  : `${counts.allegation} parents made claims about named people.`}
+                  ? /* copy: state */ "One parent made a claim about a named person."
+                  : /* copy: state */ `${counts.allegation} parents made claims about named people.`}
               </p>
             </div>
           )}
@@ -312,8 +309,8 @@ export default function DemandPage() {
             <div className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-4 py-2.5">
               <p className="text-[13.5px] font-semibold text-gold-ink">
                 {counts.high === 1
-                  ? "One parent asked about health, legal or safety."
-                  : `${counts.high} parents asked about health, legal or safety.`}
+                  ? /* copy: state */ "One parent asked about health, legal or safety."
+                  : /* copy: state */ `${counts.high} parents asked about health, legal or safety.`}
               </p>
             </div>
           )}
@@ -458,7 +455,7 @@ export default function DemandPage() {
                                 ? "What you did about it"
                                 : "Who or what could answer this"
                             }
-                            hint="Saved with your name. Never reaches the parent."
+                            hint={/* copy: kept — who sees the note, said before it is written */ "Saved with your name. Never reaches the parent."}
                           >
                             <input
                               className={inputClass}
@@ -466,7 +463,7 @@ export default function DemandPage() {
                               onChange={(e) => setNote(e.target.value.slice(0, 300))}
                             />
                           </Field>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className={cn(actionsClass, "mt-3")}>
                             <Button
                               tone="primary"
                               disabled={busy === row.id || note.trim().length < 3}
@@ -638,7 +635,7 @@ function PlacesCard({
             who finished — see `PlaceDemand` for why "or tried to" is not
             answerable here. */}
         <p className="text-[12.5px] text-muted">
-          Grouped by city, so a Pasadena district counts towards Pasadena.
+          {/* copy: kept — "the denominator, said once", above */}Grouped by city, so a Pasadena district counts towards Pasadena.
           Sign-ups are parents who finished a profile.
         </p>
 
@@ -897,10 +894,10 @@ function Tally({
 }
 
 
-/** The 11px uppercase label `Fact` uses, for a line that is not a `<dl>`. */
+/** The label `Fact` uses, for a line that is not a `<dl>`. */
 function SubLabel({ children }: { children: ReactNode }) {
   return (
-    <span className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+    <span className="text-[12.5px] font-medium text-muted">
       {children}
     </span>
   );

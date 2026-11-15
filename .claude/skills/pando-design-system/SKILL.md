@@ -183,8 +183,10 @@ components/admin/ui.tsx      PageHead · Card · Stat · Badge · Field
                                sentence or a table cell, no box)
                              TableWrap/Th/Td · Empty · NotConfigured · Loading
                              ResultNote · ErrorNote · Loading · Failed
-                             Disclosure (the **one** way a page hides a section)
-                             SegmentedFilter · SegmentedTabs · Toolbar
+                             Disclosure (the **one** way a page hides a section;
+                               `row` for one record in a long list — see below)
+components/admin/kit.tsx     Select (our own dropdown, open list included) ·
+                             SegmentedFilter · SegmentedTabs · Toolbar · Menu · Dialog
                              inputClass (fills its column) · controlClass (no width)
 components/admin/QuickFind.tsx     `/` from anywhere: find a parent, open their page
 components/admin/Reveal.tsx        the first thirty rows, then a button saying how many
@@ -199,6 +201,42 @@ components/admin/PersonPicker.tsx  find one parent among hundreds (a real combob
 because the same thing had been hand-written on three to nine pages, and the
 cost each time was not the duplication — it was that the copies drifted, so one
 control looked like three different things on pages an admin sees minutes apart.
+
+### Every control is ours — never the browser's default
+
+**The rule (the developer, 12 Nov, twice):** *"everything must be custom, not
+default"*. No browser-default control on any Pando surface, the admin included:
+no native `<select>`, checkbox, radio, `<input type="date">`/`time`, file
+picker, `title` tooltip or OS scrollbar where it shows. Each one reads as a grey
+foreign object on warm paper and cannot carry what the page needs (a count, a
+status, a calendar of marked days). Before adding an input, reach for the
+primitive in `components/admin/kit.tsx` / `ui.tsx` (admin) or `components/ui/*`
+(parent flow); if there is none, **build it there once** — never inline at the
+call site. Keyboard and screen-reader behaviour must match the native control
+or better (that was the native control's whole argument, 13 Aug). Any library
+or skill may be used to get there; the admin leans on the platform (Popover
+API, `<dialog>`) and a library is weighed by its bundle on every admin page.
+`test:digest-followup` fails on a native `<select>` or checkbox on the admin.
+
+### Choosing from a list — `Select`, never the platform's
+
+**No native `<select>` on the admin (12 Nov, the developer: "we were meant to
+have our own selectors for everything").** The 13 Aug kit kept the platform's
+open list for its typeahead and the phone's wheel; it read as a grey system
+menu on warm paper and could carry one line of text per option. `Select` is now
+ours end to end — an anchored panel on the same Popover API `Menu` uses (top
+layer, light dismiss, still no library), the keyboard kept (arrows, Home/End,
+Enter/Space, Escape, typeahead on first letters) and the value announced with
+the name. Options can carry a second line (`detail`) and a pill (`tag`): a week
+reads "Sat, Nov 21" over "33 families · 7 groups · 2 searches failed", not one
+dense string. Rows are 44px. The parent flow is separate: `OptionPicker` there.
+
+**A picker of editions (Saturdays, months) is a bar, not a lone dropdown:**
+‹ earlier · the `Select` · later › · "Latest" when not on it, real and test
+kept apart with a `SegmentedFilter` rather than a "hide" checkbox, the choice in
+the URL so a reload or a shared link opens the same one, and the bar sticky
+under the page head so the reader always knows which one they are reading.
+`/admin/digests` is the example.
 
 ### Table or cards?
 
@@ -246,6 +284,32 @@ control looked like three different things on pages an admin sees minutes apart.
   stacked over their labels, and cost 347px of card.
 - **A wash marks the exception, never the rule.** A tint on every row is a
   page-wide tint, and then it says nothing.
+- **A list of more than about six records is rows that open, not stacked
+  cards.** `Disclosure row`: the title and the row's numbers and badges on one
+  line (`meta`), one row open by default, a "needs a look" link able to open the
+  row it names (`pinnedOpen`). Seven full cards with a table each was thousands
+  of pixels before the reader knew which group mattered (`/admin/digests`, 12 Nov).
+- **Outcomes in a sentence leave zero out** ("Reached 24 families · 3 reminders
+  set · 2 loved it"); a column still shows its 0. Five numbers with three zeros
+  in one hint line read as noise.
+- **Compare, don't repeat.** Near-identical things (the texts families got) are
+  shown as what they share and what differs — the differences bold, the shared
+  muted, the reason named when the data has it ("from teens · Pasadena") — and
+  the full thing opens one at a time. Four 500px bubbles told nobody what was
+  different.
+- **No table on a phone where the numbers matter.** A table scrolls inside
+  itself, and the columns pushed off screen were exactly the ones that mattered;
+  a list of short blocks keeps every number under its title. **Since 12 Nov
+  `TableWrap` does this itself** below 46rem of its own container (a phone, or
+  a desktop window whose sidebar leaves it too little): each row a block, the
+  first cell its title, every other cell beside its column's name — so write a
+  normal table with `Th` headers and it reads right at any width. A row that
+  opens a record puts `rowLinkClass` on its first cell's link.
+- **Borrowed from property-workflows (12 Nov), colours untouched:** every
+  click answers (a pressed `Button` gives a little); loading shows the shape of
+  what is coming (`Loading` skeleton rows), never a lone word; no
+  `outline-none` without a visible replacement; numbers tabular; no `truncate`
+  where the words could fit; no hex or rgb outside the tokens (tested).
 - **An empty value is an em dash**, so a gap reads as "they skipped this" rather
   than as a layout bug — unless the absence is itself the point, in which case
   say it ("None recorded").
@@ -262,15 +326,48 @@ control looked like three different things on pages an admin sees minutes apart.
   above them.
 - **The admin explains nothing on the page — client's call, 7 Sep.** She asked
   for the explanation blocks off *every* page and they are gone; the component
-  went with them, so there is nothing to reach for. What is left to carry a fact
-  is the one-line `PageHead` intro, `RecordGroup` for something true of a whole
-  run of records, and a `Hint` **only** where the sentence says something its
-  label does not. A `title` attribute is still never an explanation: invisible
+  went with them, so there is nothing to reach for. **Since 12 Nov no intro under
+  the title either** (the developer, of the digests page's one line: *"the hook
+  should have fired right here"*), and no `body` on an empty state — the title
+  says it. What is left to carry a fact is `RecordGroup` for something true of a
+  whole run of records, and a `Hint` **only** where the sentence says something
+  its label does not. A `title` attribute is still never an explanation: invisible
   until hovered, unreachable on a touch device, unfindable by anyone who does not
   already suspect there is something to find.
+  **Enforced since 12 Nov** by `.claude/hooks/no-explainers.mjs`: an edit that
+  adds a sentence (seven words or more) is refused — in the markup, in a prop
+  (`intro=`, `body=`, `hint=`, `description=`) or in a string an expression
+  renders (`{saved ? "Saved. The next ranking uses it." : …}`) — and so is a new
+  `Hint` or a DOM `title=`. Labels, a component's `title`, placeholders and
+  aria-* are not read. The data's own state or an action's result (*"Nothing
+  found for this group…"*, *"Saved."*) is marked `{/* copy: state */}` right
+  before it (in a string: `/* copy: state */ "…"`); a warning before an action
+  (who sees a note, that opening one is audited, what a delete removes) is
+  `copy: kept — <reason>`. `node .claude/hooks/no-explainers.mjs --scan
+  "web/app/(admin)" web/components/admin` lists what is there (0 on 12 Nov).
   ⚠ The cost is real and named: `/admin/conversations` no longer says anywhere
   that message bodies are not stored, so a reader can conclude the page is
-  broken. Adding it back means one clause in that page's intro, not an explainer.
+  broken.
+- **A dense list, not boxes in boxes — 12 Nov** (the developer: *"it looks
+  wooden — improve it the way the leading sites do"*; Linear's refresh: keep the
+  density, cut the separators). `/admin/digests` is the reference: **one surface
+  per level** — the list is one card, a row opens into an inset panel on
+  `bg-paper/50` with hairline rows, never a bordered list inside a bordered row;
+  **hierarchy by weight and colour, never capitals with tracking** (sentence-case
+  section heads at 13.5–15px semibold, a muted count beside them); **numbers in
+  `tabular-nums`**, a week's figures as one strip of cells divided by hairlines
+  (`gap-px` on a `bg-bark` grid), a zero or "—" dimmed; **columns a reader can
+  scan** — a quiet header row, figures right-aligned, a small bar for a share
+  ("3/6" and its bar); **a leading icon tile** for what kind of thing a row is;
+  external links as a muted host with ↗, not an underlined URL; **chrome
+  recedes** — a week navigator is one joined control (`Select bare`,
+  `Calendar bare`, step buttons) and a two-way filter is `SegmentedFilter track`.
+  **Across the admin since the same evening:** no `uppercase` anywhere (a
+  `Card` title is a 14px semibold heading; labels 12.5px medium muted); figures
+  are `Stat` cells in a `StatStrip` (`inset` inside a card), never bordered
+  tiles; a row of buttons is `actionsClass`, so buttons that wrap are one width,
+  and every `Button` tone has a 1px border so one label is one size.
+  `test:digest-followup` fails on any of the four.
 - **Never append a conflicting width utility.** `` `${inputClass} w-auto` `` keeps
   `w-full`: two utilities for one property in one layer are resolved by
   Tailwind's output order, not by the string. Use `controlClass` for a toolbar

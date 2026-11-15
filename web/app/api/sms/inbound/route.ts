@@ -87,7 +87,7 @@ export async function POST(request: Request) {
    */
   after(async () => {
     try {
-      await handleInboundMessage({ from, body, channel, media, tap: Boolean(params.ButtonPayload) });
+      await handleInboundMessage({ from, body, channel, media, tap: Boolean(params.ButtonPayload), tapPayload: params.ButtonPayload || undefined });
     } catch (err) {
       console.error("[sms:inbound] pipeline failed", {
         error: err instanceof Error ? err.name : "unknown",

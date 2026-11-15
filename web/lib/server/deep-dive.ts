@@ -12,6 +12,7 @@ import {
   DEEP_ASK_FOOTER,
   DEEP_ASK_FOOTER_CARD,
   DEEP_DIVE_ASK_TOPIC,
+  DEEP_DIVE_NOTHING,
   DEEP_DIVE_BUSY,
   DEEP_DIVE_CANCELLED,
   DEEP_DIVE_DEEP_WORD_DAYS,
@@ -798,6 +799,8 @@ export async function deepDiveStep(input: {
       ? { reply: deepDiveStarted(topic), template: "deep_dive_started", run: { id, question: topic } }
       : { reply: DEEP_DIVE_ASK_TOPIC, template: "deep_dive_topic", run: null };
   }
+  /* DEEP and nothing it could be about: say what it is, never answer the word as a question (13 Nov). */
+  if (deepWord) return { reply: DEEP_DIVE_NOTHING, template: "deep_dive_nothing", run: null };
   return null;
 }
 

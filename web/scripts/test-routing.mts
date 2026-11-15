@@ -346,9 +346,21 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
   ok(
     "a gas smell is urgent; a seizure history and a money worry about medication are not",
     reply("I think I smell gas in the kitchen") === URGENT &&
-      reply("he has had seizures before, is swimming safe?") === HIGH &&
-      reply("we can't afford his asthma medication, any loans?") === HIGH,
+      reply("he has had seizures before, is swimming safe?") !== URGENT &&
+      reply("we can't afford his asthma medication, any loans?") !== MONEY,
   );
+  /* 13 Nov, a parent-eyes review: a fever was sent 988 and a legal aid number. */
+  const MEDICAL = reply("my son has had a fever for 3 days, what should I do?");
+  const LEGAL = reply("how do I get a custody lawyer?");
+  ok("a child's health gets the pediatrician and 911, never 988 or the legal line",
+    /pediatrician/.test(MEDICAL) && MEDICAL.includes("911") && !/988|1-800-433-6251|211/.test(MEDICAL) && /can't give medical advice/.test(MEDICAL), MEDICAL);
+  ok("a legal question gets the legal line and 911, never 988 or a pediatrician",
+    LEGAL.includes("1-800-433-6251") && LEGAL.includes("911") && !/988|pediatrician/.test(LEGAL), LEGAL);
+  ok("words of risk keep the general reply, 988 in it",
+    reply("my partner hit me, is it safe to stay?") === HIGH && reply("my kid is sick and I'm scared he will hurt himself") === HIGH);
+  for (const [name, text] of [["the health reply", MEDICAL], ["the legal reply", LEGAL]] as const) {
+    ok(`${name} is GSM-7 and asks nothing back`, seg.planSegments(text).encoding === "gsm7" && !text.includes("?"), text);
+  }
   ok(
     "another market's lines replace the pilot's, word for word otherwise",
     r.highStakesReply({ ...crisis, legalHelp: { name: "X", phone: "1-800-000-0000" } }) === HIGH.replace("1-800-433-6251", "1-800-000-0000")
@@ -419,9 +431,10 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     ok("the steps run in their fixed order: keywords, who it is, a voice note or picture and its read-back (3 Nov), settings, capture, an Ask, a ping, a clarification, an open exchange, the answer",
       at.every((i) => i > 0) && at.every((i, n) => n === 0 || i > at[n - 1]), order.filter((_, n) => at[n] <= 0).join(", "));
     /* The keyword step ends it in a block since 4 Nov: media sent with a keyword is deleted first.
-       Seven since 6 Nov: an Ask declined in words ends it at the attach step. */
+       Seven since 6 Nov: an Ask declined in words ends it at the attach step.
+       Eight since 11 Nov: a reply to the digest (a pick, a reminder yes/no, a feedback button). */
     ok("a step that answered ends the turn",
-      (main.match(/=== HANDLED\) return;/g) ?? []).length === 7 &&
+      (main.match(/=== HANDLED\) return;/g) ?? []).length === 8 &&
         /keywordStep\(\{ from, body, keyword \}\)\) === HANDLED\) \{[\s\S]{0,200}?return;\s+\}/.test(main));
   }
   /* 26 Oct, the SMS lab: a question after STOP went through the whole pipeline. */
@@ -479,6 +492,8 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
     src.includes("rank: mentionsName(body, share.name) ? -1 : sentJustNow(share.name) ? 1000 + i : i,") &&
       src.includes("notes: sentJustNow(share.name) ? undefined : {"));
   ok("beside a question about one place, it is left out", src.includes("!(namesAPlace && sentJustNow(share.name))"));
+  ok("'already sent' is judged by what the parent wrote, not the rewrite that names the record (13 Nov)",
+    src.includes("!mentionsName(input.said ?? body, name)"));
   ok("no deep dive offered after a question about one place", src.includes("!namesAPlace &&\n      deepDiveWorthOffering"));
   ok("a follow-up carries the last answer, what they said and the heard line",
     src.includes("lastAnswer: rewritten && exchange && !exchange.held ? exchange.answer : null,") &&
@@ -494,9 +509,19 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
   ok("an Ask reply is split sentence by sentence as well as line by line (6 Nov)",
     src.includes(".flatMap((l) => l.split(/(?<=[?!.])\\s+(?=[A-Za-z])/))"));
   ok("a recommendation offered in words starts the questions at once, by the same helper ADD uses (6 Nov)",
-    src.includes(`if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id))) {`) &&
+    src.includes(`if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id, body))) {`) &&
       src.includes("if (isCaptureStart(body) && (await beginCapture(from, person.person_id))) return HANDLED;") &&
-      src.indexOf("await beginCapture(from, person.person_id))) {") < src.indexOf("const sharing ="));
+      src.indexOf("await beginCapture(from, person.person_id, body))) {") < src.indexOf("const sharing ="));
+  /* 13 Nov, a parent-eyes review: the piano teacher. */
+  ok("after a held health question, a request whose own rewrite carries nothing sensitive is its own question (13 Nov)",
+    src.includes('(exchange.held === "sensitive" && !!reading.standalone && classifyDemand(reading.standalone, null) === "ordinary")'));
+  ok("a capture question unanswered after being asked twice lets go, and the message is handled as itself (13 Nov)",
+    src.includes("if ((await repeatsOfLastOutbound(person.person_id, `capture_${capture.step}`)) >= 2) {") && src.includes('console.info("[sms:inbound] capture let go"'));
+  ok("on the kind and name questions a sentence's leading name is read for a person (13 Nov)",
+    src.includes('(capture?.step === "name" && capture.answers.kind !== "doctor") || capture?.step === "kind"') && src.includes("? leading(body)") && src.includes("looksLikePerson(text.split("));
+  ok("a held follow-up's reply is the kind of the question it follows (13 Nov)", src.includes("highStakesKind(input.heldAbout ? `${input.heldAbout} ${body}` : body)") && src.includes("...(exchange?.held === \"sensitive\" ? { heldAbout: exchange.question } : {}),"));
+  ok("the kind a sentence says is not asked again, and a person's name on the kind question goes to the careful form",
+    src.includes("const kind = kindIn(said);") && src.includes('|| capture?.step === "kind"'));
   ok("the heard line goes first only when the warm rewrite did not run, and only within the budget",
     src.includes("const heardLine = !voiced && input.heard && plan.draftText.length + input.heard.length + 1 <= SMS_BUDGET ? input.heard : null;"));
 }

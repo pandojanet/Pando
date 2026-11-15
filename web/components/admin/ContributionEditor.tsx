@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button, Field, inputClass } from "@/components/admin/ui";
-import { Select } from "@/components/admin/kit";
+import { Checkbox, Select } from "@/components/admin/kit";
 import type { ContributionRow } from "@/lib/admin/types";
 import type { CleanPatch } from "@/lib/admin/contribution-edit";
 import {
@@ -129,7 +129,7 @@ export function ContributionEditor({
     ages === null
       ? "Ages are whole numbers from 0 to 25, like 3, 6"
       : !isDoctor && paid && v.price_unit === ""
-        ? "A price needs what it is per"
+        ? /* copy: state */ "A price needs what it is per"
         : null;
 
   const patch: CleanPatch = {};
@@ -304,15 +304,14 @@ export function ContributionEditor({
               value={v.caveat}
               onChange={(e) => set("caveat", e.target.value)}
             />
-            <label className="mt-1.5 flex items-center gap-2 text-[13px] text-muted">
-              <input
-                type="checkbox"
-                checked={v.nothingToFlag}
-                disabled={v.caveat !== ""}
-                onChange={(e) => set("nothingToFlag", e.target.checked)}
-              />
+            <Checkbox
+              checked={v.nothingToFlag}
+              disabled={v.caveat !== ""}
+              onChange={(c) => set("nothingToFlag", c)}
+              className="mt-1.5 text-muted"
+            >
               They were asked, and had nothing to flag
-            </label>
+            </Checkbox>
           </Field>
         )}
         {isDoctor && (
@@ -441,14 +440,9 @@ export function ContributionEditor({
           />
         </Field>
         {isActivity && (
-          <label className="flex items-center gap-2 self-end text-[13px]">
-            <input
-              type="checkbox"
-              checked={v.follow_up}
-              onChange={(e) => set("follow_up", e.target.checked)}
-            />
+          <Checkbox checked={v.follow_up} onChange={(c) => set("follow_up", c)} className="self-end">
             Happy to be asked more about this one
-          </label>
+          </Checkbox>
         )}
       </div>
       {problem && <p className="mt-2 text-[12.5px] text-alert">{problem}</p>}

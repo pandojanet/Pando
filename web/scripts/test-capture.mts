@@ -401,5 +401,12 @@ console.log("\n=== segments ===");
 }
 
 
+/* 13 Nov, a parent-eyes review: "can I recommend a great piano teacher?" was asked what kind it was. */
+{
+  ok("a piano teacher is an activity, a museum a place, a dentist a doctor", c.kindIn("can I recommend a great piano teacher?") === "activity" && c.kindIn("the Kidspace museum is great") === "place" && c.kindIn("we love our dentist") === "doctor");
+  ok("two kinds or none ask the question", c.kindIn("a teacher at the museum") === null && c.kindIn("can I recommend something?") === null);
+  ok("the careful-form link stands on its own line", /\npando\.is\/share\n/.test(c.namedPersonRedirectSms()) && /\npando\.is\/share\n/.test(c.caregiverRedirectSms()));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

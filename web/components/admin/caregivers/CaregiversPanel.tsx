@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -19,8 +20,9 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { Dialog, Menu, MenuItem, MenuSeparator } from "@/components/admin/kit";
+import { Dialog, Menu, MenuItem, MenuSeparator, Select } from "@/components/admin/kit";
 import {
   Fact,
   FactGrid,
@@ -118,7 +120,7 @@ const CONSENT_MOVE: Partial<Record<ConsentStatus, { action: string; done: string
  * reason behind a hesitant "would you hire her again" from the private note.
  */
 const RESTRICTED_KIND: Record<RestrictedNoteRead["notes"][number]["kind"], string> = {
-  hesitation_reason: "Why the family hesitated to hire her again",
+  hesitation_reason: /* copy: kept — a heading for the note, given as data */ "Why the family hesitated to hire her again",
   private_note: "The family’s private note",
 };
 
@@ -139,7 +141,7 @@ const mergeProtected = (m: DuplicateCandidate["members"][number]): string | null
     : m.consent_status === "consented" || m.active || m.discoverable || m.introducible
       ? "she consented on this record"
       : m.consent_status === "declined" || m.consent_status === "revoked"
-        ? "her no is recorded on this record"
+        ? /* copy: state */ "her no is recorded on this record"
         : null;
 
 export function CaregiversPanel() {
@@ -386,7 +388,7 @@ export function CaregiversPanel() {
                         {row.has_restricted_notes && (
                           <Badge
                             tone="red"
-                            hint="Opening it is recorded against your name."
+                            hint={/* copy: kept — the audit warning before a restricted note opens */ "Opening it is recorded against your name."}
                           >
                             Private note
                           </Badge>
@@ -470,7 +472,7 @@ export function CaregiversPanel() {
                             onClick={() =>
                               void run(
                                 row.id,
-                                "Nomination set aside — it is no longer used.",
+                                /* copy: state */ "Nomination set aside — it is no longer used.",
                                 async () =>
                                   adminAction({
                                     action: "nomination.reject",
@@ -509,7 +511,7 @@ export function CaregiversPanel() {
                               onSelect={() =>
                                 void run(
                                   row.id,
-                                  "Nomination set aside — it is no longer used.",
+                                  /* copy: state */ "Nomination set aside — it is no longer used.",
                                   async () =>
                                     adminAction({
                                       action: "nomination.reject",
@@ -610,7 +612,7 @@ export function CaregiversPanel() {
                               <MenuSeparator />
                               <MenuItem
                                 disabled={busy === row.id}
-                                hint="Opening it is recorded against your name."
+                                hint={/* copy: kept — the audit warning before a restricted note opens */ "Opening it is recorded against your name."}
                                 onSelect={() => {
                                   setNoteFor(row.id);
                                   setNoteBody(null);
@@ -783,17 +785,13 @@ export function CaregiversPanel() {
                           <Field
                             label="How did they say yes?"
                           >
-                            <select
-                              className={inputClass}
+                            <Select
+                              label="How did they say yes?"
+                              className="w-full"
                               value={method}
-                              onChange={(e) => setMethod(e.target.value)}
-                            >
-                              {METHODS.map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.label}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={setMethod}
+                              options={METHODS.map((m) => ({ id: m.id, label: m.label }))}
+                            />
                           </Field>
                           <Field
                             label={
@@ -838,7 +836,7 @@ export function CaregiversPanel() {
                       <RecordDrawer title="Release the hold">
                         <Field
                           label="Why is this safe to release?"
-                          hint="Your name goes on this in the audit log."
+                          hint={/* copy: kept — the audit warning before a restricted note opens */ "Your name goes on this in the audit log."}
                         >
                           <input
                             className={inputClass}
@@ -846,7 +844,7 @@ export function CaregiversPanel() {
                             onChange={(e) => setReleaseNote(e.target.value.slice(0, 300))}
                           />
                         </Field>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className={cn(actionsClass, "mt-3")}>
                           <Button
                             tone="danger"
                             disabled={busy === row.id || releaseNote.trim().length < 3}
@@ -966,7 +964,7 @@ export function CaregiversPanel() {
                           </span>
                           {blockers.length > 0 && (
                             <span className="mt-0.5 block text-[12.5px] text-muted">
-                              Can’t keep this one: the other record would be
+                              {/* copy: kept — why the merge is refused */}Can’t keep this one: the other record would be
                               deleted, and {blockers[0]}.
                             </span>
                           )}
@@ -1024,7 +1022,7 @@ export function CaregiversPanel() {
           setNoteError(null);
         }}
         title="Restricted — this screen only"
-        description="Opening it is recorded against your name."
+        description={/* copy: kept — the audit warning before a restricted note opens */ "Opening it is recorded against your name."}
         footer={
           <Button
             tone="secondary"
@@ -1053,7 +1051,7 @@ export function CaregiversPanel() {
           <div className="space-y-4">
             {noteBody.notes.map((n, i) => (
               <section key={`${n.kind}-${i}`}>
-                <h3 className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                <h3 className="text-[12.5px] font-medium text-muted">
                   {RESTRICTED_KIND[n.kind]}
                 </h3>
                 <p className="mt-1 whitespace-pre-line text-[14px] leading-relaxed">

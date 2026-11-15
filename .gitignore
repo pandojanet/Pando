@@ -28,3 +28,6 @@ Thumbs.db
 
 # claude code — skills and launch config are shared, local settings are not
 .claude/settings.local.json
+
+# local SMS chat lab (not in git; see .chat-lab/README.md)
+.chat-lab/

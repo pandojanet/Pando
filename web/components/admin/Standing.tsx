@@ -15,7 +15,7 @@ import {
   Th,
   Toolbar,
 } from "@/components/admin/ui";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Checkbox, SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
 import { TIERS, type TierId } from "@/lib/tiers";
 import type { StandingRow } from "@/lib/admin/types";
@@ -118,14 +118,7 @@ export function Standing() {
             className={`${inputClass} w-[12rem]`}
           />
           {testCount > 0 && (
-            <label className="flex items-center gap-1.5 text-[13px] text-muted">
-              <input
-                type="checkbox"
-                checked={hideTest}
-                onChange={(e) => setHideTest(e.target.checked)}
-              />
-              Hide test ({testCount})
-            </label>
+            <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
           )}
         </Toolbar>
       </div>
@@ -285,7 +278,7 @@ function contributionSummary(row: StandingRow): string {
 function answering(row: StandingRow): string {
   if (row.asked_30 === 0) return "not asked";
   if (row.response_rate === null) {
-    return `${row.answered_30} of ${row.asked_30} — too few to judge`;
+    return /* copy: state */ `${row.answered_30} of ${row.asked_30} — too few to judge`;
   }
   return `${row.answered_30} of ${row.asked_30} · ${Math.round(row.response_rate * 100)}%`;
 }

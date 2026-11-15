@@ -20,6 +20,7 @@ import { sentence } from "@/lib/admin/labels";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { useAdminRows } from "@/lib/admin/client";
 import { DEEP_DIVE_STATUS } from "@/lib/admin/labels";
+import { Checkbox } from "@/components/admin/kit";
 
 /**
  * Deep dives (21 Oct) — the client's measure: how many parents say yes.
@@ -75,17 +76,13 @@ export default function DeepDivesPage() {
     <>
       <PageHead
         title="Deep dives"
-        intro="Offers, requests and the reports that went out. How many people say yes to an offer is the number to watch."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
       {testCount > 0 && (
         <Toolbar>
-          <label className="flex items-center gap-1.5 text-[13px] text-muted">
-            <input type="checkbox" checked={hideTest} onChange={(e) => setHideTest(e.target.checked)} />
-            Hide test ({testCount})
-          </label>
+          <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
         </Toolbar>
       )}
 
@@ -144,7 +141,7 @@ export default function DeepDivesPage() {
 
             {all.length === 0 ? (
               <Card>
-                <Empty title="No deep dives yet" body="They appear here the moment Pando offers one or a parent asks." />
+                <Empty title="No deep dives yet" />
               </Card>
             ) : (
               <Card title="Every offer and request">

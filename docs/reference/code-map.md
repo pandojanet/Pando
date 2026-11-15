@@ -146,7 +146,13 @@
 `erasePersonIn` in `web/lib/server/repo/parent-delete.ts` — 3 Nov. The one definition of erasing a person, inside the caller's transaction: the parent's DELETE keeps their recommendations, an admin's `person.reset` takes them and any place or caregiver nobody else has a word about. `profileErasedOnServer` / `joinAgainHref` in `web/lib/api-client.ts`: a device whose saved profile is gone on the server drops its copy. `test:reset`.
 
 `web/lib/digest-cohorts.ts` — 4 Nov. The digest's groups: `familyFeatures`, `likeness` (weighted Jaccard), `groupFamilies` (the number of groups from the families), `cohortProfile` (what each group's search is told), `joinDrawn` (a later sign-up joins the day's drawn group it is like; `drawnCohorts` in `repo/digest.ts` reads them), `stageWithAges`. Read by `runWeeklyDigest` (`repo/jobs.ts`).
-`web/lib/digest.ts` + `web/lib/server/digest-agent.ts` + `web/lib/server/repo/digest.ts` — 3 Nov. The weekly digest: `digestDue` (Saturday 9–20 on a market clock), `readAgentItems` (what of the agent's findings may be sent — a link to a site its search returned, dates in the window), `ageFits` / `pickForPerson`, `composeDigest`, `digestCommand` (DIGEST / DIGEST OFF); `findDigestItems` is the agent; `digestEdition` / `digestRecipients` / `recordDigestSend` / `setDigestConsent` the records. The job body is `runWeeklyDigest(now, isTest)` in `repo/jobs.ts`. `test:digest`.
+`web/lib/conversation-memory.ts` + `web/lib/server/repo/conversation-memory.ts` — 12 Nov. A parent's older SMS exchanges as a structured memory: `mayFold` (what may be filed), `readMemoryAsks` / `validMemory` (only allowed values — `MEMORY_TOPICS`, market areas, `MEMORY_WHEN`, `MEMORY_REACTIONS`; no free text, no names), `mergeMemory`, `memoryLine` (what the classifier sees); `memoryFor` / `foldMemory` / `forgetMemory` / `expireMemory` the records (`conversation_summaries`, drizzle/0066). `test:memory`.
+
+`web/lib/digest.ts` + `web/lib/server/digest-agent.ts` + `web/lib/server/repo/digest.ts` — 3 Nov. The weekly digest: `atSameVenue` (one venue, not one town, chain or library system — one item per venue in `pickForPerson`, 11 Nov), `digestDue` (Saturday 9–20 on a market clock), `readAgentItems` (what of the agent's findings may be sent — a link to a page its search returned or it read, the item named on a page it read (`onPage` over `notePageBlocks`, 10 Nov), a link it never opened moved to a page it read that names the item (`pageNaming`, 11 Nov), dates in the window, one per thing (`sameThing`), the stated dates on the page read (`datesOnPage` / `textDates`, 12 Nov)), `poolForFamily` (other groups' items for a family's other children), `ageFits` / `pickForPerson`, `composeDigest`, `digestCommand` (DIGEST / DIGEST OFF); `findDigestItems` is the agent; `digestEdition` / `digestRecipients` / `recordDigestSend` / `setDigestConsent` the records. The job body is `runWeeklyDigest(now, isTest)` in `repo/jobs.ts`. `test:digest`.
+
+`web/app/(admin)/admin/digests/page.tsx` + `digestRows` in `web/lib/server/repo/admin-read.ts` — 12 Nov. The admin's weekly digests: weeks → groups → items, picks and the texts families were sent (rebuilt with `composeDigest` from `digest_sends.item_ids`); `DIGEST_EDITION_STATUS` / `DIGEST_ITEM_KIND` in `lib/admin/labels.ts`. `Select` in `components/admin/kit.tsx` is the admin's own listbox (options with `detail` / `tag`); `Disclosure row` in `components/admin/ui.tsx` is one record of a long list that opens.
+
+`web/lib/digest-followup.ts` + `web/lib/server/repo/digest-followup.ts` — 11 Nov. The digest answered: `readPicks` / `picksOutOfRange` (a reply of numbers), `editionOfTap` / `editionVariable` / `ID_WITH_EDITION` (in `lib/sms-rich.ts`: the edition a digest button's id carries), `readFeedback` (the three buttons) / `readFeedbackPhrase` (only words that can be nothing but feedback), `remindOn` / `feedbackOn` (which day), `startTime` (the first clock time a `when_text` states), `zonedTime` (a wall-clock time in a market's zone as UTC, summer time included), `remindAt` / `askAt` (the exact moments), the texts (`detailsSms`, `reminderSetSms`, `reminderSms`, `feedbackAskSms`); the repo keeps what each family's numbers meant (`lastDigestSent`), a pick set or taken off (`togglePick`; its answer `pickReplySms`, `sayMoment`), what is due (`dueReminders`, `dueFeedback` by each row's moment, DIGEST OFF respected), `lastOutboundTemplates` (what a reply answers, under the sweeps' own texts), claim-before-send (`claimFollowup`) and `recordFeedback`. Read by `digestReplyStep` in `inbound.ts` and the `digest_reminders` / `digest_feedback` jobs.
 
 `web/lib/named-person.ts` — M11.4. Is this record's *name* a person? Pure, two
                        thresholds, and measured against all 588 real records.
@@ -196,7 +202,7 @@
                        never wears a parent label. Pure.
 `web/lib/server/repo/retrieval.ts` — M5.5. What could answer a question, with
                        invariant 1's four conditions in the WHERE clause.
-`web/lib/server/trace.ts` — **traces to PostHog** from the server (27 Oct): `withTrace` (one per
+`web/lib/server/trace.ts` — **traces to PostHog** from the server (27 Oct; `traceSensitive` withholds a sensitive or caregiver turn's words, 12 Nov): `withTrace` (one per
                        inbound text or job), `span` (a step), `tracedFetch(purpose)` (every
                        Anthropic call as `$ai_generation`: model, tokens, cost, latency),
                        `traceEvent`, and the house log lines forwarded as `pando_log`.
@@ -267,7 +273,19 @@
                        `inputClass` — one look, with and without a width.
 `web/components/admin/kit.tsx` — the admin's *mechanics*, on platform primitives
                        rather than a component library: `Hint` · `Select` ·
-                       `SegmentedFilter` · `Menu` · `Dialog`. See [decisions.md](../decisions.md) for
+                       `Calendar` (a month in a popover, days marked) ·
+                       `Checkbox` · `Radio` · `NumberField` ·
+                       `SegmentedFilter` (`track`: one raised option on a track) ·
+                       `Menu` · `Dialog`. `Select bare` / `Calendar bare` drop
+                       their border to sit in a joined control (the digests
+                       week navigator). In `ui.tsx`: `StatStrip` (figures as
+                       one strip of `Stat` cells) and `actionsClass` (a row of
+                       buttons that are one width once they wrap); `TableWrap`
+                       stacks its rows as labelled blocks below 46rem of its
+                       own width; `rowLinkClass` makes a row open as a whole.
+                       `AccountMenu` (kit) — the signed-in user's button and
+                       popover: name, Change password, Sign out. No native control on
+                       the admin (12 Nov) — a new one is built here. See [decisions.md](../decisions.md) for
                        what that swap cost and what it bought.
 `web/components/admin/Record.tsx` — the admin's second layout, for the queues a
                        table cannot hold: `RecordCard` · `FactGrid`/`Fact` ·

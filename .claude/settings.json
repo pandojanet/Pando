@@ -17,6 +17,15 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect-files.mjs\""
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/no-explainers.mjs\""
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [

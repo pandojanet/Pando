@@ -163,7 +163,7 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             label="Follow-up"
           >
             {row.follow_up_ok
-              ? "Happy to be asked more about this one"
+              ? /* copy: state */ "Happy to be asked more about this one"
               : "Not offered"}
           </Fact>
         )}
@@ -185,7 +185,7 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
           {countsTowardFounding(row) ? (
             <Badge tone="green">Yes</Badge>
           ) : row.status !== "approved" ? (
-            <span className="text-muted">Not until it is added to Pando</span>
+            <span className="text-muted">{/* copy: state */}Not until it is added to Pando</span>
           ) : quality.status === "qualifies" ? null : (
             <span className="text-muted">Not yet — see what is missing</span>
           )}
@@ -239,7 +239,7 @@ export function ContributionFacts({ row }: { row: ContributionRow }) {
             <Quote label="Know first">{row.caveat}</Quote>
           ) : row.caveat_answered ? (
             <p className="text-[12.5px] text-muted">
-              Asked what to know first — nothing came to mind.
+              {/* copy: state */}Asked what to know first — nothing came to mind.
             </p>
           ) : null}
           {(row.who_for || row.who_not_for) && (

@@ -21,6 +21,7 @@ import {
   when,
   yearList,
 } from "@/components/admin/ui";
+import { Select } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { RewardPaid } from "@/components/admin/RewardPaid";
 import { ResetProfile } from "@/components/admin/ResetProfile";
@@ -165,7 +166,7 @@ export default function ContributorDetailPage({
       const result = await adminAction({ action: "founding.reopen", id });
       setFoundingMessage(
         result.persisted
-          ? "Back in the Founding queue, to be decided again."
+          ? /* copy: state */ "Back in the Founding queue, to be decided again."
           : "Not stored — no database connected.",
       );
       await reload();
@@ -356,7 +357,7 @@ export default function ContributorDetailPage({
               <div className="px-4 py-3">
                 {c.affinities.length === 0 && c.relevance.length === 0 ? (
                   <p className="text-[13.5px] text-muted">
-                    Nothing yet — they have not answered enough for Pando to find
+                    {/* copy: state */}Nothing yet — they have not answered enough for Pando to find
                     parents like them.
                   </p>
                 ) : (
@@ -507,7 +508,7 @@ export default function ContributorDetailPage({
                 </ul>
               )}
               <div className="border-t border-bark/70 px-4 py-3">
-                <Field label="Add a note" hint="Visible to admins only. Recorded with your name.">
+                <Field label="Add a note" hint={/* copy: kept — who sees the note, said before it is written */ "Visible to admins only. Recorded with your name."}>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value.slice(0, 500))}
@@ -535,7 +536,7 @@ export default function ContributorDetailPage({
             */}
             <Card title="Referrals">
               <div className="border-b border-bark/70 px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                <p className="text-[12.5px] font-medium text-muted">
                   Invited by
                 </p>
                 {c.referral.referred_by ? (
@@ -560,27 +561,25 @@ export default function ContributorDetailPage({
                   </div>
                 ) : (
                   <>
-                    <select
-                      aria-label="Invited by"
+                    <Select
+                      label="Invited by"
+                      className="mt-1.5 w-full"
                       value={referrer}
-                      onChange={(e) => setReferrer(e.target.value)}
+                      onChange={setReferrer}
                       disabled={everyoneLoading}
-                      className={`${inputClass} mt-1.5`}
-                    >
-                      <option value="">
-                        {everyoneLoading ? "Loading contributors…" : "Pick a parent"}
-                      </option>
-                      {(everyone ?? [])
-                        /* "Pick a parent": a caregiver's own sign-up is not
-                           one, and cannot have invited anybody (27 Oct). */
-                        .filter((p) => p.id !== id && !p.is_test && !p.is_caregiver)
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name ?? "Unknown"}
-                            {p.neighborhood ? ` · ${slugLabel(p.neighborhood)}` : ""}
-                          </option>
-                        ))}
-                    </select>
+                      options={[
+                        { id: "", label: everyoneLoading ? "Loading contributors…" : "Pick a parent" },
+                        ...(everyone ?? [])
+                          /* "Pick a parent": a caregiver's own sign-up is not
+                             one, and cannot have invited anybody (27 Oct). */
+                          .filter((p) => p.id !== id && !p.is_test && !p.is_caregiver)
+                          .map((p) => ({
+                            id: p.id,
+                            label: p.name ?? "Unknown",
+                            detail: p.neighborhood ? slugLabel(p.neighborhood) : undefined,
+                          })),
+                      ]}
+                    />
                     <Button
                       tone="primary"
                       className="mt-2 w-full"
@@ -594,7 +593,7 @@ export default function ContributorDetailPage({
               </div>
 
               <div className="px-4 py-3">
-                <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                <p className="text-[12.5px] font-medium text-muted">
                   Brought in ({c.referral.referred.filter((r) => r.status !== "void").length})
                 </p>
                 {c.referral.referred.length === 0 ? (
@@ -699,7 +698,7 @@ export default function ContributorDetailPage({
                         everyoneLoading
                           ? "Loading contributors…"
                           : everyoneError
-                            ? "Couldn't load the parents — reload and try again"
+                            ? /* copy: state */ "Couldn't load the parents — reload and try again"
                             : "Nobody else to connect"
                       }
                     />
@@ -745,7 +744,7 @@ export default function ContributorDetailPage({
 function Pair({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <dt className="text-[12.5px] font-medium text-muted">
         {label}
       </dt>
       <dd className="mt-0.5">{value}</dd>

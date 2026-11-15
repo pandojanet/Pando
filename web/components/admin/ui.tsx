@@ -5,6 +5,7 @@ import {
   isValidElement,
   useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -235,7 +236,7 @@ export function Card({
               *either* was present, so a card carrying only a `right` control
               put an **empty heading** into the outline. */}
           {title && (
-            <Heading className="text-[12.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+            <Heading className="text-[14px] font-semibold text-ink">
               {title}
             </Heading>
           )}
@@ -255,7 +256,7 @@ export function Stat({
 }: {
   label: string;
   value: ReactNode;
-  hint?: string;
+  hint?: string | null;
   /**
    * `alert` rather than `warn` for a number that is *wrong*, not pending. Gold
    * already means "not finished yet" everywhere on this surface; a delivery rate
@@ -263,33 +264,47 @@ export function Stat({
    */
   tone?: "plain" | "warn" | "good" | "alert";
 }) {
+  /* A cell of a `StatStrip`, never a tile of its own (12 Nov: bordered tiles inside a bordered card were the
+     "wooden" look). A zero or a dash is dimmed, so the eye goes to the numbers that are there. */
+  const none = value === 0 || value === "—";
   return (
     <div
       className={cn(
-        "rounded-xl border p-4",
+        "px-4 py-3.5",
         // Selected, never appended — `cn()` is a plain join.
-        tone === "warn"
-          ? "border-gold-line bg-gold-wash"
-          : tone === "good"
-            ? "border-green/25 bg-green-wash"
-            : tone === "alert"
-              ? "border-alert-line bg-alert-wash"
-              : "border-bark bg-card",
+        tone === "warn" ? "bg-gold-wash" : tone === "good" ? "bg-green-wash" : tone === "alert" ? "bg-alert-wash" : "bg-card",
       )}
     >
-      <p className="flex items-center gap-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
-        {label}
-      </p>
+      <p className="flex items-center gap-1 text-[12.5px] font-medium text-muted">{label}</p>
       <p
         className={cn(
-          "mt-1 font-display text-[1.7rem] font-bold leading-none",
-          tone === "alert" && "text-alert",
+          "mt-1.5 font-display text-[1.65rem] font-semibold leading-none tracking-[-0.02em] tabular-nums",
+          tone === "alert" ? "text-alert" : none ? "text-muted/50" : "text-ink",
         )}
       >
         {value}
       </p>
-      {hint && <p className="mt-1.5 text-[12.5px] leading-snug text-muted">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[12.5px] leading-snug tabular-nums text-muted">{hint}</p>}
     </div>
+  );
+}
+
+/**
+ * Figures side by side as one strip, cells divided by hairlines — how the leading dashboards set a row of
+ * numbers (12 Nov). `columns` from a tablet up; two on a phone. `inset` inside a card: no edge of its own.
+ */
+export function StatStrip({ children, columns = 4, inset = false, label }: { children: ReactNode; columns?: 2 | 3 | 4; inset?: boolean; label?: string }) {
+  return (
+    <section
+      aria-label={label}
+      className={cn(
+        "grid grid-cols-2 gap-px bg-bark/70",
+        columns === 4 ? "sm:grid-cols-4" : columns === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2",
+        inset ? "border-b border-bark/70" : "overflow-hidden rounded-xl border border-bark shadow-card",
+      )}
+    >
+      {children}
+    </section>
   );
 }
 
@@ -405,21 +420,75 @@ export function TableWrap({
   children: ReactNode;
 }) {
   const { ref, maskStyle } = useEdgeFade<HTMLDivElement>();
+  useCellLabels(ref);
   return (
     <div
       ref={ref}
       tabIndex={0}
       role="group"
       aria-label={label}
-      className="overflow-x-auto no-scrollbar"
+      className="@container overflow-x-auto no-scrollbar"
       style={maskStyle}
     >
-      <table className="w-full min-w-[46rem] border-collapse text-left text-[14px]">
+      <table className={STACKED_TABLE}>
         <caption className="sr-only">{label}</caption>
         {children}
       </table>
     </div>
   );
+}
+
+/**
+ * No table that scrolls sideways (12 Nov, the developer: "yes, continue" — and, borrowed the same evening from
+ * the property-workflows design system, "columns by the table's own width, not the window's"). Below 46rem of
+ * **its own container** — a phone, or a desktop window whose sidebar leaves the table too little — every row is
+ * a block: its first cell the title, every other cell beside its column's name (`data-label`, set by
+ * `useCellLabels` from the header; the cell keeps its own layout to the right of it), a cell under an empty
+ * header (the actions) on its own line. Numbers in tabular figures. A row whose first cell holds a
+ * `rowLinkClass` link opens as a whole (the link's `::after` covers the row; other controls sit above it).
+ */
+/* Written out in full: Tailwind reads class names from the source as text, so a name built from a variable is never generated. */
+const STACKED_TABLE = cn(
+  "w-full border-collapse text-left text-[14px] tabular-nums",
+  "@max-[46rem]:block @max-[46rem]:[&_thead]:sr-only @max-[46rem]:[&_tbody]:block",
+  "@max-[46rem]:[&_tbody_tr]:block @max-[46rem]:[&_tbody_tr]:border-b @max-[46rem]:[&_tbody_tr]:border-bark/60 @max-[46rem]:[&_tbody_tr]:px-4 @max-[46rem]:[&_tbody_tr]:py-3 @max-[46rem]:[&_tbody_tr:last-child]:border-b-0",
+  "@max-[46rem]:[&_tbody_tr>*]:relative @max-[46rem]:[&_tbody_tr>*]:block @max-[46rem]:[&_tbody_tr>*]:text-left @max-[46rem]:[&_tbody_tr>*]:border-0 @max-[46rem]:[&_tbody_tr>*]:py-1 @max-[46rem]:[&_tbody_tr>*]:pl-[8.25rem] @max-[46rem]:[&_tbody_tr>*]:pr-0",
+  "@max-[46rem]:[&_tbody_tr>*]:before:absolute @max-[46rem]:[&_tbody_tr>*]:before:left-0 @max-[46rem]:[&_tbody_tr>*]:before:top-1 @max-[46rem]:[&_tbody_tr>*]:before:w-[7.75rem] @max-[46rem]:[&_tbody_tr>*]:before:text-[12.5px] @max-[46rem]:[&_tbody_tr>*]:before:font-normal @max-[46rem]:[&_tbody_tr>*]:before:leading-[1.6] @max-[46rem]:[&_tbody_tr>*]:before:text-muted @max-[46rem]:[&_tbody_tr>*]:before:content-[attr(data-label)]",
+  "@max-[46rem]:[&_tbody_tr>*[data-label='']]:pl-0 @max-[46rem]:[&_tbody_tr>*[data-label='']]:before:hidden @max-[46rem]:[&_tbody_tr>*:first-child]:pl-0 @max-[46rem]:[&_tbody_tr>*:first-child]:before:hidden @max-[46rem]:[&_tbody_tr>*:first-child]:pb-1.5 @max-[46rem]:[&_tbody_tr>*:first-child]:text-[15px]",
+  /* A row that opens as a whole: positioned for its link's cover, lit on hover, every other control above the cover. */
+  "[&_tbody_tr:has(.row-link)]:relative [&_tbody_tr:has(.row-link)]:cursor-pointer [&_tbody_tr:has(.row-link)]:transition-colors [&_tbody_tr:has(.row-link):hover]:bg-paper/70",
+  "[&_tbody_tr:has(.row-link)_:is(button,input,label,a:not(.row-link))]:relative [&_tbody_tr:has(.row-link)_:is(button,input,label,a:not(.row-link))]:z-[1]",
+);
+
+/** The link in a row's first cell that opens the whole row (property-workflows' `rowLinkClass`). */
+export const rowLinkClass =
+  "row-link after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-gold";
+
+/** Each body cell's column name, read off the header (a `colSpan` counted), kept current as rows change. */
+function useCellLabels(ref: React.RefObject<HTMLElement | null>) {
+  useLayoutEffect(() => {
+    const table = ref.current?.querySelector("table");
+    if (!table) return;
+    const label = () => {
+      const heads = [...table.querySelectorAll("thead th")].flatMap((th) => {
+        const name = (th.querySelector("[data-th]")?.textContent ?? th.textContent ?? "").trim();
+        return Array.from({ length: (th as HTMLTableCellElement).colSpan || 1 }, () => name);
+      });
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        let col = 0;
+        for (const cell of Array.from(tr.children) as HTMLTableCellElement[]) {
+          const span = cell.colSpan || 1;
+          const name = span > 1 ? "" : (heads[col] ?? "");
+          if (cell.getAttribute("data-label") !== name) cell.setAttribute("data-label", name);
+          col += span;
+        }
+      });
+    };
+    label();
+    const watch = new MutationObserver(label);
+    watch.observe(table, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [ref]);
 }
 
 export function Th({
@@ -444,17 +513,17 @@ export function Th({
     <th
       scope={scope}
       className={cn(
-        "border-b border-bark/70 bg-paper/60 px-3 py-2 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted",
+        "border-b border-bark/70 bg-paper/60 px-3 py-2 text-[12.5px] font-medium text-muted",
         className,
       )}
     >
       {hint ? (
         <span className="inline-flex items-center gap-1">
-          {children}
+          <span data-th>{children}</span>
           <Hint label={hintLabel(children, "column")}>{hint}</Hint>
         </span>
       ) : (
-        children
+        <span data-th>{children}</span>
       )}
     </th>
   );
@@ -479,12 +548,21 @@ export function Td({
   );
 }
 
+/* Every tone has a 1px border — transparent where it shows none — so one label makes one size whatever the
+   tone (12 Nov, the developer: "why are the buttons different sizes" — a secondary was 2px wider). */
 const BUTTON_TONES = {
-  primary: "bg-green-deep text-white hover:bg-ink",
+  primary: "border border-transparent bg-green-deep text-white hover:bg-ink",
   secondary: "border border-bark bg-card text-ink hover:border-green/60",
   danger: "border border-alert-line bg-alert-wash text-alert hover:border-alert/45",
-  ghost: "text-muted hover:text-green-deep",
+  ghost: "border border-transparent text-muted hover:text-green-deep",
 };
+
+/**
+ * A row of buttons. Side by side at their own width while they fit; once they wrap, each line fills the
+ * row, so buttons stacked in a narrow cell or on a phone are one width rather than as wide as their words
+ * (12 Nov: "Add to the list" over a wider "Ignore this one"). Block-level and only as wide as its buttons.
+ */
+export const actionsClass = "flex w-fit max-w-full flex-wrap gap-2 [&>*]:grow";
 
 /* `whitespace-nowrap` is a correctness fix, not a style preference. In a narrow
    table cell the label wrapped mid-phrase ("Add to Pando" over three lines) and
@@ -492,8 +570,9 @@ const BUTTON_TONES = {
    rendered as **"I've dealt with this…"**: an ellipsis eating the label of the
    button somebody is meant to press. A button is as wide as its words; if that
    is too wide for its container, the container is wrong. */
+/* Pressed, it gives a little (property-workflows: "every click has a visible response"); not under reduced motion. */
 const BUTTON_BOX =
-  "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] font-semibold transition-[color,background-color,border-color,transform] duration-150 active:scale-[0.97] motion-reduce:active:scale-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100";
 
 type ButtonTone = keyof typeof BUTTON_TONES;
 
@@ -685,7 +764,7 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="block text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <span className="block text-[12.5px] font-medium text-muted">
         {label}
       </span>
       <span className="mt-1 block">{children}</span>
@@ -743,7 +822,7 @@ export function Empty({
 export function SampleBanner() {
   return (
     <div className="mb-4 rounded-xl border border-gold-line bg-gold-wash px-4 py-2.5 text-[13px] font-medium text-gold-ink">
-      Sample data — nothing here is real, and nothing you do is stored.
+      {/* copy: state */}Sample data — nothing here is real, and nothing you do is stored.
     </div>
   );
 }
@@ -813,16 +892,18 @@ export function Loading({ inline = false }: { inline?: boolean }) {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
 
+  /* The shape of what is coming — rows of a list — rather than a word in the middle (property-workflows'
+     skeletons, 12 Nov). Still after a beat, so a fast read shows nothing at all; still for a reader. */
   return (
-    <div
-      role="status"
-      className={
-        inline
-          ? "px-4 py-6 text-center text-[13.5px] text-muted"
-          : "px-4 py-10 text-center text-[13.5px] text-muted"
-      }
-    >
-      {shown ? "Loading…" : ""}
+    <div role="status" className={inline ? "space-y-3 px-4 py-4" : "space-y-4 px-4 py-6"}>
+      <span className="sr-only">{shown ? "Loading…" : ""}</span>
+      {shown &&
+        Array.from({ length: inline ? 2 : 4 }, (_, i) => (
+          <div key={i} aria-hidden="true" className="space-y-2">
+            <div className="h-3.5 animate-pulse rounded bg-bark-soft motion-reduce:animate-none" style={{ width: `${[46, 62, 38, 54][i]}%` }} />
+            <div className="h-3 animate-pulse rounded bg-bark-soft/70 motion-reduce:animate-none" style={{ width: `${[72, 58, 66, 49][i]}%` }} />
+          </div>
+        ))}
     </div>
   );
 }
@@ -859,7 +940,7 @@ export function Failed({ inline = false }: { inline?: boolean }) {
         inline ? "px-4 py-6" : "px-4 py-10",
       )}
     >
-      Couldn&apos;t load this — so this is not &ldquo;nothing&rdquo;.
+      {/* copy: state */}Couldn&apos;t load this — so this is not &ldquo;nothing&rdquo;.
     </div>
   );
 }
@@ -1054,9 +1135,28 @@ export function Disclosure({
   children,
   open = false,
   flush = false,
+  row = false,
+  meta,
+  id,
+  pinnedOpen,
+  onPinnedChange,
 }: {
   title: string;
   children: ReactNode;
+  /**
+   * 12 Nov (`/admin/digests`): one row of a **list** of disclosures — no box of
+   * its own and no margin (the list's `Card` divides them), no hover peek (a
+   * group's whole content popping open under a passing mouse is not a peek),
+   * and a summary that can carry `meta`: the row's numbers and badges.
+   */
+  row?: boolean;
+  /** Beside the title in the trigger row — short facts and badges, never a sentence. */
+  meta?: ReactNode;
+  /** An anchor, so a link elsewhere on the page can open and reach this row. */
+  id?: string;
+  /** Controlled from outside (a "needs a look" link opens the row it names). */
+  pinnedOpen?: boolean;
+  onPinnedChange?: (open: boolean) => void;
   /** Pinned open from the first render. Rare: something a page must not bury. */
   open?: boolean;
   /**
@@ -1072,12 +1172,19 @@ export function Disclosure({
    */
   flush?: boolean;
 }) {
-  const [pinned, setPinned] = useState(open);
+  const [ownPinned, setOwnPinned] = useState(open);
   const [peeking, setPeeking] = useState(false);
+  const pinned = pinnedOpen ?? ownPinned;
+  const setPinned = (next: (was: boolean) => boolean) => {
+    const value = next(pinned);
+    if (onPinnedChange) onPinnedChange(value);
+    if (pinnedOpen === undefined) setOwnPinned(value);
+  };
 
   return (
     <details
-      open={pinned || peeking}
+      id={id}
+      open={pinned || (!row && peeking)}
       /* Its own box, because it belongs **above** the work rather than inside
          it. `border-b … last:border-b-0` was shaped for living as the first row
          of a `Card` — which is exactly the placement this pass removed: on
@@ -1086,8 +1193,9 @@ export function Disclosure({
          summary line on bare paper, so the two placements could not both be
          right. */
       className={cn(
-        "group mb-4",
-        !flush && "rounded-xl border border-bark bg-card",
+        "group",
+        row ? "scroll-mt-24 border-b border-bark/70 last:border-b-0" : "mb-4",
+        !flush && !row && "rounded-xl border border-bark bg-card",
       )}
       onPointerEnter={(e) => {
         /* Pointer type matters: a tap fires `pointerenter` too, and peeking on
@@ -1110,14 +1218,16 @@ export function Disclosure({
         }}
         className={cn(
           "flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[13.5px] font-semibold text-ink-soft hover:text-green-deep",
+          row && "min-h-14 flex-wrap gap-y-1 py-3 text-[14.5px] text-ink",
           flush &&
             "rounded-xl border border-bark bg-card hover:border-green/60",
         )}
       >
         <DisclosureChevron />
-        {title}
+        <span className={row ? "min-w-0 flex-1 basis-[12rem]" : undefined}>{title}</span>
+        {meta && <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-normal text-muted">{meta}</span>}
       </summary>
-      <div className={flush ? "mt-4" : "px-4 pb-3.5"}>
+      <div className={flush ? "mt-4" : row ? "px-4 pb-4 pt-1" : "px-4 pb-3.5"}>
         {children}
       </div>
     </details>

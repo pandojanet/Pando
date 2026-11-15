@@ -55,6 +55,7 @@ const EMPTY: AdminResourceRows = {
   standing: [],
   impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
   deep_dives: { configured: false, rows: [] },
+  digests: { configured: false, picks_configured: false, weeks: [], index: [] },
   introductions: { configured: false, rows: [] },
   founding: [],
   invites: [],
@@ -140,6 +141,8 @@ const SAMPLE: AdminResourceRows = {
   impact: { rows: [], totals: { answered_yes: 0, answered_no: 0, awaiting: 0, unasked: 0 } },
   /* No sample rows: a made-up yes-rate is the number this page exists to get right. */
   deep_dives: { configured: false, rows: [] },
+  /* No sample digests: a made-up text would read as one Pando sent. */
+  digests: { configured: false, picks_configured: false, weeks: [], index: [] },
   introductions: { configured: false, rows: [] },
   founding: sample.sampleFounding,
   invites: sample.sampleInvites,

@@ -8,6 +8,7 @@ import { looksLikePerson } from "@/lib/named-person";
 import { PLACES } from "@/lib/home-places";
 import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameDeepPlace, type DeepFinding, type DeepReadStats, type PublicFinding } from "@/lib/public-info";
 import { deepDiveShape } from "@/lib/deep-dive";
+import { datesAllPast } from "@/lib/digest";
 import { searchPlacePhrase } from "@/lib/place-in-question";
 
 /**
@@ -773,8 +774,10 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
 
     /* One line per place (a deep dive returned above, in fields). */
     /* Never a place in another state that shares the town's name (26 Oct: "Pasadena, TX"). */
+    /* Nor one whose every stated date has passed (13 Nov: "May 3-31, 2026" offered in November). */
+    const today = new Date().toISOString().slice(0, 10);
     const findings: PublicFinding[] = readFindings(text, notAPlaceOfOurs, input.exclude ?? []).filter(
-      (f) => !inAnotherState(f, location?.region),
+      (f) => !inAnotherState(f, location?.region) && !datesAllPast(`${f.what} ${f.detail ?? ""}`, today),
     );
 
     /**

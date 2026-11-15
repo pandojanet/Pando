@@ -87,6 +87,10 @@ export const THANKS_REPLY = "You're welcome. Text me anytime you need something 
  * ⚠ New user-facing copy, on the list for the client. One GSM-7 segment,
  * pinned by `test:routing`; not registered A2P text.
  */
+/** Who Pando is, in its own words (13 Nov, a parent-eyes review: "who are you?" got "go ahead!"). */
+export const WHO_REPLY =
+  "Pando: a text line for local parents. Ask about classes, camps, activities or childcare and I'll share what nearby parents recommend - and say where each answer came from. Try: swim lessons for a 5 year old. Reply STOP to opt out, HELP for help.";
+
 export const OPENER_REPLY =
   "Pando: go ahead! Ask about local classes, camps, activities or childcare and I'll share what nearby parents recommend. Reply STOP to opt out, HELP for help.";
 

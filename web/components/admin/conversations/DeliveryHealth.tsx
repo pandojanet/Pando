@@ -9,6 +9,7 @@ import {
   Failed,
   Loading,
   Stat,
+  StatStrip,
 } from "@/components/admin/ui";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { useAdminRows } from "@/lib/admin/client";
@@ -58,6 +59,7 @@ export function DeliveryHealth() {
      reports carrier failures. */
   const picker = (
     <SegmentedFilter
+      track
       label="How far back to look"
       value={days}
       onChange={setDays}
@@ -90,7 +92,7 @@ export function DeliveryHealth() {
         */}
       {data?.relay && (
         <p className="rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
-          Messages are going to the Slack test channel, not to phones.
+          {/* copy: state */}Messages are going to the Slack test channel, not to phones.
         </p>
       )}
 
@@ -133,19 +135,19 @@ export function DeliveryHealth() {
           <Empty title="Nothing has been sent yet" />
         ) : (
           <>
-            <div className="grid gap-3 px-4 py-4 sm:grid-cols-2">
+            <StatStrip columns={2} inset>
               <Stat
                 label="Delivered"
                 tone={data.below_floor ? "alert" : "plain"}
                 value={data.rate === null ? "—" : pct(data.rate)}
-                hint={`${data.delivered} of ${data.settled} that have a final answer`}
+                hint={/* copy: state */ `${data.delivered} of ${data.settled} that have a final answer`}
               />
               <Stat
                 label="Still in flight"
                 value={data.in_flight}
-                hint="sent in the last day · not counted either way"
+                hint="sent in the last day"
               />
-            </div>
+            </StatStrip>
             {/* A day with no final status is not "in flight": the report never
                 came back. On the relay that is every message, because Slack
                 sends no delivery status; with Twilio it means the Messaging
@@ -155,8 +157,8 @@ export function DeliveryHealth() {
                 {data.unreported === 1 ? "1 message" : `${data.unreported} messages`}{" "}
                 older than a day never reported back
                 {data.relay
-                  ? " — the Slack relay sends no delivery status."
-                  : " — check that the Messaging Service's status callback points at /api/sms/status."}
+                  ? /* copy: state */ " — the Slack relay sends no delivery status."
+                  : "."}
               </p>
             )}
 
@@ -183,13 +185,13 @@ export function DeliveryHealth() {
               }
             >
               {data.rate === null
-                ? "No message has a final answer yet."
+                ? /* copy: state */ "No message has a final answer yet."
                 : data.below_floor
                   ? data.thin_sample
-                    ? "Below the 95% floor — and on a minority of the window, so the real rate could be worse."
+                    ? /* copy: state */ "Below the 95% floor, on a minority of the window."
                     : "Below the 95% floor."
                   : data.thin_sample
-                    ? "Too few reports to judge against the 95% floor."
+                    ? /* copy: state */ "Too few reports to judge against the 95% floor."
                     : "At or above the 95% floor."}
             </p>
           </>

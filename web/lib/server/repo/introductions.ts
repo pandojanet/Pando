@@ -97,6 +97,16 @@ export async function openIntroOfferAt(personId: string): Promise<string | null>
 }
 
 /** Take the open offer: offered → requested. Null when there is none (or it was already taken). */
+/** What an introduction is about: the record's name, for the reply that confirms it (13 Nov). */
+export async function introSubject(id: string): Promise<string | null> {
+  if (!id) return null;
+  const r = await withDb(async (db) => {
+    const out = await rows(db, sql`select s.name from introductions i join shares s on s.id = i.share_id where i.id = ${id}::uuid`);
+    return out[0]?.name ? String(out[0].name) : null;
+  });
+  return r.persisted ? (r.data ?? null) : null;
+}
+
 export async function takeIntroOffer(personId: string): Promise<{ id: string; already: boolean } | null> {
   const r = await withDb(async (db) => {
     const taken = await rows(

@@ -78,7 +78,7 @@ deploy/ .github/     what runs on the VPS, CI/CD, the PR template
                      email (enabled by `npm install` in web/)
 .claude/
   rules/invariants.md   the 14 invariants — loaded into every session
-  hooks/                protect-files (PreToolUse) · context-guard (prompt + stop)
+  hooks/                protect-files, no-explainers (PreToolUse) · context-guard (prompt + stop)
   skills/               see "Read when needed"
 .agents/skills/      vendored third-party skills, pinned in skills-lock.json
 *.html               the client's original static pages — source of truth for

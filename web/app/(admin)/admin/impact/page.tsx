@@ -15,7 +15,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Checkbox, SegmentedFilter } from "@/components/admin/kit";
 import {
   Fact,
   FactGrid,
@@ -139,14 +139,7 @@ export default function ImpactPage() {
           className={`${inputClass} w-[13rem]`}
         />
         {testCount > 0 && (
-          <label className="flex items-center gap-1.5 text-[13px] text-muted">
-            <input
-              type="checkbox"
-              checked={hideTest}
-              onChange={(e) => setHideTest(e.target.checked)}
-            />
-            Hide test ({testCount})
-          </label>
+          <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
         )}
       </Toolbar>
 
@@ -351,8 +344,8 @@ function ImpactCard({ row }: { row: ImpactEventRow }) {
 
 function owedNote(n: number): string {
   return n === 1
-    ? "1 answer helped somebody and the parent behind it has not been thanked."
-    : `${n} answers helped somebody and the parents behind them have not been thanked.`;
+    ? /* copy: state */ "1 answer helped somebody and the parent behind it has not been thanked."
+    : /* copy: state */ `${n} answers helped somebody and the parents behind them have not been thanked.`;
 }
 
 function owedBadge(n: number): string {

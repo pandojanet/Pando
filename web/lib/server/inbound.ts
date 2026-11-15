@@ -1,7 +1,7 @@
 import "server-only";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 /* RCS quick replies (29 Oct): the card wording of each message that carries buttons. */
-import { askOfferRich, captureStepRich, type RichKind } from "@/lib/sms-rich";
+import { askOfferRich, captureStepRich, editionOfTap, type RichKind } from "@/lib/sms-rich";
 import { introOfferCard } from "@/lib/introductions";
 import { childAgeCard, declinesChildren, participationCard, type ClarifyingQuestion, type KnownProfile } from "@/lib/onboarding";
 import { settingsPromptCard } from "@/lib/outreach-policy";
@@ -17,7 +17,7 @@ import {
   nothingToDeleteSms,
 } from "@/lib/sms-templates";
 import { classifyIntent, isIntentConfigured } from "@/lib/server/intent";
-import { declinesToAnswer, familyLine, isBareOpener, ownRequestNotAnAnswer } from "@/lib/intent";
+import { asksWhoPandoIs, declinesToAnswer, familyLine, isBareOpener, otherLanguageLine, ownRequestNotAnAnswer } from "@/lib/intent";
 import { composeAnswer, SMS_BUDGET, subcategoryWord, VOICE_HEADROOM, type AnswerCandidate } from "@/lib/answer";
 import {
   acceptsDeepDive,
@@ -33,6 +33,11 @@ import { openDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { GENERAL_TIER } from "@/lib/blast-tiers";
 import { openIntroOfferAt } from "@/lib/server/repo/introductions";
 import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDeepDive, type DeepDiveStep } from "@/lib/server/deep-dive";
+import { forgetMemory, foldMemory, memoryFor } from "@/lib/server/repo/conversation-memory";
+import { FEEDBACK_THANKS, PICK_WHILE_OFF_SMS, outOfRangeSms, pickReplySms, picksOutOfRange, readFeedback, readFeedbackPhrase, readPicks, type PickOutcome } from "@/lib/digest-followup";
+import { digestIsOn, lastDigestSent, lastOutboundTemplates, recordFeedback, repeatsOfLastOutbound, togglePick } from "@/lib/server/repo/digest-followup";
+import { privateIn } from "@/lib/conversation-memory";
+
 import { deepDiveFamily, earlierExchangesFor, finishDeepDive, lastExchangeFor, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
 import { judgeFindings, judgeFit } from "@/lib/server/answer-fit";
@@ -55,6 +60,7 @@ import {
   HELPED_NO,
   HELPED_YES,
   OPENER_REPLY,
+  WHO_REPLY,
   PING_NO_LONGER,
   PING_NOT_SURE,
   PING_STILL_GOOD,
@@ -129,7 +135,7 @@ import { MEDIA_REJECTED, mediaConfirmCard, mediaConfirmSms, mediaFailureReason, 
 import { deleteTwilioMedia, readInboundMedia, reviseReadBack } from "@/lib/server/media-note";
 import { ACKNOWLEDGEMENT, burstOpen, combineBurst, endTurns, gatherBurst, oneAtATime, splitBurst } from "@/lib/inbound-burst";
 import { createMediaNote, endMediaNote, endMediaNotesWhere, pendingMediaNote, reviseMediaNote } from "@/lib/server/repo/media-notes";
-import { DIGEST_OFF_REPLY, DIGEST_ON_REPLY, digestCommand } from "@/lib/digest";
+import { DIGEST_OFF_REPLY, DIGEST_ON_REPLY, digestCommand, localParts } from "@/lib/digest";
 import { setDigestConsent } from "@/lib/server/repo/digest";
 import { readPingReply } from "@/lib/vouch";
 import { applyPingReply, pendingPing } from "@/lib/server/repo/vouch";
@@ -143,6 +149,7 @@ import {
   isCaptureCancel,
   isCaptureStart,
   isSkipWord,
+  kindIn,
   offersSomething,
   readsAsSkip,
   mentionsCaregiver,
@@ -175,7 +182,7 @@ import { TYPING_DEEP_MAX_MS } from "@/lib/rcs-typing";
 import { withDb, type Db } from "@/lib/server/db";
 import { writeFlagIfNew } from "@/lib/server/repo/flags";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
-import { withTrace, traceContent, traceIdentify, traceState } from "@/lib/server/trace";
+import { withTrace, traceContent, traceIdentify, traceSensitive, traceState } from "@/lib/server/trace";
 
 /**
  * What Pando does with an inbound message, whatever carried it.
@@ -225,6 +232,8 @@ async function handleInboundMessageUntraced(input: {
   media?: InboundMedia;
   /** These are the words of a voice note or picture the person just confirmed: already counted as an inbound. */
   confirmedMedia?: boolean;
+  /** A tapped RCS button's id (`ButtonPayload`) — a digest number's carries its edition (11 Nov, `editionOfTap`). */
+  tapPayload?: string;
 }): Promise<void> {
   const { from, body } = input;
 
@@ -290,6 +299,7 @@ async function handleInboundMessageUntraced(input: {
   }
 
   if ((await digestStep({ from, body, person })) === HANDLED) return;
+  if ((await digestReplyStep({ from, body, person, tapPayload: input.tapPayload })) === HANDLED) return;
   if ((await settingsStep({ from, body, person })) === HANDLED) return;
   if ((await captureStep({ from, body, person })) === HANDLED) return;
 
@@ -363,6 +373,8 @@ async function mediaNoteStep({ from, body, media, person }: { from: string; body
     hints ?? { area: marketConfig(marketOf(person)).label, places: [] },
     asked,
   );
+  /* What a voice note or a picture was read as is the turn's words too (12 Nov). */
+  if (read.ok && sensitiveText(read.text)) traceSensitive();
   console.info("[sms:inbound] media", {
     kind: media.kind,
     ok: read.ok,
@@ -492,6 +504,20 @@ async function askedOfThem(phone: string): Promise<string | null> {
   return ask ? `Another parent asked: ${ask} Can you help?` : null;
 }
 
+/**
+ * Does this text, on its own, make the turn sensitive for its trace (12 Nov,
+ * `traceSensitive`)? The same rules the routing uses, the conversation
+ * memory's wider list of private words, and caregiver words — checked on what
+ * the parent sent before any step can answer and return, because the review
+ * found turns that never reach a later mark: a caregiver offer refused in the
+ * capture step, a clarifying reply, an Ask reply, a voice note's read-back.
+ * Errs towards withholding: a trace without words costs a debugging view, a
+ * trace with them can hold a child's diagnosis.
+ */
+function sensitiveText(text: string): boolean {
+  return classifyDemand(text, null) !== "ordinary" || privateIn(text) || mentionsCaregiver(text);
+}
+
 type InboundPerson = Awaited<ReturnType<typeof ensureInboundPerson>>;
 type Attached = Exclude<Awaited<ReturnType<typeof attachStep>>, typeof HANDLED>["attached"];
 
@@ -511,6 +537,8 @@ async function keywordStep({ from, body, keyword }: { from: string; body: string
      * query level rather than discovering it at send time.
      */
     await setOptOut(from, "out", body);
+    /* The compacted conversation goes with it (12 Nov, drizzle/0066). */
+    await forgetMemory(from);
     await recordInbound({ phone: from, category: "outreach", keyword: "opt_out" });
     return HANDLED;
   }
@@ -724,6 +752,133 @@ async function digestStep({ from, body, person }: { from: string; body: string; 
 }
 
 /**
+ * The weekly digest, answered (11 Nov, `lib/digest-followup.ts`). What a reply
+ * means is decided by the last text Pando sent this person, so "2" after the
+ * digest is a pick and "2" after "how old are your kids?" is not:
+ *  - after the digest, or after the details of an earlier pick (RCS sends one
+ *    message per button tap, so taps come one at a time), numbers are picks:
+ *    each picked item in full and "want a reminder on the day?";
+ *  - after that question, YES or NO sets the reminders;
+ *  - after "how was it?", the three feedback buttons.
+ * Anything else goes on to the steps below.
+ */
+/** The digest's own texts: a feedback phrase after one of them can only be about the digest. */
+const DIGEST_CONVERSATION: ReadonlySet<string> = new Set([
+  "weekly_digest", "digest_pick_set", "digest_details", "digest_reminder_set", "digest_pick_range", "digest_pick_off", "digest_reminder", "digest_feedback_thanks",
+]);
+/** After these a number is a pick from the digest. `digest_pick_off` and `digest_on` (13 Nov): "DIGEST, then the
+    number again" is what the pick-while-off answer asks for — a number with no digest of the past week still falls through. */
+const DIGEST_PICKABLE: ReadonlySet<string> = new Set([
+  "weekly_digest", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",
+  "digest_pick_off", "digest_on",
+]);
+
+async function digestReplyStep({ from, body, person, tapPayload }: { from: string; body: string; person: InboundPerson; tapPayload?: string }): Promise<typeof HANDLED | undefined> {
+  if (!person) return undefined;
+  const { last, conversation } = await lastOutboundTemplates(person.person_id);
+  if (last === null) return undefined;
+  /* The parent's own date and clock: the reminder's moment is set on their market's time. */
+  const timeZone = marketConfig(person.market_id).timeZone;
+  const today = localParts(new Date(), timeZone).date;
+
+  if (last === "digest_feedback_ask") {
+    const value = readFeedback(body);
+    if (value) {
+      const saved = await recordFeedback(person.person_id, value);
+      console.info("[sms:inbound] digest feedback", { value, saved });
+      await sendSms({
+        to: from,
+        body: FEEDBACK_THANKS[value],
+        category: "transactional",
+        personId: person.person_id,
+        template: "digest_feedback_thanks",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      return HANDLED;
+    }
+  }
+  /* "how was it?" still open, another digest text sent since (the 21 Nov run): only words that can be
+     nothing but feedback, onto an open question of the last three days — none open, it goes on. */
+  if (last !== "digest_feedback_ask" && DIGEST_CONVERSATION.has(last)) {
+    const value = readFeedbackPhrase(body);
+    if (value && (await recordFeedback(person.person_id, value))) {
+      console.info("[sms:inbound] digest feedback", { value, saved: true, late: true });
+      await sendSms({
+        to: from,
+        body: FEEDBACK_THANKS[value],
+        category: "transactional",
+        personId: person.person_id,
+        template: "digest_feedback_thanks",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      return HANDLED;
+    }
+  }
+  /* A pick or a YES answers the conversation — under any reminder or question the sweeps sent since (review, 11 Nov). */
+  /* A tapped number carries its own edition (11 Nov): it is a pick whatever was said since, and from
+     the digest it was on — not the newest. A typed number, or a tap without one, answers the
+     newest digest, and only while the conversation is the digest's — under any reminder or question
+     the sweeps sent since, and after another pick (`digest_pick_set`); `digest_details` /
+     `digest_reminder_set` are the texts before 11 Nov evening, still read for a digest sent before. */
+  const tappedEdition = editionOfTap(tapPayload);
+  if (tappedEdition || DIGEST_PICKABLE.has(conversation ?? "")) {
+    const sent = await lastDigestSent(person.person_id, tappedEdition);
+    const picks = sent ? readPicks(body, sent.items.length) : null;
+    if (sent && !picks && picksOutOfRange(body, sent.items.length)) {
+      /* "5" on a digest of three: the range, not an age or a monthly limit further down (review, 11 Nov). */
+      console.info("[sms:inbound] digest pick out of range", { items: sent.items.length });
+      await sendSms({
+        to: from,
+        body: outOfRangeSms(sent.items.length),
+        category: "transactional",
+        personId: person.person_id,
+        template: "digest_pick_range",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      return HANDLED;
+    }
+    if (sent && picks && !(await digestIsOn(person.person_id))) {
+      /* DIGEST OFF stops the reminders and questions, so a pick now would be a promise nobody keeps (13 Nov). */
+      console.info("[sms:inbound] digest pick while off", { picks: picks.length });
+      await sendSms({
+        to: from,
+        body: PICK_WHILE_OFF_SMS,
+        category: "transactional",
+        personId: person.person_id,
+        template: "digest_pick_off",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      return HANDLED;
+    }
+    if (sent && picks) {
+      /* A tap sets the reminder; the same tap again takes it off (11 Nov, evening). Several numbers
+         typed at once only set — "1 3" means both (the developer, 11 Nov). One at a time, in order. */
+      const mode = picks.length > 1 ? "set" : "toggle";
+      const outcomes: PickOutcome[] = [];
+      for (const n of picks) {
+        const outcome = await togglePick(person.person_id, sent.editionDate, today, timeZone, sent.items[n - 1], n, mode);
+        if (outcome) outcomes.push(outcome);
+      }
+      const count = (state: PickOutcome["state"]) => outcomes.filter((o) => o.state === state).length;
+      console.info("[sms:inbound] digest pick", { picks: picks.length, set: count("set"), already: count("already_set"), unset: count("unset"), no_day: count("no_day"), too_late: count("too_late"), reminded: count("reminded") });
+      if (outcomes.length === 0) return undefined;
+      await sendSms({
+        to: from,
+        body: pickReplySms(outcomes, timeZone),
+        category: "transactional",
+        personId: person.person_id,
+        template: "digest_pick_set",
+        templateVersion: SMS_TEMPLATE_VERSION,
+      });
+      return HANDLED;
+    }
+  }
+
+
+  return undefined;
+}
+
+/**
  * Step 2 — SETTINGS and the reply to it (8.3).
  */
 async function settingsStep({ from, body, person }: { from: string; body: string; person: InboundPerson }): Promise<typeof HANDLED | undefined> {
@@ -845,9 +1000,17 @@ async function captureStep({ from, body, person }: { from: string; body: string;
     /* A doctor or specialist is named by design — "Dr. Patel" is the answer — so
        that kind is not refused on a person's name, as the web flow does not flag
        one (five categories, 29 Oct). The caregiver words are still read above. */
+    /* And on the kind question (13 Nov): "Ms. Lee on Lake Ave, she's amazing with shy kids" answered "is it an
+       activity, a place…?" and was asked the same question again — her name is the answer to the careful form. */
+    /* A sentence is read for its leading name too (13 Nov): "Ms. Lee on Lake Ave, she's amazing with shy kids" is
+       a person by its first words, and whole it read as nobody — on the name step it was kept as the record's name. */
+    const leading = (text: string) => {
+      const whole = looksLikePerson(text);
+      return whole.person ? whole : looksLikePerson(text.split(/,|;|\s(?:on|at|from|in)\s|\s-\s/)[0] ?? text);
+    };
     const named =
-      capture?.step === "name" && capture.answers.kind !== "doctor"
-        ? looksLikePerson(body)
+      (capture?.step === "name" && capture.answers.kind !== "doctor") || capture?.step === "kind"
+        ? leading(body)
         : { person: false as const };
 
     /**
@@ -876,6 +1039,8 @@ async function captureStep({ from, body, person }: { from: string; body: string;
       offeringCaregiver
     ) {
       if (capture) await cancelCapture(capture.capture_id);
+      /* A caregiver or a named person: its words stay out of the trace (12 Nov). */
+      traceSensitive();
       console.info("[sms:inbound] capture refused", {
         reason: offeringCaregiver
           ? "caregiver_offered"
@@ -940,7 +1105,15 @@ async function captureStep({ from, body, person }: { from: string; body: string;
         /* Unreadable on a closed step. The question is repeated **once, as
            itself** rather than rephrased or escalated — a parent who typed
            something the options do not contain has not made a mistake, and
-           arguing about it is how a helpful service becomes a form. */
+           arguing about it is how a helpful service becomes a form.
+           **Once** (13 Nov, a parent-eyes review): it was asked again for every message, so a question in Spanish,
+           "asdfgh" and "who are you?" all got "is it an activity, a place…?". Asked twice and not answered, the
+           capture is let go and this message is handled as itself. */
+        if ((await repeatsOfLastOutbound(person.person_id, `capture_${capture.step}`)) >= 2) {
+          await cancelCapture(capture.capture_id);
+          console.info("[sms:inbound] capture let go", { step: capture.step });
+          return undefined;
+        }
         await sendSms({
           to: from,
           body: CAPTURE_QUESTIONS[capture.step].prompt,
@@ -964,8 +1137,10 @@ async function captureStep({ from, body, person }: { from: string; body: string;
  * the classifier reads as offering a recommendation. False when none could be
  * opened (no database).
  */
-async function beginCapture(from: string, personId: string): Promise<boolean> {
-  const started = await startCapture(personId);
+async function beginCapture(from: string, personId: string, said = ""): Promise<boolean> {
+  /* The kind the sentence already says is not asked again (13 Nov). */
+  const kind = kindIn(said);
+  const started = await startCapture(personId, false, kind ? { kind } : {});
   if (!started) return false;
   await sendSms({
     to: from,
@@ -1425,10 +1600,13 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
         lastAnswer: exchange?.answer ?? null,
         /* The rest of the conversation too, as routeStep gives it: this reading is the one it reuses (review, 4 Nov). */
         earlier: exchange && !exchange.held ? await earlierExchangesFor(from) : [],
+        memory: exchange && !exchange.held ? await memoryFor(person.person_id) : [],
         askedThem: open && pending ? CLARIFYING_COPY[pending] : null,
         context: { awaiting_blast_reply: false, known_person: !person.created },
       });
     }
+    /* A clarifying reply read as sensitive may end the turn here, before routeStep marks it (review, 12 Nov). */
+    if (early?.sensitive) traceSensitive();
     const newRequest =
       early !== null && early.intent !== "answer_blast" && early.intent !== "chitchat" && early.intent !== "unclear" && early.intent !== "settings";
     const question = open && pending ? (aQuestion ? null : pending) : volunteered;
@@ -1678,6 +1856,18 @@ async function openQuestionStep({ from, body, person, attached, answeredSomethin
    * nothing else has claimed the message: a reply to an Ask or to a question
    * Pando put is never an opener.
    */
+  if (!attached.attached && !answeredSomething && !clarified && asksWhoPandoIs(body)) {
+    await sendSms({
+      to: from,
+      body: WHO_REPLY,
+      category: "transactional",
+      personId: person?.person_id,
+      template: "who_reply",
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] answered who Pando is");
+    return HANDLED;
+  }
   if (!attached.attached && !answeredSomething && !clarified && isBareOpener(body)) {
     await sendSms({
       to: from,
@@ -1704,6 +1894,11 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
   /* The rest of the conversation (4 Nov): the questions before that one. Not
      after a held one — a follow-up to it is not rewritten (below). */
   const earlier = exchange && !exchange.held ? await earlierExchangesFor(from) : [];
+  /* And what came before those, compacted (12 Nov) — then the exchanges that
+     have just left the window are folded in, after this reading, so the turn
+     never waits on it. */
+  const memory = exchange && !exchange.held ? await memoryFor(person?.person_id) : [];
+  if (person) void foldMemory(person.person_id, from);
   const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
     text: body,
     recent: contextFor(pending),
@@ -1712,6 +1907,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     lastQuestion: exchange?.question ?? null,
     lastAnswer: exchange?.answer ?? null,
     earlier,
+    memory,
     family: familyLine(person?.profile.child_birth_years ?? [], new Date().getFullYear()),
     context: {
       awaiting_blast_reply: attached.attached,
@@ -1730,6 +1926,8 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     sensitive: reading.sensitive,
     attached: attached.attached,
   });
+  /* No words of a sensitive turn leave with its trace (12 Nov, `traceSensitive`). */
+  if (reading.sensitive) traceSensitive();
 
   /**
    * 5.5 → 5.6 → 5.7 → 5.8, finally joined to the door they come in through.
@@ -1808,6 +2006,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     const urgent =
       reading.intent === "contribute" && ruled === "ordinary" ? ruled : escalateSensitivity(ruled, reading.sensitive);
     if (urgent === "high_stakes" || urgent === "named_allegation") {
+      traceSensitive();
       if (person) {
         await withDb(async (db: Db) => {
           await writeFlagIfNew(db, {
@@ -1941,7 +2140,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * before, and the "yes" after it started a Network Ask. A caregiver offered
    * never gets here - `captureStep` hands it to the careful form first.
    */
-  if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id))) {
+  if (reading.intent === "contribute" && person && !person.created && (await beginCapture(from, person.person_id, body))) {
     console.info("[sms:inbound] capture started from a model reading");
     return;
   }
@@ -2031,7 +2230,13 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
      4 Nov): "standalone" is set for every burst and every carried-over age, so
      a day after a nosebleed question "hi / any swim lessons for my 4yo?" was
      answered with the crisis numbers. A topic of its own is its own question. */
-  const ownSubject = exchange?.held ? focusInQuestion(body, await focusOptions(marketOf(person))) !== null : false;
+  /* Nor is a request whose own rewrite carries nothing sensitive (13 Nov, a parent-eyes review: "Is Kidspace good
+     for toddlers?" after a fever question got the health reply). A follow-up that is about the worry carries it —
+     "what about at night?" is rewritten with the fever in it, and the rules still read that. */
+  const ownSubject = exchange?.held
+    ? focusInQuestion(body, await focusOptions(marketOf(person))) !== null ||
+      (exchange.held === "sensitive" && !!reading.standalone && classifyDemand(reading.standalone, null) === "ordinary")
+    : false;
   const followsHeld = exchange?.held && reading.standalone && !ownSubject ? exchange.held : null;
   const rewritten =
     !pending && !exchange?.held && reading.standalone && !reading.sensitive && classifyDemand(body, null) === "ordinary"
@@ -2054,6 +2259,8 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     person,
     caregiverIntent: reading.intent === "ask_caregiver" || followsHeld === "caregiver",
     sensitive: reading.sensitive || followsHeld === "sensitive",
+    /* What a held follow-up is about, so its reply is the right kind: "what about at night?" after a fever (13 Nov). */
+    ...(exchange?.held === "sensitive" ? { heldAbout: exchange.question } : {}),
   });
 }
 
@@ -2311,6 +2518,8 @@ async function answerQuestion(input: {
   said?: string | null;
   /** A correction said back ("A 7 year old, then."), through `acceptHeard` (5 Nov). */
   heard?: string | null;
+  /** The held question this follows, for which kind of high-stakes reply it gets (13 Nov). */
+  heldAbout?: string;
 }): Promise<void> {
   const { from, body, person } = input;
   const profile = person?.profile;
@@ -2488,6 +2697,7 @@ async function answerQuestion(input: {
      search happens at all. */
   const sensitivity = escalateSensitivity(classifyDemand(body, null), input.sensitive);
   const ownsAPerson = sensitivity === "high_stakes" || sensitivity === "named_allegation";
+  if (sensitivity !== "ordinary") traceSensitive();
 
   /**
    * A deep dive has no reviewer (21 Oct), so it is never built where an answer
@@ -2671,9 +2881,11 @@ async function answerQuestion(input: {
     /* Stable, so ties keep retrieval's own order: most families first. */
     .sort((a, b) => b.fit.score - a.fit.score || a.index - b.index);
 
-  /* Already in the answer before this one, and not what this question names. */
+  /* Already in the answer before this one, and not what this question names — what the *parent* wrote, not the
+     rewrite (13 Nov, a parent-eyes review): "Cheaper ones?" became "cheaper swim lessons for a 5 year old", which
+     names the tip "Cheaper swim lessons", so it went out in full on every turn of the thread. */
   const sentJustNow = (name: string): boolean =>
-    !!input.lastAnswer && !mentionsName(body, name) &&
+    !!input.lastAnswer && !mentionsName(input.said ?? body, name) &&
     (mentionsName(input.lastAnswer, name) || input.lastAnswer.toLowerCase().includes(name.toLowerCase()));
   /* A question about one place the answer has ("where is the second one?") is
      about that place: what they were sent just before is not sent again beside it. */
@@ -3024,6 +3236,8 @@ async function answerQuestion(input: {
       used: draft.parent_used,
       next_step: draft.next_step,
     });
+    /* Held as sensitive or because it is about a caregiver: its words stay out of the trace (12 Nov). */
+    if (verdict.reason === "sensitive" || verdict.reason === "caregiver") traceSensitive();
 
     /**
      * Deep Dive, the proactive trigger (21 Oct): offered at the end of an answer
@@ -3153,7 +3367,7 @@ async function answerQuestion(input: {
       }
       await sendSms({
         to: from,
-        body: sensitivity === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body)) : allegationReply(marketConfig(marketOf(person)).crisis),
+        body: sensitivity === "high_stakes" ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(input.heldAbout ? `${input.heldAbout} ${body}` : body)) : allegationReply(marketConfig(marketOf(person)).crisis),
         category: "transactional",
         personId: person?.person_id,
         template: sensitivity === "high_stakes" ? "answer_high_stakes" : "answer_allegation",
@@ -3259,16 +3473,19 @@ async function answerQuestion(input: {
       ? CLARIFYING_COPY[asking]
       : null;
   const sending = !verdict.hold;
+  /* A question in another language is answered in English and says so (13 Nov, a parent-eyes review). */
+  const languageLine = otherLanguageLine(input.said ?? body);
+  const shown = languageLine ? `${languageLine}\n${answerText}` : answerText;
   const text = sending
     ? offerDeep
-      ? `${answerText}\n\n${deepDiveOffer(sent.parent_used > 0)}`
+      ? `${shown}\n\n${deepDiveOffer(sent.parent_used > 0)}`
       : offerIntro && lead
-        ? `${answerText}\n\n${introOffer(lead.name, introOthers)}`
+        ? `${shown}\n\n${introOffer(lead.name, introOthers)}`
         : clarifier
-        ? `${answerText}\n\n${clarifier}`
-        : answerText
+        ? `${shown}\n\n${clarifier}`
+        : shown
     : urgent === "high_stakes"
-      ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(body))
+      ? highStakesReply(marketConfig(marketOf(person)).crisis, highStakesKind(input.heldAbout ? `${input.heldAbout} ${body}` : body))
       : urgent === "named_allegation"
         ? allegationReply(marketConfig(marketOf(person)).crisis)
         : heldReply(clarifier);
@@ -3380,6 +3597,7 @@ async function handleOne(input: Parameters<typeof handleInboundMessageUntraced>[
   return withTrace("sms_inbound", async () => {
     /* What the parent sent, onto the trace's input (5 Nov, `traceContent`): the text, and what media came with it. */
     traceContent({ said: [input.media ? `[${input.media.kind}${input.media.also?.length ? ` x${input.media.also.length + 1}` : ""}]` : "", input.body].filter(Boolean).join(" ") });
+    if (sensitiveText(input.body)) traceSensitive();
     /* "Pando is typing…" while an ordinary text over RCS is answered (29 Oct,
        lib/rcs-typing.ts). Not for a keyword: Twilio or the keyword step answers
        those at once. The first reply sent stops it; so does the end of the run. */

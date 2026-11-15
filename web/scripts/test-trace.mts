@@ -1,3 +1,4 @@
+import fs from "node:fs";
 /**
  * lib/server/trace.ts — the PostHog traces (27 Oct). No network: `fetch` is a
  * stand-in that plays both PostHog's /batch/ and Anthropic's /v1/messages.
@@ -142,6 +143,52 @@ console.log("\n=== the conversation, and its switch (5 Nov) ===");
   const offJson = JSON.stringify(batches);
   ok("POSTHOG_TRACE_CONTENT=off sends no words at all", !offJson.includes("swim lessons") && !offJson.includes("hello Maya") && !offJson.includes('"$ai_input"'));
   delete process.env.POSTHOG_TRACE_CONTENT;
+}
+
+console.log("\n=== a sensitive turn's words never leave (12 Nov) ===");
+{
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => {
+    tr.traceContent({ said: "my son keeps getting ear infections, which pediatric ENT?" });
+    const f = tr.tracedFetch("intent");
+    /* The model call happens before anything knows the turn is sensitive. */
+    await f("https://api.anthropic.com/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "ear infections ENT" }] }) });
+    tr.traceState("answer_plan", { question: "ENT for ear infections" }, { parents_found: [] });
+    tr.traceSensitive();
+    tr.traceContent({ sent: "A person at Pando will read your message." });
+  });
+  const json = JSON.stringify(batches);
+  const ev = batches[0]?.batch ?? [];
+  ok("no word of it is sent — the model call made before it was known included",
+    !/ear infections|ENT|person at Pando/.test(json), json.slice(0, 200));
+  ok("each content key says it was withheld", ev.filter((e) => e.properties.$ai_input !== undefined || e.properties.$ai_input_state !== undefined)
+    .every((e) => ["$ai_input", "$ai_output_choices", "$ai_input_state", "$ai_output_state"].every((k) => !(k in e.properties) || e.properties[k] === tr.WITHHELD || e.properties[k] === null)));
+  ok("the trace still goes, with its model, tokens and enums, and says why the words are missing",
+    ev.some((e) => e.event === "$ai_generation" && e.properties.$ai_output_tokens === 200) &&
+      ev.find((e) => e.event === "$ai_trace")?.properties.content_withheld === "sensitive");
+  batches.length = 0;
+  await tr.withTrace("sms_inbound", async () => {
+    tr.traceContent({ said: "any swim lessons?" });
+  });
+  ok("an ordinary turn after it is traced as before", JSON.stringify(batches).includes("any swim lessons?"));
+  batches.length = 0;
+  {
+    const f = tr.tracedFetch("assist");
+    await f("https://api.anthropic.com/v1/messages", { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: "our nanny Marisol is wonderful" }] }) });
+  }
+  ok("outside a trace no words are sent at all — nothing could mark it sensitive (third review: the Seed Tool's interview)",
+    batches.length === 1 && !JSON.stringify(batches).includes("Marisol") && batches[0].batch[0].properties.$ai_input === tr.WITHHELD &&
+      batches[0].batch[0].properties.$ai_output_tokens === 200, JSON.stringify(batches).slice(0, 200));
+  const inbound = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("marked on what the parent sent and what a voice note was read as, before any step can answer and return (third review)",
+    /if \(sensitiveText\(input\.body\)\) traceSensitive\(\);/.test(inbound) && /if \(read\.ok && sensitiveText\(read\.text\)\) traceSensitive\(\);/.test(inbound) &&
+      /return classifyDemand\(text, null\) !== "ordinary" \|\| privateIn\(text\) \|\| mentionsCaregiver\(text\);/.test(inbound));
+  ok("and on a refused caregiver or named-person capture and a clarifying reply read as sensitive",
+    /if \(capture\) await cancelCapture\(capture\.capture_id\);\s+\/\*[^*]*\*\/\s+traceSensitive\(\);/.test(inbound) && /if \(early\?\.sensitive\) traceSensitive\(\);/.test(inbound));
+  ok("marked when the model reads it as sensitive, when the rules do, and when the answer is held as sensitive or about a caregiver",
+    /if \(reading\.sensitive\) traceSensitive\(\);/.test(inbound) && /if \(sensitivity !== "ordinary"\) traceSensitive\(\);/.test(inbound) &&
+      /if \(urgent === "high_stakes" \|\| urgent === "named_allegation"\) \{\s+traceSensitive\(\);/.test(inbound) &&
+      /if \(verdict\.reason === "sensitive" \|\| verdict\.reason === "caregiver"\) traceSensitive\(\);/.test(inbound));
 }
 
 console.log("\n=== each decision between model calls, readable (6 Nov) ===");

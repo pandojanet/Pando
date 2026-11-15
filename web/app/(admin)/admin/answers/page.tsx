@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -16,6 +17,7 @@ import {
   ResultNote,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { holdReasonLabel, sentence } from "@/lib/admin/labels";
@@ -80,7 +82,7 @@ function AnswerCard({
   return (
     <li className="px-4 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <p className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <p className="text-[12.5px] font-medium text-muted">
           They asked
         </p>
         <p className="flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
@@ -115,14 +117,14 @@ function AnswerCard({
       {row.duplicates > 0 && (
         <p className="mt-2 rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
           {row.duplicates === 1
-            ? "One more answer to this same question from this number is also waiting."
-            : `${row.duplicates} more answers to this same question from this number are also waiting.`}{" "}
+            ? /* copy: state */ "One more answer to this same question from this number is also waiting."
+            : /* copy: state */ `${row.duplicates} more answers to this same question from this number are also waiting.`}{" "}
           Send one and reject the rest, or the parent gets the same message
           {row.duplicates === 1 ? " twice" : ` ${row.duplicates + 1} times`}.
         </p>
       )}
 
-      <p className="mt-3 text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+      <p className="mt-3 text-[12.5px] font-medium text-muted">
         What Pando would send
       </p>
       {editing ? (
@@ -152,7 +154,7 @@ function AnswerCard({
        * checks.
        */}
       <p className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className="text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted">
+        <span className="text-[12.5px] font-medium text-muted">
           Claims
         </span>
         {/* 26 Oct: a Deep Dive report carries no labels by construction
@@ -188,7 +190,7 @@ function AnswerCard({
         )}
       </p>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className={cn(actionsClass, "mt-3")}>
         {row.status === "pending_review" && !editing && (
           <>
             <Button
@@ -324,7 +326,7 @@ function RewriteCount({ id, text }: { id: string; text: string }) {
       {plan.encoding === "ucs2" && plan.offenders.length > 0
         ? ` · Unicode because of ${plan.offenders.slice(0, 5).join(" ")}`
         : ""}
-      {over ? " · longer than an answer is allowed to be" : ""}
+      {over ? /* copy: state */ " · longer than an answer is allowed to be" : ""}
     </p>
   );
 }

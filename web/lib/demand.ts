@@ -250,11 +250,27 @@ const MONEY_TERMS = [
  * matched, so "we can't afford his asthma medication" keeps the medical reply;
  * `general` for the rest, and for a message the model flagged with no word here.
  */
-export type HighStakesKind = "urgent" | "money" | "general";
+export type HighStakesKind = "urgent" | "money" | "medical" | "legal" | "general";
+
+/* A child's health, by its own words (13 Nov, a parent-eyes review): "my son has had a fever for 3 days" was sent
+   988 and a legal aid number with the pediatrician's line — a list, not an answer. */
+const MEDICAL_TERMS = [
+  "fever", "fevers", "rash", "rashes", "vomit", "vomiting", "vomited", "nosebleed", "nosebleeds", "seizure", "seizures",
+  "asthma", "allergic", "allergy", "allergies", "infection", "infections", "medication", "medications", "prescription",
+  "prescriptions", "antibiotic", "antibiotics", "symptom", "symptoms", "diagnosis", "diagnosed", "concussion",
+  "dehydrated", "urgent care", "emergency room", "hospital", "sick", "cough", "coughing", "diarrhea", "ear infection",
+];
+const LEGAL_TERMS = ["legal", "lawyer", "lawyers", "attorney", "custody", "court", "restraining", "cps"];
+/* Words that mean a person may be at risk: these keep the general reply, with 988 in it. */
+const DISTRESS_TERMS = ["abuse", "abused", "hurt", "hurting", "hit", "unsafe", "danger", "dangerous", "self-harm", "suicide", "neglect", "assault", "police", "social services"];
 
 export function highStakesKind(text: string): HighStakesKind {
   if (mentions(text, URGENT_TERMS)) return "urgent";
   if (mentions(text, MONEY_TERMS) && !mentions(text, HIGH_STAKES_TERMS)) return "money";
+  if (!mentions(text, DISTRESS_TERMS)) {
+    if (mentions(text, MEDICAL_TERMS) && !mentions(text, LEGAL_TERMS)) return "medical";
+    if (mentions(text, LEGAL_TERMS) && !mentions(text, MEDICAL_TERMS)) return "legal";
+  }
   return "general";
 }
 
