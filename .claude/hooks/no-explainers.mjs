@@ -36,6 +36,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const SENTENCE_WORDS = 7;
 const SCOPE = [/^web\/app\/\(admin\)\/.+\.tsx$/, /^web\/components\/admin\/.+\.tsx$/];
@@ -218,7 +219,9 @@ if (process.argv[2] === "--scan") {
 }
 
 /* ── Hook ─────────────────────────────────────────────────────────────────── */
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) {
+/* `fileURLToPath`, not `new URL(…).pathname` (16 Nov): on Windows the pathname is "/D:/…", which
+   resolves to "D:\D:\…", never matched the script path, and the hook silently allowed every edit. */
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   let input;
   try {
     input = JSON.parse(readFileSync(0, "utf8"));

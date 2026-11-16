@@ -276,7 +276,8 @@ console.log("\n=== /admin/digests (12 Nov) ===");
   ok("no native <select> anywhere on the admin", nativeSelects.length === 0, nativeSelects.join(", "));
   /* 12 Nov, again: "everything must be custom, not default" — the kit draws its own on the real input; nobody else uses one. */
   const defaults = [...walk("app/(admin)"), ...walk("components/admin")]
-    .filter((f) => !f.endsWith("components/admin/kit.tsx"))
+    /* `path.join` gives "\" on Windows (16 Nov): compare with forward slashes. */
+    .filter((f) => !f.replace(/\\/g, "/").endsWith("components/admin/kit.tsx"))
     .filter((f) => /type="(checkbox|radio|number|date|time|datetime-local|file|range)"/.test(read(f)));
   ok("no default checkbox, radio, number, date, file or range input on the admin outside the kit", defaults.length === 0, defaults.join(", "));
   ok("the kit draws them: Checkbox and Radio on the real input with appearance-none, NumberField with its own − +, a Calendar in a popover",
