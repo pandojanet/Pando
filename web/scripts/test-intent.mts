@@ -523,6 +523,18 @@ console.log("\n=== a correction said back (heard, 5 Nov) ===");
       m.acceptHeard("A seven year old who loves the water and swims every single weekend.", "she's 7") === null);
   ok("never an emoji or a stray symbol", m.acceptHeard("A 7 year old, then 🎉.", "she's 7") === null);
   ok("empty is nothing", m.acceptHeard("", "hi") === null && m.acceptHeard(null, "hi") === null);
+  ok("'who are you?' and its kind are asked whole, a question about who is not", m.asksWhoPandoIs("who are you?") && m.asksWhoPandoIs("Hi, what is this?") && m.asksWhoPandoIs("are you a bot") &&
+    !m.asksWhoPandoIs("who are you recommending for toddlers?") && !m.asksWhoPandoIs("what is a good swim school?"));
+  ok("a question in Spanish is told, in Spanish, that the answer is in English; another script in English; English nothing",
+    m.otherLanguageLine("hola, busco clases de natación para mi hijo de 4 años") === "Por ahora respondo solo en inglés." &&
+      m.otherLanguageLine("游泳课 4岁") === "I can only answer in English for now." &&
+      m.otherLanguageLine("Any swim classes for my 4 year old?") === null && m.otherLanguageLine("para") === null);
+  /* 13 Nov, a parent-eyes review: a first question said back with a want nobody had. */
+  ok("never a word the parent did not say, nor more than eight",
+    m.acceptHeard("A 4 year old in Pasadena, so here are the cheaper options.", "Any swim classes for a 4 year old near Pasadena?") === null &&
+      m.acceptHeard("Cheaper ones, then.", "swim lessons please") === null);
+  ok("the parent's own words still come back", m.acceptHeard("Arcadia instead.", "sorry, Arcadia") === "Arcadia instead." &&
+    m.acceptHeard("Cheaper ones, then.", "Cheaper ones?") === "Cheaper ones, then.");
   const heard = (h: string) => ({ intent: "ask_recommendation", confidence: 0.9, standalone: "swim lessons for a 7 year old", heard: h });
   ok("the reading carries it for a request", m.applyThreshold(heard("A 7 year old, then."), "actually she's 7", ctx()).heard === "A 7 year old, then.");
   ok("and not for any other intent", m.applyThreshold({ ...heard("A 7 year old, then."), intent: "chitchat" }, "actually she's 7", ctx()).heard === null);

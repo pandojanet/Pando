@@ -66,15 +66,17 @@ for (const t of ["can you introduce me to a parent who goes there?", "could you 
 for (const t of ["any good swim classes?", "is there a parent and me class?", "thanks!"]) ok(`"${t}" does not`, !i.asksForIntro(t));
 
 console.log("\n=== the offer: the client's words, and no names ===");
-ok("two is 'a couple'", i.introOffer("Little Maestros", 2).startsWith("By the way, a couple of parents Pando knows have used Little Maestros."));
-ok("one is 'a parent'", i.introOffer("Little Maestros", 1).startsWith("By the way, a parent Pando knows has used Little Maestros."));
-ok("more is a number", i.introOffer("Little Maestros", 4).includes("4 parents Pando knows have used"));
+ok("two is 'a couple'", i.introOffer("Little Maestros", 2).startsWith("By the way, a couple of local parents have used Little Maestros."));
+ok("one is 'a parent'", i.introOffer("Little Maestros", 1).startsWith("By the way, a local parent has used Little Maestros."));
+ok("more is a number", i.introOffer("Little Maestros", 4).includes("4 local parents have used"));
+ok("never 'a parent Pando knows' (13 Nov: it read as a rolodex)", !/Pando knows/.test(i.introOffer("X", 1) + i.introOffer("X", 2) + i.introOffer("X", 4)));
+ok("INTRO taken names what it is about, and says it plainly with no name", i.introRequested("Little Maestros").includes("a parent who's used Little Maestros") && i.introRequested(null) === i.INTRO_REQUESTED);
 ok("never 'near you': nothing checks where they live (review, 21 Oct)", !i.introOffer("X", 2).includes("near you"));
 ok("'used' fits a doctor or a product", !i.introOffer("Graco stroller", 1).includes("been to"));
 for (const t of ["Any good intro to ballet classes?", "intro to coding classes?", "Can you connect me with a good pediatrician?"]) {
   ok(`"${t}" is a question, not an intro request (review, 21 Oct)`, !i.asksForIntro(t));
 }
-ok("it says how to take it, and that they are asked first", /Reply INTRO and someone at Pando will ask them first\.$/.test(i.introOffer("X", 2)));
+ok("it says how to take it, that they are asked first, and that nothing is shared without their yes", /Reply INTRO and someone at Pando will ask them first - nothing is shared unless they say yes\.$/.test(i.introOffer("X", 2)));
 ok("a name outside GSM-7 cannot break the encoding", !/[^\x20-\x7E]/.test(i.introOffer("Zoë’s Studio \u{1F600}", 2)));
 for (const [name, copy] of Object.entries({ REQUESTED: i.INTRO_REQUESTED, NOTHING: i.INTRO_NOTHING, ALREADY: i.INTRO_ALREADY })) {
   ok(`${name} is plain GSM-7`, !/[^\x20-\x7E]/.test(copy));

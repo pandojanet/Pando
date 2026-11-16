@@ -14,8 +14,10 @@
  * writes to a parent's phone" should be visible in one glance rather than
  * discovered by reading three job bodies.
  *
- * The host cron does one thing: call the endpoint. Everything about *what* runs
- * is here.
+ * The scheduler does one thing: call the endpoint. Since 11 Nov that is
+ * Supabase Cron (`drizzle/0068_supabase_cron.sql`, one schedule per job here —
+ * `npm run test:digest-followup` fails if one is missing), not a host crontab.
+ * Everything about *what* runs is here.
  */
 
 export type JobName =
@@ -26,12 +28,23 @@ export type JobName =
   | "thanks_prompt"
   | "thanks_delivery"
   | "retry_failed"
-  | "weekly_digest";
+  | "weekly_digest"
+  | "expire_memory"
+  | "digest_reminders"
+  | "digest_feedback";
 
 export interface JobSpec {
   name: JobName;
   /** Shortest gap between two runs. A cron firing more often is simply refused. */
   min_interval_minutes: number;
+  /**
+   * 11 Nov, the review of the Supabase Cron change: a run left open (a crash or
+   * a deploy mid-run) blocks the job until a person clears it — deliberately,
+   * 27 Aug. For the two digest sweeps that would let every reminder lapse
+   * silently (a reminder two hours late is dropped), so a run open this long is
+   * closed as `error` (note `taken_over`) and a new one starts. Unset: blocks.
+   */
+  take_over_after_minutes?: number;
   /**
    * The job sends messages to parents.
    *
@@ -60,6 +73,50 @@ export const JOBS: Record<JobName, JobSpec> = {
     min_interval_minutes: 55,
     sends: true,
     what: "On Saturday, text the parents who asked for it a few local events, camps and classes.",
+  },
+
+  /**
+   * 12 Nov (drizzle/0066): a parent's compacted conversation
+   * (`conversation_summaries`) is kept while they keep talking, and deleted
+   * after 90 days with nothing added. Daily is enough for a 90-day clock; it
+   * reads and deletes, and sends nothing.
+   */
+  /**
+   * 11 Nov (lib/digest-followup.ts): the reminder of an event a parent picked
+   * from the digest and said YES to. Each pick is its own scheduled job — a
+   * `digest_interests` row with the moment it fires (two hours before the
+   * event's stated start, never before 8:00 on the market's clock, else 8:00);
+   * this sweep, every five minutes, sends what has come due and skips one more
+   * than two hours late. It sends, in category `digest` — the parent's own
+   * yes, outside the contributor limits.
+   */
+  digest_reminders: {
+    name: "digest_reminders",
+    min_interval_minutes: 4,
+    take_over_after_minutes: 15,
+    sends: true,
+    what: "Two hours before an event a parent picked from the digest (never before 8:00), remind them of it.",
+  },
+
+  /**
+   * 11 Nov: the day after a reminded event, "how was it?" with three buttons,
+   * at 10:00 on the market's clock (the row's `ask_at`); every five minutes,
+   * up to two days late, then dropped; one open question per family. Sends in
+   * category `digest`.
+   */
+  digest_feedback: {
+    name: "digest_feedback",
+    min_interval_minutes: 4,
+    take_over_after_minutes: 15,
+    sends: true,
+    what: "The day after a reminded event, ask the parent how it was, by buttons.",
+  },
+
+  expire_memory: {
+    name: "expire_memory",
+    min_interval_minutes: 60 * 23,
+    sends: false,
+    what: "Delete the conversation summaries of parents who have not texted for 90 days.",
   },
 
   /**
@@ -132,7 +189,7 @@ export const JOBS: Record<JobName, JobSpec> = {
    */
   retry_failed: {
     name: "retry_failed",
-    min_interval_minutes: 10,
+    min_interval_minutes: 8, /* called every 10 min by Supabase Cron; 8 leaves room for the call's own delay (review, 11 Nov) */
     sends: true,
     what: "Send again the handful of messages that failed for a reason that might not repeat.",
   },

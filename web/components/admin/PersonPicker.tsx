@@ -179,7 +179,7 @@ export function PersonPicker<T extends SearchablePerson>({
     <div className={cn("min-w-[15rem]", className)} ref={wrapRef}>
       <label
         htmlFor={inputId}
-        className="block text-[11.5px] font-semibold uppercase tracking-[0.07em] text-muted"
+        className="block text-[12.5px] font-medium text-muted"
       >
         {label}
       </label>
@@ -259,7 +259,7 @@ export function PersonPicker<T extends SearchablePerson>({
               <li className="px-3 py-2.5 text-[13px] text-muted">
                 {people.length === 0
                   ? emptyLabel
-                  : `No ${noun} matches “${query.trim()}”. Try a surname, or the town.`}
+                  : `No ${noun} matches “${query.trim()}”.`}
               </li>
             ) : (
               matches.map((person, i) => (

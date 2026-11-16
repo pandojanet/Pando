@@ -149,8 +149,16 @@ console.log("\n=== the review's cases (4 Nov) ===");
   const { joined, rest } = c.joinDrawn(late, drawn);
   ok("a family signing up later that Saturday joins the group already drawn that it is like",
     joined.get(drawn[0].key)?.join() === "0");
-  ok("one the graph knows nothing about joins the market-wide group", joined.get("c-general")?.join() === "1");
-  ok("one like none is grouped anew, and no drawn group's key moves", rest.join() === "2" && c.cohortProfile(drawnFams).key === drawn[0].key);
+  ok("one the graph knows nothing about joins the market-wide group", (joined.get("c-general") ?? []).includes(1));
+  /* 11 Nov, the lab: one family like none got a deep search of its own, which found nothing. */
+  ok("one like none joins the market-wide group, not a search of its own; no drawn group's key moves",
+    rest.length === 0 && joined.get("c-general")?.join() === "1,2" && c.cohortProfile(drawnFams).key === drawn[0].key);
+  const school = [fam([9], "Sierra Madre"), fam([9], "Sierra Madre"), fam([10], "Sierra Madre"), fam([3], "Altadena")];
+  const three = c.joinDrawn(school, drawn);
+  ok("three alike and like none are a group of their own; the fourth joins its own",
+    three.rest.join() === "0,1,2" && three.joined.get(drawn[0].key)?.join() === "3");
+  const noGeneral = c.joinDrawn([fam([9], "Sierra Madre")], drawn.slice(0, 2));
+  ok("with no market-wide group drawn, one like none is still grouped anew", noGeneral.rest.join() === "0");
 }
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);

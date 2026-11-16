@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
+  actionsClass,
   ageList,
   Badge,
   Button,
@@ -17,6 +18,7 @@ import {
   slugLabel,
   TextLink,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { FoundingRow } from "@/lib/admin/types";
 
@@ -225,7 +227,7 @@ export default function FoundingQueuePage() {
                           </p>
                         </div>
 
-                        <div className="flex shrink-0 flex-wrap gap-2">
+                        <div className={cn(actionsClass, "shrink-0")}>
                           <Button
                             tone="primary"
                             disabled={busy !== null}

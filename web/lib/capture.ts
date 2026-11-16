@@ -164,6 +164,20 @@ export const CAPTURE_QUESTIONS: Record<CaptureStep, CaptureQuestion> = {
   },
 };
 
+/**
+ * The kind a sentence already says (13 Nov, a parent-eyes review): "can I recommend a great piano teacher?" was
+ * asked "is it an activity, a place, a doctor…?" — the parent had said. One kind's words only; two, or none, and
+ * the question is asked. Never a caregiver: that has its own careful form.
+ */
+export function kindIn(text: string): "activity" | "place" | "doctor" | null {
+  const t = ` ${text.toLowerCase().replace(/[^a-z\s]/g, " ")} `;
+  const found = new Set<"activity" | "place" | "doctor">();
+  if (/\s(teacher|teachers|tutor|tutors|coach|coaches|instructor|instructors|class|classes|lesson|lessons|camp|camps|program|programs|school|club|clubs|team)\s/.test(t)) found.add("activity");
+  if (/\s(park|parks|museum|museums|library|libraries|playground|playgrounds|restaurant|restaurants|cafe|pool|pools|beach|zoo|store|shop)\s/.test(t)) found.add("place");
+  if (/\s(doctor|doctors|dentist|dentists|pediatrician|pediatricians|therapist|therapists|specialist|specialists|orthodontist|optometrist)\s/.test(t)) found.add("doctor");
+  return found.size === 1 ? [...found][0] : null;
+}
+
 /** Words that start a capture. Exact on the whole message, as everywhere else. */
 const START_WORDS = ["ADD", "RECOMMEND", "SHARE", "SUGGEST"];
 
@@ -447,9 +461,10 @@ export function captureCancelledSms(): string {
  * person rather than for childcare.
  */
 export function namedPersonRedirectSms(): string {
-  return "Pando: that sounds like a person rather than a place. For a person we ask a few careful questions first. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
+  /* The link on a line of its own (13 Nov): "pando.is/share Reply STOP" ran the link into the words after it. */
+  return "Pando: that sounds like a person rather than a place. For a person we ask a few careful questions first. Takes two minutes:\npando.is/share\nReply STOP to opt out, HELP for help.";
 }
 
 export function caregiverRedirectSms(): string {
-  return "Pando: for a nanny or sitter we ask a few careful questions first, including whether you employed them yourself. Takes two minutes: pando.is/share Reply STOP to opt out, HELP for help.";
+  return "Pando: for a nanny or sitter we ask a few careful questions first, including whether you employed them yourself. Takes two minutes:\npando.is/share\nReply STOP to opt out, HELP for help.";
 }

@@ -463,6 +463,27 @@
       "when": 1793797200000,
       "tag": "0065_digest_cohorts",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794402000000,
+      "tag": "0066_conversation_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794488400000,
+      "tag": "0067_digest_interests",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794492000000,
+      "tag": "0068_supabase_cron",
+      "breakpoints": true
     }
   ]
 }

@@ -7,10 +7,10 @@ import {
   introTarget,
   INTRO_ALREADY,
   INTRO_NOTHING,
-  INTRO_REQUESTED,
+  introRequested,
 } from "@/lib/introductions";
 import { notifyAdmins } from "@/lib/server/notify";
-import { requestIntroExplicitly, takeIntroOffer } from "@/lib/server/repo/introductions";
+import { introSubject, requestIntroExplicitly, takeIntroOffer } from "@/lib/server/repo/introductions";
 
 /**
  * Introductions — the parent's side (21 Oct). The rules and statuses are in
@@ -43,7 +43,7 @@ export async function introStep(input: {
     if (!taken) return null;
     if (taken.already) return { reply: INTRO_ALREADY, template: "intro_already" };
     await notifyAdmins({ kind: "introduction" }, { is_test: input.isTest === true });
-    return { reply: INTRO_REQUESTED, template: "intro_requested" };
+    return { reply: introRequested(await introSubject(taken.id)), template: "intro_requested" };
   }
   const explicit = !word && asksForIntro(body);
   if (!word && !explicit) return null;
@@ -72,5 +72,5 @@ export async function introStep(input: {
   if (!made) return { reply: INTRO_NOTHING, template: "intro_nothing" };
   if (made.already) return { reply: INTRO_ALREADY, template: "intro_already" };
   await notifyAdmins({ kind: "introduction" }, { is_test: input.isTest === true });
-  return { reply: INTRO_REQUESTED, template: "intro_requested" };
+  return { reply: introRequested(await introSubject(made.id)), template: "intro_requested" };
 }

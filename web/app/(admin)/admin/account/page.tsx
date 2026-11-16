@@ -64,7 +64,7 @@ export default function AccountPage() {
       setNext("");
       setAgain("");
     } catch {
-      setError("Couldn't reach the server. Nothing was changed.");
+      setError(/* copy: state */ "Couldn't reach the server. Nothing was changed.");
     } finally {
       setBusy(false);
     }
@@ -85,7 +85,7 @@ export default function AccountPage() {
               Password changed.
             </p>
             <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
-              You&apos;re still signed in here. Anywhere else has been signed out.
+              {/* copy: state */}You&apos;re still signed in here. Anywhere else has been signed out.
             </p>
             <Button
               tone="secondary"

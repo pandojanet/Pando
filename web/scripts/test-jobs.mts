@@ -126,6 +126,9 @@ const SENDING = [
   "retry_failed",
   /* 3 Nov: the weekly digest, on Saturdays, to the parents who said yes to it. */
   "weekly_digest",
+  /* 11 Nov: the morning reminder of an event a parent picked from the digest, and the day-after question. */
+  "digest_reminders",
+  "digest_feedback",
 ];
 ok(
   "and those are the only jobs that may text anybody",

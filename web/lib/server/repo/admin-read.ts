@@ -4,6 +4,7 @@ import { DEFAULT_MARKET_ID } from "@/lib/markets";
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { deliveryHealth } from "@/lib/delivery";
+import { composeDigest, type DigestItem } from "@/lib/digest";
 import { completeCounts, completeCountSql } from "@/lib/server/repo/founding-count";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
@@ -124,6 +125,7 @@ const READERS: { [R in AdminResource]: Reader<R> } = {
   standing: (db) => contributorStanding(db),
   impact: (db) => impactRows(db),
   deep_dives: (db) => deepDiveRows(db),
+  digests: (db, params) => digestRows(db, params),
   introductions: (db) => introductionRows(db),
   conversations: (db) => conversationRows(db),
   conversation: (db, params) => conversationDetail(db, String(params.person_id ?? params.id ?? "")),
@@ -2676,6 +2678,204 @@ async function deepDiveRows(db: Db): Promise<AdminResourceRows["deep_dives"]> {
       is_test: r.is_test === true,
     })),
   };
+}
+
+/** How many Saturdays the digest page shows, newest first. */
+const DIGEST_WEEKS = 12;
+
+/**
+ * The weekly digest, week by week and group by group (12 Nov, `DigestsResult`).
+ * Reads nothing until `drizzle/0064`; what each family was sent and their picks
+ * only once `drizzle/0067` is applied (`picks_configured`). The texts are
+ * rebuilt from each send's stored items — bodies are never stored.
+ */
+async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise<AdminResourceRows["digests"]> {
+  const ready = await rows(db, sql`
+    select to_regclass('public.digest_editions') is not null as editions,
+           to_regclass('public.digest_interests') is not null
+             and exists (select 1 from information_schema.columns
+                          where table_schema = 'public' and table_name = 'digest_sends' and column_name = 'item_ids') as picks
+  `);
+  if (ready[0]?.editions !== true) return { configured: false, picks_configured: false, weeks: [], index: [] };
+  const picks = ready[0]?.picks === true;
+
+  /* Every Saturday, one line each (12 Nov: the calendar finds any week, not only the latest twelve). */
+  const indexRows = await rows(db, sql`
+    select e.edition_date::text as edition_date, e.is_test,
+           count(*) as groups,
+           count(*) filter (where e.status = 'failed') as failed,
+           (select count(*) from digest_sends s join digest_editions e2 on e2.id = s.edition_id
+             where e2.edition_date = e.edition_date and e2.is_test = e.is_test and s.item_count > 0) as families
+      from digest_editions e
+     group by e.edition_date, e.is_test
+     order by e.edition_date desc, e.is_test
+  `);
+  const index = indexRows.map((r) => ({
+    edition_date: String(r.edition_date),
+    is_test: r.is_test === true,
+    groups: Number(r.groups ?? 0),
+    families: Number(r.families ?? 0),
+    failed: Number(r.failed ?? 0),
+  }));
+  if (index.length === 0) return { configured: true, picks_configured: picks, weeks: [], index };
+  /* The latest Saturdays in full, and one asked for by date however old — only a real YYYY-MM-DD reaches the query. */
+  const asked = typeof params.week === "string" && /^\d{4}-\d{2}-\d{2}$/.test(params.week) ? params.week : null;
+  const dates = [...new Set([...index.map((w) => w.edition_date).slice(0, DIGEST_WEEKS * 2), ...(asked ? [asked] : [])])]
+    .sort()
+    .reverse()
+    .filter((d, i, all) => d === asked || all.indexOf(d) < DIGEST_WEEKS);
+  const dateList = sql.join(dates.map((d) => sql`${d}::date`), sql`, `);
+
+  const editions = await rows(db, sql`
+    select id::text as id, edition_date::text as edition_date, is_test, cohort_key, cohort_label,
+           status, attempts, created_at::text as created_at
+      from digest_editions where edition_date in (${dateList})
+     order by edition_date desc, is_test, (cohort_key = 'c-general'), cohort_label nulls last, created_at
+  `);
+  const editionIds = editions.map((e) => String(e.id));
+  if (editionIds.length === 0) return { configured: true, picks_configured: picks, weeks: [], index };
+  const idList = sql.join(editionIds.map((id) => sql`${id}::uuid`), sql`, `);
+
+  const items = await rows(db, sql`
+    select id::text as id, edition_id::text as edition_id, position, kind, title, when_text,
+           starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url
+      from digest_items where edition_id in (${idList})
+     order by edition_id, position
+  `);
+  const sends = await rows(db, picks
+    ? sql`
+      select s.edition_id::text as edition_id, s.item_count, s.item_ids::text[] as item_ids,
+             s.sent_at::text as sent_at, p.id::text as person_id, p.first_name
+        from digest_sends s join people p on p.id = s.person_id
+       where s.edition_id in (${idList})
+       order by s.sent_at`
+    : sql`
+      select s.edition_id::text as edition_id, s.item_count, null::text[] as item_ids,
+             s.sent_at::text as sent_at, p.id::text as person_id, p.first_name
+        from digest_sends s join people p on p.id = s.person_id
+       where s.edition_id in (${idList})
+       order by s.sent_at`);
+  const interests = picks
+    ? await rows(db, sql`
+      select item_id::text as item_id,
+             count(*) filter (where status = 'going' and reminded_at is null) as reminders,
+             count(*) filter (where status = 'declined' and remind_at is not null) as taken_off,
+             count(*) filter (where reminded_at is not null) as reminded,
+             count(*) filter (where feedback = 'loved') as loved,
+             count(*) filter (where feedback = 'ok') as ok,
+             count(*) filter (where feedback = 'didnt_go') as didnt_go
+        from digest_interests
+       where item_id in (select id from digest_items where edition_id in (${idList}))
+       group by item_id`)
+    : [];
+
+  /* Every item of the shown weeks by id: a family's text can carry other groups' items (`poolForFamily`). */
+  const byId = new Map<string, Row>(items.map((i) => [String(i.id), i]));
+  const groupLabel = new Map(editions.map((e) => [String(e.id), e.cohort_label ? String(e.cohort_label) : "Everyone"]));
+  const asDigestItem = (i: Row): DigestItem => ({
+    id: String(i.id),
+    kind: col(String(i.kind)),
+    title: String(i.title),
+    when_text: String(i.when_text),
+    starts_on: i.starts_on ? String(i.starts_on) : null,
+    ends_on: i.ends_on ? String(i.ends_on) : null,
+    place: i.place ? String(i.place) : null,
+    age_min: i.age_min === null ? null : Number(i.age_min),
+    age_max: i.age_max === null ? null : Number(i.age_max),
+    summary: String(i.summary),
+    url: String(i.url),
+  });
+  const sentTo = new Map<string, number>();
+  /* "item id|edition id" → families of that edition whose text carried it. */
+  const sentHere = new Map<string, number>();
+  for (const s of sends) {
+    for (const id of (s.item_ids as string[] | null) ?? []) {
+      sentTo.set(id, (sentTo.get(id) ?? 0) + 1);
+      const k = `${id}|${String(s.edition_id)}`;
+      sentHere.set(k, (sentHere.get(k) ?? 0) + 1);
+    }
+  }
+  const did = new Map(interests.map((r) => [String(r.item_id), r]));
+  const n = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
+
+  const out: AdminResourceRows["digests"]["weeks"] = [];
+  for (const e of editions) {
+    const date = String(e.edition_date);
+    const isTest = e.is_test === true;
+    let week = out.find((w) => w.edition_date === date && w.is_test === isTest);
+    if (!week) {
+      week = { edition_date: date, is_test: isTest, groups: [] };
+      out.push(week);
+    }
+    const mine = sends.filter((s) => String(s.edition_id) === String(e.id));
+    const variants = new Map<string, AdminResourceRows["digests"]["weeks"][number]["groups"][number]["variants"][number]>();
+    for (const s of mine) {
+      const ids = (s.item_ids as string[] | null) ?? [];
+      if (n(s.item_count) === 0 || ids.length === 0) continue;
+      const key = ids.join(",");
+      const who = { id: String(s.person_id), name: s.first_name ? String(s.first_name) : null };
+      const known = variants.get(key);
+      if (known) {
+        known.families++;
+        known.people.push(who);
+        continue;
+      }
+      const found = ids.map((id) => byId.get(id)).filter((i): i is Row => !!i).map(asDigestItem);
+      /* An item gone since (its edition deleted) cannot be rebuilt honestly: no text rather than a shorter one. */
+      const composed = found.length === ids.length ? composeDigest(found) : null;
+      variants.set(key, {
+        item_ids: ids,
+        items: ids.map((id) => {
+          const it = byId.get(id);
+          const from = it ? String(it.edition_id) : null;
+          return { id, title: it ? String(it.title) : "(deleted)", from_group: from && from !== String(e.id) ? (groupLabel.get(from) ?? null) : null };
+        }),
+        families: 1,
+        people: [who],
+        text: composed?.body ?? "",
+        card: composed?.card ?? "",
+        first_sent_at: String(s.sent_at),
+      });
+    }
+    week.groups.push({
+      id: String(e.id),
+      label: e.cohort_label ? String(e.cohort_label) : null,
+      general: e.cohort_key === "c-general",
+      status: col(String(e.status)),
+      attempts: n(e.attempts),
+      created_at: String(e.created_at),
+      sent_at: mine.find((s) => n(s.item_count) > 0)?.sent_at ? String(mine.find((s) => n(s.item_count) > 0)!.sent_at) : null,
+      families_sent: mine.filter((s) => n(s.item_count) > 0).length,
+      families_nothing: mine.filter((s) => n(s.item_count) === 0).length,
+      variants: [...variants.values()].sort((a, b) => b.families - a.families),
+      items: items
+        .filter((i) => String(i.edition_id) === String(e.id))
+        .map((i) => {
+          const d = did.get(String(i.id));
+          return {
+            id: String(i.id),
+            position: n(i.position) + 1,
+            kind: col(String(i.kind)),
+            title: String(i.title),
+            when_text: String(i.when_text),
+            place: i.place ? String(i.place) : null,
+            age_min: i.age_min === null ? null : Number(i.age_min),
+            age_max: i.age_max === null ? null : Number(i.age_max),
+            summary: String(i.summary),
+            url: String(i.url),
+            sent_to: sentTo.get(String(i.id)) ?? 0,
+            sent_here: sentHere.get(`${String(i.id)}|${String(e.id)}`) ?? 0,
+            reminders: n(d?.reminders),
+            taken_off: n(d?.taken_off),
+            reminded: n(d?.reminded),
+            loved: n(d?.loved),
+            ok: n(d?.ok),
+            didnt_go: n(d?.didnt_go),
+          };
+        }),
+    });
+  }
+  return { configured: true, picks_configured: picks, weeks: out, index };
 }
 
 async function impactRows(db: Db): Promise<AdminResourceRows["impact"]> {

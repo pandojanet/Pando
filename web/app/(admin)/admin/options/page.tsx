@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from "react";
 import {
+  actionsClass,
   Button,
   Card,
   Empty,
@@ -150,7 +151,7 @@ export default function PendingOptionsPage() {
                   <Td className="text-[13px]">{row.submitted_by?.name ?? "—"}</Td>
                   <Td className="text-muted">{when(row.created_at)}</Td>
                   <Td>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className={actionsClass}>
                       <Button
                         tone="primary"
                         subject={row.submitted_value}
@@ -198,14 +199,12 @@ export default function PendingOptionsPage() {
                     <td colSpan={7} className="bg-paper px-4 py-3">
                       <div className="grid gap-4 text-[13px] sm:grid-cols-2">
                         <div>
-                          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                          <p className="mb-1 text-[12.5px] font-medium text-muted">
                             Who typed it
                           </p>
                           {row.parents.length === 0 ? (
                             <p className="text-muted">
-                              No saved profile carries it any more — the number
-                              is how many times it was entered, not how many
-                              parents.
+                              {/* copy: state */}No saved profile carries it any more.
                             </p>
                           ) : (
                             <ul className="space-y-1">
@@ -229,13 +228,12 @@ export default function PendingOptionsPage() {
                           )}
                         </div>
                         <div>
-                          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                          <p className="mb-1 text-[12.5px] font-medium text-muted">
                             Recommendations under this name
                           </p>
                           {row.recommendations.length === 0 ? (
                             <p className="text-muted">
-                              Nobody has recommended it yet — a parent only mentioned it,
-                              which is not a contribution.
+                              {/* copy: state */}Nobody has recommended it yet — a parent only mentioned it.
                             </p>
                           ) : (
                             <ul className="space-y-1">

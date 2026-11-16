@@ -50,7 +50,9 @@ export type RichKind =
   | "capture_firsthand"
   | "capture_recommend"
   | "skip"
-  | "child_age";
+  | "child_age"
+  | "digest_pick"
+  | "digest_feedback";
 
 /** One quick reply: what the person sees, and the id Twilio returns as `ButtonPayload`. */
 export interface RichButton {
@@ -104,6 +106,14 @@ export const RICH_BUTTONS: Record<RichKind, readonly RichButton[]> = {
   /* The age question (3 Nov, open signup): the ages are typed; having none is one
      tap. `declinesChildren` reads "No kids". */
   child_age: [b("No kids", "no_kids")],
+  /* The weekly digest's numbers (11 Nov, lib/digest-followup.ts): a tap is a
+     pick, several taps several picks; `readPicks` reads each. Always four — a
+     template's buttons are fixed — and **inside the card** (`IN_CARD`), where
+     they stay after the next message; a number past the digest's own is
+     answered with the range. */
+  digest_pick: [b("1", "pick_1"), b("2", "pick_2"), b("3", "pick_3"), b("4", "pick_4")],
+  /* The day after a picked event: `readFeedback`. Buttons only, no free text. */
+  digest_feedback: [b("Loved it", "fb_loved"), b("It was OK", "fb_ok"), b("Didn't go", "fb_didnt_go")],
 };
 
 /**
@@ -123,6 +133,8 @@ export const RICH_ENV: Record<RichKind, string> = {
   capture_recommend: "TWILIO_RCS_CONTENT_SID_CAPTURE_RECOMMEND",
   skip: "TWILIO_RCS_CONTENT_SID_SKIP",
   child_age: "TWILIO_RCS_CONTENT_SID_CHILD_AGE",
+  digest_pick: "TWILIO_RCS_CONTENT_SID_DIGEST_PICK",
+  digest_feedback: "TWILIO_RCS_CONTENT_SID_DIGEST_FEEDBACK",
 };
 
 export const RICH_KINDS = Object.keys(RICH_BUTTONS) as RichKind[];
@@ -216,16 +228,44 @@ export function cardFormat(text: string): string {
  * Null when either would not fit — the plain text goes instead, which is what a
  * parent without RCS would have had anyway.
  */
-export function richVariables(card: string, body: string): string | null {
+export function richVariables(card: string, body: string, edition?: string): string | null {
   if (card.length === 0 || body.length === 0) return null;
   if (card.length > RICH_BODY_MAX || body.length > RICH_BODY_MAX) return null;
-  return JSON.stringify({ "1": card, "2": body });
+  return JSON.stringify({ "1": card, "2": body, ...(edition ? { "3": edition } : {}) });
 }
+
+/**
+ * Kinds whose button ids carry `{{3}}`, the edition they belong to (11 Nov,
+ * the developer: *"the button on an old card must be fixed"*). A digest card's
+ * buttons stay tappable for weeks; a fixed "pick_2" was read against the newest
+ * digest, so last week's "2" set a reminder on this week's second item. The
+ * template's ids are `pick_1_{{3}}` … and `{{3}}` is the edition date,
+ * `YYYYMMDD` (`editionVariable`); the tap comes back as `pick_2_20261121`.
+ */
+export const ID_WITH_EDITION: ReadonlySet<RichKind> = new Set<RichKind>(["digest_pick"]);
+
+/** The edition date as the button ids carry it: "2026-11-21" → "20261121". */
+export const editionVariable = (editionDate: string) => editionDate.replaceAll("-", "");
 
 /** Every button id, mapped to its title — the word the parsers read. */
 const TAP_WORDS: ReadonlyMap<string, string> = new Map(
   RICH_KINDS.flatMap((kind) => RICH_BUTTONS[kind].map((button) => [button.id, button.title] as const)),
 );
+
+/* A tap's id with its edition taken off: "pick_2_20261121" → "pick_2"; any other id as it is. */
+const baseId = (payload: string) => {
+  const m = /^(.+)_(\d{8})$/.exec(payload);
+  return m && TAP_WORDS.has(m[1]) ? m[1] : payload;
+};
+
+/**
+ * The edition a tapped digest number belongs to, "YYYY-MM-DD", or null — a
+ * typed number, or a tap from a template without `{{3}}` in its ids.
+ */
+export function editionOfTap(buttonPayload: string | null | undefined): string | null {
+  const m = /^pick_\d_(\d{4})(\d{2})(\d{2})$/.exec((buttonPayload ?? "").trim());
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
 
 /**
  * What a reply says, read from a tap where there was one.
@@ -242,7 +282,7 @@ const TAP_WORDS: ReadonlyMap<string, string> = new Map(
  * the STOP — the two would disagree about whether the person had left.
  */
 export function tapText(input: { body: string; buttonPayload?: string | null }): string {
-  const title = TAP_WORDS.get((input.buttonPayload ?? "").trim());
+  const title = TAP_WORDS.get(baseId((input.buttonPayload ?? "").trim()));
   if (!title) return input.body;
   const typed = input.body.trim();
   return typed === "" || typed.toLowerCase() === title.toLowerCase() ? title : input.body;
@@ -281,23 +321,39 @@ export function captureStepRich(step: string, card: string | undefined): { kind:
  * `twilio/text` is **not optional**: without it Twilio has no SMS version of the
  * message, and a parent without RCS would get an MMS or nothing.
  */
+/**
+ * Kinds whose buttons sit inside the card ("Chip list: Rich Card" in the
+ * Builder, `chip_list: false` in the API), not in a chip list under it. A chip
+ * list shows only while its message is the newest and is gone after the next;
+ * a card's buttons stay, on every client (Google RBM: "Suggestions are always
+ * persistent" for rich cards). At most four fit in a card. Only the digest
+ * needs it: a parent may tap several of its numbers (11 Nov).
+ */
+export const IN_CARD: ReadonlySet<RichKind> = new Set<RichKind>(["digest_pick"]);
+
 export function contentTemplateDefinition(kind: RichKind): {
   friendly_name: string;
   language: "en";
-  variables: { "1": string; "2": string };
+  variables: { "1": string; "2": string; "3"?: string };
   types: {
-    "twilio/card": { body: string; actions: Array<{ type: "QUICK_REPLY"; title: string; id: string }> };
+    "twilio/card": { body: string; actions: Array<{ type: "QUICK_REPLY"; title: string; id: string; chip_list?: boolean }> };
     "twilio/text": { body: string };
   };
 } {
   return {
     friendly_name: `pando_${kind}`,
     language: "en",
-    variables: { "1": "The card text", "2": "The SMS text" },
+    variables: { "1": "The card text", "2": "The SMS text", ...(ID_WITH_EDITION.has(kind) ? { "3": "20261121" } : {}) },
     types: {
       "twilio/card": {
         body: "{{1}}",
-        actions: RICH_BUTTONS[kind].map((button) => ({ type: "QUICK_REPLY" as const, title: button.title, id: button.id })),
+        actions: RICH_BUTTONS[kind].map((button) => ({
+          type: "QUICK_REPLY" as const,
+          title: button.title,
+          id: button.id,
+          ...(ID_WITH_EDITION.has(kind) ? { id: `${button.id}_{{3}}` } : {}),
+          ...(IN_CARD.has(kind) ? { chip_list: false } : {}),
+        })),
       },
       "twilio/text": { body: "{{2}}" },
     },

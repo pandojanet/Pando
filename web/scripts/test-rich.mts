@@ -28,6 +28,7 @@ const intro = (await import(`../lib/introductions.ts?v=${Date.now()}`)) as typeo
 const capture = (await import(`../lib/capture.ts?v=${Date.now()}`)) as typeof import("../lib/capture.ts");
 const onboarding = (await import(`../lib/onboarding.ts?v=${Date.now()}`)) as typeof import("../lib/onboarding.ts");
 const delivery = (await import(`../lib/delivery.ts?v=${Date.now()}`)) as typeof import("../lib/delivery.ts");
+const followup = (await import(`../lib/digest-followup.ts?v=${Date.now()}`)) as typeof import("../lib/digest-followup.ts");
 
 let pass = 0;
 let fail = 0;
@@ -60,7 +61,7 @@ ok(
   r.RICH_ENV.yes_no === "TWILIO_RCS_CONTENT_SID_YES_NO" && r.RICH_ENV.settings_allowance === "TWILIO_RCS_CONTENT_SID_SETTINGS",
 );
 const envNames = Object.values(r.RICH_ENV);
-ok("every kind has its own variable", new Set(envNames).size === envNames.length && envNames.length === 10);
+ok("every kind has its own variable", new Set(envNames).size === envNames.length && envNames.length === 12);
 ok("every variable is a TWILIO_RCS_CONTENT_SID_ name", envNames.every((n) => /^TWILIO_RCS_CONTENT_SID_[A-Z_]+$/.test(n)));
 
 console.log("\n=== the two variables ===");
@@ -91,8 +92,10 @@ const TITLES: Record<string, string[]> = {
   capture_recommend: ["Yes", "Yes but", "No"],
   skip: ["Skip"],
   child_age: ["No kids"],
+  digest_pick: ["1", "2", "3", "4"],
+  digest_feedback: ["Loved it", "It was OK", "Didn't go"],
 };
-ok("exactly the ten kinds the runbook lists", JSON.stringify([...r.RICH_KINDS].sort()) === JSON.stringify(Object.keys(TITLES).sort()));
+ok("exactly the twelve kinds the runbook lists", JSON.stringify([...r.RICH_KINDS].sort()) === JSON.stringify(Object.keys(TITLES).sort()));
 for (const kind of r.RICH_KINDS) {
   ok(`${kind}: the titles are ${TITLES[kind]?.join(", ")}`, JSON.stringify(r.RICH_BUTTONS[kind].map((x) => x.title)) === JSON.stringify(TITLES[kind]));
 }
@@ -116,6 +119,9 @@ const meaning: Record<string, (text: string) => unknown> = {
   capture_recommend: (t) => JSON.stringify(capture.readAnswer("recommend", t)),
   skip: (t) => JSON.stringify(capture.readAnswer("detail", t)),
   child_age: (t) => onboarding.declinesChildren(t),
+  /* The digest's numbers and the day-after buttons (11 Nov, lib/digest-followup.ts). */
+  digest_pick: (t) => JSON.stringify(followup.readPicks(t, 5)),
+  digest_feedback: (t) => followup.readFeedback(t),
 };
 const expected: Record<string, unknown[]> = {
   yes_no: ["true/still_good", "false/no_longer"],
@@ -138,6 +144,8 @@ const expected: Record<string, unknown[]> = {
   capture_recommend: ['{"ok":true,"value":"yes"}', '{"ok":true,"value":"yes_with_caveats"}', '{"ok":true,"value":"no"}'],
   skip: ['{"ok":true,"skipped":true}'],
   child_age: [true],
+  digest_pick: ["[1]", "[2]", "[3]", "[4]", "[5]"],
+  digest_feedback: ["loved", "ok", "didnt_go"],
 };
 for (const kind of r.RICH_KINDS) {
   r.RICH_BUTTONS[kind].forEach((button, i) => {
@@ -188,7 +196,7 @@ ok(
 ok(
   "intro offer without Reply INTRO",
   intro.introOfferCard("Little Maestros", 1) ===
-    "By the way, a parent Pando knows has used Little Maestros. Want an introduction? Someone at Pando will ask them first.",
+    "By the way, a local parent has used Little Maestros. Want an introduction? Someone at Pando will ask them first - nothing is shared unless they say yes.",
 );
 ok(
   "did it help, without Reply YES or NO",
@@ -263,7 +271,7 @@ console.log("\n=== the template an operator creates ===");
 for (const kind of r.RICH_KINDS) {
   const t = r.contentTemplateDefinition(kind);
   ok(`${kind}: card is {{1}}, text is {{2}}`, t.types["twilio/card"].body === "{{1}}" && t.types["twilio/text"].body === "{{2}}");
-  ok(`${kind}: both variables have a sample`, Object.keys(t.variables).join() === "1,2");
+  ok(`${kind}: both variables have a sample (and the edition, where the ids carry it)`, Object.keys(t.variables).join() === (r.ID_WITH_EDITION.has(kind) ? "1,2,3" : "1,2"));
   ok(
     `${kind}: one quick reply per button, in order`,
     t.types["twilio/card"].actions.every((a) => a.type === "QUICK_REPLY") &&
@@ -277,6 +285,28 @@ ok(
     '["5_a_month","10_a_month","as_relevant"]' &&
     JSON.stringify(r.contentTemplateDefinition("capture_recommend").types["twilio/card"].actions.map((a) => a.id)) === '["yes","yes_but","no"]',
 );
+{
+  /* 11 Nov: a tap on an old digest card must pick from its own week — the ids carry the edition. */
+  const pick = r.contentTemplateDefinition("digest_pick");
+  ok("the digest's button ids carry {{3}}, the edition; every other kind's ids are as before",
+    pick.types["twilio/card"].actions.map((a) => a.id).join() === "pick_1_{{3}},pick_2_{{3}},pick_3_{{3}},pick_4_{{3}}" && pick.variables["3"] === "20261121" &&
+      r.contentTemplateDefinition("yes_no").types["twilio/card"].actions.map((a) => a.id).join() === "yes,no" && r.contentTemplateDefinition("yes_no").variables["3"] === undefined);
+  ok("a tap with its edition reads as its number, and says which edition",
+    r.tapText({ body: "", buttonPayload: "pick_2_20261121" }) === "2" && r.tapText({ body: "2", buttonPayload: "pick_2_20261121" }) === "2" &&
+      r.editionOfTap("pick_2_20261121") === "2026-11-21" && r.editionOfTap("pick_2") === null && r.editionOfTap("yes") === null && r.editionOfTap(undefined) === null &&
+      r.tapText({ body: "", buttonPayload: "pick_2" }) === "2" && r.tapText({ body: "", buttonPayload: "yes_20261121" }) === "Yes");
+  ok("the edition goes as {{3}} only when given", JSON.parse(r.richVariables("c", "s", "20261121")!)["3"] === "20261121" && !("3" in JSON.parse(r.richVariables("c", "s")!)) &&
+    r.editionVariable("2026-11-21") === "20261121");
+}
+{
+  /* 11 Nov: a chip list is gone after the next message, so the digest's numbers sit in the card — at most four fit. */
+  const pick = r.contentTemplateDefinition("digest_pick").types["twilio/card"].actions;
+  ok("the digest's four numbers sit inside the card (chip_list false), every other kind's in its chip list",
+    pick.length === 4 && pick.every((a) => a.chip_list === false) &&
+      [...r.IN_CARD].every((k) => r.RICH_BUTTONS[k].length <= 4) &&
+      (Object.keys(r.RICH_BUTTONS) as Array<keyof typeof r.RICH_BUTTONS>).filter((k) => !r.IN_CARD.has(k))
+        .every((k) => r.contentTemplateDefinition(k).types["twilio/card"].actions.every((a) => a.chip_list === undefined)));
+}
 
 console.log("\n=== the card's formatting: seen, never changed ===");
 /* What a reader of the card sees, written out. Tested on a phone, 29 Oct: these letters show bold. */
@@ -444,7 +474,7 @@ console.log("\n=== \"Pando is typing…\" on RCS (lib/rcs-typing.ts) ===");
   const inboundSrc = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   ok("only for an ordinary text that came over RCS — never a keyword", inboundSrc.includes('input.channel === "rcs" && keywordOf(input.body) === null ? startTyping(input.from) : null'));
   const routeSrc = readFileSync(new URL("../app/api/sms/inbound/route.ts", import.meta.url), "utf8");
-  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel, media, tap: Boolean(params.ButtonPayload) })"));
+  ok("the webhook reads the channel from ChannelMetadata and passes it on", routeSrc.includes("inboundChannel(params.ChannelMetadata)") && routeSrc.includes("handleInboundMessage({ from, body, channel, media, tap: Boolean(params.ButtonPayload), tapPayload: params.ButtonPayload || undefined })"));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

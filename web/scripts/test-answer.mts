@@ -60,9 +60,9 @@ console.log("\n=== a tip is shared, a camp is a camp (the SMS lab, 5 Nov) ===");
 {
   const tip = compose([parent({ name: "Cheaper swim lessons", kind: "tip", area: null })]).text;
   ok("a tip is shared, not used, and with no place of its own it is 'on Pando'",
-    tip.includes("2 parents on Pando have shared Cheaper swim lessons") && !/have used Cheaper swim lessons/.test(tip), tip.slice(0, 120));
+    tip.includes("2 parents on Pando have shared a tip: cheaper swim lessons") && !/have used/.test(tip) && !/, a tip\b/.test(tip), tip.slice(0, 120));
   const placed = compose([parent({ name: "Waitlist trick", kind: "tip", area: "altadena" })]).text;
-  ok("a tip with a place is near you", placed.includes("2 parents near you have shared Waitlist trick"), placed.slice(0, 120));
+  ok("a tip with a place is near you", placed.includes("2 parents near you have shared a tip in Altadena: waitlist trick"), placed.slice(0, 120));
   const camp = compose([parent({ name: "Tom Sawyer Camps", area: "altadena" })]).text;
   ok("a camp is called a camp, not a class", camp.includes("Tom Sawyer Camps, a camp in Altadena"), camp.slice(0, 120));
   ok("and 'Campbell Hall swim' is still a class", compose([parent({ name: "Campbell Hall swim", area: "altadena" })]).text.includes("a class in Altadena"));

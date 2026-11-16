@@ -191,6 +191,11 @@ export const DEEP_DIVE_FAILED =
 
 export const DEEP_DIVE_CANCELLED = "No problem, I've cancelled that deep dive.";
 
+/** A bare DEEP with nothing to dive into (13 Nov, a parent-eyes review: it fell through and was answered as a
+    question — after a health question, with the health reply again). Says what DEEP is. */
+export const DEEP_DIVE_NOTHING =
+  "DEEP gets you a closer look at an answer I've just sent. Ask me about something first - like swim classes for a 5 year old - and I'll offer one.";
+
 export const DEEP_DIVE_BUSY =
   "Your deep dive is still on its way. Ask for the next one once it lands.";
 

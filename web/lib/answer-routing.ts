@@ -284,6 +284,19 @@ export function highStakesReply(crisis: MarketConfig["crisis"], kind: HighStakes
       "A person at Pando will also read your message."
     );
   }
+  if (kind === "medical") {
+    return (
+      "Pando is a parent network, so I can't give medical advice. Please call your pediatrician today - " +
+      "they have an after-hours nurse line - or 911 if it's an emergency. " +
+      "A person at Pando will also read your message."
+    );
+  }
+  if (kind === "legal") {
+    return (
+      "Pando is a parent network, not a legal service. For free legal help call " + crisis.legalHelp.phone + ". " +
+      "If anyone is in danger, call 911. A person at Pando will also read your message."
+    );
+  }
   if (kind === "money") {
     return (
       "Pando is a parent network, not a financial or tax advisor, so for a decision about investing, " +

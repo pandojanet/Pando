@@ -6,8 +6,10 @@ import { runJob } from "@/lib/server/repo/jobs";
 /**
  * M9.5 — the one door a scheduled job comes through.
  *
- * Deployment is standalone Docker behind Traefik (no platform cron), so the host
- * runs one line and everything about *what* runs lives in `lib/jobs.ts`:
+ * Deployment is standalone Docker behind Traefik (no platform cron). Since 11 Nov
+ * the caller is Supabase Cron (`drizzle/0068_supabase_cron.sql`: pg_cron + pg_net,
+ * the address and token from Vault); everything about *what* runs lives in
+ * `lib/jobs.ts`. By hand it is one line:
  *
  *     curl -fsS -X POST -H "authorization: Bearer $JOBS_SECRET" \
  *       https://pando.is/api/jobs/run?job=expire_blasts

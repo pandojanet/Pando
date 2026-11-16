@@ -3,6 +3,7 @@ import { isQuietHoursIn, marketConfig, quietWindowPhrase } from "@/lib/markets";
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -19,6 +20,7 @@ import {
   slugLabel,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { PersonPicker } from "@/components/admin/PersonPicker";
@@ -519,7 +521,7 @@ export default function BlastsPage() {
                       label="Asked"
                       hint={
                         row.recipients > 0 && row.recipients < row.pool_target
-                          ? `${row.pool_target} wanted — the rest were inside a protection rule`
+                          ? /* copy: state */ `${row.pool_target} wanted — the rest were inside a protection rule`
                           : undefined
                       }
                     >
@@ -557,7 +559,7 @@ export default function BlastsPage() {
                       <Fact label="The asker">
                         {row.answers_sent_at
                           ? `Answered ${when(row.answers_sent_at)}`
-                          : "Still waiting — the answers have not gone out"}
+                          : /* copy: state */ "Still waiting — the answers have not gone out"}
                       </Fact>
                     )}
                   </FactGrid>
@@ -585,7 +587,7 @@ export default function BlastsPage() {
                     >
                       <Field
                         label={drawer === "fulfil" ? "Your note" : "Your reason"}
-                        hint="Saved with your name. Never reaches the parent."
+                        hint={/* copy: kept — who sees the note, said before it is written */ "Saved with your name. Never reaches the parent."}
                       >
                         <input
                           className={inputClass}
@@ -593,7 +595,7 @@ export default function BlastsPage() {
                           onChange={(e) => setNote(e.target.value.slice(0, 300))}
                         />
                       </Field>
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className={cn(actionsClass, "mt-3")}>
                         <Button
                           subject={row.question_text}
                           tone="primary"
@@ -603,7 +605,7 @@ export default function BlastsPage() {
                               row.id,
                               drawer === "fulfil"
                                 ? "Marked answered."
-                                : "Released. It still has to be sent.",
+                                : /* copy: state */ "Released. It still has to be sent.",
                               async () =>
                                 drawer === "fulfil"
                                   ? adminAction({
@@ -680,8 +682,7 @@ function PoolPreview({ blastId }: { blastId: string }) {
   if (!rows) {
     return (
       <p className="mt-4 rounded-xl border border-bark bg-paper/70 px-3.5 py-3 text-[13px] text-muted">
-        Nobody to match against: whoever asked this is no longer in Pando, so
-        there are no connections to rank the network by.
+        {/* copy: state */}Nobody to match against: whoever asked this is no longer in Pando.
       </p>
     );
   }
@@ -730,14 +731,14 @@ function PoolPreview({ blastId }: { blastId: string }) {
     <RecordDrawer title={`Who Pando would ask (${rows.chosen.length} of ${rows.wanted} wanted)`}>
       {rows.human_review.required && (
         <p className="mb-3 rounded-lg border border-gold-line bg-gold-wash px-3 py-2 text-[12.5px] leading-relaxed text-gold-ink">
-          A person has to read this match before it goes out
+          {/* copy: state */}A person has to read this match before it goes out
           {rows.human_review.reason ? ` — ${sentence(rows.human_review.reason)}` : ""}.
         </p>
       )}
 
       {rows.chosen.length === 0 ? (
         <p className="text-[13px] text-muted">
-          Nobody is eligible right now — the held list below says why.
+          {/* copy: state */}Nobody is eligible right now — the held list below says why.
         </p>
       ) : (
         <ul className="space-y-2">
@@ -776,7 +777,7 @@ function PoolPreview({ blastId }: { blastId: string }) {
 
       {rows.held.length > 0 && (
         <div className="mt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.07em] text-muted">
+          <p className="text-[12.5px] font-medium text-muted">
             Matched, but not asked ({rows.held.length})
           </p>
           <ul className="mt-1.5 space-y-1">

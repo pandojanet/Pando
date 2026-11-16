@@ -19,7 +19,7 @@ import {
   when,
 } from "@/components/admin/ui";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Checkbox, SegmentedFilter } from "@/components/admin/kit";
 import { DeliveryHealth } from "@/components/admin/conversations/DeliveryHealth";
 import { useAdminRows } from "@/lib/admin/client";
 import { DELIVERED_STATUSES } from "@/lib/delivery";
@@ -170,14 +170,7 @@ export default function ConversationsPage() {
           className={`${inputClass} w-[12rem]`}
         />
         {testCount > 0 && (
-          <label className="flex items-center gap-1.5 text-[13px] text-muted">
-            <input
-              type="checkbox"
-              checked={hideTest}
-              onChange={(e) => setHideTest(e.target.checked)}
-            />
-            Hide test ({testCount})
-          </label>
+          <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
         )}
       </Toolbar>
 
@@ -368,7 +361,7 @@ function History({ detail }: { detail: ConversationDetail }) {
       </p>
       {detail.opted_out && (
         <p className="border-b border-alert-line bg-alert-wash px-4 py-2.5 text-[13.5px] font-medium text-alert">
-          They have texted STOP. Nothing proactive reaches them.
+          {/* copy: state */}They have texted STOP. Nothing proactive reaches them.
         </p>
       )}
       <ol className="divide-y divide-bark/70">
@@ -429,12 +422,12 @@ function agreement(detail: ConversationDetail): string {
       ? "up to 3 questions a week"
       : `up to ${detail.monthly_contact_allowance ?? 5} questions a month`;
   const first = chose
-    ? `They agreed to be asked ${stated}, with at least 48 hours between any two.`
-    : "No allowance chosen (treated as 5 a month), with at least 48 hours between any two.";
+    ? /* copy: state */ `They agreed to be asked ${stated}, with at least 48 hours between any two.`
+    : /* copy: state */ "No allowance chosen (treated as 5 a month), with at least 48 hours between any two.";
   if (!detail.allowance_lowered) return first;
   const applied =
     detail.effective_allowance === null
       ? "up to 3 a week"
       : `up to ${detail.effective_allowance} a month`;
-  return `${first} Pando applies ${applied} for now: they answered fewer than a quarter of the requests in the last 30 days.`;
+  return /* copy: state */ `${first} Pando applies ${applied} for now: they answered fewer than a quarter of the requests in the last 30 days.`;
 }

@@ -66,6 +66,8 @@ interface Trace {
   /** What the parent said and what Pando sent, for `$ai_input_state` / `$ai_output_state` (5 Nov). */
   said: string[];
   sent: string[];
+  /** Set when the turn turned out sensitive or about a caregiver (`traceSensitive`): no words leave with it. */
+  sensitive: boolean;
 }
 
 const store = new AsyncLocalStorage<Trace>();
@@ -202,7 +204,13 @@ function capture(t: Trace | undefined, event: string, input: Record<string, unkn
   if (t) {
     t.out.push(row);
     summarise(t, event, properties);
-  } else void send([row], "anon", false);
+  } else {
+    /* Outside a trace nothing can mark it sensitive, so it carries no words at
+       all (review, 12 Nov: the Seed Tool's interview, extraction and the
+       provider check sent a parent's free text, caregivers included). */
+    withholdContent([row]);
+    void send([row], "anon", false);
+  }
 }
 
 /**
@@ -279,6 +287,7 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
     summary: { intent: null, intentSource: null, keyword: null, replyTemplate: null, replies: 0 },
     said: [],
     sent: [],
+    sensitive: false,
   };
   t.distinctId = `trace_${t.id}`;
   let outcome = "ok";
@@ -298,8 +307,39 @@ export async function withTrace<T>(name: string, fn: () => Promise<T>): Promise<
       ...traceSummary(name, t.summary),
       ...(t.said.length ? { $ai_input_state: t.said.length === 1 ? t.said[0] : t.said } : {}),
       ...(t.sent.length ? { $ai_output_state: t.sent.length === 1 ? t.sent[0] : t.sent } : {}),
+      ...(t.sensitive ? { content_withheld: "sensitive" } : {}),
     });
+    if (t.sensitive) withholdContent(t.out);
     await send(t.out, t.distinctId, t.personKnown);
+  }
+}
+
+/**
+ * Marks the turn in hand as sensitive (12 Nov): a health, legal, safety or
+ * money question, a claim about a named person, or anything about a
+ * caregiver. The trace still goes — its steps, models, tokens, costs and
+ * enums — but every content key (`CONTENT_KEYS`) on every event of it is
+ * replaced before it is sent. The events wait in the trace until it ends, so
+ * a turn found sensitive late (the routing, after the model calls) is
+ * withheld whole, its first model call included.
+ *
+ * Why (the developer, 12 Nov, asking whether anything breached the law): the
+ * 5 Nov exception put the conversation into PostHog, and a lab trace showed
+ * "my son keeps getting ear infections, which pediatric ENT…" there word for
+ * word — health information is sensitive personal information (CCPA/CPRA), and
+ * a caregiver's details are kept to the admin surface (invariant 12).
+ */
+export function traceSensitive(): void {
+  const t = store.getStore();
+  if (t) t.sensitive = true;
+}
+
+export const WITHHELD = "[sensitive: words not traced]";
+
+/** Every content key on these events replaced by `WITHHELD`. */
+export function withholdContent(rows: Array<{ properties: Record<string, unknown> }>): void {
+  for (const row of rows) {
+    for (const k of CONTENT_KEYS) if (k in row.properties && row.properties[k] !== null) row.properties[k] = WITHHELD;
   }
 }
 

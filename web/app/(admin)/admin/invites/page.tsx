@@ -22,6 +22,7 @@ import {
   Th,
   when,
 } from "@/components/admin/ui";
+import { Select } from "@/components/admin/kit";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { InviteRow } from "@/lib/admin/types";
 
@@ -197,9 +198,9 @@ export default function InvitesPage() {
           {/**
             * What the link points at (7 Sep, `drizzle/0034`).
             *
-            * A native `<select>` on purpose — the 13 Aug decision keeps them for
-            * their typeahead and the OS wheel, and the schools list is 133
-            * curated starters, which is exactly the case typeahead is for.
+            * The admin's own `Select` since 12 Nov (it was a native `<select>`
+            * for its typeahead and the OS wheel — 13 Aug); ours keeps the
+            * typeahead, which the schools list of 133 curated starters needs.
             *
             * Personal takes no target field: **the referrer is whoever created
             * the link**, which is already recorded in `created_by`. A parent's
@@ -209,52 +210,42 @@ export default function InvitesPage() {
           <Field
             label="What is this link for?"
           >
-            <select
-              className={inputClass}
+            <Select
+              label="What is this link for?"
+              className="w-full"
               value={kind}
-              onChange={(e) =>
-                setKind(e.target.value as "group" | "school" | "personal")
-              }
-            >
-              <option value="group">A parent group</option>
-              <option value="school">A school</option>
-              <option value="personal">One person — you</option>
-            </select>
+              onChange={setKind}
+              options={[
+                { id: "group", label: "A parent group" },
+                { id: "school", label: "A school" },
+                { id: "personal", label: "One person — you" },
+              ]}
+            />
           </Field>
           {kind === "group" && (
             <Field
               label="Which group in the tap lists?"
             >
-              <select
-                className={inputClass}
+              <Select
+                label="Which group in the tap lists?"
+                className="w-full"
                 value={group}
-                onChange={(e) => setGroup(e.target.value)}
-              >
-                <option value="">— none —</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setGroup}
+                options={[{ id: "", label: "— none —" }, ...groups.map((g) => ({ id: g.id, label: g.label }))]}
+              />
             </Field>
           )}
           {kind === "school" && (
             <Field
               label="Which school?"
             >
-              <select
-                className={inputClass}
+              <Select
+                label="Which school?"
+                className="w-full"
                 value={school}
-                onChange={(e) => setSchool(e.target.value)}
-              >
-                <option value="">— pick one —</option>
-                {schools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setSchool}
+                options={[{ id: "", label: "— pick one —" }, ...schools.map((s) => ({ id: s.id, label: s.label }))]}
+              />
             </Field>
           )}
           <Field label="Note">
@@ -324,7 +315,7 @@ export default function InvitesPage() {
                 The reasoning behind it — a forwarded link must not become a dead
                 end — is a decision, and decisions live in CLAUDE.md. */}
             <p className="border-t border-bark/70 px-4 py-2.5 text-[12.5px] leading-relaxed text-muted">
-              A stopped link still lets a parent in — it just records no group.
+              {/* copy: kept */}A stopped link still lets a parent in — it just records no group.
             </p>
           </Card>
         </div>
@@ -399,7 +390,7 @@ function LinkCell({ code }: { code: string }) {
         {state === "copied"
           ? "copied"
           : state === "failed"
-            ? "couldn't copy — select it and copy by hand"
+            ? /* copy: state */ "couldn't copy — select it and copy by hand"
             : ""}
       </span>
     </span>
@@ -484,14 +475,14 @@ function InviteTable({
                 <>
                   {schools.find((s) => s.id === row.school_option_value)?.label ??
                     slugLabel(row.school_option_value)}
-                  <span className="mt-0.5 block text-[11.5px] uppercase tracking-[0.06em] text-muted">
+                  <span className="mt-0.5 block text-[12.5px] text-muted">
                     school
                   </span>
                 </>
               ) : row.kind === "personal" ? (
                 <>
                   {row.referrer_name ?? row.created_by ?? "somebody"}
-                  <span className="mt-0.5 block text-[11.5px] uppercase tracking-[0.06em] text-muted">
+                  <span className="mt-0.5 block text-[12.5px] text-muted">
                     {row.referrer_name ? "a parent's own link" : "personal"}
                   </span>
                 </>

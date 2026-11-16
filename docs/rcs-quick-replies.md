@@ -72,7 +72,8 @@ Do this once per template in the table below.
    table.
 5. **Buttons**: for each button in the table, add a **Quick reply** with exactly that
    **title** and that **id** (the field may be called *ID* or *Payload*). Same order,
-   same spelling, same capitals. Leave the placement (chip list) as it is.
+   same spelling, same capitals. Leave the placement (the **Chip list** field) as it
+   is — **except `pando_digest_pick`**, whose buttons are set to **Rich Card** (see 11).
 6. **Fallback for devices without RCS**: add a text message whose body is `{{2}}` and
    nothing else. Give `{{2}}` the sample SMS text from the table. **This is required**:
    without it a phone without RCS gets no text.
@@ -138,8 +139,8 @@ The samples are only for the Console's preview; Pando fills both variables on ev
 | Field | Value |
 | --- | --- |
 | Buttons | **Intro** (`intro`) |
-| Sample `{{1}}` | `Little Maestros runs music classes for toddlers. By the way, a parent Pando knows has used Little Maestros. Want an introduction? Someone at Pando will ask them first.` |
-| Sample `{{2}}` | `Little Maestros runs music classes for toddlers. By the way, a parent Pando knows has used Little Maestros. Want an introduction? Reply INTRO and someone at Pando will ask them first.` |
+| Sample `{{1}}` | `Little Maestros runs music classes for toddlers. By the way, a local parent has used Little Maestros. Want an introduction? Someone at Pando will ask them first - nothing is shared unless they say yes.` |
+| Sample `{{2}}` | `Little Maestros runs music classes for toddlers. By the way, a local parent has used Little Maestros. Want an introduction? Reply INTRO and someone at Pando will ask them first.` |
 | Env var | `TWILIO_RCS_CONTENT_SID_INTRO_OFFER` |
 
 ### 6. `pando_capture_kind` — new
@@ -190,6 +191,36 @@ careful form, as when they type the word.
 | Sample `{{2}}` | `Mind if I ask one more thing so I can give you a better answer? How old are your kids? Like 3 and 7, or reply NONE if you don't have kids.` |
 | Env var | `TWILIO_RCS_CONTENT_SID_CHILD_AGE` |
 
+### 11. `pando_digest_pick` — new (11 Nov), four buttons **inside the card**
+
+The weekly digest, numbered; a tap sets a reminder for that item, the same tap again takes it off (`togglePick`).
+Each button's ID carries `{{3}}`, the edition (a card stays tappable for weeks, and a bare `pick_2` was read against the newest digest); a tap whose ID has no edition still works, against the newest. Each button's **Chip list** field is set to **Rich Card**: a chip list under a message
+shows only while that message is the newest and is gone after the next (on Android), so
+after the first tap there was nothing left to tap; buttons inside a card stay, on every
+client ("Suggestions are always persistent" for rich cards, Google RBM reference). A card
+holds at most four, so the digest carries four items (`DIGEST_MAX_ITEMS`).
+
+| Field | Value |
+| --- | --- |
+| Buttons | **1** (`pick_1_{{3}}`), **2** (`pick_2_{{3}}`), **3** (`pick_3_{{3}}`), **4** (`pick_4_{{3}}`) — each with Chip list: **Rich Card**. In each ID type `pick_1_` and then **Add variable** → `{{3}}` |
+| Sample `{{3}}` | `20261121` — the digest's Saturday; a tap comes back as `pick_2_20261121`, so a button on an old card picks from its own week (11 Nov) |
+| Sample `{{1}}` | `Pando: your Saturday list of local events, camps and classes.` … `1. Toddler Tuesday at Kidspace - Tue Nov 17, 10am-12pm …` … `Tap the ones you'd like a reminder for - tap again to undo. Public listings - check with the organizer. DIGEST OFF stops these.` |
+| Sample `{{2}}` | The same, ending `Reply with the numbers you'd like a reminder for (e.g. 1 3). Public listings - check with the organizer. DIGEST OFF stops these.` |
+| Env var | `TWILIO_RCS_CONTENT_SID_DIGEST_PICK` |
+
+A digest with fewer than four items still shows four buttons (a template's buttons are fixed); a number past its own is answered with the range ("That digest had 3 items…").
+
+### 12. `pando_digest_feedback` — new (11 Nov)
+
+The day after a reminded event (`readFeedback`). Buttons only: nothing typed is kept.
+
+| Field | Value |
+| --- | --- |
+| Buttons | **Loved it** (`fb_loved`), **It was OK** (`fb_ok`), **Didn't go** (`fb_didnt_go`) |
+| Sample `{{1}}` | `Pando: how was Toddler Tuesday at Kidspace?` |
+| Sample `{{2}}` | `Pando: how was Toddler Tuesday at Kidspace? Reply LOVED IT, IT WAS OK or DIDN'T GO. STOP to opt out.` |
+| Env var | `TWILIO_RCS_CONTENT_SID_DIGEST_FEEDBACK` |
+
 ## Switching it on
 
 1. **First edit the two existing templates** (fallback `{{1}}` → `{{2}}`). Until then, a
@@ -205,6 +236,8 @@ careful form, as when they type the word.
    TWILIO_RCS_CONTENT_SID_CAPTURE_RECOMMEND=HX…
    TWILIO_RCS_CONTENT_SID_SKIP=HX…
    TWILIO_RCS_CONTENT_SID_CHILD_AGE=HX…
+   TWILIO_RCS_CONTENT_SID_DIGEST_PICK=HX…
+   TWILIO_RCS_CONTENT_SID_DIGEST_FEEDBACK=HX…
    ```
 
    A kind can be switched on alone; the others stay plain text.

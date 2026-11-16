@@ -305,6 +305,14 @@ const GENERAL = (members: number): CohortProfile => ({
  * that fit none are grouped anew. Redrawing on every hourly run let one sign-up shift a
  * group's profile, and with it its key: a new edition, a new deep search, and
  * the three-attempt limit reset.
+ *
+ * **Grouped anew only when they make a group** (11 Nov, the lab): those that
+ * fit no drawn group are grouped among themselves, and a group of fewer than
+ * `COHORT_MIN` joins the market-wide one when it is drawn — the same rule the
+ * first draw applies to a group too small. One family sent late (the 21 Nov
+ * test edition: a family first placed in the market-wide group as unlike the
+ * rest) had a group and a deep search of its own, which found nothing, and was
+ * sent no digest; 3 of 33 families on the real-graph copy would have.
  */
 export function joinDrawn(
   families: readonly FamilyFacts[],
@@ -333,7 +341,15 @@ export function joinDrawn(
     }
     joined.set(to.key, [...(joined.get(to.key) ?? []), i]);
   });
-  return { joined, rest };
+  if (!general || rest.length === 0) return { joined, rest };
+  /* Grouped among themselves; only a group big enough for one of its own stays apart. */
+  const own: number[] = [];
+  for (const g of groupFamilies(rest.map((i) => families[i]))) {
+    const members = g.members.map((k) => rest[k]);
+    if (!g.general && members.length >= COHORT_MIN) own.push(...members);
+    else joined.set(general.key, [...(joined.get(general.key) ?? []), ...members]);
+  }
+  return { joined, rest: own.sort((a, b) => a - b) };
 }
 
 /* FNV-1a, 32 bits: a short stable name, not a secret. */

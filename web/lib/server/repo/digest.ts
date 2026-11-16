@@ -29,7 +29,7 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
   if (!rows[0]) return null;
   const id = String(rows[0].id);
   const items = (await db.execute(sql`
-    select kind, title, when_text, starts_on::text as starts_on, ends_on::text as ends_on, place,
+    select id::text as id, kind, title, when_text, starts_on::text as starts_on, ends_on::text as ends_on, place,
            age_min, age_max, summary, url
       from digest_items where edition_id = ${id}::uuid order by position
   `)) as unknown as DigestItem[];
@@ -48,7 +48,12 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
  * network error (`editionOutcome`) — is stored as `failed` and tried again by
  * the next hourly run, up to `DIGEST_AGENT_ATTEMPTS` a Saturday (review, 3 Nov:
  * the first version stored every bad run as `empty`, and one timeout cost the
- * whole week). Null means: nothing to send from, this run.
+ * whole week). Null means: nothing to send from this run — a failed run
+ * that will be tried again. A settled edition with no items (`empty`, or
+ * `failed` with every attempt spent) is returned with none, so its families
+ * are still sent what other groups found for their children (11 Nov,
+ * `poolForFamily`; the review: they were skipped while a ready edition for
+ * the same ages sat beside theirs).
  *
  * The agent runs outside any transaction (it takes a minute or two); the job's
  * own lock (`job_runs`) keeps two runs from racing. A test run (`isTest`) has
@@ -65,10 +70,10 @@ export async function digestEdition(
   if (!existing.persisted) return null;
   const before = existing.data;
   if (before && before.status !== "failed") return before;
-  if (before && before.attempts >= DIGEST_AGENT_ATTEMPTS) return null;
+  if (before && before.attempts >= DIGEST_AGENT_ATTEMPTS) return { ...before, items: [] };
 
   const run = await findDigestItems(marketId, editionDate, cohort);
-  const status = editionOutcome({ end: run.end, parsed: run.parsed, kept: run.items.length });
+  const status = editionOutcome({ end: run.end, parsed: run.parsed, returned: run.returned, kept: run.items.length });
   console.info("[digest] agent", {
     market: marketId,
     test: isTest,
@@ -82,6 +87,7 @@ export async function digestEdition(
     pages: run.pages,
     returned: run.returned,
     kept: run.items.length,
+    relinked: run.relinked,
     text_length: run.shape.length,
     text_fence: run.shape.fence,
     text_objects: run.shape.objects,
@@ -115,7 +121,30 @@ export async function digestEdition(
       return readEdition(tx as unknown as Db, marketId, editionDate, isTest, cohort.key);
     }),
   );
-  return stored.persisted && stored.data?.status === "ready" ? stored.data : null;
+  if (!stored.persisted || !stored.data) return null;
+  const settled = stored.data.status !== "failed" || stored.data.attempts >= DIGEST_AGENT_ATTEMPTS;
+  return settled ? { ...stored.data, items: stored.data.status === "ready" ? stored.data.items : [] } : null;
+}
+
+/**
+ * Every ready edition of this Saturday, by group (11 Nov): what a family with
+ * children in more than one group's ages may also be sent (`poolForFamily`).
+ */
+export async function readyEditionsOfDay(marketId: MarketId, editionDate: string, isTest = false): Promise<Array<{ key: string; items: DigestItem[] }>> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select cohort_key from digest_editions
+       where market_id = ${marketId} and edition_date = ${editionDate}::date and is_test = ${isTest} and status = 'ready'
+       order by cohort_key
+    `)) as unknown as Array<Record<string, unknown>>;
+    const out: Array<{ key: string; items: DigestItem[] }> = [];
+    for (const r of rows) {
+      const edition = await readEdition(db, marketId, editionDate, isTest, String(r.cohort_key));
+      if (edition) out.push({ key: String(r.cohort_key), items: edition.items });
+    }
+    return out;
+  });
+  return result.persisted && result.data ? result.data : [];
 }
 
 /**
@@ -230,11 +259,13 @@ export async function digestAudience(marketId: MarketId, editionDate: string, is
  * between the two leaves the claim, so a parent can miss a week but is never
  * sent the same digest twice.
  */
-export async function claimDigestSend(editionId: string, personId: string, itemCount: number): Promise<boolean> {
+export async function claimDigestSend(editionId: string, personId: string, itemCount: number, itemIds: readonly string[] = []): Promise<boolean> {
+  /* What they were sent, in its numbers' order (11 Nov, drizzle/0067): "2" is the second of these. */
+  const ids = itemIds.length ? sql`array[${sql.join(itemIds.map((id) => sql`${id}::uuid`), sql`, `)}]::uuid[]` : sql`'{}'::uuid[]`;
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
-      insert into digest_sends (edition_id, person_id, item_count)
-      values (${editionId}::uuid, ${personId}::uuid, ${itemCount})
+      insert into digest_sends (edition_id, person_id, item_count, item_ids)
+      values (${editionId}::uuid, ${personId}::uuid, ${itemCount}, ${ids})
       on conflict do nothing
       returning person_id
     `)) as unknown as unknown[];

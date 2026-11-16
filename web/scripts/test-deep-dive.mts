@@ -1190,5 +1190,12 @@ console.log("\n=== where the search looks: a district says its city (30 Oct, Lin
   ok("the profile's district and a named one both carry it", pf.includes("city: await cityOf(marketId, home, areas),") && pf.includes('supported(marketId, named, "question", areas)'));
 }
 
+{
+  /* 13 Nov, a parent-eyes review: a bare DEEP with nothing to dive into was answered as a question. */
+  const stepSrc = fs.readFileSync(new URL("../lib/server/deep-dive.ts", import.meta.url), "utf8");
+  ok("a bare DEEP with nothing to dive into says what DEEP is, and is never read as a question",
+    /if \(deepWord\) return \{ reply: DEEP_DIVE_NOTHING, template: "deep_dive_nothing", run: null \};\s+return null;\s+\}/.test(stepSrc));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

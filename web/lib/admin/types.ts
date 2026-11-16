@@ -39,6 +39,7 @@ export type AdminResource =
   | "standing"
   | "impact"
   | "deep_dives"
+  | "digests"
   | "introductions"
   | "audit";
 
@@ -1307,6 +1308,7 @@ export interface AdminResourceRows {
   standing: StandingRow[];
   impact: ImpactResult;
   deep_dives: DeepDivesResult;
+  digests: DigestsResult;
   introductions: IntroductionsResult;
   audit: AuditRow[];
 }
@@ -1653,6 +1655,110 @@ export interface DeepDiveRow {
  * The client's measure: how many parents say yes to a deep dive. Offers lapse
  * by age, so "no reply" is an offer older than its window that nobody took.
  */
+/**
+ * The weekly digest, for the admin (12 Nov): every Saturday's editions — one per
+ * group of alike families — what each found, what each family was sent, and
+ * what they did with it (picks, reminders, "how was it?").
+ *
+ * The text a family was sent is **rebuilt** from the items stored for that send
+ * (`digest_sends.item_ids`, in their numbers' order) by the same `composeDigest`
+ * that sent it: message bodies are not stored (invariant 7). Families with the
+ * same items got the same text, so the texts come grouped as variants.
+ */
+export interface DigestsResult {
+  /** False until `drizzle/0064` (the digest tables) is applied. */
+  configured: boolean;
+  /** False until `drizzle/0067` (what each family was sent, and their picks): variants and picks are then unknown. */
+  picks_configured: boolean;
+  /** In full: the latest Saturdays (`DIGEST_WEEKS`), and a week asked for by date (`params.week`) however old. */
+  weeks: DigestWeek[];
+  /** Every Saturday there is a digest for, in a line each — what the calendar marks and the picker lists. */
+  index: DigestWeekIndex[];
+}
+
+export interface DigestWeekIndex {
+  edition_date: string;
+  is_test: boolean;
+  groups: number;
+  /** Families sent a digest with at least one item. */
+  families: number;
+  /** Groups whose search failed. */
+  failed: number;
+}
+
+export interface DigestWeek {
+  /** The Saturday, YYYY-MM-DD. */
+  edition_date: string;
+  is_test: boolean;
+  groups: DigestGroup[];
+}
+
+export interface DigestGroup {
+  id: string;
+  /** "baby · Highland Park", "Everyone in the market"; null for the single edition before groups (4 Nov). */
+  label: string | null;
+  /** The market-wide group: families too few or too unlike anyone for a group of their own. */
+  general: boolean;
+  status: "ready" | "empty" | "failed";
+  /** Agent searches this Saturday for this group (at most three). */
+  attempts: number;
+  created_at: string;
+  /** When its first digest went out (null: none went). */
+  sent_at: string | null;
+  items: DigestItemRow[];
+  /** Families sent a digest from this edition (with at least one item). */
+  families_sent: number;
+  /** Families of this group nothing suited (claimed, never texted). */
+  families_nothing: number;
+  variants: DigestVariant[];
+}
+
+export interface DigestItemRow {
+  id: string;
+  /** Its place in the edition as the agent returned it, from 1. */
+  position: number;
+  kind: "event" | "camp" | "class" | "opportunity";
+  title: string;
+  when_text: string;
+  place: string | null;
+  age_min: number | null;
+  age_max: number | null;
+  summary: string;
+  url: string;
+  /** Families whose digest carried it (this group's and other groups' families). */
+  sent_to: number;
+  /** Of those, this group's own families — the rest got it for a child another group's search was for. */
+  sent_here: number;
+  /** Reminders set and still on. */
+  reminders: number;
+  /** Reminders taken off again. */
+  taken_off: number;
+  /** Reminders that went out. */
+  reminded: number;
+  loved: number;
+  ok: number;
+  didnt_go: number;
+}
+
+export interface DigestVariant {
+  /** The items in their numbers' order. */
+  item_ids: string[];
+  /**
+   * The same items, with where each came from: `from_group` is the label of
+   * another group whose search found it (a family's other child — `poolForFamily`),
+   * null for this group's own.
+   */
+  items: Array<{ id: string; title: string; from_group: string | null }>;
+  families: number;
+  /** Who got it, in sending order — for a link to each parent's page. */
+  people: Array<{ id: string; name: string | null }>;
+  /** The SMS text, rebuilt. */
+  text: string;
+  /** The RCS card's text, rebuilt. */
+  card: string;
+  first_sent_at: string;
+}
+
 export interface DeepDivesResult {
   /** False until `drizzle/0058` is applied. */
   configured: boolean;

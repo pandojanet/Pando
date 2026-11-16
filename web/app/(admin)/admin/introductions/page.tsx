@@ -2,6 +2,7 @@
 
 import { useId, useMemo, useState } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -17,7 +18,7 @@ import {
   Toolbar,
   when,
 } from "@/components/admin/ui";
-import { SegmentedFilter } from "@/components/admin/kit";
+import { Radio, Checkbox, SegmentedFilter } from "@/components/admin/kit";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { useUrlFilter } from "@/lib/admin/url-state";
@@ -109,7 +110,6 @@ export default function IntroductionsPage() {
     <>
       <PageHead
         title="Introductions"
-        intro="Parents who asked, after a recommendation, to talk to a parent who has been there. Approve, contact the other parent outside Pando, and record how it went. Nothing here texts anybody."
       />
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -124,10 +124,7 @@ export default function IntroductionsPage() {
           className={`${inputClass} w-[13rem]`}
         />
         {testCount > 0 && (
-          <label className="flex items-center gap-1.5 text-[13px] text-muted">
-            <input type="checkbox" checked={hideTest} onChange={(e) => setHideTest(e.target.checked)} />
-            Hide test ({testCount})
-          </label>
+          <Checkbox checked={hideTest} onChange={setHideTest} className="text-muted">Hide test ({testCount})</Checkbox>
         )}
         {offered > 0 && (
           <span className="text-[13px] text-muted">
@@ -168,7 +165,6 @@ export default function IntroductionsPage() {
           <Card>
             <Empty
               title={all.length === 0 ? "No introductions yet" : "Nothing in this view"}
-              body="A request appears here when a parent replies INTRO to an answer, or asks to be introduced to a parent who has been somewhere."
             />
           </Card>
         ) : (
@@ -241,16 +237,15 @@ export default function IntroductionsPage() {
                       <div>
                         <p className="mb-1.5 text-muted">Parents who have been there</p>
                         {r.candidates.length === 0 ? (
-                          <p className="text-[13.5px]">Nobody left to ask on this record.</p>
+                          <p className="text-[13.5px]">{/* copy: state */}Nobody left to ask on this record.</p>
                         ) : (
                           <ul className="space-y-1">
                             {r.candidates.map((c) => (
                               <li key={c.person_id} className="flex flex-wrap items-center gap-2">
                                 {r.status === "approved" && (
-                                  <input
-                                    type="radio"
+                                  <Radio
                                     name={`pick-${r.id}`}
-                                    aria-label={`Contacted ${c.name ?? "this parent"}`}
+                                    label={`Contacted ${c.name ?? "this parent"}`}
                                     checked={choice === c.person_id}
                                     onChange={() => setPicked((p) => ({ ...p, [r.id]: c.person_id }))}
                                   />
@@ -278,7 +273,7 @@ export default function IntroductionsPage() {
                           maxLength={500}
                           className={inputClass}
                         />
-                        <div className="flex flex-wrap gap-2">
+                        <div className={actionsClass}>
                           {r.status === "requested" && (
                             <Button
                               tone="primary"

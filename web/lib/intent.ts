@@ -157,8 +157,19 @@ export function acceptHeard(heard: string | null | undefined, said: string): str
   if (line.slice(0, -1).includes(".")) return null;
   const saidNumbers = new Set(said.match(/\d+/g) ?? []);
   if ((line.match(/\d+/g) ?? []).some((d) => !saidNumbers.has(d))) return null;
+  /* Under eight words, and nothing the parent did not say (13 Nov, a parent-eyes review): "Any swim classes for a
+     4 year old near Pasadena?" was said back as "A 4 year old in Pasadena, so here are the cheaper options." —
+     twelve words, and "cheaper" nobody asked for. Every word that carries meaning must be one of theirs (its
+     first five letters, so "weekends" covers "weekend"); the glue of a said-back line is allowed. */
+  const words = line.toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean);
+  if (words.length > 8) return null;
+  const theirs = said.toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean).map((w) => w.slice(0, 5));
+  if (words.some((w) => !HEARD_GLUE.has(w) && !/^\d+$/.test(w) && !theirs.includes(w.slice(0, 5)))) return null;
   return line;
 }
+
+/** The words a said-back line may add to the parent's own: articles, "then", "instead", "only", age words. */
+const HEARD_GLUE = new Set(["a", "an", "the", "then", "instead", "only", "just", "too", "also", "and", "or", "for", "in", "on", "at", "near", "year", "years", "old", "olds", "month", "months", "ok", "okay", "got", "it", "one", "ones"]);
 
 /**
  * Who their children are, for the classifier (6 Nov, the SMS lab): "camps?"
@@ -215,6 +226,29 @@ const SETTINGS_WORDS =
  * "can I ask a question about swim classes in Altadena?" is not an opener - it
  * has a subject and is answered as a question.
  */
+/**
+ * "Who are you?" and its kind (13 Nov, a parent-eyes review): it was answered "go ahead! Ask about…", which is
+ * not who. The whole message only — "who are you recommending for toddlers?" is a question.
+ */
+export function asksWhoPandoIs(text: string): boolean {
+  const s = text.toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^((hi|hello|hey|sorry|um+|so|ok(ay)?)\s)+/, "");
+  return /^(who|what) (are|r) (you|u)$|^who (is|s) (this|that|pando)$|^who's this$|^what (is|s) (this|pando)$|^what's (this|pando)$|^what (do|does) (you|pando) do$|^is this a (bot|robot|person|human)$|^are you a (bot|robot|person|human)$/.test(s);
+}
+
+/**
+ * A line that says the answer is in English, for a message that was not (13 Nov, a parent-eyes review: a question in
+ * Spanish got an English answer and nothing said about it). Spanish gets it in Spanish — the market's second
+ * language — and any other script in English. GSM-7 both ways. Null for English.
+ */
+export function otherLanguageLine(said: string): string | null {
+  const s = said.toLowerCase();
+  if (/[\u0400-\u04FF\u0530-\u058F\u0590-\u06FF\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/.test(said)) return "I can only answer in English for now.";
+  const spanish = (s.match(/\b(hola|busco|buscando|necesito|para|mi|hijo|hija|hijos|años|clases|natación|cerca|dónde|donde|gracias|quiero|niños|niño|niña|campamento|escuela|qué|cuál)\b/g) ?? []).length;
+  if (spanish >= 2 || /[ñ¿¡]/.test(s)) return "Por ahora respondo solo en inglés.";
+  return null;
+}
+
 export function isBareOpener(text: string): boolean {
   let s = text
     .toLowerCase()

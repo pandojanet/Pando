@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  actionsClass,
   Badge,
   Button,
   Card,
@@ -17,6 +18,7 @@ import {
   TextLink,
   when,
 } from "@/components/admin/ui";
+import { cn } from "@/lib/cn";
 import { RevealMore, useReveal } from "@/components/admin/Reveal";
 import { Spec, SpecList } from "@/components/admin/Record";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
@@ -86,7 +88,7 @@ function ViaNomination({
             {via.recommender.name ?? "A parent"}
           </TextLink>
         ) : (
-          <span className="text-muted">A parent who has since left Pando</span>
+          <span className="text-muted">{/* copy: state */}A parent who has since left Pando</span>
         )}
         {via.recommender?.phone && (
           <span className="ml-2 text-muted">{via.recommender.phone}</span>
@@ -151,7 +153,7 @@ export function SignupsPanel() {
       });
       setMessage(
         result.persisted
-          ? "Matched. They're consented, and still not visible — raise that on the Caregivers tab."
+          ? /* copy: state */ "Matched. They're consented, and still not visible."
           : "Not stored — no database connected.",
       );
       await reload();
@@ -165,7 +167,7 @@ export function SignupsPanel() {
   async function decline(claimId: string) {
     const reason = (reasons[claimId] ?? "").trim();
     if (!reason) {
-      setMessage("Say why first — this is a person who asked to be listed.");
+      setMessage("Say why first.");
       return;
     }
     setBusy(claimId);
@@ -198,7 +200,7 @@ export function SignupsPanel() {
   async function remove(claimId: string) {
     const requested = (via[claimId] ?? "").trim();
     if (!requested) {
-      setMessage("Record how they asked — a text, an email, a call.");
+      setMessage("Record how they asked.");
       return;
     }
     setBusy(claimId);
@@ -211,7 +213,7 @@ export function SignupsPanel() {
       });
       setMessage(
         result.persisted
-          ? "Deleted. Their profile and their consent records are gone; the audit log keeps the fact that you did it."
+          ? /* copy: state */ "Deleted. Their profile and their consent records are gone."
           : "Not stored — no database connected.",
       );
       setConfirming(null);
@@ -290,7 +292,7 @@ export function SignupsPanel() {
                 </SpecList>
 
                 <div>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                  <p className="text-[12.5px] font-medium text-muted">
                     What they agreed to
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -319,7 +321,7 @@ export function SignupsPanel() {
                     <span className="font-mono">{claim.consent_text_version}</span>
                   </p>
 
-                  <p className="mt-4 text-[12px] font-semibold uppercase tracking-[0.07em] text-muted">
+                  <p className="mt-4 text-[12.5px] font-medium text-muted">
                     {claim.via ? "Recommended by" : "Which nomination is this?"}
                   </p>
                   {claim.via ? (
@@ -502,7 +504,7 @@ function DeleteRequest({
   return (
     <div className="mt-2 rounded-xl border border-alert-line bg-alert-wash p-3">
       <p className="text-[13px] font-semibold text-alert">
-        This deletes their profile, their sign-up and their consent records.
+        {/* copy: kept — what the delete removes, said before it */}This deletes their profile, their sign-up and their consent records.
       </p>
       <input
         value={via}
@@ -512,7 +514,7 @@ function DeleteRequest({
         className={`${inputClass} mt-2`}
         id={`via-${claimId}`}
       />
-      <div className="mt-2 flex gap-2">
+      <div className={cn(actionsClass, "mt-2")}>
         <Button
           tone="danger"
           disabled={busy || via.trim().length === 0}
