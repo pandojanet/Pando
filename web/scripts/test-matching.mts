@@ -398,6 +398,18 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
   /* 26 Oct, the SMS lab: "fencing classes" read as the general bucket, so AYSO soccer led a fencing answer. */
   const fencing = ask("any good fencing classes for kids near Altadena?", "activities");
   ok("a subject the vocabulary does not know, under a bare 'classes', must be in the record's name", fit(fencing, REC.ayso) === null && fit(fencing, REC.maestros) === null && fit(fencing, { name: "Pasadena Fencing Academy", focus: "sports" }) === 0);
+  /* 18 Nov: a parent's first text, "Hi is there a good activity for Jasper today" — Jasper was read as the subject, and every parents' record was dropped. */
+  const jasper = ask("Hi is there a good activity for Jasper today", "activities");
+  ok("a child's name is not the subject: the question stays open", (jasper.unknown ?? []).length === 0 && fit(jasper, REC.maestros) === 1 && fit(jasper, REC.roseBowl) === 1);
+  ok(
+    "names read from the shape — for/with X (and Y), my son X, X is 4, X loves",
+    JSON.stringify(m.firstNamesIn("something fun for Maya and Leo this weekend")) === '["maya","leo"]' &&
+      JSON.stringify(m.firstNamesIn("my son Jasper needs a class")) === '["jasper"]' &&
+      JSON.stringify(m.firstNamesIn("Is there something for my daughter? Ella is 4")) === '["ella"]' &&
+      JSON.stringify(m.firstNamesIn("a good activity for Jasper, he loves dinosaurs")) === '["jasper"]',
+  );
+  ok("a capitalised subject is still a subject: Kumon, and a place that is good", (ask("any Kumon near us?", "activities").unknown ?? []).join() === "kumon" && (ask("Kidspace is good?", "activities").unknown ?? []).join() === "kidspace");
+  ok("he and she are not subjects", !(ask("an activity he would like", "activities").unknown ?? []).includes("he") && !(ask("something she can do", "activities").unknown ?? []).includes("she"));
   const chess = ask("chess club for an 8 year old in Pasadena", "activities");
   ok("'club', 'gym', 'program' are what a place is, not its subject", (chess.unknown ?? []).join() === "chess" && fit(chess, { name: "Chess Wizards", focus: "activities" }) === 0);
   ok("weekend activities stay open", fit(ask("weekend activities for a 9 month old around Pasadena", "activities"), REC.roseBowl) === 1);

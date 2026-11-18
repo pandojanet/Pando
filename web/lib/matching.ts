@@ -449,7 +449,7 @@ export interface TopicRead {
 const NOT_A_SUBJECT = new Set(
   (
     "a an the any some all good great best nice fun cheap cheaper affordable local nearby near around close " +
-    "in at on for to of with from by into my our me us i we you your they them their his her it its " +
+    "in at on for to of with from by into my our me us i we you your they them their his her it its he she him hers " +
     "kid kids child children childs toddler toddlers baby babies infant infants son sons daughter daughters boy boys girl girls " +
     "year years yr yrs yo old month months week weeks age ages aged twins twin " +
     "parent parents family families mom moms dad dads people anyone someone somebody everyone " +
@@ -479,12 +479,48 @@ const NOT_A_SUBJECT = new Set(
  */
 export function subjectWords(text: string, places: ReadonlyArray<string | null | undefined> = []): string[] {
   const placeWords = new Set(places.flatMap((p) => (p ?? "").toLowerCase().split(/[^a-z]+/)));
+  const names = new Set(firstNamesIn(text));
   return text
     .toLowerCase()
     .replace(/['’]s\b/g, "")
     .replace(/[^a-z]+/g, " ")
     .split(" ")
-    .filter((w) => w.length > 1 && !NOT_A_SUBJECT.has(w) && !placeWords.has(w));
+    .filter((w) => w.length > 1 && !NOT_A_SUBJECT.has(w) && !placeWords.has(w) && !names.has(w));
+}
+
+/**
+ * The people a question names — the child it is for, mostly (18 Nov).
+ *
+ * *"Hi is there a good activity for Jasper today"*, a parent's first text: the
+ * topic read `activities`, and "jasper" was left as the **subject**, so only a
+ * record named for Jasper could answer — every parents' record was dropped and
+ * the reply was the web alone. A name is the child, never the thing wanted.
+ *
+ * Read from the shape, not a list of names: a capitalised word after "for",
+ * "with", "take"… ("for Jasper", "for Maya and Leo"), after "my son / daughter
+ * / kid…" ("my son Jasper"), or before an age or a verb about the child
+ * ("Jasper is 5", "Jasper loves…"). A capitalised word anywhere else ("any
+ * Kumon near us?") is still a subject; a record the question names by its own
+ * name gets in regardless (`namedByQuestion`).
+ */
+const CAP = "([A-Z][a-z]+)";
+const MORE_NAMES = `((?:\\s*,\\s*|\\s+(?:and|&)\\s+)${CAP})*`;
+const NAME_SHAPES: readonly RegExp[] = [
+  new RegExp(`\\b(?:for|with|take|taking|bring|bringing|entertain|keep|keeping|occupy)\\s+${CAP}${MORE_NAMES}`, "g"),
+  new RegExp(`\\bmy\\s+(?:son|daughter|kid|kids|child|children|boy|girl|toddler|baby|twins?|little one)\\s+${CAP}${MORE_NAMES}`, "g"),
+  /* An age says it is a child: "Ella is 4" — but not "Kidspace is good". */
+  new RegExp(`\\b${CAP}\\s+(?:is|was|turns|turned|just turned)\\s+(?:\\d|almost|nearly|about|only|going on)`, "g"),
+  /* What the child likes or needs: "Jasper loves dinosaurs". */
+  new RegExp(`\\b${CAP}\\s+(?:loves|likes|enjoys|wants|needs|hates|is into|is obsessed)\\b`, "g"),
+];
+export function firstNamesIn(text: string): string[] {
+  const out = new Set<string>();
+  for (const re of NAME_SHAPES) {
+    for (const m of text.matchAll(re)) {
+      for (const w of m[0].match(/\b[A-Z][a-z]+\b/g) ?? []) out.add(w.toLowerCase());
+    }
+  }
+  return [...out];
 }
 
 /** What a place is, not what it teaches: "chess club", "climbing gym", "robotics program". */
