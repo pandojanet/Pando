@@ -702,3 +702,53 @@ export function questionFromTemplate(template: string | null): ClarifyingQuestio
   if (template === "clarify_participation") return "participation";
   return null;
 }
+
+/**
+ * Ask the age **first**, before an answer that depends on it (18 Nov).
+ *
+ * Janet, testing live on a call, from a number Pando had no profile for: *"Hi is
+ * there a good activity for Jasper today"* — Jasper is 18 months — came back
+ * with kids' taekwondo for ages 4 to 11, "otherwise it's totally irrelevant".
+ * Pando knew no age and answered anyway; the age question that exists
+ * (`CLARIFYING_COPY.child_age`) rides only under an answer with no offer below
+ * it, and an answer to a stranger always ends on the Network Ask offer, so it
+ * was never asked. The developer chose to ask first ("варіант A"): one more
+ * text, then an answer that fits.
+ *
+ * Only where the age changes the answer: the topics below, or no topic read.
+ * Not a doctor, special-needs resources, logistics or settling in, where one
+ * list fits every age; not a caregiver (held for a person either way).
+ */
+export const AGE_FIRST_TOPICS: readonly string[] = ["activities", "camps", "sports", "arts_music", "preschools_schools", "outings"];
+
+export function asksAgeFirst(input: {
+  profile: Pick<KnownProfile, "child_birth_years" | "children_declined">;
+  /** The age bands the question itself names. */
+  bandsInQuestion: number;
+  /** The market topic the question reads as, or null. */
+  focus: string | null;
+}): boolean {
+  if (input.profile.child_birth_years.length > 0 || input.profile.children_declined) return false;
+  if (input.bandsInQuestion > 0) return false;
+  return input.focus === null || AGE_FIRST_TOPICS.includes(input.focus);
+}
+
+/** The question, with the child's name when the message gave one. GSM-7, no dash. */
+export function ageFirstQuestion(name: string | null): string {
+  const who = name ? name.charAt(0).toUpperCase() + name.slice(1) : null;
+  return who
+    ? `Happy to help! How old is ${who}? Then I can pick things that fit.`
+    : "Happy to help! How old are your kids? Like 3 and 7, so I can pick things that fit.";
+}
+
+/**
+ * The held question with the age it was waiting for, as retrieval and the search
+ * read an age: "…for Jasper today, for a 1 year old". `parseAges` reads "18
+ * months" as 1, "almost 2" as 2.
+ */
+export function withAgeSaid(question: string, ages: readonly number[]): string {
+  if (ages.length === 0) return question;
+  /* Under one is a baby, which is how the band reader takes it ("6 months" parses as 0). */
+  const each = ages.map((a) => (a <= 0 ? "a baby under 1" : `a ${a} year old`));
+  return `${question.trim().replace(/[.?!]+$/, "")}, for ${each.join(" and ")}`;
+}

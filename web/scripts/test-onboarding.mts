@@ -520,5 +520,27 @@ console.log("\n=== the whole profile over SMS, one question at a time ===");
   );
 }
 
+console.log("\n=== the age first, when the answer turns on it (18 Nov, Janet live: taekwondo 4-11 for an 18-month-old) ===");
+{
+  const none = { child_birth_years: [], children_declined: false };
+  ok("no age known, an activity question: ask first", o.asksAgeFirst({ profile: none, bandsInQuestion: 0, focus: "activities" }));
+  ok("no topic read: ask first too", o.asksAgeFirst({ profile: none, bandsInQuestion: 0, focus: null }));
+  ok("the question says an age: answer", !o.asksAgeFirst({ profile: none, bandsInQuestion: 1, focus: "activities" }));
+  ok("the profile has the ages: answer", !o.asksAgeFirst({ profile: { child_birth_years: [2025], children_declined: false }, bandsInQuestion: 0, focus: "camps" }));
+  ok("they said they have no children: answer", !o.asksAgeFirst({ profile: { child_birth_years: [], children_declined: true }, bandsInQuestion: 0, focus: "camps" }));
+  ok("a doctor, special needs, logistics, settling in: one list fits every age", ["pediatric_health", "special_needs_resources", "working_parent_logistics", "new_to_area_help"].every((f) => !o.asksAgeFirst({ profile: none, bandsInQuestion: 0, focus: f })));
+  ok("the question names the child", o.ageFirstQuestion("jasper") === "Happy to help! How old is Jasper? Then I can pick things that fit.");
+  ok("or asks for every child", o.ageFirstQuestion(null) === "Happy to help! How old are your kids? Like 3 and 7, so I can pick things that fit.");
+  ok("both are plain GSM-7 (one segment each)", [o.ageFirstQuestion("jasper"), o.ageFirstQuestion(null)].every((s) => /^[\x20-\x7E]+$/.test(s) && s.length <= 160));
+  ok("the held question takes the age as an age", o.withAgeSaid("Hi is there a good activity for Jasper today", o.parseAges("18 months")) === "Hi is there a good activity for Jasper today, for a 1 year old");
+  ok("under one is a baby; two children are two", o.withAgeSaid("camps?", [0]) === "camps, for a baby under 1" && o.withAgeSaid("camps?", [3, 7]) === "camps, for a 3 year old and a 7 year old");
+  ok("no age (\"none\") leaves the question as it was", o.withAgeSaid("camps?", []) === "camps?");
+  const src = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("asked as the ordinary age question, with the request held as an open exchange", src.includes("await rememberTurn({ personId: person.person_id, text: asked });") && src.includes('template: clarifyTemplate("child_age"),') && src.includes("body: ageFirstQuestion(firstNamesIn(asked)[0] ?? null),"));
+  ok("never mid-exchange, held or sensitive, and at most once a week", /!pending &&\r?\n\s*!followsHeld &&/.test(src) &&src.includes("!reading.sensitive &&") && src.includes('(await pendingClarificationAt(person.person_id))?.question !== "child_age"'));
+  ok("the age that arrives answers the held question, instead of a thank-you", src.includes("body: withAgeSaid(combined(held, \"\"), parseAges(body)),") && src.indexOf('if (saved && question === "child_age")') < src.indexOf("const next = nextQuestion(alsoKept"));
+  ok("\"18 months\" is an age when the age was asked", src.includes("const monthsAsked = open && pending === \"child_age\" && AGE_IN_MONTHS.test("));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

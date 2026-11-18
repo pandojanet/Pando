@@ -78,13 +78,17 @@ import {
 import { TRUST_LABEL } from "@/lib/trust-labels";
 import { classifyDemand, escalateSensitivity, highStakesKind } from "@/lib/demand";
 import { maskContactDetails } from "@/lib/contact-details";
-import { bandsForBirthYears, bandsInQuestion, focusInQuestion } from "@/lib/matching";
+import { bandsForBirthYears, bandsInQuestion, firstNamesIn, focusInQuestion } from "@/lib/matching";
 import {
+  ageFirstQuestion,
+  asksAgeFirst,
   CLARIFYING_COPY,
   clarifyReply,
   clarifyTemplate,
   isClarifyingAnswer,
   nextQuestion,
+  parseAges,
+  withAgeSaid,
   withAnswer,
 } from "@/lib/onboarding";
 import { focusOptions, retrieveFor } from "@/lib/server/repo/retrieval";
@@ -1635,9 +1639,12 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
        it stored the number and returned before answering anything. */
     /* An age only when it reads as one (review, 4 Nov): a bare number or numbers,
        an age said about a child, or "no kids" — "top 3" stored a 3 year old. */
+    /* "18 months", "he's 18 months old" — an age in months, when the age is what Pando asked (18 Nov). */
+    const monthsAsked = open && pending === "child_age" && AGE_IN_MONTHS.test(body.split("\n")[0] ?? "");
     const ageReads =
       question !== "child_age" ||
       BARE_AGES.test(body.split("\n")[0] ?? "") ||
+      monthsAsked ||
       (saysAChild && !DURATION.test(body)) ||
       declinesChildren(body);
     if (question && !newRequest && isClarifyingAnswer(body) && ageReads) {
@@ -1659,6 +1666,27 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
        * was asked, and until today the whole of Pando's reply was to stop
        * talking. One outbound for one inbound, as everywhere else on this path.
        */
+      /**
+       * The age a held question was waiting for (18 Nov, `asksAgeFirst`): the
+       * question is answered now, with the age in it, instead of a thank-you —
+       * that was the point of asking. The next profile question waits for a later
+       * answer, as everywhere: one ask per message.
+       */
+      if (saved && question === "child_age") {
+        const held = await openQuestion(person.person_id);
+        if (held && held.turns.length > 0) {
+          await closeQuestion(held.id, "resolved");
+          console.info("[sms:inbound] held question answered with the age");
+          await answerQuestion({
+            from,
+            body: withAgeSaid(combined(held, ""), parseAges(body)),
+            person,
+            caregiverIntent: false,
+            sensitive: false,
+          });
+          return { clarified: true, early };
+        }
+      }
       if (saved) {
         /**
          * Thanked, and the next question asked in the same message while the
@@ -1719,6 +1747,8 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
  */
 const DURATION = /\b\d+\s*(?:-\s*\d+\s*)?(?:days?|weeks?|wks?|months?|mos?|hours?|hrs?|sessions?|times?|nights?)\b/i;
 const BARE_AGES = /^\s*\d{1,2}(?:\s*(?:,|and|&)\s*\d{1,2})*\s*$/i;
+/* An age said in months, alone or about the child: "18 months", "he's 18 mo", "Jasper is 18 months old". */
+const AGE_IN_MONTHS = /^\s*(?:(?:he|she)(?:'s|’s|\s+is)|[A-Za-z]+\s+is|about|almost|nearly|just)?\s*\d{1,2}\s*(?:months?|mos?|mo)\b(?:\s+old)?\s*[.!]?\s*$/i;
 
 async function saveFactsIn(
   person: NonNullable<InboundPerson>,
@@ -2243,6 +2273,44 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
       ? reading.standalone
       : null;
   console.info("[sms:inbound] request", { rewritten: rewritten !== null, follows_held: followsHeld !== null });
+
+  /**
+   * The age first, when the answer turns on it and nobody knows it (18 Nov —
+   * Janet, live: "a good activity for Jasper today" came back with taekwondo for
+   * 4 to 11 year olds; Jasper is 18 months). The question is held as an open
+   * exchange (`rememberTurn`) and the age is asked as the ordinary age question
+   * (`clarify_child_age`), so the reply is read and saved by the clarifying step
+   * — which then answers the held question with it (`answerHeldWithAge`).
+   * Never mid-exchange, never for anything held or sensitive, and at most once a
+   * week: a parent who did not say the first time gets an answer the second.
+   */
+  const asked = rewritten ?? (switched ? body : combined(pending, body));
+  if (
+    person &&
+    !pending &&
+    !followsHeld &&
+    reading.intent === "ask_recommendation" &&
+    !reading.sensitive &&
+    classifyDemand(asked, null) === "ordinary" &&
+    asksAgeFirst({
+      profile: person.profile,
+      bandsInQuestion: bandsInQuestion(asked).length,
+      focus: focusInQuestion(asked, await focusOptions(marketOf(person))),
+    }) &&
+    (await pendingClarificationAt(person.person_id))?.question !== "child_age"
+  ) {
+    await rememberTurn({ personId: person.person_id, text: asked });
+    await sendSms({
+      to: from,
+      body: ageFirstQuestion(firstNamesIn(asked)[0] ?? null),
+      category: "transactional",
+      personId: person.person_id,
+      template: clarifyTemplate("child_age"),
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] asked the age first");
+    return;
+  }
 
   await answerQuestion({
     from,
