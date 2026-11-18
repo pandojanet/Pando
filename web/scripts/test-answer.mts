@@ -1202,5 +1202,21 @@ console.log("\n=== 26 Oct review: the rewrite check and the composer's room ==="
   ok("26 Oct (4): no 'All of these' over the single record shown", !tight.includes("All of these"), JSON.stringify(tight));
 }
 
+console.log("\n=== the facts a parent decides on: ages, when, price (18 Nov, Janet live) ===");
+{
+  const kf = pi.keyFactsIn;
+  ok("all three read", JSON.stringify(kf("Mixed ages 0-5 years; Sunday classes at 9:00 AM and 10:00 AM; $135/month")) === '["age","when","price"]');
+  ok("months, 'and up', free, open daily", JSON.stringify(kf("ages 18 to 36 months; free")) === '["age","price"]' && JSON.stringify(kf("Open daily; 400 S Baldwin Ave")) === '["when"]' && JSON.stringify(kf("kids 3 and up")) === '["age"]');
+  ok("a fact that is none of the three reads as none", kf("indoor heated pool").length === 0 && kf(null).length === 0);
+  ok("the deciding facts go first, each whole, the rest after", pi.keyFactsFirst("indoor heated pool; $25 a class; ages 3 to 5; Sat 9am") === "ages 3 to 5; Sat 9am; $25 a class; indoor heated pool");
+  ok("a line cut from the end now loses the extra fact, not the price", pi.keyFactsFirst("$12 a visit; soft play; ages 0-5")?.endsWith("soft play") === true);
+  ok("what was not found is never a fact (the search began writing it)", pi.withoutSilence("ages 3-11 years; no published days, hours or price in the results") === "ages 3-11 years" && pi.withoutSilence("free; no public hours listed") === "free" && pi.withoutSilence("no published days, hours or price in the results") === null);
+  const ws = readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
+  ok("the search asks for the three, in order, and has a search to find them", ws.includes("(1) the ages it takes") && ws.includes("(2) when it runs or is open") && ws.includes("(3) its published") && ws.includes("max_uses: 3,"));
+  const ib = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("the lines that state more of the three come first", ib.includes("keyFactsIn(b.detail).length - keyFactsIn(a.detail).length"));
+  ok("and each line carries them first", ib.includes("detail: keyFactsFirst(sendableNote(finding.detail)),"));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

@@ -132,7 +132,7 @@ import {
 import { askedRecently, attachResponse, createBlast, openAskQuestion, recordPass } from "@/lib/server/repo/blast";
 import { isDeleteRequest } from "@/lib/consent";
 import { looksLikePerson } from "@/lib/named-person";
-import { mentionsName, sameName } from "@/lib/public-info";
+import { keyFactsFirst, keyFactsIn, mentionsName, sameName } from "@/lib/public-info";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 import { leadingYesOrNo, yesOrNo } from "@/lib/thanks";
 import { MEDIA_REJECTED, mediaConfirmCard, mediaConfirmSms, mediaFailureReason, mediaFailureSms, mediaUrls, type InboundMedia } from "@/lib/media-note";
@@ -2533,7 +2533,9 @@ function publicSlots(
      that went out were "WaterWaves - swim lessons school in Pasadena." and its
      twin, while the findings with ages, ratios and a heated pool came third and
      fourth and were never read. Search order otherwise. */
-  const withFacts = [...info.findings].sort((a, b) => Number(!a.detail) - Number(!b.detail));
+  /* Since 18 Nov by how many of the three a parent decides on — ages, when, price —
+     the page states (Janet, live: "no price, no age range, no opening hours"). */
+  const withFacts = [...info.findings].sort((a, b) => keyFactsIn(b.detail).length - keyFactsIn(a.detail).length || Number(!a.detail) - Number(!b.detail));
   /* The place the question names comes first and is never the one cut (5 Nov,
      the SMS lab): "is Kidspace good for toddlers?" was answered with two of its
      corners, while "Kidspace Children's Museum" itself, whose page stated no
@@ -3127,7 +3129,8 @@ async function answerQuestion(input: {
          name — a published price with an en dash would double the whole bill. */
       /* sendableNote, not `toGsm7 ?? text`: that sent the very text toGsm7 could
          not clean, and one such character makes the whole message UCS-2. */
-      detail: sendableNote(finding.detail),
+      /* Ages, when, price first, so a cut line loses the extra fact before the price (18 Nov). */
+      detail: keyFactsFirst(sendableNote(finding.detail)),
       kind: sendableNote(finding.what) ?? "a place",
       area: sendableNote(finding.area),
       /* The same place as a parents' record: said as that, not as another one (26 Oct). */

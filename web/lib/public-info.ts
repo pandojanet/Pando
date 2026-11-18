@@ -711,7 +711,9 @@ export function inAnotherState(
  * is advice, and its fields do not pass through here.
  */
 const SILENCE =
-  /\b(?:(?:does|do|did)(?:n't| not) (?:state|list|mention|say|give|show|specify|include|post)|not (?:stated|listed|mentioned|given|specified|shown|provided|available|published)|no (?:price|prices|pricing|ages?|hours|schedule|dates|details|information|info)\b[^;,.]*\b(?:listed|given|stated|available|posted|shown|provided|found)|unknown|unclear|n\/a)\b/i;
+  /\b(?:(?:does|do|did)(?:n't| not) (?:state|list|mention|say|give|show|specify|include|post)|not (?:stated|listed|mentioned|given|specified|shown|provided|available|published)|no (?:price|prices|pricing|ages?|hours|schedule|dates|details|information|info)\b[^;,.]*\b(?:listed|given|stated|available|posted|shown|provided|found)|no (?:published|listed|posted|stated|public)\b|in the (?:search )?results\b|unknown|unclear|n\/a)\b/i;
+/* 18 Nov: asked for ages, hours and price first, the search began writing what it
+   did not find — "no published days, hours or price in the results". */
 export function withoutSilence(detail: string | null): string | null {
   if (!detail) return detail;
   const kept = detail.split(/\s*;\s*/).filter((part) => part.trim() && !SILENCE.test(part));
@@ -862,4 +864,45 @@ export function readDeepFindings(
   }
   if (stats) stats.kept = out.length;
   return out;
+}
+
+/**
+ * The three facts a parent decides on, as a page states them (18 Nov): **the
+ * ages**, **when** (days, hours, term dates) and **the price**. Janet, live:
+ * *"no price, no age range, no opening hours — otherwise it's totally
+ * irrelevant"*. Read to order the web lines (more of the three first) and to
+ * cut one (these before anything else), never to invent one.
+ */
+const FACT_AGE = /\b(?:ages?\s*\d|\d+\s*(?:-|–|to)\s*\d+\s*(?:years?|yrs?|months?|mos?)?|\d+\s*(?:months?|mos?)\b|\d+\s*(?:\+|and up|and older)|under\s*\d|toddlers?|infants?|babies|preschoolers?|grades?\s*(?:k|\d))/i;
+const FACT_WHEN = /\b(?:\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.)|(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day)?s?\b|daily|weekends?|weekdays?|mornings?|afternoons?|open\s+\d|year-round|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2})/i;
+const FACT_PRICE = /(?:\$\s?\d|\bfree\b|\bno cost\b|\bper (?:class|session|month|term|visit|week)\b)/i;
+
+export type KeyFact = "age" | "when" | "price";
+export function keyFactsIn(text: string | null | undefined): KeyFact[] {
+  if (!text) return [];
+  const out: KeyFact[] = [];
+  if (FACT_AGE.test(text)) out.push("age");
+  if (FACT_WHEN.test(text)) out.push("when");
+  if (FACT_PRICE.test(text)) out.push("price");
+  return out;
+}
+
+/**
+ * A page's facts with the deciding ones first — ages, then when, then price —
+ * and anything else after, each fact whole (18 Nov). The composer cuts a line's
+ * facts from the end (`wholeFacts`), so the price a page states is the last to
+ * go rather than the first.
+ */
+export function keyFactsFirst(detail: string | null): string | null {
+  if (!detail) return detail;
+  const facts = detail.split(/\s*;\s*/).filter((f) => f.trim().length > 0);
+  const rank = (f: string) => {
+    const kinds = keyFactsIn(f);
+    return kinds.includes("age") ? 0 : kinds.includes("when") ? 1 : kinds.includes("price") ? 2 : 3;
+  };
+  return facts
+    .map((f, i) => ({ f, i, r: rank(f) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.f)
+    .join("; ");
 }

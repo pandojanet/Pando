@@ -167,10 +167,15 @@ const SYSTEM = [
   '  "toddler swim lessons", "drop-in indoor playspace". No adjectives of praise,',
   "  no marketing language, no claim about quality, no opening hours, no prices.",
   "- `area` is the town or neighbourhood, or null if the page did not say.",
-  "- `detail` is up to three short facts the page actually states and a parent",
-  "  would want, separated by '; ': the ages it takes, when it runs (days, hours",
-  "  or term dates), a published price, and one thing that sets it apart",
-  "  ('indoor heated pool', 'parent in the water'). Under 25 words in all. Leave",
+  "- `detail` is the facts a parent decides on, in this order, separated by '; ':",
+  "  (1) the ages it takes ('ages 18 months to 3'), (2) when it runs or is open - days",
+  "  and hours, or term dates ('Sat 9am and 10am', 'open daily 9-5'), (3) its published",
+  "  price ('$135 a month', '$12 a visit', 'free'). Only then, if there is room, one",
+  "  thing that sets it apart ('indoor heated pool'). Find these on the place's own",
+  "  pages: when a result does not show its ages, hours or price, spend a search on",
+  "  that place's schedule or prices. Prefer places whose pages state all three. A fact",
+  "  the pages do not give is left out, never reported missing ('no published hours').",
+  "  Under 30 words in all. Leave",
   "  out any fact the page did not state -- never inferred, never rounded, never",
   "  never write that a page does not state something ('does not list prices') - just leave it out,",
   "  a guess -- and null if it stated none. No praise, no ratings, no marketing,",
@@ -740,7 +745,10 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
           {
             type: SEARCH_TOOL,
             name: "web_search",
-            max_uses: 2,
+            /* Three since 18 Nov: Janet, live — "no price, no age range, no opening
+               hours, otherwise it's totally irrelevant"; the third search is for a
+               place's own schedule or prices. */
+            max_uses: 3,
             ...(location
               ? { user_location: { type: "approximate" as const, ...location } }
               : {}),
