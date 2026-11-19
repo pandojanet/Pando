@@ -275,21 +275,55 @@ export function sayMoment(at: Date, timeZone: string): string {
  */
 export type PickOutcome =
   /* `weekly`: it runs every week and the reminder is for its first date only, which the answer says (13 Nov). */
-  | { n: number; title: string; state: "set" | "already_set"; at: Date; weekly?: boolean }
+  /* `running`: already on, through `until` — said, with when the reminder is and why then (19 Nov, `runningUntil`). */
+  | { n: number; title: string; state: "set" | "already_set"; at: Date; weekly?: boolean; running?: Running }
   | { n: number; title: string; state: "unset" | "no_day" | "too_late" | "reminded" };
+
+/** An event already on when it was picked: its last day, and whether the reminder is on that day rather than next week. */
+export interface Running {
+  /** YYYY-MM-DD, the last day it runs. */
+  until: string;
+  lastDay: boolean;
+}
+
+/**
+ * Whether an item is already on at its reminder, and through when (19 Nov). A
+ * test digest's "Kidspace Winter Frolic — through Jan 10" was answered "I'll
+ * text you Sat Nov 28" with no word of why, and the developer read the date as
+ * a fault (*"чомусь підтягує 28 November … не дуже зрозуміло"*). `remindOn`
+ * reminds a running event the Saturday after the digest, or on its last day if
+ * that comes first; the answer now says which, and that it is on now.
+ */
+export function runningUntil(item: Pick<FollowupItem, "starts_on" | "ends_on">, remind: string): Running | undefined {
+  if (!item.ends_on || item.starts_on === remind || (item.starts_on && item.starts_on > remind)) return undefined;
+  return { until: item.ends_on, lastDay: item.ends_on === remind };
+}
+
+/** "2027-01-10" → "Jan 10": a day as a parent reads it. */
+export function sayDay(date: string): string {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
 
 /** The answer to a pick (or several typed at once): each outcome in one line, GSM-7, under 1,600 characters. */
 export function pickReplySms(outcomes: readonly PickOutcome[], timeZone: string): string {
   const one = (o: PickOutcome): string => {
     switch (o.state) {
       case "set":
+        if (o.running) {
+          const when = `${o.running.lastDay ? "on its last day" : "next week"}, ${sayMoment(o.at, timeZone)}`;
+          return outcomes.length === 1
+            ? `Got it - ${o.title} is on now through ${sayDay(o.running.until)}. I'll remind you ${when}, and ask how it went after. Pick ${o.n} again to undo.`
+            : `${o.n}. ${o.title} - on now through ${sayDay(o.running.until)}; reminder ${when}.`;
+        }
         return outcomes.length === 1
           ? `Got it - I'll text you ${sayMoment(o.at, timeZone)} about ${o.title}${o.weekly ? " (the first date only)" : ""}, and ask how it went after. Pick ${o.n} again to undo.`
           : `${o.n}. ${o.title} - reminder ${sayMoment(o.at, timeZone)}${o.weekly ? " (the first date only)" : ""}.`;
-      case "already_set":
+      case "already_set": {
+        const on = o.running ? ` (on now through ${sayDay(o.running.until)})` : "";
         return outcomes.length === 1
-          ? `Your reminder for ${o.title} is already set for ${sayMoment(o.at, timeZone)}. Pick ${o.n} again to take it off.`
-          : `${o.n}. ${o.title} - reminder already set for ${sayMoment(o.at, timeZone)}.`;
+          ? `Your reminder for ${o.title}${on} is already set for ${sayMoment(o.at, timeZone)}. Pick ${o.n} again to take it off.`
+          : `${o.n}. ${o.title}${on} - reminder already set for ${sayMoment(o.at, timeZone)}.`;
+      }
       case "unset":
         return `OK - no reminder for ${o.title}.`;
       case "no_day":

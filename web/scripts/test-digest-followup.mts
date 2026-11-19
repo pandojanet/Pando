@@ -50,6 +50,27 @@ ok("one already running: the next Saturday while it runs, else its last day",
   f.remindOn({ starts_on: "2026-11-06", ends_on: "2027-01-10" }, "2026-11-14") === "2026-11-21" &&
     f.remindOn({ starts_on: "2026-11-06", ends_on: "2026-11-18" }, "2026-11-14") === "2026-11-18");
 ok("no day at all: no reminder", f.remindOn({ starts_on: null, ends_on: null }, "2026-11-14") === null);
+/* 19 Nov, the developer on a test digest: "Through Jan 10" answered "I'll text you Sat Nov 28" read as a fault. */
+{
+  const LA = "America/Los_Angeles";
+  const frolic = { starts_on: "2026-11-06", ends_on: "2027-01-10" };
+  const remind = f.remindOn(frolic, "2026-11-21")!;
+  const at = f.remindAt({ starts_on: frolic.starts_on, when_text: "Through Jan 10" }, remind, LA);
+  const running = f.runningUntil(frolic, remind);
+  ok("an event already on is marked running, through its last day", remind === "2026-11-28" && running?.until === "2027-01-10" && running.lastDay === false);
+  ok("and the answer says it is on now, through when, and that the reminder is next week",
+    f.pickReplySms([{ n: 1, title: "Kidspace Winter Frolic", state: "set", at, running }], LA) ===
+      "Got it - Kidspace Winter Frolic is on now through Jan 10. I'll remind you next week, Sat Nov 28 at 8am, and ask how it went after. Pick 1 again to undo.");
+  const fair = { starts_on: "2026-11-06", ends_on: "2026-11-25" };
+  const r2 = f.remindOn(fair, "2026-11-21")!;
+  ok("ending within the week: on its last day, said so",
+    /is on now through Nov 25\. I'll remind you on its last day, Wed Nov 25 at 8am/.test(
+      f.pickReplySms([{ n: 2, title: "Fall Fair", state: "set", at: f.remindAt({ starts_on: fair.starts_on, when_text: "Through Nov 25" }, r2, LA), running: f.runningUntil(fair, r2) }], LA)));
+  ok("an event still to come is not running", f.runningUntil({ starts_on: "2026-11-26", ends_on: "2026-11-26" }, "2026-11-26") === undefined &&
+    f.runningUntil({ starts_on: "2026-11-26", ends_on: null }, "2026-11-26") === undefined);
+  ok("an already-set reminder says it too", /Kidspace Winter Frolic \(on now through Jan 10\) is already set for Sat Nov 28 at 8am/.test(
+    f.pickReplySms([{ n: 1, title: "Kidspace Winter Frolic", state: "already_set", at, running }], LA)));
+}
 ok("the feedback question the day after", f.feedbackOn("2026-11-17") === "2026-11-18" && f.feedbackOn("2026-11-30") === "2026-12-01");
 ok("a pick made later counts from that day: not today, not past (review, 11 Nov)",
   f.remindOn({ starts_on: "2026-11-15", ends_on: null }, "2026-11-14", "2026-11-15") === null &&

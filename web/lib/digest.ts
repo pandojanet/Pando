@@ -790,6 +790,12 @@ export function readAgentItems(
     } else if (starts_on && starts_on > addDays(ctx.editionDate, DIGEST_LONG_DAYS)) {
       drop("too_far");
       continue;
+    } else if ((kind === "camp" || kind === "class") && starts_on && starts_on < ctx.editionDate) {
+      /* A camp or class already under way is one a family can rarely still join (19 Nov, the developer:
+         "навіщо пропонувати подію, яка вже почалась і ймовірно на неї не можна зареєструватися?").
+         An event running for days — an exhibit, a light show — stays: it is walked into, not signed up for. */
+      drop("already_started");
+      continue;
     }
     /* The dates it states, on the page it links, when the agent read that page (12 Nov, `datesOnPage`). */
     const read = ctx.pages?.get(key);

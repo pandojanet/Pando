@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
-import { askAt, feedbackOn, remindAt, remindOn, type Feedback, type FollowupItem, type PickOutcome } from "@/lib/digest-followup";
+import { askAt, feedbackOn, remindAt, remindOn, runningUntil, type Feedback, type FollowupItem, type PickOutcome } from "@/lib/digest-followup";
 import { withDb, type Db } from "@/lib/server/db";
 import { textDates } from "@/lib/digest";
 
@@ -148,14 +148,15 @@ export async function togglePick(
         on conflict (person_id, item_id) do nothing
       `);
       const held = (await tx.execute(sql`
-        select status, reminded_at is not null as reminded, remind_at from digest_interests
+        select status, reminded_at is not null as reminded, remind_at, remind_on::text as remind_on from digest_interests
          where person_id = ${personId}::uuid and item_id = ${item.id}::uuid
          for update
       `)) as unknown as Row[];
       const was = held[0];
       if (was?.reminded === true) return { n, title: item.title, state: "reminded" };
       if (was?.status === "going" && mode === "set" && was.remind_at) {
-        return { n, title: item.title, state: "already_set", at: new Date(String(was.remind_at)), weekly: textDates(item.when_text).weekly.size > 0 };
+        const running = was.remind_on ? runningUntil(item, String(was.remind_on)) : undefined;
+        return { n, title: item.title, state: "already_set", at: new Date(String(was.remind_at)), weekly: textDates(item.when_text).weekly.size > 0, ...(running ? { running } : {}) };
       }
       if (was?.status === "going") {
         await tx.execute(sql`
@@ -176,7 +177,8 @@ export async function togglePick(
                ask_at = ${ask.toISOString()}::timestamptz, updated_at = now()
          where person_id = ${personId}::uuid and item_id = ${item.id}::uuid
       `);
-      return { n, title: item.title, state: "set", at, weekly: textDates(item.when_text).weekly.size > 0 };
+      const running = runningUntil(item, remind);
+      return { n, title: item.title, state: "set", at, weekly: textDates(item.when_text).weekly.size > 0, ...(running ? { running } : {}) };
     }),
   );
   return r.persisted && r.data ? r.data : null;

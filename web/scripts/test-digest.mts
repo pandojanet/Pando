@@ -66,6 +66,15 @@ ok("a made-up page on a site it did see is dropped — the host alone proves not
 ok("a link to a site it never saw is dropped", d.readAgentItems([{ ...good, url: "https://made-up-events.example/x" }], ctx).length === 0);
 ok("an event already over is dropped", d.readAgentItems([{ ...good, starts_on: "2026-11-01", ends_on: "2026-11-01" }], ctx).length === 0);
 ok("an event a month out is not this week's", d.readAgentItems([{ ...good, starts_on: "2026-12-10", ends_on: null }], ctx).length === 0);
+/* 19 Nov: a camp or class already under way can rarely still be joined; an event running for days is walked into. */
+{
+  const dropped: Record<string, number> = {};
+  const started = { ...good, kind: "camp", title: "Fall break camp", starts_on: "2026-11-02", ends_on: "2026-11-20", url: "https://cityofpasadena.net/camps" };
+  ok("a camp or class that has already begun is dropped", d.readAgentItems([started], ctx, dropped).length === 0 && dropped.already_started === 1 &&
+    d.readAgentItems([{ ...started, kind: "class" }], ctx).length === 0);
+  ok("a camp that starts after the digest stays", d.readAgentItems([{ ...started, starts_on: "2026-11-16", ends_on: "2026-11-20" }], ctx).length === 1);
+  ok("an event running for days through the digest stays", d.readAgentItems([{ ...good, when_text: "Through Jan 10", starts_on: "2026-11-01", ends_on: "2027-01-10" }], ctx).length === 1);
+}
 ok("an event with no date at all is dropped", d.readAgentItems([{ ...good, starts_on: null, ends_on: null }], ctx).length === 0);
 ok("a summer camp registering now may be months out",
   d.readAgentItems([{ ...good, kind: "camp", starts_on: "2027-03-01", ends_on: null, url: "https://cityofpasadena.net/camps" }], ctx).length === 1);

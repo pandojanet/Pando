@@ -161,7 +161,7 @@ export async function findDigestItems(marketId: MarketId, editionDate: string, c
       role: "user",
       content: [
         `Today is Saturday ${editionDate}. Area: ${m.label}, ${m.stateName}.`,
-        `Events must fall between ${addDays(editionDate, 1)} and ${addDays(editionDate, DIGEST_EVENT_DAYS)} - the message is read today, so nothing that happens only today; something running for days through today counts. Camps and classes may start later if registration is open now.`,
+        `Events must fall between ${addDays(editionDate, 1)} and ${addDays(editionDate, DIGEST_EVENT_DAYS)} - the message is read today, so nothing that happens only today; something running for days through today counts. Camps and classes may start later if registration is open now; a camp or class that has already begun is not listed (19 Nov), so a search is not spent on one.`,
         `Find ${cohort && cohort.key !== "c-general" ? DIGEST_GROUP_ITEMS : DIGEST_EDITION_MAX} items if the pages you read support them. Return an empty array only if your searches found nothing dated in that window.`,
         ...forCohort(cohort),
       ].join("\n"),
