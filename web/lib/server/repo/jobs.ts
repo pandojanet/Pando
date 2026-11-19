@@ -470,6 +470,8 @@ export async function sendDigestTo(phone: string, now = new Date()): Promise<Dig
     template: "weekly_digest",
     templateVersion: SMS_TEMPLATE_VERSION,
     rich: { kind: "digest_pick", card, edition: editionVariable(one.editionDate) },
+    /* Not held by quiet hours (19 Nov, the developer's choice for this test; invariant 6's one exception). */
+    adminTest: "digest_one",
   });
   console.info("[digest] one-number send", { sent: result.sent, items: included, reason: result.sent ? null : result.reason });
   if (!result.sent) {

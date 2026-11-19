@@ -598,6 +598,18 @@ ok("the search runs after the response", /after\(async \(\) => \{[\s\S]{0,80}pre
 ok("every press is an audit row with the person, never the phone (invariant 7)",
   /auditDigestOne\(session\.user, "digest\.prepare_for", family\.person_id/.test(route) && /auditDigestOne\(session\.user, "digest\.send_to", personId/.test(route) &&
     !/phone/.test(repo.slice(repo.indexOf("export async function auditDigestOne"), repo.indexOf("async function familyRows")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\*.*$/gm, "")));
+/* 19 Nov: the one named exception to invariant 6's quiet hours. */
+ok("the one-number test is not held by quiet hours", !policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms", adminTest: true }));
+ok("every other digest still is", policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms" }) &&
+  policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms", adminTest: false }));
+ok("only sendDigestTo sets it, and the send layer says so every time",
+  /adminTest: "digest_one",/.test(one) &&
+    /quiet hours ignored — the admin's one-number digest test/.test(sms) &&
+    (() => {
+      const all = [...new Set(["lib/server/repo/jobs.ts", "lib/server/inbound.ts", "lib/server/repo/outreach.ts", "lib/server/repo/admin-write.ts", "lib/server/repo/digest-followup.ts"].filter((f) => /adminTest: "digest_one"/.test(read(f))))];
+      return all.length === 1 && all[0] === "lib/server/repo/jobs.ts" && (read("lib/server/repo/jobs.ts").match(/adminTest: "digest_one"/g) ?? []).length === 1;
+    })());
+ok("opt-out is still read before it", sms.indexOf('reason: "opted_out"') < sms.indexOf("adminTest: input.adminTest"));
 ok("the log lines carry counts and enums only", !/console\.\w+\([^)]*phone/.test(one) && !/console\.\w+\([^)]*phone/.test(route));
 const names = read("lib/admin/action-names.ts");
 ok("the four actions are named, so each press is audited", ["digest.approve", "digest.unapprove", "digest_item.remove", "digest_item.restore"].every((a) => names.includes(`"${a}"`)));

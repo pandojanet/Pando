@@ -204,7 +204,15 @@ export function quietHoursBlocks(input: {
   /** From `isQuietHours()` — passed in so this stays clock-free. */
   quiet: boolean;
   transport: "sms" | "slack";
+  /**
+   * An admin pressed Send for one number on /admin/digests (19 Nov, the one
+   * named exception to invariant 6's quiet hours): the developer, testing what
+   * a digest looks like on a phone, chose it for any number. Only `sendDigestTo`
+   * sets it; opt-out and everything after quiet hours still apply.
+   */
+  adminTest?: boolean;
 }): boolean {
+  if (input.adminTest) return false;
   /* The digest is as proactive as an Ask (3 Nov): held in quiet hours too. */
   if (input.category !== "outreach" && input.category !== "digest") return false;
   if (input.inReplyTo) return false;

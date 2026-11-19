@@ -110,6 +110,13 @@ interface SendInput {
    */
   inReplyTo?: string;
   /**
+   * The admin's one-number digest test (19 Nov): quiet hours do not hold it —
+   * the one named exception to invariant 6, the developer's choice ("для цього
+   * тесту скасувати тихі години"). Set only by `sendDigestTo`, behind the admin
+   * session; opt-out runs before it and everything after it is unchanged.
+   */
+  adminTest?: "digest_one";
+  /**
    * 13.4 — the `message_log` id this attempt is retrying.
    *
    * Set only by the retry sweep (`repo/retry.ts`). It is threaded to
@@ -427,8 +434,12 @@ async function sendSmsUntraced(input: SendInput): Promise<SendResult> {
     : isMarketId(marketId)
       ? isQuietHours(new Date(), marketConfig(marketId).timeZone)
       : isQuietHoursAnywhere();
-  if (quietHoursBlocks({ category, inReplyTo: Boolean(input.inReplyTo), quiet, transport })) {
+  if (quietHoursBlocks({ category, inReplyTo: Boolean(input.inReplyTo), quiet, transport, adminTest: input.adminTest === "digest_one" })) {
     return { sent: false, reason: "quiet_hours" };
+  }
+  if (quiet && proactive && input.adminTest === "digest_one") {
+    /* Said every time, as the relay exemption below is: an exception that applies silently spreads. */
+    console.info("[sms] quiet hours ignored — the admin's one-number digest test", { template: input.template ?? null });
   }
   if (quiet && category === "outreach" && !input.inReplyTo && transport === "slack") {
     /* Said out loud every time it happens, because a rule that stops applying

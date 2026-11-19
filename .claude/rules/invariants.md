@@ -65,6 +65,14 @@ path-scoped rule loads only when a matching file is opened with Read. -->
    opt-out → quiet hours 8:00–21:00 PT → frequency → throttle → provider, in that
    order. No raw Twilio calls anywhere, and always via the Messaging
    Service SID.
+
+   **One named exception to quiet hours, approved 19 Nov:** the admin's
+   one-number digest test (`/admin/digests` → *Digest for one number* → Send,
+   `sendDigestTo`) passes `adminTest: "digest_one"` and is not held by quiet
+   hours, for any number — the developer, testing how a digest looks on a
+   phone. It still goes through `sendSms` in order (opt-out first; nothing
+   after quiet hours changes), each send is an audit row, and the log says
+   so every time. No other path may set it.
 7. Never log phone numbers, names or free text. Counts and enums only.
 
    **One exception, approved 5 Nov: PostHog's LLM traces carry the
