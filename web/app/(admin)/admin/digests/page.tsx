@@ -257,15 +257,18 @@ export default function DigestsPage() {
 
       {/* A test tool, below the week it is about (review, 19 Nov: above the week bar, an open Preview pushed
           the week and its groups a phone's length down). */}
+      {/* The page's section rhythm (the week's `space-y-6`), not glued to the groups' card (19 Nov). */}
       {tableConfigured && (
-        <OneNumber
-          onSent={async (week) => {
-            setWhich("test");
-            setDate(week);
-            await reload();
-          }}
-          onPrepared={reload}
-        />
+        <div className="mt-6">
+          <OneNumber
+            onSent={async (week) => {
+              setWhich("test");
+              setDate(week);
+              await reload();
+            }}
+            onPrepared={reload}
+          />
+        </div>
       )}
     </>
   );
