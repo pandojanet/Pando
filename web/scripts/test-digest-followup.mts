@@ -93,7 +93,7 @@ ok("a tapped number picks from its own edition, whatever was said since; a typed
   /const tappedEdition = editionOfTap\(tapPayload\);\s+if \(tappedEdition \|\| DIGEST_PICKABLE\.has\(conversation \?\? ""\)\) \{\s+const sent = await lastDigestSent\(person\.person_id, tappedEdition\);/.test(read("lib/server/inbound.ts")) &&
     /e\.edition_date = \$\{editionDate\}::date/.test(read("lib/server/repo/digest-followup.ts")) &&
     /tapPayload: params\.ButtonPayload \|\| undefined/.test(read("app/api/sms/inbound/route.ts")) &&
-    /rich: \{ kind: "digest_pick", card, edition: editionVariable\(editionDate\) \}/.test(read("lib/server/repo/jobs.ts")));
+    /rich: \{ kind: "digest_pick", card: input\.ask\.card, edition: editionVariable\(input\.editionDate\) \}/.test(read("lib/server/repo/jobs.ts")));
 ok("no date at all, or today / under way: each said, not a reminder (review, 11 Nov)",
   /has no fixed day, so there's no reminder to set/.test(f.pickReplySms([{ n: 4, title: "artWORKS", state: "no_day" }], LA)) &&
     /is today or already under way, so it's too late for a reminder/.test(f.pickReplySms([{ n: 2, title: "Santa Letters", state: "too_late" }], LA)));
@@ -127,7 +127,7 @@ const inbound = read("lib/server/inbound.ts");
 ok("read right after DIGEST / DIGEST OFF, before anything else answers",
   /if \(\(await digestStep\(\{ from, body, person \}\)\) === HANDLED\) return;\s+if \(\(await digestReplyStep\(\{ from, body, person, tapPayload: input\.tapPayload \}\)\) === HANDLED\) return;/.test(inbound));
 ok("a pick only after the digest or another pick; no Yes/No step any more; feedback only after its question",
-  /const DIGEST_PICKABLE: ReadonlySet<string> = new Set\(\[\s+"weekly_digest", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",\s+"digest_pick_off", "digest_on",/.test(inbound) &&
+  /const DIGEST_PICKABLE: ReadonlySet<string> = new Set\(\[\s+"weekly_digest", "weekly_digest_ask", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",\s+"digest_pick_off", "digest_on",/.test(inbound) &&
     /if \(tappedEdition \|\| DIGEST_PICKABLE\.has\(conversation \?\? ""\)\)/.test(inbound) && !/yesOrNo\(body\);\s+if \(yes !== null\) \{\s+const days = await answerReminder/.test(inbound) &&
     /await togglePick\(person\.person_id, sent\.editionDate, today, timeZone, sent\.items\[n - 1\], n, mode\)/.test(inbound) &&
     /if \(last === "digest_feedback_ask"\) \{\s+const value = readFeedback\(body\);/.test(inbound));
@@ -136,7 +136,9 @@ ok("its log carries counts and enums only (invariant 7)",
     /console\.info\("\[sms:inbound\] digest feedback", \{ value, saved \}\);/.test(inbound));
 const jobs = read("lib/server/repo/jobs.ts");
 ok("the digest goes out with its number buttons and keeps what it sent",
-  /rich: \{ kind: "digest_pick", card, edition: editionVariable\(editionDate\) \}/.test(jobs) && /claimDigestSend\(edition\.id, recipient\.person_id, included, sentIds\)/.test(jobs));
+  /rich: \{ kind: "digest_pick", card: input\.ask\.card, edition: editionVariable\(input\.editionDate\) \}/.test(jobs) && /claimDigestSend\(edition\.id, recipient\.person_id, included, sentIds\)/.test(jobs) &&
+    /* 19 Nov: the list first, as plain text (its links open), and the buttons only after it went. */
+    /template: "weekly_digest",\s+templateVersion: SMS_TEMPLATE_VERSION,\s+\.\.\.exempt,\s+\}\);\s+if \(!list\.sent\) return list;/.test(jobs) && /template: "weekly_digest_ask"/.test(jobs));
 ok("swept by each row's own moment, claimed before sending, in category digest",
   /const due = kind === "remind" \? await dueReminders\(now\) : await dueFeedback\(now\);/.test(jobs) && /if \(!\(await claimFollowup\(kind, item\.interestId, now\)\)\) continue;/.test(jobs) &&
     /category: "digest",\s+personId: item\.personId,/.test(jobs) && /rich: kind === "feedback" \? \{ kind: "digest_feedback"/.test(jobs));

@@ -186,8 +186,8 @@ ok("a due year ahead is under 0", d.ageOn(2027, 3, "2026-11-07") < 0);
   const one = d.composeDigest([at("Video Game Club", "Hastings Branch Library", "2026-11-26")]);
   const two = d.composeDigest([at("Video Game Club", "Hastings Branch Library", "2026-11-26"), at("Holidayfest", "South Lake Avenue", "2026-12-05")]);
   ok("a digest of one says 1 (21 Nov run); a pick is a reminder, tapped again undone (11 Nov, evening)",
-    /Tap 1 for a reminder\./.test(one.card) && /Reply 1 for a reminder\./.test(one.body) && !/tap again/.test(one.card) &&
-      /Tap the ones you'd like a reminder for - tap again to undo\./.test(two.card) && /Reply with the numbers you'd like a reminder for \(e\.g\. 1 3\)\./.test(two.body));
+    one.ask.card === "Tap 1 for a reminder." && one.ask.sms === "Reply 1 for a reminder." &&
+      two.ask.card === "Tap the ones you'd like a reminder for - tap again to undo." && two.ask.sms === "Reply with the numbers you'd like a reminder for (e.g. 1 3).");
 }
 const many = Array.from({ length: 8 }, (_, i) =>
   item({ title: `Thing ${i}`, kind: i % 2 ? "camp" : "event", starts_on: `2026-11-${String(15 - i).padStart(2, "0")}`, url: `https://cityofpasadena.net/${i}` }));
@@ -270,18 +270,20 @@ console.log("\n=== what it says ===");
 const two = d.composeDigest([good as Item, item({ title: "Library “story time” — toddlers", url: "https://cityofpasadena.net/story" })]);
 ok("numbered since 11 Nov, so a parent can pick by number; the items it carries are returned in that order",
   /\n\n1\. Dia de los Muertos/.test(two.body) && /\n\n2\. Library/.test(two.body) && two.included === 2 && two.items.length === 2 && two.items[0].title === good.title);
-ok("the SMS says how to pick; the card's buttons are the numbers", /Reply with the numbers you'd like a reminder for \(e\.g\. 1 3\)/.test(two.body) && /Tap the ones/.test(two.card) && !/Tap the ones/.test(two.body));
+/* 19 Nov: two messages — the list (plain text, so its links open), then the question about reminders. */
+ok("the list is its own message; how to pick is the second (the card's buttons on RCS, a line by SMS)",
+  !/reminder/i.test(two.body) && /Tap the ones/.test(two.ask.card) && /Reply with the numbers/.test(two.ask.sms));
 ok("each with its own link", two.body.includes(good.url));
 ok("said to be public listings — never human trust (invariant 3)", /Public listings/.test(two.body) && !/parents (recommend|said|used)/i.test(two.body));
-ok("says how to stop it", /DIGEST OFF stops these/.test(two.body) && /DIGEST OFF stops these/.test(two.card));
+ok("says how to stop it", /DIGEST OFF stops these/.test(two.body) && /STOP stops all texts\.$/.test(two.body));
 ok("GSM-7 even when a listing has curly quotes and long dashes", seg.planSegments(two.body).encoding === "gsm7", seg.planSegments(two.body).offenders?.join(""));
 {
   const town = d.composeDigest([item({ place: "Descanso Gardens, La Cañada Flintridge", summary: "Día de los Muertos crafts at the café." })]);
   ok("an accented letter loses its accent, not itself (10 Nov: \"La Caada Flintridge\")",
-    town.body.includes("La Canada Flintridge") && town.card.includes("Dia de los Muertos crafts at the cafe.") && seg.planSegments(town.body).encoding === "gsm7");
-  /* 13 Nov, a parent-eyes review: nine segments by SMS. */
-  ok("the SMS leaves each summary to the card, keeps every link and number, and says who and how to stop",
-    !town.body.includes("Dia de los Muertos crafts at the cafe.") && town.body.startsWith("Pando: your Saturday list") && /STOP stops all texts\.$/.test(town.body) && /STOP stops all texts\.$/.test(town.card));
+    town.body.includes("La Canada Flintridge") && town.body.includes("Dia de los Muertos crafts at the cafe.") && seg.planSegments(town.body).encoding === "gsm7");
+  /* 19 Nov, the developer's choice: every item keeps its summary, for RCS and SMS alike (reverses the 13 Nov cut). */
+  ok("the list keeps each summary, every link and number, and says who and how to stop",
+    town.body.includes("Dia de los Muertos crafts at the cafe.") && town.body.startsWith("Pando: your Saturday list") && /STOP stops all texts\.$/.test(town.body));
 }
 /* The longest items the reader lets through: title 100, when 60, place 60, summary 180, a 400-character link. */
 const longest = Array.from({ length: 5 }, (_, i) =>
@@ -594,7 +596,7 @@ ok("grouped as the job groups a family alone", /groupFamilies\(\[one\.facts\]\)/
 ok("Send never starts a search: only a group Prepare drew", /if \(!one\.existing\) return \{ refused: \{ ok: false, reason: "not_prepared"/.test(one) &&
   one.indexOf('reason: "not_prepared"') < one.lastIndexOf("digestEdition("));
 ok("and only once approved", /if \(!edition\.approved && edition\.items\.length > 0\) return \{ refused: \{ ok: false, reason: "not_approved"/.test(one));
-ok("to that number only, through the send layer (STOP, quiet hours)", /to: one\.family\.phone,/.test(one) && /sendSms\(\{/.test(one) && !/for \(const /.test(one.slice(one.indexOf("export async function sendDigestTo"))));
+ok("to that number only, through the send layer (STOP)", /sendDigestMessages\(\{ to: one\.family\.phone,/.test(one) && /async function sendDigestMessages[\s\S]{0,1500}await sendSms\(\{/.test(jobs) && !/for \(const /.test(one.slice(one.indexOf("export async function sendDigestTo"))));
 ok("a test can be sent again: the earlier claim is replaced, and a refused send gives it back",
   one.indexOf("await releaseDigestSend(edition.id, one.family.person_id);") < one.indexOf("claimDigestSend(") &&
     /if \(!result\.sent\) \{\s+await releaseDigestSend/.test(one));
@@ -622,11 +624,11 @@ ok("the one-number test is not held by quiet hours", !policy.quietHoursBlocks({ 
 ok("every other digest still is", policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms" }) &&
   policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms", adminTest: false }));
 ok("only sendDigestTo sets it, and the send layer says so every time",
-  /adminTest: "digest_one",/.test(one) &&
+  /adminTest: true \}\);/.test(one) && /const exempt = input\.adminTest \? \{ adminTest: "digest_one" as const \} : \{\};/.test(jobs) &&
     /quiet hours ignored — the admin's one-number digest test/.test(sms) &&
     (() => {
       const all = [...new Set(["lib/server/repo/jobs.ts", "lib/server/inbound.ts", "lib/server/repo/outreach.ts", "lib/server/repo/admin-write.ts", "lib/server/repo/digest-followup.ts"].filter((f) => /adminTest: "digest_one"/.test(read(f))))];
-      return all.length === 1 && all[0] === "lib/server/repo/jobs.ts" && (read("lib/server/repo/jobs.ts").match(/adminTest: "digest_one"/g) ?? []).length === 1;
+      return all.length === 1 && all[0] === "lib/server/repo/jobs.ts" && (read("lib/server/repo/jobs.ts").match(/adminTest: "digest_one"/g) ?? []).length === 1 && (jobs.match(/adminTest: true/g) ?? []).length === 1;
     })());
 ok("opt-out is still read before it", sms.indexOf('reason: "opted_out"') < sms.indexOf("adminTest: input.adminTest"));
 ok("the log lines carry counts and enums only", !/console\.\w+\([^)]*phone/.test(one) && !/console\.\w+\([^)]*phone/.test(route));

@@ -1065,52 +1065,70 @@ export const DIGEST_MAX_CHARS = 1600;
 /* 13 Nov, a parent-eyes review: "Pando weekly" said neither what it is nor that it is the list they asked for, and
    only DIGEST OFF was offered as a way out of a recurring text. */
 const DIGEST_HEAD = "Pando: your Saturday list of local events, camps and classes.";
-/* 11 Nov (evening): a pick is the reminder itself — the same pick again takes it off (`lib/digest-followup.ts`). */
-const DIGEST_FOOT =
-  "Reply with the numbers you'd like a reminder for (e.g. 1 3). Public listings - check with the organizer. DIGEST OFF stops these, STOP stops all texts.";
-/** The card's own line: the buttons ask the question, so the card only says what they are for. */
-const DIGEST_CARD_FOOT = "Tap the ones you'd like a reminder for - tap again to undo. Public listings - check with the organizer. DIGEST OFF stops these, STOP stops all texts.";
-/* A digest of one item (the 21 Nov run: a teen family got one, under "tap more than one if you like"). */
-const DIGEST_FOOT_ONE = "Reply 1 for a reminder. Public listings - check with the organizer. DIGEST OFF stops these, STOP stops all texts.";
-const DIGEST_CARD_FOOT_ONE = "Tap 1 for a reminder. Public listings - check with the organizer. DIGEST OFF stops these, STOP stops all texts.";
+/**
+ * The list's own foot: what it is and how to stop it. **Since 19 Nov the
+ * question about reminders is its own message** (`DIGEST_ASK`) — see
+ * `composeDigest`.
+ */
+const DIGEST_FOOT = "Public listings - check with the organizer. DIGEST OFF stops these, STOP stops all texts.";
+/* 11 Nov (evening): a pick is the reminder itself — the same pick again takes it off (`lib/digest-followup.ts`).
+   A digest of one item says "1" (the 21 Nov run: a teen family got one, under "tap more than one if you like"). */
+export const DIGEST_ASK = {
+  /** The RCS card's text, above its buttons 1-4. */
+  card: "Tap the ones you'd like a reminder for - tap again to undo.",
+  cardOne: "Tap 1 for a reminder.",
+  /** What a phone without RCS gets in the card's place (the template's own `twilio/text`). */
+  sms: "Reply with the numbers you'd like a reminder for (e.g. 1 3).",
+  smsOne: "Reply 1 for a reminder.",
+} as const;
 
 /**
- * The text, and how many items it carries. Public listings, said so
- * (invariant 3: never present public information as human trust), each with
- * the organizer's own link, and how to stop it — the digest's own off switch
- * before STOP, which ends everything.
+ * The digest: the list, and the question about reminders as a second message.
+ * Public listings, said so (invariant 3: never present public information as
+ * human trust), each with the organizer's own link, and how to stop it — the
+ * digest's own off switch before STOP, which ends everything.
  *
- * Items go in whole while the message stays within `DIGEST_MAX_CHARS`; one
- * that would not fit is left out rather than cut, because a cut link is a
- * broken one. **Numbered since 11 Nov** (the developer: a parent picks what
- * interests them, several if they like, `lib/digest-followup.ts`) — reversing
- * the 3 Nov dashes, whose reason was that nothing should read a reply of "2"
- * as an item; now a reply is read as a pick only when the digest is the last
- * thing Pando sent that person. `items` is what went in, in its numbers' order,
- * kept so "2" can be found again; `card` is the RCS card's text, whose buttons
- * are the numbers.
+ * ## Two messages since 19 Nov, so the links open
+ *
+ * Until then the RCS version was one card holding the whole list, and a link
+ * in a card's text is not a link: Infobip's RCS notes say URLs in a rich card's
+ * description are not clickable and show as plain text, and the developer saw
+ * exactly that on a phone (*"лінки в повідомленні не клікабельні"*). RCS has no
+ * markup to make one; the only link inside a card is an `OPEN_URL` button,
+ * which the developer did not want. So `body` — the list — goes as an ordinary
+ * text, where the phone makes each URL a link, and `ask` follows: on RCS the
+ * `digest_pick` card with buttons 1-4, on a phone without RCS the template's
+ * one-line SMS. Every item carries its one-sentence summary for everyone (the
+ * developer's choice, 19 Nov — this reverses the 13 Nov cut of summaries from
+ * the SMS lines, and a phone without RCS gets the longer text again).
+ *
+ * Items go in whole while the list stays within `DIGEST_MAX_CHARS`; one that
+ * would not fit is left out rather than cut, because a cut link is a broken
+ * one. Numbered since 11 Nov: a reply is read as a pick only when the digest is
+ * the last thing Pando sent that person (`weekly_digest` or its `weekly_digest_ask`).
+ * `items` is what went in, in its numbers' order, kept so "2" can be found again.
  */
-export function composeDigest(items: readonly DigestItem[]): { body: string; card: string; included: number; items: DigestItem[] } {
+export function composeDigest(items: readonly DigestItem[]): {
+  body: string;
+  ask: { card: string; sms: string };
+  included: number;
+  items: DigestItem[];
+} {
   const kept: DigestItem[] = [];
   const lines: string[] = [];
-  /* The SMS lines leave out the summary (13 Nov, a parent-eyes review: four items made 1,325 characters, nine
-     segments, a wall on a phone without RCS); the card, which costs no segments, keeps it. Each item is kept or
-     left by its card line, the longer of the two, so both carry the same items under the same numbers. */
-  const sms: string[] = [];
-  let length = DIGEST_HEAD.length + 2 + Math.max(DIGEST_FOOT.length, DIGEST_CARD_FOOT.length);
+  let length = DIGEST_HEAD.length + 2 + DIGEST_FOOT.length;
   for (const item of items) {
     const where = item.place ? `, ${item.place}` : "";
     const line = plain(`${kept.length + 1}. ${item.title} - ${item.when_text}${where}. ${item.summary} ${item.url}`);
     if (length + line.length + 2 > DIGEST_MAX_CHARS) continue;
     kept.push(item);
     lines.push(line);
-    sms.push(plain(`${kept.length}. ${item.title} - ${item.when_text}${where}. ${item.url}`));
     length += line.length + 2;
   }
   const one = lines.length === 1;
   return {
-    body: plain([DIGEST_HEAD, ...sms, one ? DIGEST_FOOT_ONE : DIGEST_FOOT].join("\n\n")),
-    card: plain([DIGEST_HEAD, ...lines, one ? DIGEST_CARD_FOOT_ONE : DIGEST_CARD_FOOT].join("\n\n")),
+    body: plain([DIGEST_HEAD, ...lines, DIGEST_FOOT].join("\n\n")),
+    ask: { card: one ? DIGEST_ASK.cardOne : DIGEST_ASK.card, sms: one ? DIGEST_ASK.smsOne : DIGEST_ASK.sms },
     included: lines.length,
     items: kept,
   };

@@ -2843,8 +2843,10 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
         }),
         families: 1,
         people: [who],
+        /* Rebuilt in today's shape (19 Nov: the list, then the reminder question), also for a week sent before it. */
         text: composed?.body ?? "",
-        card: composed?.card ?? "",
+        card: composed?.ask.card ?? "",
+        ask_sms: composed?.ask.sms ?? "",
         first_sent_at: String(s.sent_at),
       });
     }

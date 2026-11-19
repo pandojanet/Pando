@@ -269,6 +269,38 @@ export default function DigestsPage() {
   );
 }
 
+/* ── The digest as a phone shows it (19 Nov) ──────────────────────────────── */
+
+/** The `digest_pick` card's buttons: fixed at four in its Twilio template. */
+const DIGEST_BUTTONS = 4;
+
+/**
+ * Two messages since 19 Nov (`composeDigest`): the list as plain text, so its
+ * links open, then the question — on RCS the card with buttons 1-4, on SMS one line.
+ */
+function TwoMessages({ list, card, sms, as }: { list: string; card: string; sms: string; as: "card" | "sms" }) {
+  const bubble = "whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-paper px-3.5 py-2.5 text-[14px] leading-relaxed text-ink ring-1 ring-bark/70";
+  return (
+    <div className="max-w-[22rem] space-y-2">
+      <p className={bubble}>{list}</p>
+      {as === "card" ? (
+        <div className="rounded-2xl rounded-bl-md bg-card px-3.5 py-2.5 ring-1 ring-bark/70">
+          <p className="text-[14px] leading-relaxed text-ink">{card}</p>
+          <div className="mt-2 flex gap-1.5" aria-hidden>
+            {Array.from({ length: DIGEST_BUTTONS }, (_, k) => k + 1).map((n) => (
+              <span key={n} className="rounded-full bg-paper px-3 py-0.5 text-[13px] font-medium text-green-deep ring-1 ring-green/40">
+                {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className={bubble}>{sms}</p>
+      )}
+    </div>
+  );
+}
+
 /* ── One number (19 Nov) ──────────────────────────────────────────────────── */
 
 /**
@@ -281,7 +313,7 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
   const [phone, setPhone] = useState("");
   const [working, setWorking] = useState<"prepare" | "preview" | "send" | null>(null);
   /* Preview (19 Nov): the exact text Send would send now; nothing written. Cleared when the number changes. */
-  const [preview, setPreview] = useState<{ body: string; card: string; edition_date: string } | null>(null);
+  const [preview, setPreview] = useState<{ body: string; ask: { card: string; sms: string }; edition_date: string; items: number } | null>(null);
   const [as, setAs] = useState<"card" | "sms">("card");
   const run = async (step: "prepare" | "preview" | "send") => {
     setWorking(step);
@@ -291,10 +323,17 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ step, phone }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string; sent?: number; edition_date?: string; body?: string; card?: string };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        sent?: number;
+        edition_date?: string;
+        body?: string;
+        ask?: { card: string; sms: string };
+        items?: string[];
+      };
       if (step === "preview") {
-        if (response.ok && data.body && data.card && data.edition_date) {
-          setPreview({ body: data.body, card: data.card, edition_date: data.edition_date });
+        if (response.ok && data.body && data.ask && data.edition_date) {
+          setPreview({ body: data.body, ask: data.ask, edition_date: data.edition_date, items: data.items?.length ?? 0 });
         } else {
           setPreview(null);
           await onDone(data.error ?? "That didn't go through", null);
@@ -354,26 +393,14 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
               value={as}
               onChange={setAs}
               options={[
-                { id: "card", label: "Card" },
-                { id: "sms", label: "Plain text" },
+                { id: "card", label: "RCS" },
+                { id: "sms", label: "SMS" },
               ]}
             />
             <span className="text-[12.5px] text-muted">{saturday(preview.edition_date)} · not sent</span>
+            {preview.items < DIGEST_BUTTONS && <Badge tone="gold">{`${preview.items} of ${DIGEST_BUTTONS}`}</Badge>}
           </div>
-          <div className="max-w-[22rem]">
-            <p className="whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-paper px-3.5 py-2.5 text-[14px] leading-relaxed text-ink ring-1 ring-bark/70">
-              {as === "card" ? preview.card : preview.body}
-            </p>
-            {as === "card" && (
-              <div className="mt-1.5 flex gap-1.5" aria-hidden>
-                {[1, 2, 3, 4].map((n) => (
-                  <span key={n} className="rounded-full bg-card px-3 py-0.5 text-[13px] font-medium text-green-deep ring-1 ring-green/40">
-                    {n}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          <TwoMessages list={preview.body} card={preview.ask.card} sms={preview.ask.sms} as={as} />
         </div>
       )}
     </section>
@@ -826,6 +853,8 @@ function Review({ group: g, act, busy }: { group: DigestGroup; act: Act; busy: b
             {kept}
             {out > 0 ? ` · ${out} taken out` : ""}
           </span>
+          {/* 19 Nov: a digest has four buttons; fewer kept leaves one with nothing behind it. */}
+          {kept < DIGEST_BUTTONS && <Badge tone="gold">{`${kept} of ${DIGEST_BUTTONS}`}</Badge>}
         </h3>
         {waiting ? (
           <Button
@@ -1046,7 +1075,6 @@ function Received({ group: g }: { group: DigestGroup }) {
 }
 
 function TextView({ variant: v, as, onAs }: { variant: DigestVariant; as: "card" | "sms"; onAs: (a: "card" | "sms") => void }) {
-  const text = as === "card" ? v.card : v.text;
   return (
     <div className="border-t border-bark/60 bg-paper/40 px-3.5 pb-4 pt-3 sm:pl-[10.5rem]">
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -1056,26 +1084,15 @@ function TextView({ variant: v, as, onAs }: { variant: DigestVariant; as: "card"
           value={as}
           onChange={onAs}
           options={[
-            { id: "card", label: "Card" },
-            { id: "sms", label: "Plain text" },
+            { id: "card", label: "RCS" },
+            { id: "sms", label: "SMS" },
           ]}
         />
         <span className="text-[12.5px] text-muted">First sent {when(v.first_sent_at)}</span>
       </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
-        {text ? (
-          <div>
-            <p className="whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-card px-3.5 py-2.5 text-[14px] leading-relaxed text-ink shadow-card ring-1 ring-bark/70">{text}</p>
-            {as === "card" && (
-              <div className="mt-1.5 flex gap-1.5" aria-hidden>
-                {[1, 2, 3, 4].map((n) => (
-                  <span key={n} className="rounded-full bg-card px-3 py-0.5 text-[13px] font-medium text-green-deep ring-1 ring-green/40">
-                    {n}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+        {v.text ? (
+          <TwoMessages list={v.text} card={v.card} sms={v.ask_sms} as={as} />
         ) : (
           <p className="text-[13px] text-muted">{/* copy: state */}This text cannot be shown: one of its items has since been deleted.</p>
         )}

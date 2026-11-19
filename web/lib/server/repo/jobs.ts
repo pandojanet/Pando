@@ -234,6 +234,50 @@ async function expire_memory(): Promise<JobResult> {
 }
 
 /**
+ * A digest is two messages since 19 Nov (`composeDigest`): the list as plain
+ * text, so its links open, then the question about reminders — on RCS the
+ * `digest_pick` card with buttons 1-4 (`{{3}}` the edition, in each button's id,
+ * 11 Nov), on a phone without RCS the template's one-line SMS. The list is the
+ * digest: its result is what the caller counts and claims by. The question goes
+ * only after the list went, and a question that fails is said in the log and
+ * left — the list already says what it is, and a reply of "2" is still read as
+ * a pick after it (`weekly_digest` is pickable).
+ */
+async function sendDigestMessages(input: {
+  to: string;
+  personId: string;
+  body: string;
+  ask: { card: string; sms: string };
+  editionDate: string;
+  /** The admin's one-number test: not held by quiet hours (invariant 6's one named exception). */
+  adminTest?: boolean;
+}): Promise<Awaited<ReturnType<typeof sendSms>>> {
+  const exempt = input.adminTest ? { adminTest: "digest_one" as const } : {};
+  const list = await sendSms({
+    to: input.to,
+    body: input.body,
+    category: "digest",
+    personId: input.personId,
+    template: "weekly_digest",
+    templateVersion: SMS_TEMPLATE_VERSION,
+    ...exempt,
+  });
+  if (!list.sent) return list;
+  const question = await sendSms({
+    to: input.to,
+    body: input.ask.sms,
+    category: "digest",
+    personId: input.personId,
+    template: "weekly_digest_ask",
+    templateVersion: SMS_TEMPLATE_VERSION,
+    rich: { kind: "digest_pick", card: input.ask.card, edition: editionVariable(input.editionDate) },
+    ...exempt,
+  });
+  if (!question.sent) console.warn("[digest] the reminder question did not go", { reason: question.reason });
+  return list;
+}
+
+/**
  * The weekly digest's body (3 Nov). Per market: not Saturday morning to
  * evening there, nothing. Otherwise the edition (found once), then each parent
  * who said yes gets what suits their household. Somebody it has nothing for, or
@@ -337,7 +381,7 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
        */
       for (const i of unsent) {
         const recipient = audience[i];
-        const { body, card, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, families[i].ages), families[i].ages));
+        const { body, ask, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, families[i].ages), families[i].ages));
         /* Claimed before it is sent, so a write that fails afterwards can never
            mean a second copy next hour (review, 3 Nov). Nothing that suits them is
            a claim with no items: the hourly runs stop weighing them. The claim
@@ -353,17 +397,7 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
           skipped++;
           continue;
         }
-        const result = await sendSms({
-          to: recipient.phone,
-          body,
-          category: "digest",
-          personId: recipient.person_id,
-          template: "weekly_digest",
-          templateVersion: SMS_TEMPLATE_VERSION,
-          /* On RCS, buttons "1" to "4" inside the card (11 Nov, `digest_pick`); off until its template's SID is set. */
-          /* `{{3}}`: the edition, in each button's id — a tap on an old card picks from its own week (11 Nov). */
-          rich: { kind: "digest_pick", card, edition: editionVariable(editionDate) },
-        });
+        const result = await sendDigestMessages({ to: recipient.phone, personId: recipient.person_id, body, ask, editionDate });
         if (result.sent) {
           processed++;
         } else if (result.reason === "opted_out") {
@@ -468,10 +502,10 @@ async function composeOne(phone: string, now: Date) {
 export async function previewDigestFor(
   phone: string,
   now = new Date(),
-): Promise<DigestOneOutcome | { ok: true; preview: true; edition_date: string; body: string; card: string; items: string[] }> {
+): Promise<DigestOneOutcome | { ok: true; preview: true; edition_date: string; body: string; ask: { card: string; sms: string }; items: string[] }> {
   const c = await composeOne(phone, now);
   if ("refused" in c) return c.refused!;
-  return { ok: true, preview: true, edition_date: c.one.editionDate, body: c.composed.body, card: c.composed.card, items: c.composed.items.map((i) => i.title) };
+  return { ok: true, preview: true, edition_date: c.one.editionDate, body: c.composed.body, ask: c.composed.ask, items: c.composed.items.map((i) => i.title) };
 }
 
 export async function sendDigestTo(phone: string, now = new Date()): Promise<DigestOneOutcome> {
@@ -479,23 +513,14 @@ export async function sendDigestTo(phone: string, now = new Date()): Promise<Dig
   const c = await composeOne(phone, now);
   if ("refused" in c) return c.refused!;
   const { one, edition } = c;
-  const { body, card, included, items: sentItems } = c.composed;
+  const { body, ask, included, items: sentItems } = c.composed;
   const ids = sentItems.map((x) => x.id);
   const sentIds = ids.every((id): id is string => typeof id === "string") ? ids : [];
   /* Again and again while testing: the last send is the one its numbers mean. */
   await releaseDigestSend(edition.id, one.family.person_id);
   if (!(await claimDigestSend(edition.id, one.family.person_id, included, sentIds))) return { ok: false, reason: "not_sent", edition_date: one.editionDate };
-  const result = await sendSms({
-    to: one.family.phone,
-    body,
-    category: "digest",
-    personId: one.family.person_id,
-    template: "weekly_digest",
-    templateVersion: SMS_TEMPLATE_VERSION,
-    rich: { kind: "digest_pick", card, edition: editionVariable(one.editionDate) },
-    /* Not held by quiet hours (19 Nov, the developer's choice for this test; invariant 6's one exception). */
-    adminTest: "digest_one",
-  });
+  /* Not held by quiet hours (19 Nov, the developer's choice for this test; invariant 6's one exception). */
+  const result = await sendDigestMessages({ to: one.family.phone, personId: one.family.person_id, body, ask, editionDate: one.editionDate, adminTest: true });
   console.info("[digest] one-number send", { sent: result.sent, items: included, reason: result.sent ? null : result.reason });
   if (!result.sent) {
     await releaseDigestSend(edition.id, one.family.person_id);

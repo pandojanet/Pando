@@ -854,6 +854,7 @@ export const MESSAGE_LABEL: Record<string, string> = {
   clarify_participation: "Asked how often they may be asked",
   clarification_saved: "Thanked for an answer",
   weekly_digest: "Sent the weekly digest",
+  weekly_digest_ask: "Asked which digest items they'd like a reminder for",
   digest_pick_set: "Set or took off reminders for the digest items they picked",
   digest_details: "Sent details of the digest items they picked",
   digest_pick_range: "Told them which numbers the digest had",

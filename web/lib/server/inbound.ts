@@ -768,12 +768,13 @@ async function digestStep({ from, body, person }: { from: string; body: string; 
  */
 /** The digest's own texts: a feedback phrase after one of them can only be about the digest. */
 const DIGEST_CONVERSATION: ReadonlySet<string> = new Set([
-  "weekly_digest", "digest_pick_set", "digest_details", "digest_reminder_set", "digest_pick_range", "digest_pick_off", "digest_reminder", "digest_feedback_thanks",
+  /* 19 Nov: the digest is two messages, the list then `weekly_digest_ask` (the buttons) — `composeDigest`. */
+  "weekly_digest", "weekly_digest_ask", "digest_pick_set", "digest_details", "digest_reminder_set", "digest_pick_range", "digest_pick_off", "digest_reminder", "digest_feedback_thanks",
 ]);
 /** After these a number is a pick from the digest. `digest_pick_off` and `digest_on` (13 Nov): "DIGEST, then the
     number again" is what the pick-while-off answer asks for — a number with no digest of the past week still falls through. */
 const DIGEST_PICKABLE: ReadonlySet<string> = new Set([
-  "weekly_digest", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",
+  "weekly_digest", "weekly_digest_ask", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",
   "digest_pick_off", "digest_on",
 ]);
 

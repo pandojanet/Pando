@@ -1768,10 +1768,12 @@ export interface DigestVariant {
   families: number;
   /** Who got it, in sending order — for a link to each parent's page. */
   people: Array<{ id: string; name: string | null }>;
-  /** The SMS text, rebuilt. */
+  /** The list — the first message, plain text so its links open (19 Nov), rebuilt. */
   text: string;
-  /** The RCS card's text, rebuilt. */
+  /** The second message on RCS: the `digest_pick` card's text above its buttons. */
   card: string;
+  /** The second message on a phone without RCS. */
+  ask_sms: string;
   first_sent_at: string;
 }
 
