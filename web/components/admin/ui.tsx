@@ -1057,50 +1057,6 @@ export function Toolbar({ children }: { children: ReactNode }) {
 }
 
 /**
- * How something on this page works, in prose, on the page.
- *
- * ## Why a component and not a tooltip
- *
- * The client has now twice reported an admin screen as unexplained — the second
- * time about the matching harness, in the words *"the scoring logic is not
- * entirely clear"* — and both times the explanation existed, in a `title`
- * attribute. A tooltip is not an explanation: it is invisible until hovered,
- * unreachable on a touch device, and unfindable by somebody who does not
- * already suspect there is something to find. `labels.ts` fixed the *words* an
- * admin reads; this fixes where the sentences behind them live.
- *
- * It is a real `<details>` so the browser owns the disclosure: keyboard
- * operable, findable by the browser's own find-in-page (Chrome expands a closed
- * `details` to reveal a hit), and no state for a page to get wrong.
- *
- * ## Closed by default, and it opens on hover (3 Sep)
- *
- * This **reverses** the 2 Sep decision recorded in CLAUDE.md, which was "open
- * by default, because a collapsed explainer is a tooltip with a bigger target".
- * The client's instruction is the newer document and it wins: *"Тултіпи лише
- * при наведенні курсору, а не бути постійно розгорнутими, щоб не
- * перевантажувати сторінку."*
- *
- * She is right about the cost, and the cost is what the earlier reasoning did
- * not price. Six pages carry one of these, and every one of them opened with a
- * paragraph of ours above the work — on `/admin/payments` the reader met four
- * sentences about how money works before the first payment. An explanation that
- * is always on screen stops being read at all, which is the same failure as a
- * tooltip nobody finds, arriving from the other direction.
- *
- * **What is kept from the earlier decision, because it was the sound half:**
- * this is not a `title` attribute. It stays a real `<details>`, so it is
- * reachable by tap and by keyboard, and findable by the browser's own
- * find-in-page (Chrome expands a closed `details` to reveal a hit). The hover
- * is added *on top of* that rather than instead of it — hover alone would put
- * the explanation out of reach on the phone the admin sometimes uses, which is
- * exactly the defect this component was written to end.
- *
- * So there are two ways in and they do not fight: hovering peeks, clicking
- * pins. A pinned explainer stays open when the pointer leaves — otherwise
- * reading a long one means keeping the mouse inside it while you scroll.
- */
-/**
  * A section of a page you can open — the **one** way the admin hides anything.
  *
  * ## Why this exists
@@ -1120,15 +1076,21 @@ export function Toolbar({ children }: { children: ReactNode }) {
  * arrow, because that is what it means), `RecordDrawer` for a panel belonging to
  * one record, `SegmentedFilter` for changing which rows you are looking at.
  *
- * ## `peek` is help, not content
+ * ## A click opens it, never the pointer (19 Nov)
  *
- * Hovering previews an *explanation* — the client's 3 Sep instruction, kept
- * verbatim. It is deliberately **not** the default: peeking a nine-section
- * statistics grid would make the page jump every time the pointer crossed it,
- * so content opens on a click and only help previews on hover. That is the one
- * behavioural difference left here, it is a property of what is inside rather
- * than of who wrote the page, and `Explainer` is the name for the help case so
- * a call site never has to decide.
+ * It used to open on hover too — the client's 3 Sep wish for *explanations*
+ * ("тултіпи лише при наведенні"). The explanations went on 7 Sep, and that
+ * day's note said hover would not be the default for content; the code kept it
+ * anyway, for every disclosure that was not a row. The developer, on the
+ * digests page's "Digest for one number": *"мені загалом не подобається цей
+ * компонент, що при наведенні розгортається … хоча б по кліку"*. Hover-open
+ * made the page jump under a passing mouse (the Overview's statistics grid),
+ * closed again when the pointer left, and did nothing on a phone — two states
+ * that looked the same. Now one gesture: a click or a tap on the whole row,
+ * Enter or Space from the keyboard (a summary turns both into a click). The
+ * row says it can be opened — it tints on hover, the pointer is a hand, the
+ * chevron turns when open, and the keyboard focus is drawn. `Hint`, the ⓘ
+ * beside a label, is a tooltip and still shows on hover: it moves nothing.
  */
 export function Disclosure({
   title,
@@ -1173,7 +1135,6 @@ export function Disclosure({
   flush?: boolean;
 }) {
   const [ownPinned, setOwnPinned] = useState(open);
-  const [peeking, setPeeking] = useState(false);
   const pinned = pinnedOpen ?? ownPinned;
   const setPinned = (next: (was: boolean) => boolean) => {
     const value = next(pinned);
@@ -1184,7 +1145,7 @@ export function Disclosure({
   return (
     <details
       id={id}
-      open={pinned || (!row && peeking)}
+      open={pinned}
       /* Its own box, because it belongs **above** the work rather than inside
          it. `border-b … last:border-b-0` was shaped for living as the first row
          of a `Card` — which is exactly the placement this pass removed: on
@@ -1197,27 +1158,19 @@ export function Disclosure({
         row ? "scroll-mt-24 border-b border-bark/70 last:border-b-0" : "mb-4",
         !flush && !row && "rounded-xl border border-bark bg-card",
       )}
-      onPointerEnter={(e) => {
-        /* Pointer type matters: a tap fires `pointerenter` too, and peeking on
-           a tap would race the click that toggles the pin — the summary would
-           open on the enter and close again on the click. Hover is a mouse. */
-        if (e.pointerType === "mouse") setPeeking(true);
-      }}
-      onPointerLeave={() => setPeeking(false)}
     >
-      {/* `open` is ours, so the browser's own toggle has to be stopped — and
-          `onToggle` is **not** the place to read it back: that event fires on
-          any change to the attribute, including one React made for a peek, so
-          hovering would silently pin. Intercepting the click is what keeps the
-          two gestures separate, and it covers the keyboard too (Enter and Space
-          on a summary both arrive as a click). */}
+      {/* `open` is ours (a "needs a look" link can open a row from outside), so the
+          browser's own toggle is stopped and the click decides — which covers the
+          keyboard too: Enter and Space on a summary both arrive as a click. */}
       <summary
         onClick={(e) => {
           e.preventDefault();
           setPinned((was) => !was);
         }}
         className={cn(
-          "flex min-h-10 cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[13.5px] font-semibold text-ink-soft hover:text-green-deep",
+          "flex min-h-11 cursor-pointer select-none list-none items-center gap-2 rounded-xl px-4 py-2.5 text-[13.5px] font-semibold text-ink-soft transition-colors hover:bg-paper/70 hover:text-green-deep focus-visible:outline focus-visible:outline-2 focus-visible:outline-green [&::-webkit-details-marker]:hidden",
+          !flush && !row && "group-open:rounded-b-none",
+          row && "rounded-none",
           row && "min-h-14 flex-wrap gap-y-1 py-3 text-[14.5px] text-ink",
           flush &&
             "rounded-xl border border-bark bg-card hover:border-green/60",
