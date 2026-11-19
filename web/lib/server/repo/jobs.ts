@@ -446,17 +446,40 @@ export async function prepareDigestFor(phone: string, now = new Date()): Promise
   return { ok: true, edition_date: one.editionDate, edition_id: edition.id, status: edition.status, items: edition.items.length, approved: edition.approved };
 }
 
-export async function sendDigestTo(phone: string, now = new Date()): Promise<DigestOneOutcome> {
+/**
+ * What Send would send to this number, composed and nothing else (19 Nov) —
+ * Preview shows it and Send sends it, so the two cannot differ. Reads only:
+ * never an agent run (only a group Prepare drew), never a claim, never a text.
+ */
+async function composeOne(phone: string, now: Date) {
   const one = await oneFamily(phone, now);
-  if (!one) return { ok: false, reason: "no_person" };
-  /* Never an agent run from Send: only a group Prepare drew. */
-  if (!one.existing) return { ok: false, reason: "not_prepared", edition_date: one.editionDate };
+  if (!one) return { refused: { ok: false, reason: "no_person" } as DigestOneOutcome };
+  if (!one.existing) return { refused: { ok: false, reason: "not_prepared", edition_date: one.editionDate } as DigestOneOutcome };
   const edition = await digestEdition(one.market.id, one.editionDate, one.existing, true);
-  if (!edition) return { ok: false, reason: "preparing", edition_date: one.editionDate };
-  if (!edition.approved && edition.items.length > 0) return { ok: false, reason: "not_approved", edition_date: one.editionDate };
+  if (!edition) return { refused: { ok: false, reason: "preparing", edition_date: one.editionDate } as DigestOneOutcome };
+  if (!edition.approved && edition.items.length > 0) return { refused: { ok: false, reason: "not_approved", edition_date: one.editionDate } as DigestOneOutcome };
   const others = (await readyEditionsOfDay(one.market.id, one.editionDate, true)).filter((e) => e.key !== one.existing!.key).map((e) => e.items);
-  const { body, card, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, one.facts.ages), one.facts.ages));
-  if (included === 0) return { ok: false, reason: "nothing_suits", edition_date: one.editionDate };
+  const composed = composeDigest(pickForPerson(poolForFamily(edition.items, others, one.facts.ages), one.facts.ages));
+  if (composed.included === 0) return { refused: { ok: false, reason: "nothing_suits", edition_date: one.editionDate } as DigestOneOutcome };
+  return { one, edition, composed };
+}
+
+/** Preview: the exact text Send would send to this number now. Nothing is written or sent. */
+export async function previewDigestFor(
+  phone: string,
+  now = new Date(),
+): Promise<DigestOneOutcome | { ok: true; preview: true; edition_date: string; body: string; card: string; items: string[] }> {
+  const c = await composeOne(phone, now);
+  if ("refused" in c) return c.refused!;
+  return { ok: true, preview: true, edition_date: c.one.editionDate, body: c.composed.body, card: c.composed.card, items: c.composed.items.map((i) => i.title) };
+}
+
+export async function sendDigestTo(phone: string, now = new Date()): Promise<DigestOneOutcome> {
+  /* Never an agent run from Send: only a group Prepare drew (`composeOne`). */
+  const c = await composeOne(phone, now);
+  if ("refused" in c) return c.refused!;
+  const { one, edition } = c;
+  const { body, card, included, items: sentItems } = c.composed;
   const ids = sentItems.map((x) => x.id);
   const sentIds = ids.every((id): id is string => typeof id === "string") ? ids : [];
   /* Again and again while testing: the last send is the one its numbers mean. */

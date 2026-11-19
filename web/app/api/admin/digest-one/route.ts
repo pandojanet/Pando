@@ -7,25 +7,29 @@ import { quietWindowPhrase } from "@/lib/markets";
 import { toE164 } from "@/lib/phone";
 import { getDb } from "@/lib/server/db";
 import { auditDigestOne, digestFamilyByPhone } from "@/lib/server/repo/digest";
-import { prepareDigestFor, sendDigestTo } from "@/lib/server/repo/jobs";
+import { prepareDigestFor, previewDigestFor, sendDigestTo } from "@/lib/server/repo/jobs";
 
 /**
  * POST /api/admin/digest-one — the weekly digest for one number (19 Nov).
  *
  * The developer, with every scheduled job paused while the product is tested:
  * prepare the digest job and its send for a number they give. Body
- * `{ step: "prepare" | "send", phone }`.
+ * `{ step: "prepare" | "preview" | "send", phone }`.
  *
  *  - `prepare` answers at once (`202`) and runs the agent after the response:
  *    a search takes minutes, and the edition it stores shows under Test on
  *    /admin/digests to approve like any other.
+ *  - `preview` (19 Nov) answers with the exact text `send` would send now —
+ *    the same items in the same order (`composeOne`) — and writes nothing: no
+ *    claim, no audit row, no text.
  *  - `send` sends that family's approved test edition to that number only.
  *
  * Not in `/api/admin/action`, which holds one transaction per press — the
  * agent's minutes must not. Behind the admin session (it spends money and
  * texts a person); each press is an audit row with the person, never the
  * phone (invariant 7). No digest consent is asked — the developer's choice for
- * testing; STOP and quiet hours still apply (`sendSms`).
+ * testing. STOP still applies; quiet hours do not — invariant 6's one named
+ * exception (`adminTest`, `sendSms`).
  */
 export const dynamic = "force-dynamic";
 
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const body = (await request.json().catch(() => null)) as { step?: unknown; phone?: unknown } | null;
-  const step = body?.step === "prepare" || body?.step === "send" ? body.step : null;
+  const step = body?.step === "prepare" || body?.step === "preview" || body?.step === "send" ? body.step : null;
   const phone = typeof body?.phone === "string" ? toE164(body.phone) : null;
   if (!step) return NextResponse.json({ error: "Unknown step" }, { status: 400 });
   if (!phone) return NextResponse.json({ error: "That is not a phone number" }, { status: 422 });
@@ -73,6 +77,12 @@ export async function POST(request: Request) {
       }
     });
     return NextResponse.json({ ok: true, step, preparing: true }, { status: 202 });
+  }
+
+  if (step === "preview") {
+    const outcome = await previewDigestFor(phone);
+    if (!outcome.ok) return NextResponse.json({ error: REFUSALS[outcome.reason] ?? "Nothing to show.", reason: outcome.reason }, { status: 409 });
+    return NextResponse.json({ ...outcome, step });
   }
 
   try {

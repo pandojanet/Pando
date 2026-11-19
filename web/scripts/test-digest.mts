@@ -585,9 +585,10 @@ ok("the real audience still needs the yes", /p\.is_test = \$\{isTest\}[\s\S]{0,2
 ok("stored as test editions, so a real Saturday never sends from them",
   /digestEdition\(one\.market\.id, one\.editionDate, profile, true\)/.test(one) && /digestEdition\(one\.market\.id, one\.editionDate, one\.existing, true\)/.test(one));
 ok("grouped as the job groups a family alone", /groupFamilies\(\[one\.facts\]\)/.test(one));
-ok("Send never starts a search: only a group Prepare drew", /if \(!one\.existing\) return \{ ok: false, reason: "not_prepared"/.test(one) &&
+/* Since Preview (19 Nov) Send's checks live in `composeOne`, which both use. */
+ok("Send never starts a search: only a group Prepare drew", /if \(!one\.existing\) return \{ refused: \{ ok: false, reason: "not_prepared"/.test(one) &&
   one.indexOf('reason: "not_prepared"') < one.lastIndexOf("digestEdition("));
-ok("and only once approved", /if \(!edition\.approved && edition\.items\.length > 0\) return \{ ok: false, reason: "not_approved"/.test(one));
+ok("and only once approved", /if \(!edition\.approved && edition\.items\.length > 0\) return \{ refused: \{ ok: false, reason: "not_approved"/.test(one));
 ok("to that number only, through the send layer (STOP, quiet hours)", /to: one\.family\.phone,/.test(one) && /sendSms\(\{/.test(one) && !/for \(const /.test(one.slice(one.indexOf("export async function sendDigestTo"))));
 ok("a test can be sent again: the earlier claim is replaced, and a refused send gives it back",
   one.indexOf("await releaseDigestSend(edition.id, one.family.person_id);") < one.indexOf("claimDigestSend(") &&
@@ -598,6 +599,19 @@ ok("the search runs after the response", /after\(async \(\) => \{[\s\S]{0,80}pre
 ok("every press is an audit row with the person, never the phone (invariant 7)",
   /auditDigestOne\(session\.user, "digest\.prepare_for", family\.person_id/.test(route) && /auditDigestOne\(session\.user, "digest\.send_to", personId/.test(route) &&
     !/phone/.test(repo.slice(repo.indexOf("export async function auditDigestOne"), repo.indexOf("async function familyRows")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\*.*$/gm, "")));
+/* 19 Nov: Preview — the exact text Send would send, nothing written. */
+const previewFn = one.slice(one.indexOf("export async function previewDigestFor"), one.indexOf("export async function sendDigestTo"));
+const composeFn = one.slice(one.indexOf("async function composeOne"), one.indexOf("export async function previewDigestFor"));
+ok("Preview and Send compose through the same function, so the two cannot differ",
+  /const c = await composeOne\(phone, now\);/.test(previewFn) && /const c = await composeOne\(phone, now\);/.test(one.slice(one.indexOf("export async function sendDigestTo"))));
+ok("Preview writes nothing: no claim, no text, no release", !/claimDigestSend|releaseDigestSend|sendSms/.test(previewFn + composeFn));
+ok("and composing never starts a search: only a group Prepare drew", /if \(!one\.existing\) return \{ refused/.test(composeFn) && composeFn.indexOf("!one.existing") < composeFn.indexOf("digestEdition("));
+ok("the route's preview step answers before any audit row or send",
+  (() => {
+    const at = route.indexOf('if (step === "preview")');
+    const block = route.slice(at, route.indexOf("try {", at));
+    return at > 0 && /previewDigestFor\(phone\)/.test(block) && !/auditDigestOne|sendDigestTo/.test(block);
+  })());
 /* 19 Nov: the one named exception to invariant 6's quiet hours. */
 ok("the one-number test is not held by quiet hours", !policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms", adminTest: true }));
 ok("every other digest still is", policy.quietHoursBlocks({ category: "digest", inReplyTo: false, quiet: true, transport: "sms" }) &&

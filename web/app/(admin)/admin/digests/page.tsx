@@ -279,8 +279,11 @@ export default function DigestsPage() {
  */
 function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => Promise<void> }) {
   const [phone, setPhone] = useState("");
-  const [working, setWorking] = useState<"prepare" | "send" | null>(null);
-  const run = async (step: "prepare" | "send") => {
+  const [working, setWorking] = useState<"prepare" | "preview" | "send" | null>(null);
+  /* Preview (19 Nov): the exact text Send would send now; nothing written. Cleared when the number changes. */
+  const [preview, setPreview] = useState<{ body: string; card: string; edition_date: string } | null>(null);
+  const [as, setAs] = useState<"card" | "sms">("card");
+  const run = async (step: "prepare" | "preview" | "send") => {
     setWorking(step);
     try {
       const response = await fetch("/api/admin/digest-one", {
@@ -288,8 +291,15 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ step, phone }),
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string; sent?: number; edition_date?: string };
-      if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as { error?: string; sent?: number; edition_date?: string; body?: string; card?: string };
+      if (step === "preview") {
+        if (response.ok && data.body && data.card && data.edition_date) {
+          setPreview({ body: data.body, card: data.card, edition_date: data.edition_date });
+        } else {
+          setPreview(null);
+          await onDone(data.error ?? "That didn't go through", null);
+        }
+      } else if (!response.ok) {
         await onDone(data.error ?? "That didn't go through", null);
       } else if (step === "prepare") {
         /* copy: state */
@@ -315,7 +325,10 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
             inputMode="tel"
             autoComplete="off"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setPreview(null);
+            }}
             placeholder="+1 626 555 0123"
             className={inputClass}
           />
@@ -324,11 +337,45 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
           <Button disabled={!ready || working !== null} onClick={() => void run("prepare")}>
             {working === "prepare" ? "Preparing…" : "Prepare"}
           </Button>
+          <Button disabled={!ready || working !== null} onClick={() => void run("preview")}>
+            {working === "preview" ? "Loading…" : "Preview"}
+          </Button>
           <Button tone="primary" disabled={!ready || working !== null} onClick={() => void run("send")}>
             {working === "send" ? "Sending…" : "Send"}
           </Button>
         </div>
       </div>
+      {preview && (
+        <div className="mt-4 border-t border-bark/60 pt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <SegmentedFilter
+              track
+              label="Show as"
+              value={as}
+              onChange={setAs}
+              options={[
+                { id: "card", label: "Card" },
+                { id: "sms", label: "Plain text" },
+              ]}
+            />
+            <span className="text-[12.5px] text-muted">{saturday(preview.edition_date)} · not sent</span>
+          </div>
+          <div className="max-w-[22rem]">
+            <p className="whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-paper px-3.5 py-2.5 text-[14px] leading-relaxed text-ink ring-1 ring-bark/70">
+              {as === "card" ? preview.card : preview.body}
+            </p>
+            {as === "card" && (
+              <div className="mt-1.5 flex gap-1.5" aria-hidden>
+                {[1, 2, 3, 4].map((n) => (
+                  <span key={n} className="rounded-full bg-card px-3 py-0.5 text-[13px] font-medium text-green-deep ring-1 ring-green/40">
+                    {n}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
