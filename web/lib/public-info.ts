@@ -160,7 +160,11 @@ export function readFindings(
         /* Through the deep dive's filter since the detail grew to three facts
            (22 Oct): more words from a page is more room for "parents rave", a
            named teacher or a phone number, and each is dropped whole. */
-        withoutSilence(deepFact((row as Record<string, unknown>).detail, limits.detailMax ?? DETAIL_MAX, isPerson, name)),
+        /* Too long is cut by whole facts, not dropped whole (19 Nov, the SMS lab): AYSO's
+           page gave ages, practice times, Saturdays and three prices in 290 characters and
+           the line went out as a bare name. Silence first, then ages, when and price ahead
+           of the rest, then as many whole facts as fit. */
+        deepFact(wholeFactsWithin(keyFactsFirst(withoutSilence(flatDetail((row as Record<string, unknown>).detail))), limits.detailMax ?? DETAIL_MAX), limits.detailMax ?? DETAIL_MAX, isPerson, name),
       ),
     );
     if (out.length === (limits.max ?? MAX_PUBLIC_FINDINGS)) break;
@@ -874,7 +878,7 @@ export function readDeepFindings(
  * cut one (these before anything else), never to invent one.
  */
 const FACT_AGE = /\b(?:ages?\s*\d|\d+\s*(?:-|–|to)\s*\d+\s*(?:years?|yrs?|months?|mos?)?|\d+\s*(?:months?|mos?)\b|\d+\s*(?:\+|and up|and older)|under\s*\d|toddlers?|infants?|babies|preschoolers?|grades?\s*(?:k|\d))/i;
-const FACT_WHEN = /\b(?:\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.)|(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day)?s?\b|daily|weekends?|weekdays?|mornings?|afternoons?|open\s+\d|year-round|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2})/i;
+const FACT_WHEN = /\b(?:\d{1,2}(?::\d\d)?\s*(?:am|pm|a\.m\.|p\.m\.)|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)s?\b|daily|weekends?|weekdays?|mornings?|afternoons?|open\s+\d|year-round|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2})/i;
 const FACT_PRICE = /(?:\$\s?\d|\bfree\b|\bno cost\b|\bper (?:class|session|month|term|visit|week)\b)/i;
 
 export type KeyFact = "age" | "when" | "price";
@@ -893,6 +897,30 @@ export function keyFactsIn(text: string | null | undefined): KeyFact[] {
  * facts from the end (`wholeFacts`), so the price a page states is the last to
  * go rather than the first.
  */
+/** A detail as one line of text, or null when it is not text. */
+function flatDetail(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const flat = value.replace(/\s+/g, " ").trim();
+  return flat.length > 0 ? flat : null;
+}
+
+/**
+ * The facts of a detail ("a; b; c") that fit in `max`, each whole and in order
+ * (19 Nov). A fact longer than `max` on its own is skipped; none fitting is null.
+ */
+export function wholeFactsWithin(detail: string | null, max: number): string | null {
+  if (!detail) return null;
+  const kept: string[] = [];
+  let length = 0;
+  for (const fact of detail.split(/\s*;\s*/).map((f) => f.trim()).filter(Boolean)) {
+    const cost = fact.length + (kept.length > 0 ? 2 : 0);
+    if (length + cost > max) continue;
+    kept.push(fact);
+    length += cost;
+  }
+  return kept.length > 0 ? kept.join("; ") : null;
+}
+
 export function keyFactsFirst(detail: string | null): string | null {
   if (!detail) return detail;
   const facts = detail.split(/\s*;\s*/).filter((f) => f.trim().length > 0);

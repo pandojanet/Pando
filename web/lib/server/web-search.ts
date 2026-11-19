@@ -95,6 +95,10 @@ const SEARCH_TOOL = "web_search_20250305" as const;
 
 /** See the `timeout` argument below for why this exists and why it is 20s. */
 const SEARCH_TIMEOUT_MS = 20_000;
+/** With one page read for a parents' place (19 Nov): a fetch is a few seconds more. */
+const LOOKUP_TIMEOUT_MS = 30_000;
+/** The ordinary search's page reader — the 2025 version, as `SEARCH_TOOL` explains. */
+const FETCH_TOOL = "web_fetch_20250910" as const;
 /** A deep dive searches twice as much; still bounded, still degrades to records only. */
 const DEEP_SEARCH_TIMEOUT_MS = 150_000; /* Sonnet 5.5 thinking + ten searches + eight pages read; runs in after(), after "On it". */
 /* As many as "top 10" needs with room to drop a few (22 Oct: "five was an example"). */
@@ -173,13 +177,15 @@ const SYSTEM = [
   "  price ('$135 a month', '$12 a visit', 'free'). Only then, if there is room, one",
   "  thing that sets it apart ('indoor heated pool'). Find these on the place's own",
   "  pages: when a result does not show its ages, hours or price, spend a search on",
-  "  that place's schedule or prices. Prefer places whose pages state all three. A fact",
-  "  the pages do not give is left out, never reported missing ('no published hours').",
-  "  Under 30 words in all. Leave",
-  "  out any fact the page did not state -- never inferred, never rounded, never",
-  "  never write that a page does not state something ('does not list prices') - just leave it out,",
-  "  a guess -- and null if it stated none. No praise, no ratings, no marketing,",
-  "  no person's name.",
+  "  that place's schedule or prices. Prefer places whose pages state all three.",
+  "  Under 30 words in all. A fact the page did not state is left out -- never inferred,",
+  "  never rounded, never a guess, and never reported missing ('no published hours',",
+  "  'does not list prices'). null if it stated none. No praise, no ratings, no",
+  "  marketing, no person's name.",
+  "- A place under `Also look up` is one parents already recommended. Find its own pages",
+  "  (read the one with its classes, schedule or prices when you can) and list it first,",
+  "  with its ages, days and hours, and price in `detail` - that is all it is listed for.",
+  "  Leave it out if its pages state none of them.",
   "- When the parent asks about one place by name ('where is Swim ATCC?', 'how much is",
   "  Kidspace?', 'is Tom Sawyer Camps good for a 4 year old?'), that place comes first, found",
   "  on its own pages, even if it does not match the age or the brief - its ages are what tells",
@@ -735,6 +741,7 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
       });
       return { findings: deep.map(oneLine), deep, focus: readDeepFocus(run.text), configured: true };
     }
+    const lookingUp = (input.enrich ?? []).some((n) => n.trim().length > 0);
     const response = await anthropic.messages.create(
       {
         model: MODEL,
@@ -753,6 +760,14 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
               ? { user_location: { type: "approximate" as const, ...location } }
               : {}),
           },
+          /* One page read, only when the answer leads on a parents' place to look up
+             (19 Nov): a search result about "Pasadena Conservatory of Music" came back
+             naming it and nothing else, so the line under the parents' record was
+             dropped. Its own page carries the ages, days and price. The 2025 version,
+             for the reason `SEARCH_TOOL` gives. */
+          ...(lookingUp
+            ? [{ type: FETCH_TOOL, name: "web_fetch" as const, max_uses: 1, max_content_tokens: 4000 }]
+            : []),
         ],
         messages: [{ role: "user", content: userContent }],
       },
@@ -772,7 +787,7 @@ async function searchOnce(input: SearchInput, limits: DeepLimits = DEEP_LIMITS):
        * from the parents' records alone — which is the honest degradation and
        * the same one an unconfigured key produces.
        */
-      { timeout: SEARCH_TIMEOUT_MS },
+      { timeout: lookingUp ? LOOKUP_TIMEOUT_MS : SEARCH_TIMEOUT_MS },
     );
 
     const text = response.content

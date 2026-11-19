@@ -2511,6 +2511,7 @@ function publicSlots(
   parentBacked: number,
   info: { findings: PublicFinding[] },
   question = "",
+  lead: string | null = null,
 ): PublicFinding[] {
   /**
    * ⚠ **Two at minimum, and up to four when the parents are thin** (9 Sep,
@@ -2540,7 +2541,9 @@ function publicSlots(
      the SMS lab): "is Kidspace good for toddlers?" was answered with two of its
      corners, while "Kidspace Children's Museum" itself, whose page stated no
      detail, lost its slot to them. */
-  const named = withFacts.filter((f) => mentionsName(question, f.name));
+  /* …and then the parents' lead looked up on its own page (19 Nov), when the page said something:
+     it is what puts the ages, days and price under the record the answer opens on. */
+  const named = withFacts.filter((f) => mentionsName(question, f.name) || (lead !== null && Boolean(f.detail) && sameName(f.name, lead)));
   /* A line that states nothing ("Rose Bowl Aquatics Center, toddler swim
      lessons in Pasadena.") takes a slot only when fewer than two say something
      (26 Oct, the SMS lab). */
@@ -2865,7 +2868,15 @@ async function answerQuestion(input: {
             ],
         /* A deep dive (21 Oct) looks the records up instead: what the page says
            about them sits beside what parents said, matched by name. */
-        ...(deep ? { enrich: retrieved.shares.slice(0, 6).map((share) => share.name) } : {}),
+        /* An ordinary answer looks up the one it leads on (19 Nov): parents say what it was
+           like, its page the ages, the days and the price, under it as "(above), from its own
+           page". The developer, after Janet's test: "щоб була ця інформація - ціна, дні".
+           A tip is advice, not a place, and has no page. */
+        ...(deep
+          ? { enrich: retrieved.shares.slice(0, 6).map((share) => share.name) }
+          : retrieved.shares[0] && retrieved.shares[0].kind !== "tip"
+            ? { enrich: [retrieved.shares[0].name] }
+            : {}),
       });
 
   /**
@@ -3105,7 +3116,7 @@ async function answerQuestion(input: {
      * date for records that carry one, so this adds no claim.
      */
     /* A deep dive weighs every finding its deeper search returned; an answer shows two to four. */
-    ...(deep ? publicInfo.findings : publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body))
+    ...(deep ? publicInfo.findings : publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body, retrieved.shares[0]?.name ?? null))
       /* A name GSM-7 cannot carry at all drops the finding (review, 21 Oct): see sendableNote. */
       .filter((finding) => sendableNote(finding.name) !== null)
       .map((finding) => ({
@@ -3230,6 +3241,8 @@ async function answerQuestion(input: {
     /* Chooses which of a record's notes go out when not all fit (22 Oct). */
     question: body,
     ...(headroom ? { headroom: VOICE_HEADROOM } : {}),
+    /* "There's nothing from parents near Altadena on this yet." over a web-only answer (19 Nov). */
+    place_label: place.label ? (toGsm7(place.label) ?? place.label) : null,
     ...(given
       ? {
           /* "More" after "No parent near you has mentioned …" still says so (review, 4 Nov). */

@@ -161,7 +161,7 @@ ok(
 );
 ok(
   "and it still never says parents about public information - the head carries the verbatim label once (22 Oct)",
-  compose([publicRecord()]).text.split("\n")[0] === `Here's what I found. ${t.TRUST_LABEL.PUBLIC}:` &&
+  compose([publicRecord()]).text.split("\n")[0] === `There's nothing from parents near you on this yet. Here's what I found. ${t.TRUST_LABEL.PUBLIC}:` &&
     !/local parent/.test(compose([publicRecord()]).text.split("\n")[0]),
   "5.6's guard arriving in the prose, where it is easiest to lose",
 );
@@ -900,10 +900,25 @@ console.log("\n=== 10 Sep: one name per record, and only where it was granted ==
     "Ages 0-3, includes open-ended play, art, music, and parent participation throughout the term; runs Monday to Friday mornings from 9 to noon all year; $25 a drop-in visit, with a covered outdoor garden";
   const withDetail = (detail: string) =>
     found(JSON.stringify({ findings: [{ name: "Big Little Mornings", what: "open play", area: null, detail }] }))[0];
+  /* 19 Nov: whole facts that fit, never a phrase cut and never all dropped (AYSO's
+     ages, practice times and prices in 290 characters went out as a bare name). */
   ok(
-    "a detail past the budget is dropped rather than cut mid-phrase",
-    withDetail(long)?.detail === null,
+    "a detail past the budget keeps whole facts, never cut mid-phrase",
+    withDetail(long)?.detail ===
+      "Ages 0-3, includes open-ended play, art, music, and parent participation throughout the term; runs Monday to Friday mornings from 9 to noon all year",
     String(withDetail(long)?.detail),
+  );
+  ok(
+    "wholeFactsWithin: skips a fact too long alone, keeps order, null when none fits",
+    pi.wholeFactsWithin("ages 3-5; " + "x".repeat(200) + "; $25", 170) === "ages 3-5; $25" &&
+      pi.wholeFactsWithin("x".repeat(200), 170) === null,
+  );
+  ok(
+    "a long detail loses its silence and puts ages, when and price first before it is cut",
+    withDetail(
+      "recreational league run by volunteers with a long history in the area and coaches trained every season; price and hours not published on the pages I found; ages 6 through 14; games Saturdays, September through mid-November; $220 through June 7, $250 after",
+    )?.detail === "ages 6 through 14; games Saturdays, September through mid-November; $220 through June 7, $250 after",
+    String(withDetail("x")?.detail),
   );
   ok(
     "and a detail the prompt's own ten words fit is kept whole",
@@ -1118,7 +1133,16 @@ console.log("\n=== 22 Oct review: ordinary answers ===");
 
   /* (6) A web-only answer says its label once. */
   const webOnly = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly; top-rope and bouldering", "arcadia"), web("Sender One", "climbing gym", "Youth classes from age 6", "glendale")]).text;
-  ok("web-only: the verbatim label once, in the head", webOnly.startsWith(`Here's what I found. ${t.TRUST_LABEL.PUBLIC}:\n`) && webOnly.split(t.TRUST_LABEL.PUBLIC).length === 2 && !webOnly.includes("All of these"), webOnly);
+  ok("web-only: the verbatim label once, in the head", webOnly.startsWith(`There's nothing from parents near you on this yet. Here's what I found. ${t.TRUST_LABEL.PUBLIC}:\n`) && webOnly.split(t.TRUST_LABEL.PUBLIC).length === 2 && !webOnly.includes("All of these"), webOnly);
+  /* 19 Nov, after Janet's test: a web-only answer says no parent's record is in it, where and how it can. */
+  const nearAltadena = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia")], { place_label: "Altadena, CA" }).text;
+  ok("web-only: says nothing from parents near the place", nearAltadena.startsWith(`There's nothing from parents near Altadena on this yet. Here's what I found. ${t.TRUST_LABEL.PUBLIC}:`), nearAltadena);
+  const nowhere = compose([{ ...web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia"), place_unknown: true }]).text;
+  ok("web-only, place unknown: on Pando", nowhere.startsWith("There's nothing from parents on Pando on this yet."), nowhere);
+  const unmetWeb = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia")], { opening: "No parent near you has recommended a climbing gym yet." }).text;
+  ok("web-only with an unmet want: its own opening, not two", unmetWeb.startsWith(`No parent near you has recommended a climbing gym yet. ${t.TRUST_LABEL.PUBLIC}:`) && !/nothing from parents/i.test(unmetWeb), unmetWeb);
+  const mixed = compose([parent(), web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia")], { place_label: "Altadena" }).text;
+  ok("a mixed answer never says nothing from parents", !/nothing from parents/i.test(mixed), mixed);
   /* 26 Oct, the chat lab: a web-only "more" said "There's nothing from parents near…" just after quoting them. */
   const moreWeb = compose([web("Hangar 18", "indoor climbing gym", "Kid-friendly", "arcadia")], { opening: "A few more that may fit:", nothing_left: false, can_offer_blast: false }).text;
   ok("a web-only 'more' says it is more, under the label", moreWeb.startsWith(`A few more that may fit. ${t.TRUST_LABEL.PUBLIC}:\n`) && !/nothing from parents/i.test(moreWeb), moreWeb);

@@ -489,7 +489,14 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
     src.includes("namedAnywhere: place.near === null || place.near.length > 0,"));
   ok("the web's verdict never drops the place the question names",
     src.includes(`publicVerdicts[i] !== "mismatch" || mentionsName(body, f.name)`));
-  ok("and the named place is the first public line", src.includes("publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body)"));
+  ok("and the named place is the first public line", src.includes("publicSlots(retrieved.shares.length + retrieved.caregivers.length, publicInfo, body, retrieved.shares[0]?.name ?? null)"));
+  /* 19 Nov: the parents' lead is looked up on its own page, and its line comes right after the named place. */
+  ok("the ordinary search looks up the record the answer leads on, never a tip",
+    src.includes('retrieved.shares[0] && retrieved.shares[0].kind !== "tip"') && src.includes("{ enrich: [retrieved.shares[0].name] }"));
+  ok("and its own page goes first among the web's lines when it said something",
+    src.includes("(lead !== null && Boolean(f.detail) && sameName(f.name, lead))"));
+  const ws = readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
+  ok("one page read, only when there is a parents' place to look up", /\.\.\.\(lookingUp\s*\?\s*\[\{ type: FETCH_TOOL, name: "web_fetch" as const, max_uses: 1/.test(ws) && ws.includes('const FETCH_TOOL = "web_fetch_20250910"'));
   ok("a record the last answer gave is ranked after new ones and not quoted again",
     src.includes("rank: mentionsName(body, share.name) ? -1 : sentJustNow(share.name) ? 1000 + i : i,") &&
       src.includes("notes: sentJustNow(share.name) ? undefined : {"));

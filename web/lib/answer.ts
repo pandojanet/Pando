@@ -1236,6 +1236,12 @@ export interface ComposeInput {
    */
   nobody_near?: { place: string | null };
   /**
+   * Where the parents' half was looked for, for the line a web-only answer
+   * opens on (19 Nov): "There's nothing from parents near Altadena on this yet."
+   * Null or absent is "near you"; a candidate with `place_unknown` is "on Pando".
+   */
+  place_label?: string | null;
+  /**
    * A line above a parent-backed answer, budgeted like the rest (29 Sep). Used
    * for "any others?", where the first record would otherwise read as though it
    * were the answer to a new question. Ignored when the whole answer is public:
@@ -1549,6 +1555,18 @@ function composeRanked(
    * thing twice in one message. It now opens on the 24 Sep sentence and then
    * the labels, verbatim, exactly as the other head does.
    */
+  /**
+   * A web-only answer says first that no parent's record is in it (19 Nov). The
+   * developer, after Janet's live test: *"або про приватну інфу так і казалось
+   * що нема"*. It opened "Here's what I found." whenever parents near the place
+   * existed to ask, so a parent could not tell "Pando's parents have nothing on
+   * this" from "Pando did not look". Said as the 24 Sep nobody-near sentence is,
+   * with "on this", because there are parents near — just nothing they shared
+   * fits. A "more" or an unmet want brings its own opening and keeps it.
+   */
+  const nothingFromParents = ranked.some((c) => c.place_unknown)
+    ? "There's nothing from parents on Pando on this yet."
+    : `There's nothing from parents near ${input.place_label?.split(",")[0]?.trim() || "you"} on this yet.`;
   const headLabels = publicOnly
     ? ranked[0].trust.labels.filter((l) => ranked.every((c) => c.trust.labels.includes(l)))
     : [];
@@ -1559,8 +1577,8 @@ function composeRanked(
         : `There's nothing from parents near ${nobodyWhere} yet. Here's general information, not from a parent:`
       : headLabels.length > 0
         ? /* A "more" says so: "A few more that may fit. Public/general information:" (26 Oct). */
-          `${input.opening ? input.opening.replace(/:$/, ".") : "Here's what I found."} ${headLabels.join(". ")}:`
-        : "Here's what I can tell you. This is general information, not from a parent:"
+          `${input.opening ? input.opening.replace(/:$/, ".") : `${nothingFromParents} Here's what I found.`} ${headLabels.join(". ")}:`
+        : `${input.opening ? input.opening.replace(/:$/, ".") : nothingFromParents} Here's what I can tell you. This is general information, not from a parent:`
     : (input.opening ?? "");
 
   /**
