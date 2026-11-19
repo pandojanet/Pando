@@ -253,8 +253,10 @@ console.log("\n=== /admin/digests (12 Nov) ===");
       /label="Which weeks"/.test(page) && !/type="checkbox"/.test(page) && !/<select/.test(page));
   ok("before 0067 the page says once what it cannot know, in words, never a migration name",
     /picks_configured/.test(readSrc) && /Picks are not recorded for this week\./.test(page) && /Texts are not recorded for this week\./.test(page) && !/migration 0067/.test(page));
-  ok("groups are rows that open, failed first then the largest; what needs a look opens the row it names",
-    /aria-expanded=\{open\}/.test(page) && /aria-controls=\{panel\}/.test(page) && /Number\(b\.status === "failed"\) - Number\(a\.status === "failed"\) \|\| b\.families_sent - a\.families_sent/.test(page) &&
+  /* 19 Nov: waiting for approval first, then failed, then the largest. */
+  ok("groups are rows that open, awaiting approval first, then failed, then the largest; what needs a look opens the row it names",
+    /aria-expanded=\{open\}/.test(page) && /aria-controls=\{panel\}/.test(page) &&
+      /Number\(awaitsApproval\(b\)\) - Number\(awaitsApproval\(a\)\) \|\|\s+Number\(b\.status === "failed"\) - Number\(a\.status === "failed"\) \|\|\s+b\.families_sent - a\.families_sent/.test(page) &&
       /Needs a look/.test(page) && /onClick=\{\(\) => reveal\(g\)\}/.test(page));
   ok("what families received is a comparison: shared items muted, differences bold, another group's item named, one text open at a time",
     /const differs = k > 0 && !mainIds\.has\(it\.id\);/.test(page) && /from \{it\.from_group\}/.test(page) && /setOpenKey\(isOpen \? null : key\)/.test(page) &&

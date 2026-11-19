@@ -2694,16 +2694,24 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
     select to_regclass('public.digest_editions') is not null as editions,
            to_regclass('public.digest_interests') is not null
              and exists (select 1 from information_schema.columns
-                          where table_schema = 'public' and table_name = 'digest_sends' and column_name = 'item_ids') as picks
+                          where table_schema = 'public' and table_name = 'digest_sends' and column_name = 'item_ids') as picks,
+           exists (select 1 from information_schema.columns
+                    where table_schema = 'public' and table_name = 'digest_editions' and column_name = 'approval_required') as approval
   `);
   if (ready[0]?.editions !== true) return { configured: false, picks_configured: false, weeks: [], index: [] };
   const picks = ready[0]?.picks === true;
+  /* drizzle/0069 (19 Nov): approval and items taken out; before it, every edition reads as needing none. */
+  const approval = ready[0]?.approval === true;
+  const awaitingSql = approval
+    ? sql`count(*) filter (where e.approval_required and e.approved_at is null and e.status = 'ready')`
+    : sql`0`;
 
   /* Every Saturday, one line each (12 Nov: the calendar finds any week, not only the latest twelve). */
   const indexRows = await rows(db, sql`
     select e.edition_date::text as edition_date, e.is_test,
            count(*) as groups,
            count(*) filter (where e.status = 'failed') as failed,
+           ${awaitingSql} as awaiting,
            (select count(*) from digest_sends s join digest_editions e2 on e2.id = s.edition_id
              where e2.edition_date = e.edition_date and e2.is_test = e.is_test and s.item_count > 0) as families
       from digest_editions e
@@ -2716,6 +2724,7 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
     groups: Number(r.groups ?? 0),
     families: Number(r.families ?? 0),
     failed: Number(r.failed ?? 0),
+    awaiting: Number(r.awaiting ?? 0),
   }));
   if (index.length === 0) return { configured: true, picks_configured: picks, weeks: [], index };
   /* The latest Saturdays in full, and one asked for by date however old — only a real YYYY-MM-DD reaches the query. */
@@ -2728,7 +2737,8 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
 
   const editions = await rows(db, sql`
     select id::text as id, edition_date::text as edition_date, is_test, cohort_key, cohort_label,
-           status, attempts, created_at::text as created_at
+           status, attempts, created_at::text as created_at,
+           ${approval ? sql`approval_required, approved_at::text as approved_at, approved_by` : sql`false as approval_required, null::text as approved_at, null::text as approved_by`}
       from digest_editions where edition_date in (${dateList})
      order by edition_date desc, is_test, (cohort_key = 'c-general'), cohort_label nulls last, created_at
   `);
@@ -2738,7 +2748,8 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
 
   const items = await rows(db, sql`
     select id::text as id, edition_id::text as edition_id, position, kind, title, when_text,
-           starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url
+           starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url,
+           ${approval ? sql`removed_at is not null` : sql`false`} as removed
       from digest_items where edition_id in (${idList})
      order by edition_id, position
   `);
@@ -2842,6 +2853,9 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
       label: e.cohort_label ? String(e.cohort_label) : null,
       general: e.cohort_key === "c-general",
       status: col(String(e.status)),
+      approval: e.approval_required !== true ? "not_required" : e.approved_at ? "approved" : "awaiting",
+      approved_at: e.approved_at ? String(e.approved_at) : null,
+      approved_by: e.approved_by ? String(e.approved_by) : null,
       attempts: n(e.attempts),
       created_at: String(e.created_at),
       sent_at: mine.find((s) => n(s.item_count) > 0)?.sent_at ? String(mine.find((s) => n(s.item_count) > 0)!.sent_at) : null,
@@ -2863,6 +2877,7 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
             age_max: i.age_max === null ? null : Number(i.age_max),
             summary: String(i.summary),
             url: String(i.url),
+            removed: i.removed === true,
             sent_to: sentTo.get(String(i.id)) ?? 0,
             sent_here: sentHere.get(`${String(i.id)}|${String(e.id)}`) ?? 0,
             reminders: n(d?.reminders),

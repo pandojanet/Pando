@@ -1708,9 +1708,14 @@ export const digestEditions = pgTable(
     cohortLabel: text("cohort_label"),
     cohortProfile: jsonb("cohort_profile"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** 19 Nov, drizzle/0069: sent only once a person approved it; false for every edition from before. */
+    approvalRequired: boolean("approval_required").notNull().default(false),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedBy: text("approved_by"),
   },
   (t) => [
     check("digest_editions_status_check", sql`${t.status} in ('ready','empty','failed')`),
+    check("digest_editions_approved_pair", sql`(${t.approvedAt} is null) = (${t.approvedBy} is null)`),
     unique("digest_editions_one_per_cohort").on(t.marketId, t.editionDate, t.isTest, t.cohortKey),
   ],
 );
@@ -1733,6 +1738,8 @@ export const digestItems = pgTable(
     ageMax: integer("age_max"),
     summary: text("summary").notNull(),
     url: text("url").notNull(),
+    /** 19 Nov, drizzle/0069: taken out by an admin before approval — kept on the record, never sent. */
+    removedAt: timestamp("removed_at", { withTimezone: true }),
   },
   (t) => [
     check("digest_items_kind_check", sql`${t.kind} in ('event','camp','class','opportunity')`),

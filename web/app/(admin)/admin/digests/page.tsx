@@ -13,12 +13,13 @@ import {
   Loading,
   NotConfigured,
   PageHead,
+  ResultNote,
   Stat,
   StatStrip,
   TextLink,
   when,
 } from "@/components/admin/ui";
-import { useAdminRows } from "@/lib/admin/client";
+import { adminAction, useAdminRows } from "@/lib/admin/client";
 import { DIGEST_EDITION_STATUS, DIGEST_ITEM_KIND, sentence } from "@/lib/admin/labels";
 import { cn } from "@/lib/cn";
 import type { DigestGroup, DigestItemRow, DigestVariant, DigestWeek, DigestWeekIndex } from "@/lib/admin/types";
@@ -45,11 +46,20 @@ import type { DigestGroup, DigestItemRow, DigestVariant, DigestWeek, DigestWeekI
  *    bold, and an item another group's search found named as such — the reason
  *    texts differ is the layout, not a paragraph (the client's rule, 7 Sep).
  *
- * Read-only. Texts are rebuilt from each send's stored items — bodies are never
- * stored (invariant 7).
+ * Texts are rebuilt from each send's stored items — bodies are never stored
+ * (invariant 7).
+ *
+ * **Approval (19 Nov).** The job prepares each group's edition on Friday and
+ * sends on Saturday only what was approved here. A group waiting for it opens
+ * on its items, each of which can be taken out (and put back) before the
+ * group is approved; an approval can be taken back while nothing from it has
+ * gone out. Every press is an audited action (`digest.*`, `digest_item.*`).
  */
 
 type Which = "real" | "test";
+
+/** One admin action on the page, then a fresh read; its result said at the top. */
+type Act = (action: Parameters<typeof adminAction>[0], done: string) => Promise<void>;
 
 /** "2026-11-21" → "Sat, Nov 21": the Saturday, read on its own date whatever the browser's clock. */
 function saturday(date: string): string {
@@ -95,6 +105,7 @@ function weekTotals(week: DigestWeek) {
   return {
     groups: week.groups.length,
     failed: week.groups.filter((g) => g.status === "failed"),
+    awaiting: week.groups.filter(awaitsApproval),
     families: week.groups.reduce((n, g) => n + g.families_sent, 0),
     nothing: week.groups.filter((g) => g.families_nothing > 0),
     remindersSet: items.reduce((n, i) => n + i.reminders + i.reminded, 0),
@@ -113,9 +124,19 @@ function groupTotals(g: DigestGroup) {
   };
 }
 
-/* Failed searches first, then the groups that reached the most families. */
+/** Prepared, found something, and nobody has approved it: nothing of it goes until somebody does. */
+const awaitsApproval = (g: DigestGroup) => g.approval === "awaiting" && g.status === "ready";
+/** Approved here and nothing of it sent yet: the approval can still be taken back. */
+const approvedUnsent = (g: DigestGroup) => g.approval === "approved" && g.families_sent === 0 && g.items.every((i) => i.sent_to === 0);
+
+/* Waiting for approval first, then failed searches, then the groups that reached the most families. */
 function ordered(groups: DigestGroup[]): DigestGroup[] {
-  return [...groups].sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed") || b.families_sent - a.families_sent);
+  return [...groups].sort(
+    (a, b) =>
+      Number(awaitsApproval(b)) - Number(awaitsApproval(a)) ||
+      Number(b.status === "failed") - Number(a.status === "failed") ||
+      b.families_sent - a.families_sent,
+  );
 }
 
 const groupAnchor = (g: DigestGroup) => `digest-group-${g.id}`;
@@ -130,7 +151,25 @@ export default function DigestsPage() {
   const [date, setDate] = useState<string | null>(null);
   /* A Saturday older than the latest ones the page holds in full is read on its own (the calendar, 12 Nov). */
   const [asked, setAsked] = useState<string | null>(null);
-  const { rows, configured, loading, error, demo, setDemo } = useAdminRows("digests", asked ? { week: asked } : undefined);
+  const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows("digests", asked ? { week: asked } : undefined);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const act: Act = useCallback(
+    async (action, done) => {
+      setBusy(true);
+      setMessage(null);
+      try {
+        const result = await adminAction(action);
+        setMessage(result.persisted ? done : `${done} — but nothing was saved.`);
+        await reload();
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "That didn't go through");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [reload],
+  );
 
   /* The week lives in the URL (`?week=2026-11-21&test=1`): a reload or a shared link opens the same Saturday. */
   useEffect(() => {
@@ -171,6 +210,7 @@ export default function DigestsPage() {
       <PageHead title="Weekly digests" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
+      {message && <ResultNote>{message}</ResultNote>}
 
       {tableConfigured && index.length > 0 && (
         <WeekBar
@@ -208,7 +248,7 @@ export default function DigestsPage() {
             <Loading />
           </Card>
         ) : (
-          <WeekView key={`${week.edition_date}-${week.is_test}`} week={week} picksKnown={picksKnown} />
+          <WeekView key={`${week.edition_date}-${week.is_test}`} week={week} picksKnown={picksKnown} act={act} busy={busy} />
         )}
       </div>
     </>
@@ -261,6 +301,7 @@ function WeekBar({
                   detail: [
                     plural(w.families, "family", "families"),
                     plural(w.groups, "group"),
+                    w.awaiting > 0 ? `${w.awaiting} awaiting approval` : null,
                     w.failed > 0 ? `${plural(w.failed, "search", "searches")} failed` : null,
                   ]
                     .filter(Boolean)
@@ -274,7 +315,7 @@ function WeekBar({
               label="Find a week on the calendar"
               value={week?.edition_date ?? null}
               onChange={onPick}
-              marks={new Map(weeks.map((w) => [w.edition_date, { note: `${w.families} ${w.families === 1 ? "family" : "families"}`, alert: w.failed > 0 }]))}
+              marks={new Map(weeks.map((w) => [w.edition_date, { note: w.awaiting > 0 ? `${w.awaiting} awaiting` : `${w.families} ${w.families === 1 ? "family" : "families"}`, alert: w.failed > 0 || w.awaiting > 0 }]))}
               resolve={(day) => {
                 const sat = saturdayOf(day);
                 return weeks.some((w) => w.edition_date === sat) ? sat : null;
@@ -338,7 +379,7 @@ function StepButton({
 
 /* ── One week ─────────────────────────────────────────────────────────────── */
 
-function WeekView({ week, picksKnown }: { week: DigestWeek; picksKnown: boolean }) {
+function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnown: boolean; act: Act; busy: boolean }) {
   const t = weekTotals(week);
   const groups = ordered(week.groups);
   /* One group open at a time is the default reading; a "needs a look" link opens the one it names. */
@@ -348,7 +389,7 @@ function WeekView({ week, picksKnown }: { week: DigestWeek; picksKnown: boolean 
     requestAnimationFrame(() => document.getElementById(groupAnchor(g))?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }, []);
   const sentOn = week.groups.map((g) => g.sent_at).filter((s): s is string => !!s).sort()[0] ?? null;
-  const problems = t.failed.length > 0 || t.nothing.length > 0;
+  const problems = t.failed.length > 0 || t.nothing.length > 0 || t.awaiting.length > 0;
   const found = week.groups.reduce((n, g) => n + g.items.length, 0);
   const sentItems = week.groups.reduce((n, g) => n + g.items.filter((i) => i.sent_to > 0).length, 0);
   const replies = t.loved + t.ok + t.didntGo;
@@ -388,6 +429,14 @@ function WeekView({ week, picksKnown }: { week: DigestWeek; picksKnown: boolean 
               Needs a look
             </h2>
             <ul className="mt-1 space-y-0.5 text-[13.5px] text-ink">
+              {t.awaiting.map((g) => (
+                <li key={`a-${g.id}`}>
+                  <TextLink href={`#${groupAnchor(g)}`} onClick={() => reveal(g)}>
+                    {labelParts(g.label).who}
+                  </TextLink>{" "}
+                  waits for approval.
+                </li>
+              ))}
               {t.failed.map((g) => (
                 <li key={`f-${g.id}`}>
                   The search failed for{" "}
@@ -428,6 +477,8 @@ function WeekView({ week, picksKnown }: { week: DigestWeek; picksKnown: boolean 
               key={g.id}
               group={g}
               picksKnown={picksKnown}
+              act={act}
+              busy={busy}
               open={open.has(g.id)}
               onOpen={(o) =>
                 setOpen((was) => {
@@ -457,7 +508,21 @@ function labelParts(label: string | null): { who: string; where: string | null; 
   return { who: who.charAt(0).toUpperCase() + who.slice(1), where, also: rest.length > 0 ? rest.join(" · ") : null };
 }
 
-function GroupRow({ group: g, picksKnown, open, onOpen }: { group: DigestGroup; picksKnown: boolean; open: boolean; onOpen: (open: boolean) => void }) {
+function GroupRow({
+  group: g,
+  picksKnown,
+  act,
+  busy,
+  open,
+  onOpen,
+}: {
+  group: DigestGroup;
+  picksKnown: boolean;
+  act: Act;
+  busy: boolean;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+}) {
   const gt = groupTotals(g);
   const status = DIGEST_EDITION_STATUS[g.status];
   const { who, where, also } = labelParts(g.label);
@@ -477,6 +542,8 @@ function GroupRow({ group: g, picksKnown, open, onOpen }: { group: DigestGroup; 
             <span className="text-[14.5px] font-semibold text-ink">{who}</span>
             {where && <span className="text-[14px] text-ink-soft">{where}</span>}
             {g.status !== "ready" && <Badge tone={status?.tone ?? "neutral"}>{status?.label ?? sentence(g.status)}</Badge>}
+            {awaitsApproval(g) && <Badge tone="gold">Awaiting approval</Badge>}
+            {approvedUnsent(g) && <Badge tone="green">Approved</Badge>}
             {g.attempts > 1 && <Badge tone="gold">{`Searched ${g.attempts} times`}</Badge>}
             {g.general && <Badge tone="muted">Market-wide</Badge>}
           </span>
@@ -511,6 +578,8 @@ function GroupRow({ group: g, picksKnown, open, onOpen }: { group: DigestGroup; 
         <div id={panel} className="border-t border-bark/60 bg-paper/50 px-4 pb-5 pt-4 md:pl-11">
           {g.items.length === 0 ? (
             <p className="text-[13.5px] text-muted">{/* copy: state */}Nothing found for this group, so nobody got a text from it.</p>
+          ) : awaitsApproval(g) || approvedUnsent(g) ? (
+            <Review group={g} act={act} busy={busy} />
           ) : (
             <div className="space-y-6">
               <Items group={g} picksKnown={picksKnown} />
@@ -612,7 +681,95 @@ function Items({ group: g, picksKnown }: { group: DigestGroup; picksKnown: boole
   );
 }
 
-function ItemRow({ item: i, picksKnown, muted = false }: { item: DigestItemRow; picksKnown: boolean; muted?: boolean }) {
+/**
+ * A group waiting for approval, or approved with nothing of it sent yet: every
+ * item it found, each with Remove / Put back while it waits; then Approve, or
+ * the approval and a way to take it back.
+ */
+function Review({ group: g, act, busy }: { group: DigestGroup; act: Act; busy: boolean }) {
+  const waiting = awaitsApproval(g);
+  const items = [...g.items].sort((a, b) => a.position - b.position);
+  const kept = items.filter((i) => !i.removed).length;
+  const out = items.length - kept;
+  const name = labelParts(g.label).who;
+  return (
+    <section>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h3 className="flex items-baseline gap-2 text-[13.5px] font-semibold text-ink">
+          {waiting ? "To approve" : "Approved"}
+          <span className="font-normal tabular-nums text-muted">
+            {kept}
+            {out > 0 ? ` · ${out} taken out` : ""}
+          </span>
+        </h3>
+        {waiting ? (
+          <Button
+            tone="primary"
+            disabled={busy || kept === 0}
+            subject={name}
+            onClick={() => act({ action: "digest.approve", id: g.id }, "Approved")}
+          >
+            Approve
+          </Button>
+        ) : (
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-[12.5px] text-muted">
+              {[g.approved_by, g.approved_at ? when(g.approved_at) : null].filter(Boolean).join(" · ")}
+            </span>
+            <Button
+              tone="ghost"
+              disabled={busy}
+              subject={name}
+              onClick={() => act({ action: "digest.unapprove", id: g.id }, "Approval taken back")}
+            >
+              Take back approval
+            </Button>
+          </span>
+        )}
+      </div>
+      <ul className="divide-y divide-bark/60">
+        {items.map((i) => (
+          <ItemRow
+            key={i.id}
+            item={i}
+            picksKnown={false}
+            muted={i.removed}
+            aside={
+              waiting ? (
+                <Button
+                  tone="ghost"
+                  disabled={busy}
+                  subject={i.title}
+                  onClick={() =>
+                    act(
+                      { action: i.removed ? "digest_item.restore" : "digest_item.remove", id: i.id },
+                      i.removed ? "Put back" : "Taken out",
+                    )
+                  }
+                >
+                  {i.removed ? "Put back" : "Remove"}
+                </Button>
+              ) : null
+            }
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ItemRow({
+  item: i,
+  picksKnown,
+  muted = false,
+  aside,
+}: {
+  item: DigestItemRow;
+  picksKnown: boolean;
+  muted?: boolean;
+  /** In place of the sent counts: a control (`Review`), or nothing when null. */
+  aside?: React.ReactNode;
+}) {
   const Icon = KIND_ICON[i.kind] ?? Ticket;
   const age = ages(i.age_min, i.age_max);
   const after = picksKnown
@@ -635,7 +792,10 @@ function ItemRow({ item: i, picksKnown, muted = false }: { item: DigestItemRow; 
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
-        <p className={cn("text-[14px] leading-snug", muted ? "font-medium text-ink-soft" : "font-semibold text-ink")}>{i.title}</p>
+        <p className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] leading-snug", muted ? "font-medium text-ink-soft" : "font-semibold text-ink")}>
+          <span className={cn(i.removed && "line-through decoration-muted/60")}>{i.title}</span>
+          {i.removed && <Badge tone="muted">Taken out</Badge>}
+        </p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
           {[DIGEST_ITEM_KIND[i.kind] ?? sentence(i.kind), i.when_text, i.place, age].filter(Boolean).join(" · ")}
         </p>
@@ -655,7 +815,9 @@ function ItemRow({ item: i, picksKnown, muted = false }: { item: DigestItemRow; 
           </p>
         )}
       </div>
-      {!muted && (
+      {aside !== undefined ? (
+        aside && <div className="col-start-2 mt-1.5 sm:col-start-3 sm:mt-0 sm:self-center">{aside}</div>
+      ) : !muted && (
         <div className="col-start-2 mt-1.5 flex items-baseline gap-2 sm:col-start-3 sm:mt-0 sm:block sm:text-right">
           <p className="text-[14px] font-semibold tabular-nums text-ink">
             {i.sent_to}

@@ -484,6 +484,13 @@
       "when": 1794492000000,
       "tag": "0068_supabase_cron",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794495600000,
+      "tag": "0069_digest_approval",
+      "breakpoints": true
     }
   ]
 }

@@ -498,6 +498,10 @@ export const AUDIT_ACTION: Record<string, string> = {
   "intro.contacted": "Contacted a parent about an introduction",
   "intro.connected": "Recorded an introduction as connected",
   "intro.declined": "Recorded that the other parent said no",
+  "digest.approve": "Approved a group's weekly digest",
+  "digest.unapprove": "Took back the approval of a group's weekly digest",
+  "digest_item.remove": "Took an item out of a weekly digest",
+  "digest_item.restore": "Put an item back into a weekly digest",
   /* Written outside admin-write (26 Oct): repo/admin-users.ts and
      repo/parent-delete.ts. The second's actor is 'parent' — the parent did it. */
   "admin.password": "Changed their own admin password",

@@ -25,7 +25,7 @@ import { editionVariable } from "@/lib/sms-rich";
 import { expireMemory } from "@/lib/server/repo/conversation-memory";
 import { feedbackAskCard, feedbackAskSms, reminderSms } from "@/lib/digest-followup";
 import { claimFollowup, dueFeedback, dueReminders, releaseFollowup } from "@/lib/server/repo/digest-followup";
-import { ageOn, composeDigest, digestDue, localParts, pickForPerson, poolForFamily } from "@/lib/digest";
+import { ageOn, composeDigest, digestDue, digestPrepFor, pickForPerson, poolForFamily } from "@/lib/digest";
 import { cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
 import {
   claimDigestSend,
@@ -33,6 +33,7 @@ import {
   digestEdition,
   drawnCohorts,
   readyEditionsOfDay,
+  unapprovedEditionsOfDay,
   hasDigestRecipients,
   releaseDigestSend,
 } from "@/lib/server/repo/digest";
@@ -252,12 +253,16 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
   let processed = 0;
   let skipped = 0;
   let failed = 0;
+  let awaiting = 0;
   for (const market of Object.values(MARKETS)) {
-    const editionDate = digestDue(now, market.timeZone);
+    /* Prepared from Friday morning, sent on Saturday only once approved (19 Nov). */
+    const editionDate = digestPrepFor(now, market.timeZone);
     if (!editionDate) continue;
+    const sending = digestDue(now, market.timeZone) !== null;
     /* Nobody signed up, no agent run (review, 3 Nov). */
     if (!(await hasDigestRecipients(market.id, isTest))) continue;
-    const today = localParts(now, market.timeZone).date;
+    /* Ages on the Saturday itself, so Friday's groups are Saturday's (19 Nov). */
+    const today = editionDate;
     /**
      * Groups, not people (4 Nov, `lib/digest-cohorts.ts`): drawn over everyone
      * this Saturday's digest is for, sent or not, so every hourly run draws the
@@ -311,8 +316,16 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
       const edition = await digestEdition(market.id, editionDate, profile, isTest);
       if (edition) editions.push({ unsent, profile, edition });
     }
+    /* What still waits for a person, said in the run's note (counts only). */
+    const waiting = await unapprovedEditionsOfDay(market.id, editionDate, isTest);
+    awaiting += waiting;
+    /* Friday: prepared, nothing sent (19 Nov). */
+    if (!sending) continue;
     const ofDay = editions.length ? await readyEditionsOfDay(market.id, editionDate, isTest) : [];
     for (const { unsent, profile, edition } of editions) {
+      /* A group's own edition with something in it goes only once approved; one with
+         nothing of its own sends what approved editions hold for its children. */
+      if (!edition.approved && edition.items.length > 0) continue;
       const others = ofDay.filter((e) => e.key !== profile.key).map((e) => e.items);
       /**
        * One search per group; what each family is sent is the group's items
@@ -331,6 +344,9 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
         /* The ids in their numbers' order; with any missing the text is not read as picks at all, never shifted (review, 11 Nov). */
         const ids = sentItems.map((x) => x.id);
         const sentIds = ids.every((id): id is string => typeof id === "string") ? ids : [];
+        /* Nothing yet, while an edition that may hold something for them still waits for approval:
+           not claimed, so a later run can send it (19 Nov — a claim is final). */
+        if (included === 0 && waiting > 0) continue;
         if (!(await claimDigestSend(edition.id, recipient.person_id, included, sentIds))) continue;
         if (included === 0) {
           skipped++;
@@ -360,7 +376,13 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
       }
     }
   }
-  return { outcome: outcomeFor({ processed, skipped, failed }), processed, skipped, failed };
+  return {
+    outcome: outcomeFor({ processed, skipped, failed }),
+    processed,
+    skipped,
+    failed,
+    ...(awaiting > 0 ? { note: `${awaiting} ${awaiting === 1 ? "group waits" : "groups wait"} for approval.` } : {}),
+  };
 }
 
 /**

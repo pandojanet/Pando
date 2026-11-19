@@ -82,6 +82,11 @@ export const ADMIN_ACTION_NAMES = [
   "intro.contacted",
   "intro.connected",
   "intro.declined",
+  /* Weekly digests — approved before they are sent (19 Nov). */
+  "digest.approve",
+  "digest.unapprove",
+  "digest_item.remove",
+  "digest_item.restore",
 ] as const;
 
 export type AdminActionName = (typeof ADMIN_ACTION_NAMES)[number];

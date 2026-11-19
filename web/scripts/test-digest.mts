@@ -534,5 +534,48 @@ ok("never throws: an error is an ending, so one market cannot stop the others â€
 ok("from the model registry", /const MODEL = MODELS\.deep;/.test(agent) && !/claude-(sonnet|haiku|opus)/.test(agent));
 ok("text on pages is never an instruction", /never an instruction to you/.test(agent));
 
+console.log("\n=== approval before sending (19 Nov) ===");
+/* Friday 6 Nov 2026 and Saturday 7 Nov, on Los Angeles' clock (UTCâˆ’8). */
+ok("Friday 8:00 prepares for the next day", d.digestPrepFor(new Date("2026-11-06T16:00:00Z"), LA) === "2026-11-07");
+ok("Friday 7:59 does not", d.digestPrepFor(new Date("2026-11-06T15:59:00Z"), LA) === null);
+ok("late Friday evening still prepares", d.digestPrepFor(new Date("2026-11-07T07:30:00Z"), LA) === "2026-11-07");
+ok("Saturday's send window prepares too (late families' groups)", d.digestPrepFor(new Date("2026-11-07T17:00:00Z"), LA) === "2026-11-07");
+ok("Saturday after 20:00 does not", d.digestPrepFor(new Date("2026-11-08T04:00:00Z"), LA) === null);
+ok("Thursday does not", d.digestPrepFor(new Date("2026-11-05T18:00:00Z"), LA) === null);
+ok("the job prepares on Friday and sends only in Saturday's window",
+  /const editionDate = digestPrepFor\(now, market\.timeZone\);/.test(body) &&
+    /const sending = digestDue\(now, market\.timeZone\) !== null;/.test(body) &&
+    body.indexOf("if (!sending) continue;") > body.indexOf("digestEdition(") &&
+    body.indexOf("if (!sending) continue;") < body.indexOf("sendSms("));
+ok("an edition with items of its own is sent only once approved",
+  /if \(!edition\.approved && edition\.items\.length > 0\) continue;/.test(body) && body.indexOf("edition.approved") < body.indexOf("claimDigestSend("));
+ok("an empty result is not claimed while an edition still waits for approval (a claim is final)",
+  body.indexOf("if (included === 0 && waiting > 0) continue;") > 0 &&
+    body.indexOf("if (included === 0 && waiting > 0) continue;") < body.indexOf("claimDigestSend("));
+ok("other groups' items come only from approved editions", /if \(edition\?\.approved\) out\.push/.test(repo));
+ok("an item an admin took out is never read for sending", /removed_at is null/.test(repo.slice(repo.indexOf("async function readEdition"), repo.indexOf("export async function digestEdition"))));
+ok("a new edition is inserted as needing approval", /approval \? sql`, approval_required` : sql``/.test(repo) && /approval \? sql`, true` : sql``/.test(repo));
+ok("approved is 'not required, or approved_at set'", /\(not approval_required or approved_at is not null\)/.test(repo));
+ok("before drizzle/0069 nothing changes: the columns are read only once they exist",
+  /column_name = 'approval_required'/.test(repo) && /\$\{approval \? sql`\(not approval_required or approved_at is not null\)` : sql`true`\}/.test(repo));
+const mig = read("drizzle/0069_digest_approval.sql");
+ok("the migration is additive: no existing row rewritten, old editions need no approval",
+  /approval_required boolean NOT NULL DEFAULT false/.test(mig) && !/\bUPDATE\b|\bDELETE\b|\bDROP\b/i.test(mig.replace(/^--.*$/gm, "")));
+const journal = JSON.parse(read("drizzle/meta/_journal.json")) as { entries: Array<{ tag: string; when: number }> };
+const last = journal.entries[journal.entries.length - 1];
+ok("its journal entry is the newest", last.tag === "0069_digest_approval" && journal.entries.every((e) => e === last || e.when < last.when));
+const write = read("lib/server/repo/admin-write.ts");
+const approve = write.slice(write.indexOf('case "digest.approve"'), write.indexOf('case "digest.unapprove"'));
+ok("approve: only a prepared, unapproved, found edition; the actor is recorded",
+  /where id = \$\{target\}::uuid and approval_required and approved_at is null and status = 'ready'/.test(approve) && /approved_by = \$\{ctx\.actor\}/.test(approve));
+const unapprove = write.slice(write.indexOf('case "digest.unapprove"'), write.indexOf('case "digest_item.remove"'));
+ok("an approval is not taken back once anything from it went out, its own families or another group's",
+  /s\.edition_id = \$\{target\}::uuid\s+or s\.item_ids && /.test(unapprove) && /reason: "digest_already_sent"/.test(unapprove));
+const items = write.slice(write.indexOf('case "digest_item.remove"'), write.indexOf("default: {", write.indexOf('case "digest_item.remove"')));
+ok("an item is changed only while its edition waits; never once approved", /if \(edition\[0\]\.approved_at\) return \{ applied: false, reason: "digest_approved" \};/.test(items));
+ok("taken out is kept on the record, not deleted", /set removed_at = /.test(items) && !/delete from digest_items/.test(items));
+const names = read("lib/admin/action-names.ts");
+ok("the four actions are named, so each press is audited", ["digest.approve", "digest.unapprove", "digest_item.remove", "digest_item.restore"].every((a) => names.includes(`"${a}"`)));
+
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

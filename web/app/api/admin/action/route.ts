@@ -716,6 +716,11 @@ export async function POST(request: Request) {
       caregiver_declined:
         "Nothing changed. Her own sign-up said she does not want to appear in answers, or to be introduced, and that is hers to change — not ours.",
       reset_not_confirmed: "Nothing was reset. Type RESET to confirm.",
+      /* 19 Nov — digest approval. */
+      digest_already_sent:
+        "Families have already been sent this group's digest, or items from it, so the approval stands. What went out cannot be taken back.",
+      digest_approved:
+        "This digest is approved, so its items are fixed. Take back the approval first — only while nothing from it has been sent.",
       share_name_taken:
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:

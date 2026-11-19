@@ -121,6 +121,10 @@ export type ActionOutcome =
         | "share_name_taken"
         /* 3 Nov — a reset sent without its typed confirmation. */
         | "reset_not_confirmed"
+        /* 19 Nov — a digest approval taken back after something from it went out,
+           and an item changed on a digest already approved. */
+        | "digest_already_sent"
+        | "digest_approved"
         ;
     };
 
@@ -2220,6 +2224,76 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       `)) as unknown as Array<Record<string, unknown>>;
       if (moved.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "introduction", resource_id: target };
+    }
+
+    /* ── Weekly digests (19 Nov) ─────────────────────────────────────────── */
+
+    /**
+     * A group's edition may be sent. Only one the job prepared for approval and
+     * nobody has approved: a second press, or an edition from before approval
+     * existed, changes nothing. Sent from Saturday's window on (`runWeeklyDigest`).
+     */
+    case "digest.approve": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const moved = (await tx.execute(sql`
+        update digest_editions set approved_at = now(), approved_by = ${ctx.actor}
+         where id = ${target}::uuid and approval_required and approved_at is null and status = 'ready'
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "digest_edition", resource_id: target };
+    }
+
+    /**
+     * An approval taken back — only while nothing from it has gone out: not to
+     * its own families, and not to another group's family as an item for their
+     * other child (`poolForFamily`). What went out cannot be recalled, so the
+     * approval that sent it stands.
+     */
+    case "digest.unapprove": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const sent = (await tx.execute(sql`
+        select 1 from digest_sends s
+         where s.edition_id = ${target}::uuid
+            or s.item_ids && coalesce((select array_agg(i.id) from digest_items i where i.edition_id = ${target}::uuid), '{}'::uuid[])
+         limit 1
+      `)) as unknown as unknown[];
+      if (sent.length > 0) return { applied: false, reason: "digest_already_sent" };
+      const moved = (await tx.execute(sql`
+        update digest_editions set approved_at = null, approved_by = null
+         where id = ${target}::uuid and approval_required and approved_at is not null
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "digest_edition", resource_id: target };
+    }
+
+    /**
+     * One item out of, or back into, an edition waiting for approval. Kept on
+     * the record either way (`removed_at`); never once approved — what an admin
+     * approved is what goes.
+     */
+    case "digest_item.remove":
+    case "digest_item.restore": {
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const edition = (await tx.execute(sql`
+        select e.id::text as id, e.approval_required, e.approved_at
+          from digest_items i join digest_editions e on e.id = i.edition_id
+         where i.id = ${target}::uuid
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (!edition[0] || edition[0].approval_required !== true) return { applied: false, reason: "not_found" };
+      if (edition[0].approved_at) return { applied: false, reason: "digest_approved" };
+      const removing = ctx.action === "digest_item.remove";
+      const moved = (await tx.execute(sql`
+        update digest_items set removed_at = ${removing ? sql`now()` : sql`null`}
+         where id = ${target}::uuid and ${removing ? sql`removed_at is null` : sql`removed_at is not null`}
+        returning id
+      `)) as unknown as Array<Record<string, unknown>>;
+      if (moved.length === 0) return { applied: false, reason: "not_found" };
+      return { applied: true, resource: "digest_item", resource_id: target };
     }
 
     default: {

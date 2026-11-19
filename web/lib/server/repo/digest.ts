@@ -17,12 +17,36 @@ export interface DigestEdition {
   id: string;
   status: "ready" | "empty" | "failed";
   attempts: number;
+  /** Items an admin took out are not here (19 Nov): only what may be sent. */
   items: DigestItem[];
+  /** May be sent: approved by a person, or from before approval existed (drizzle/0069). */
+  approved: boolean;
+}
+
+/**
+ * Whether drizzle/0069 (the approval columns) is applied. Until it is, the
+ * digest runs exactly as before — prepared and sent on Saturday, no approval —
+ * so a deploy that lands before the migration stops nothing (DEPLOY.md §3b).
+ * Only a yes is remembered: a no is asked again, so the migration takes effect
+ * without a restart.
+ */
+let approvalApplied = false;
+export async function hasDigestApproval(db: Db): Promise<boolean> {
+  if (approvalApplied) return true;
+  const rows = (await db.execute(sql`
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'digest_editions' and column_name = 'approval_required'
+  `)) as unknown as unknown[];
+  approvalApplied = rows.length > 0;
+  return approvalApplied;
 }
 
 async function readEdition(db: Db, marketId: string, editionDate: string, isTest: boolean, cohortKey: string): Promise<DigestEdition | null> {
+  const approval = await hasDigestApproval(db);
   const rows = (await db.execute(sql`
-    select id, status, attempts from digest_editions
+    select id, status, attempts,
+           ${approval ? sql`(not approval_required or approved_at is not null)` : sql`true`} as approved
+      from digest_editions
      where market_id = ${marketId} and edition_date = ${editionDate}::date and is_test = ${isTest}
        and cohort_key = ${cohortKey} limit 1
   `)) as unknown as Array<Record<string, unknown>>;
@@ -31,13 +55,14 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
   const items = (await db.execute(sql`
     select id::text as id, kind, title, when_text, starts_on::text as starts_on, ends_on::text as ends_on, place,
            age_min, age_max, summary, url
-      from digest_items where edition_id = ${id}::uuid order by position
+      from digest_items where edition_id = ${id}::uuid ${approval ? sql`and removed_at is null` : sql``} order by position
   `)) as unknown as DigestItem[];
   return {
     id,
     status: rows[0].status as DigestEdition["status"],
     attempts: Number(rows[0].attempts ?? 1),
     items,
+    approved: rows[0].approved === true,
   };
 }
 
@@ -94,12 +119,16 @@ export async function digestEdition(
     ...Object.fromEntries(Object.entries(run.dropped).map(([k, v]) => [`dropped_${k}`, v])),
   });
 
-  const stored = await withDb(async (db: Db) =>
-    db.transaction(async (tx) => {
+  const stored = await withDb(async (db: Db) => {
+    /* Every new edition waits for a person (19 Nov), once drizzle/0069 is applied. */
+    const approval = await hasDigestApproval(db);
+    return db.transaction(async (tx) => {
       const rows = (await tx.execute(sql`
-        insert into digest_editions (market_id, edition_date, status, is_test, cohort_key, cohort_label, cohort_profile)
+        insert into digest_editions (market_id, edition_date, status, is_test, cohort_key, cohort_label, cohort_profile
+                                     ${approval ? sql`, approval_required` : sql``})
         values (${marketId}, ${editionDate}::date, ${status}, ${isTest},
-                ${cohort.key}, ${cohort.label}, ${JSON.stringify(cohort)}::jsonb)
+                ${cohort.key}, ${cohort.label}, ${JSON.stringify(cohort)}::jsonb
+                ${approval ? sql`, true` : sql``})
         on conflict (market_id, edition_date, is_test, cohort_key) do update
            set status = excluded.status, attempts = digest_editions.attempts + 1
          where digest_editions.status = 'failed'
@@ -119,8 +148,8 @@ export async function digestEdition(
         }
       }
       return readEdition(tx as unknown as Db, marketId, editionDate, isTest, cohort.key);
-    }),
-  );
+    });
+  });
   if (!stored.persisted || !stored.data) return null;
   const settled = stored.data.status !== "failed" || stored.data.attempts >= DIGEST_AGENT_ATTEMPTS;
   return settled ? { ...stored.data, items: stored.data.status === "ready" ? stored.data.items : [] } : null;
@@ -140,11 +169,32 @@ export async function readyEditionsOfDay(marketId: MarketId, editionDate: string
     const out: Array<{ key: string; items: DigestItem[] }> = [];
     for (const r of rows) {
       const edition = await readEdition(db, marketId, editionDate, isTest, String(r.cohort_key));
-      if (edition) out.push({ key: String(r.cohort_key), items: edition.items });
+      /* Only what a person approved is anyone's to be sent (19 Nov). */
+      if (edition?.approved) out.push({ key: String(r.cohort_key), items: edition.items });
     }
     return out;
   });
   return result.persisted && result.data ? result.data : [];
+}
+
+/**
+ * How many of this Saturday's editions with items still wait for approval
+ * (19 Nov). While any do, a family whose digest would come out empty is not
+ * claimed as "nothing suited": an edition approved an hour later may hold
+ * something for their children (`poolForFamily`), and a claim is final.
+ */
+export async function unapprovedEditionsOfDay(marketId: MarketId, editionDate: string, isTest = false): Promise<number> {
+  const result = await withDb(async (db: Db) => {
+    if (!(await hasDigestApproval(db))) return 0;
+    const rows = (await db.execute(sql`
+      select count(*)::int as n from digest_editions e
+       where e.market_id = ${marketId} and e.edition_date = ${editionDate}::date and e.is_test = ${isTest}
+         and e.status = 'ready' and e.approval_required and e.approved_at is null
+         and exists (select 1 from digest_items i where i.edition_id = e.id and i.removed_at is null)
+    `)) as unknown as Array<Record<string, unknown>>;
+    return Number(rows[0]?.n ?? 0);
+  });
+  return result.persisted ? Number(result.data ?? 0) : 0;
 }
 
 /**

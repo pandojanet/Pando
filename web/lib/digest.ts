@@ -86,6 +86,27 @@ export function localParts(now: Date, timeZone: string): { date: string; weekday
   return { date: `${parts.year}-${parts.month}-${parts.day}`, weekday, hour: Number(parts.hour) };
 }
 
+/**
+ * From this hour on the Friday before, the job prepares each group's edition
+ * for an admin to approve (19 Nov). The agent's three tries an edition then
+ * have the whole day, and the admin the evening and Saturday morning.
+ */
+export const DIGEST_PREP_FROM_HOUR = 8;
+
+/**
+ * The Saturday whose editions the job should be preparing, or null (19 Nov):
+ * the Friday before from `DIGEST_PREP_FROM_HOUR`, and the Saturday's own send
+ * window — when a family that fits no group drawn on Friday still gets one,
+ * which then waits for approval like the rest.
+ */
+export function digestPrepFor(now: Date, timeZone: string): string | null {
+  const due = digestDue(now, timeZone);
+  if (due) return due;
+  const local = localParts(now, timeZone);
+  if (local.weekday !== (DIGEST_WEEKDAY + 6) % 7 || local.hour < DIGEST_PREP_FROM_HOUR) return null;
+  return addDays(local.date, 1);
+}
+
 /** The Saturday a digest is due for, on the market's clock — or null when it is not the time. */
 export function digestDue(now: Date, timeZone: string): string | null {
   const local = localParts(now, timeZone);

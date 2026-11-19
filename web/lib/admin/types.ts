@@ -1262,7 +1262,12 @@ export type AdminAction =
   | { action: "intro.reject"; id: string; reason: string }
   | { action: "intro.contacted"; id: string; parent_id: string; note?: string }
   | { action: "intro.connected"; id: string; note?: string }
-  | { action: "intro.declined"; id: string; note?: string };
+  | { action: "intro.declined"; id: string; note?: string }
+  /* Weekly digests (19 Nov): a group's edition approved before it is sent; an item taken out first. */
+  | { action: "digest.approve"; id: string }
+  | { action: "digest.unapprove"; id: string }
+  | { action: "digest_item.remove"; id: string }
+  | { action: "digest_item.restore"; id: string };
 
 /* AdminAction names exactly lib/admin/action-names.ts — a name in one and not the other fails here. */
 type SameNames<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
@@ -1684,6 +1689,8 @@ export interface DigestWeekIndex {
   families: number;
   /** Groups whose search failed. */
   failed: number;
+  /** Groups with something found that wait for an admin's approval (19 Nov). */
+  awaiting: number;
 }
 
 export interface DigestWeek {
@@ -1700,6 +1707,13 @@ export interface DigestGroup {
   /** The market-wide group: families too few or too unlike anyone for a group of their own. */
   general: boolean;
   status: "ready" | "empty" | "failed";
+  /**
+   * 19 Nov: prepared on Friday, sent on Saturday only once approved. `not_required`
+   * is an edition from before approval existed (drizzle/0069).
+   */
+  approval: "not_required" | "awaiting" | "approved";
+  approved_at: string | null;
+  approved_by: string | null;
   /** Agent searches this Saturday for this group (at most three). */
   attempts: number;
   created_at: string;
@@ -1725,6 +1739,8 @@ export interface DigestItemRow {
   age_max: number | null;
   summary: string;
   url: string;
+  /** Taken out by an admin before approval: kept on the record, never sent (19 Nov). */
+  removed: boolean;
   /** Families whose digest carried it (this group's and other groups' families). */
   sent_to: number;
   /** Of those, this group's own families — the rest got it for a child another group's search was for. */
