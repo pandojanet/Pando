@@ -25,12 +25,13 @@ import { editionVariable } from "@/lib/sms-rich";
 import { expireMemory } from "@/lib/server/repo/conversation-memory";
 import { feedbackAskCard, feedbackAskSms, reminderSms } from "@/lib/digest-followup";
 import { claimFollowup, dueFeedback, dueReminders, releaseFollowup } from "@/lib/server/repo/digest-followup";
-import { ageOn, composeDigest, digestDue, digestPrepFor, pickForPerson, poolForFamily } from "@/lib/digest";
+import { ageOn, composeDigest, digestDue, digestPrepFor, nextDigestDate, pickForPerson, poolForFamily } from "@/lib/digest";
 import { cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
 import {
   claimDigestSend,
   digestAudience,
   digestEdition,
+  digestFamilyByPhone,
   drawnCohorts,
   readyEditionsOfDay,
   unapprovedEditionsOfDay,
@@ -383,6 +384,99 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
     failed,
     ...(awaiting > 0 ? { note: `${awaiting} ${awaiting === 1 ? "group waits" : "groups wait"} for approval.` } : {}),
   };
+}
+
+/**
+ * The admin's one-number test (19 Nov). The developer, with every scheduled job
+ * paused for testing: *"підготувати виклик джоби та надсилання для певного
+ * номера"*; and no digest consent asked for it.
+ *
+ * Two steps, the same approval between them as a real Saturday:
+ *  - `prepareDigestFor` — the family's own group (`cohortProfile` of that one
+ *    family, or a test group already drawn for that Saturday that fits it) and
+ *    its edition, found by the agent. Stored as a **test** edition, so a real
+ *    Saturday never sends from it; it is approved on /admin/digests → Test.
+ *  - `sendDigestTo` — composed and sent to that number only, from that group's
+ *    edition once approved (with what other approved test editions hold for its
+ *    children). A second send replaces the first's claim, so the test can be
+ *    run again; STOP and quiet hours are still `sendSms`'s.
+ *
+ * The Saturday is today's or the next (`nextDigestDate`); the hourly window
+ * does not apply. Counts and enums only in the log (invariant 7).
+ */
+export type DigestOneOutcome =
+  | { ok: true; edition_date: string; edition_id: string; status: "ready" | "empty" | "failed"; items: number; approved: boolean; sent?: number }
+  | { ok: false; reason: "no_person" | "not_prepared" | "preparing" | "not_approved" | "nothing_suits" | "not_sent"; edition_date?: string; detail?: string };
+
+async function oneFamily(phone: string, now: Date) {
+  /* `sent` is not read here (a test send replaces its own claim), so any date finds the person. */
+  const family = await digestFamilyByPhone(phone, nextDigestDate(now, Object.values(MARKETS)[0].timeZone));
+  if (!family) return null;
+  /* The Saturday on the person's own market's clock. */
+  const market = MARKETS[family.market_id as keyof typeof MARKETS] ?? Object.values(MARKETS)[0];
+  const editionDate = nextDigestDate(now, market.timeZone);
+  const facts: FamilyFacts = {
+    id: family.person_id,
+    ages: family.children.map((c) => ageOn(c.year, c.month, editionDate)),
+    neighborhood: family.neighborhood,
+    area: family.area,
+    affinities: family.affinities,
+    relevance: family.relevance,
+  };
+  const drawn = await drawnCohorts(market.id, editionDate, true);
+  const { joined } = joinDrawn([facts], drawn);
+  const key = [...joined.keys()][0];
+  const existing = key ? drawn.find((d) => d.key === key) ?? null : null;
+  return { family, facts, market, editionDate, existing };
+}
+
+export async function prepareDigestFor(phone: string, now = new Date()): Promise<DigestOneOutcome> {
+  const one = await oneFamily(phone, now);
+  if (!one) return { ok: false, reason: "no_person" };
+  /* Grouped exactly as the job groups a family that is alone (`groupFamilies`: its own group,
+     market-wide only when nothing is known about it), so the test searches what a real
+     Saturday would. The agent can still come back empty or time out — walked in the lab,
+     Thanksgiving weekend's search for one San Marino family did both, and the next
+     Saturday's found three; Prepare again retries, up to DIGEST_AGENT_ATTEMPTS. */
+  const drawnAlone = groupFamilies([one.facts])[0];
+  const profile = one.existing ?? cohortProfile([one.facts], drawnAlone?.general ?? true);
+  const edition = await digestEdition(one.market.id, one.editionDate, profile, true);
+  console.info("[digest] one-number prepare", { found: edition !== null, items: edition?.items.length ?? 0 });
+  if (!edition) return { ok: false, reason: "preparing", edition_date: one.editionDate };
+  return { ok: true, edition_date: one.editionDate, edition_id: edition.id, status: edition.status, items: edition.items.length, approved: edition.approved };
+}
+
+export async function sendDigestTo(phone: string, now = new Date()): Promise<DigestOneOutcome> {
+  const one = await oneFamily(phone, now);
+  if (!one) return { ok: false, reason: "no_person" };
+  /* Never an agent run from Send: only a group Prepare drew. */
+  if (!one.existing) return { ok: false, reason: "not_prepared", edition_date: one.editionDate };
+  const edition = await digestEdition(one.market.id, one.editionDate, one.existing, true);
+  if (!edition) return { ok: false, reason: "preparing", edition_date: one.editionDate };
+  if (!edition.approved && edition.items.length > 0) return { ok: false, reason: "not_approved", edition_date: one.editionDate };
+  const others = (await readyEditionsOfDay(one.market.id, one.editionDate, true)).filter((e) => e.key !== one.existing!.key).map((e) => e.items);
+  const { body, card, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, one.facts.ages), one.facts.ages));
+  if (included === 0) return { ok: false, reason: "nothing_suits", edition_date: one.editionDate };
+  const ids = sentItems.map((x) => x.id);
+  const sentIds = ids.every((id): id is string => typeof id === "string") ? ids : [];
+  /* Again and again while testing: the last send is the one its numbers mean. */
+  await releaseDigestSend(edition.id, one.family.person_id);
+  if (!(await claimDigestSend(edition.id, one.family.person_id, included, sentIds))) return { ok: false, reason: "not_sent", edition_date: one.editionDate };
+  const result = await sendSms({
+    to: one.family.phone,
+    body,
+    category: "digest",
+    personId: one.family.person_id,
+    template: "weekly_digest",
+    templateVersion: SMS_TEMPLATE_VERSION,
+    rich: { kind: "digest_pick", card, edition: editionVariable(one.editionDate) },
+  });
+  console.info("[digest] one-number send", { sent: result.sent, items: included, reason: result.sent ? null : result.reason });
+  if (!result.sent) {
+    await releaseDigestSend(edition.id, one.family.person_id);
+    return { ok: false, reason: "not_sent", edition_date: one.editionDate, detail: result.reason };
+  }
+  return { ok: true, edition_date: one.editionDate, edition_id: edition.id, status: edition.status, items: edition.items.length, approved: true, sent: included };
 }
 
 /**

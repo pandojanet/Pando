@@ -258,9 +258,45 @@ export interface DigestRecipient {
  * real one never to them.
  */
 export async function digestAudience(marketId: MarketId, editionDate: string, isTest = false): Promise<DigestRecipient[]> {
+  return familyRows(editionDate, isTest, sql`
+         p.market_id = ${marketId}
+         and p.is_test = ${isTest}
+         and p.phone is not null
+         and (select k.status from consents k
+               where k.person_id = p.id and k.scope = 'digest'
+               order by k.captured_at desc limit 1) = 'opted_in'`);
+}
+
+/**
+ * One family by its phone, for the admin's one-number test (19 Nov): **no
+ * digest consent asked** (the developer's choice for testing) and test or not;
+ * the market is the person's own. `sent` reads the test editions of that
+ * Saturday, which are what the test sends from. STOP and quiet hours are still
+ * the send layer's.
+ */
+export async function digestFamilyByPhone(phone: string, editionDate: string): Promise<(DigestRecipient & { market_id: string }) | null> {
+  const found = await familyRows(editionDate, true, sql`p.phone = ${phone}`, true);
+  return (found[0] as (DigestRecipient & { market_id: string }) | undefined) ?? null;
+}
+
+/**
+ * The audit row for the one-number test (19 Nov): who pressed it, which person,
+ * the Saturday and what came of it — never the phone (invariant 7).
+ */
+export async function auditDigestOne(actor: string, action: "digest.prepare_for" | "digest.send_to", personId: string | null, after: Record<string, unknown>): Promise<void> {
+  await withDb(async (db: Db) => {
+    await db.execute(sql`
+      insert into audit_log (actor, action, resource, resource_id, after)
+      values (${actor}, ${action}, 'person', ${personId}, ${JSON.stringify(after)}::jsonb)
+    `);
+    return true;
+  });
+}
+
+async function familyRows(editionDate: string, isTest: boolean, where: ReturnType<typeof sql>, withMarket = false): Promise<DigestRecipient[]> {
   const result = await withDb(async (db: Db) =>
     (await db.execute(sql`
-      select p.id as person_id, p.phone, p.neighborhood,
+      select p.id as person_id, p.phone, p.neighborhood, p.market_id,
              (select o.area from market_options o
                where o.market_id = p.market_id and o.category = 'neighborhoods'
                  and o.option_value = p.neighborhood limit 1) as area,
@@ -277,17 +313,13 @@ export async function digestAudience(marketId: MarketId, editionDate: string, is
                          from children c where c.person_id = p.id
                           and coalesce(c.birth_year, c.due_year) is not null), '[]'::json) as children
         from people p
-       where p.market_id = ${marketId}
-         and p.is_test = ${isTest}
-         and p.phone is not null
-         and (select k.status from consents k
-               where k.person_id = p.id and k.scope = 'digest'
-               order by k.captured_at desc limit 1) = 'opted_in'
+       where ${where}
        order by p.id
     `)) as unknown as Array<Record<string, unknown>>,
   );
   if (!result.persisted || !result.data) return [];
   return result.data.map((r) => ({
+    ...(withMarket ? { market_id: String(r.market_id) } : {}),
     person_id: String(r.person_id),
     phone: String(r.phone),
     children: ((r.children as Array<{ year: number; month: number | null }> | null) ?? []).map((c) => ({

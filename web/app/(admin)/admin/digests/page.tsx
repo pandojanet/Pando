@@ -14,6 +14,7 @@ import {
   NotConfigured,
   PageHead,
   ResultNote,
+  inputClass,
   Stat,
   StatStrip,
   TextLink,
@@ -212,6 +213,19 @@ export default function DigestsPage() {
       {error && <ErrorNote>{error}</ErrorNote>}
       {message && <ResultNote>{message}</ResultNote>}
 
+      {tableConfigured && (
+        <OneNumber
+          onDone={async (note, sent) => {
+            setMessage(note);
+            if (sent) {
+              setWhich("test");
+              setDate(sent);
+            }
+            await reload();
+          }}
+        />
+      )}
+
       {tableConfigured && index.length > 0 && (
         <WeekBar
           weeks={entries}
@@ -252,6 +266,70 @@ export default function DigestsPage() {
         )}
       </div>
     </>
+  );
+}
+
+/* ── One number (19 Nov) ──────────────────────────────────────────────────── */
+
+/**
+ * The digest for one number while the scheduled jobs are paused: Prepare (the
+ * agent's search for that family's group, minutes, after the response), then
+ * Approve the group under Test, then Send — to that number only.
+ * `/api/admin/digest-one`; every press audited.
+ */
+function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => Promise<void> }) {
+  const [phone, setPhone] = useState("");
+  const [working, setWorking] = useState<"prepare" | "send" | null>(null);
+  const run = async (step: "prepare" | "send") => {
+    setWorking(step);
+    try {
+      const response = await fetch("/api/admin/digest-one", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ step, phone }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { error?: string; sent?: number; edition_date?: string };
+      if (!response.ok) {
+        await onDone(data.error ?? "That didn't go through", null);
+      } else if (step === "prepare") {
+        /* copy: state */
+        await onDone("Preparing — the group shows under Test when the search ends, in a few minutes.", null);
+      } else {
+        /* copy: state */
+        await onDone(`Sent: ${plural(data.sent ?? 0, "item")}.`, data.edition_date ?? null);
+      }
+    } finally {
+      setWorking(null);
+    }
+  };
+  const ready = phone.replace(/\D/g, "").length >= 10;
+  return (
+    <section aria-labelledby="digest-one" className="mb-5 rounded-xl border border-bark bg-card px-4 py-3 shadow-card">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="min-w-[14rem] flex-1">
+          <span id="digest-one" className="mb-1 block text-[13px] font-medium text-ink">
+            Digest for one number
+          </span>
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="off"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+1 626 555 0123"
+            className={inputClass}
+          />
+        </label>
+        <div className="flex gap-2">
+          <Button disabled={!ready || working !== null} onClick={() => void run("prepare")}>
+            {working === "prepare" ? "Preparing…" : "Prepare"}
+          </Button>
+          <Button tone="primary" disabled={!ready || working !== null} onClick={() => void run("send")}>
+            {working === "send" ? "Sending…" : "Send"}
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 

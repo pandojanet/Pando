@@ -107,6 +107,16 @@ export function digestPrepFor(now: Date, timeZone: string): string | null {
   return addDays(local.date, 1);
 }
 
+/**
+ * The Saturday a digest sent now is for: today when it is Saturday on the
+ * market's clock, else the next one (19 Nov — the admin's one-number test,
+ * which ignores the hourly window).
+ */
+export function nextDigestDate(now: Date, timeZone: string): string {
+  const local = localParts(now, timeZone);
+  return addDays(local.date, (DIGEST_WEEKDAY - local.weekday + 7) % 7);
+}
+
 /** The Saturday a digest is due for, on the market's clock — or null when it is not the time. */
 export function digestDue(now: Date, timeZone: string): string | null {
   const local = localParts(now, timeZone);

@@ -574,6 +574,31 @@ ok("an approval is not taken back once anything from it went out, its own famili
 const items = write.slice(write.indexOf('case "digest_item.remove"'), write.indexOf("default: {", write.indexOf('case "digest_item.remove"')));
 ok("an item is changed only while its edition waits; never once approved", /if \(edition\[0\]\.approved_at\) return \{ applied: false, reason: "digest_approved" \};/.test(items));
 ok("taken out is kept on the record, not deleted", /set removed_at = /.test(items) && !/delete from digest_items/.test(items));
+console.log("\n=== one number, while the jobs are paused (19 Nov) ===");
+ok("the Saturday is today's on a Saturday", d.nextDigestDate(new Date("2026-11-21T18:00:00Z"), LA) === "2026-11-21");
+ok("and the next one otherwise", d.nextDigestDate(new Date("2026-11-19T18:00:00Z"), LA) === "2026-11-21" && d.nextDigestDate(new Date("2026-11-22T18:00:00Z"), LA) === "2026-11-28");
+ok("a Saturday morning in UTC that is Friday in Los Angeles is Saturday's", d.nextDigestDate(new Date("2026-11-21T06:00:00Z"), LA) === "2026-11-21");
+const one = jobs.slice(jobs.indexOf("export async function prepareDigestFor"), jobs.indexOf("/**\n * 13.4") > 0 ? jobs.indexOf("/**\n * 13.4") : jobs.indexOf("13.4 — the retry sweep"));
+ok("found by phone with no digest consent asked, the market the person's own", /export async function digestFamilyByPhone/.test(repo) &&
+  !/scope = 'digest'/.test(repo.slice(repo.indexOf("export async function digestFamilyByPhone"), repo.indexOf("async function familyRows"))));
+ok("the real audience still needs the yes", /p\.is_test = \$\{isTest\}[\s\S]{0,200}k\.scope = 'digest'[\s\S]{0,80}= 'opted_in'/.test(repo.slice(repo.indexOf("export async function digestAudience"))));
+ok("stored as test editions, so a real Saturday never sends from them",
+  /digestEdition\(one\.market\.id, one\.editionDate, profile, true\)/.test(one) && /digestEdition\(one\.market\.id, one\.editionDate, one\.existing, true\)/.test(one));
+ok("grouped as the job groups a family alone", /groupFamilies\(\[one\.facts\]\)/.test(one));
+ok("Send never starts a search: only a group Prepare drew", /if \(!one\.existing\) return \{ ok: false, reason: "not_prepared"/.test(one) &&
+  one.indexOf('reason: "not_prepared"') < one.lastIndexOf("digestEdition("));
+ok("and only once approved", /if \(!edition\.approved && edition\.items\.length > 0\) return \{ ok: false, reason: "not_approved"/.test(one));
+ok("to that number only, through the send layer (STOP, quiet hours)", /to: one\.family\.phone,/.test(one) && /sendSms\(\{/.test(one) && !/for \(const /.test(one.slice(one.indexOf("export async function sendDigestTo"))));
+ok("a test can be sent again: the earlier claim is replaced, and a refused send gives it back",
+  one.indexOf("await releaseDigestSend(edition.id, one.family.person_id);") < one.indexOf("claimDigestSend(") &&
+    /if \(!result\.sent\) \{\s+await releaseDigestSend/.test(one));
+const route = read("app/api/admin/digest-one/route.ts");
+ok("the route: an admin session, this site only, JSON", /refuseForeignAdminWrite\(request, "digest-one"\)/.test(route) && /if \(!session\) return NextResponse\.json\(\{ error: "Not signed in" \}, \{ status: 401 \}\)/.test(route));
+ok("the search runs after the response", /after\(async \(\) => \{[\s\S]{0,80}prepareDigestFor\(phone\)/.test(route) && /status: 202/.test(route));
+ok("every press is an audit row with the person, never the phone (invariant 7)",
+  /auditDigestOne\(session\.user, "digest\.prepare_for", family\.person_id/.test(route) && /auditDigestOne\(session\.user, "digest\.send_to", personId/.test(route) &&
+    !/phone/.test(repo.slice(repo.indexOf("export async function auditDigestOne"), repo.indexOf("async function familyRows")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\*.*$/gm, "")));
+ok("the log lines carry counts and enums only", !/console\.\w+\([^)]*phone/.test(one) && !/console\.\w+\([^)]*phone/.test(route));
 const names = read("lib/admin/action-names.ts");
 ok("the four actions are named, so each press is audited", ["digest.approve", "digest.unapprove", "digest_item.remove", "digest_item.restore"].every((a) => names.includes(`"${a}"`)));
 

@@ -504,6 +504,8 @@ export const AUDIT_ACTION: Record<string, string> = {
   "digest.unapprove": "Took back the approval of a group's weekly digest",
   "digest_item.remove": "Took an item out of a weekly digest",
   "digest_item.restore": "Put an item back into a weekly digest",
+  "digest.prepare_for": "Prepared a weekly digest for one number (test)",
+  "digest.send_to": "Sent a weekly digest to one number (test)",
   /* Written outside admin-write (26 Oct): repo/admin-users.ts and
      repo/parent-delete.ts. The second's actor is 'parent' — the parent did it. */
   "admin.password": "Changed their own admin password",
