@@ -1012,11 +1012,14 @@ export function poolForFamily(own: readonly DigestItem[], others: readonly (read
 
 /**
  * What one parent gets: what suits their household, events first by date, at
- * most `DIGEST_MAX_ITEMS`, and **one item per place** (the 21 Nov run: the baby
- * groups' four were two or three at Kidspace — its winter season, a mobile
- * library visit, "open Monday for Thanksgiving break"). The next item at
- * another venue takes the spot; with nothing else, a digest is shorter rather
- * than one venue's. A place that is only a town is not a venue (`atSameVenue`).
+ * most `DIGEST_MAX_ITEMS`.
+ *
+ * ⚠ **Different events at one venue all go, since 19 Nov.** From 11 Nov this
+ * kept one item per place (the 21 Nov test run: the baby groups' four were two
+ * or three at Kidspace), and a test digest then left "Free First Friday at
+ * Kidspace" out beside "Kidspace Winter Frolic" — the developer: *"тут Kidspace
+ * не потрібно відсіювати, бо це різні Kidspace"*. One event under two spellings
+ * is still one item (`sameThing`, `poolForFamily`); that is not this rule.
  */
 export function pickForPerson(items: readonly DigestItem[], childAges: readonly number[]): DigestItem[] {
   const fits = items.filter((item) => ageFits(item, childAges));
@@ -1030,7 +1033,6 @@ export function pickForPerson(items: readonly DigestItem[], childAges: readonly 
   const picked: DigestItem[] = [];
   for (const item of sorted) {
     if (picked.length >= DIGEST_MAX_ITEMS) break;
-    if (picked.some((p) => atSameVenue(p, item))) continue;
     picked.push(item);
   }
   return picked;

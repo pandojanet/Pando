@@ -164,8 +164,13 @@ ok("a due year ahead is under 0", d.ageOn(2027, 3, "2026-11-07") < 0);
     at("Children's Storytime", "LA County Arboretum, Arcadia", "2026-11-26"),
     at("Holidayfest", "South Lake Avenue, Pasadena", "2026-12-05"),
   ], [4]);
-  ok("one item per venue: the next venue takes the spot (21 Nov run)",
-    four.map((i) => i.title).join("|") === "Winter Frolic|Baby Rhyme Time|Children's Storytime|Holidayfest");
+  /* 19 Nov: different events at one venue all go (the developer: "це різні Kidspace"); by date. */
+  ok("different events at one venue are not left out: events by date",
+    four.map((i) => i.title).join("|") === "Winter Frolic|Mobile Library at Kidspace|Baby Rhyme Time|Toddler Tuesday");
+  ok("one event written twice at one venue is still one item", d.poolForFamily([
+    item({ title: "Video Games Club for teens", place: "Pasadena Public Library, Hastings Branch", starts_on: "2026-11-22", kind: "event", url: "https://a.example/1" }),
+    item({ title: "Video Games Club for teens", place: "Pasadena Public Library, Hastings Branch", starts_on: "2026-11-29", kind: "event", url: "https://a.example/2" }),
+  ], [], [14]).length === 1);
   ok("not one venue: two branches, two rooms' buildings, a chain in two towns, a bare or extended name, a placeholder (review, 11 Nov)",
     !d.atSameVenue({ place: "Pasadena Public Library, Hastings Branch" }, { place: "Pasadena Public Library, Allendale Branch" }) &&
       !d.atSameVenue({ place: "Community Room, Hastings Library" }, { place: "Community Room, Allendale Library" }) &&
