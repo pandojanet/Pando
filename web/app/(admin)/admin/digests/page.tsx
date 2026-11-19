@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Bell, ChevronLeft, ChevronRight, GraduationCap, HandHeart, Tent, Ticket, TriangleAlert, type LucideIcon } from "lucide-react";
-import { Calendar, SegmentedFilter, Select } from "@/components/admin/kit";
+import { Calendar, Dialog, SegmentedFilter, Select } from "@/components/admin/kit";
 import {
   Badge,
   Button,
   Card,
+  Disclosure,
   Empty,
   ErrorNote,
   Failed,
@@ -153,7 +154,8 @@ export default function DigestsPage() {
   /* A Saturday older than the latest ones the page holds in full is read on its own (the calendar, 12 Nov). */
   const [asked, setAsked] = useState<string | null>(null);
   const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows("digests", asked ? { week: asked } : undefined);
-  const [message, setMessage] = useState<string | null>(null);
+  /* A result in green and a refusal in red (review, 19 Nov: a refused take-back read as a success). */
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const act: Act = useCallback(
     async (action, done) => {
@@ -161,10 +163,10 @@ export default function DigestsPage() {
       setMessage(null);
       try {
         const result = await adminAction(action);
-        setMessage(result.persisted ? done : `${done} — but nothing was saved.`);
+        setMessage({ text: result.persisted ? done : `${done} — but nothing was saved.`, error: !result.persisted });
         await reload();
       } catch (err) {
-        setMessage(err instanceof Error ? err.message : "That didn't go through");
+        setMessage({ text: err instanceof Error ? err.message : "That didn't go through", error: true });
       } finally {
         setBusy(false);
       }
@@ -211,20 +213,7 @@ export default function DigestsPage() {
       <PageHead title="Weekly digests" />
 
       {error && <ErrorNote>{error}</ErrorNote>}
-      {message && <ResultNote>{message}</ResultNote>}
-
-      {tableConfigured && (
-        <OneNumber
-          onDone={async (note, sent) => {
-            setMessage(note);
-            if (sent) {
-              setWhich("test");
-              setDate(sent);
-            }
-            await reload();
-          }}
-        />
-      )}
+      {message && (message.error ? <ErrorNote>{message.text}</ErrorNote> : <ResultNote>{message.text}</ResultNote>)}
 
       {tableConfigured && index.length > 0 && (
         <WeekBar
@@ -265,6 +254,19 @@ export default function DigestsPage() {
           <WeekView key={`${week.edition_date}-${week.is_test}`} week={week} picksKnown={picksKnown} act={act} busy={busy} />
         )}
       </div>
+
+      {/* A test tool, below the week it is about (review, 19 Nov: above the week bar, an open Preview pushed
+          the week and its groups a phone's length down). */}
+      {tableConfigured && (
+        <OneNumber
+          onSent={async (week) => {
+            setWhich("test");
+            setDate(week);
+            await reload();
+          }}
+          onPrepared={reload}
+        />
+      )}
     </>
   );
 }
@@ -279,9 +281,10 @@ const DIGEST_BUTTONS = 4;
  * links open, then the question — on RCS the card with buttons 1-4, on SMS one line.
  */
 function TwoMessages({ list, card, sms, as }: { list: string; card: string; sms: string; as: "card" | "sms" }) {
-  const bubble = "whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-paper px-3.5 py-2.5 text-[14px] leading-relaxed text-ink ring-1 ring-bark/70";
+  /* `anywhere`, not only `break-words`: a long URL must shrink the bubble's min-content too (review, 19 Nov). */
+  const bubble = "whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl rounded-bl-md bg-paper px-3.5 py-2.5 text-[14px] leading-relaxed text-ink ring-1 ring-bark/70";
   return (
-    <div className="max-w-[22rem] space-y-2">
+    <div className="min-w-0 max-w-[22rem] space-y-2">
       <p className={bubble}>{list}</p>
       {as === "card" ? (
         <div className="rounded-2xl rounded-bl-md bg-card px-3.5 py-2.5 ring-1 ring-bark/70">
@@ -303,20 +306,37 @@ function TwoMessages({ list, card, sms, as }: { list: string; card: string; sms:
 
 /* ── One number (19 Nov) ──────────────────────────────────────────────────── */
 
+/** How long Prepare's search may take before the page reads again on its own (the agent's deadline is three minutes). */
+const PREPARE_RELOAD_MS = 200_000;
+
 /**
  * The digest for one number while the scheduled jobs are paused: Prepare (the
  * agent's search for that family's group, minutes, after the response), then
- * Approve the group under Test, then Send — to that number only.
+ * Approve the group under Test, Preview, then Send — to that number only.
  * `/api/admin/digest-one`; every press audited.
+ *
+ * Review, 19 Nov: folded below the week (a test tool, not the page's subject);
+ * its results said under its own buttons, a refusal in red; the Preview closable
+ * and called a preview; Send asks first, repeating the number — it goes out at
+ * once and is not held by quiet hours (invariant 6's one exception); the phone
+ * field 16px on a phone so iOS does not zoom; the page reads again after Prepare.
  */
-function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => Promise<void> }) {
+function OneNumber({ onSent, onPrepared }: { onSent: (week: string) => Promise<void>; onPrepared: () => Promise<void> | void }) {
   const [phone, setPhone] = useState("");
   const [working, setWorking] = useState<"prepare" | "preview" | "send" | null>(null);
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [confirming, setConfirming] = useState(false);
   /* Preview (19 Nov): the exact text Send would send now; nothing written. Cleared when the number changes. */
   const [preview, setPreview] = useState<{ body: string; ask: { card: string; sms: string }; edition_date: string; items: number } | null>(null);
   const [as, setAs] = useState<"card" | "sms">("card");
+  useEffect(() => {
+    if (note?.text !== PREPARING) return;
+    const t = setTimeout(() => void onPrepared(), PREPARE_RELOAD_MS);
+    return () => clearTimeout(t);
+  }, [note, onPrepared]);
   const run = async (step: "prepare" | "preview" | "send") => {
     setWorking(step);
+    setNote(null);
     try {
       const response = await fetch("/api/admin/digest-one", {
         method: "POST",
@@ -331,21 +351,19 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
         ask?: { card: string; sms: string };
         items?: string[];
       };
-      if (step === "preview") {
-        if (response.ok && data.body && data.ask && data.edition_date) {
+      if (!response.ok) {
+        if (step === "preview") setPreview(null);
+        setNote({ text: data.error ?? "That didn't go through", error: true });
+      } else if (step === "preview") {
+        if (data.body && data.ask && data.edition_date) {
           setPreview({ body: data.body, ask: data.ask, edition_date: data.edition_date, items: data.items?.length ?? 0 });
-        } else {
-          setPreview(null);
-          await onDone(data.error ?? "That didn't go through", null);
         }
-      } else if (!response.ok) {
-        await onDone(data.error ?? "That didn't go through", null);
       } else if (step === "prepare") {
-        /* copy: state */
-        await onDone("Preparing — the group shows under Test when the search ends, in a few minutes.", null);
+        setNote({ text: PREPARING, error: false });
       } else {
         /* copy: state */
-        await onDone(`Sent: ${plural(data.sent ?? 0, "item")}.`, data.edition_date ?? null);
+        setNote({ text: `Sent: ${plural(data.sent ?? 0, "item")}.`, error: false });
+        if (data.edition_date) await onSent(data.edition_date);
       }
     } finally {
       setWorking(null);
@@ -353,12 +371,10 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
   };
   const ready = phone.replace(/\D/g, "").length >= 10;
   return (
-    <section aria-labelledby="digest-one" className="mb-5 rounded-xl border border-bark bg-card px-4 py-3 shadow-card">
+    <Disclosure title="Digest for one number">
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-[14rem] flex-1">
-          <span id="digest-one" className="mb-1 block text-[13px] font-medium text-ink">
-            Digest for one number
-          </span>
+          <span className="sr-only">Phone number</span>
           <input
             type="tel"
             inputMode="tel"
@@ -367,23 +383,25 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
             onChange={(e) => {
               setPhone(e.target.value);
               setPreview(null);
+              setNote(null);
             }}
             placeholder="+1 626 555 0123"
-            className={inputClass}
+            className={cn(inputClass, "text-[16px] md:text-[14px]")}
           />
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button disabled={!ready || working !== null} onClick={() => void run("prepare")}>
             {working === "prepare" ? "Preparing…" : "Prepare"}
           </Button>
           <Button disabled={!ready || working !== null} onClick={() => void run("preview")}>
             {working === "preview" ? "Loading…" : "Preview"}
           </Button>
-          <Button tone="primary" disabled={!ready || working !== null} onClick={() => void run("send")}>
+          <Button tone="primary" disabled={!ready || working !== null} onClick={() => setConfirming(true)}>
             {working === "send" ? "Sending…" : "Send"}
           </Button>
         </div>
       </div>
+      {note && (note.error ? <ErrorNote className="mt-3">{note.text}</ErrorNote> : <ResultNote inline>{note.text}</ResultNote>)}
       {preview && (
         <div className="mt-4 border-t border-bark/60 pt-3">
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -397,15 +415,45 @@ function OneNumber({ onDone }: { onDone: (note: string, week: string | null) => 
                 { id: "sms", label: "SMS" },
               ]}
             />
-            <span className="text-[12.5px] text-muted">{saturday(preview.edition_date)} · not sent</span>
-            {preview.items < DIGEST_BUTTONS && <Badge tone="gold">{`${preview.items} of ${DIGEST_BUTTONS}`}</Badge>}
+            <span className="text-[12.5px] text-muted">{`Preview · ${saturday(preview.edition_date)}`}</span>
+            {preview.items < DIGEST_BUTTONS && <Badge tone="gold">{`${preview.items} of ${DIGEST_BUTTONS} buttons`}</Badge>}
+            <Button tone="ghost" className="ml-auto" onClick={() => setPreview(null)}>
+              Close preview
+            </Button>
           </div>
           <TwoMessages list={preview.body} card={preview.ask.card} sms={preview.ask.sms} as={as} />
         </div>
       )}
-    </section>
+      <Dialog
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        title={`Send the digest to ${phone.trim()}?`}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button tone="ghost" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button
+              tone="primary"
+              onClick={() => {
+                setConfirming(false);
+                void run("send");
+              }}
+            >
+              Send now
+            </Button>
+          </div>
+        }
+      >
+        {/* copy: kept — a warning before an action: it is a real text, now, at any hour */}
+        <p className="text-[14px] text-ink">It goes out now, at any hour, to this number only.</p>
+      </Dialog>
+    </Disclosure>
   );
 }
+
+/* copy: state */
+const PREPARING = "Preparing — the group shows under Test when the search ends, in a few minutes.";
 
 /* ── The week picker ──────────────────────────────────────────────────────── */
 
@@ -443,15 +491,17 @@ function WeekBar({
             {week && (
               <Select
                 bare
+                compact
                 label="Which Saturday"
-                className="min-w-0 flex-1 sm:w-[21rem] sm:flex-none"
+                className="min-w-0 flex-1 sm:w-[12rem] sm:flex-none"
                 value={week.edition_date}
                 onChange={onPick}
                 options={weeks.map((w) => ({
                   id: w.edition_date,
                   label: saturday(w.edition_date),
                   detail: [
-                    plural(w.families, "family", "families"),
+                    /* Zero is left out of a list of outcomes (review, 19 Nov). */
+                    w.families > 0 ? plural(w.families, "family", "families") : null,
                     plural(w.groups, "group"),
                     w.awaiting > 0 ? `${w.awaiting} awaiting approval` : null,
                     w.failed > 0 ? `${plural(w.failed, "search", "searches")} failed` : null,
@@ -467,7 +517,9 @@ function WeekBar({
               label="Find a week on the calendar"
               value={week?.edition_date ?? null}
               onChange={onPick}
-              marks={new Map(weeks.map((w) => [w.edition_date, { note: w.awaiting > 0 ? `${w.awaiting} awaiting` : `${w.families} ${w.families === 1 ? "family" : "families"}`, alert: w.failed > 0 || w.awaiting > 0 }]))}
+              /* The number is always families (review, 19 Nov: it was groups awaiting on one week, families on the next);
+                 a week waiting for approval or with a failed search is marked. */
+              marks={new Map(weeks.map((w) => [w.edition_date, { note: `${w.families} ${w.families === 1 ? "family" : "families"}`, alert: w.failed > 0 || w.awaiting > 0 }]))}
               resolve={(day) => {
                 const sat = saturdayOf(day);
                 return weeks.some((w) => w.edition_date === sat) ? sat : null;
@@ -542,7 +594,8 @@ function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnow
   }, []);
   const sentOn = week.groups.map((g) => g.sent_at).filter((s): s is string => !!s).sort()[0] ?? null;
   const problems = t.failed.length > 0 || t.nothing.length > 0 || t.awaiting.length > 0;
-  const found = week.groups.reduce((n, g) => n + g.items.length, 0);
+  /* What the searches found and nobody took out before approval (review, 19 Nov: a taken-out item counted as found). */
+  const found = week.groups.reduce((n, g) => n + g.items.filter((i) => !i.removed).length, 0);
   const sentItems = week.groups.reduce((n, g) => n + g.items.filter((i) => i.sent_to > 0).length, 0);
   const replies = t.loved + t.ok + t.didntGo;
 
@@ -557,7 +610,7 @@ function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnow
         )}
         {picksKnown ? (
           <>
-            <Stat label="Reminders" value={t.remindersSet} hint={t.remindersSent > 0 ? `${t.remindersSent} sent` : null} />
+            <Stat label="Reminders" value={t.remindersSet > 0 ? t.remindersSet : "—"} hint={t.remindersSent > 0 ? `${t.remindersSent} sent` : null} />
             <Stat
               label="Afterwards"
               value={replies > 0 ? replies : "—"}
@@ -583,8 +636,8 @@ function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnow
             <ul className="mt-1 space-y-0.5 text-[13.5px] text-ink">
               {t.awaiting.map((g) => (
                 <li key={`a-${g.id}`}>
-                  <TextLink href={`#${groupAnchor(g)}`} onClick={() => reveal(g)}>
-                    {labelParts(g.label).who}
+                  <TextLink onClick={() => reveal(g)}>
+                    {groupName(g)}
                   </TextLink>{" "}
                   waits for approval.
                 </li>
@@ -592,8 +645,8 @@ function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnow
               {t.failed.map((g) => (
                 <li key={`f-${g.id}`}>
                   The search failed for{" "}
-                  <TextLink href={`#${groupAnchor(g)}`} onClick={() => reveal(g)}>
-                    {g.label ?? "everyone"}
+                  <TextLink onClick={() => reveal(g)}>
+                    {groupName(g)}
                   </TextLink>
                   {g.attempts > 1 ? `, after ${g.attempts} tries` : ""}.
                 </li>
@@ -601,8 +654,8 @@ function WeekView({ week, picksKnown, act, busy }: { week: DigestWeek; picksKnow
               {t.nothing.map((g) => (
                 <li key={`n-${g.id}`}>
                   {plural(g.families_nothing, "family", "families")} in{" "}
-                  <TextLink href={`#${groupAnchor(g)}`} onClick={() => reveal(g)}>
-                    {g.label ?? "everyone"}
+                  <TextLink onClick={() => reveal(g)}>
+                    {groupName(g)}
                   </TextLink>{" "}
                   had nothing that suited, so got no text.
                 </li>
@@ -660,6 +713,13 @@ function labelParts(label: string | null): { who: string; where: string | null; 
   return { who: who.charAt(0).toUpperCase() + who.slice(1), where, also: rest.length > 0 ? rest.join(" · ") : null };
 }
 
+/** "Toddler · Altadena": who and where, as the group's row says it (review, 19 Nov: raw lower-case labels leaked into sentences). */
+function labelName(label: string | null): string {
+  const { who, where } = labelParts(label);
+  return where ? `${who} · ${where}` : who;
+}
+const groupName = (g: DigestGroup) => labelName(g.label);
+
 function GroupRow({
   group: g,
   picksKnown,
@@ -679,6 +739,10 @@ function GroupRow({
   const status = DIGEST_EDITION_STATUS[g.status];
   const { who, where, also } = labelParts(g.label);
   const panel = `${groupAnchor(g)}-panel`;
+  /* An item taken out before approval was never going to anyone: not "found" for the counts. */
+  const kept = g.items.filter((i) => !i.removed);
+  const pending = awaitsApproval(g) || approvedUnsent(g);
+  const pendingSay = `${kept.length} ${awaitsApproval(g) ? "to approve" : "approved"}`;
   return (
     <div id={groupAnchor(g)} className="scroll-mt-24 border-b border-bark/60 last:border-b-0">
       <button
@@ -701,18 +765,29 @@ function GroupRow({
           </span>
           {also && <span className="mt-0.5 block text-[12.5px] text-muted">{also}</span>}
           <span className="mt-1.5 flex flex-wrap gap-x-3 text-[12.5px] tabular-nums text-muted md:hidden">
-            <span>{plural(g.families_sent, "family", "families")}</span>
-            <span>{g.items.length === 0 ? "nothing found" : sendsKnown(g) ? `${gt.sentItems} of ${g.items.length} sent` : `${g.items.length} found`}</span>
+            {pending ? (
+              <span>{pendingSay}</span>
+            ) : (
+              <>
+                <span>{plural(g.families_sent, "family", "families")}</span>
+                <span>{g.status === "failed" ? "search failed" : kept.length === 0 ? "nothing found" : sendsKnown(g) ? `${gt.sentItems} of ${kept.length} sent` : `${kept.length} found`}</span>
+              </>
+            )}
             {picksKnown && gt.remindersSet > 0 && <span>{plural(gt.remindersSet, "reminder")}</span>}
           </span>
         </span>
         <span className="hidden text-right text-[14px] tabular-nums text-ink md:block">
           {g.families_sent}
-          <span className="sr-only"> families</span>
+          <span className="sr-only"> {g.families_sent === 1 ? "family" : "families"}</span>
         </span>
         <span className="hidden md:block">
-          {sendsKnown(g) ? (
-            <Coverage sent={gt.sentItems} found={g.items.length} />
+          {pending ? (
+            /* Waiting, or approved and not yet sent: what is to go, not "0 of 3 sent" (review, 19 Nov). */
+            <span className="text-[14px] tabular-nums text-ink">{pendingSay}</span>
+          ) : g.status === "failed" ? (
+            <span className="text-[13px] text-muted">search failed</span>
+          ) : sendsKnown(g) ? (
+            <Coverage sent={gt.sentItems} found={kept.length} />
           ) : (
             <span className="text-[14px] tabular-nums text-ink">
               {g.items.length}
@@ -723,14 +798,18 @@ function GroupRow({
         <span className={cn("hidden items-center justify-end gap-1.5 text-[14px] tabular-nums md:flex", gt.remindersSet > 0 ? "text-ink" : "text-muted/50")}>
           {picksKnown && gt.remindersSet > 0 && <Bell className="h-3.5 w-3.5 text-muted" aria-hidden="true" />}
           {picksKnown ? gt.remindersSet || "—" : "—"}
-          <span className="sr-only"> reminders</span>
+          <span className="sr-only"> {gt.remindersSet === 1 ? "reminder" : "reminders"}</span>
         </span>
       </button>
       {open && (
         <div id={panel} className="border-t border-bark/60 bg-paper/50 px-4 pb-5 pt-4 md:pl-11">
           {g.items.length === 0 ? (
-            <p className="text-[13.5px] text-muted">{/* copy: state */}Nothing found for this group, so nobody got a text from it.</p>
-          ) : awaitsApproval(g) || approvedUnsent(g) ? (
+            <p className="text-[13.5px] text-muted">
+              {g.status === "failed"
+                ? /* copy: state */ `The search failed${g.attempts > 1 ? ` after ${g.attempts} tries` : ""}, so nobody got a text from this group.`
+                : /* copy: state */ "Nothing found for this group, so nobody got a text from it."}
+            </p>
+          ) : pending ? (
             <Review group={g} act={act} busy={busy} />
           ) : (
             <div className="space-y-6">
@@ -798,6 +877,13 @@ function Items({ group: g, picksKnown }: { group: DigestGroup; picksKnown: boole
   }
   return (
     <section>
+      {/* Who approved it stays on record once it has gone (review, 19 Nov). */}
+      {g.approval === "approved" && (
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-[12.5px] text-muted">
+          <Badge tone="green">Approved</Badge>
+          {[g.approved_by, g.approved_at ? when(g.approved_at) : null].filter(Boolean).join(" · ")}
+        </p>
+      )}
       <SectionHead title="Sent" count={sent.length} />
       {sent.length === 0 ? (
         <p className="py-2 text-[13.5px] text-muted">{/* copy: state */}None of what was found reached a family.</p>
@@ -854,7 +940,7 @@ function Review({ group: g, act, busy }: { group: DigestGroup; act: Act; busy: b
             {out > 0 ? ` · ${out} taken out` : ""}
           </span>
           {/* 19 Nov: a digest has four buttons; fewer kept leaves one with nothing behind it. */}
-          {kept < DIGEST_BUTTONS && <Badge tone="gold">{`${kept} of ${DIGEST_BUTTONS}`}</Badge>}
+          {kept < DIGEST_BUTTONS && <Badge tone="gold">{`${kept} of ${DIGEST_BUTTONS} buttons`}</Badge>}
         </h3>
         {waiting ? (
           <Button
@@ -1015,7 +1101,9 @@ function Received({ group: g }: { group: DigestGroup }) {
   const hasMost = g.variants.length > 1 && main.families > g.variants[1].families;
   const summary =
     g.variants.length === 1
-      ? `${total === 1 ? "The one family" : `All ${total} families`} got the same ${plural(main.items.length, "item")}.`
+      ? /* copy: state */ total === 1
+        ? `The one family got ${plural(main.items.length, "item")}.`
+        : `All ${total} families got the same ${plural(main.items.length, "item")}.`
       : hasMost
         ? /* copy: state */ `${main.families} of ${total} families got the same ${plural(main.items.length, "item")}; ${plural(total - main.families, "family", "families")} got a different mix.`
         : g.variants.length === total
@@ -1041,10 +1129,12 @@ function Received({ group: g }: { group: DigestGroup }) {
                   isOpen && "bg-paper/40",
                 )}
               >
-                <span className="flex items-center gap-2 text-[13.5px] font-semibold tabular-nums text-ink">
+                <span className="flex flex-wrap items-center gap-2 text-[13.5px] font-semibold tabular-nums text-ink">
                   <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-muted transition-transform", isOpen && "rotate-90 text-ink")} aria-hidden="true" />
                   {plural(v.families, "family", "families")}
                   {k === 0 && hasMost && <Badge tone="green">Most</Badge>}
+                  {/* Sent with fewer items than the card has buttons (review, 19 Nov). */}
+                  {v.items.length < DIGEST_BUTTONS && <Badge tone="gold">{`${v.items.length} of ${DIGEST_BUTTONS} buttons`}</Badge>}
                 </span>
                 <ol className="flex min-w-0 flex-wrap gap-1.5">
                   {v.items.map((it, slot) => {
@@ -1059,7 +1149,7 @@ function Received({ group: g }: { group: DigestGroup }) {
                       >
                         <span className="tabular-nums opacity-60">{slot + 1}</span>
                         <span className="min-w-0 break-words">{it.title}</span>
-                        {it.from_group && <span className="font-normal opacity-75">· from {it.from_group}</span>}
+                        {it.from_group && <span className="font-normal opacity-75">· from {labelName(it.from_group)}</span>}
                       </li>
                     );
                   })}
@@ -1090,7 +1180,8 @@ function TextView({ variant: v, as, onAs }: { variant: DigestVariant; as: "card"
         />
         <span className="text-[12.5px] text-muted">First sent {when(v.first_sent_at)}</span>
       </div>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
+      {/* One shrinkable column below lg (review, 19 Nov: a long URL widened the track and the page scrolled sideways at 375px). */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         {v.text ? (
           <TwoMessages list={v.text} card={v.card} sms={v.ask_sms} as={as} />
         ) : (
@@ -1099,9 +1190,12 @@ function TextView({ variant: v, as, onAs }: { variant: DigestVariant; as: "card"
         <div>
           <h4 className="mb-1.5 text-[12.5px] font-medium text-muted">Sent to</h4>
           <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-[13.5px]">
-            {v.people.map((p) => (
+            {/* Families with no name are numbered, so three links are three people (review, 19 Nov). */}
+            {v.people.map((p, k) => (
               <li key={p.id}>
-                <TextLink href={`/admin/contributors/${p.id}`}>{p.name ?? "No name given"}</TextLink>
+                <TextLink href={`/admin/contributors/${p.id}`}>
+                  {p.name ?? `Unnamed family ${v.people.slice(0, k + 1).filter((q) => !q.name).length}`}
+                </TextLink>
               </li>
             ))}
           </ul>

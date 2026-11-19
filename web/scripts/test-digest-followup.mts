@@ -282,8 +282,23 @@ console.log("\n=== /admin/digests (12 Nov) ===");
       /Number\(awaitsApproval\(b\)\) - Number\(awaitsApproval\(a\)\) \|\|\s+Number\(b\.status === "failed"\) - Number\(a\.status === "failed"\) \|\|\s+b\.families_sent - a\.families_sent/.test(page) &&
       /Needs a look/.test(page) && /onClick=\{\(\) => reveal\(g\)\}/.test(page));
   ok("what families received is a comparison: shared items muted, differences bold, another group's item named, one text open at a time",
-    /const differs = k > 0 && !mainIds\.has\(it\.id\);/.test(page) && /from \{it\.from_group\}/.test(page) && /setOpenKey\(isOpen \? null : key\)/.test(page) &&
+    /* 19 Nov review: the other group named as its row says it ("Teens · Arcadia"), not the raw label. */
+    /const differs = k > 0 && !mainIds\.has\(it\.id\);/.test(page) && /from \{labelName\(it\.from_group\)\}/.test(page) && /setOpenKey\(isOpen \? null : key\)/.test(page) &&
       /from_group: from && from !== String\(e\.id\)/.test(readSrc) && !/version/i.test(page.replace(/\/\*[\s\S]*?\*\//g, "")));
+  /* 19 Nov, an independent review of the page: what it found wrong, pinned. */
+  ok("a 'needs a look' link is a button that opens its group (an href dropped the onClick)",
+    !/<TextLink href=\{`#\$\{groupAnchor\(g\)\}`\}/.test(page) && (page.match(/<TextLink onClick=\{\(\) => reveal\(g\)\}>/g) ?? []).length === 3);
+  ok("a refusal is red, a result green", /message\.error \? <ErrorNote>\{message\.text\}<\/ErrorNote> : <ResultNote>\{message\.text\}<\/ResultNote>/.test(page));
+  ok("a group waiting or approved and unsent says what is to go, not '0 of 3 sent'; a failed search says so",
+    /const pendingSay = `\$\{kept\.length\} \$\{awaitsApproval\(g\) \? "to approve" : "approved"\}`;/.test(page) && /g\.status === "failed" \? "search failed"/.test(page) && /The search failed\$\{g\.attempts > 1/.test(page));
+  ok("an open text cannot widen the page on a phone", /grid grid-cols-\[minmax\(0,1fr\)\] gap-5 lg:/.test(page) && /\[overflow-wrap:anywhere\]/.test(page));
+  ok("the week picker shows the date alone; the calendar's number is always families",
+    /<Select\s+bare\s+compact/.test(page) && /note: `\$\{w\.families\} \$\{w\.families === 1 \? "family" : "families"\}`/.test(page));
+  ok("Send asks first, repeating the number; the tool sits below the week, folded",
+    /onClick=\{\(\) => setConfirming\(true\)\}/.test(page) && /title=\{`Send the digest to \$\{phone\.trim\(\)\}\?`\}/.test(page) && /<Disclosure title="Digest for one number">/.test(page) &&
+      page.indexOf("<OneNumber") > page.indexOf("<WeekView"));
+  ok("sent sets with fewer items than buttons are marked; who approved stays on a sent group",
+    /\{v\.items\.length < DIGEST_BUTTONS && <Badge tone="gold">/.test(page) && /g\.approval === "approved" && \(/.test(page));
   ok("sent first, what went to nobody folded; an item's reach split between this group and others",
     /Not sent to anyone/.test(page) && /\{elsewhere\} other \{elsewhere === 1 \? "group" : "groups"\}/.test(page) && /sent_here: sentHere\.get/.test(readSrc));
   /* 12 Nov, the developer: "it looks wooden — improve it the way the leading sites do". */

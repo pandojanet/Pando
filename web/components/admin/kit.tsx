@@ -306,6 +306,7 @@ export function Select<T extends string>({
   className,
   disabled = false,
   bare = false,
+  compact = false,
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -317,6 +318,12 @@ export function Select<T extends string>({
   className?: string;
   /** No border of its own: one segment of a `ControlGroup`, which draws the edge. */
   bare?: boolean;
+  /**
+   * The closed trigger shows the label alone; each option's `detail` stays in
+   * the open list (19 Nov, the digests review: the week's figures were cut off
+   * in the trigger as "4 families · 3 gr…").
+   */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -394,7 +401,7 @@ export function Select<T extends string>({
       >
         <span className="min-w-0 flex-1 truncate">
           {selected?.label ?? "—"}
-          {selected?.detail && <span className="ml-1.5 text-muted">· {selected.detail}</span>}
+          {selected?.detail && !compact && <span className="ml-1.5 text-muted">· {selected.detail}</span>}
         </span>
         {selected?.tag && (
           <span className="shrink-0 rounded-full border border-gold-line bg-gold-wash px-2 py-0.5 text-[11.5px] font-semibold text-gold-ink">
