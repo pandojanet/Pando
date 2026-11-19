@@ -2300,12 +2300,15 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     (await pendingClarificationAt(person.person_id))?.question !== "child_age"
   ) {
     await rememberTurn({ personId: person.person_id, text: asked });
+    /* "clarify_child_age" — named outside the call, so the template scan in
+       test:admin-wiring reads the template, not its argument. */
+    const askedAge = clarifyTemplate("child_age");
     await sendSms({
       to: from,
       body: ageFirstQuestion(firstNamesIn(asked)[0] ?? null),
       category: "transactional",
       personId: person.person_id,
-      template: clarifyTemplate("child_age"),
+      template: askedAge,
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     console.info("[sms:inbound] asked the age first");

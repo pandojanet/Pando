@@ -422,6 +422,8 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   contributor_note: "a note on a contributor",
   person_relationship: "a connection between two parents",
   introduction: "an introduction",
+  digest_edition: "a group's weekly digest",
+  digest_item: "an item in a weekly digest",
   /* `profile.delete` (repo/parent-delete.ts) names the table, not the row. */
   people: "a parent's profile",
 };
