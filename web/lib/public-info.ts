@@ -119,6 +119,8 @@ export function readFindings(
        dentist question). The practice may well be the right answer; it is
        still a named individual, which this half never prints. */
     if (CREDENTIAL.test(name)) continue;
+    /* Nor one person's private or in-home lessons under their own name (19 Nov). */
+    if (individualOffer(name, what, isPerson)) continue;
 
     if (taken.some((already) => sameName(already, name))) continue;
     taken.push(name);
@@ -576,6 +578,39 @@ function deepWhat(value: unknown, isPerson: (name: string) => { person: boolean;
 }
 
 /**
+ * One person teaching under their own name, not a place (19 Nov, the SMS lab).
+ *
+ * *"Elena Marmol private art lessons, weekly in-home art lessons in Altadena"*
+ * went out twice as a web line. `looksLikePerson` vetoes on any venue word, and
+ * "art" and "lessons" are venue words — on purpose, for "Coach Patty's
+ * Gymnastics" (3 Sep) — so a name built as *person + subject + lessons* always
+ * read as a business. A founder's name on a business is still fine ("Tom Sawyer
+ * Camps", "Steve & Kate's Camp"); what makes it one person is the offer:
+ *
+ *  - the name opens on a person-shaped pair of words (not a street, not a known
+ *    organisation, not a town the caller passes) **and** the name or `what`
+ *    offers private, in-home or one-on-one teaching; or
+ *  - `what` names the person's role: "piano teacher", "swim instructor".
+ *
+ * Read on the name and `what` only, never the facts: "group classes, private
+ * lessons and open bouting" is a fencing club's menu, not a person.
+ */
+const ONE_TO_ONE = /\b(?:private|in[- ]home|home[- ]based|at[- ]home|one[- ]on[- ]one|1[- ]on[- ]1|1:1)\b/i;
+/* Singular and standing alone: "teacher-led preschool" and "certified instructors" are places. */
+const PERSON_ROLE = /(?<![-\w])(?:teacher|instructor|tutor|coach|trainer|nanny|babysitter|sitter)(?![-\w])/i;
+export function individualOffer(
+  name: string,
+  what: string | null,
+  isPerson: (name: string) => { person: boolean; strong?: boolean },
+): boolean {
+  if (what && PERSON_ROLE.test(what)) return true;
+  if (!ONE_TO_ONE.test(`${name} ${what ?? ""}`)) return false;
+  const lead = name.match(/^\p{Lu}\p{Ll}[\p{Ll}'’-]*\s+\p{Lu}\p{Ll}[\p{Ll}'’-]*(?![\p{L}])/u)?.[0];
+  if (!lead || isPlaceRun(lead) || NOT_PEOPLE.test(lead)) return false;
+  return isPerson(lead).person;
+}
+
+/**
  * The name a place's facts may use freely — or "" when the name opens with a
  * person's (29 Oct review). "Jenny Kim Swim" exempted "Jenny Kim" from the person
  * check in its own facts, so *"Jenny Kim leads every class"* and *"Jenny Kim
@@ -816,7 +851,7 @@ export function readDeepFindings(
       continue;
     }
     const verdict = isPerson(name);
-    if (verdict.person && verdict.strong) {
+    if ((verdict.person && verdict.strong) || individualOffer(name, what, isPerson)) {
       drop("person");
       continue;
     }

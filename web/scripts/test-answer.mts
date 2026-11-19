@@ -575,6 +575,42 @@ ok(
   found('Here is what I found:\n{"findings":[{"name":"Kidspace","what":"childrens museum","area":"Pasadena"}]}\nHope that helps.').length === 1,
 );
 ok("nothing parseable is nothing", found("I could not find anything useful.").length === 0);
+
+/* 19 Nov, the SMS lab, twice: "Elena Marmol private art lessons, weekly in-home art lessons in Altadena". */
+{
+  const rows = (pairs: Array<[string, string]>) =>
+    JSON.stringify({ findings: pairs.map(([name, what]) => ({ name, what, area: "Pasadena", detail: null })) });
+  const individuals: Array<[string, string]> = [
+    ["Elena Marmol private art lessons", "weekly in-home art lessons"],
+    ["Elena Marmol Art - Private Art Lessons", "private art lessons"],
+    ["Sarah Chen Piano", "private piano lessons"],
+    ["David Park", "math tutor"],
+    ["Jenny Kim Music", "piano teacher"],
+    ["Lisa Gomez", "one-on-one reading tutoring"],
+  ];
+  const places: Array<[string, string]> = [
+    ["Tom Sawyer Camps", "summer day camp"],
+    ["Steve & Kate's Camp", "summer day camp"],
+    ["Coach Patty's Gymnastics", "preschool gymnastics"],
+    ["Fortune Fencing", "kids fencing lessons"],
+    ["Hollywood Arts Academy", "private kids music lessons"],
+    ["Rose Bowl Aquatics", "private swim lessons"],
+    ["Kumon Math and Reading Center", "math and reading tutoring"],
+    ["Bethany Christian Preschool", "teacher-led Christian preschool"],
+    ["British Swim School", "private and semi-private swim lessons"],
+    ["Pasadena Conservatory of Music", "private music lessons"],
+  ];
+  ok("one person's private, in-home or one-on-one lessons under their own name are not a place", found(rows(individuals)).length === 0, found(rows(individuals)).map((f) => f.name).join(" | "));
+  /* One at a time: the reader keeps six at most. */
+  const lost = places.filter((p) => found(rows([p])).length !== 1).map(([n]) => n);
+  ok("a business named after its founder, or one that also teaches privately, stays", lost.length === 0, lost.join(" | "));
+  ok("the facts are not read for it: a club's 'private lessons' on its menu is not a person",
+    found(JSON.stringify({ findings: [{ name: "Fortune Fencing", what: "kids fencing lessons", area: null, detail: "group classes, private lessons and open bouting" }] })).length === 1);
+  ok("the deep reader drops them too", pi.readDeepFindings(rows(individuals), (n) => np.looksLikePerson(n)).length === 0);
+  /* Known, accepted: no first-name dictionary, so a person-shaped business name offering only
+     private lessons reads as one person. The cost is one web line; the other way it is a name. */
+  ok("known limit: 'Golden Bear Swim, private swim lessons' is dropped", found(rows([["Golden Bear Swim", "private swim lessons"]])).length === 0);
+}
 ok("a findings key that is not a list is nothing", found('{"findings":"lots"}').length === 0);
 ok(
   "a row missing what it is gets dropped",
