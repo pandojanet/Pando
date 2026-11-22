@@ -180,6 +180,13 @@ export default function AdminOverviewPage() {
           href: "/admin/introductions?view=open",
           urgent: false,
         },
+        /* 20 Nov — Pando MCP: what an agent proposed, waiting for a yes. */
+        {
+          label: "proposals from Pando's agents",
+          n: o.proposals?.open ?? 0,
+          href: "/admin/proposals",
+          urgent: false,
+        },
       ]
         .filter((t) => t.n > 0)
         /* Urgent first, and **stable** within each half, so the order below is

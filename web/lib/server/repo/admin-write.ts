@@ -1,5 +1,6 @@
 import "server-only";
-import { DEFAULT_MARKET_ID } from "@/lib/markets";
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
+import { DIGEST_EDITION_MAX, candidatesForGroup, sameThing, type DigestItem } from "@/lib/digest";
 import type { AdminActionName } from "@/lib/admin/action-names";
 import { flagNamedPersonRecord } from "@/lib/server/repo/flags";
 import { sendSms } from "@/lib/server/sms";
@@ -13,8 +14,9 @@ import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 
 import { sql } from "drizzle-orm";
 import { cleanText } from "@/lib/sanitize";
+import { checkCandidate, type CandidateInput } from "@/lib/server/mcp/candidate";
 import { cleanContributionPatch, TEXT_COLUMNS } from "@/lib/admin/contribution-edit";
-import { bandsForAge } from "@/lib/matching";
+import { AGE_BANDS, bandsForAge } from "@/lib/matching";
 import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
@@ -119,6 +121,12 @@ export type ActionOutcome =
         | "caregiver_declined"
         /* 4 Oct — a rename onto a name another record of this kind holds. */
         | "share_name_taken"
+        /* 20 Nov — an MCP proposal no longer applicable: decided already, or its record gone. */
+        | "proposal_closed"
+        /* 20 Nov (review) — a proposal that cannot be applied as it is (an event whose link or words fail the
+           candidate rules, a date that is not a date), and "ready to answer with" on a record not approved. */
+        | "proposal_invalid"
+        | "record_not_approved"
         /* 3 Nov — a reset sent without its typed confirmation. */
         | "reset_not_confirmed"
         /* 19 Nov — a digest approval taken back after something from it went out,
@@ -2294,6 +2302,232 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       `)) as unknown as Array<Record<string, unknown>>;
       if (moved.length === 0) return { applied: false, reason: "not_found" };
       return { applied: true, resource: "digest_item", resource_id: target };
+    }
+
+    /* ── Pando MCP (20 Nov) ─────────────────────────────────────────────────── */
+
+    case "proposal.approve": {
+      /* An agent's proposal, applied by an admin's yes — on /admin/proposals or in chat, the same
+         function either way. Each change goes through the action an admin would have used by hand
+         (and gets its own audit row); this row records the decision. */
+      const target = id(b.id);
+      const via = b.via === "chat" ? "chat" : "admin";
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const [p] = (await tx.execute(
+        sql`select id, kind, share_id, payload, source_url from mcp_proposals where id = ${target}::uuid and status = 'proposed' for update`,
+      )) as unknown as Array<{ id: string; kind: string; share_id: string | null; payload: Record<string, unknown>; source_url: string | null }>;
+      if (!p) return { applied: false, reason: "proposal_closed" };
+      const payload = p.payload ?? {};
+      let shareId = p.share_id;
+      /* The page the proposal is based on: http(s) only (the MCP tool checks it too), kept on the record (0071). */
+      const sourceUrl = p.source_url && /^https?:\/\/\S+$/i.test(p.source_url) ? p.source_url.slice(0, 500) : null;
+      let before: Record<string, unknown> | undefined;
+      const textArray = (v: unknown, ok: (x: string) => boolean) =>
+        Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && ok(x)).slice(0, 12) : null;
+      const isArea = (x: string) => /^[a-z0-9-]{2,40}$/.test(x);
+      const isBand = (x: string) => (AGE_BANDS as string[]).includes(x);
+
+      if (p.kind === "record_edit" && payload.change === "facts") {
+        /* The Fact-checker's correction of a record's facts — where, which areas, which ages, which
+           subcategory. No hand-made admin action edits these, so it is applied here and this row's
+           `before` keeps what they were. A field the proposal leaves out is left as it is. */
+        if (!shareId) return { applied: false, reason: "proposal_closed" };
+        const [was] = (await tx.execute(
+          sql`select venue, neighborhoods, age_bands, subcategory from shares where id = ${shareId}::uuid and not is_test for update`,
+        )) as unknown as Array<Record<string, unknown>>;
+        if (!was) return { applied: false, reason: "proposal_closed" };
+        const areas = textArray(payload.areas, isArea);
+        const bands = textArray(payload.age_bands, isBand);
+        const venue = payload.venue === undefined ? undefined : cleanText(payload.venue, 120);
+        const subcategory = payload.subcategory === undefined ? undefined : cleanText(payload.subcategory, 40);
+        before = { venue: was.venue ?? null, areas: was.neighborhoods ?? [], age_bands: was.age_bands ?? [], subcategory: was.subcategory ?? null };
+        await tx.execute(sql`
+          update shares set
+            venue = ${venue === undefined ? sql`venue` : sql`${venue}`},
+            neighborhoods = ${areas === null ? sql`neighborhoods` : sql`(select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(areas)}::jsonb) x)`},
+            age_bands = ${bands === null ? sql`age_bands` : sql`(select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(bands)}::jsonb) x)`},
+            subcategory = ${subcategory === undefined ? sql`subcategory` : sql`${subcategory}`},
+            source_url = coalesce(${sourceUrl}, source_url),
+            updated_at = now()
+           where id = ${shareId}::uuid
+        `);
+        /* A venue is free text: one that reads as a person's name is flagged, as a new record's name is (invariant 8). */
+        if (venue) await flagNamedPersonRecord(tx, { shareId, name: venue, marketId: DEFAULT_MARKET_ID });
+      } else if (p.kind === "record_edit") {
+        if (!shareId) return { applied: false, reason: "proposal_closed" };
+        const change = payload.change;
+        /* The record as it is now, not as it was when proposed (review, 20 Nov): a test row is never edited,
+           and "ready" on a record that is not approved would change nothing and still read "Applied". */
+        const [now] = (await tx.execute(sql`select status, is_test from shares where id = ${shareId}::uuid`)) as unknown as Array<{ status: string; is_test: boolean }>;
+        if (!now || now.is_test) return { applied: false, reason: "proposal_closed" };
+        if (change === "answer_ready" && payload.to === true && now.status !== "approved") return { applied: false, reason: "record_not_approved" };
+        const sub: ActionContext | null =
+          change === "rename"
+            ? { ...ctx, action: "share.rename", body: { id: shareId, name: payload.name } }
+            : change === "retire"
+              ? { ...ctx, action: "share.retire", body: { id: shareId, reason: "MCP proposal" } }
+              : change === "answer_ready"
+                ? { ...ctx, action: "share.answer_ready", body: { id: shareId, to: payload.to === true } }
+                : null;
+        if (!sub) return { applied: false, reason: "not_implemented" };
+        const out = await run(tx, sub);
+        if (!out.applied) return out;
+        await audit(tx, sub, out.resource, out.resource_id, out.before);
+      } else if (p.kind === "new_record") {
+        /* Entered by an admin (provenance admin_entered): approved by this yes, never labelled as a
+           parent's (invariants 3, 4). A name another record of this kind holds is refused. */
+        const kind = String(payload.kind ?? "");
+        const name = cleanText(payload.name, 80);
+        if (!["activity", "place", "tip", "doctor"].includes(kind) || !name) return { applied: false, reason: "not_implemented" };
+        const market = cleanText(payload.market_id, 40) ?? DEFAULT_MARKET_ID;
+        if (kind !== "tip") {
+          const clash = (await tx.execute(
+            sql`select 1 from shares where market_id = ${market} and kind = ${kind}::share_kind and lower(name) = lower(${name}) limit 1`,
+          )) as unknown as unknown[];
+          if (clash.length) return { applied: false, reason: "share_name_taken" };
+        }
+        const areas = textArray(payload.areas, isArea) ?? [];
+        const bands = textArray(payload.age_bands, isBand) ?? [];
+        const [made] = (await tx.execute(sql`
+          insert into shares (market_id, kind, name, venue, neighborhoods, age_bands, subcategory, status, provenance,
+                              last_confirmed_at, freshness_state, source_url)
+          values (${market}, ${kind}::share_kind, ${name}, ${cleanText(payload.venue, 120)},
+                  (select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(areas)}::jsonb) x),
+                  (select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(bands)}::jsonb) x),
+                  ${cleanText(payload.subcategory, 40)}, 'approved', 'admin_entered', now(), 'fresh', ${sourceUrl})
+          returning id
+        `)) as unknown as Array<{ id: string }>;
+        shareId = made?.id ?? null;
+        if (shareId) await flagNamedPersonRecord(tx, { shareId, name, marketId: market });
+      } else if (p.kind === "fact_check") {
+        if (!shareId) return { applied: false, reason: "proposal_closed" };
+        /* confirmed → fresh as of today; stale → stale; unreachable → the page could not be read, so
+           nothing about the record changes except that the check is on it (0071), for the Fact-checker
+           and the daily brief to see. Only a confirmed check makes its page the record's source: a page that
+           could not be read, or says the record is stale, never replaces one that held (review, 20 Nov). */
+        const verdict = payload.verdict === "confirmed" ? "confirmed" : payload.verdict === "stale" ? "stale" : payload.verdict === "unreachable" ? "unreachable" : null;
+        if (!verdict) return { applied: false, reason: "proposal_invalid" };
+        const [live] = (await tx.execute(sql`select 1 from shares where id = ${shareId}::uuid and not is_test`)) as unknown as unknown[];
+        if (!live) return { applied: false, reason: "proposal_closed" };
+        await tx.execute(sql`
+          update shares set
+            ${verdict === "confirmed" ? sql`last_confirmed_at = now(), freshness_state = 'fresh',` : verdict === "stale" ? sql`freshness_state = 'stale',` : sql``}
+            source_check = ${verdict}, source_checked_at = now(),
+            ${verdict === "confirmed" ? sql`source_url = coalesce(${sourceUrl}, source_url),` : sql``} updated_at = now()
+           where id = ${shareId}::uuid
+        `);
+      } else if (p.kind === "event") {
+        /* The Researcher's find, approved for the weekly digest (20 Nov, 0073): from here each Saturday's
+           groups it fits get it first (`candidatesForGroup`). Its dates were checked when it was proposed;
+           the digest checks them again against each Saturday. */
+        /* The same link and text rules as when it was proposed (`checkCandidate`): it goes into parents' texts. */
+        const checked = checkCandidate({ ...(payload as Record<string, never>), url: p.source_url ?? "" } as CandidateInput);
+        if ("refused" in checked) return { applied: false, reason: "proposal_invalid" };
+        const e = checked.item;
+        const [made] = (await tx.execute(sql`
+          insert into digest_candidates (market_id, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url, proposal_id, added_by)
+          values (${cleanText(payload.market_id, 40) ?? DEFAULT_MARKET_ID}, ${e.kind}, ${e.title}, ${e.when_text}, ${e.starts_on}::date, ${e.ends_on}::date,
+                  ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url}, ${target}::uuid, ${ctx.actor})
+          returning id
+        `)) as unknown as Array<{ id: string }>;
+        if (!made) return { applied: false, reason: "not_implemented" };
+        /* Approved after the groups' digests were prepared (review round 2): it joins every prepared edition
+           it fits that nobody has approved or sent yet — an approved one stays as the admin approved it. */
+        const market = cleanText(payload.market_id, 40) ?? DEFAULT_MARKET_ID;
+        const prepared = (await tx.execute(sql`
+          select e.id::text as id, e.edition_date::text as day, e.cohort_profile
+            from digest_editions e
+           where e.market_id = ${market} and e.status in ('ready', 'empty') and e.approved_at is null
+             and e.edition_date >= (now() at time zone ${marketConfig(market).timeZone}::text)::date
+             and not exists (select 1 from digest_sends s where s.edition_id = e.id)
+             for update of e
+        `)) as unknown as Array<{ id: string; day: string; cohort_profile: { ages?: { min: number; max: number } | null } | null }>;
+        for (const ed of prepared) {
+          if (candidatesForGroup([e], ed.day, ed.cohort_profile?.ages ?? null).length === 0) continue;
+          const have = (await tx.execute(sql`
+            select title, starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, position
+              from digest_items where edition_id = ${ed.id}::uuid
+          `)) as unknown as Array<DigestItem & { position: number }>;
+          if (have.some((i) => sameThing(i, e)) || have.length >= DIGEST_EDITION_MAX) continue;
+          await tx.execute(sql`
+            insert into digest_items (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url)
+            values (${ed.id}::uuid, ${Math.max(-1, ...have.map((i) => i.position)) + 1}, ${e.kind}, ${e.title}, ${e.when_text},
+                    ${e.starts_on}::date, ${e.ends_on}::date, ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url})
+          `);
+          /* A group the agent found nothing for now has something to send (review round 3). */
+          await tx.execute(sql`update digest_editions set status = 'ready' where id = ${ed.id}::uuid and status = 'empty'`);
+        }
+      } else {
+        return { applied: false, reason: "not_implemented" };
+      }
+
+      await tx.execute(sql`
+        update mcp_proposals set status = 'applied', decided_by = ${ctx.actor}, decided_via = ${via}, decided_at = now(),
+               share_id = coalesce(share_id, ${shareId}::uuid)
+         where id = ${target}::uuid
+      `);
+      return { applied: true, resource: "mcp_proposal", resource_id: target, detail: { share_id: shareId }, ...(before ? { before } : {}) };
+    }
+
+    case "proposal.reject": {
+      const target = id(b.id);
+      const via = b.via === "chat" ? "chat" : "admin";
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const done = (await tx.execute(sql`
+        update mcp_proposals set status = 'rejected', decided_by = ${ctx.actor}, decided_via = ${via}, decided_at = now(),
+               decision_note = ${cleanText(b.reason, 300)}
+         where id = ${target}::uuid and status = 'proposed' returning id
+      `)) as unknown as unknown[];
+      if (!done.length) return { applied: false, reason: "proposal_closed" };
+      return { applied: true, resource: "mcp_proposal", resource_id: target };
+    }
+
+    case "digest_candidate.remove": {
+      /* Takes an approved event out of the weekly digest's candidates (20 Nov): kept, never deleted. */
+      const target = id(b.id);
+      if (!target) return { applied: false, reason: "not_implemented" };
+      const done = (await tx.execute(sql`
+        update digest_candidates set removed_at = now(), removed_by = ${ctx.actor}
+         where id = ${target}::uuid and removed_at is null returning id, url
+      `)) as unknown as Array<{ id: string; url: string }>;
+      if (!done.length) return { applied: false, reason: "not_found" };
+      /* And out of any edition already prepared but not sent (review, 20 Nov), as an admin's own take-out would. */
+      await tx.execute(sql`
+        update digest_items i set removed_at = now()
+          from digest_editions e
+         where i.edition_id = e.id and i.url = ${done[0].url} and i.removed_at is null
+           and e.approved_at is null
+           and not exists (select 1 from digest_sends s where s.edition_id = e.id)
+      `);
+      /* An approved digest stays as approved (review round 3): the admin is told it still carries the event. */
+      const [kept] = (await tx.execute(sql`
+        select count(distinct e.id) as n from digest_items i join digest_editions e on e.id = i.edition_id
+         where i.url = ${done[0].url} and i.removed_at is null and e.approved_at is not null
+           and not exists (select 1 from digest_sends s where s.edition_id = e.id)
+      `)) as unknown as Array<{ n: string | number }>;
+      return { applied: true, resource: "digest_candidate", resource_id: target, detail: { still_in_approved: Number(kept?.n ?? 0) } };
+    }
+
+    case "mcp.switch": {
+      /* The one switch (20 Nov): Pando MCP answers only while it is on. */
+      const on = b.on === true;
+      await tx.execute(sql`
+        insert into app_settings (key, value, updated_by, updated_at) values ('mcp_enabled', ${JSON.stringify(on)}::jsonb, ${ctx.actor}, now())
+        on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()
+      `);
+      return { applied: true, resource: "app_setting", resource_id: "mcp_enabled" };
+    }
+
+    case "mcp.revoke": {
+      /* Ends one connection — an app's every session (its client ids, grouped on /admin/mcp): every live
+         token of that admin on them, and any code from a consent not yet exchanged. */
+      const ids = (Array.isArray(b.client_ids) ? b.client_ids : [b.client_id]).map((c) => cleanText(c, 300)).filter((c): c is string => !!c).slice(0, 200);
+      const who = cleanText(b.admin_user, 80);
+      if (ids.length === 0 || !who) return { applied: false, reason: "not_implemented" };
+      const list = JSON.stringify(ids);
+      await tx.execute(sql`update mcp_tokens set revoked_at = now() where client_id in (select jsonb_array_elements_text(${list}::jsonb)) and admin_user = ${who} and revoked_at is null`);
+      await tx.execute(sql`update mcp_auth_codes set used_at = now() where client_id in (select jsonb_array_elements_text(${list}::jsonb)) and admin_user = ${who} and used_at is null`);
+      return { applied: true, resource: "mcp_connection", resource_id: null };
     }
 
     default: {

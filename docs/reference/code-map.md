@@ -4,6 +4,13 @@
 > This is the reuse catalogue: search it before adding a module, and add a line in the
 > same change when you add one that others should find.
 
+Admin pieces for Pando MCP — 20 Nov: `Toggle` (`components/admin/kit.tsx`, a real on/off switch), `ConnectScreen` (the OAuth consent screen) and `AdminFrame` (pages that stand alone without the admin menu). Tests against a real Postgres — 20 Nov: `web/scripts/lib/pglite-server.mjs` (in-memory PGlite on 127.0.0.1, every migration) and `web/scripts/lib/server-loader.mjs` (load server code outside Next); used by `test:mcp-db`. Critical alerts — 20 Nov. `web/lib/alerts.ts` (pure: what is critical, said once, the Slack text) · `web/lib/server/alerts.ts` (`runCriticalAlerts`, the `critical_alerts` job). Pando MCP — 20 Nov. The interface: [pando-mcp.md](pando-mcp.md). `web/lib/mcp/oauth.ts` (pure: PKCE, secret hashing, redirect matching, the discovery
+                       documents) · `web/lib/server/mcp/` (`server.ts` — the tools and the one wrapper
+                       every tool runs in: switch, call log; `authorize.ts`, `bearer.ts`, `costs.ts`, `plugin-skills.ts` — save_skill's one SKILL.md shape and its GitHub commit) · digest candidates (20 Nov): `datesMiss` / `candidatesForGroup` / `withCandidates` in `lib/digest.ts`, `approvedCandidates` in `lib/server/repo/digest.ts` ·
+                       `web/lib/server/repo/mcp.ts` (clients, codes, tokens, the switch, `mcp_calls`) ·
+                       `mcp-read.ts` (totals and records with no names) · `mcp-proposals.ts` · the
+                       `proposal.*` / `mcp.*` cases in `admin-write.ts` · `/admin/connect`,
+                       `/admin/proposals`, `/admin/mcp`. A new tool goes through `tool()` in server.ts.
 `web/lib/questions.ts` — the profile questionnaire (order, gating, weights, P3–P14).
 `web/lib/home-places.ts` — where a parent lives: her §5 place list and the
                        ZIPs that reach it. A ZIP names a place only

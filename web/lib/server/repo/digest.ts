@@ -1,9 +1,10 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { DIGEST_CONSENT_TEXT_VERSION } from "@/lib/consent";
-import { DIGEST_AGENT_ATTEMPTS, editionOutcome, type DigestItem } from "@/lib/digest";
+import { DIGEST_AGENT_ATTEMPTS, candidatesForGroup, editionOutcome, editionWithCandidates, type DigestItem } from "@/lib/digest";
 import type { CohortProfile } from "@/lib/digest-cohorts";
 import type { MarketId } from "@/lib/types";
+import { marketConfig } from "@/lib/markets";
 import { findDigestItems } from "@/lib/server/digest-agent";
 import { withDb, type Db } from "@/lib/server/db";
 
@@ -85,6 +86,35 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
  * its own edition, marked, so nothing it found is ever what a real Saturday
  * sends.
  */
+/** The approved digest candidates of a market still ahead (0073); none when the table is not there yet. */
+async function approvedCandidates(marketId: MarketId): Promise<DigestItem[]> {
+  const r = await withDb(async (db: Db) => {
+    const exists = (await db.execute(sql`select to_regclass('public.digest_candidates') is not null as ok`)) as unknown as Array<{ ok: boolean }>;
+    if (!exists[0]?.ok) return [];
+    return (await db.execute(sql`
+      select kind, title, when_text, starts_on::text, ends_on::text, place, age_min, age_max, summary, url
+        from digest_candidates
+       where market_id = ${marketId} and removed_at is null
+         and coalesce(ends_on, starts_on, (now() at time zone ${marketConfig(marketId).timeZone}::text)::date) >= (now() at time zone ${marketConfig(marketId).timeZone}::text)::date - 1
+       order by coalesce(starts_on, ends_on) nulls last, created_at
+       limit 100
+    `)) as unknown as Array<Record<string, unknown>>;
+  });
+  if (!r.persisted) return [];
+  return r.data.map((c) => ({
+    kind: c.kind as DigestItem["kind"],
+    title: String(c.title),
+    when_text: String(c.when_text),
+    starts_on: c.starts_on ? String(c.starts_on) : null,
+    ends_on: c.ends_on ? String(c.ends_on) : null,
+    place: c.place ? String(c.place) : null,
+    age_min: c.age_min === null ? null : Number(c.age_min),
+    age_max: c.age_max === null ? null : Number(c.age_max),
+    summary: String(c.summary),
+    url: String(c.url),
+  }));
+}
+
 export async function digestEdition(
   marketId: MarketId,
   editionDate: string,
@@ -97,8 +127,15 @@ export async function digestEdition(
   if (before && before.status !== "failed") return before;
   if (before && before.attempts >= DIGEST_AGENT_ATTEMPTS) return { ...before, items: [] };
 
-  const run = await findDigestItems(marketId, editionDate, cohort);
-  const status = editionOutcome({ end: run.end, parsed: run.parsed, returned: run.returned, kept: run.items.length });
+  const found = await findDigestItems(marketId, editionDate, cohort);
+  /* The Researcher's events an admin approved (20 Nov, 0073) go first for every group they fit. A run
+     that failed is still tried again; on the last attempt, the candidates alone are this group's week. */
+  const candidates = candidatesForGroup(await approvedCandidates(marketId), editionDate, cohort.ages);
+  const lastAttempt = (before?.attempts ?? 0) + 1 >= DIGEST_AGENT_ATTEMPTS;
+  const agentStatus = editionOutcome({ end: found.end, parsed: found.parsed, returned: found.returned, kept: found.items.length });
+  const merged = editionWithCandidates({ status: agentStatus, items: found.items }, candidates, lastAttempt);
+  const run = { ...found, items: merged.items };
+  const status = merged.status;
   console.info("[digest] agent", {
     market: marketId,
     test: isTest,
@@ -112,6 +149,7 @@ export async function digestEdition(
     pages: run.pages,
     returned: run.returned,
     kept: run.items.length,
+    candidates: candidates.length,
     relinked: run.relinked,
     text_length: run.shape.length,
     text_fence: run.shape.fence,

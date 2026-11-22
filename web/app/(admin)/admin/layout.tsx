@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { AdminShell } from "@/components/admin/Shell";
+import { AdminFrame } from "@/components/admin/AdminFrame";
 import { ADMIN_COOKIE } from "@/lib/admin/auth";
 import { readAdminSession } from "@/lib/server/admin-auth";
 
@@ -24,5 +24,6 @@ export default async function AdminLayout({
   // Unreachable in practice (proxy redirects first), and harmless if it happens.
   if (!session) return children;
 
-  return <AdminShell user={session.user}>{children}</AdminShell>;
+  /* The shell, except on the pages that stand alone (`AdminFrame`: the Claude connect screen). */
+  return <AdminFrame user={session.user}>{children}</AdminFrame>;
 }

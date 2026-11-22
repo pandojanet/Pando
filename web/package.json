@@ -77,6 +77,8 @@
     "test:cohorts": "node --experimental-strip-types --no-warnings scripts/test-cohorts.mts",
     "test:memory": "node --experimental-strip-types --no-warnings scripts/test-memory.mts",
     "test:digest-followup": "node --experimental-strip-types --no-warnings scripts/test-digest-followup.mts",
+    "test:mcp": "node --experimental-strip-types --no-warnings scripts/test-mcp.mts",
+    "test:mcp-db": "node --experimental-transform-types --no-warnings --import ./scripts/lib/server-loader.mjs scripts/test-mcp-db.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",
     "test:hooks": "node ../.claude/hooks/protect-files.test.mjs && node ../.claude/hooks/context-guard.test.mjs && node ../.claude/hooks/no-explainers.test.mjs",
     "test:githooks": "node ../.githooks/pre-commit.test.mjs",
@@ -86,6 +88,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.39.0",
     "motion": "^13.2.0",
@@ -93,9 +96,12 @@
     "postgres": "^3.4.9",
     "posthog-js": "^1.413.2",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "@electric-sql/pglite-socket": "0.2.14",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

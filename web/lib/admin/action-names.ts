@@ -87,6 +87,12 @@ export const ADMIN_ACTION_NAMES = [
   "digest.unapprove",
   "digest_item.remove",
   "digest_item.restore",
+  /* Pando MCP (20 Nov): an agent's proposal decided, the one switch, a connection ended. */
+  "proposal.approve",
+  "proposal.reject",
+  "mcp.switch",
+  "mcp.revoke",
+  "digest_candidate.remove",
 ] as const;
 
 export type AdminActionName = (typeof ADMIN_ACTION_NAMES)[number];

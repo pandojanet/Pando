@@ -926,6 +926,62 @@ export function NumberField({
 /* ── Filter ───────────────────────────────────────────────────────────────── */
 
 /**
+ * An on/off switch (20 Nov, the developer on Pando MCP's switch: a real toggle, not a button that says
+ * what it would do). `role="switch"` with `aria-checked`, so a screen reader says "on" or "off"; Space and
+ * Enter flip it as a button does; the knob slides, the track turns green when on. While the change is
+ * saving (`busy`) it stays where it was and goes quiet, so it never shows a state the server has not
+ * taken. `label` names it for assistive tech; the visible words beside it are the caller's.
+ */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  busy = false,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  busy?: boolean;
+  disabled?: boolean;
+}) {
+  const off = disabled || busy;
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={off}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "group relative inline-flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold",
+        checked ? "bg-green" : "bg-bark",
+        !off && (checked ? "hover:bg-green-deep" : "hover:bg-paper-soft"),
+        disabled && "cursor-not-allowed opacity-50",
+        busy && "cursor-wait",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none flex size-6 items-center justify-center rounded-full bg-card shadow-[0_1px_2px_rgba(34,48,24,0.25),0_1px_1px_rgba(34,48,24,0.08)] transition-transform duration-200 ease-out",
+          checked ? "translate-x-5" : "translate-x-0",
+        )}
+      >
+        {busy ? (
+          <span className="size-3 animate-spin rounded-full border-[1.5px] border-bark border-t-green" />
+        ) : checked ? (
+          <Check className="size-3.5 text-green" strokeWidth={3} />
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+/**
  * The one filter control, now with a keyboard.
  *
  * It was five hand-rolled copies, then one component with `role="tablist"`. Two

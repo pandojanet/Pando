@@ -491,6 +491,55 @@
       "when": 1794495600000,
       "tag": "0069_digest_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1795132800000,
+      "tag": "0070_pando_mcp",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1795136400000,
+      "tag": "0071_record_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795140000000,
+      "tag": "0072_plugin_skills",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795143600000,
+      "tag": "0073_digest_candidates",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795147200000,
+      "tag": "0074_critical_alerts_cron",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795150800000,
+      "tag": "0075_proposal_before",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795154400000,
+      "tag": "0076_mcp_prune_cron",
+      "breakpoints": true
     }
   ]
 }

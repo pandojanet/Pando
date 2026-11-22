@@ -1,5 +1,5 @@
 import "server-only";
-import { DEFAULT_MARKET_ID } from "@/lib/markets";
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 
 import { sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
@@ -98,6 +98,8 @@ type Reader<R extends AdminResource> = (db: Db, params: Record<string, unknown>)
  */
 const READERS: { [R in AdminResource]: Reader<R> } = {
   overview: (db) => overview(db),
+  proposals: (db, params) => proposalRows(db, params),
+  mcp: (db) => mcpAdmin(db),
   contributors: (db) => contributors(db),
   contributor: (db, params) => contributorDetail(db, String(params.id ?? "")),
   /* 23 Sep: one parent's cards, for the contributor page the Founding
@@ -362,9 +364,11 @@ async function overview(db: Db): Promise<AdminResourceRows["overview"]> {
   /* Its own statement: the table may not exist yet, and one missing relation
      must not take the whole overview down with it. */
   const introductionsOpen = await openIntroductions(db);
+  const proposalsOpen = await openProposals(db);
 
   return {
     introductions: { open: introductionsOpen },
+    proposals: { open: proposalsOpen },
     contributors: {
       total: n("contributors_total"),
       completed: n("contributors_completed"),
@@ -2628,6 +2632,164 @@ async function introductionRows(db: Db): Promise<AdminResourceRows["introduction
 }
 
 /** Requests a person still has to move, for the nav badge. Zero until `drizzle/0059` exists. */
+/* ── Pando MCP (20 Nov) ──────────────────────────────────────────────────── */
+
+const mcpTables = async (db: Db) =>
+  (await rows(db, sql`select to_regclass('public.mcp_proposals') is not null as ok`))[0]?.ok === true;
+
+async function openProposals(db: Db): Promise<number> {
+  if (!(await mcpTables(db))) return 0;
+  const out = await rows(db, sql`select count(*) as n from mcp_proposals where status = 'proposed'`);
+  return Number(out[0]?.n ?? 0);
+}
+
+/** Proposals for /admin/proposals: open ones, or every one with `status: "all"`. Reads nothing before 0070. */
+async function proposalRows(db: Db, params: Record<string, unknown>): Promise<AdminResourceRows["proposals"]> {
+  if (!(await mcpTables(db))) return { configured: false, rows: [] };
+  if (params.status === "candidates") {
+    const [has] = await rows(db, sql`select to_regclass('public.digest_candidates') is not null as ok`);
+    if (has?.ok !== true) return { configured: true, rows: [], candidates: [] };
+    const live = await rows(db, sql`
+      select id, kind, title, when_text, place, age_min, age_max, url, added_by, created_at
+        from digest_candidates
+       where removed_at is null
+         and coalesce(ends_on, starts_on, (now() at time zone ${marketConfig(DEFAULT_MARKET_ID).timeZone}::text)::date) >= (now() at time zone ${marketConfig(DEFAULT_MARKET_ID).timeZone}::text)::date
+       order by coalesce(starts_on, ends_on) nulls last, created_at limit 200
+    `);
+    const [waiting] = await rows(db, sql`select count(*) as n from mcp_proposals where status = 'proposed'`);
+    return {
+      configured: true,
+      rows: [],
+      counts: { waiting: Number(waiting?.n ?? 0), candidates: live.length },
+      candidates: live.map((r) => ({
+        id: String(r.id),
+        kind: String(r.kind),
+        title: String(r.title),
+        when_text: String(r.when_text),
+        place: r.place ? String(r.place) : null,
+        ages: r.age_min === null && r.age_max === null ? null : `${r.age_min ?? 0}–${r.age_max ?? 18}`,
+        url: String(r.url),
+        added_by: String(r.added_by),
+        created_at: new Date(String(r.created_at)).toISOString(),
+      })),
+    };
+  }
+  const status = params.status === "all" ? "all" : params.status === "decided" ? "decided" : "proposed";
+  /* 0075 may not be applied yet: then nothing has a "before" and nothing reads it. */
+  const [hasBefore] = await rows(db, sql`select exists (select 1 from information_schema.columns where table_name = 'mcp_proposals' and column_name = 'before') as ok`);
+  const out = await rows(db, sql`
+    select p.*, s.name as share_name, s.kind as share_kind,
+           s.venue as cur_venue, s.neighborhoods as cur_areas, s.age_bands as cur_bands, s.subcategory as cur_subcategory,
+           s.status as cur_status, s.answer_ready as cur_ready, s.freshness_state as cur_freshness
+      from mcp_proposals p left join shares s on s.id = p.share_id
+     ${status === "proposed" ? sql`where p.status = 'proposed'` : status === "decided" ? sql`where p.status <> 'proposed'` : sql``}
+     order by p.created_at ${status === "proposed" ? sql`asc` : sql`desc`} limit 200
+  `);
+  /* The queue oldest first (review, 20 Nov: a queue is worked in the order it arrived); decided, newest first. */
+  const [counts] = await rows(db, sql`
+    select (select count(*) from mcp_proposals where status = 'proposed') as waiting,
+           ${(await rows(db, sql`select to_regclass('public.digest_candidates') is not null as ok`))[0]?.ok === true
+             ? sql`(select count(*) from digest_candidates where removed_at is null and coalesce(ends_on, starts_on, current_date) >= current_date)`
+             : sql`0`} as candidates
+  `);
+  const facts = (r: Row, prefix: "cur_" | null, from?: Record<string, unknown> | null) => {
+    if (prefix === null) {
+      if (!from) return null;
+      return {
+        name: from.name ? String(from.name) : null, venue: from.venue ? String(from.venue) : null,
+        areas: ((from.areas as string[] | null) ?? []).map(String), age_bands: ((from.age_bands as string[] | null) ?? []).map(String),
+        subcategory: from.subcategory ? String(from.subcategory) : null, status: from.status ? String(from.status) : null,
+        answer_ready: from.answer_ready === true, freshness: from.freshness ? String(from.freshness) : null,
+      };
+    }
+    if (!r.share_id || r.share_name == null) return null;
+    return {
+      name: String(r.share_name), venue: r.cur_venue ? String(r.cur_venue) : null,
+      areas: ((r.cur_areas as string[] | null) ?? []).map(String), age_bands: ((r.cur_bands as string[] | null) ?? []).map(String),
+      subcategory: r.cur_subcategory ? String(r.cur_subcategory) : null, status: r.cur_status ? String(r.cur_status) : null,
+      answer_ready: r.cur_ready === true, freshness: r.cur_freshness ? String(r.cur_freshness) : null,
+    };
+  };
+  return {
+    configured: true,
+    counts: { waiting: Number(counts?.waiting ?? 0), candidates: Number(counts?.candidates ?? 0) },
+    rows: out.map((r) => ({
+      id: String(r.id),
+      created_at: new Date(String(r.created_at)).toISOString(),
+      proposed_by: String(r.actor),
+      kind: String(r.kind) as "record_edit" | "new_record" | "fact_check" | "event",
+      record: r.share_id ? { id: String(r.share_id), name: String(r.share_name ?? ""), kind: String(r.share_kind ?? "") } : null,
+      change: (r.payload as Record<string, unknown>) ?? {},
+      source_url: r.source_url ? String(r.source_url) : null,
+      status: String(r.status),
+      decided_by: r.decided_by ? String(r.decided_by) : null,
+      decided_via: r.decided_via ? String(r.decided_via) : null,
+      decided_at: r.decided_at ? new Date(String(r.decided_at)).toISOString() : null,
+      ...(() => {
+        const before = hasBefore?.ok === true ? facts(r, null, r.before as Record<string, unknown> | null) : null;
+        const current = facts(r, "cur_");
+        /* Changed since: a field the agent saw is different now — only while the proposal still waits. */
+        const changed = String(r.status) === "proposed" && before !== null && current !== null &&
+          JSON.stringify({ ...before, freshness: null }) !== JSON.stringify({ ...current, freshness: null });
+        return { before, current, changed_since: changed, decision_note: hasBefore?.ok === true && r.decision_note ? String(r.decision_note) : null };
+      })(),
+    })),
+  };
+}
+
+/** The switch, live connections (one row per admin and client) and the last 24 hours' calls by tool. */
+async function mcpAdmin(db: Db): Promise<AdminResourceRows["mcp"]> {
+  const envOff = (process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off";
+  if (!(await mcpTables(db))) return { configured: false, enabled: false, env_off: envOff, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] };
+  const [setting] = await rows(db, sql`select value, updated_by, updated_at from app_settings where key = 'mcp_enabled'`);
+  /* One row per admin and app (review, 20 Nov): Claude registers anew on each reconnect, so an app is
+     many client ids. The app is told by where its codes go — Claude's hosted callback, or a loopback
+     address (Claude Code) — never by the name a client gave itself alone. */
+  const connections = await rows(db, sql`
+    select t.admin_user,
+           case when exists (select 1 from unnest(c.redirect_uris) u where u like 'https://claude.%') then 'Claude' else 'Claude Code' end as app,
+           c.client_name,
+           array_agg(distinct t.client_id) as client_ids,
+           count(distinct t.client_id) as sessions,
+           min(t.created_at) as since, max(t.last_used_at) as last_used_at
+      from mcp_tokens t left join mcp_clients c on c.client_id = t.client_id
+     where t.revoked_at is null and t.refresh_expires_at > now()
+     group by 1, 2, 3
+     order by max(coalesce(t.last_used_at, t.created_at)) desc
+  `);
+  const recent = await rows(db, sql`
+    select at, actor, tool, outcome, ms from mcp_calls order by at desc limit 50
+  `);
+  const history = await rows(db, sql`
+    select at, actor, (after->>'on')::boolean as on from audit_log
+     where action = 'mcp.switch' order by at desc limit 5
+  `).catch(() => [] as Row[]);
+  const calls = await rows(db, sql`
+    select tool, count(*) filter (where outcome = 'ok') as ok, count(*) filter (where outcome = 'refused') as refused,
+           count(*) filter (where outcome = 'off') as off, count(*) filter (where outcome = 'error') as error, max(at) as last_at
+      from mcp_calls where at > now() - interval '24 hours' group by tool order by count(*) desc
+  `);
+  return {
+    configured: true,
+    enabled: setting?.value === true && !envOff,
+    env_off: envOff,
+    switched_by: setting?.updated_by ? String(setting.updated_by) : null,
+    switched_at: setting?.updated_at ? new Date(String(setting.updated_at)).toISOString() : null,
+    connections: connections.map((c) => ({
+      admin_user: String(c.admin_user),
+      app: String(c.app),
+      client_name: c.client_name ? String(c.client_name) : null,
+      client_ids: ((c.client_ids as string[] | null) ?? []).map(String),
+      sessions: Number(c.sessions ?? 0),
+      since: new Date(String(c.since)).toISOString(),
+      last_used_at: c.last_used_at ? new Date(String(c.last_used_at)).toISOString() : null,
+    })),
+    recent: recent.map((r) => ({ at: new Date(String(r.at)).toISOString(), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: Number(r.ms ?? 0) })),
+    history: history.map((h) => ({ at: new Date(String(h.at)).toISOString(), by: String(h.actor), on: h.on === true })),
+    calls: calls.map((c) => ({ tool: String(c.tool), ok: Number(c.ok), refused: Number(c.refused), off: Number(c.off), error: Number(c.error), last_at: new Date(String(c.last_at)).toISOString() })),
+  };
+}
+
 async function openIntroductions(db: Db): Promise<number> {
   const exists = await rows(db, sql`select to_regclass('public.introductions') is not null as ok`);
   if (exists[0]?.ok !== true) return 0;
@@ -2746,10 +2908,13 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
   if (editionIds.length === 0) return { configured: true, picks_configured: picks, weeks: [], index };
   const idList = sql.join(editionIds.map((id) => sql`${id}::uuid`), sql`, `);
 
+  /* 20 Nov (review round 2): which items came from an approved candidate, so the digest's approver can tell them from the agent's finds. */
+  const [candidatesTable] = await rows(db, sql`select to_regclass('public.digest_candidates') is not null as ok`);
   const items = await rows(db, sql`
     select id::text as id, edition_id::text as edition_id, position, kind, title, when_text,
            starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url,
-           ${approval ? sql`removed_at is not null` : sql`false`} as removed
+           ${approval ? sql`removed_at is not null` : sql`false`} as removed,
+           ${candidatesTable?.ok === true ? sql`exists (select 1 from digest_candidates c where c.url = digest_items.url and c.removed_at is null)` : sql`false`} as from_candidate
       from digest_items where edition_id in (${idList})
      order by edition_id, position
   `);
@@ -2880,6 +3045,7 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
             summary: String(i.summary),
             url: String(i.url),
             removed: i.removed === true,
+            from_candidate: i.from_candidate === true,
             sent_to: sentTo.get(String(i.id)) ?? 0,
             sent_here: sentHere.get(`${String(i.id)}|${String(e.id)}`) ?? 0,
             reminders: n(d?.reminders),

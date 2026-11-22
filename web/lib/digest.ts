@@ -766,35 +766,9 @@ export function readAgentItems(
 
     const starts_on = isoOrNull(r.starts_on);
     const ends_on = isoOrNull(r.ends_on);
-    const last = ends_on ?? starts_on;
-    if (last && last < ctx.editionDate) {
-      drop("past");
-      continue;
-    }
-    if (kind === "event") {
-      if (!starts_on && !ends_on) {
-        drop("undated_event");
-        continue;
-      }
-      /* Read on the day it is sent (6 Nov, the lab walk): a ceremony at 10am went
-         out in a digest sent at 10am. An event that is only today is gone by the
-         time most read it; one running for days through today stays. */
-      if (last === ctx.editionDate) {
-        drop("today_only");
-        continue;
-      }
-      if ((starts_on ?? ends_on)! > addDays(ctx.editionDate, DIGEST_EVENT_DAYS)) {
-        drop("too_far");
-        continue;
-      }
-    } else if (starts_on && starts_on > addDays(ctx.editionDate, DIGEST_LONG_DAYS)) {
-      drop("too_far");
-      continue;
-    } else if ((kind === "camp" || kind === "class") && starts_on && starts_on < ctx.editionDate) {
-      /* A camp or class already under way is one a family can rarely still join (19 Nov, the developer:
-         "навіщо пропонувати подію, яка вже почалась і ймовірно на неї не можна зареєструватися?").
-         An event running for days — an exhibit, a light show — stays: it is walked into, not signed up for. */
-      drop("already_started");
+    const outOfWindow = datesMiss({ kind, starts_on, ends_on }, ctx.editionDate);
+    if (outOfWindow) {
+      drop(outOfWindow);
       continue;
     }
     /* The dates it states, on the page it links, when the agent read that page (12 Nov, `datesOnPage`). */
@@ -830,6 +804,69 @@ export function readAgentItems(
     }
     out.push({ kind, title, when_text, starts_on, ends_on, place: clip(r.place, 60) || null, age_min, age_max, summary, url });
     if (out.length >= DIGEST_EDITION_MAX) break;
+  }
+  return out;
+}
+
+/**
+ * Why an item's dates keep it out of the digest sent on `editionDate`, or null when they fit — one rule
+ * for what the agent found and for what an admin approved (`candidatesForGroup`, 20 Nov).
+ */
+export function datesMiss(
+  item: { kind: DigestKind; starts_on: string | null; ends_on: string | null },
+  editionDate: string,
+): "past" | "undated_event" | "today_only" | "too_far" | "already_started" | null {
+  const { kind, starts_on, ends_on } = item;
+  const last = ends_on ?? starts_on;
+  if (last && last < editionDate) return "past";
+  if (kind === "event") {
+    if (!starts_on && !ends_on) return "undated_event";
+    /* Read on the day it is sent (6 Nov, the lab walk): a ceremony at 10am went
+       out in a digest sent at 10am. An event that is only today is gone by the
+       time most read it; one running for days through today stays. */
+    if (last === editionDate) return "today_only";
+    if ((starts_on ?? ends_on)! > addDays(editionDate, DIGEST_EVENT_DAYS)) return "too_far";
+    return null;
+  }
+  if (starts_on && starts_on > addDays(editionDate, DIGEST_LONG_DAYS)) return "too_far";
+  /* A camp or class already under way is one a family can rarely still join (19 Nov, the developer:
+     "навіщо пропонувати подію, яка вже почалась і ймовірно на неї не можна зареєструватися?").
+     An event running for days — an exhibit, a light show — stays: it is walked into, not signed up for. */
+  if ((kind === "camp" || kind === "class") && starts_on && starts_on < editionDate) return "already_started";
+  return null;
+}
+
+/**
+ * The Researcher's events an admin approved (20 Nov, `digest_candidates`), for one group's Saturday:
+ * dated inside the window by the same rule as the agent's finds (`datesMiss`), and for ages that meet
+ * the group's (an item or a group with no ages meets every one). Checked by a person already, so
+ * none of the page checks the agent's finds need.
+ */
+export function candidatesForGroup(
+  candidates: readonly DigestItem[],
+  editionDate: string,
+  ages: { min: number; max: number } | null,
+): DigestItem[] {
+  return candidates.filter(
+    (c) =>
+      datesMiss(c, editionDate) === null &&
+      (ages === null || ((c.age_max ?? 99) >= ages.min && (c.age_min ?? 0) <= ages.max)),
+  );
+}
+
+/** At most this many approved candidates in one group's edition, so the agent's finds always keep room (review round 2). */
+export const DIGEST_CANDIDATES_MAX = 8;
+
+/**
+ * A group's items: the approved candidates first (up to `DIGEST_CANDIDATES_MAX`), then what the agent
+ * found that is not one of them, up to `max`. First in the group's list — each family's own picks
+ * (`pickForPerson`) still go by its children's ages and by kind.
+ */
+export function withCandidates(candidates: readonly DigestItem[], found: readonly DigestItem[], max: number): DigestItem[] {
+  const out: DigestItem[] = [];
+  for (const item of [...candidates.slice(0, DIGEST_CANDIDATES_MAX), ...found]) {
+    if (out.length >= max) break;
+    if (!out.some((o) => sameThing(o, item))) out.push(item);
   }
   return out;
 }
@@ -1154,6 +1191,22 @@ export function composeDigest(items: readonly DigestItem[]): {
  * kept eight of eight.
  */
 export const DIGEST_AGENT_ATTEMPTS = 3;
+
+/**
+ * A group's edition once candidates are in (20 Nov): a failed agent run is tried again while attempts
+ * are left, whatever the candidates; on the last attempt, the candidates alone are the week; an agent
+ * that found nothing still gives a ready edition when candidates fit.
+ */
+export function editionWithCandidates(
+  agent: { status: "ready" | "empty" | "failed"; items: readonly DigestItem[] },
+  candidates: readonly DigestItem[],
+  lastAttempt: boolean,
+): { status: "ready" | "empty" | "failed"; items: DigestItem[] } {
+  if (agent.status === "failed" && !lastAttempt) return { status: "failed", items: [...agent.items] };
+  const items = withCandidates(candidates, agent.items, DIGEST_EDITION_MAX);
+  if (items.length > 0) return { status: "ready", items };
+  return { status: agent.status, items };
+}
 
 export function editionOutcome(run: { end: string; parsed: boolean; returned: number; kept: number }): "ready" | "empty" | "failed" {
   if (run.kept > 0) return "ready";

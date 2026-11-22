@@ -330,7 +330,8 @@ ok("a send that may pass gives the claim back; STOP keeps it",
 ok("a settled edition with no items still reaches its families, for the other groups' items (review, 11 Nov)",
   /if \(before && before\.attempts >= DIGEST_AGENT_ATTEMPTS\) return \{ \.\.\.before, items: \[\] \};/.test(repo) &&
     /const settled = stored\.data\.status !== "failed" \|\| stored\.data\.attempts >= DIGEST_AGENT_ATTEMPTS;/.test(repo));
-ok("the edition is judged on what the agent returned", /editionOutcome\(\{ end: run\.end, parsed: run\.parsed, returned: run\.returned, kept: run\.items\.length \}\)/.test(repo));
+ok("the edition is judged on what the agent returned", /editionOutcome\(\{ end: found\.end, parsed: found\.parsed, returned: found\.returned, kept: found\.items\.length \}\)/.test(repo));
+ok("approved candidates are read for each group's window and ages (20 Nov)", /candidatesForGroup\(await approvedCandidates\(marketId\), editionDate, cohort\.ages\)/.test(repo));
 ok("an edition that failed is not sent from, and is tried again", /if \(before && before\.status !== "failed"\) return before;/.test(repo) &&
   /where digest_editions\.status = 'failed'/.test(repo));
 const sms = read("lib/server/sms.ts");
@@ -578,8 +579,10 @@ const mig = read("drizzle/0069_digest_approval.sql");
 ok("the migration is additive: no existing row rewritten, old editions need no approval",
   /approval_required boolean NOT NULL DEFAULT false/.test(mig) && !/\bUPDATE\b|\bDELETE\b|\bDROP\b/i.test(mig.replace(/^--.*$/gm, "")));
 const journal = JSON.parse(read("drizzle/meta/_journal.json")) as { entries: Array<{ tag: string; when: number }> };
-const last = journal.entries[journal.entries.length - 1];
-ok("its journal entry is the newest", last.tag === "0069_digest_approval" && journal.entries.every((e) => e === last || e.when < last.when));
+ok("its journal entry is newer than every one before it", (() => {
+  const i = journal.entries.findIndex((e) => e.tag === "0069_digest_approval");
+  return i > 0 && journal.entries.slice(0, i).every((e) => e.when < journal.entries[i].when);
+})());
 const write = read("lib/server/repo/admin-write.ts");
 const approve = write.slice(write.indexOf('case "digest.approve"'), write.indexOf('case "digest.unapprove"'));
 ok("approve: only a prepared, unapproved, found edition; the actor is recorded",
@@ -643,6 +646,37 @@ ok("opt-out is still read before it", sms.indexOf('reason: "opted_out"') < sms.i
 ok("the log lines carry counts and enums only", !/console\.\w+\([^)]*phone/.test(one) && !/console\.\w+\([^)]*phone/.test(route));
 const names = read("lib/admin/action-names.ts");
 ok("the four actions are named, so each press is audited", ["digest.approve", "digest.unapprove", "digest_item.remove", "digest_item.restore"].every((a) => names.includes(`"${a}"`)));
+
+console.log("\n=== the Researcher's approved events (20 Nov) ===");
+{
+  const sat = "2026-11-21";
+  const base = { title: "Winter Lights Walk", when_text: "Sat Nov 28, 5-8pm", place: "Descanso Gardens", summary: "An evening light walk for families.", url: "https://example.org/lights" };
+  const ev = (o: Partial<Item>): Item => ({ kind: "event", starts_on: "2026-11-28", ends_on: null, age_min: null, age_max: null, ...base, ...o }) as Item;
+  ok("one date rule for both: today-only, past, too far and an already-started camp are out", d.datesMiss(ev({}), sat) === null &&
+    d.datesMiss(ev({ starts_on: sat }), sat) === "today_only" && d.datesMiss(ev({ starts_on: "2026-11-01" }), sat) === "past" &&
+    d.datesMiss(ev({ starts_on: "2026-12-20" }), sat) === "too_far" && d.datesMiss(ev({ kind: "camp", starts_on: "2026-11-16", ends_on: "2026-12-30" }), sat) === "already_started");
+  const toddlers = ev({ title: "Toddler Art", age_min: 1, age_max: 3, url: "https://example.org/art" });
+  const teens = ev({ title: "Teen Robotics", age_min: 13, age_max: 17, url: "https://example.org/robots" });
+  const fit = d.candidatesForGroup([toddlers, teens, ev({}), ev({ title: "Old", starts_on: "2026-11-02" })], sat, { min: 0, max: 4 });
+  ok("a candidate goes to the groups whose ages it meets and whose window it falls in", fit.length === 2 && fit.some((i) => i.title === "Toddler Art") && fit.some((i) => i.title === "Winter Lights Walk"));
+  ok("a group with no ages gets every dated candidate", d.candidatesForGroup([toddlers, teens], sat, null).length === 2);
+  const agent = [ev({ title: "Winter Lights Walk", url: "https://other.example/lights" }), ev({ title: "Library Storytime", place: "Altadena Library", url: "https://example.org/story" })];
+  const merged = d.withCandidates([toddlers, ev({})], agent, 12);
+  ok("candidates come first; the agent's copy of the same thing is dropped; the cap holds", merged.length === 3 && merged[0].title === "Toddler Art" &&
+    merged.filter((i) => i.title === "Winter Lights Walk").length === 1 && merged[1].url === "https://example.org/lights" && d.withCandidates([toddlers, ev({})], agent, 2).length === 2);
+  const names = ["Lantern Parade", "Pottery Wheel", "Robot Garage", "Puppet Theater", "Fossil Dig", "Ballet Basics", "Chess Club", "Tide Pools", "Kite Festival", "Drum Circle", "Bug Safari", "Star Party"];
+  const many = names.map((n, k) => ev({ title: n, place: `Venue ${n}`, url: `https://example.org/c${k}` }));
+  ok("at most eight candidates in a group's edition, so the agent's finds keep room (review round 2)",
+    d.withCandidates(many, agent, 12).filter((i) => names.includes(i.title)).length === d.DIGEST_CANDIDATES_MAX && d.DIGEST_CANDIDATES_MAX === 8);
+  const failed = { status: "failed" as const, items: [] };
+  ok("a failed agent run is tried again while attempts are left, candidates or not",
+    d.editionWithCandidates(failed, [toddlers], false).status === "failed");
+  ok("on the last attempt, the candidates alone are the week; with none it stays failed",
+    d.editionWithCandidates(failed, [toddlers], true).status === "ready" && d.editionWithCandidates(failed, [], true).status === "failed");
+  ok("an agent that found nothing still gives a ready edition when candidates fit; empty without them",
+    d.editionWithCandidates({ status: "empty", items: [] }, [toddlers], false).status === "ready" && d.editionWithCandidates({ status: "empty", items: [] }, [], false).status === "empty");
+  ok("the edition job uses that rule", /editionWithCandidates\(\{ status: agentStatus, items: found\.items \}, candidates, lastAttempt\)/.test(repo));
+}
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

@@ -97,6 +97,8 @@ const EMPTY: AdminResourceRows = {
     people: [],
   },
   audit: [],
+  proposals: { configured: false, rows: [] },
+  mcp: { configured: false, enabled: false, env_off: false, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] },
 };
 
 const SAMPLE: AdminResourceRows = {
@@ -179,6 +181,9 @@ const SAMPLE: AdminResourceRows = {
     people: [],
   },
   audit: sample.sampleAudit,
+  /* No sample proposals or connections: a made-up approval would read as one an admin gave. */
+  proposals: { configured: false, rows: [] },
+  mcp: { configured: false, enabled: false, env_off: false, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] },
 };
 
 /**

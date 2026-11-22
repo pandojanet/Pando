@@ -725,6 +725,10 @@ export async function POST(request: Request) {
         "Another record of this kind already has that name. Renaming onto it would split future contributions between the two — merging them is a separate step.",
       blast_answers_not_sent:
         "Nothing went out. The asker may have texted STOP, or no messaging provider is configured here. Nothing is marked as delivered, so you can try again.",
+      /* 20 Nov — Pando MCP. */
+      proposal_closed: "This proposal was already decided, or its record is gone.",
+      proposal_invalid: "This proposal can't be applied as it is. Reject it; the agent can propose it again correctly.",
+      record_not_approved: "This record isn't approved yet, so it can't be marked ready to answer with.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

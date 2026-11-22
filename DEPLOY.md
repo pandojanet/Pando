@@ -288,6 +288,31 @@ Health: `GET /api/health` returns `{ ok, uptime_s, n8n: {…} }` and is what the
 container's `HEALTHCHECK` polls. `docker compose ps` on the server shows
 `healthy` once the app is answering.
 
+### Turning on Pando MCP (20 Nov)
+
+1. Migrations `0070_pando_mcp` (six tables, nothing existing changed), `0071_record_source` (three
+   nullable columns on `shares`) `0072_plugin_skills` (one table), `0073_digest_candidates` (one table; `mcp_proposals.kind` gains
+   `event`) `0074_critical_alerts_cron` (the alert job's schedule, created **paused**) `0075_proposal_before` (two nullable columns) and `0076_mcp_prune_cron` (the nightly cleanup's schedule, created **paused**) — one `npm run migrate` with the yes the database rule asks for,
+   **before** the deploy: drizzle's `insert(shares)` names every column in `schema.ts`, so code
+   without `0071` breaks every Seed Tool card save. **A push to `main` deploys** (`deploy.yml`), so the
+   migration runs before the branch is merged, not after.
+2. Optional, for the AI half of `costs_summary`: `POSTHOG_PERSONAL_API_KEY` (scope `query:read`) and
+   `POSTHOG_PROJECT_ID` in the server's `.env`. `MCP_BASE_URL=https://pando.is` if `NOTIFY_BASE_URL` is not.
+   For the Agent builder's `save_skill`: `PLUGIN_GITHUB_TOKEN` (Contents read/write on the plugin repo
+   only) and `PLUGIN_GITHUB_REPO`.
+   For critical alerts: `SLACK_ALERTS_WEBHOOK_URL` (an Incoming Webhook for the channel to alert), then,
+   with the developer's word, turn the schedule on in Supabase's SQL editor:
+   `select cron.alter_job(jobid, active := true) from cron.job where jobname = 'pando-critical_alerts';`
+   It needs the Vault secrets every Pando job needs (`pando_jobs_url`, `pando_jobs_secret`, 0068).
+   The same for the nightly cleanup: `select cron.alter_job(jobid, active := true) from cron.job where jobname = 'pando-mcp_prune';`
+3. Deploy, then `curl -s https://pando.is/.well-known/oauth-protected-resource` must show
+   `"resource":"https://pando.is/api/mcp"`, and `curl -si -X POST https://pando.is/api/mcp` a 401 with
+   `WWW-Authenticate: Bearer resource_metadata=…`.
+4. An admin switches it on at `/admin/mcp`; in Claude: Settings → Connectors → Add custom connector →
+   `https://pando.is/api/mcp` (or install the plugin, whose `.mcp.json` names it), sign in, Allow.
+5. Off: the switch at `/admin/mcp`, or `PANDO_MCP=off` in `.env` and redeploy. Rollback: the image before;
+   the tables stay and are unread.
+
 ### Rolling back
 
 The deploy script records the previously healthy image in

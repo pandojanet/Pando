@@ -106,9 +106,43 @@ export type RateLimitName =
   | "geocode"
   | "caregiver_claim"
   | "invite_check"
-  | "phone_lookup";
+  | "phone_lookup"
+  | "oauth"
+  | "mcp"
+  | "mcp_day"
+  | "oauth_register";
 
 export const LIMITS: Record<RateLimitName, RateLimit> = {
+  mcp: {
+    /* Pando MCP (20 Nov, the founder's Playbook: "rate limits, quotas"): per connection — one admin in
+       one Claude — not per address, since every connection comes from Anthropic's range. A brief that
+       fans out to several helpers makes a few dozen calls; this is a runaway loop's ceiling. */
+    max: 120,
+    windowSeconds: 60,
+    message: "Too many requests from this Claude connection just now. Try again in a minute.",
+  },
+  oauth_register: {
+    /* Registering a client (review, 20 Nov): once per person per Claude, so a burst is never a real
+       sign-in, and the cap on registered clients must not be fillable in minutes. */
+    max: 30,
+    windowSeconds: 60 * 60,
+    message: "Too many connector registrations just now. Try again in an hour.",
+  },
+  mcp_day: {
+    /* And a day's quota per connection, so a scheduled task stuck in a loop stops within the day. */
+    max: 3000,
+    windowSeconds: 24 * 60 * 60,
+    message: "This Claude connection has used its Pando requests for today. Try again tomorrow.",
+  },
+  oauth: {
+    /* Pando MCP's OAuth endpoints (20 Nov): discovery, registration, codes, tokens. Claude refreshes
+       proactively and Anthropic's traffic comes from one range (160.79.104.0/21), so the ceiling is
+       for a handful of people connecting, not for one. */
+    max: 120,
+    windowSeconds: 60,
+    message: "Too many sign-in requests just now. Try again in a minute.",
+  },
+
   /**
    * Three a minute, which is a roomful of parents rather than one.
    *

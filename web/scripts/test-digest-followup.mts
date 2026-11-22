@@ -227,10 +227,13 @@ ok("the row is the job: its moments stored when picked, swept by time, late ones
     /remind_at\s+timestamptz/.test(migration) && /ask_at\s+timestamptz/.test(migration) && !/feedback_on/.test(migration));
 
 console.log("\n=== Supabase Cron (drizzle/0068) ===");
-const cron = read("drizzle/0068_supabase_cron.sql");
+const cron0068 = read("drizzle/0068_supabase_cron.sql");
+/* 20 Nov: critical_alerts' schedule is its own migration (0074, created paused); the schedules are read from both. */
+const cron0074 = read("drizzle/0074_critical_alerts_cron.sql") + read("drizzle/0076_mcp_prune_cron.sql");
+const cron = cron0068;
 const jobNames = [...registry.matchAll(/\n  ([a-z_]+): \{\s+name: "\1"/g)].map((m) => m[1]);
-const scheduled = [...cron.matchAll(/cron\.schedule\('pando-([a-z_]+)',\s*'([^']+)',\s*\$c\$select pando_private\.run_job\('([a-z_]+)'\)\$c\$\)/g)];
-ok("every registered job has exactly one schedule, under its own name", jobNames.length === 11 &&
+const scheduled = [...(cron0068 + cron0074).matchAll(/cron\.schedule\('pando-([a-z_]+)',\s*'([^']+)',\s*\$c\$select pando_private\.run_job\('([a-z_]+)'\)\$c\$\)/g)];
+ok("every registered job has exactly one schedule, under its own name", jobNames.length === 13 &&
   jobNames.every((j) => scheduled.filter((m) => m[1] === j && m[3] === j).length === 1) && scheduled.length === jobNames.length,
   `${jobNames.length} jobs, ${scheduled.length} schedules`);
 ok("no address or token in the file: both from Vault by name",
@@ -239,6 +242,9 @@ ok("no address or token in the file: both from Vault by name",
 ok("the caller is out of the REST API's reach: its own schema, definer, empty search_path, revoked",
   /CREATE OR REPLACE FUNCTION pando_private\.run_job/.test(cron) && /SECURITY DEFINER\s+SET search_path = ''/.test(cron) &&
     /REVOKE ALL ON FUNCTION pando_private\.run_job\(text\) FROM PUBLIC/.test(cron) && /REVOKE ALL ON SCHEMA pando_private FROM PUBLIC/.test(cron));
+ok("critical_alerts is scheduled every ten minutes and created paused, like every job on production (19 Nov)",
+  /cron\.schedule\('pando-critical_alerts', '\*\/10 \* \* \* \*'/.test(cron0074) && /cron\.alter_job\(job_id := \(SELECT jobid FROM cron\.job WHERE jobname = 'pando-critical_alerts'\), active := false\)/.test(cron0074) &&
+    /IF NOT EXISTS \(SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron'\)[\s\S]{0,250}RETURN;/.test(cron0074) && /EXCEPTION WHEN OTHERS THEN/.test(cron0074));
 ok("where pg_cron or pg_net is missing (the lab) it makes no schedule and does not fail",
   /IF NOT EXISTS \(SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron'\)[\s\S]{0,200}RETURN;/.test(cron));
 ok("the daily texting jobs are called only through the Pacific day (16-03 UTC)",

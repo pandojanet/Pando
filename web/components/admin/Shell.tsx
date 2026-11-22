@@ -10,6 +10,7 @@ import {
   Flag,
   ChevronRight,
   Gauge,
+  GitPullRequestArrow,
   Handshake,
   Heart,
   Layers,
@@ -17,6 +18,7 @@ import {
   ListChecks,
   Newspaper,
   MessageSquareReply,
+  Plug,
   Send,
   ScrollText,
   Search,
@@ -180,6 +182,13 @@ const NAV: NavSection[] = [
         count: (o) => o.quality.open_flags,
         urgent: (o) => o.quality.escalations,
       },
+      {
+        /* 20 Nov. A count: every proposal waits for an admin's yes. */
+        href: "/admin/proposals",
+        icon: GitPullRequestArrow,
+        label: "Proposals",
+        count: (o) => o.proposals?.open ?? 0,
+      },
     ],
   },
   {
@@ -297,6 +306,12 @@ const NAV: NavSection[] = [
         icon: Handshake,
         label: "Introductions",
         count: (o) => o.introductions?.open ?? 0,
+      },
+      {
+        /* 20 Nov. No count: the switch and connections, not a queue. */
+        href: "/admin/mcp",
+        icon: Plug,
+        label: "Pando MCP",
       },
       {
         href: "/admin/audit",

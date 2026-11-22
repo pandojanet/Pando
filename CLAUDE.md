@@ -55,6 +55,7 @@ docs/
   phase-2-scope.md            Phase 2 scope that no estimate row covers, and the tiers
   reference/validation.md     how a change is proven: the gate, proof by area, done
   reference/code-map.md       where the logic lives — the reuse catalogue
+  reference/pando-mcp.md      Pando MCP's interface: auth, tools, audit, errors, quotas
   documentation-standards.md  how docs here are written
   technical-debt.md           shortcuts taken on purpose, and when each falls due
   spec-compliance-review.md   built vs. every client document, + open questions

@@ -162,6 +162,32 @@ export function rateLimited(
   );
 }
 
+/**
+ * The same limit counted against a caller the route already knows (20 Nov, Pando MCP: one admin's
+ * connection) rather than an address — every Claude connection arrives from Anthropic's range, so an
+ * address would put everyone in one budget. `key` is never logged.
+ */
+export function rateLimitedKey(key: string, name: RateLimitName, now = Date.now()): NextResponse | null {
+  const bucketKey = `${name}:key:${key}`;
+  const { bucket, verdict } = consume(buckets.get(bucketKey), LIMITS[name], now);
+  buckets.set(bucketKey, bucket);
+  evictIfNeeded(now);
+  if (verdict.ok) return null;
+  console.warn("[rate] refused", { limit: name, retry_after: verdict.retryAfter });
+  return NextResponse.json(
+    { error: LIMITS[name].message, retry_after: verdict.retryAfter },
+    {
+      status: 429,
+      headers: {
+        "Retry-After": String(verdict.retryAfter),
+        "RateLimit-Limit": String(LIMITS[name].max),
+        "RateLimit-Remaining": "0",
+        "RateLimit-Reset": String(verdict.retryAfter),
+      },
+    },
+  );
+}
+
 /** Test seam. Never called by the app. */
 export function __resetRateLimits(): void {
   buckets.clear();

@@ -43,6 +43,21 @@ const nextConfig: NextConfig = {
     ];
   },
 
+  /**
+   * Pando MCP's OAuth discovery (20 Nov) answers at the RFC paths, which an app folder cannot hold:
+   * `/.well-known/oauth-protected-resource` (also with the MCP path after it, which clients probe
+   * first) and `/.well-known/oauth-authorization-server`.
+   */
+  async rewrites() {
+    return [
+      { source: "/.well-known/oauth-protected-resource", destination: "/api/oauth/resource" },
+      { source: "/.well-known/oauth-protected-resource/:path*", destination: "/api/oauth/resource" },
+      { source: "/.well-known/oauth-authorization-server", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/oauth-authorization-server/:path*", destination: "/api/oauth/metadata" },
+      { source: "/.well-known/openid-configuration", destination: "/api/oauth/metadata" },
+    ];
+  },
+
   async redirects() {
     return [
       // The public site used to be four static .html files at the repo root.

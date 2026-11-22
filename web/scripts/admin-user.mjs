@@ -280,6 +280,15 @@ try {
           update admin_users set active = ${active}, updated_at = now()
           where name = ${name}
         `;
+        /* Pando MCP (20 Nov): their Claude connections end now too, not at their next call — and a code
+           from a consent not yet exchanged is spent. Skipped where 0070 has not run. */
+        if (!active) {
+          const [mcp] = await tx`select to_regclass('public.mcp_tokens') is not null as ok`;
+          if (mcp?.ok) {
+            await tx`update mcp_tokens set revoked_at = now() where admin_user = ${name} and revoked_at is null`;
+            await tx`update mcp_auth_codes set used_at = now() where admin_user = ${name} and used_at is null`;
+          }
+        }
       },
     );
     console.log("");
@@ -287,8 +296,8 @@ try {
       console.log(`  ✓ ${name} can sign in again. Their old password still works —`);
       console.log(`    rotate it with \`password ${name}\` if that is not intended.\n`);
     } else {
-      console.log(`  ✓ ${name} is revoked: no sign-in, and their open sessions stop`);
-      console.log("    within a minute. The name stays, so the audit log still reads.\n");
+      console.log(`  ✓ ${name} is revoked: no sign-in, their open sessions stop within a minute,`);
+      console.log("    and their Claude connections (Pando MCP) end now. The name stays, so the audit log still reads.\n");
     }
   }
 } catch (err) {

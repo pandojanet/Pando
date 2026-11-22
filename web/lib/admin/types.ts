@@ -13,6 +13,8 @@ import type { AdminActionName } from "./action-names";
 
 export type AdminResource =
   | "overview"
+  | "proposals"
+  | "mcp"
   | "contributors"
   | "contributor"
   | "contributions"
@@ -336,6 +338,8 @@ export interface Overview {
   answers: { waiting: number; replies: number };
   /** Introduction requests a person still has to move (21 Oct). */
   introductions: { open: number };
+  /** Pando MCP proposals waiting for an admin's yes (20 Nov). */
+  proposals?: { open: number };
   /** §17.1 — records an admin has marked good enough to answer with. */
   answer_ready: number;
   drop_off: Array<{ step: string; reached: number }>;
@@ -1267,7 +1271,14 @@ export type AdminAction =
   | { action: "digest.approve"; id: string }
   | { action: "digest.unapprove"; id: string }
   | { action: "digest_item.remove"; id: string }
-  | { action: "digest_item.restore"; id: string };
+  | { action: "digest_item.restore"; id: string }
+  /* Pando MCP (20 Nov): an agent's proposal decided; the one switch; a connection ended. */
+  | { action: "proposal.approve"; id: string; via?: "admin" | "chat" }
+  | { action: "proposal.reject"; id: string; via?: "admin" | "chat"; reason?: string }
+  | { action: "mcp.switch"; on: boolean }
+  | { action: "mcp.revoke"; client_ids: string[]; admin_user: string }
+  /* 20 Nov: an approved event taken out of the weekly digest's candidates. */
+  | { action: "digest_candidate.remove"; id: string };
 
 /* AdminAction names exactly lib/admin/action-names.ts — a name in one and not the other fails here. */
 type SameNames<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
@@ -1316,6 +1327,90 @@ export interface AdminResourceRows {
   digests: DigestsResult;
   introductions: IntroductionsResult;
   audit: AuditRow[];
+  proposals: ProposalsResult;
+  mcp: McpAdminResult;
+}
+
+/** Pando MCP proposals (20 Nov): what an agent proposed, waiting for an admin or decided. */
+export interface ProposalRowAdmin {
+  id: string;
+  created_at: string;
+  proposed_by: string;
+  kind: "record_edit" | "new_record" | "fact_check" | "event";
+  record: { id: string; name: string; kind: string } | null;
+  change: Record<string, unknown>;
+  source_url: string | null;
+  status: string;
+  decided_by: string | null;
+  decided_via: string | null;
+  decided_at: string | null;
+  /** The record's facts when it was proposed (0075), and now — what "was → becomes" and "changed since" read. */
+  before: RecordFactsAdmin | null;
+  current: RecordFactsAdmin | null;
+  /** The record changed between the proposal and now (a field the proposal saw is different). */
+  changed_since: boolean;
+  /** An admin's reason for a rejection (0075). */
+  decision_note: string | null;
+}
+export interface RecordFactsAdmin {
+  name: string | null;
+  venue: string | null;
+  areas: string[];
+  age_bands: string[];
+  subcategory: string | null;
+  status: string | null;
+  answer_ready: boolean;
+  freshness: string | null;
+}
+/** An event approved for the weekly digest, still ahead (20 Nov, 0073). */
+export interface DigestCandidateAdmin {
+  id: string;
+  kind: string;
+  title: string;
+  when_text: string;
+  place: string | null;
+  ages: string | null;
+  url: string;
+  added_by: string;
+  created_at: string;
+}
+export interface ProposalsResult {
+  configured: boolean;
+  rows: ProposalRowAdmin[];
+  /** With `status: "candidates"`: the digest's approved events still ahead; `rows` is then empty. */
+  candidates?: DigestCandidateAdmin[];
+  /** For the tabs: proposals waiting, and digest events ahead. */
+  counts?: { waiting: number; candidates: number };
+}
+
+/** Pando MCP's switch, the live connections and today's calls (20 Nov). */
+export interface McpAdminResult {
+  configured: boolean;
+  enabled: boolean;
+  /** The server's emergency override `PANDO_MCP=off` is set: the switch cannot turn it on. */
+  env_off: boolean;
+  switched_by: string | null;
+  switched_at: string | null;
+  /**
+   * One row per admin and app (review of 20 Nov, after GitHub's and Google's connected-apps pages): a
+   * client registers anew each time Claude reconnects, so the same app is many client ids — grouped,
+   * counted as sessions, revoked together.
+   */
+  connections: Array<{
+    admin_user: string;
+    /** "Claude" (claude.ai, Desktop, Cowork) or "Claude Code" (a loopback callback), from where its codes go. */
+    app: string;
+    client_name: string | null;
+    client_ids: string[];
+    sessions: number;
+    since: string;
+    last_used_at: string | null;
+  }>;
+  calls: Array<{ tool: string; ok: number; refused: number; off: number; error: number; last_at: string }>;
+  /** The last 50 calls, newest first: who, which tool, how it ended, how long — never the arguments. */
+  recent: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number }>;
+  /** The switch's last flips, newest first. */
+  history: Array<{ at: string; by: string; on: boolean }>;
 }
 
 /* Every resource has a row type, and every row type a resource. */
@@ -1741,6 +1836,8 @@ export interface DigestItemRow {
   url: string;
   /** Taken out by an admin before approval: kept on the record, never sent (19 Nov). */
   removed: boolean;
+  /** An event an admin approved from the plugin's Researcher (20 Nov, `digest_candidates`), not the digest agent's find. */
+  from_candidate?: boolean;
   /** Families whose digest carried it (this group's and other groups' families). */
   sent_to: number;
   /** Of those, this group's own families — the rest got it for a child another group's search was for. */

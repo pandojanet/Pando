@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import { JOBS, isDue, outcomeFor, type JobName, type JobResult } from "@/lib/jobs";
+import { runCriticalAlerts } from "@/lib/server/alerts";
+import { pruneMcp } from "@/lib/server/repo/mcp";
 import { deliveryHealth } from "@/lib/delivery";
 import { withDb, type Db } from "@/lib/server/db";
 import { deliveryCounts } from "@/lib/server/repo/outreach";
@@ -184,6 +186,13 @@ const BODIES: Record<JobName, () => Promise<JobResult>> = {
   expire_memory,
   digest_reminders: () => runDigestReminders(new Date()),
   digest_feedback: () => runDigestFeedback(new Date()),
+  critical_alerts: () => runCriticalAlerts(new Date()),
+  mcp_prune: async () => {
+    const out = await pruneMcp();
+    return out === null
+      ? { outcome: "error", processed: 0, skipped: 0, failed: 1 }
+      : { outcome: outcomeFor({ processed: out, skipped: 0, failed: 0 }), processed: out, skipped: 0, failed: 0 };
+  },
 };
 
 /**

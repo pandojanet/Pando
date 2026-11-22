@@ -264,8 +264,11 @@ console.log("\n=== 15.4: no public route is unguarded ===");
     const secret = /JOBS_SECRET/.test(src);
     const session = /readAdminSession|ADMIN_COOKIE/.test(src);
     const limited = /rateLimited\(request/.test(src);
+    /* Pando MCP (20 Nov): an OAuth access token, read by `mcpBearer` before anything else. */
+    const bearer = /mcpBearer\(request\)/.test(src);
 
     if (signed) guards[name] = "signature";
+    else if (bearer) guards[name] = "mcp bearer";
     else if (secret) guards[name] = "secret";
     else if (session) guards[name] = "admin session";
     else if (limited) guards[name] = "rate limit";
@@ -276,7 +279,7 @@ console.log("\n=== 15.4: no public route is unguarded ===");
     console.log(`        ${name.padEnd(24)} ${guard}`);
   }
   ok(
-    "every route is behind a signature, a secret, the session, or a limit",
+    "every route is behind a signature, a secret, the session, an MCP bearer, or a limit",
     unguarded.length === 0,
     unguarded.join(", "),
   );

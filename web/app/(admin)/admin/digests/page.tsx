@@ -1038,6 +1038,7 @@ function ItemRow({
         <p className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] leading-snug", muted ? "font-medium text-ink-soft" : "font-semibold text-ink")}>
           <span className={cn(i.removed && "line-through decoration-muted/60")}>{i.title}</span>
           {i.removed && <Badge tone="muted">Taken out</Badge>}
+          {i.from_candidate && <Badge tone="green">Approved event</Badge>}
         </p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
           {[DIGEST_ITEM_KIND[i.kind] ?? sentence(i.kind), i.when_text, i.place, age].filter(Boolean).join(" · ")}

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigserial,
   boolean,
   char,
   date,
@@ -753,6 +754,11 @@ export const shares = pgTable(
     providerCheckUrl: text("provider_check_url"),
     /** The claim a running check holds, so one doctor is never searched twice at once. */
     providerCheckStartedAt: timestamp("provider_check_started_at", { withTimezone: true }),
+    /** The page this record's facts come from, and its last approved check (0071, Pando MCP). */
+    sourceUrl: text("source_url"),
+    sourceCheckedAt: timestamp("source_checked_at", { withTimezone: true }),
+    /** confirmed | stale | unreachable; null = never checked. Gates nothing. */
+    sourceCheck: text("source_check"),
     /**
      * The client's sub-category (9 Oct, `drizzle/0056`): which of the
      * button's sub-categories the chat classified the card into — activities,
@@ -1823,6 +1829,125 @@ export const conversationSummaries = pgTable(
     index("conversation_summaries_updated_at_idx").on(t.updatedAt),
   ],
 );
+
+/**
+ * 20 Nov (drizzle/0070): Pando MCP — the plugin's one door into Pando. OAuth clients,
+ * codes and tokens (hashes only), one row per tool call (never its arguments), the
+ * proposals an admin approves, and the admin-flippable settings (`mcp_enabled`).
+ * Admins are named by `admin_users.name`, as `audit_log` does.
+ */
+export const mcpClients = pgTable("mcp_clients", {
+  clientId: text("client_id").primaryKey(),
+  clientName: text("client_name"),
+  redirectUris: text("redirect_uris").array().notNull(),
+  kind: text("kind").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mcpAuthCodes = pgTable("mcp_auth_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  clientId: text("client_id").notNull(),
+  adminUser: text("admin_user").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  scope: text("scope").notNull(),
+  resource: text("resource"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const mcpTokens = pgTable(
+  "mcp_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accessHash: text("access_hash").notNull().unique(),
+    refreshHash: text("refresh_hash").notNull().unique(),
+    adminUser: text("admin_user").notNull(),
+    clientId: text("client_id").notNull(),
+    scope: text("scope").notNull(),
+    accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }).notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at", { withTimezone: true }).notNull(),
+    rotatedFrom: uuid("rotated_from"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("mcp_tokens_admin_idx").on(t.adminUser).where(sql`${t.revokedAt} is null`)],
+);
+
+export const mcpCalls = pgTable(
+  "mcp_calls",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    actor: text("actor").notNull(),
+    clientId: text("client_id"),
+    tool: text("tool").notNull(),
+    outcome: text("outcome").notNull(),
+    ms: integer("ms").notNull().default(0),
+    rows: integer("rows"),
+  },
+  (t) => [index("mcp_calls_at_idx").on(sql`${t.at} desc`)],
+);
+
+export const mcpProposals = pgTable("mcp_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  actor: text("actor").notNull(),
+  kind: text("kind").notNull(),
+  shareId: uuid("share_id").references(() => shares.id, { onDelete: "set null" }),
+  payload: jsonb("payload").notNull(),
+  sourceUrl: text("source_url"),
+  status: text("status").notNull().default("proposed"),
+  decidedBy: text("decided_by"),
+  decidedVia: text("decided_via"),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  /** The record when the proposal was made (0075): what "was → becomes" and "changed since" read. */
+  before: jsonb("before"),
+  /** An admin's optional reason for a rejection (0075). */
+  decisionNote: text("decision_note"),
+});
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Events the plugin's Researcher found and an admin approved, for the weekly digest (0073). */
+export const digestCandidates = pgTable("digest_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  marketId: text("market_id").notNull(),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  whenText: text("when_text").notNull(),
+  startsOn: date("starts_on"),
+  endsOn: date("ends_on"),
+  place: text("place"),
+  ageMin: integer("age_min"),
+  ageMax: integer("age_max"),
+  summary: text("summary").notNull(),
+  url: text("url").notNull(),
+  proposalId: uuid("proposal_id").references(() => mcpProposals.id, { onDelete: "set null" }),
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+  removedBy: text("removed_by"),
+});
+
+/** Skills the Agent builder saved into the Pando plugin through `save_skill` (0072). */
+export const pluginSkills = pgTable("plugin_skills", {
+  name: text("name").primaryKey(),
+  description: text("description").notNull(),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  commitSha: text("commit_sha"),
+  version: text("version"),
+});
 
 export type ShareContribution = typeof shareContributions.$inferSelect;
 export type Caregiver = typeof caregivers.$inferSelect;

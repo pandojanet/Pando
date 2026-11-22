@@ -424,6 +424,11 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   introduction: "an introduction",
   digest_edition: "a group's weekly digest",
   digest_item: "an item in a weekly digest",
+  mcp_proposal: "a Pando MCP proposal",
+  app_setting: "a setting",
+  mcp_connection: "a Pando MCP connection",
+  plugin_skill: "a skill in the Pando plugin",
+  digest_candidate: "a digest candidate",
   /* `profile.delete` (repo/parent-delete.ts) names the table, not the row. */
   people: "a parent's profile",
 };
@@ -504,6 +509,13 @@ export const AUDIT_ACTION: Record<string, string> = {
   "digest.unapprove": "Took back the approval of a group's weekly digest",
   "digest_item.remove": "Took an item out of a weekly digest",
   "digest_item.restore": "Put an item back into a weekly digest",
+  "proposal.approve": "Applied a Pando MCP proposal",
+  "proposal.reject": "Rejected a Pando MCP proposal",
+  "mcp.switch": "Switched Pando MCP on or off",
+  "mcp.revoke": "Ended a Pando MCP connection",
+  "digest_candidate.remove": "Took an event out of the weekly digest's candidates",
+  /* Written by lib/server/mcp/plugin-skills.ts (20 Nov), not admin-write. */
+  "skill.save": "Saved a skill into the Pando plugin",
   "digest.prepare_for": "Prepared a weekly digest for one number (test)",
   "digest.send_to": "Sent a weekly digest to one number (test)",
   /* Written outside admin-write (26 Oct): repo/admin-users.ts and

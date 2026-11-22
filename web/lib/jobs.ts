@@ -31,7 +31,9 @@ export type JobName =
   | "weekly_digest"
   | "expire_memory"
   | "digest_reminders"
-  | "digest_feedback";
+  | "digest_feedback"
+  | "critical_alerts"
+  | "mcp_prune";
 
 export interface JobSpec {
   name: JobName;
@@ -110,6 +112,22 @@ export const JOBS: Record<JobName, JobSpec> = {
     take_over_after_minutes: 15,
     sends: true,
     what: "The day after a reminded event, ask the parent how it was, by buttons.",
+  },
+
+  mcp_prune: {
+    name: "mcp_prune",
+    /* Once a day (drizzle/0076, created paused). */
+    min_interval_minutes: 60 * 23,
+    sends: false,
+    what: "Delete Pando MCP's spent codes, tokens long revoked or expired, clients nobody signed in through, and calls older than 90 days.",
+  },
+
+  critical_alerts: {
+    name: "critical_alerts",
+    /* Called every ten minutes (drizzle/0074, created paused); 8 leaves room for the call's own delay. */
+    min_interval_minutes: 8,
+    sends: false,
+    what: "Tell the team in Slack at once when something critical breaks: a failed or stuck job, texts not delivered, a Saturday digest still unapproved.",
   },
 
   expire_memory: {
