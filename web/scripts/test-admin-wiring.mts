@@ -32,10 +32,10 @@ function ok(what: string, cond: boolean, detail = "") {
   }
 }
 
-const route = readFileSync("app/api/admin/action/route.ts", "utf8");
+const route = readFileSync("app/api/admin/action/route.ts", "utf8").replace(/\r\n/g, "\n");
 /* The allowlist moved out of the route on 27 Oct; the route imports it. */
-const names = readFileSync("lib/admin/action-names.ts", "utf8");
-const write = readFileSync("lib/server/repo/admin-write.ts", "utf8");
+const names = readFileSync("lib/admin/action-names.ts", "utf8").replace(/\r\n/g, "\n");
+const write = readFileSync("lib/server/repo/admin-write.ts", "utf8").replace(/\r\n/g, "\n");
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -80,7 +80,7 @@ ok(
 const screens = [...walk("app/(admin)"), ...walk("components/admin")];
 const called = new Set<string>();
 for (const file of screens) {
-  const src = readFileSync(file, "utf8");
+  const src = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
   for (const m of src.matchAll(/"([a-z_]+\.[a-z_]+)"/g)) {
     if (allowed.has(m[1]) || handled.has(m[1])) called.add(m[1]);
   }
@@ -147,7 +147,7 @@ console.log("\n=== every named refusal is said in words ===");
 
 console.log("\n=== /admin/responses sends what the route asks for ===");
 {
-  const page = readFileSync("app/(admin)/admin/responses/page.tsx", "utf8");
+  const page = readFileSync("app/(admin)/admin/responses/page.tsx", "utf8").replace(/\r\n/g, "\n");
   const check = route.slice(
     route.indexOf('if (action === "blast_response.approve")'),
     route.indexOf('if (action === "matching.weight")'),
@@ -189,7 +189,7 @@ console.log("\n=== /admin/responses sends what the route asks for ===");
 
 console.log("\n=== a decision an admin can take, an admin can reach ===");
 {
-  const panel = readFileSync("components/admin/caregivers/CaregiversPanel.tsx", "utf8");
+  const panel = readFileSync("components/admin/caregivers/CaregiversPanel.tsx", "utf8").replace(/\r\n/g, "\n");
   ok(
     "a nomination is not offered for approval while its hold stands",
     /canApproveNomination =[\s\S]{0,200}!row\.review_hold/.test(panel),
@@ -198,7 +198,7 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
     "the menu's count knows about the item that sets a nomination aside",
     /canRejectNomination \? \["reject_nomination"\]/.test(panel),
   );
-  const retrieval = readFileSync("lib/server/repo/retrieval.ts", "utf8");
+  const retrieval = readFileSync("lib/server/repo/retrieval.ts", "utf8").replace(/\r\n/g, "\n");
   ok(
     "a nomination set aside is not counted or quoted in an answer",
     /join caregiver_nominations n on n\.caregiver_id = c\.id and not n\.is_test\s+and n\.status <> 'rejected'/.test(
@@ -221,7 +221,7 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
     /rows\.length === 0\) return \{ applied: false, reason: "not_found" \}/.test(reopen),
   );
 
-  const options = readFileSync("app/(admin)/admin/options/page.tsx", "utf8");
+  const options = readFileSync("app/(admin)/admin/options/page.tsx", "utf8").replace(/\r\n/g, "\n");
   ok(
     "a name with no Latin letter in it can still be promoted",
     /slugify\(row\.submitted_value\) \|\|\s+`option-\$\{row\.id\.slice\(0, 8\)\}`/.test(options),
@@ -234,7 +234,7 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
    * 29 actions and 8 resources showed as raw ids). Pinned as a set, so an
    * action added to the allowlist without its sentence fails here.
    */
-  const labels = readFileSync("lib/admin/labels.ts", "utf8");
+  const labels = readFileSync("lib/admin/labels.ts", "utf8").replace(/\r\n/g, "\n");
   const block = (name: string) => {
     const at = labels.indexOf(`export const ${name}`);
     return labels.slice(at, labels.indexOf("\n};", at));
@@ -254,7 +254,7 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
   const outside: Array<[string, string]> = [];
   for (const file of walk("lib/server")) {
     if (!file.endsWith(".ts")) continue;
-    const src = readFileSync(file, "utf8");
+    const src = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     for (const m of src.matchAll(
       /insert into audit_log[^`]*?values\s*\(\s*(?:\$\{[^}]*\}|'[a-z_]+')\s*,\s*'([a-z_.]+)'\s*,\s*'([a-z_]+)'/g,
     )) {
@@ -278,13 +278,13 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
   /* 27 Oct: /admin/conversations read eighteen templates the code sends as
      "Answer deep offer", "Deep dive started" — the stored id with capitals.
      Every literal template under lib/server must have its words. */
-  const labels = readFileSync("lib/admin/labels.ts", "utf8");
+  const labels = readFileSync("lib/admin/labels.ts", "utf8").replace(/\r\n/g, "\n");
   const at = labels.indexOf("export const MESSAGE_LABEL");
   const messageLabels = labels.slice(at, labels.indexOf("\n};", at));
   const templates = new Set<string>();
   for (const file of walk("lib/server")) {
     if (!file.endsWith(".ts")) continue;
-    const src = readFileSync(file, "utf8");
+    const src = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
     /* Up to the end of the property: a ternary spans lines (`template: urgent
        ? "answer_high_stakes" : …`), so stop at `;`, the next `key:` or a `}`. */
     for (const m of src.matchAll(/\btemplate:([^;]*?)(?=;|\n\s*\}|\n\s*[a-zA-Z_]+:)/g)) {
@@ -300,14 +300,14 @@ console.log("\n=== a decision an admin can take, an admin can reach ===");
   const demandAt = write.indexOf('case "demand.status"');
   const demand = write.slice(demandAt, write.indexOf("case ", demandAt + 10));
   ok("demand.status answers not_found for an id that changed nothing", /returning id/.test(demand) && /reason: "not_found"/.test(demand));
-  const read = readFileSync("lib/server/repo/admin-read.ts", "utf8");
+  const read = readFileSync("lib/server/repo/admin-read.ts", "utf8").replace(/\r\n/g, "\n");
   const pool = read.slice(read.indexOf("async function blastPool("));
   ok(
     "a sent Ask shows who was asked (blast_recipients) before any selectPool re-run",
     pool.indexOf("from blast_recipients r") > 0 &&
       pool.indexOf("from blast_recipients r") < pool.indexOf('const { selectPool } = await import'),
   );
-  const blasts = readFileSync("app/(admin)/admin/blasts/page.tsx", "utf8");
+  const blasts = readFileSync("app/(admin)/admin/blasts/page.tsx", "utf8").replace(/\r\n/g, "\n");
   ok("an SMS-only asker is a masked number, never 'No profile'", blasts.includes("maskPhoneRecognisable(row.asker.phone)") && !blasts.includes('?? "No profile"'));
 }
 
@@ -328,7 +328,7 @@ console.log("\n=== the queues: the overview, the answers and the flags agree (26
   );
   ok("the route words an answer's not_found", /action\.startsWith\("answer\."\)/.test(route));
 
-  const answers = readFileSync("app/(admin)/admin/answers/page.tsx", "utf8");
+  const answers = readFileSync("app/(admin)/admin/answers/page.tsx", "utf8").replace(/\r\n/g, "\n");
   const approvedBlock = answers.slice(answers.indexOf('row.status === "approved" && ('));
   ok(
     "an approved answer card offers Don't send",
@@ -338,7 +338,7 @@ console.log("\n=== the queues: the overview, the answers and the flags agree (26
   ok("the rewrite is counted against SMS_BUDGET with planSegments", /SMS_BUDGET/.test(answers) && /planSegments\(/.test(answers));
   ok("a Deep Dive report is named rather than claiming nothing", /deep_dive/.test(answers) && /Deep Dive report/.test(answers));
 
-  const read = readFileSync("lib/server/repo/admin-read.ts", "utf8");
+  const read = readFileSync("lib/server/repo/admin-read.ts", "utf8").replace(/\r\n/g, "\n");
   const flagRows = read.slice(read.indexOf("async function flagRows"), read.indexOf("async function demandRows"));
   ok(
     "a flag on an SMS answer or a record carries its words or name",
@@ -350,8 +350,8 @@ console.log("\n=== the queues: the overview, the answers and the flags agree (26
     .replace(/\/\*[\s\S]*?\*\//g, "");
   ok("and the flag read never selects a phone", !/\bphone\b/.test(flagSql));
 
-  const overviewPage = readFileSync("app/(admin)/admin/page.tsx", "utf8");
-  const shell = readFileSync("components/admin/Shell.tsx", "utf8");
+  const overviewPage = readFileSync("app/(admin)/admin/page.tsx", "utf8").replace(/\r\n/g, "\n");
+  const shell = readFileSync("components/admin/Shell.tsx", "utf8").replace(/\r\n/g, "\n");
   /* Every count the sidebar badges is a row on the overview's worklist. */
   const badged = [...shell.matchAll(/count: \(o\) =>\s*([\s\S]*?),\n/g)].map((m) => m[1]);
   const fields = new Set(
@@ -363,7 +363,7 @@ console.log("\n=== the queues: the overview, the answers and the flags agree (26
   });
   ok("every sidebar badge's count is on the overview's worklist", fields.size > 5 && missing.length === 0, missing.join(", "));
 
-  const activities = readFileSync("app/(admin)/admin/activities/page.tsx", "utf8");
+  const activities = readFileSync("app/(admin)/admin/activities/page.tsx", "utf8").replace(/\r\n/g, "\n");
   ok("a card from an Ask reply says so", /source_blast_id/.test(activities) && /From a Network Ask reply/.test(activities));
   ok("a card shows its open flag", /row\.open_flag/.test(activities));
 }

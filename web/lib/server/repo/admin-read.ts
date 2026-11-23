@@ -7,7 +7,7 @@ import { deliveryHealth } from "@/lib/delivery";
 import { composeDigest, type DigestItem } from "@/lib/digest";
 import { completeCounts, completeCountSql } from "@/lib/server/repo/founding-count";
 import { matchesFor } from "@/lib/server/repo/matching";
-import { deliveryCounts } from "@/lib/server/repo/outreach";
+import { deliveryCountsOn } from "@/lib/server/repo/outreach";
 import { isSlackRelayEnabled } from "@/lib/server/slack";
 import { EVENT_WEIGHT, nextTier, tierFor } from "@/lib/tiers";
 import { ALLOWANCE_WINDOW_DAYS, RESPONSE_WINDOW_DAYS, RESPONSE_MIN_SAMPLE, effectiveAllowance } from "@/lib/outreach-policy";
@@ -116,7 +116,7 @@ const READERS: { [R in AdminResource]: Reader<R> } = {
   blast_responses: (db) => blastResponses(db),
   blasts: (db) => blastRows(db),
   blast_pool: (db, params) => blastPool(db, params),
-  delivery: (_db, params) => deliveryHealthRow(params),
+  delivery: (db, params) => deliveryHealthRow(db, params),
   flags: (db) => flagRows(db),
   demand: (db) => demandRows(db),
   demand_places: (db) => demandPlaces(db),
@@ -2100,31 +2100,20 @@ async function blastResponses(db: Db): Promise<BlastResponseRow[]> {
 /**
  * 12.5 — the delivery picture, for the admin view.
  *
- * Thin on purpose: `deliveryCounts` does the one query and `deliveryHealth`
+ * Thin on purpose: `deliveryCountsOn` does the one query and `deliveryHealth`
  * turns it into the rate and the alerts. Both are used by the daily check too,
  * so the page and the alarm can never disagree about what 95% means.
+ *
+ * On the caller's connection, so a failure is an error on the page and in
+ * Pando MCP's `delivery_health`, never "not configured" (23 Nov). With no
+ * database at all the admin route answers `configured: false` before it reads.
  */
 async function deliveryHealthRow(
+  db: Db,
   params: Record<string, unknown>,
 ): Promise<DeliveryHealthRow> {
   const windowDays = Math.min(90, Math.max(1, Number(params.days ?? 7) || 7));
-  const counts = await deliveryCounts(windowDays);
-  if (!counts) {
-    return {
-      configured: false,
-      relay: isSlackRelayEnabled(),
-      window_days: windowDays,
-      rate: null,
-      below_floor: false,
-      coverage: null,
-      thin_sample: false,
-      settled: 0,
-      delivered: 0,
-      in_flight: 0,
-      unreported: 0,
-      alerts: [],
-    };
-  }
+  const counts = await deliveryCountsOn(db, windowDays);
   return {
     configured: true,
     relay: isSlackRelayEnabled(),

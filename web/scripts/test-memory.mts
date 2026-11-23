@@ -17,7 +17,7 @@ const ok = (label: string, cond: boolean, detail = "") => {
     console.log(`  FAIL  ${label}${detail ? `  ${detail}` : ""}`);
   }
 };
-const read = (p: string) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+const read = (p: string) => fs.readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 const m = (await import(`../lib/conversation-memory.ts?v=${Date.now()}`)) as typeof import("../lib/conversation-memory.ts");
 const demand = (await import(`../lib/demand.ts?v=${Date.now()}`)) as typeof import("../lib/demand.ts");

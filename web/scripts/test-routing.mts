@@ -372,7 +372,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
     "the allegation reply carries no resource list, only the number for a child at risk",
     !/988|211|433-6251/.test(ALLEGATION) && ALLEGATION.includes("LA County child protection at 1-800-540-4000."),
   );
-  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   /* 26 Oct, the chat lab: a never-asked parent's bare "3" was read as answer_blast and told to text ADD. */
   ok(
     "an answer_blast reading is a contribution only for somebody sent an Ask lately",
@@ -484,7 +484,7 @@ console.log("\n=== a sensitive question over SMS gets what the web D1 flow gives
 
 console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS lab) ===");
 {
-  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   ok("a named record is found anywhere in the market, unless the place is one the market does not hold",
     src.includes("namedAnywhere: place.near === null || place.near.length > 0,"));
   ok("the web's verdict never drops the place the question names",
@@ -495,7 +495,7 @@ console.log("\n=== a place asked about by name, and a follow-up (5 Nov, the SMS 
     src.includes('retrieved.shares[0] && retrieved.shares[0].kind !== "tip"') && src.includes("{ enrich: [retrieved.shares[0].name] }"));
   ok("and its own page goes first among the web's lines when it said something",
     src.includes("(lead !== null && Boolean(f.detail) && sameName(f.name, lead))"));
-  const ws = readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8");
+  const ws = readFileSync(new URL("../lib/server/web-search.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   ok("one page read, only when there is a parents' place to look up", /\.\.\.\(lookingUp\s*\?\s*\[\{ type: FETCH_TOOL, name: "web_fetch" as const, max_uses: 1/.test(ws) && ws.includes('const FETCH_TOOL = "web_fetch_20250910"'));
   ok("a record the last answer gave is ranked after new ones and not quoted again",
     src.includes("rank: mentionsName(body, share.name) ? -1 : sentJustNow(share.name) ? 1000 + i : i,") &&

@@ -136,6 +136,10 @@ for (const [name, args] of reads) {
   const plain = name === "digest_weeks" && args.week ? r.error === "No digest for that Saturday." : r.error === null;
   ok(`${name} ${JSON.stringify(args)} runs against Postgres`, plain, r.error ?? "");
 }
+/* 23 Nov: delivery_health counted on a second connection of its own and turned any error into
+   "configured: false". On the tool's own connection it answers here, on one session, as configured. */
+const dh = JSON.parse((await call("delivery_health", { days: 7 })).text) as { configured: boolean; settled: number };
+ok("delivery_health counts on the tool's own connection: configured, never \"not configured\" after a timeout", dh.configured === true && typeof dh.settled === "number", JSON.stringify(dh).slice(0, 80));
 const search = JSON.parse((await call("search_records", { query: "toddler" })).text);
 ok("search finds the record by its words, with has_more", search.results?.[0]?.name === "CI Toddler Music" && search.has_more === false);
 ok("and gives its trust labels verbatim: an admin's record is public information", search.results?.[0]?.public_only === true && Array.isArray(search.results?.[0]?.trust_labels) && search.results[0].trust_labels.length > 0);

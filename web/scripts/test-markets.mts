@@ -55,7 +55,7 @@ ok("midnight reads as hour 0, not 24", mk.hourIn("America/Los_Angeles", at("2026
 ok("the same instant can be open in New York and quiet in Los Angeles", !mk.isQuietHoursIn("America/New_York", at("2026-10-26T12:30:00Z")) && mk.isQuietHoursIn("America/Los_Angeles", at("2026-10-26T12:30:00Z")));
 ok("an unreadable market is quiet wherever any market is", mk.isQuietHoursAnywhere(at("2026-10-26T14:59:00Z")) && !mk.isQuietHoursAnywhere(at("2026-10-26T18:00:00Z")));
 ok("the window reads as the copy always did", mk.quietWindowPhrase() === "8am-9pm Pacific" && mk.quietWindowPhrase(def, "–") === "8am–9pm Pacific");
-const sms = readFileSync("lib/server/sms.ts", "utf8");
+const sms = readFileSync("lib/server/sms.ts", "utf8").replace(/\r\n/g, "\n");
 
 console.log("\n=== the sender ===");
 ok("the default market sends from the service the deploy already sets", def.messagingServiceEnv === "TWILIO_MESSAGING_SERVICE_SID");
@@ -90,7 +90,7 @@ const walk = (dir: string) => {
 for (const d of ["lib", "app", "components"]) walk(d);
 /* Code only: comment lines are prose about the rule, not the rule. */
 const code = (f: string) =>
-  readFileSync(f, "utf8")
+  readFileSync(f, "utf8").replace(/\r\n/g, "\n")
     .split(/\r?\n/)
     .map((l, i) => ({ l, n: i + 1 }))
     .filter(({ l }) => !/^\s*(\/\/|\*|\/\*)/.test(l));
@@ -110,7 +110,7 @@ ok("no local crisis line outside the registry", localLines.length === 0, localLi
 const policySql = ["lib/server/repo/outreach.ts", "lib/server/repo/blast.ts", "lib/server/repo/admin-read.ts"]
   .flatMap((f) => code(f).filter(({ l }) => /sent_at >=? now\(\) - (interval '\d+ (day|days|month|months)'|make_interval\(days => \d+\))/.test(l)).map(({ n }) => `${f}:${n}`));
 ok("the allowance, weekly and governor windows in SQL are the policy's constants", policySql.length === 0, policySql.join(", "));
-const standing = readFileSync("lib/server/repo/admin-read.ts", "utf8");
+const standing = readFileSync("lib/server/repo/admin-read.ts", "utf8").replace(/\r\n/g, "\n");
 ok("the admin's asked counts use the allowance window, as the send layer does", /ALLOWANCE_WINDOW_DAYS\}\)\)::int\s+as asked_30/.test(standing) && !/RESPONSE_WINDOW_DAYS\}\)\)(::int)?\s+as asked_30/.test(standing));
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

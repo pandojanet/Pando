@@ -414,45 +414,66 @@ export async function recordDeliveryStatus(input: {
  * reported on is neither a success nor a failure, so it is excluded from the rate
  * rather than counted against it — otherwise the number swings with how recently
  * somebody opened the page.
+ *
+ * This form opens its own connection, and null means no database **or** an error: right for the
+ * nightly `delivery_check`, which reports either as its outcome. A reader that already has a
+ * connection uses `deliveryCountsOn`.
  */
 export async function deliveryCounts(days = 7): Promise<DeliveryCounts | null> {
-  const window = Math.min(90, Math.max(1, Math.trunc(days)));
-  const result = await withDb(async (db: Db) => {
-    const rows = (await db.execute(sql`
-      select
-        count(*) filter (
-          where status in ('delivered', 'read', 'undelivered', 'failed'))::int as settled,
-        -- 'read' is an RCS message that was delivered and then read (29 Oct).
-        count(*) filter (where status in ('delivered', 'read'))::int         as delivered,
-        count(*) filter (
-          where (status is null or status in ('queued', 'sent'))
-            and sent_at > now() - interval '24 hours')::int                 as in_flight,
-        -- In flight is young. Twilio reports within minutes, so a message a day
-        -- old with no final status is not travelling: nothing came back, which
-        -- means a missing status callback, or the Slack relay, which sends
-        -- none. Counted apart rather than left in flight for ever (25 Sep).
-        count(*) filter (
-          where (status is null or status in ('queued', 'sent'))
-            and sent_at <= now() - interval '24 hours')::int                as unreported,
-        coalesce(
-          (select json_agg(json_build_object('code', code, 'count', n))
-             from (select error_code as code, count(*)::int as n
-                     from message_log
-                    where direction = 'out'
-                      and error_code is not null
-                      and sent_at > now() - make_interval(days => ${window})
-                    group by error_code
-                    order by n desc) e),
-          '[]'::json)                                                       as by_error
-      from message_log
-      where direction = 'out'
-        and sent_at > now() - make_interval(days => ${window})
-    `)) as unknown as Array<Record<string, unknown>>;
-    return rows[0] ?? null;
-  });
-
+  const window = deliveryWindow(days);
+  const result = await withDb((own: Db) => deliveryRow(own, window));
   if (!result.persisted || !result.data) return null;
-  const row = result.data;
+  return toDeliveryCounts(result.data);
+}
+
+/**
+ * The same count on the caller's connection, and a failure is thrown (23 Nov). The admin's delivery
+ * page and Pando MCP's `delivery_health` used `deliveryCounts`, so any error came back as null and was
+ * shown as *"not configured"* — an outage reading as a missing setting — and the second connection it
+ * opened waited 10–17 s in the lab, whose database has one session.
+ */
+export async function deliveryCountsOn(db: Db, days = 7): Promise<DeliveryCounts> {
+  return toDeliveryCounts(await deliveryRow(db, deliveryWindow(days)));
+}
+
+const deliveryWindow = (days: number) => Math.min(90, Math.max(1, Math.trunc(days)));
+
+async function deliveryRow(db: Db, window: number): Promise<Record<string, unknown>> {
+  const rows = (await db.execute(sql`
+    select
+      count(*) filter (
+        where status in ('delivered', 'read', 'undelivered', 'failed'))::int as settled,
+      -- 'read' is an RCS message that was delivered and then read (29 Oct).
+      count(*) filter (where status in ('delivered', 'read'))::int         as delivered,
+      count(*) filter (
+        where (status is null or status in ('queued', 'sent'))
+          and sent_at > now() - interval '24 hours')::int                 as in_flight,
+      -- In flight is young. Twilio reports within minutes, so a message a day
+      -- old with no final status is not travelling: nothing came back, which
+      -- means a missing status callback, or the Slack relay, which sends
+      -- none. Counted apart rather than left in flight for ever (25 Sep).
+      count(*) filter (
+        where (status is null or status in ('queued', 'sent'))
+          and sent_at <= now() - interval '24 hours')::int                as unreported,
+      coalesce(
+        (select json_agg(json_build_object('code', code, 'count', n))
+           from (select error_code as code, count(*)::int as n
+                   from message_log
+                  where direction = 'out'
+                    and error_code is not null
+                    and sent_at > now() - make_interval(days => ${window})
+                  group by error_code
+                  order by n desc) e),
+        '[]'::json)                                                       as by_error
+    from message_log
+    where direction = 'out'
+      and sent_at > now() - make_interval(days => ${window})
+  `)) as unknown as Array<Record<string, unknown>>;
+  /* An aggregate always returns one row; an empty object is the same zeros, said safely. */
+  return rows[0] ?? {};
+}
+
+function toDeliveryCounts(row: Record<string, unknown>): DeliveryCounts {
   return {
     settled: Number(row.settled ?? 0),
     delivered: Number(row.delivered ?? 0),

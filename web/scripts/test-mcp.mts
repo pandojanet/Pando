@@ -164,6 +164,11 @@ console.log("\n=== the diagram's promises ===");
   ok("search filters by age band; what went wrong is kinds and counts — never a job's note",
     /\$\{input\.age_band\} = any\(s\.age_bands\)/.test(readSrc) && /export async function whatWentWrong/.test(readSrc) &&
       !/\bnote\b/.test(code(readSrc.slice(readSrc.indexOf("export async function whatWentWrong")))) && /tool\("what_went_wrong"/.test(server));
+  ok("delivery_health and the admin's delivery page count on the caller's connection, so an error is an error, never \"not configured\"",
+    /delivery: \(db, params\) => deliveryHealthRow\(db, params\)/.test(read("lib/server/repo/admin-read.ts")) &&
+      /const counts = await deliveryCountsOn\(db, windowDays\);/.test(read("lib/server/repo/admin-read.ts")) &&
+      !/configured: false/.test(read("lib/server/repo/admin-read.ts").slice(read("lib/server/repo/admin-read.ts").indexOf("async function deliveryHealthRow"), read("lib/server/repo/admin-read.ts").indexOf("14.1 Conversations"))) &&
+      /export async function deliveryCountsOn\(db: Db, days = 7\): Promise<DeliveryCounts> \{\s+return toDeliveryCounts\(await deliveryRow\(db, deliveryWindow\(days\)\)\);/.test(read("lib/server/repo/outreach.ts")));
   const uq = readSrc.slice(readSrc.indexOf("export async function unansweredQuestions"));
   ok("question texts only from unanswered_questions: masked, never who asked or the answer; sensitive, caregiver and person-asking ones only counted; Seed Tool only ordinary",
     /maskContactDetails\(String\(r\.question_text/.test(uq) && (uq.match(/maskNames\(maskContactDetails\(String\(r\.question_text/g) ?? []).length === 2 && !/person_id|phone|answer_text|neighborhood/.test(code(uq)) &&

@@ -6,14 +6,30 @@
 // a migration changed by a command no PreToolUse hook can read a path out of.
 
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/* Windows has no /bin/sh (23 Nov): use the sh that ships with git — the one git itself runs this hook
+   with — found from git's exec path. Git for Windows keeps it at …/bin/sh.exe above
+   …/mingw64/libexec/git-core; an MSYS2 git at …/usr/bin/sh.exe above …/usr/lib/git-core. Until this,
+   every case ran under a missing /bin/sh and failed, so the cases that must be refused passed unrun. */
+function gitSh() {
+  const exec = execSync("git --exec-path", { encoding: "utf8" }).trim();
+  const found = [
+    join(exec, "..", "..", "..", "bin", "sh.exe"),
+    join(exec, "..", "..", "..", "usr", "bin", "sh.exe"),
+    join(exec, "..", "..", "bin", "sh.exe"),
+  ].find((p) => existsSync(p));
+  if (!found) throw new Error(`test:githooks: no sh.exe found near git's exec path ${exec}`);
+  return found;
+}
+
 const hooks = dirname(fileURLToPath(import.meta.url));
+const shell = process.platform === "win32" ? gitSh() : "/bin/sh";
 const repo = mkdtempSync(join(tmpdir(), "pre commit-"));
-const sh = (command) => execSync(command, { cwd: repo, stdio: "ignore", shell: "/bin/sh" });
+const sh = (command) => execSync(command, { cwd: repo, stdio: "ignore", shell });
 
 sh("git init -q");
 sh("git config user.email fixture@example.com && git config user.name Fixture && git config commit.gpgsign false");
@@ -59,7 +75,7 @@ for (const [name, command, shouldCommit, prepare] of cases) {
   prepare?.();
   const head = execSync("git rev-parse HEAD", { cwd: repo, encoding: "utf8" });
   try {
-    execSync(command, { cwd: repo, stdio: "pipe", shell: "/bin/sh" });
+    execSync(command, { cwd: repo, stdio: "pipe", shell });
   } catch {
     /* a refused commit exits non-zero; HEAD below is the verdict */
   }
