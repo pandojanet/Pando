@@ -12,7 +12,7 @@ import { invalidateOptions } from "@/lib/server/market-cache";
 import { invalidateInvites } from "@/lib/server/invite-cache";
 import { cleanContributionPatch } from "@/lib/admin/contribution-edit";
 import { applyAction } from "@/lib/server/repo/admin-write";
-import { saveSkill } from "@/lib/server/mcp/plugin-skills";
+import { commitPluginChange, type PluginDraft } from "@/lib/server/mcp/plugin-repo";
 import { sql } from "drizzle-orm";
 
 /**
@@ -613,10 +613,11 @@ export async function POST(request: Request) {
   }
 
   /**
-   * A skill for the Pando plugin (23 Nov, the security review): approved here, by an admin who read it
-   * in full on /admin/proposals — never from the chat. The commit to GitHub is a network call, so it is
-   * made before the transaction that marks the proposal applied; a refusal leaves it waiting.
-   * `saveSkill` records plugin_skills and its own `skill.save` audit row; the commit's sha is passed on.
+   * A change to the Pando plugin — a skill, an agent or a connector (23 Nov): approved here, by an admin
+   * who read it line by line on /admin/proposals — never from the chat. The commit to GitHub is a network
+   * call, so it is made before the transaction that marks the proposal applied; a refusal (the file
+   * changed since, today's rules refuse it, GitHub down) leaves it waiting. `commitPluginChange` writes
+   * its own `plugin.commit` audit row; the commit's sha is passed on.
    */
   if (action === "proposal.approve" && body) {
     const proposalId = cleanId(body.id);
@@ -626,15 +627,15 @@ export async function POST(request: Request) {
           return found[0] ?? null;
         })
       : null;
-    if (waiting?.persisted && waiting.data?.kind === "skill") {
+    if (waiting?.persisted && waiting.data?.kind === "plugin") {
       const p = waiting.data.payload ?? {};
-      const saved = await saveSkill(session.user, {
-        name: String(p.name ?? ""),
-        description: String(p.description ?? ""),
-        instructions: String(p.instructions ?? ""),
+      const saved = await commitPluginChange(session.user, {
+        draft: p.draft as PluginDraft,
+        base_sha: typeof p.base_sha === "string" ? p.base_sha : null,
+        after_text: typeof p.after_text === "string" ? p.after_text : null,
       });
       if ("refused" in saved) {
-        return NextResponse.json({ error: `Nothing was committed. ${saved.refused}`, reason: "skill_not_committed" }, { status: 409 });
+        return NextResponse.json({ error: `Nothing was committed. ${saved.refused}`, reason: "plugin_not_committed" }, { status: 409 });
       }
       body.commit = saved.commit;
       body.version = saved.version;
@@ -761,7 +762,7 @@ export async function POST(request: Request) {
       proposal_invalid: "This proposal can't be applied as it is. Reject it; the agent can propose it again correctly.",
       record_not_approved: "This record isn't approved yet, so it can't be marked ready to answer with.",
       /* 23 Nov — skills and the sources & partners list. */
-      skill_not_committed: "The skill was not committed to the plugin, so the proposal is still waiting. Try Apply again.",
+      plugin_not_committed: "The change was not committed to the plugin, so the proposal is still waiting. Try again.",
       source_name_taken: "The sources & partners list already has an entry with that name. Reject this one, or change the existing entry.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];

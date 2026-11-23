@@ -21,7 +21,7 @@ async function rows(db: Db, query: ReturnType<typeof sql>): Promise<Row[]> {
   return (await db.execute(query)) as unknown as Row[];
 }
 
-export type ProposalKind = "record_edit" | "new_record" | "fact_check" | "event" | "skill" | "source";
+export type ProposalKind = "record_edit" | "new_record" | "fact_check" | "event" | "source" | "plugin";
 
 export interface NewProposal {
   actor: string;
@@ -63,12 +63,13 @@ async function createLocked(db: Db, p: NewProposal): Promise<{ id: string } | { 
          and payload = ${JSON.stringify(p.payload)}::jsonb
     `);
     if (open) return { refused: "the same proposal is already waiting for an admin" };
-  } else if (p.kind === "skill" || p.kind === "source") {
-    /* One waiting proposal per skill name, or per source (by its id, else its name). */
-    const key = p.kind === "skill" ? sql`payload->>'name' = ${String(p.payload.name ?? "")}`
+  } else if (p.kind === "plugin" || p.kind === "source") {
+    /* One waiting change per plugin file (two would be made against the same file, and the second could
+       never commit), or per source (by its id, else its name). */
+    const key = p.kind === "plugin" ? sql`payload->>'path' = ${String(p.payload.path ?? "")}`
       : p.payload.source_id ? sql`payload->>'source_id' = ${String(p.payload.source_id)}` : sql`lower(payload->>'name') = lower(${String(p.payload.name ?? "")})`;
     const [open] = await rows(db, sql`select 1 from mcp_proposals where kind = ${p.kind} and status = 'proposed' and ${key}`);
-    if (open) return { refused: p.kind === "skill" ? "A skill with that name is already waiting for an admin; it can be changed after they decide." : "A change to that source is already waiting for an admin." };
+    if (open) return { refused: p.kind === "plugin" ? `A change to ${String(p.payload.path)} is already waiting for an admin; propose again after they decide.` : "A change to that source is already waiting for an admin." };
   }
   const [made] = await rows(db, sql`
     insert into mcp_proposals (actor, kind, share_id, payload, source_url, before)
@@ -98,8 +99,8 @@ export interface ProposalRow {
  * Proposals; `status` narrows (proposed by default). Waiting ones oldest first — the order an admin
  * works through them, as the tool says (23 Nov, the review: it said oldest and sorted newest) — and
  * decided ones newest first. Admins are named; parents never, and a record flagged as a person's name
- * goes without its name (`FLAGGED_PERSON`). A skill's instructions are not repeated here: they are
- * long, and an admin reads them in full on /admin/proposals.
+ * goes without its name (`FLAGGED_PERSON`). A plugin change comes back as what it changes, not the
+ * files: they are long, and an admin reads them on /admin/proposals.
  */
 export async function listProposals(db: Db, input: { status?: string | null; limit: number }): Promise<ProposalRow[]> {
   const out = await rows(db, sql`
@@ -115,7 +116,7 @@ export async function listProposals(db: Db, input: { status?: string | null; lim
     proposed_by: String(r.actor),
     kind: String(r.kind) as ProposalKind,
     record: r.share_id ? { id: String(r.share_id), name: r.flagged_person === true ? null : String(r.share_name ?? ""), kind: String(r.share_kind ?? "") } : null,
-    change: r.kind === "skill" ? skillSummary(r.payload as Record<string, unknown>) : ((r.payload as Record<string, unknown>) ?? {}),
+    change: r.kind === "plugin" ? pluginSummary(r.payload as Record<string, unknown>) : ((r.payload as Record<string, unknown>) ?? {}),
     source_url: r.source_url ? String(r.source_url) : null,
     status: String(r.status),
     decided_by: r.decided_by ? String(r.decided_by) : null,
@@ -125,9 +126,8 @@ export async function listProposals(db: Db, input: { status?: string | null; lim
   }));
 }
 
-function skillSummary(p: Record<string, unknown> | null): Record<string, unknown> {
-  const body = typeof p?.instructions === "string" ? p.instructions : "";
-  return { name: p?.name ?? null, description: p?.description ?? null, instructions_chars: body.length };
+function pluginSummary(p: Record<string, unknown> | null): Record<string, unknown> {
+  return { target: p?.target ?? null, action: p?.action ?? null, name: p?.name ?? null, path: p?.path ?? null, warnings: p?.warnings ?? [] };
 }
 
 /**

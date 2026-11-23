@@ -134,10 +134,16 @@ console.log("\n=== the diagram's promises ===");
   const write = read("lib/server/repo/admin-write.ts");
   ok("a decision is recorded as made here, whatever the request says", /case "proposal\.approve": \{[\s\S]{0,600}const via = "admin";/.test(write) && /case "proposal\.reject": \{[\s\S]{0,300}const via = "admin";/.test(write));
   const actionRoute = read("app/api/admin/action/route.ts");
-  ok("a skill is committed only by an admin's Apply on /admin/proposals: the route commits first, the proposal is marked with the commit",
-    /tool\("propose_skill"/.test(server) && /kind: "skill", shareId: null/.test(server) && /const file = buildSkillFile\(a\);/.test(server) &&
-      /waiting\.data\?\.kind === "skill"/.test(actionRoute) && /const saved = await saveSkill\(session\.user,/.test(actionRoute) && /body\.commit = saved\.commit;/.test(actionRoute) &&
-      /\} else if \(p\.kind === "skill"\) \{[\s\S]{0,700}reason: "skill_not_committed"/.test(write));
+  /* 23 Nov, the developer: the client changes the plugin — skills, agents, connectors — without QuitCode. */
+  ok("a plugin change is committed only by an admin's Commit on /admin/proposals: the route commits first, the proposal is marked with the commit",
+    /tool\("propose_plugin_change"/.test(server) && /kind: "plugin", shareId: null/.test(server) && /const prepared = await preparePluginChange\(a\);/.test(server) &&
+      /waiting\.data\?\.kind === "plugin"/.test(actionRoute) && /const saved = await commitPluginChange\(session\.user,/.test(actionRoute) && /body\.commit = saved\.commit;/.test(actionRoute) &&
+      /\} else if \(p\.kind === "plugin"\) \{[\s\S]{0,700}reason: "plugin_not_committed"/.test(write) && /'plugin'\)\);/.test(read("drizzle/0078_plugin_changes.sql")));
+  const toolNames = read("lib/mcp/tool-names.ts");
+  ok("one list of Pando's tools: the server cannot register a tool missing from it or listed as the other kind",
+    /const kind = PANDO_TOOLS\[name as keyof typeof PANDO_TOOLS\];\s+if \(!kind \|\| \(kind === "read"\) !== config\.readOnly\) throw/.test(server) &&
+      [...server.matchAll(/tool\("([a-z_]+)"/g)].every((m) => toolNames.includes(`  ${m[1]}: "`)) &&
+      (toolNames.match(/^  [a-z_]+: "(read|write)",$/gm) ?? []).length === [...server.matchAll(/tool\("([a-z_]+)"/g)].length);
   ok("the sources & partners list: read by agents, changed by an admin's yes, only a check's time and result written directly",
     /tool\("list_sources"/.test(server) && /tool\("propose_source"/.test(server) && /kind: "source", shareId: null/.test(server) && /tool\("record_source_check"/.test(server) &&
       /update pando_sources set last_checked_at = now\(\), last_check = \$\{result\}/.test(read("lib/server/repo/mcp-sources.ts")) &&
@@ -163,14 +169,23 @@ console.log("\n=== the diagram's promises ===");
     /maskContactDetails\(String\(r\.question_text/.test(uq) && !/person_id|phone|answer_text|neighborhood/.test(code(uq)) &&
       /coalesce\(a\.hold_reason, 'not_held'\) not in \('caregiver', 'sensitive', 'generator_asked'\)/.test(uq) &&
       /not requires_human_review and coalesce\(sensitivity, 'ordinary'\) in \('ordinary', 'peer_support'\)/.test(uq) && (readSrc.match(/question_text/g) ?? []).length === (uq.match(/question_text/g) ?? []).length);
-  const skills = read("lib/server/mcp/plugin-skills.ts");
-  ok("a skill: one SKILL.md shape Pando writes, only under skills/<name>/, version raised in the same commit",
-    /return `---\\nname: \$\{d\.name\}\\ndescription: \$\{yaml\(description\)\}\\n---\\n\\n\$\{body\}\\n`/.test(skills) &&
-      /const path = `skills\/\$\{input\.name\}\/SKILL\.md`/.test(skills) && /\{ path: MANIFEST, mode: "100644", type: "blob", content: `\$\{JSON\.stringify\(\{ \.\.\.plugin, version \}/.test(skills) &&
-      /Pando writes the frontmatter/.test(skills));
-  ok("save_skill never overwrites a skill QuitCode maintains, never force-pushes, and audits every save",
-    /if \(existing && !input\.mayOverwrite\)/.test(skills) && /force: false/.test(skills) && !/force: true/.test(skills) &&
-      /'skill\.save', 'plugin_skill'/.test(skills) && /"skill\.save":/.test(read("lib/admin/labels.ts")));
+  const skills = read("lib/server/mcp/plugin-repo.ts");
+  ok("a plugin change: Pando writes every file's frontmatter, only skills/<name>/SKILL.md, agents/<name>.md or .mcp.json, version raised in the same commit",
+    /return `---\\nname: \$\{d\.name\}\\ndescription: \$\{yaml\(description\)\}\\n\$\{hint/.test(skills) &&
+      /target === "skill" \? `skills\/\$\{name\}\/SKILL\.md` : target === "agent" \? `agents\/\$\{name\}\.md` : MCP_JSON/.test(skills) &&
+      /\{ path: MANIFEST, mode: "100644", type: "blob", content: `\$\{JSON\.stringify\(\{ \.\.\.plugin, version \}/.test(skills) && /Pando writes the frontmatter/.test(skills));
+  ok("never force-pushes; a file changed since the proposal, or a render that differs from what the admin read, is refused; every commit audited",
+    /force: false/.test(skills) && !/force: true/.test(skills) && /if \(\(file\?\.sha \?\? null\) !== p\.base_sha\)/.test(skills) && /if \(after !== p\.after_text\)/.test(skills) &&
+      /'plugin\.commit', 'plugin'/.test(skills) && /"plugin\.commit":/.test(read("lib/admin/labels.ts")));
+  ok("an agent never gets Bash, Write, Edit or NotebookEdit; a connector is https, public and keyless; the means of change cannot be removed",
+    /const NEVER = \["Bash", "Write", "Edit", "NotebookEdit"\];/.test(skills) && /if \(u\.protocol !== "https:"\)/.test(skills) && /u\.username \|\| u\.password \|\| u\.search \|\| u\.hash/.test(skills) &&
+      /LOCKED: Record<PluginTarget, string\[\]> = \{ skill: \["customize", "pando-data"\], agent: \["agent-builder"\], connector: \["pando"\] \}/.test(skills) &&
+      /servers\[d\.name\] = \{ type: "http", url:/.test(skills) && !/\b(command|args|env)\s*:/.test(code(skills)));
+  const ld = (await import(`../lib/admin/line-diff.ts?v=${Math.random()}`)) as typeof import("../lib/admin/line-diff.ts");
+  const dl = ld.diffLines("a\nb\nc\nd\ne\nf\ng\nh", "a\nb\nc\nX\ne\nf\ng\nh", 1);
+  ok("the admin's line diff: removed and added lines, unchanged ones far from a change folded",
+    JSON.stringify(dl) === JSON.stringify([{ op: "skip", count: 2 }, { op: "same", text: "c" }, { op: "del", text: "d" }, { op: "add", text: "X" }, { op: "same", text: "e" }, { op: "skip", count: 3 }]) &&
+      ld.diffLines(null, "x\ny").every((l) => l.op === "add") && ld.diffLines("x", null).every((l) => l.op === "del"), JSON.stringify(dl));
   const sql0072 = read("drizzle/0072_plugin_skills.sql");
   ok("migration 0072: plugin_skills with RLS, in the journal after 0071",
     /CREATE TABLE IF NOT EXISTS plugin_skills/.test(sql0072) && /ENABLE ROW LEVEL SECURITY/.test(sql0072) && /REVOKE ALL ON plugin_skills FROM anon, authenticated/.test(sql0072) &&

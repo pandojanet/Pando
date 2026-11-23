@@ -112,7 +112,7 @@ ok("no token: 401 with the pointer Claude reads", (await post({ jsonrpc: "2.0", 
 ok("a batch is refused", (await post([{ jsonrpc: "2.0", id: 1, method: "tools/list" }])).status === 400);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("24 tools, each with a title and read/destructive hints", tools.length === 24 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("25 tools, each with a title and read/destructive hints", tools.length === 25 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
 ok("no tool decides a proposal or commits a skill", !tools.some((t) => ["approve_proposal", "reject_proposal", "save_skill"].includes(t.name)));
 ok("a token not shaped like Pando's is a 401 without a lookup", (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "not-a-pando-token")).status === 401);
 
@@ -157,8 +157,134 @@ const rejected = JSON.parse((await call("propose_record_edit", { id: share.id, c
 await decide("proposal.reject", { id: rejected.proposal_id, reason: "the page uses the long name" });
 const decided = JSON.parse((await call("list_proposals", { status: "rejected" })).text);
 ok("a rejection keeps its reason for the agent", decided.results?.[0]?.reason === "the page uses the long name");
-const skill = await call("propose_skill", { name: "ci-skill", description: "A skill the CI run proposes, to see it wait.", instructions: "Read the numbers and say what changed since last week, in three lines." });
-ok("a skill without a plugin repo configured is refused, not saved", /not configured/.test(skill.error ?? ""));
+const skill = await call("propose_plugin_change", { target: "skill", action: "create", name: "ci-skill", description: "A skill the CI run proposes, to see it wait.", instructions: "Read the numbers and say what changed since last week, in three lines." });
+ok("a plugin change without a plugin repo configured is refused, not saved", /not configured/.test(skill.error ?? ""));
+
+console.log("\n=== the plugin, changed by the client (a GitHub stand-in on 127.0.0.1) ===");
+/* Just enough of GitHub's git data API for plugin-repo.ts: a branch, commits as snapshots, trees,
+   contents, and a ref that moves only forward. Nothing leaves this process. */
+const { createServer } = await import("node:http");
+const blobSha = (t: string) => createHash("sha1").update(`blob ${Buffer.byteLength(t)}\0${t}`).digest("hex");
+const snapshots = new Map<string, Map<string, string>>();
+const hexId = (k: string) => createHash("sha1").update(k).digest("hex");
+let headSha = hexId("c0");
+snapshots.set(headSha, new Map([
+  [".claude-plugin/plugin.json", `${JSON.stringify({ name: "pando", version: "0.5.0" }, null, 2)}\n`],
+  [".mcp.json", `${JSON.stringify({ mcpServers: { pando: { type: "http", url: "https://pando.is/api/mcp" } } }, null, 2)}\n`],
+  ["skills/pando-data/SKILL.md", "---\nname: pando-data\ndescription: \"The catalogue of Pando's tools.\"\n---\n\nThe catalogue.\n"],
+  ["skills/old-brief/SKILL.md", "---\nname: old-brief\ndescription: \"An old brief nobody uses any more.\"\n---\n\nOld.\n"],
+  ["skills/old-brief/references/notes.md", "notes\n"],
+  ["agents/agent-builder.md", "---\nname: agent-builder\ndescription: \"Drafts skills.\"\ntools: Read\nmodel: sonnet\n---\n\nBuild.\n"],
+]));
+const trees = new Map<string, Map<string, string>>();
+let n = 0;
+const gh = createServer(async (req, res) => {
+  const body = await new Promise<string>((done) => { let b = ""; req.on("data", (d) => (b += d)); req.on("end", () => done(b)); });
+  const u = new URL(req.url ?? "/", "http://x");
+  const p = u.pathname.replace(/^\/repos\/o\/r/, "");
+  const send = (status: number, j: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(j)); };
+  if (req.method === "GET" && p === "/git/ref/heads/main") return send(200, { object: { sha: headSha } });
+  if (req.method === "GET" && p.startsWith("/git/commits/")) return snapshots.has(p.slice(13)) ? send(200, { tree: { sha: `tree-${p.slice(13)}` } }) : send(404, {});
+  if (req.method === "GET" && p.startsWith("/git/trees/tree-")) {
+    const snap = snapshots.get(p.slice(16));
+    return snap ? send(200, { tree: [...snap.entries()].map(([path, t]) => ({ path, type: "blob", sha: blobSha(t) })) }) : send(404, {});
+  }
+  if (req.method === "GET" && p.startsWith("/contents/")) {
+    const t = snapshots.get(u.searchParams.get("ref") ?? "")?.get(decodeURIComponent(p.slice(10)));
+    return t === undefined ? send(404, {}) : send(200, { content: Buffer.from(t).toString("base64"), sha: blobSha(t) });
+  }
+  if (req.method === "POST" && p === "/git/trees") {
+    const j = JSON.parse(body) as { base_tree: string; tree: Array<{ path: string; content?: string; sha?: null }> };
+    const next = new Map(snapshots.get(j.base_tree.replace(/^tree-/, "")) ?? []);
+    for (const e of j.tree) if (e.sha === null) next.delete(e.path); else next.set(e.path, e.content ?? "");
+    const id = `t${++n}`;
+    trees.set(id, next);
+    return send(201, { sha: id });
+  }
+  if (req.method === "POST" && p === "/git/commits") {
+    const j = JSON.parse(body) as { tree: string; parents: string[] };
+    const id = hexId(`c${++n}`);
+    snapshots.set(id, trees.get(j.tree) ?? new Map());
+    return send(201, { sha: id });
+  }
+  if (req.method === "PATCH" && p === "/git/refs/heads/main") {
+    const j = JSON.parse(body) as { sha: string };
+    headSha = j.sha;
+    return send(200, { object: { sha: headSha } });
+  }
+  send(404, {});
+});
+await new Promise<void>((r) => gh.listen(0, "127.0.0.1", () => r()));
+process.env.PLUGIN_GITHUB_TOKEN = "ci-token";
+process.env.PLUGIN_GITHUB_REPO = "o/r";
+process.env.GITHUB_API_BASE = `http://127.0.0.1:${(gh.address() as { port: number }).port}`;
+const repoNow = () => snapshots.get(headSha)!;
+const pluginRepo = await load<typeof import("../lib/server/mcp/plugin-repo.ts")>("../lib/server/mcp/plugin-repo.ts");
+/* What /api/admin/action does on *Commit to plugin*: commit first, then mark the proposal applied. */
+const commitProposal = async (proposalId: string) => {
+  const [row] = await q(sql`select payload from mcp_proposals where id = ${proposalId}::uuid`);
+  const pl = row.payload as { draft: import("../lib/server/mcp/plugin-repo.ts").PluginDraft; base_sha: string | null; after_text: string | null };
+  const saved = await pluginRepo.commitPluginChange("ci", pl);
+  if ("refused" in saved) return saved;
+  return { ...saved, applied: (await decide("proposal.approve", { id: proposalId, commit: saved.commit, version: saved.version })).applied };
+};
+type Proposed = { proposal_id?: string; warnings?: string[]; error?: string };
+const propose = async (a: Record<string, unknown>): Promise<Proposed> => {
+  const r = await call("propose_plugin_change", a);
+  return r.error ? { error: r.error } : (JSON.parse(r.text) as Proposed);
+};
+
+const index = JSON.parse((await call("read_plugin", {})).text);
+ok("read_plugin lists the plugin: skills, agents, connectors, and what may be removed",
+  index.version === "0.5.0" && index.skills?.some((s: { name: string; may_remove: boolean }) => s.name === "pando-data" && !s.may_remove) &&
+    index.connectors?.[0]?.name === "pando" && index.agents?.[0]?.name === "agent-builder", JSON.stringify(index).slice(0, 200));
+ok("and reads one agent's file to start an edit from", /name: agent-builder/.test(JSON.parse((await call("read_plugin", { target: "agent", name: "agent-builder" })).text).text ?? ""));
+
+const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "mcp__plugin_pando_pando__search_records"] };
+ok("an agent with Bash is refused", /never given to a Pando agent/.test(String((await propose({ ...agentArgs, tools: ["Bash"] })).error ?? "")));
+ok("an agent with a tool Pando does not have is refused", /Pando has no tool/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__approve_proposal"] })).error ?? "")));
+ok("an agent told to approve is refused", /approves, rejects or saves/.test(String((await propose({ ...agentArgs, instructions: "Read everything, then call approve_proposal for each proposal you like." })).error ?? "")));
+const newAgent = await propose(agentArgs);
+ok("a new agent is proposed, and nothing is committed yet", !!newAgent.proposal_id && !repoNow().has("agents/ci-newsletter.md"));
+const committed = newAgent.proposal_id ? await commitProposal(newAgent.proposal_id) : { refused: "not proposed" };
+const agentFile = repoNow().get("agents/ci-newsletter.md") ?? "";
+ok("Commit to plugin commits it with Pando's frontmatter and the version raised, and marks the proposal applied",
+  "applied" in committed && committed.applied === true && /^---\nname: ci-newsletter\ndescription: ".+"\ntools: Read, mcp__plugin_pando_pando__search_records\nmodel: sonnet\n---\n/.test(agentFile) &&
+    JSON.parse(repoNow().get(".claude-plugin/plugin.json") ?? "{}").version === "0.5.1", JSON.stringify(committed));
+const [pluginAudit] = await q(sql`select after from audit_log where action = 'plugin.commit' order by at desc limit 1`);
+ok("and the commit is in the audit log", (pluginAudit?.after as { name?: string } | null)?.name === "ci-newsletter");
+
+const mail = await propose({ ...agentArgs, name: "ci-replies", tools: ["mcp__plugin_pando_pando__propose_source"], account_connectors: true });
+const [mailRow] = await q(sql`select payload from mcp_proposals where id = ${mail.proposal_id ?? "00000000-0000-0000-0000-000000000000"}::uuid`);
+const mailFile = String((mailRow?.payload as { after_text?: string } | undefined)?.after_text ?? "");
+ok("an agent that reads connected accounts is a deny list: Bash, Write, Edit and every Pando change but the one it names",
+  /disallowedTools: Bash, Write, Edit, NotebookEdit, /.test(mailFile) && /propose_record_edit/.test(mailFile) && !/propose_source/.test(mailFile) &&
+    (mail.warnings ?? []).some((w) => /every account connected/.test(w)), mailFile.slice(0, 300));
+
+const edit = await propose({ target: "skill", action: "update", name: "pando-data", description: "The catalogue of Pando's tools, with the new ones.", instructions: "The catalogue, updated with read_plugin and propose_plugin_change." });
+ok("a skill QuitCode made can be changed", !!edit.proposal_id);
+ok("a second change to the same file waits for the first", /already waiting/.test(String((await propose({ target: "skill", action: "update", name: "pando-data", description: "Another change to the catalogue, made too soon.", instructions: "Another version of the catalogue's instructions." })).error ?? "")));
+const live = repoNow();
+live.set("skills/pando-data/SKILL.md", `${live.get("skills/pando-data/SKILL.md")}Edited by hand.\n`);
+const stale = edit.proposal_id ? await commitProposal(edit.proposal_id) : { refused: "" };
+const [staleRow] = await q(sql`select status from mcp_proposals where id = ${edit.proposal_id ?? "00000000-0000-0000-0000-000000000000"}::uuid`);
+ok("a file changed since the proposal is not overwritten: refused, and the proposal still waits", "refused" in stale && /changed after this was proposed/.test(stale.refused) && staleRow?.status === "proposed");
+
+ok("a connector over http is refused", /https only/.test(String((await propose({ target: "connector", action: "create", name: "notion", url: "http://mcp.notion.com/mcp" })).error ?? "")));
+ok("a connector with a key in its address is refused", /No sign-in, key or query/.test(String((await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp?key=abc" })).error ?? "")));
+ok("a connector on a local machine is refused", /public service/.test(String((await propose({ target: "connector", action: "create", name: "lab", url: "https://127.0.0.1/mcp" })).error ?? "")));
+ok("the pando connector cannot be removed", /cannot be removed/.test(String((await propose({ target: "connector", action: "delete", name: "pando" })).error ?? "")));
+const conn = await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp" });
+const connDone = conn.proposal_id ? await commitProposal(conn.proposal_id) : { refused: "" };
+const servers = JSON.parse(repoNow().get(".mcp.json") ?? "{}").mcpServers ?? {};
+ok("a connector is added as a remote https server, pando kept first", "committed" in connDone && Object.keys(servers).join(",") === "pando,notion" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion));
+
+ok("the agent-builder cannot be removed", /cannot be removed/.test(String((await propose({ target: "agent", action: "delete", name: "agent-builder" })).error ?? "")));
+const gone = await propose({ target: "skill", action: "delete", name: "old-brief" });
+const goneDone = gone.proposal_id ? await commitProposal(gone.proposal_id) : { refused: "" };
+ok("removing a skill removes its whole folder", "committed" in goneDone && ![...repoNow().keys()].some((k) => k.startsWith("skills/old-brief/")) && repoNow().has("skills/pando-data/SKILL.md"));
+gh.close();
+delete process.env.PLUGIN_GITHUB_TOKEN;
 
 console.log("\n=== sources & partners ===");
 const src = JSON.parse((await call("propose_source", { role: "partner", kind: "school", name: "CI Elementary", url: "https://example.org/ci-school", area: "pasadena" })).text);

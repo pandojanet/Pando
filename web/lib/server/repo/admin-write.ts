@@ -128,9 +128,9 @@ export type ActionOutcome =
            candidate rules, a date that is not a date), and "ready to answer with" on a record not approved. */
         | "proposal_invalid"
         | "record_not_approved"
-        /* 23 Nov — a skill proposal approved without its commit (the route commits first), and a source
+        /* 23 Nov — a plugin change approved without its commit (the route commits first), and a source
            whose name the list already has. */
-        | "skill_not_committed"
+        | "plugin_not_committed"
         | "source_name_taken"
         /* 3 Nov — a reset sent without its typed confirmation. */
         | "reset_not_confirmed"
@@ -2473,13 +2473,13 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           /* A group the agent found nothing for now has something to send (review round 3). */
           await tx.execute(sql`update digest_editions set status = 'ready' where id = ${ed.id}::uuid and status = 'empty'`);
         }
-      } else if (p.kind === "skill") {
-        /* A skill for the Pando plugin (23 Nov, replacing the chat's save_skill). The commit to GitHub
-           cannot sit inside this transaction, so the admin route makes it first (`saveSkill`, which
-           records plugin_skills and its own `skill.save` audit row) and passes what was committed;
-           without it the proposal stays waiting. */
+      } else if (p.kind === "plugin") {
+        /* A change to the Pando plugin — a skill, an agent or a connector (23 Nov). The commit to GitHub
+           cannot sit inside this transaction, so the admin route makes it first (`commitPluginChange`,
+           which writes its own `plugin.commit` audit row) and passes what was committed; without it the
+           proposal stays waiting. */
         const commit = cleanText(b.commit, 64);
-        if (!commit || !/^[0-9a-f]{7,64}$/.test(commit)) return { applied: false, reason: "skill_not_committed" };
+        if (!commit || !/^[0-9a-f]{7,64}$/.test(commit)) return { applied: false, reason: "plugin_not_committed" };
         extra = { commit, version: cleanText(b.version, 20) };
       } else if (p.kind === "source") {
         /* The sources & partners list (0077): a new entry, or a change to one. Organisations only. */

@@ -1336,7 +1336,7 @@ export interface ProposalRowAdmin {
   id: string;
   created_at: string;
   proposed_by: string;
-  kind: "record_edit" | "new_record" | "fact_check" | "event" | "skill" | "source";
+  kind: "record_edit" | "new_record" | "fact_check" | "event" | "source" | "plugin";
   record: { id: string; name: string; kind: string } | null;
   change: Record<string, unknown>;
   source_url: string | null;

@@ -19,7 +19,7 @@ session to lose between deploys.
 | Switching it on or off; revoking a connection | any Pando admin, at `/admin/mcp` |
 | Approving what agents propose | any Pando admin, at `/admin/proposals` — only there (23 Nov) |
 | The emergency switch-off | whoever runs the server: `PANDO_MCP=off` in its `.env`, over the admin's switch |
-| The plugin (agents, skills) | QuitCode; a skill the Agent builder writes is a `propose_skill` proposal, committed when an admin applies it |
+| The plugin (skills, agents, connectors) | the client, without QuitCode: the Agent builder proposes a change (`propose_plugin_change`) and an admin commits it on `/admin/proposals`; QuitCode keeps the rules below |
 | The sources & partners list | any Pando admin, by approving `propose_source` proposals |
 
 ## Auth
@@ -95,12 +95,36 @@ already full is said in the result (*"N prepared digests are full"*). An approve
 approved, and *Take out* says when one still carries it. `/admin/digests` marks such an item
 *Approved event*; *Take out* on `/admin/proposals` also takes it out of prepared, unapproved digests.
 
-A record's proposed name, venue and subcategory carry no phone number, email or link either. A skill
-(`propose_skill`) may not carry contact details or name `approve_proposal`, `reject_proposal`,
-`save_skill` or the `admin_said_*` flags — none of those exists any more, and a skill never decides.
-An admin reads the whole skill on `/admin/proposals`; *Commit to plugin* commits it to the plugin's
-branch with the version raised (`saveSkill`, its own `skill.save` audit row) and only then marks the
-proposal applied. A skill QuitCode maintains is refused at that moment.
+A record's proposed name, venue and subcategory carry no phone number, email or link either.
+
+### Changing the plugin itself (23 Nov)
+
+The client changes the Pando plugin without QuitCode: a **skill**, an **agent** (subagent) or a
+**connector** (a remote MCP server), created, updated or deleted. The Agent builder reads the plugin
+(`read_plugin`: the index, or one file to start an edit from) and proposes one change per file
+(`propose_plugin_change`). Pando renders the file at once, against the plugin as it is, and keeps that
+text and the blob it was made on (`base_sha`). `/admin/proposals` shows the change as lines removed and
+added, with what it lets the plugin do in plain words above it; *Commit to plugin* commits it to the
+plugin's branch with the patch version raised (`commitPluginChange`, an `audit_log` row
+`plugin.commit`), then marks the proposal applied. No pull request (20 Nov). Rules
+(`lib/server/mcp/plugin-repo.ts`), whatever a proposal says:
+
+- **Pando writes every frontmatter** from plain fields: a skill's name, description, argument hint; an
+  agent's name, description, tools, model. No hooks, `mcpServers` or permission mode.
+- **An agent's tools:** `Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, Pando's tools by their real
+  names (`lib/mcp/tool-names.ts`, the list the server registers from), and tools of connectors the
+  plugin declares. Never `Bash`, `Write`, `Edit` or `NotebookEdit`. An agent that reads Gmail or other
+  accounts connected to Claude (`account_connectors`) is written as a deny list: those four, and every
+  Pando tool that writes except the ones it names.
+- **A connector** is `{ "type": "http", "url": … }` at an `https://` address on a public host, with no
+  user, key or query in it, no headers, no local command; each person signs in to it in Claude.
+- **Text** carries no phone number or email, and no step that approves, rejects or saves.
+- **Cannot be removed** (can be changed): the `pando` connector, the `customize` and `pando-data`
+  skills, the `agent-builder` agent. `shared/` (the safety rules) is not reachable at all.
+- **One waiting change per file.** A file changed after the proposal is never overwritten: the commit is
+  refused and the proposal waits, to be rejected and proposed again. The commit renders the change again
+  under the rules of the day and refuses anything that is not exactly what the admin read.
+- `PLUGIN_GITHUB_TOKEN` needs Contents read and write on the plugin repo only.
 
 `digest_weeks` for one week is a summary by default (totals and each group's state, ~1k characters) and
 adds the items only with `detail: "items"` (the full week was ~32k characters on test data, past Claude
@@ -119,7 +143,7 @@ approval runs `applyAction`, in one transaction with its `audit_log` row. Waitin
 oldest first, decided ones newest first.
 
 **Not in the chat (23 Nov, the security review).** `approve_proposal`, `reject_proposal` and
-`save_skill` were removed. Each required an `admin_said_yes` / `_no` / `_save: true` argument that the
+`save_skill` were removed (`save_skill` is now part of `propose_plugin_change`). Each required an `admin_said_yes` / `_no` / `_save: true` argument that the
 agent itself filled in — a web page or a parent's words that steered the agent could fill it in too, and
 Claude's confirmation prompt is a setting an admin can turn off. A decision is now a person's press on
 a page the agent cannot reach. The one direct write left is `record_source_check` (when a source was
@@ -138,13 +162,14 @@ read and how that went — never shown to a parent).
 | `list_sources` | the sources & partners list, least recently checked first | — (the features sheet's "sources & partners list") |
 | `propose_source` | **proposal**: add an organisation or feed, or change, pause or retire one | — ("Keeps the partner list") |
 | `record_source_check` | writes when a source was read and how (ok, failed, changed, gone) | `source_status` |
-| `propose_skill` | **proposal**: a skill for the plugin, committed when an admin applies it | Prompt Architect / reusable workflows |
+| `read_plugin` | the plugin's skills, agents and connectors; one file's text | — |
+| `propose_plugin_change` | **proposal**: create, update or delete a skill, an agent or a connector; committed when an admin commits it | Prompt Architect / reusable workflows |
 | `list_proposals` | proposals and their decisions | `get_request_status`, `list_approval_queue` |
 | `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one | `log_cost_event` (read side) |
 
 **Not here, on purpose:** `add_watch`, `cancel_watch`, `request_network_check`, `record_outcome`.
 Each acts towards a parent; the plugin never texts parents, so they stay in the SMS product.
-Approving or rejecting a proposal, and committing a skill, happen only on `/admin/proposals`.
+Approving or rejecting a proposal, and committing a change to the plugin, happen only on `/admin/proposals`.
 
 ## Audit
 
@@ -155,7 +180,7 @@ Approving or rejecting a proposal, and committing a skill, happen only on `/admi
   the list inside an answer (`results`, `weeks`, `groups`, `questions`). `/admin/mcp` shows the last 24
   hours' calls per tool; `what_went_wrong` reports errors and refusals.
 - **Every change:** an `audit_log` row naming the admin — `proposal.approve` / `proposal.reject`, plus
-  the row of the change itself (`share.rename`, …), `skill.save`, `digest_candidate.remove`,
+  the row of the change itself (`share.rename`, …), `plugin.commit`, `digest_candidate.remove`,
   `mcp.switch`, `mcp.revoke`. Decisions made in chat before 23 Nov keep `via: chat`.
 - **Proposals** keep who proposed, the source page, who decided, where, and when (`mcp_proposals`).
 - Server logs carry counts and enums only (invariant 7): never a token, code, name or argument.
@@ -212,7 +237,7 @@ a deploy resets them. `costs_summary` keeps a result for an hour.
 There is no test switch on production. Everything is tried in the lab first (`.chat-lab`, the local
 database on `127.0.0.1:55432`, the admin on `localhost:3100`): `.chat-lab/tmp/mcp-walk.mjs` walks the
 whole sign-in and every read tool, and `tmp/mcp-call.mjs <tool> '<json>'` calls one tool;
-a skill applied there is committed to a local copy of GitHub (`tmp/mock-github.mjs`), never the real repo.
+a plugin change committed there goes to a local copy of GitHub (`tmp/mock-github.mjs`), never the real repo; `test:mcp-db` runs the whole path — read, propose, commit, a stale file refused, a connector, a folder removed — against a GitHub stand-in on 127.0.0.1.
 `npm --prefix web run test:mcp` checks the rules above in the code, and `test:mcp-db` runs them against a
 real Postgres: an in-memory PGlite on 127.0.0.1, every migration applied, the real route handlers called
 for sign-in, refresh, every read tool, a proposal applied with its audit row, the switch, the cleanup and
@@ -223,5 +248,5 @@ the alerts. Both run in the gate.
 `PANDO_MCP` (`off` overrides the admin's switch) · `MCP_BASE_URL` (the public origin, if not
 `NOTIFY_BASE_URL` or `NEXT_PUBLIC_SITE_URL`; `https://pando.is` in production otherwise) ·
 `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `POSTHOG_API_HOST` (AI spend) ·
-`PLUGIN_GITHUB_TOKEN`, `PLUGIN_GITHUB_REPO`, `PLUGIN_GITHUB_BRANCH` (committing an applied skill). Twilio's existing
+`PLUGIN_GITHUB_TOKEN`, `PLUGIN_GITHUB_REPO`, `PLUGIN_GITHUB_BRANCH` (reading the plugin and committing an approved change). Twilio's existing
 credentials give the SMS spend. Turning it on: [DEPLOY.md](../../DEPLOY.md#turning-on-pando-mcp-20-nov).

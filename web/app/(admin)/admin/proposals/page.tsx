@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ChevronDown, Minus, Plus } from "lucide-react";
+import { ChevronDown, Minus, Plus, TriangleAlert } from "lucide-react";
 import { SegmentedFilter } from "@/components/admin/kit";
 import { Badge, Button, Card, Empty, ErrorNote, Failed, Loading, NotConfigured, PageHead, ResultNote, TextLink, inputClass, when } from "@/components/admin/ui";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { DigestCandidateAdmin, ProposalRowAdmin, RecordFactsAdmin } from "@/lib/admin/types";
 import { cn } from "@/lib/cn";
+import { diffLines } from "@/lib/admin/line-diff";
 
 /**
  * What Pando's agents proposed through Pando MCP (20 Nov; redrawn the same day after GitHub's pull
@@ -17,8 +18,11 @@ import { cn } from "@/lib/cn";
  * Nothing an agent proposes changes a record before it.
  *
  * 23 Nov (the security review): this page is now the only place a proposal is decided — the chat's
- * approve/reject are gone — and it carries two more kinds: a skill for the Pando plugin, shown in full
- * exactly as it would be committed (Apply commits it), and an entry for the sources & partners list.
+ * approve/reject are gone — and it carries two more kinds: an entry for the sources & partners list,
+ * and a change to the Pando plugin itself — a skill, an agent or a connector, new, changed or removed —
+ * shown as the lines it removes and adds, exactly as it would be committed, with what it lets the plugin
+ * do in plain words above it. *Commit to plugin* commits it (the developer, 23 Nov: the client changes
+ * the plugin without QuitCode).
  */
 
 type View = "proposed" | "decided" | "candidates";
@@ -29,7 +33,7 @@ const GROUPS: Array<{ kind: ProposalRowAdmin["kind"]; title: string }> = [
   { kind: "fact_check", title: "Fact checks" },
   { kind: "event", title: "Digest events" },
   { kind: "source", title: "Sources & partners" },
-  { kind: "skill", title: "Plugin skills" },
+  { kind: "plugin", title: "Plugin: skills, agents, connectors" },
 ];
 
 const host = (url: string) => {
@@ -158,24 +162,62 @@ function Changes({ p }: { p: ProposalRowAdmin }) {
         {typeof c.note === "string" && <Fact label="Note">{c.note}</Fact>}
       </div>
     );
-  if (p.kind === "skill")
-    return (
-      <div className="space-y-2">
-        <Fact label="Description">{String(c.description ?? "")}</Fact>
-        {/* The whole skill, as it would reach every admin's Claude: read before Apply. */}
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-bark bg-paper px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-ink">
-          {String(c.instructions ?? "")}
-        </pre>
-      </div>
-    );
+  if (p.kind === "plugin") return <PluginChange c={c} />;
   return null;
 }
+
+/**
+ * A plugin change: what it lets the plugin do, in plain words, then the file as lines removed (struck,
+ * red) and added (green) — the whole file for a new one — exactly as *Commit to plugin* would commit it.
+ */
+function PluginChange({ c }: { c: Record<string, unknown> }) {
+  const before = typeof c.before_text === "string" ? c.before_text : null;
+  const after = typeof c.after_text === "string" ? c.after_text : null;
+  const lines = diffLines(before, after);
+  const warnings = Array.isArray(c.warnings) ? c.warnings.map(String) : [];
+  return (
+    <div className="space-y-2">
+      <Fact label="File">
+        <span className="font-mono text-[12.5px]">{String(c.path ?? "")}</span>
+      </Fact>
+      {warnings.map((w) => (
+        <p key={w} className="flex items-start gap-2 rounded-xl border border-gold-line bg-gold-wash px-3 py-2 text-[13px] text-gold-ink">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-gold-ink" aria-hidden />
+          {w}
+        </p>
+      ))}
+      <div className="max-h-[28rem] overflow-auto rounded-xl border border-bark bg-paper py-2 font-mono text-[12.5px] leading-relaxed" role="group" aria-label="The change, line by line">
+        {lines.map((l, k) =>
+          l.op === "skip" ? (
+            <div key={k} className="px-3.5 py-0.5 text-muted">{`… ${l.count} unchanged line${l.count === 1 ? "" : "s"}`}</div>
+          ) : (
+            <div
+              key={k}
+              className={cn(
+                "whitespace-pre-wrap break-words px-3.5",
+                l.op === "add" && "bg-green-wash text-green-deep",
+                l.op === "del" && "bg-alert-wash text-alert line-through decoration-alert/40",
+                l.op === "same" && "text-ink",
+              )}
+            >
+              <span className="sr-only">{l.op === "add" ? "added: " : l.op === "del" ? "removed: " : ""}</span>
+              <span aria-hidden className="mr-2 select-none text-muted">{l.op === "add" ? "+" : l.op === "del" ? "−" : " "}</span>
+              {l.text || " "}
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+const TARGET_WORD: Record<string, string> = { skill: "skill", agent: "agent", connector: "connector" };
 
 function titleOf(p: ProposalRowAdmin): string {
   if (p.record?.name) return p.record.name;
   if (p.kind === "event") return String(p.change.title ?? "Event");
   if (p.kind === "new_record") return String(p.change.name ?? "New record");
-  if (p.kind === "skill") return String(p.change.name ?? "Skill");
+  if (p.kind === "plugin") return String(p.change.name ?? "Plugin");
   if (p.kind === "source") return String(p.change.name ?? "Source");
   return p.current?.name ?? "Record";
 }
@@ -185,7 +227,10 @@ function kindWord(p: ProposalRowAdmin): string {
   if (p.kind === "record_edit") return c.change === "rename" ? "rename" : c.change === "retire" ? "retire" : c.change === "answer_ready" ? "ready to answer" : "facts";
   if (p.kind === "new_record") return `new ${String(c.kind ?? "record")}`;
   if (p.kind === "fact_check") return "fact check";
-  if (p.kind === "skill") return "plugin skill";
+  if (p.kind === "plugin") {
+    const what = TARGET_WORD[String(c.target)] ?? "plugin change";
+    return c.action === "create" ? `new ${what}` : c.action === "delete" ? `remove ${what}` : `change to a ${what}`;
+  }
   if (p.kind === "source") return c.source_id ? `change to a ${String(c.role ?? "source")}` : `new ${String(c.role ?? "source")}`;
   return String(c.kind ?? "event");
 }
@@ -273,7 +318,7 @@ function ProposalRow({ p, busy, onDecide }: { p: ProposalRowAdmin; busy: boolean
         ) : (
           <div className="mt-3 flex flex-wrap gap-2">
             <Button tone="primary" disabled={busy} subject={title} onClick={() => onDecide("proposal.approve")}>
-              {p.changed_since ? "Apply anyway" : p.kind === "skill" ? "Commit to plugin" : "Apply"}
+              {p.changed_since ? "Apply anyway" : p.kind === "plugin" ? "Commit to plugin" : "Apply"}
             </Button>
             <Button disabled={busy} subject={title} onClick={() => setRejecting(true)}>
               Reject
@@ -340,7 +385,7 @@ export default function ProposalsPage() {
     void run(async () => {
       const out = await adminAction({ action, id: p.id, ...(reason ? { reason } : {}) });
       if (action === "proposal.reject") return `Rejected · ${titleOf(p)}`;
-      if (p.kind === "skill") return `Committed to the plugin · ${titleOf(p)}${typeof out.detail?.version === "string" ? ` · version ${out.detail.version}` : ""}`;
+      if (p.kind === "plugin") return `Committed to the plugin · ${titleOf(p)}${typeof out.detail?.version === "string" ? ` · version ${out.detail.version}` : ""}`;
       const full = Number(out.detail?.editions_full ?? 0);
       return full > 0
         ? /* copy: kept — 23 Nov: the event could not join a prepared digest that is already full */ `Applied · ${titleOf(p)} · ${full} prepared digest${full === 1 ? " is" : "s are"} full, so it waits for next week there`
