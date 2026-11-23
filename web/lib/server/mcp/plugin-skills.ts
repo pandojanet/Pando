@@ -6,10 +6,14 @@ import { hasContactDetail } from "@/lib/contact-details";
 import { withDb } from "@/lib/server/db";
 
 /**
- * `save_skill` (20 Nov): the diagram's Agent builder saves a skill "through Pando MCP" into GitHub
- * `pando-plugin`, and the plugin's next update brings it to everyone's Claude. The developer chose no
- * pull request — one build mechanism, committed straight to the plugin's branch, fixed afterwards if
- * something is wrong.
+ * A skill for the Pando plugin (20 Nov): the diagram's Agent builder saves a skill "through Pando MCP"
+ * into GitHub `pando-plugin`, and the plugin's next update brings it to everyone's Claude. The developer
+ * chose no pull request — one build mechanism, committed straight to the plugin's branch.
+ *
+ * 23 Nov, the security review: the commit no longer happens from the chat. `propose_skill` makes an
+ * `mcp_proposals` row of kind `skill`; an admin reads the whole skill on /admin/proposals and Apply
+ * calls `saveSkill` (app/api/admin/action) — so a page or a parent's words that steered an agent can
+ * no longer put instructions into every admin's Claude without a person reading them first.
  *
  * One mechanism, so every saved skill has the same shape: Pando writes the SKILL.md itself from a
  * name, a one-line description and the instructions — the agent cannot add frontmatter (tools, hooks,
@@ -50,7 +54,7 @@ export function buildSkillFile(d: SkillDraft): string | { refused: string } {
   /* A saved skill reaches every admin's Claude (review round 3): it never tells Claude to approve,
      reject or save anything — those wait for a person, every time, and are never a skill's step. */
   if (/\b(approve_proposal|reject_proposal|save_skill|admin_said_(yes|no|save))\b/.test(`${description}\n${body}`)) {
-    return { refused: "A skill may not call approve_proposal, reject_proposal or save_skill; those wait for a person every time." };
+    return { refused: "A skill may not name approve_proposal, reject_proposal, save_skill or an admin_said flag; proposals are decided by a person on /admin/proposals, every time." };
   }
   const yaml = (v: string) => JSON.stringify(v);
   return `---\nname: ${d.name}\ndescription: ${yaml(description)}\n---\n\n${body}\n`;

@@ -12,6 +12,8 @@ import { invalidateOptions } from "@/lib/server/market-cache";
 import { invalidateInvites } from "@/lib/server/invite-cache";
 import { cleanContributionPatch } from "@/lib/admin/contribution-edit";
 import { applyAction } from "@/lib/server/repo/admin-write";
+import { saveSkill } from "@/lib/server/mcp/plugin-skills";
+import { sql } from "drizzle-orm";
 
 /**
  * POST /api/admin/action — one write endpoint for every sensitive admin action
@@ -610,6 +612,35 @@ export async function POST(request: Request) {
     }
   }
 
+  /**
+   * A skill for the Pando plugin (23 Nov, the security review): approved here, by an admin who read it
+   * in full on /admin/proposals — never from the chat. The commit to GitHub is a network call, so it is
+   * made before the transaction that marks the proposal applied; a refusal leaves it waiting.
+   * `saveSkill` records plugin_skills and its own `skill.save` audit row; the commit's sha is passed on.
+   */
+  if (action === "proposal.approve" && body) {
+    const proposalId = cleanId(body.id);
+    const waiting = proposalId
+      ? await withDb(async (db) => {
+          const found = (await db.execute(sql`select kind, payload from mcp_proposals where id = ${proposalId}::uuid and status = 'proposed'`)) as unknown as Array<{ kind: string; payload: Record<string, unknown> }>;
+          return found[0] ?? null;
+        })
+      : null;
+    if (waiting?.persisted && waiting.data?.kind === "skill") {
+      const p = waiting.data.payload ?? {};
+      const saved = await saveSkill(session.user, {
+        name: String(p.name ?? ""),
+        description: String(p.description ?? ""),
+        instructions: String(p.instructions ?? ""),
+      });
+      if ("refused" in saved) {
+        return NextResponse.json({ error: `Nothing was committed. ${saved.refused}`, reason: "skill_not_committed" }, { status: 409 });
+      }
+      body.commit = saved.commit;
+      body.version = saved.version;
+    }
+  }
+
   // Enums and ids only — never the free text an admin typed about a person.
   /* No actor: the audit row carries who, and a log line is not the place for an
      admin's name (invariant 7, 27 Oct). */
@@ -729,6 +760,9 @@ export async function POST(request: Request) {
       proposal_closed: "This proposal was already decided, or its record is gone.",
       proposal_invalid: "This proposal can't be applied as it is. Reject it; the agent can propose it again correctly.",
       record_not_approved: "This record isn't approved yet, so it can't be marked ready to answer with.",
+      /* 23 Nov — skills and the sources & partners list. */
+      skill_not_committed: "The skill was not committed to the plugin, so the proposal is still waiting. Try Apply again.",
+      source_name_taken: "The sources & partners list already has an entry with that name. Reject this one, or change the existing entry.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

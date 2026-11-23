@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { adminCredentials } from "@/lib/server/admin-auth";
 import { withDb, type Db } from "@/lib/server/db";
@@ -119,20 +120,47 @@ export interface CodeGrant {
   resource: string | null;
 }
 
-/** Takes a code: unused and unexpired, marked used in the same statement, so it works once. */
-export async function takeCode(code: string): Promise<CodeGrant | null | "unavailable"> {
+/**
+ * Takes a code: unused, unexpired **and** presented by its own client, redirect and PKCE verifier —
+ * all checked in the statement that marks it used, so it works once and a request without the
+ * verifier cannot spend it (23 Nov, the security review: it used to be burnt before the checks, so
+ * anyone who saw a code could cancel the admin's sign-in).
+ *
+ * A code that was already exchanged and is presented again is a stolen one (RFC 6749 §4.1.2): the pair
+ * it bought and every pair rotated from it are revoked, and the answer is `null` like any refusal.
+ */
+export async function takeCode(input: { code: string; clientId: string; redirectUri: string | null; verifier: string }): Promise<(CodeGrant & { codeHash: string }) | null | "unavailable"> {
+  if (!/^[A-Za-z0-9._~-]{43,128}$/.test(input.verifier) || !input.redirectUri) return null;
+  const codeHash = hashSecret(input.code);
+  const challenge = createHash("sha256").update(input.verifier).digest("base64url");
   const r = await withDb(async (db) => {
     const out = await rows(db, sql`
       update mcp_auth_codes set used_at = now()
-       where code_hash = ${hashSecret(code)} and used_at is null and expires_at > now()
+       where code_hash = ${codeHash} and used_at is null and expires_at > now()
+         and client_id = ${input.clientId} and redirect_uri = ${input.redirectUri} and code_challenge = ${challenge}
       returning client_id, admin_user, redirect_uri, code_challenge, scope, resource
     `);
-    return out[0] ?? null;
+    if (out[0]) return out[0];
+    /* Not taken. Was it exchanged before? Then whatever it bought is revoked. */
+    const [spent] = await rows(db, sql`select token_id from mcp_auth_codes where code_hash = ${codeHash} and used_at is not null and token_id is not null`);
+    if (spent) {
+      await db.execute(sql`
+        with recursive family(id) as (
+          select ${String(spent.token_id)}::uuid
+          union all
+          select m.id from mcp_tokens m join family f on m.rotated_from = f.id
+        )
+        update mcp_tokens set revoked_at = now() where id in (select id from family) and revoked_at is null
+      `);
+      console.warn("[mcp:oauth] a used code came back — its tokens are revoked");
+    }
+    return null;
   });
   if (!r.persisted) return r.reason === "unconfigured" ? null : "unavailable";
   if (!r.data) return null;
   const row = r.data;
   return {
+    codeHash,
     clientId: String(row.client_id),
     adminUser: String(row.admin_user),
     redirectUri: String(row.redirect_uri),
@@ -171,24 +199,23 @@ function insertPair(input: { adminUser: string; clientId: string; scope: string;
             ${new Date(Date.now() + ACCESS_TTL_MS).toISOString()}::timestamptz,
             ${new Date(Date.now() + REFRESH_TTL_MS).toISOString()}::timestamptz,
             ${input.rotatedFrom ?? null})
+    returning id
   `;
 }
 
-/** A new access + refresh pair, after a code. */
-export async function issueTokens(input: { adminUser: string; clientId: string; scope: string }): Promise<IssuedTokens | null> {
+/** A new access + refresh pair, after a code; the code remembers the pair, so a replay of it can revoke it. */
+export async function issueTokens(input: { adminUser: string; clientId: string; scope: string; codeHash?: string }): Promise<IssuedTokens | null> {
   const accessToken = newSecret("access");
   const refreshToken = newSecret("refresh");
   const r = await withDb(async (db) => {
-    await db.execute(insertPair(input, accessToken, refreshToken));
+    const [pair] = await rows(db, insertPair(input, accessToken, refreshToken));
+    if (input.codeHash && pair) await db.execute(sql`update mcp_auth_codes set token_id = ${String(pair.id)}::uuid where code_hash = ${input.codeHash}`);
     return true;
   });
   return r.persisted ? { accessToken, refreshToken, expiresIn: Math.floor(ACCESS_TTL_MS / 1000), scope: input.scope } : null;
 }
 
-export type RefreshOutcome = { tokens: IssuedTokens } | { refused: "unknown" | "replayed" | "rotated_just_now" | "expired" | "not_admin" } | { unavailable: true };
-
-/** A refresh token presented again this soon after it was rotated is a retry or a second helper, not a theft. */
-const REFRESH_GRACE_MS = 30_000;
+export type RefreshOutcome = { tokens: IssuedTokens } | { refused: "unknown" | "replayed" | "expired" | "not_admin" } | { unavailable: true };
 
 /**
  * A refresh, in one transaction: the pair is locked, revoked and replaced together, so a refresh
@@ -196,6 +223,10 @@ const REFRESH_GRACE_MS = 30_000;
  * alive rather than signing the person out. A refresh token presented **again** after it was
  * rotated is a stolen or replayed one: every pair descended from it is revoked too, so whoever holds
  * the newer one loses it as well. A revoked admin, or one no longer active, gets nothing.
+ *
+ * 23 Nov, the security review: the 30-second grace for a second presentation is gone. It refused the
+ * retry but kept the new pair alive — exactly what a thief racing the real client needs. Claude
+ * refreshes once per connector; a lost answer now costs one sign-in, a theft costs the thief.
  */
 export async function rotateRefresh(refreshToken: string, clientId: string): Promise<RefreshOutcome> {
   const accessToken = newSecret("access");
@@ -210,15 +241,11 @@ export async function rotateRefresh(refreshToken: string, clientId: string): Pro
   const r = await withDb((db) =>
     db.transaction(async (tx): Promise<RefreshOutcome> => {
       const [t] = (await tx.execute(sql`
-        select id, admin_user, scope, revoked_at, refresh_expires_at > now() as live,
-               revoked_at > now() - make_interval(secs => ${REFRESH_GRACE_MS / 1000}) and exists (select 1 from mcp_tokens n where n.rotated_from = mcp_tokens.id) as just_rotated
+        select id, admin_user, scope, revoked_at, refresh_expires_at > now() as live
           from mcp_tokens where refresh_hash = ${hashSecret(refreshToken)} and client_id = ${clientId}
            for update
       `)) as unknown as Row[];
       if (!t) return { refused: "unknown" };
-      /* Rotated in the last 30 seconds (review, 20 Nov): two helpers refreshing at once, or a retry after a
-         lost answer. Refused, but the pair it was rotated into stays — only a later replay is a theft. */
-      if (t.revoked_at && t.just_rotated === true) return { refused: "rotated_just_now" };
       if (t.revoked_at) {
         await tx.execute(sql`
           with recursive family(id) as (

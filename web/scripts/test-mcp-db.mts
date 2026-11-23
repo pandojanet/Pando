@@ -78,9 +78,29 @@ const t2 = await (await token.POST(form({ grant_type: "refresh_token", refresh_t
 ok("a refresh rotates the pair", typeof t2.access_token === "string" && t2.access_token !== t1.access_token);
 const reuse = await token.POST(form({ grant_type: "refresh_token", refresh_token: t1.refresh_token, client_id: client.client_id }));
 ok("the old refresh token is refused", reuse.status === 400);
+/* 23 Nov, the security review: no grace — a second use at once revokes the pair it was rotated into. */
+const [liveAfterReplay] = await q(sql`select count(*) as n from mcp_tokens where admin_user = 'ci' and revoked_at is null`);
+ok("and its replay, even at once, revokes the pair it was rotated into", Number(liveAfterReplay.n) === 0);
+
+const exchange = (c: string, v: string) => token.POST(form({ grant_type: "authorization_code", code: c, code_verifier: v, client_id: client.client_id, redirect_uri: "http://localhost:4999/callback" }));
+const newCode = async () => {
+  const v = randomBytes(32).toString("base64url");
+  const c = await repo.issueCode({ clientId: client.client_id, adminUser: "ci", redirectUri: "http://localhost:4999/callback", codeChallenge: createHash("sha256").update(v).digest("base64url"), scope: "pando:read pando:propose", resource: `${A}/api/mcp` });
+  return { c: c!, v };
+};
+const second = await newCode();
+const t3 = await (await exchange(second.c, second.v)).json();
+const replayCode = await exchange(second.c, second.v);
+const [t3Row] = await q(sql`select revoked_at from mcp_tokens where admin_user = 'ci' order by created_at desc limit 1`);
+ok("a code exchanged twice is refused, and the tokens it bought are revoked", typeof t3.access_token === "string" && replayCode.status === 400 && t3Row?.revoked_at !== null);
+const third = await newCode();
+const wrong = await exchange(third.c, randomBytes(32).toString("base64url"));
+const t4res = await exchange(third.c, third.v);
+const t4 = await t4res.json();
+ok("a wrong verifier does not spend the code: its owner can still exchange it", wrong.status === 400 && t4res.status === 200 && typeof t4.access_token === "string");
 
 let id = 0;
-const post = (body: unknown, auth = t2.access_token) =>
+const post = (body: unknown, auth = t4.access_token) =>
   mcpRoute.POST(new Request(`${A}/api/mcp`, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-06-18", ...(auth ? { authorization: `Bearer ${auth}` } : {}) }, body: JSON.stringify(body) }));
 const call = async (name: string, args: Record<string, unknown> = {}) => {
   const j = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } })).json()) as { result?: { isError?: boolean; content?: Array<{ text: string }> }; error?: { message: string } };
@@ -92,7 +112,9 @@ ok("no token: 401 with the pointer Claude reads", (await post({ jsonrpc: "2.0", 
 ok("a batch is refused", (await post([{ jsonrpc: "2.0", id: 1, method: "tools/list" }])).status === 400);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("23 tools, each with a title and read/destructive hints", tools.length === 23 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"));
+ok("24 tools, each with a title and read/destructive hints", tools.length === 24 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("no tool decides a proposal or commits a skill", !tools.some((t) => ["approve_proposal", "reject_proposal", "save_skill"].includes(t.name)));
+ok("a token not shaped like Pando's is a 401 without a lookup", (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "not-a-pando-token")).status === 401);
 
 const today = new Date().toISOString().slice(0, 10);
 const reads: Array<[string, Record<string, unknown>]> = [
@@ -100,7 +122,8 @@ const reads: Array<[string, Record<string, unknown>]> = [
   ["demand_by_place", {}], ["delivery_health", { days: 7 }], ["impact_totals", {}], ["digest_weeks", {}],
   ["digest_weeks", { week: "2026-11-14" }], ["daily_activity", { days: 8 }], ["unanswered_questions", { days: 30, limit: 10 }],
   ["what_went_wrong", { days: 7 }], ["search_records", { query: "toddler", age_band: "toddler", limit: 5 }],
-  ["get_record", { id: share.id }], ["list_proposals", { status: "all" }], ["digest_candidates", {}],
+  ["get_record", { id: share.id }], ["list_proposals", { status: "all" }], ["digest_candidates", {}], ["list_sources", {}],
+  ["search_records", { status: "any", source_check: "never", not_checked_since: "2026-01-01" }], ["impact_totals", { from: "2026-01-01", to: today }],
   ["costs_summary", { from: `${today.slice(0, 8)}01`, to: today }],
 ];
 for (const [name, args] of reads) {
@@ -110,26 +133,45 @@ for (const [name, args] of reads) {
 }
 const search = JSON.parse((await call("search_records", { query: "toddler" })).text);
 ok("search finds the record by its words, with has_more", search.results?.[0]?.name === "CI Toddler Music" && search.has_more === false);
+ok("and gives its trust labels verbatim: an admin's record is public information", search.results?.[0]?.public_only === true && Array.isArray(search.results?.[0]?.trust_labels) && search.results[0].trust_labels.length > 0);
 
-console.log("\n=== a proposal, applied in chat ===");
+console.log("\n=== a proposal, applied on /admin/proposals ===");
+const admin = await load<typeof import("../lib/server/repo/admin-write.ts")>("../lib/server/repo/admin-write.ts");
+const decide = (action: "proposal.approve" | "proposal.reject", body: Record<string, unknown>) => admin.applyAction(db, { actor: "ci", action, body });
 const proposed = JSON.parse((await call("propose_record_edit", { id: share.id, change: "facts", venue: "Pasadena Music Hall", age_bands: ["toddler", "preschool"], source_url: "https://example.org/ci" })).text);
 ok("an agent proposes a fact correction", typeof proposed.proposal_id === "string");
 const [before] = await q(sql`select before from mcp_proposals where id = ${proposed.proposal_id}::uuid`);
 ok("the proposal keeps the record as the agent saw it", (before?.before as { venue?: unknown } | null)?.venue === null);
-const approved = await call("approve_proposal", { id: proposed.proposal_id, admin_said_yes: true });
-ok("approve_proposal applies it", approved.error === null && /"applied"/.test(approved.text), approved.error ?? "");
+const approved = await decide("proposal.approve", { id: proposed.proposal_id, via: "chat" });
+const [via] = await q(sql`select decided_via from mcp_proposals where id = ${proposed.proposal_id}::uuid`);
+ok("an admin's Apply applies it, recorded as decided here whatever the request says", approved.applied === true && via?.decided_via === "admin");
 const [rec] = await q(sql`select venue, age_bands from shares where id = ${share.id}::uuid`);
 ok("the record changed", rec.venue === "Pasadena Music Hall" && JSON.stringify(rec.age_bands) === '["toddler","preschool"]');
 const [audit] = await q(sql`select actor, before from audit_log where action = 'proposal.approve' order by at desc limit 1`);
 ok("an audit row names the admin and keeps what was there", audit?.actor === "ci" && audit?.before !== null);
 const event = JSON.parse((await call("propose_event", { kind: "event", title: "CI Winter Walk", when_text: "Sat Dec 26, 10am", starts_on: "2099-12-26", place: "Pasadena", summary: "A walk for families in the park.", url: "https://example.org/ci-walk" })).text);
-await call("approve_proposal", { id: event.proposal_id, admin_said_yes: true });
+await decide("proposal.approve", { id: event.proposal_id });
 const candidates = JSON.parse((await call("digest_candidates")).text);
 ok("an approved event becomes a digest candidate", candidates.results?.some((c: { title: string }) => c.title === "CI Winter Walk"));
 const rejected = JSON.parse((await call("propose_record_edit", { id: share.id, change: "rename", name: "CI Music" })).text);
-await call("reject_proposal", { id: rejected.proposal_id, admin_said_no: true, reason: "the page uses the long name" });
+await decide("proposal.reject", { id: rejected.proposal_id, reason: "the page uses the long name" });
 const decided = JSON.parse((await call("list_proposals", { status: "rejected" })).text);
 ok("a rejection keeps its reason for the agent", decided.results?.[0]?.reason === "the page uses the long name");
+const skill = await call("propose_skill", { name: "ci-skill", description: "A skill the CI run proposes, to see it wait.", instructions: "Read the numbers and say what changed since last week, in three lines." });
+ok("a skill without a plugin repo configured is refused, not saved", /not configured/.test(skill.error ?? ""));
+
+console.log("\n=== sources & partners ===");
+const src = JSON.parse((await call("propose_source", { role: "partner", kind: "school", name: "CI Elementary", url: "https://example.org/ci-school", area: "pasadena" })).text);
+ok("an agent proposes a partner", typeof src.proposal_id === "string");
+ok("a partner's note with a phone is refused", /phone or email/.test((await call("propose_source", { role: "partner", kind: "pta", name: "CI PTA", note: "call 626-555-0101" })).error ?? ""));
+const srcApplied = await decide("proposal.approve", { id: src.proposal_id });
+const listed = JSON.parse((await call("list_sources", { role: "partner" })).text);
+const entry = listed.results?.find((s: { name: string }) => s.name === "CI Elementary");
+ok("approved, it is on the list", srcApplied.applied === true && !!entry);
+const checked = await call("record_source_check", { source_id: entry?.id, result: "failed" });
+const [chk] = await q(sql`select last_check, last_checked_at from pando_sources where name = 'CI Elementary'`);
+ok("a source check writes only its time and result", checked.error === null && chk?.last_check === "failed" && chk?.last_checked_at !== null);
+ok("the same name again is refused as already listed", /already on the list/.test((await call("propose_source", { role: "partner", kind: "school", name: "ci elementary" })).error ?? ""));
 
 console.log("\n=== the switch ===");
 await q(sql`update app_settings set value = 'false'::jsonb where key = 'mcp_enabled'`);

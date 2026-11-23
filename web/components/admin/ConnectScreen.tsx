@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowLeftRight, BarChart3, BookOpen, GitPullRequestArrow, Link2Off, LockKeyhole, ShieldCheck, Sparkles, SquareTerminal } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BookOpen, GitPullRequestArrow, Link2Off, LockKeyhole, ShieldCheck, Sparkles, SquareTerminal, TriangleAlert } from "lucide-react";
 import { PandoMark } from "@/components/ui/Logo";
 import { cn } from "@/lib/cn";
 
@@ -177,6 +177,15 @@ export function ConnectScreen({ user }: { user: string }) {
                   <dt className="inline">Returns to </dt>
                   <dd className="inline font-semibold text-ink">{target?.host}</dd>
                   {local && <span>{" · Claude Code on this computer"}</span>}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-alert" aria-hidden />
+                <span>
+                  <dt className="sr-only">Before you allow</dt>
+                  <dd className="inline">
+                    {/* copy: kept — 23 Nov security review: a consent link can be sent by someone else */}Allow only if you just started this from your own {client}. If someone sent you this link, cancel.
+                  </dd>
                 </span>
               </div>
               <div className="flex items-start gap-2">

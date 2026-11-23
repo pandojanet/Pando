@@ -108,10 +108,20 @@ export function isMetadataDocumentUrl(clientId: string): boolean {
   }
 }
 
-/** The public origin Pando answers on: `MCP_BASE_URL`, else `NOTIFY_BASE_URL`, else the request's own. */
+/**
+ * The public origin Pando answers on: `MCP_BASE_URL`, else `NOTIFY_BASE_URL`, else
+ * `NEXT_PUBLIC_SITE_URL`. In production that is the end of it — `https://pando.is`, **never the
+ * request's Host** (23 Nov, the security review: the issuer and the resource Claude checks tokens
+ * against would otherwise be whatever a request claimed, as notify.ts already refuses). Outside
+ * production the request's own origin, so a local server works without configuration.
+ *
+ * `||`, not `??`: the env example leaves these as empty lines, and an empty `MCP_BASE_URL` must fall
+ * through to the next one rather than win.
+ */
 export function baseUrl(requestUrl: string): string {
-  const env = (process.env.MCP_BASE_URL ?? process.env.NOTIFY_BASE_URL ?? "").trim().replace(/\/+$/, "");
+  const env = (process.env.MCP_BASE_URL || process.env.NOTIFY_BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || "").trim().replace(/\/+$/, "");
   if (env) return env;
+  if (process.env.NODE_ENV === "production") return "https://pando.is";
   return new URL(requestUrl).origin;
 }
 

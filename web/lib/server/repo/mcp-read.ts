@@ -3,7 +3,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { maskContactDetails } from "@/lib/contact-details";
-import { freshnessOf, lastConfirmedLabel } from "@/lib/trust-labels";
+import { freshnessOf, labelsFor, lastConfirmedLabel } from "@/lib/trust-labels";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 
 /**
@@ -92,6 +92,26 @@ export async function questionsTotals(db: Db, weeks: number) {
   };
 }
 
+/**
+ * "Did it help", counted in the database over every sent answer (23 Nov, the review): `impact_totals`
+ * used to add up the admin's /impact list, which stops at the latest 200 and includes test answers —
+ * the totals went flat at 200 and counted the QA walk. Optional days on Pasadena's clock.
+ */
+export async function impactTotals(db: Db, input: { from?: string; to?: string } = {}) {
+  const [t] = await rows(db, sql`
+    select count(*) filter (where helped is true) as yes,
+           count(*) filter (where helped is false) as no,
+           count(*) filter (where helped_asked_at is not null and helped is null) as awaiting,
+           count(*) filter (where helped_asked_at is null) as unasked,
+           count(*) as sent
+      from answers
+     where not is_test and status = 'sent'
+       ${input.from ? sql`and (sent_at at time zone ${TZ}::text)::date >= ${input.from}::date` : sql``}
+       ${input.to ? sql`and (sent_at at time zone ${TZ}::text)::date <= ${input.to}::date` : sql``}
+  `);
+  return { answered_yes: n(t?.yes), answered_no: n(t?.no), awaiting: n(t?.awaiting), unasked: n(t?.unasked), sent: n(t?.sent) };
+}
+
 export async function recordsTotals(db: Db) {
   const byKind = await rows(db, sql`
     select kind, status, count(*) as n, count(*) filter (where answer_ready) as answer_ready
@@ -123,8 +143,30 @@ const TEXT_FIELDS = ["what_makes_it_great", "caveat", "who_for", "who_not_for", 
 export const FLAGGED_PERSON = sql`exists (select 1 from flags f where f.subject_id = s.id and f.reason = 'possible_named_person' and f.status in ('open', 'escalated'))`;
 const WITHHELD = "withheld: flagged as a person's name";
 
+/**
+ * Who stands behind a record, counted as the answer path counts it (23 Nov, the review: search gave an
+ * agent the provenance word and no label, so a Writer could call a public listing "parent-vouched").
+ * Approved, firsthand, real contributions; recommending = said yes or yes with caveats.
+ */
+const BACKING = sql`
+  (select count(*) from share_contributions sc where sc.share_id = s.id and sc.status = 'approved' and not sc.is_test and sc.firsthand) as firsthand_count,
+  (select count(*) from share_contributions sc where sc.share_id = s.id and sc.status = 'approved' and not sc.is_test and sc.firsthand
+      and sc.recommendation in ('yes', 'yes_with_caveats')) as recommending_count`;
+
 function recordFacts(r: Row) {
   const flagged = r.flagged_person === true;
+  /* The labels an answer to a parent would carry, verbatim (invariants 3 and 4): what a post or an
+     email may say about where this came from — and public_only when no parent stands behind it. */
+  const trust = labelsFor({
+    kind: String(r.kind),
+    provenance: String(r.provenance) as "parent_submitted" | "admin_entered" | "migrated",
+    firsthand_count: n(r.firsthand_count),
+    secondhand_count: 0,
+    recommending_count: n(r.recommending_count),
+    human_reviewed: r.status === "approved",
+    last_confirmed_at: (r.last_confirmed_at as string | null) ?? null,
+    marked_stale: r.freshness_state === "stale",
+  });
   return {
     id: String(r.id),
     name: flagged ? null : String(r.name),
@@ -138,7 +180,9 @@ function recordFacts(r: Row) {
     status: String(r.status),
     provenance: String(r.provenance),
     answer_ready: r.answer_ready === true,
-    freshness: freshnessOf(r.last_confirmed_at as string | null, String(r.kind)),
+    freshness: trust.freshness,
+    trust_labels: trust.labels,
+    public_only: trust.public_only,
     last_confirmed: lastConfirmedLabel(r.last_confirmed_at as string | null),
     parents_who_shared: n(r.parents),
     /* The page its facts come from (0071), else the doctor check's page; and the last approved check. */
@@ -149,15 +193,25 @@ function recordFacts(r: Row) {
 }
 
 /** Records by name, kind, area or status — never a caregiver (shares hold none, by CHECK). */
-export async function searchRecords(db: Db, input: { query?: string; kind?: string; area?: string; age_band?: string; status?: string; limit: number }) {
+/**
+ * Records by words and facts. `status` is "approved" unless asked (23 Nov, the review: the default was
+ * every status, so a Marketing or Writer agent could quote a record nobody had reviewed); "any" for all.
+ * `source_check` and `not_checked_since` are the Fact-checker's: what the last check of the record's
+ * page found ("never" = not checked), and records not checked since a date.
+ */
+export async function searchRecords(db: Db, input: { query?: string; kind?: string; area?: string; age_band?: string; status?: string; source_check?: string; not_checked_since?: string; limit: number }) {
+  const status = input.status ?? "approved";
   const q = input.query?.trim() ? `%${input.query.trim().replace(/[%_\\]/g, (c) => `\\${c}`)}%` : null;
   const out = await rows(db, sql`
-    select s.*, (select count(distinct sc.person_id) from share_contributions sc where sc.share_id = s.id and sc.status = 'approved' and not sc.is_test) as parents
+    select s.*, (select count(distinct sc.person_id) from share_contributions sc where sc.share_id = s.id and sc.status = 'approved' and not sc.is_test) as parents,
+           ${BACKING}
       from shares s
      where not s.is_test and not ${FLAGGED_PERSON}
        ${q ? sql`and (s.name ilike ${q} or coalesce(s.venue, '') ilike ${q} or coalesce(s.subcategory, '') ilike ${q} or coalesce(s.focus, '') ilike ${q})` : sql``}
        ${input.kind ? sql`and s.kind = ${input.kind}` : sql``}
-       ${input.status ? sql`and s.status = ${input.status}` : sql``}
+       ${status !== "any" ? sql`and s.status = ${status}` : sql``}
+       ${input.source_check === "never" ? sql`and s.source_check is null` : input.source_check ? sql`and s.source_check = ${input.source_check}` : sql``}
+       ${input.not_checked_since ? sql`and (s.source_checked_at is null or s.source_checked_at < ${input.not_checked_since}::date)` : sql``}
        ${input.area ? sql`and ${input.area} = any(s.neighborhoods)` : sql``}
        ${input.age_band ? sql`and ${input.age_band} = any(s.age_bands)` : sql``}
      order by s.updated_at desc
@@ -169,7 +223,7 @@ export async function searchRecords(db: Db, input: { query?: string; kind?: stri
 /** One record: its facts and what parents said about it, approved, without who said it. */
 export async function getRecord(db: Db, id: string) {
   const [r] = await rows(db, sql`
-    select s.*, ${FLAGGED_PERSON} as flagged_person,
+    select s.*, ${FLAGGED_PERSON} as flagged_person, ${BACKING},
            (select count(distinct sc.person_id) from share_contributions sc where sc.share_id = s.id and sc.status = 'approved' and not sc.is_test) as parents
       from shares s where s.id = ${id}::uuid and not s.is_test
   `);

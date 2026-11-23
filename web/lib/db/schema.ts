@@ -1854,6 +1854,8 @@ export const mcpAuthCodes = pgTable("mcp_auth_codes", {
   resource: text("resource"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
+  /** The pair this code was exchanged for (0077): a second exchange of the code revokes it. */
+  tokenId: uuid("token_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1947,6 +1949,24 @@ export const pluginSkills = pgTable("plugin_skills", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   commitSha: text("commit_sha"),
   version: text("version"),
+});
+
+/** The sources & partners list (0077): organisations and feeds, never a person. Written by an admin's yes. */
+export const pandoSources = pgTable("pando_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  role: text("role").notNull(),
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  url: text("url"),
+  marketId: text("market_id"),
+  note: text("note"),
+  status: text("status").notNull().default("active"),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  lastCheck: text("last_check"),
+  addedBy: text("added_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  proposalId: uuid("proposal_id").references(() => mcpProposals.id, { onDelete: "set null" }),
 });
 
 export type ShareContribution = typeof shareContributions.$inferSelect;

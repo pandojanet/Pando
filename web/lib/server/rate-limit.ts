@@ -188,6 +188,23 @@ export function rateLimitedKey(key: string, name: RateLimitName, now = Date.now(
   );
 }
 
+/**
+ * Already over a limit, without counting this request (23 Nov, Pando MCP's review): the bearer check
+ * asks before it reads the database, and counts only a failed lookup (`rateLimited` after it), so
+ * guessing tokens costs the guesser 429s rather than the SMS side's shared pool its connections.
+ */
+export function rateBlocked(request: Request, name: RateLimitName, now = Date.now()): NextResponse | null {
+  const address = clientAddress(request.headers.get("x-forwarded-for"), request.headers.get("x-real-ip"), trustedProxies());
+  if (!address) return null;
+  const bucket = buckets.get(`${name}:${address}`);
+  if (!bucket || bucket.resetAt <= now || bucket.count < LIMITS[name].max) return null;
+  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  return NextResponse.json(
+    { error: LIMITS[name].message, retry_after: retryAfter },
+    { status: 429, headers: { "Retry-After": String(retryAfter), "RateLimit-Limit": String(LIMITS[name].max), "RateLimit-Remaining": "0", "RateLimit-Reset": String(retryAfter) } },
+  );
+}
+
 /** Test seam. Never called by the app. */
 export function __resetRateLimits(): void {
   buckets.clear();

@@ -59,12 +59,32 @@ console.log("\n=== the routes ===");
 {
   const token = read("app/api/oauth/token/route.ts");
   ok("tokens: form-urlencoded, a code once with its verifier, client and redirect; refusals are invalid_grant",
-    /request\.formData\(\)/.test(token) && /takeCode\(code\)/.test(token) && /pkceMatches\(verifier, taken\.codeChallenge\)/.test(token) &&
-      /taken\.redirectUri !== field\("redirect_uri"\)/.test(token) && /"invalid_grant"/.test(token) && /no-store/.test(token));
+    /request\.formData\(\)/.test(token) && /takeCode\(\{ code, clientId, redirectUri: field\("redirect_uri"\), verifier \}\)/.test(token) &&
+      /"invalid_grant"/.test(token) && /no-store/.test(token));
   const repo = read("lib/server/repo/mcp.ts");
-  ok("a code is taken and marked used in one statement; a refresh locks, revokes and replaces its pair in one transaction",
-    /update mcp_auth_codes set used_at = now\(\)\s+where code_hash = \$\{hashSecret\(code\)\} and used_at is null and expires_at > now\(\)/.test(repo) &&
+  /* 23 Nov, the security review: client, redirect and PKCE are checked in the statement that spends the
+     code, so a request without the verifier cannot burn it; a spent code presented again revokes what it bought. */
+  ok("a code is spent only by its own client, redirect and verifier, in one statement; a refresh locks, revokes and replaces its pair in one transaction",
+    /update mcp_auth_codes set used_at = now\(\)\s+where code_hash = \$\{codeHash\} and used_at is null and expires_at > now\(\)\s+and client_id = \$\{input\.clientId\} and redirect_uri = \$\{input\.redirectUri\} and code_challenge = \$\{challenge\}/.test(repo) &&
+      /createHash\("sha256"\)\.update\(input\.verifier\)\.digest\("base64url"\)/.test(repo) &&
       /db\.transaction\(async \(tx\): Promise<RefreshOutcome>/.test(repo) && /refresh_hash = \$\{hashSecret\(refreshToken\)\} and client_id = \$\{clientId\}\s+for update/.test(repo));
+  ok("a code exchanged twice revokes the tokens it bought, and every pair rotated from them (RFC 6749 §4.1.2)",
+    /select token_id from mcp_auth_codes where code_hash = \$\{codeHash\} and used_at is not null and token_id is not null/.test(repo) &&
+      /update mcp_auth_codes set token_id = \$\{String\(pair\.id\)\}::uuid where code_hash = \$\{input\.codeHash\}/.test(repo) &&
+      /codeHash: taken\.codeHash/.test(token) && /ADD COLUMN IF NOT EXISTS token_id uuid/.test(read("drizzle/0077_mcp_review_fixes.sql")));
+  ok("the token endpoint has a budget per client, beside the address-wide one", /rateLimitedKey\(clientId, "oauth_token"\)/.test(token) && /rateLimited\(request, "oauth"\)/.test(token));
+  const oauthSrc = read("lib/mcp/oauth.ts");
+  ok("the public origin never comes from the request's Host in production", /if \(process\.env\.NODE_ENV === "production"\) return "https:\/\/pando\.is";/.test(oauthSrc) &&
+    oauthSrc.indexOf('process.env.NODE_ENV === "production"') < oauthSrc.indexOf("return new URL(requestUrl).origin") && /process\.env\.MCP_BASE_URL \|\| process\.env\.NOTIFY_BASE_URL/.test(oauthSrc));
+  const bearerSrc = read("lib/server/mcp/bearer.ts");
+  ok("a token not shaped like Pando's is never looked up; an address guessing tokens is refused before the database",
+    /ACCESS_SHAPE = \/\^pma_\[A-Za-z0-9_-\]\{43\}\$\//.test(bearerSrc) && /const owner = shaped \? await tokenOwner\(token\) : null;/.test(bearerSrc) &&
+      bearerSrc.indexOf('rateBlocked(request, "mcp_bad_token")') > -1 && bearerSrc.indexOf('rateBlocked(request, "mcp_bad_token")') < bearerSrc.indexOf("await tokenOwner(") &&
+      /if \(shaped\) rateLimited\(request, "mcp_bad_token"\);/.test(bearerSrc));
+  ok("a new password ends the admin's Claude connections (their own change, and the CLI's)",
+    /update mcp_tokens set revoked_at = now\(\) where admin_user = \$\{name\} and revoked_at is null/.test(read("lib/server/repo/admin-users.ts")) &&
+      (read("scripts/admin-user.mjs").match(/update mcp_tokens set revoked_at = now\(\) where admin_user = \$\{name\} and revoked_at is null/g) ?? []).length === 2);
+  ok("the consent screen says to allow only a connection you started", /If someone sent you this link, cancel\./.test(read("components/admin/ConnectScreen.tsx")));
   ok("a rotated refresh token used again revokes its whole family", /with recursive family\(id\)/.test(repo) && /refused: "replayed"/.test(repo));
   ok("an unreadable database is a 503, not a 401 that sends the person through sign-in again",
     /"unavailable"/.test(repo) && /status: 503/.test(read("lib/server/mcp/bearer.ts")));
@@ -107,10 +127,22 @@ console.log("\n=== the diagram's promises ===");
   ok("a tool that writes needs pando:propose; source links are http(s) only",
     /if \(!config\.readOnly && !mayPropose\(ctx\.scopes\)\)/.test(server) && /regex\(\/\^https\?:/.test(server) && !/source_url: z\.string\(\)\.url\(\)/.test(server));
   ok("the digest tool drops the texts and the families each set went to", /\(\{ variants: _v, \.\.\.g \}\) => g/.test(server));
-  ok("writes are proposals; approve and reject run applyAction with via chat, approve only with admin_said_yes: true",
-    /approve_proposal/.test(server) && /admin_said_yes: z\.literal\(true\)/.test(server) && /applyAction\(db\(\), \{ actor: ctx\.actor, action, body: \{ id, via: "chat", client: ctx\.clientId, \.\.\.\(reason \? \{ reason \} : \{\}\) \} \}\)/.test(server) && /admin_said_no: z\.literal\(true\)/.test(server) &&
-      !/insert into shares|update shares/.test(server));
+  /* 23 Nov, the security review: the chat's "admin said yes" was a value the agent filled in itself. */
+  ok("writes are proposals, and the chat decides none: no approve, reject or save tool, no applyAction, no admin_said flag",
+    !/tool\("(approve_proposal|reject_proposal|save_skill)"/.test(server) && !/applyAction|admin_said_|saveSkill\(/.test(code(server)) &&
+      !/insert into shares|update shares|insert into digest|commitSkill/.test(server));
   const write = read("lib/server/repo/admin-write.ts");
+  ok("a decision is recorded as made here, whatever the request says", /case "proposal\.approve": \{[\s\S]{0,600}const via = "admin";/.test(write) && /case "proposal\.reject": \{[\s\S]{0,300}const via = "admin";/.test(write));
+  const actionRoute = read("app/api/admin/action/route.ts");
+  ok("a skill is committed only by an admin's Apply on /admin/proposals: the route commits first, the proposal is marked with the commit",
+    /tool\("propose_skill"/.test(server) && /kind: "skill", shareId: null/.test(server) && /const file = buildSkillFile\(a\);/.test(server) &&
+      /waiting\.data\?\.kind === "skill"/.test(actionRoute) && /const saved = await saveSkill\(session\.user,/.test(actionRoute) && /body\.commit = saved\.commit;/.test(actionRoute) &&
+      /\} else if \(p\.kind === "skill"\) \{[\s\S]{0,700}reason: "skill_not_committed"/.test(write));
+  ok("the sources & partners list: read by agents, changed by an admin's yes, only a check's time and result written directly",
+    /tool\("list_sources"/.test(server) && /tool\("propose_source"/.test(server) && /kind: "source", shareId: null/.test(server) && /tool\("record_source_check"/.test(server) &&
+      /update pando_sources set last_checked_at = now\(\), last_check = \$\{result\}/.test(read("lib/server/repo/mcp-sources.ts")) &&
+      /\} else if \(p\.kind === "source"\) \{[\s\S]{0,2500}insert into pando_sources/.test(write) && /CREATE TABLE IF NOT EXISTS pando_sources/.test(read("drizzle/0077_mcp_review_fixes.sql")) &&
+      /REVOKE ALL ON pando_sources FROM anon, authenticated/.test(read("drizzle/0077_mcp_review_fixes.sql")));
   ok("an approval applies through the action an admin would use, each with its own audit row, then marks the proposal",
     /case "proposal\.approve":/.test(write) && /action: "share\.rename"/.test(write) && /const out = await run\(tx, sub\);\s+if \(!out\.applied\) return out;\s+await audit\(tx, sub/.test(write) &&
       /update mcp_proposals set status = 'applied'/.test(write) && /'admin_entered'/.test(write));
@@ -132,8 +164,8 @@ console.log("\n=== the diagram's promises ===");
       /coalesce\(a\.hold_reason, 'not_held'\) not in \('caregiver', 'sensitive', 'generator_asked'\)/.test(uq) &&
       /not requires_human_review and coalesce\(sensitivity, 'ordinary'\) in \('ordinary', 'peer_support'\)/.test(uq) && (readSrc.match(/question_text/g) ?? []).length === (uq.match(/question_text/g) ?? []).length);
   const skills = read("lib/server/mcp/plugin-skills.ts");
-  ok("save_skill: only after the admin's save, one SKILL.md shape Pando writes, only under skills/<name>/, version raised in the same commit",
-    /admin_said_save: z\.literal\(true\)/.test(server) && /return `---\\nname: \$\{d\.name\}\\ndescription: \$\{yaml\(description\)\}\\n---\\n\\n\$\{body\}\\n`/.test(skills) &&
+  ok("a skill: one SKILL.md shape Pando writes, only under skills/<name>/, version raised in the same commit",
+    /return `---\\nname: \$\{d\.name\}\\ndescription: \$\{yaml\(description\)\}\\n---\\n\\n\$\{body\}\\n`/.test(skills) &&
       /const path = `skills\/\$\{input\.name\}\/SKILL\.md`/.test(skills) && /\{ path: MANIFEST, mode: "100644", type: "blob", content: `\$\{JSON\.stringify\(\{ \.\.\.plugin, version \}/.test(skills) &&
       /Pando writes the frontmatter/.test(skills));
   ok("save_skill never overwrites a skill QuitCode maintains, never force-pushes, and audits every save",
@@ -174,12 +206,13 @@ console.log("\n=== the diagram's promises ===");
   ok("one message per request: a JSON-RPC batch is refused before the quota and the tools", /Batches are not accepted/.test(mcpRoute) && mcpRoute.indexOf("Batches are not accepted") < mcpRoute.indexOf("pandoMcpServer("));
   ok("a quota refusal is in the call log, once a minute per connection", /tool: "\(rate limited\)", outcome: "refused"/.test(mcpRoute));
   ok("undelivered texts are the log's outbound rows ('out', as the table's CHECK has it)", !/direction = 'outbound'/.test(readSrc) && (readSrc.match(/direction = 'out'/g) ?? []).length === 2);
-  ok("save_skill: no contact details, a version that is not x.y.z refused, the hash returned and audited, recording retried and a failure said",
+  ok("a skill's save: no contact details, a version that is not x.y.z refused, the hash returned and audited, recording retried and a failure said",
     /hasContactDetail\(body\) \|\| hasContactDetail\(description\)/.test(skills) && /return m \? `\$\{m\[1\]\}\.\$\{m\[2\]\}\.\$\{Number\(m\[3\]\) \+ 1\}` : null;/.test(skills) &&
       /sha256/.test(skills) && /\(await record\(\)\)\.persisted \|\| \(await record\(\)\)\.persisted/.test(skills) && /warning:/.test(skills) && /res\.status === 404 && method === "GET"/.test(skills));
   const repoSrc = read("lib/server/repo/mcp.ts");
-  ok("an unreadable admin list is a 503, never a sign-out; a refresh rotated in the last 30 s is refused without revoking its successor",
-    /if \(set\.mode === "unavailable"\) return "unavailable";/.test(repoSrc) && /REFRESH_GRACE_MS = 30_000/.test(repoSrc) && /t\.just_rotated === true\) return \{ refused: "rotated_just_now" \}/.test(repoSrc));
+  /* 23 Nov, the security review: the 30-second grace kept a thief's racing refresh alive; it is gone. */
+  ok("an unreadable admin list is a 503, never a sign-out; any second use of a refresh token revokes the family, with no grace",
+    /if \(set\.mode === "unavailable"\) return "unavailable";/.test(repoSrc) && !/REFRESH_GRACE_MS|just_rotated|rotated_just_now/.test(code(repoSrc)));
   ok("registration: its own hourly limit, and clients never used for a sign-in dropped after a day",
     /rateLimited\(request, "oauth_register"\)/.test(read("app/api/oauth/register/route.ts")) && /delete from mcp_clients c where c\.kind = 'dcr' and c\.created_at < now\(\) - interval '1 day'/.test(repoSrc));
   ok("a proposal is checked against the record as it is now: a test row never, \"ready\" only on an approved record; 100 waiting at most",
@@ -213,7 +246,23 @@ console.log("\n=== the diagram's promises ===");
   const descs = [...server.matchAll(/description: "((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
   ok("tool descriptions say what a tool does, not how Claude must behave (no \"only after\", \"never on your own\", \"always\")",
     descs.length >= 23 && descs.every((d) => !/\b(only after|never on your own|always call|you must|do not call)\b/i.test(d)), descs.filter((d) => /\b(only after|never on your own|always call|you must|do not call)\b/i.test(d)).join(" | ").slice(0, 200));
-  ok("lists say when they were cut and how to narrow them (has_more + narrow)", /const paged = </.test(server) && (server.match(/paged\(await /g) ?? []).length === 3 && /has_more: true, narrow/.test(server));
+  ok("lists say when they were cut and how to narrow them (has_more + narrow)", /const paged = </.test(server) && (server.match(/paged\(await /g) ?? []).length === 4 && /has_more: true, narrow/.test(server));
+  /* 23 Nov, the review's data findings. */
+  ok("impact counts every sent answer in the database, without test rows (not the admin list's latest 200)",
+    /export async function impactTotals/.test(readSrc) && /where not is_test and status = 'sent'/.test(readSrc) && /impactTotals\(db\(\), \{ from, to \}\)/.test(server) && !/readResource\(db\(\), "impact"/.test(server));
+  ok("the digest tool leaves the admin's test editions out", /d\.index\.filter\(\(w\) => w\.is_test !== true\)/.test(server) && /w\.edition_date === week && w\.is_test !== true/.test(server));
+  ok("search: approved unless asked, verbatim trust labels, and the Fact-checker's filters",
+    /z\.enum\(\["approved", "pending_review", "needs_detail", "rejected", "any"\]\)\.default\("approved"\)/.test(server) && /const status = input\.status \?\? "approved";/.test(readSrc) &&
+      /trust_labels: trust\.labels/.test(readSrc) && /labelsFor\(\{/.test(readSrc) && /source_check: z\.enum\(\["confirmed", "stale", "unreachable", "never"\]\)/.test(server) && /not_checked_since/.test(readSrc));
+  ok("\"already known\" never confirms a name flagged as a person's", /lower\(s\.name\) = lower\(\$\{r\.name\}\) and not \$\{FLAGGED_PERSON\}/.test(read("lib/server/repo/mcp-proposals.ts")));
+  const props = read("lib/server/repo/mcp-proposals.ts");
+  ok("waiting proposals oldest first; the cap of 100 under a lock per actor", /p\.created_at asc/.test(props) && /pg_advisory_xact_lock\(hashtext\('mcp_proposals:' \|\| \$\{p\.actor\}\)\)/.test(props) && /db\.transaction\(async \(tx\) => createLocked\(/.test(props));
+  ok("an approved event joins a prepared digest first, and a taken-out item does not count toward the cap",
+    /const live = have\.filter\(\(i\) => !i\.removed\);/.test(write) && /if \(live\.length >= DIGEST_EDITION_MAX\)/.test(write) && /Math\.min\(0, \.\.\.have\.map\(\(i\) => i\.position\)\) - 1/.test(write));
+  ok("the call log counts rows inside an answer's list", /for \(const key of \["results", "weeks", "groups", "questions"\]\)/.test(server));
+  ok("costs: AI on Pasadena days, Twilio's UTC days said, useful answers and the cost per one",
+    /toDateTime\('\$\{from\} 00:00:00', '\$\{TZ\}'\)/.test(read("lib/server/mcp/costs.ts")) && /days: \{ sms: "UTC days/.test(read("lib/server/mcp/costs.ts")) &&
+      /useful_answers: helped/.test(server) && /cost_per_useful_answer:/.test(server));
   ok("the server instructions are short and factual (under 4,096 characters, names the proposal flow)", (() => {
     const at = server.indexOf("const INSTRUCTIONS = ["); const body = server.slice(at, server.indexOf('].join(" ")', at));
     return body.length < 4096 && /proposal/.test(body) && !/\bNever change\b|\bCall approve_proposal or reject_proposal only after\b/.test(body);

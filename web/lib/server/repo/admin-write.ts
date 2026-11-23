@@ -14,6 +14,7 @@ import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 
 import { sql } from "drizzle-orm";
 import { cleanText } from "@/lib/sanitize";
+import { hasContactDetail } from "@/lib/contact-details";
 import { checkCandidate, type CandidateInput } from "@/lib/server/mcp/candidate";
 import { cleanContributionPatch, TEXT_COLUMNS } from "@/lib/admin/contribution-edit";
 import { AGE_BANDS, bandsForAge } from "@/lib/matching";
@@ -127,6 +128,10 @@ export type ActionOutcome =
            candidate rules, a date that is not a date), and "ready to answer with" on a record not approved. */
         | "proposal_invalid"
         | "record_not_approved"
+        /* 23 Nov — a skill proposal approved without its commit (the route commits first), and a source
+           whose name the list already has. */
+        | "skill_not_committed"
+        | "source_name_taken"
         /* 3 Nov — a reset sent without its typed confirmation. */
         | "reset_not_confirmed"
         /* 19 Nov — a digest approval taken back after something from it went out,
@@ -2307,11 +2312,14 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     /* ── Pando MCP (20 Nov) ─────────────────────────────────────────────────── */
 
     case "proposal.approve": {
-      /* An agent's proposal, applied by an admin's yes — on /admin/proposals or in chat, the same
-         function either way. Each change goes through the action an admin would have used by hand
-         (and gets its own audit row); this row records the decision. */
+      /* An agent's proposal, applied by an admin's yes on /admin/proposals — only there since 23 Nov
+         (the security review: the chat's yes was a flag the agent set itself). Each change goes through
+         the action an admin would have used by hand (and gets its own audit row); this row records the
+         decision. */
       const target = id(b.id);
-      const via = b.via === "chat" ? "chat" : "admin";
+      const via = "admin";
+      let extra: Record<string, unknown> = {};
+      let fullEditions = 0;
       if (!target) return { applied: false, reason: "not_implemented" };
       const [p] = (await tx.execute(
         sql`select id, kind, share_id, payload, source_url from mcp_proposals where id = ${target}::uuid and status = 'proposed' for update`,
@@ -2445,17 +2453,72 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         for (const ed of prepared) {
           if (candidatesForGroup([e], ed.day, ed.cohort_profile?.ages ?? null).length === 0) continue;
           const have = (await tx.execute(sql`
-            select title, starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, position
+            select title, starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, position, removed_at is not null as removed
               from digest_items where edition_id = ${ed.id}::uuid
-          `)) as unknown as Array<DigestItem & { position: number }>;
-          if (have.some((i) => sameThing(i, e)) || have.length >= DIGEST_EDITION_MAX) continue;
+          `)) as unknown as Array<DigestItem & { position: number; removed: boolean }>;
+          /* 23 Nov, the review: an item the admin took out no longer counts toward the cap, and an approved
+             event goes first — ahead of the agent's finds, as it does in a group prepared after it
+             (`candidatesForGroup`) — instead of last, where a family's four rarely reached it. */
+          const live = have.filter((i) => !i.removed);
+          if (have.some((i) => sameThing(i, e))) continue;
+          if (live.length >= DIGEST_EDITION_MAX) {
+            fullEditions += 1;
+            continue;
+          }
           await tx.execute(sql`
             insert into digest_items (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url)
-            values (${ed.id}::uuid, ${Math.max(-1, ...have.map((i) => i.position)) + 1}, ${e.kind}, ${e.title}, ${e.when_text},
+            values (${ed.id}::uuid, ${Math.min(0, ...have.map((i) => i.position)) - 1}, ${e.kind}, ${e.title}, ${e.when_text},
                     ${e.starts_on}::date, ${e.ends_on}::date, ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url})
           `);
           /* A group the agent found nothing for now has something to send (review round 3). */
           await tx.execute(sql`update digest_editions set status = 'ready' where id = ${ed.id}::uuid and status = 'empty'`);
+        }
+      } else if (p.kind === "skill") {
+        /* A skill for the Pando plugin (23 Nov, replacing the chat's save_skill). The commit to GitHub
+           cannot sit inside this transaction, so the admin route makes it first (`saveSkill`, which
+           records plugin_skills and its own `skill.save` audit row) and passes what was committed;
+           without it the proposal stays waiting. */
+        const commit = cleanText(b.commit, 64);
+        if (!commit || !/^[0-9a-f]{7,64}$/.test(commit)) return { applied: false, reason: "skill_not_committed" };
+        extra = { commit, version: cleanText(b.version, 20) };
+      } else if (p.kind === "source") {
+        /* The sources & partners list (0077): a new entry, or a change to one. Organisations only. */
+        const sid = id(payload.source_id);
+        const roles = ["source", "partner"];
+        const kinds = ["api", "ical", "rss", "page", "sheet", "newsletter", "school", "camp", "pta", "group", "venue", "other"];
+        const statuses = ["active", "paused", "retired"];
+        const pick = (v: unknown, allowed: string[]) => (typeof v === "string" && allowed.includes(v) ? v : undefined);
+        const name = payload.name === undefined ? undefined : cleanText(payload.name, 120);
+        const note = payload.note === undefined ? undefined : cleanText(payload.note, 500);
+        const area = payload.area === undefined ? undefined : cleanText(payload.area, 60);
+        if (hasContactDetail(`${name ?? ""} ${note ?? ""}`)) return { applied: false, reason: "proposal_invalid" };
+        if (sid) {
+          const [was] = (await tx.execute(sql`select role, kind, name, url, market_id, note, status from pando_sources where id = ${sid}::uuid for update`)) as unknown as Array<Record<string, unknown>>;
+          if (!was) return { applied: false, reason: "proposal_closed" };
+          before = was;
+          const role = pick(payload.role, roles);
+          const kind = pick(payload.kind, kinds);
+          const status = pick(payload.status, statuses);
+          await tx.execute(sql`
+            update pando_sources set
+              role = ${role ?? sql`role`}, kind = ${kind ?? sql`kind`}, name = ${name ?? sql`name`},
+              url = ${sourceUrl ?? sql`url`}, market_id = ${area ?? sql`market_id`}, note = ${note === undefined ? sql`note` : sql`${note}`},
+              status = ${status ?? sql`status`}, updated_at = now(), proposal_id = ${target}::uuid
+             where id = ${sid}::uuid
+          `);
+          extra = { source_id: sid };
+        } else {
+          const role = pick(payload.role, roles);
+          const kind = pick(payload.kind, kinds);
+          if (!role || !kind || !name) return { applied: false, reason: "proposal_invalid" };
+          const clash = (await tx.execute(sql`select 1 from pando_sources where role = ${role} and lower(name) = lower(${name})`)) as unknown as unknown[];
+          if (clash.length) return { applied: false, reason: "source_name_taken" };
+          const [made] = (await tx.execute(sql`
+            insert into pando_sources (role, kind, name, url, market_id, note, added_by, proposal_id)
+            values (${role}, ${kind}, ${name}, ${sourceUrl}, ${area ?? null}, ${note ?? null}, ${ctx.actor}, ${target}::uuid)
+            returning id
+          `)) as unknown as Array<{ id: string }>;
+          extra = { source_id: made?.id ?? null };
         }
       } else {
         return { applied: false, reason: "not_implemented" };
@@ -2466,12 +2529,19 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
                share_id = coalesce(share_id, ${shareId}::uuid)
          where id = ${target}::uuid
       `);
-      return { applied: true, resource: "mcp_proposal", resource_id: target, detail: { share_id: shareId }, ...(before ? { before } : {}) };
+      return {
+        applied: true,
+        resource: "mcp_proposal",
+        resource_id: target,
+        detail: { share_id: shareId, ...extra, ...(p.kind === "event" ? { editions_full: fullEditions } : {}) },
+        ...(before ? { before } : {}),
+      };
     }
 
     case "proposal.reject": {
       const target = id(b.id);
-      const via = b.via === "chat" ? "chat" : "admin";
+      /* Decided on /admin/proposals only since 23 Nov; "chat" stays readable on old rows. */
+      const via = "admin";
       if (!target) return { applied: false, reason: "not_implemented" };
       const done = (await tx.execute(sql`
         update mcp_proposals set status = 'rejected', decided_by = ${ctx.actor}, decided_via = ${via}, decided_at = now(),

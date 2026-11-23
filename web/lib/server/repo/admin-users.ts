@@ -89,6 +89,15 @@ export async function changeOwnPassword(
 
     if (rows.length === 0) return false;
 
+    /* Pando MCP (23 Nov, the security review): a new password ends this admin's Claude connections,
+       as the CLI's `password` and `disable` do — a password is changed because it may be known.
+       Guarded, so a database where 0070 has not run changes the password all the same. */
+    const [mcp] = (await tx.execute(sql`select to_regclass('public.mcp_tokens') is not null as ok`)) as unknown as Array<Record<string, unknown>>;
+    if (mcp?.ok === true) {
+      await tx.execute(sql`update mcp_tokens set revoked_at = now() where admin_user = ${name} and revoked_at is null`);
+      await tx.execute(sql`update mcp_auth_codes set used_at = now() where admin_user = ${name} and used_at is null`);
+    }
+
     /* No `after` payload: everything about this change that is safe to keep is
        already in the columns, and the one thing that is not — the password —
        must never reach a log. The fact, the actor and the time are the record. */

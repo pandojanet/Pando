@@ -110,9 +110,27 @@ export type RateLimitName =
   | "oauth"
   | "mcp"
   | "mcp_day"
-  | "oauth_register";
+  | "oauth_register"
+  | "mcp_bad_token"
+  | "oauth_token";
 
 export const LIMITS: Record<RateLimitName, RateLimit> = {
+  mcp_bad_token: {
+    /* Access tokens Pando MCP did not know, per address (23 Nov, the security review): each is a database
+       lookup on the pool the SMS side shares. A real connection presents a bad token once (expired) and
+       refreshes; this ceiling is for someone guessing. Counted only on a failed lookup (`rateBlocked`). */
+    max: 60,
+    windowSeconds: 60,
+    message: "Too many unknown tokens from here just now. Try again in a minute.",
+  },
+  oauth_token: {
+    /* The token endpoint per client (23 Nov, the security review): every Claude arrives from Anthropic's
+       range, so an address-wide budget let anyone on claude.ai use up other admins' refreshes. One
+       connector refreshes about once an hour; this is a loop's ceiling. */
+    max: 30,
+    windowSeconds: 60,
+    message: "Too many token requests for this connector just now. Try again in a minute.",
+  },
   mcp: {
     /* Pando MCP (20 Nov, the founder's Playbook: "rate limits, quotas"): per connection — one admin in
        one Claude — not per address, since every connection comes from Anthropic's range. A brief that

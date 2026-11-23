@@ -1,10 +1,16 @@
 import "server-only";
 
+import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
+
 /**
  * What Pando spends (20 Nov), for Pando MCP's `costs_summary`: Twilio's own usage records (SMS, MMS,
  * RCS, numbers — the price Twilio charged, not an estimate) and the AI spend `tracedFetch` already
  * sends PostHog with every model call (`$ai_total_cost_usd`, by `$ai_span_name`). Read-only; each half
  * says "not configured" when its keys are missing, and a result is kept for an hour.
+ *
+ * Days (23 Nov, the review): the AI half counts Pasadena days, as every other Pando number does.
+ * Twilio's usage records are whole UTC days and cannot be asked otherwise, so the answer says so
+ * (`days`) rather than pretending the two halves line up to the hour.
  *
  * Env: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN (already set for sending), POSTHOG_PERSONAL_API_KEY and
  * POSTHOG_PROJECT_ID (new: a personal key with query:read), POSTHOG_API_HOST (default from
@@ -14,9 +20,13 @@ import "server-only";
 export interface CostsSummary {
   from: string;
   to: string;
+  days: { sms: string; ai: string };
   sms: { configured: boolean; currency: string | null; total: number | null; by_category: Array<{ category: string; description: string; count: number; price: number }> ; error?: string };
   ai: { configured: boolean; total_usd: number | null; by_purpose: Array<{ purpose: string; calls: number; usd: number }>; error?: string };
 }
+
+/** The market's clock, a constant of lib/markets.ts — the only value spliced into the HogQL besides the checked dates. */
+const TZ = marketConfig(DEFAULT_MARKET_ID).timeZone;
 
 const cache = new Map<string, { at: number; value: CostsSummary }>();
 const HOUR = 60 * 60 * 1000;
@@ -58,7 +68,7 @@ async function posthog(from: string, to: string): Promise<CostsSummary["ai"]> {
   const project = process.env.POSTHOG_PROJECT_ID?.trim();
   if (!key || !project) return { configured: false, total_usd: null, by_purpose: [] };
   const query = `select properties.$ai_span_name as purpose, count() as calls, sum(toFloat(properties.$ai_total_cost_usd)) as usd
-                   from events where event = '$ai_generation' and timestamp >= toDateTime('${from} 00:00:00') and timestamp < toDateTime('${to} 00:00:00') + interval 1 day
+                   from events where event = '$ai_generation' and timestamp >= toDateTime('${from} 00:00:00', '${TZ}') and timestamp < toDateTime('${to} 00:00:00', '${TZ}') + interval 1 day
                   group by purpose order by usd desc limit 50`;
   try {
     const res = await fetch(`${posthogApiHost()}/api/projects/${encodeURIComponent(project)}/query/`, {
@@ -82,7 +92,7 @@ export async function costsSummary(from: string, to: string): Promise<CostsSumma
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < HOUR) return hit.value;
   const [sms, ai] = await Promise.all([twilio(from, to), posthog(from, to)]);
-  const value = { from, to, sms, ai };
+  const value = { from, to, days: { sms: "UTC days (Twilio's usage records)", ai: `${TZ} days` }, sms, ai };
   if (!sms.error && !ai.error) cache.set(key, { at: Date.now(), value });
   return value;
 }

@@ -247,13 +247,20 @@ try {
         set password_hash = ${record}, password_changed_at = now(), updated_at = now()
         where name = ${name}
       `;
+      /* Pando MCP (23 Nov, the security review): a new password ends their Claude connections too — a
+         password is rotated because it may be known, and a connector made with it must not outlive it. */
+      const [mcp] = await tx`select to_regclass('public.mcp_tokens') is not null as ok`;
+      if (mcp?.ok) {
+        await tx`update mcp_tokens set revoked_at = now() where admin_user = ${name} and revoked_at is null`;
+        await tx`update mcp_auth_codes set used_at = now() where admin_user = ${name} and used_at is null`;
+      }
     });
     console.log("");
     if (generated) {
       console.log(`  New password for ${name}   ${password}`);
       console.log("  ^ hand this over now; it is not stored anywhere.\n");
     }
-    console.log(`  ✓ rotated. ${name}'s existing sessions are over.`);
+    console.log(`  ✓ rotated. ${name}'s existing sessions and Claude connections are over.`);
     console.log(
       "    Without ADMIN_SESSION_SECRET set, so is everyone else's — the signing\n" +
         "    key is derived from the credentials. That is the documented trade.\n",

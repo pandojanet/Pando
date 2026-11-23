@@ -13,8 +13,12 @@ import { cn } from "@/lib/cn";
  * request review, Google Docs' suggestion mode and Linear's triage): the queue oldest first, grouped by
  * kind, every change shown as "was → becomes" from the record as the agent saw it (0075), a warning
  * when the record changed since, Reject with an optional reason the agent sees, and one press for the
- * low-risk batch — fact checks that confirm a record is current. Apply runs `proposal.approve`, the
- * same function and audit row as a yes in chat. Nothing an agent proposes changes a record before it.
+ * low-risk batch — fact checks that confirm a record is current. Apply runs `proposal.approve`.
+ * Nothing an agent proposes changes a record before it.
+ *
+ * 23 Nov (the security review): this page is now the only place a proposal is decided — the chat's
+ * approve/reject are gone — and it carries two more kinds: a skill for the Pando plugin, shown in full
+ * exactly as it would be committed (Apply commits it), and an entry for the sources & partners list.
  */
 
 type View = "proposed" | "decided" | "candidates";
@@ -24,6 +28,8 @@ const GROUPS: Array<{ kind: ProposalRowAdmin["kind"]; title: string }> = [
   { kind: "new_record", title: "New records" },
   { kind: "fact_check", title: "Fact checks" },
   { kind: "event", title: "Digest events" },
+  { kind: "source", title: "Sources & partners" },
+  { kind: "skill", title: "Plugin skills" },
 ];
 
 const host = (url: string) => {
@@ -140,6 +146,28 @@ function Changes({ p }: { p: ProposalRowAdmin }) {
         {typeof c.summary === "string" && <Fact label="Summary">{c.summary}</Fact>}
       </div>
     );
+  if (p.kind === "source")
+    return (
+      <div className="space-y-1">
+        {typeof c.source_id === "string" && <Fact label="Changes">an entry already on the list</Fact>}
+        {typeof c.role === "string" && <Fact label="Role">{c.role}</Fact>}
+        {typeof c.kind === "string" && <Fact label="Kind">{c.kind}</Fact>}
+        {typeof c.name === "string" && <Fact label="Name">{c.name}</Fact>}
+        {typeof c.area === "string" && <Fact label="Area">{c.area}</Fact>}
+        {typeof c.status === "string" && <Fact label="Status">{c.status}</Fact>}
+        {typeof c.note === "string" && <Fact label="Note">{c.note}</Fact>}
+      </div>
+    );
+  if (p.kind === "skill")
+    return (
+      <div className="space-y-2">
+        <Fact label="Description">{String(c.description ?? "")}</Fact>
+        {/* The whole skill, as it would reach every admin's Claude: read before Apply. */}
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-bark bg-paper px-3.5 py-3 font-mono text-[12.5px] leading-relaxed text-ink">
+          {String(c.instructions ?? "")}
+        </pre>
+      </div>
+    );
   return null;
 }
 
@@ -147,6 +175,8 @@ function titleOf(p: ProposalRowAdmin): string {
   if (p.record?.name) return p.record.name;
   if (p.kind === "event") return String(p.change.title ?? "Event");
   if (p.kind === "new_record") return String(p.change.name ?? "New record");
+  if (p.kind === "skill") return String(p.change.name ?? "Skill");
+  if (p.kind === "source") return String(p.change.name ?? "Source");
   return p.current?.name ?? "Record";
 }
 
@@ -155,6 +185,8 @@ function kindWord(p: ProposalRowAdmin): string {
   if (p.kind === "record_edit") return c.change === "rename" ? "rename" : c.change === "retire" ? "retire" : c.change === "answer_ready" ? "ready to answer" : "facts";
   if (p.kind === "new_record") return `new ${String(c.kind ?? "record")}`;
   if (p.kind === "fact_check") return "fact check";
+  if (p.kind === "skill") return "plugin skill";
+  if (p.kind === "source") return c.source_id ? `change to a ${String(c.role ?? "source")}` : `new ${String(c.role ?? "source")}`;
   return String(c.kind ?? "event");
 }
 
@@ -241,7 +273,7 @@ function ProposalRow({ p, busy, onDecide }: { p: ProposalRowAdmin; busy: boolean
         ) : (
           <div className="mt-3 flex flex-wrap gap-2">
             <Button tone="primary" disabled={busy} subject={title} onClick={() => onDecide("proposal.approve")}>
-              {p.changed_since ? "Apply anyway" : "Apply"}
+              {p.changed_since ? "Apply anyway" : p.kind === "skill" ? "Commit to plugin" : "Apply"}
             </Button>
             <Button disabled={busy} subject={title} onClick={() => setRejecting(true)}>
               Reject
@@ -306,8 +338,13 @@ export default function ProposalsPage() {
 
   const decide = (p: ProposalRowAdmin) => (action: "proposal.approve" | "proposal.reject", reason?: string) =>
     void run(async () => {
-      await adminAction({ action, id: p.id, via: "admin", ...(reason ? { reason } : {}) });
-      return `${action === "proposal.approve" ? "Applied" : "Rejected"} · ${titleOf(p)}`;
+      const out = await adminAction({ action, id: p.id, ...(reason ? { reason } : {}) });
+      if (action === "proposal.reject") return `Rejected · ${titleOf(p)}`;
+      if (p.kind === "skill") return `Committed to the plugin · ${titleOf(p)}${typeof out.detail?.version === "string" ? ` · version ${out.detail.version}` : ""}`;
+      const full = Number(out.detail?.editions_full ?? 0);
+      return full > 0
+        ? /* copy: kept — 23 Nov: the event could not join a prepared digest that is already full */ `Applied · ${titleOf(p)} · ${full} prepared digest${full === 1 ? " is" : "s are"} full, so it waits for next week there`
+        : `Applied · ${titleOf(p)}`;
     });
 
   const takeOut = (c: DigestCandidateAdmin) =>
@@ -322,7 +359,7 @@ export default function ProposalsPage() {
     void run(async () => {
       let done = 0;
       for (const p of confirmedChecks) {
-        await adminAction({ action: "proposal.approve", id: p.id, via: "admin" });
+        await adminAction({ action: "proposal.approve", id: p.id });
         done++;
       }
       setBulk(false);

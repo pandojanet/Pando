@@ -10,8 +10,9 @@ const TODAY = sql`(now() at time zone ${marketConfig(DEFAULT_MARKET_ID).timeZone
 
 /**
  * What an agent proposes through Pando MCP (20 Nov). A proposal changes nothing: it waits for an
- * admin's yes on /admin/proposals or in chat, and is then applied by `proposal.approve` in
- * `applyAction` — the same function and audit trail as an admin's own edits.
+ * admin's yes on /admin/proposals, and is then applied by `proposal.approve` in `applyAction` — the
+ * same function and audit trail as an admin's own edits. Since 23 Nov (the security review) only
+ * there: a yes "from the conversation" was a flag the agent itself set, so the chat no longer decides.
  */
 
 type Row = Record<string, unknown>;
@@ -20,7 +21,7 @@ async function rows(db: Db, query: ReturnType<typeof sql>): Promise<Row[]> {
   return (await db.execute(query)) as unknown as Row[];
 }
 
-export type ProposalKind = "record_edit" | "new_record" | "fact_check" | "event";
+export type ProposalKind = "record_edit" | "new_record" | "fact_check" | "event" | "skill" | "source";
 
 export interface NewProposal {
   actor: string;
@@ -30,11 +31,19 @@ export interface NewProposal {
   sourceUrl: string | null;
 }
 
-/** Saves a proposal; a record it names must exist and be a real (not test) record. */
 /** Waiting proposals one admin's agents may have at once: a loop cannot bury /admin/proposals (review, 20 Nov). */
 const MAX_WAITING = 100;
 
+/**
+ * Saves a proposal; a record it names must exist and be a real (not test) record. One transaction
+ * holding a lock on the actor (23 Nov, the review): count-then-insert let parallel calls pass the cap.
+ */
 export async function createProposal(db: Db, p: NewProposal): Promise<{ id: string } | { refused: string }> {
+  return db.transaction(async (tx) => createLocked(tx as unknown as Db, p));
+}
+
+async function createLocked(db: Db, p: NewProposal): Promise<{ id: string } | { refused: string }> {
+  await db.execute(sql`select pg_advisory_xact_lock(hashtext('mcp_proposals:' || ${p.actor}))`);
   const [waiting] = await rows(db, sql`select count(*) as n from mcp_proposals where actor = ${p.actor} and status = 'proposed'`);
   if (Number(waiting?.n ?? 0) >= MAX_WAITING) return { refused: `${MAX_WAITING} proposals are already waiting for an admin; wait until some are decided.` };
   let before: Record<string, unknown> | null = null;
@@ -54,6 +63,12 @@ export async function createProposal(db: Db, p: NewProposal): Promise<{ id: stri
          and payload = ${JSON.stringify(p.payload)}::jsonb
     `);
     if (open) return { refused: "the same proposal is already waiting for an admin" };
+  } else if (p.kind === "skill" || p.kind === "source") {
+    /* One waiting proposal per skill name, or per source (by its id, else its name). */
+    const key = p.kind === "skill" ? sql`payload->>'name' = ${String(p.payload.name ?? "")}`
+      : p.payload.source_id ? sql`payload->>'source_id' = ${String(p.payload.source_id)}` : sql`lower(payload->>'name') = lower(${String(p.payload.name ?? "")})`;
+    const [open] = await rows(db, sql`select 1 from mcp_proposals where kind = ${p.kind} and status = 'proposed' and ${key}`);
+    if (open) return { refused: p.kind === "skill" ? "A skill with that name is already waiting for an admin; it can be changed after they decide." : "A change to that source is already waiting for an admin." };
   }
   const [made] = await rows(db, sql`
     insert into mcp_proposals (actor, kind, share_id, payload, source_url, before)
@@ -80,15 +95,18 @@ export interface ProposalRow {
 }
 
 /**
- * Proposals, newest first; `status` narrows (proposed by default). Admins are named; parents never,
- * and a record flagged as a person's name goes without its name (`FLAGGED_PERSON`).
+ * Proposals; `status` narrows (proposed by default). Waiting ones oldest first — the order an admin
+ * works through them, as the tool says (23 Nov, the review: it said oldest and sorted newest) — and
+ * decided ones newest first. Admins are named; parents never, and a record flagged as a person's name
+ * goes without its name (`FLAGGED_PERSON`). A skill's instructions are not repeated here: they are
+ * long, and an admin reads them in full on /admin/proposals.
  */
 export async function listProposals(db: Db, input: { status?: string | null; limit: number }): Promise<ProposalRow[]> {
   const out = await rows(db, sql`
     select p.*, s.name as share_name, s.kind as share_kind, ${FLAGGED_PERSON} as flagged_person
       from mcp_proposals p left join shares s on s.id = p.share_id
      ${input.status === "all" ? sql`` : sql`where p.status = ${input.status ?? "proposed"}`}
-     order by p.created_at desc
+     order by ${(input.status ?? "proposed") === "proposed" ? sql`p.created_at asc` : sql`coalesce(p.decided_at, p.created_at) desc`}
      limit ${input.limit}
   `);
   return out.map((r) => ({
@@ -97,7 +115,7 @@ export async function listProposals(db: Db, input: { status?: string | null; lim
     proposed_by: String(r.actor),
     kind: String(r.kind) as ProposalKind,
     record: r.share_id ? { id: String(r.share_id), name: r.flagged_person === true ? null : String(r.share_name ?? ""), kind: String(r.share_kind ?? "") } : null,
-    change: (r.payload as Record<string, unknown>) ?? {},
+    change: r.kind === "skill" ? skillSummary(r.payload as Record<string, unknown>) : ((r.payload as Record<string, unknown>) ?? {}),
     source_url: r.source_url ? String(r.source_url) : null,
     status: String(r.status),
     decided_by: r.decided_by ? String(r.decided_by) : null,
@@ -105,6 +123,11 @@ export async function listProposals(db: Db, input: { status?: string | null; lim
     decided_at: r.decided_at ? new Date(String(r.decided_at)).toISOString() : null,
     reason: r.decision_note ? String(r.decision_note) : null,
   }));
+}
+
+function skillSummary(p: Record<string, unknown> | null): Record<string, unknown> {
+  const body = typeof p?.instructions === "string" ? p.instructions : "";
+  return { name: p?.name ?? null, description: p?.description ?? null, instructions_chars: body.length };
 }
 
 /**
@@ -130,10 +153,15 @@ export async function eventAlreadyKnown(db: Db, e: { title: string; url: string;
   return out.length > 0;
 }
 
-/** A new record Pando already has (same kind and name) or that is already waiting as a proposal. */
+/**
+ * A new record Pando already has (same kind and name) or that is already waiting as a proposal.
+ * A record flagged as a person's name is not counted (23 Nov, the review): otherwise "already has"
+ * would confirm a guessed name that search_records deliberately never shows. Such a duplicate reaches
+ * the admin as a proposal, who sees both.
+ */
 export async function recordAlreadyKnown(db: Db, r: { kind: string; name: string; url: string }): Promise<boolean> {
   const out = await rows(db, sql`
-    select 1 from shares where not is_test and kind::text = ${r.kind} and lower(name) = lower(${r.name})
+    select 1 from shares s where not s.is_test and s.kind::text = ${r.kind} and lower(s.name) = lower(${r.name}) and not ${FLAGGED_PERSON}
     union all
     select 1 from mcp_proposals
      where kind = 'new_record' and status in ('proposed', 'rejected') and created_at > now() - interval '60 days'
