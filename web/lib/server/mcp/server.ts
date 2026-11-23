@@ -13,6 +13,7 @@ import { logCall, mcpEnabled, type CallOutcome } from "@/lib/server/repo/mcp";
 import { dailyActivity, getRecord, impactTotals, parentsTotals, questionsTotals, recordsTotals, searchRecords, unansweredQuestions, whatWentWrong } from "@/lib/server/repo/mcp-read";
 import { SOURCE_CHECKS, SOURCE_KINDS, SOURCE_ROLES, SOURCE_STATUSES, getSource, listSources, recordSourceCheck, sourceNamed } from "@/lib/server/repo/mcp-sources";
 import { AGE_BANDS } from "@/lib/matching";
+import { SUBCATEGORIES, SUBCATEGORIES_BY_KIND, subcategoryFor } from "@/lib/seed-chat/subcategories";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 import { createProposal, eventAlreadyKnown, listProposals, liveCandidates, recordAlreadyKnown } from "@/lib/server/repo/mcp-proposals";
 import { costsSummary } from "@/lib/server/mcp/costs";
@@ -300,6 +301,11 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
   /** Pando's values: an area is a neighborhood slug ("east-pasadena"), an age band one of the ladder. */
   const area = z.string().regex(/^[a-z0-9-]{2,40}$/, "a neighborhood as Pando stores it, e.g. east-pasadena");
   const band = z.enum(AGE_BANDS as [string, ...string[]]);
+  /* The client's sub-categories (0056, lib/seed-chat/subcategories.ts) — the only values `shares`
+     accepts. Any other word was taken here and failed only when an admin pressed Apply (23 Nov, the
+     lab walk: "storytime" → a 502). */
+  const subcategory = z.enum(SUBCATEGORIES as unknown as [string, ...string[]]);
+  const SUBCATEGORY_HINT = `one of the record kind's own: ${Object.entries(SUBCATEGORIES_BY_KIND).map(([k, v]) => `${k} → ${v.join(" / ")}`).join("; ")}`;
 
   tool("search_records", {
     title: "Search records",
@@ -341,7 +347,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
       venue: z.string().min(2).max(120).optional().describe("For facts"),
       areas: z.array(area).max(12).optional().describe("For facts: the whole new list"),
       age_bands: z.array(band).max(12).optional().describe("For facts: the whole new list"),
-      subcategory: z.string().min(2).max(40).optional().describe("For facts"),
+      subcategory: subcategory.optional().describe(`For facts: ${SUBCATEGORY_HINT}`),
       note: z.string().max(300).optional().describe("What was wrong, in a sentence"),
       source_url: source,
     },
@@ -375,7 +381,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
       venue: z.string().max(120).optional(),
       areas: z.array(area).max(12).optional(),
       age_bands: z.array(band).max(12).optional(),
-      subcategory: z.string().max(40).optional(),
+      subcategory: subcategory.optional().describe(SUBCATEGORY_HINT),
       note: z.string().max(300).optional().describe("For the admin: how it was checked"),
       source_url: page.describe("The page this is based on"),
     },
@@ -383,7 +389,8 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
   }, async (a) => {
     const words = plainWordsRefusal({ name: a.name, venue: a.venue, subcategory: a.subcategory });
     if (words) return words;
-    if (await recordAlreadyKnown(db(), { kind: a.kind, name: a.name, url: a.source_url })) return "Pando already has a record of this kind with that name, or one is waiting or was rejected lately.";
+    if (a.subcategory && !subcategoryFor(a.kind, a.subcategory)) return `A ${a.kind}'s subcategory is one of ${(SUBCATEGORIES_BY_KIND[a.kind] ?? []).join(", ")}.`;
+    if (await recordAlreadyKnown(db(), { kind: a.kind, name: a.name, url: a.source_url, facts: { venue: a.venue, areas: a.areas, age_bands: a.age_bands, subcategory: a.subcategory, url: a.source_url } })) return "Pando already has a record of this kind with that name, or one is waiting, or this same proposal was rejected lately (a corrected one may be proposed).";
     const { source_url, ...payload } = a;
     const r = await createProposal(db(), { actor: ctx.actor, kind: "new_record", shareId: null, payload, sourceUrl: source_url });
     return "refused" in r ? r.refused : { proposal_id: r.id, status: "proposed", waits_for: "an admin's yes" };

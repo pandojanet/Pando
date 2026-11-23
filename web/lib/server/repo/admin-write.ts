@@ -14,6 +14,7 @@ import { TIER_IDS, type BlastTier } from "@/lib/blast-tiers";
 
 import { sql } from "drizzle-orm";
 import { cleanText } from "@/lib/sanitize";
+import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import { hasContactDetail } from "@/lib/contact-details";
 import { checkCandidate, type CandidateInput } from "@/lib/server/mcp/candidate";
 import { cleanContributionPatch, TEXT_COLUMNS } from "@/lib/admin/contribution-edit";
@@ -2341,13 +2342,16 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
            `before` keeps what they were. A field the proposal leaves out is left as it is. */
         if (!shareId) return { applied: false, reason: "proposal_closed" };
         const [was] = (await tx.execute(
-          sql`select venue, neighborhoods, age_bands, subcategory from shares where id = ${shareId}::uuid and not is_test for update`,
+          sql`select kind::text as kind, venue, neighborhoods, age_bands, subcategory from shares where id = ${shareId}::uuid and not is_test for update`,
         )) as unknown as Array<Record<string, unknown>>;
         if (!was) return { applied: false, reason: "proposal_closed" };
         const areas = textArray(payload.areas, isArea);
         const bands = textArray(payload.age_bands, isBand);
         const venue = payload.venue === undefined ? undefined : cleanText(payload.venue, 120);
-        const subcategory = payload.subcategory === undefined ? undefined : cleanText(payload.subcategory, 40);
+        /* Only the client's sub-categories, and only the record kind's own (23 Nov, the lab walk: any other
+           word broke `shares_subcategory_check` and the admin saw a 502). */
+        const subcategory = payload.subcategory === undefined ? undefined : subcategoryFor(String(was.kind), payload.subcategory);
+        if (subcategory === null) return { applied: false, reason: "proposal_invalid" };
         before = { venue: was.venue ?? null, areas: was.neighborhoods ?? [], age_bands: was.age_bands ?? [], subcategory: was.subcategory ?? null };
         await tx.execute(sql`
           update shares set
@@ -2396,13 +2400,16 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         }
         const areas = textArray(payload.areas, isArea) ?? [];
         const bands = textArray(payload.age_bands, isBand) ?? [];
+        /* The kind's own sub-category or none (23 Nov): see the facts branch above. */
+        const newSubcategory = payload.subcategory === undefined || payload.subcategory === null ? null : subcategoryFor(kind, payload.subcategory);
+        if (payload.subcategory != null && newSubcategory === null) return { applied: false, reason: "proposal_invalid" };
         const [made] = (await tx.execute(sql`
           insert into shares (market_id, kind, name, venue, neighborhoods, age_bands, subcategory, status, provenance,
                               last_confirmed_at, freshness_state, source_url)
           values (${market}, ${kind}::share_kind, ${name}, ${cleanText(payload.venue, 120)},
                   (select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(areas)}::jsonb) x),
                   (select coalesce(array_agg(x), '{}'::text[]) from jsonb_array_elements_text(${JSON.stringify(bands)}::jsonb) x),
-                  ${cleanText(payload.subcategory, 40)}, 'approved', 'admin_entered', now(), 'fresh', ${sourceUrl})
+                  ${newSubcategory}, 'approved', 'admin_entered', now(), 'fresh', ${sourceUrl})
           returning id
         `)) as unknown as Array<{ id: string }>;
         shareId = made?.id ?? null;

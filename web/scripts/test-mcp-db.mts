@@ -166,6 +166,19 @@ const rejected = JSON.parse((await call("propose_record_edit", { id: share.id, c
 await decide("proposal.reject", { id: rejected.proposal_id, reason: "the page uses the long name" });
 const decided = JSON.parse((await call("list_proposals", { status: "rejected" })).text);
 ok("a rejection keeps its reason for the agent", decided.results?.[0]?.reason === "the page uses the long name");
+/* 23 Nov, the lab walk: a sub-category Pando does not have was taken, and failed only on Apply as a 502. */
+const storytime = { kind: "activity", name: "CI Toddler Storytime", areas: ["altadena"], age_bands: ["toddler"], source_url: "https://example.org/ci-storytime" };
+ok("a sub-category Pando does not have is refused when proposed", /expected one of|subcategory/i.test((await call("propose_new_record", { ...storytime, subcategory: "storytime" })).error ?? ""));
+ok("and one of another kind's", /activity's subcategory is one of activities, classes, camps/.test((await call("propose_new_record", { ...storytime, subcategory: "restaurants" })).error ?? ""));
+const [legacy] = await q(sql`insert into mcp_proposals (actor, kind, payload, source_url) values ('ci', 'new_record', ${JSON.stringify({ ...storytime, subcategory: "storytime" })}::jsonb, ${storytime.source_url}) returning id`);
+const legacyApply = await decide("proposal.approve", { id: legacy.id });
+ok("an older proposal with one is refused on Apply as invalid, not a database error", legacyApply.applied === false && (legacyApply as { reason?: string }).reason === "proposal_invalid");
+await decide("proposal.reject", { id: legacy.id, reason: "propose again with classes" });
+const asCamps = JSON.parse((await call("propose_new_record", { ...storytime, subcategory: "camps" })).text);
+await decide("proposal.reject", { id: asCamps.proposal_id, reason: "it is a class, not a camp" });
+ok("the same proposal again is still refused after a rejection", /rejected lately/.test((await call("propose_new_record", { ...storytime, subcategory: "camps" })).error ?? ""));
+const corrected = await call("propose_new_record", { ...storytime, subcategory: "classes" });
+ok("a corrected one gets through, and applies", corrected.error === null && (await decide("proposal.approve", { id: JSON.parse(corrected.text).proposal_id })).applied === true, corrected.error ?? "");
 const skill = await call("propose_plugin_change", { target: "skill", action: "create", name: "ci-skill", description: "A skill the CI run proposes, to see it wait.", instructions: "Read the numbers and say what changed since last week, in three lines." });
 ok("a plugin change without a plugin repo configured is refused, not saved", /not configured/.test(skill.error ?? ""));
 

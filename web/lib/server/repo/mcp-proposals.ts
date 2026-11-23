@@ -159,17 +159,33 @@ export async function eventAlreadyKnown(db: Db, e: { title: string; url: string;
  * would confirm a guessed name that search_records deliberately never shows. Such a duplicate reaches
  * the admin as a proposal, who sees both.
  */
-export async function recordAlreadyKnown(db: Db, r: { kind: string; name: string; url: string }): Promise<boolean> {
+export async function recordAlreadyKnown(db: Db, r: { kind: string; name: string; url: string; facts: Record<string, unknown> }): Promise<boolean> {
+  /* A rejected one blocks only the same proposal again (23 Nov, the lab walk): one that could not be
+     applied — a sub-category Pando does not have — is rejected with "propose it again correctly", and
+     the corrected one must get through. Waiting ones still block by name or page. */
+  const facts = JSON.stringify(SAME_FACTS(r.facts));
   const out = await rows(db, sql`
     select 1 from shares s where not s.is_test and s.kind::text = ${r.kind} and lower(s.name) = lower(${r.name}) and not ${FLAGGED_PERSON}
     union all
     select 1 from mcp_proposals
-     where kind = 'new_record' and status in ('proposed', 'rejected') and created_at > now() - interval '60 days'
+     where kind = 'new_record' and created_at > now() - interval '60 days'
        and ((payload->>'kind' = ${r.kind} and lower(payload->>'name') = lower(${r.name})) or source_url = ${r.url})
+       and (status = 'proposed'
+            or (status = 'rejected' and jsonb_build_object('venue', payload->'venue', 'areas', payload->'areas', 'age_bands', payload->'age_bands',
+                                                            'subcategory', payload->'subcategory', 'url', to_jsonb(source_url)) = ${facts}::jsonb))
     limit 1
   `);
   return out.length > 0;
 }
+
+/** The facts that make two new-record proposals the same one: what an admin would judge differently. */
+const SAME_FACTS = (f: Record<string, unknown>) => ({
+  venue: f.venue ?? null,
+  areas: f.areas ?? null,
+  age_bands: f.age_bands ?? null,
+  subcategory: f.subcategory ?? null,
+  url: f.url ?? null,
+});
 
 /** The digest's approved candidates still ahead, soonest first — what the Researcher checks before proposing. */
 export async function liveCandidates(db: Db, limit: number) {
