@@ -247,6 +247,9 @@ const index = JSON.parse((await call("read_plugin", {})).text);
 ok("read_plugin lists the plugin: skills, agents, connectors, and what may be removed",
   index.version === "0.5.0" && index.skills?.some((s: { name: string; may_remove: boolean }) => s.name === "pando-data" && !s.may_remove) &&
     index.connectors?.[0]?.name === "pando" && index.agents?.[0]?.name === "agent-builder", JSON.stringify(index).slice(0, 200));
+ok("and says the read-only supabase connector may be removed but not changed",
+  index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean; read_only?: boolean }) => c.name === "supabase" && !c.may_change && c.may_remove && c.read_only === true) &&
+    index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean }) => c.name === "pando" && !c.may_change && !c.may_remove), JSON.stringify(index.connectors));
 ok("and reads one agent's file to start an edit from", /name: agent-builder/.test(JSON.parse((await call("read_plugin", { target: "agent", name: "agent-builder" })).text).text ?? ""));
 
 const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "mcp__plugin_pando_pando__search_records"] };

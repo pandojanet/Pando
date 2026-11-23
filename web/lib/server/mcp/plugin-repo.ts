@@ -301,7 +301,15 @@ export async function readPluginIndex(): Promise<Record<string, unknown> | { ref
       version,
       skills: skills.map((name, k) => ({ name, description: describe(texts[k]), may_remove: !LOCKED.skill.includes(name) })),
       agents: agents.map((name, k) => ({ name, description: describe(texts[skills.length + k]), may_remove: !LOCKED.agent.includes(name) })),
-      connectors: Object.entries(servers).map(([name, s]) => ({ name, url: s?.url ?? null, may_change: !LOCKED.connector.includes(name) })),
+      /* What a proposal may do to each (23 Nov, the lab check: supabase and posthog read "may_change"
+         though buildMcpJson refuses any change to them). */
+      connectors: Object.entries(servers).map(([name, s]) => ({
+        name,
+        url: s?.url ?? null,
+        may_change: !LOCKED.connector.includes(name) && !(name in READ_ONLY_CONNECTORS),
+        may_remove: !LOCKED.connector.includes(name),
+        ...(name in READ_ONLY_CONNECTORS ? { read_only: true } : {}),
+      })),
     };
   } catch (err) {
     return { refused: failure(err) };
