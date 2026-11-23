@@ -170,7 +170,7 @@ const hexId = (k: string) => createHash("sha1").update(k).digest("hex");
 let headSha = hexId("c0");
 snapshots.set(headSha, new Map([
   [".claude-plugin/plugin.json", `${JSON.stringify({ name: "pando", version: "0.5.0" }, null, 2)}\n`],
-  [".mcp.json", `${JSON.stringify({ mcpServers: { pando: { type: "http", url: "https://pando.is/api/mcp" } } }, null, 2)}\n`],
+  [".mcp.json", `${JSON.stringify({ mcpServers: { pando: { type: "http", url: "https://pando.is/api/mcp" }, supabase: { type: "http", url: "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true" } } }, null, 2)}\n`],
   ["skills/pando-data/SKILL.md", "---\nname: pando-data\ndescription: \"The catalogue of Pando's tools.\"\n---\n\nThe catalogue.\n"],
   ["skills/old-brief/SKILL.md", "---\nname: old-brief\ndescription: \"An old brief nobody uses any more.\"\n---\n\nOld.\n"],
   ["skills/old-brief/references/notes.md", "notes\n"],
@@ -277,7 +277,15 @@ ok("the pando connector cannot be removed", /cannot be removed/.test(String((awa
 const conn = await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp" });
 const connDone = conn.proposal_id ? await commitProposal(conn.proposal_id) : { refused: "" };
 const servers = JSON.parse(repoNow().get(".mcp.json") ?? "{}").mcpServers ?? {};
-ok("a connector is added as a remote https server, pando kept first", "committed" in connDone && Object.keys(servers).join(",") === "pando,notion" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion));
+ok("a connector is added as a remote https server, pando kept first, the others untouched", "committed" in connDone && Object.keys(servers).join(",") === "pando,notion,supabase" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion) &&
+  servers.supabase?.url === "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true");
+/* 23 Nov: Supabase and PostHog stay read-only — their address is what makes them so. */
+ok("the read-only supabase connector's address cannot be changed", /kept read-only by QuitCode/.test(String((await propose({ target: "connector", action: "update", name: "supabase", url: "https://mcp.supabase.com/mcp" })).error ?? "")));
+ok("no second connector to Supabase or PostHog", /would not be read-only/.test(String((await propose({ target: "connector", action: "create", name: "db", url: "https://mcp.supabase.com/mcp" })).error ?? "")) &&
+  /would not be read-only/.test(String((await propose({ target: "connector", action: "create", name: "analytics", url: "https://mcp.posthog.com/mcp" })).error ?? "")));
+const dropSupabase = await propose({ target: "connector", action: "delete", name: "supabase" });
+ok("removing the read-only supabase connector is allowed (it only takes access away)", !!dropSupabase.proposal_id, dropSupabase.error ?? "");
+if (dropSupabase.proposal_id) await decide("proposal.reject", { id: dropSupabase.proposal_id, reason: "test" });
 
 ok("the agent-builder cannot be removed", /cannot be removed/.test(String((await propose({ target: "agent", action: "delete", name: "agent-builder" })).error ?? "")));
 const gone = await propose({ target: "skill", action: "delete", name: "old-brief" });

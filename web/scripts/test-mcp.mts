@@ -181,6 +181,9 @@ console.log("\n=== the diagram's promises ===");
     /const NEVER = \["Bash", "Write", "Edit", "NotebookEdit"\];/.test(skills) && /if \(u\.protocol !== "https:"\)/.test(skills) && /u\.username \|\| u\.password \|\| u\.search \|\| u\.hash/.test(skills) &&
       /LOCKED: Record<PluginTarget, string\[\]> = \{ skill: \["customize", "pando-data"\], agent: \["agent-builder"\], connector: \["pando"\] \}/.test(skills) &&
       /servers\[d\.name\] = \{ type: "http", url:/.test(skills) && !/\b(command|args|env)\s*:/.test(code(skills)));
+  ok("Supabase and PostHog stay read-only: their address is never changed by a proposal, and no second connector to them",
+    /READ_ONLY_CONNECTORS: Record<string, string> = \{ supabase: "mcp\.supabase\.com", posthog: "mcp\.posthog\.com" \}/.test(skills) &&
+      /if \(d\.action !== "delete" && d\.name in READ_ONLY_CONNECTORS\)/.test(skills) && /a second connector to it would not be read-only/.test(skills));
   const ld = (await import(`../lib/admin/line-diff.ts?v=${Math.random()}`)) as typeof import("../lib/admin/line-diff.ts");
   const dl = ld.diffLines("a\nb\nc\nd\ne\nf\ng\nh", "a\nb\nc\nX\ne\nf\ng\nh", 1);
   ok("the admin's line diff: removed and added lines, unchanged ones far from a change folded",

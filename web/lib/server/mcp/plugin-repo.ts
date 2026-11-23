@@ -152,10 +152,32 @@ export function connectorUrlRefusal(raw: string | undefined): string | null {
   return null;
 }
 
+/**
+ * Connectors QuitCode keeps read-only (23 Nov, the developer: Supabase and PostHog in the plugin "тільки на
+ * читання, без зміни даних"). Their read-only switch is a query parameter in the address
+ * (`read_only=true`, `readonly=true`), so the address is what keeps them read-only: no proposal may
+ * change it, and no connector may be added for the same services, which would arrive with write tools.
+ * Removing one only takes access away, so that stays possible.
+ */
+export const READ_ONLY_CONNECTORS: Record<string, string> = { supabase: "mcp.supabase.com", posthog: "mcp.posthog.com" };
+
 /** .mcp.json after a connector change: the servers object, sorted, `pando` first. */
 export function buildMcpJson(current: string, d: PluginDraft): string | { refused: string } {
   if (!CONNECTOR_NAME.test(d.name)) return { refused: "A connector's name is 2–31 lowercase letters, digits or hyphens." };
   if (d.name === "pando") return { refused: "The Pando connector is the plugin's own; it is not changed here." };
+  if (d.action !== "delete" && d.name in READ_ONLY_CONNECTORS) {
+    return { refused: `The ${d.name} connector is kept read-only by QuitCode; its address is not changed from here. It can be removed.` };
+  }
+  if (d.action !== "delete") {
+    let host = "";
+    try {
+      host = new URL((d.url ?? "").trim()).hostname.toLowerCase();
+    } catch {
+      /* connectorUrlRefusal says why */
+    }
+    const same = Object.entries(READ_ONLY_CONNECTORS).find(([, h]) => host === h || host.endsWith(`.${h}`));
+    if (same) return { refused: `${same[1]} is in the plugin already as the read-only ${same[0]} connector; a second connector to it would not be read-only.` };
+  }
   let parsed: { mcpServers?: Record<string, unknown> };
   try {
     parsed = JSON.parse(current) as { mcpServers?: Record<string, unknown> };

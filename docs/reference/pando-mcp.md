@@ -118,6 +118,11 @@ plugin's branch with the patch version raised (`commitPluginChange`, an `audit_l
   Pando tool that writes except the ones it names.
 - **A connector** is `{ "type": "http", "url": … }` at an `https://` address on a public host, with no
   user, key or query in it, no headers, no local command; each person signs in to it in Claude.
+- **Supabase and PostHog stay read-only.** The plugin carries them as `supabase`
+  (`https://mcp.supabase.com/mcp?project_ref=…&read_only=true&features=database,docs,debugging`) and
+  `posthog` (`https://mcp.posthog.com/mcp?readonly=true&features=…`); the read-only switch is in the
+  address, so a proposal can remove them but never change them, and no second connector to
+  `mcp.supabase.com` or `mcp.posthog.com` is accepted (`READ_ONLY_CONNECTORS`).
 - **Text** carries no phone number or email, and no step that approves, rejects or saves.
 - **Cannot be removed** (can be changed): the `pando` connector, the `customize` and `pando-data`
   skills, the `agent-builder` agent. `shared/` (the safety rules) is not reachable at all.
