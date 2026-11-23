@@ -302,7 +302,7 @@ ok("the pando connector cannot be removed", /cannot be removed/.test(String((awa
 const conn = await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp" });
 const connDone = conn.proposal_id ? await commitProposal(conn.proposal_id) : { refused: "" };
 const servers = JSON.parse(repoNow().get(".mcp.json") ?? "{}").mcpServers ?? {};
-ok("a connector is added as a remote https server, pando kept first, the others untouched", "committed" in connDone && Object.keys(servers).join(",") === "pando,notion,supabase" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion) &&
+ok("a connector is added as a remote https server, last, the others untouched and in place", "committed" in connDone && Object.keys(servers).join(",") === "pando,supabase,notion" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion) &&
   servers.supabase?.url === "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true");
 /* 23 Nov: Supabase and PostHog stay read-only — their address is what makes them so. */
 ok("the read-only supabase connector's address cannot be changed", /kept read-only by QuitCode/.test(String((await propose({ target: "connector", action: "update", name: "supabase", url: "https://mcp.supabase.com/mcp" })).error ?? "")));

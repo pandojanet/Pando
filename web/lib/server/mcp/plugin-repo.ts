@@ -194,7 +194,9 @@ export function buildMcpJson(current: string, d: PluginDraft): string | { refuse
     if (bad) return { refused: bad };
     servers[d.name] = { type: "http", url: (d.url ?? "").trim() };
   }
-  const ordered = Object.fromEntries(Object.entries(servers).sort(([a], [b]) => (a === "pando" ? -1 : b === "pando" ? 1 : a.localeCompare(b))));
+  /* The file's own order, `pando` first, a new connector last (23 Nov, the lab walk: sorting by name
+     moved untouched connectors, and the admin read their lines as removed and added). */
+  const ordered = Object.fromEntries(Object.entries(servers).sort(([a], [b]) => (a === "pando" ? -1 : b === "pando" ? 1 : 0)));
   return `${JSON.stringify({ ...parsed, mcpServers: ordered }, null, 2)}\n`;
 }
 
