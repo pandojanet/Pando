@@ -428,6 +428,8 @@ export const AUDIT_RESOURCE: Record<string, string> = {
   app_setting: "a setting",
   mcp_connection: "a Pando MCP connection",
   plugin_skill: "a skill in the Pando plugin",
+  /* `plugin.commit` (lib/server/mcp/plugin-repo.ts) names the plugin, whatever the change was: a skill, an agent or a connector. */
+  plugin: "the Pando plugin",
   digest_candidate: "a digest candidate",
   /* `profile.delete` (repo/parent-delete.ts) names the table, not the row. */
   people: "a parent's profile",

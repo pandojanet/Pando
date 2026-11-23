@@ -120,7 +120,7 @@ console.log("\n=== the diagram's promises ===");
   const leaked = forbidden.filter((k) => new RegExp(`\\b${k.replace(":", "\\s*:")}`).test(outputs));
   ok("no tool output carries a parent's name, phone, email, id or question text", leaked.length === 0, leaked.join(", "));
   ok("a record's texts go out without who wrote them, masked, and never for a record flagged as a person",
-    /maskContactDetails\(/.test(readSrc) && /possible_named_person/.test(readSrc) && /parents_said: \[\]/.test(readSrc) && !/\bapproved_by\b|show_first_name/.test(code(readSrc)));
+    /texts\[f\] = maskNames\(maskContactDetails\(String\(c\[f\]\)\.trim\(\)\)\)/.test(readSrc) && /possible_named_person/.test(readSrc) && /parents_said: \[\]/.test(readSrc) && !/\bapproved_by\b|show_first_name/.test(code(readSrc)));
   ok("a record flagged as a person's name: out of search, and without its name or venue when read or proposed",
     /where not s\.is_test and not \$\{FLAGGED_PERSON\}/.test(readSrc) && /name: flagged \? null : String\(r\.name\)/.test(readSrc) && /r\.venue && !flagged/.test(readSrc) &&
       /flagged_person === true \? null : String\(r\.share_name/.test(read("lib/server/repo/mcp-proposals.ts")));
@@ -166,7 +166,7 @@ console.log("\n=== the diagram's promises ===");
       !/\bnote\b/.test(code(readSrc.slice(readSrc.indexOf("export async function whatWentWrong")))) && /tool\("what_went_wrong"/.test(server));
   const uq = readSrc.slice(readSrc.indexOf("export async function unansweredQuestions"));
   ok("question texts only from unanswered_questions: masked, never who asked or the answer; sensitive, caregiver and person-asking ones only counted; Seed Tool only ordinary",
-    /maskContactDetails\(String\(r\.question_text/.test(uq) && !/person_id|phone|answer_text|neighborhood/.test(code(uq)) &&
+    /maskContactDetails\(String\(r\.question_text/.test(uq) && (uq.match(/maskNames\(maskContactDetails\(String\(r\.question_text/g) ?? []).length === 2 && !/person_id|phone|answer_text|neighborhood/.test(code(uq)) &&
       /coalesce\(a\.hold_reason, 'not_held'\) not in \('caregiver', 'sensitive', 'generator_asked'\)/.test(uq) &&
       /not requires_human_review and coalesce\(sensitivity, 'ordinary'\) in \('ordinary', 'peer_support'\)/.test(uq) && (readSrc.match(/question_text/g) ?? []).length === (uq.match(/question_text/g) ?? []).length);
   const skills = read("lib/server/mcp/plugin-repo.ts");

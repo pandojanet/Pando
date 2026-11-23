@@ -408,6 +408,35 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
       JSON.stringify(m.firstNamesIn("Is there something for my daughter? Ella is 4")) === '["ella"]' &&
       JSON.stringify(m.firstNamesIn("a good activity for Jasper, he loves dinosaurs")) === '["jasper"]',
   );
+  /* 23 Nov: the MCP's unanswered_questions quoted "good activity for Jasper today" as typed. */
+  ok(
+    "a child's name is masked in a question the MCP quotes — every shape, also at the start of the text; a text with no name is unchanged",
+    m.maskNames("good activity for Jasper today") === "good activity for [name] today" &&
+      m.maskNames("My son Jasper needs a class. Jasper loves dinosaurs") === "My son [name] needs a class. [name] loves dinosaurs" &&
+      m.maskNames("For Maya and Leo this weekend?") === "For [name] and [name] this weekend?" &&
+      m.maskNames("Ella is 4, any swim lessons?") === "[name] is 4, any swim lessons?" &&
+      m.maskNames("any good swim lessons in Pasadena?") === "any good swim lessons in Pasadena?",
+  );
+  /* 23 Nov, the independent review: each of these came back unmasked or half-masked. */
+  ok(
+    "and the shapes a review found missed: mid-text, accented, hyphenated with the names after it, lowercase after 'my son'",
+    m.maskNames("Hi! My son Jasper, 6, needs a class") === "Hi! My son [name], 6, needs a class" &&
+      m.maskNames("Thanks. For Maya, anything?") === "Thanks. For [name], anything?" &&
+      m.maskNames("for Mary-Kate and Ashley") === "for [name] and [name]" &&
+      m.maskNames("for Zoë this weekend") === "for [name] this weekend" &&
+      m.maskNames("José is 5") === "[name] is 5" &&
+      m.maskNames("For José, Zoë & Léa") === "For [name], [name] & [name]" &&
+      m.maskNames("my son jasper needs a class") === "my son [name] needs a class",
+  );
+  ok(
+    "a question with no name keeps every word: 'my son needs', 'my daughter loves', a place, a brand, an age",
+    m.maskNames("my son needs a class") === "my son needs a class" &&
+      m.maskNames("my daughter loves art") === "my daughter loves art" &&
+      m.maskNames("my little girl is 3") === "my little girl is 3" &&
+      m.maskNames("art classes for my 7 year old in Altadena") === "art classes for my 7 year old in Altadena" &&
+      m.maskNames("any Kumon near us?") === "any Kumon near us?" &&
+      m.maskNames("") === "",
+  );
   ok("a capitalised subject is still a subject: Kumon, and a place that is good", (ask("any Kumon near us?", "activities").unknown ?? []).join() === "kumon" && (ask("Kidspace is good?", "activities").unknown ?? []).join() === "kidspace");
   ok("he and she are not subjects", !(ask("an activity he would like", "activities").unknown ?? []).includes("he") && !(ask("something she can do", "activities").unknown ?? []).includes("she"));
   const chess = ask("chess club for an 8 year old in Pasadena", "activities");

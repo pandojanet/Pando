@@ -3,6 +3,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { maskContactDetails } from "@/lib/contact-details";
+import { maskNames } from "@/lib/matching";
 import { freshnessOf, labelsFor, lastConfirmedLabel } from "@/lib/trust-labels";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 
@@ -239,7 +240,8 @@ export async function getRecord(db: Db, id: string) {
     ...facts,
     parents_said: said.map((c) => {
       const texts: Record<string, string> = {};
-      for (const f of TEXT_FIELDS) if (typeof c[f] === "string" && String(c[f]).trim()) texts[f] = maskContactDetails(String(c[f]).trim());
+      /* Phones, emails and a child's first name (23 Nov): the same masking as unanswered_questions. */
+      for (const f of TEXT_FIELDS) if (typeof c[f] === "string" && String(c[f]).trim()) texts[f] = maskNames(maskContactDetails(String(c[f]).trim()));
       return {
         recommendation: c.recommendation ? String(c.recommendation) : null,
         firsthand: c.firsthand === true,
@@ -350,7 +352,7 @@ export async function unansweredQuestions(db: Db, input: { days: number; limit: 
     days: input.days,
     texted: asked.map((r) => ({
       asked_on: new Date(String(r.created_at)).toISOString().slice(0, 10),
-      question: maskContactDetails(String(r.question_text ?? "").trim()).slice(0, 600),
+      question: maskNames(maskContactDetails(String(r.question_text ?? "").trim())).slice(0, 600),
       why: why(r),
     })),
     /* Counted, never quoted: about a caregiver, or sensitive. */
@@ -358,7 +360,7 @@ export async function unansweredQuestions(db: Db, input: { days: number; limit: 
     seed_tool_open: seed.map((r) => ({
       asked_on: new Date(String(r.created_at)).toISOString().slice(0, 10),
       category: r.category ? String(r.category) : null,
-      question: maskContactDetails(String(r.question_text ?? "").trim()).slice(0, 600),
+      question: maskNames(maskContactDetails(String(r.question_text ?? "").trim())).slice(0, 600),
     })),
     seed_tool_not_quoted: n(seedUnquoted?.n),
   };

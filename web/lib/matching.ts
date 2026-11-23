@@ -523,6 +523,56 @@ export function firstNamesIn(text: string): string[] {
   return [...out];
 }
 
+/** The shapes' own words, wherever they stand: "Hi! My son Jasper", "Thanks. For Maya" start a sentence mid-text. */
+const SHAPE_WORDS = /\b(?:for|with|take|taking|bring|bringing|entertain|keep|keeping|occupy|my)\b/gi;
+const CHILD_WORD = "(?:son|daughter|kid|kids|child|children|boy|girl|toddler|baby|twins?)";
+/** After "my son…" a lowercase word is a name unless it is one of these (or a word `NOT_A_SUBJECT` knows). */
+const NOT_A_NAME = new Set(
+  "son daughter kid kids child children boy girl toddler baby twin twins has had goes went plays played gets got starts started turns turned attends attended loved hated needed wanted".split(" "),
+);
+/** A Latin letter's accented forms ("e" → "èéêëēĕėęě…"), so "Zoë" and "José" are found and masked whole. */
+const ACCENTED: Record<string, string> = {};
+for (let c = 0xc0; c <= 0x17f; c++) {
+  const ch = String.fromCharCode(c).toLowerCase();
+  const base = ch.normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/^[a-z]$/.test(base) && ch !== base && !(ACCENTED[base] ?? "").includes(ch)) ACCENTED[base] = (ACCENTED[base] ?? "") + ch;
+}
+const deaccent = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/**
+ * A child's first name typed into a question becomes "[name]" (23 Nov: the lab test pass found
+ * "good activity for Jasper today" quoted as typed by the MCP's `unanswered_questions`).
+ *
+ * Read with the shapes above, plus what an independent review found they miss on their own: a shape
+ * mid-text ("Hi! My son Jasper"), an accented name ("Zoë", "José"), a hyphenated one and the names
+ * after it ("Mary-Kate and Ashley"), and a lowercase name after "my son / daughter…" ("my son
+ * jasper"), which SMS often is. `firstNamesIn` itself is unchanged — the SMS flow reads it.
+ *
+ * **What it still does not catch**, said so no one relies on it for more: a lowercase name after
+ * "for" ("for jasper" reads exactly like "for swimming"), an all-capitals one ("FOR MAYA"), and a name
+ * in no shape at all. That is why a question about a caregiver or a sensitive matter is counted where
+ * it is quoted, never quoted. It errs toward masking: "for Kumon" becomes "for [name]".
+ */
+export function maskNames(text: string): string {
+  const plain = deaccent(text).replace(SHAPE_WORDS, (w) => w.toLowerCase());
+  const names = new Set(firstNamesIn(plain));
+  for (const m of plain.matchAll(new RegExp(`\\bmy\\s+(?:little\\s+)?${CHILD_WORD}\\s+([a-z][a-z'-]+)`, "gi"))) {
+    const w = m[1].toLowerCase().replace(/['-].*$/, "");
+    if (!NOT_A_SUBJECT.has(w) && !NOT_A_NAME.has(w)) names.add(w);
+  }
+  let out = text;
+  for (const w of names) {
+    const letters = [...w].map((c) => (ACCENTED[c] ? `[${c}${ACCENTED[c]}]` : c)).join("");
+    out = out.replace(new RegExp(`(?<!\\p{L})${letters}(?!\\p{L})`, "giu"), "[name]");
+  }
+  /* The rest of a masked name, and the names listed after it: "[name]-Kate and Ashley", "[name], Leo". */
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/\[name\]-\p{L}+/gu, "[name]").replace(/(\[name\](?:\s*,\s*|\s+(?:and|&)\s+))\p{Lu}\p{L}*/gu, "$1[name]");
+  }
+  return out;
+}
+
 /** What a place is, not what it teaches: "chess club", "climbing gym", "robotics program". */
 const VENUE = /^(?:gym|gyms|studio|studios|program|programs|programme|programmes|academy|academies|center|centers|centre|centres|team|teams|league|leagues|course|courses|group|groups|school|schools|session|sessions)$/;
 

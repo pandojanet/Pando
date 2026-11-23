@@ -60,7 +60,9 @@ in to the Pando admin can connect; every admin has full access (no roles, decisi
 - Totals are counts. No tool returns a parent's name, phone, email or id.
 - A parent's words come back in two places only: the approved texts about a record (`get_record`,
   without who wrote them) and the questions Pando could not answer yet (`unanswered_questions`, without
-  who asked, never the answer). Phone numbers and emails are masked in both. A question held as
+  who asked, never the answer). Phone numbers, emails and a child's first name are masked in both
+  (`maskContactDetails`, then `maskNames`; a name is read from the sentence's shape, so a lowercase one
+  after "for" or one in no shape at all is not caught — hence the next rule). A question held as
   sensitive (health, legal, safety, a named person), about a caregiver, or asking for a person is
   counted, never quoted; so is a Seed Tool question that needs a person's review.
 - Caregivers never leave the admin through MCP.

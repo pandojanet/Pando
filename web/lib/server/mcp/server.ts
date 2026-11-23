@@ -283,7 +283,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
 
   tool("unanswered_questions", {
     title: "Questions Pando can't answer yet",
-    description: "Questions parents texted that no Pando record answered (answered from public information only, or with no record behind them), and open Seed Tool questions: their words with phones and emails masked, the date, and why. Never who asked, never the answer. Sensitive, caregiver and person-asking questions are counted, not quoted.",
+    description: "Questions parents texted that no Pando record answered (answered from public information only, or with no record behind them), and open Seed Tool questions: their words with phones, emails and a child's first name masked, the date, and why. Never who asked, never the answer. Sensitive, caregiver and person-asking questions are counted, not quoted.",
     input: { days: z.number().int().min(1).max(90).default(30), limit: z.number().int().min(1).max(100).default(50) },
     readOnly: true,
   }, async (a) => unansweredQuestions(db(), a));

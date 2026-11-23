@@ -20,6 +20,13 @@ async function handle(request: Request): Promise<Response> {
   const auth = await mcpBearer(request);
   if ("refusal" in auth) return auth.refusal;
   const { owner } = auth;
+  /* No server-to-client stream (23 Nov): this route is stateless and has nothing to push, so a GET is
+     answered 405, which the MCP transport spec allows. Before this, the SDK closed the stream at once,
+     the client re-opened it about every second, and those GETs used up the connection's minute and day
+     limits below — the next sign-in then got a 429. Not counted, not logged: it is not a tool call. */
+  if (request.method === "GET") {
+    return new Response(null, { status: 405, headers: { Allow: "POST, DELETE" } });
+  }
   /* Per connection — one admin in one Claude — a minute's ceiling and a day's quota (20 Nov). */
   const connection = `${owner.adminUser}|${owner.clientId}`;
   /* One JSON-RPC message per request (review, 20 Nov): the SDK takes a batch of up to 100, which would

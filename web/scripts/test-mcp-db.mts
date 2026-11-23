@@ -110,6 +110,11 @@ const call = async (name: string, args: Record<string, unknown> = {}) => {
 console.log("\n=== the MCP endpoint ===");
 ok("no token: 401 with the pointer Claude reads", (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "")).status === 401);
 ok("a batch is refused", (await post([{ jsonrpc: "2.0", id: 1, method: "tools/list" }])).status === 400);
+/* 23 Nov: the route has no stream to open, and a client that re-opened it every second used up the minute's
+   and the day's limits, so its next sign-in got a 429. A GET is 405, not counted. */
+const gets: Response[] = [];
+for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api/mcp`, { headers: { accept: "text/event-stream", "mcp-protocol-version": "2025-06-18", authorization: `Bearer ${t4.access_token}` } })));
+ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
 ok("25 tools, each with a title and read/destructive hints", tools.length === 25 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
