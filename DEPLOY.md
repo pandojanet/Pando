@@ -292,7 +292,7 @@ container's `HEALTHCHECK` polls. `docker compose ps` on the server shows
 
 1. Migrations `0070_pando_mcp` (six tables, nothing existing changed), `0071_record_source` (three
    nullable columns on `shares`) `0072_plugin_skills` (one table), `0073_digest_candidates` (one table; `mcp_proposals.kind` gains
-   `event`) `0074_critical_alerts_cron` (the alert job's schedule, created **paused**) `0075_proposal_before` (two nullable columns), `0076_mcp_prune_cron` (the nightly cleanup's schedule, created **paused**), `0077_mcp_review_fixes` (a nullable column on `mcp_auth_codes`, `mcp_proposals.kind` gains `skill` and `source`, one table `pando_sources`) and `0078_plugin_changes` (`mcp_proposals.kind` gains `plugin`) — one `npm run migrate` with the yes the database rule asks for,
+   `event`) `0074_critical_alerts_cron` (the alert job's schedule, created **paused**) `0075_proposal_before` (two nullable columns), `0076_mcp_prune_cron` (the nightly cleanup's schedule, created **paused**), `0077_mcp_review_fixes` (a nullable column on `mcp_auth_codes`, `mcp_proposals.kind` gains `skill` and `source`, one table `pando_sources`) `0078_plugin_changes` (`mcp_proposals.kind` gains `plugin`) and `0079_sources_area` (`pando_sources.market_id` renamed `area`; the table is new, so on production it is created and renamed in the same run, empty) — one `npm run migrate` with the yes the database rule asks for,
    **before** the deploy: drizzle's `insert(shares)` names every column in `schema.ts`, so code
    without `0071` breaks every Seed Tool card save. **A push to `main` deploys** (`deploy.yml`), so the
    migration runs before the branch is merged, not after.

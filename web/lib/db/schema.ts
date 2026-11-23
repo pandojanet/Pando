@@ -1958,7 +1958,8 @@ export const pandoSources = pgTable("pando_sources", {
   kind: text("kind").notNull(),
   name: text("name").notNull(),
   url: text("url"),
-  marketId: text("market_id"),
+  /** The area it covers ("altadena"), not a market: 0077 named it market_id, 0079 renamed it. */
+  area: text("area"),
   note: text("note"),
   status: text("status").notNull().default("active"),
   lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),

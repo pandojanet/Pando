@@ -2500,7 +2500,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         const area = payload.area === undefined ? undefined : cleanText(payload.area, 60);
         if (hasContactDetail(`${name ?? ""} ${note ?? ""}`)) return { applied: false, reason: "proposal_invalid" };
         if (sid) {
-          const [was] = (await tx.execute(sql`select role, kind, name, url, market_id, note, status from pando_sources where id = ${sid}::uuid for update`)) as unknown as Array<Record<string, unknown>>;
+          const [was] = (await tx.execute(sql`select role, kind, name, url, area, note, status from pando_sources where id = ${sid}::uuid for update`)) as unknown as Array<Record<string, unknown>>;
           if (!was) return { applied: false, reason: "proposal_closed" };
           before = was;
           const role = pick(payload.role, roles);
@@ -2509,7 +2509,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           await tx.execute(sql`
             update pando_sources set
               role = ${role ?? sql`role`}, kind = ${kind ?? sql`kind`}, name = ${name ?? sql`name`},
-              url = ${sourceUrl ?? sql`url`}, market_id = ${area ?? sql`market_id`}, note = ${note === undefined ? sql`note` : sql`${note}`},
+              url = ${sourceUrl ?? sql`url`}, area = ${area ?? sql`area`}, note = ${note === undefined ? sql`note` : sql`${note}`},
               status = ${status ?? sql`status`}, updated_at = now(), proposal_id = ${target}::uuid
              where id = ${sid}::uuid
           `);
@@ -2521,7 +2521,7 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
           const clash = (await tx.execute(sql`select 1 from pando_sources where role = ${role} and lower(name) = lower(${name})`)) as unknown as unknown[];
           if (clash.length) return { applied: false, reason: "source_name_taken" };
           const [made] = (await tx.execute(sql`
-            insert into pando_sources (role, kind, name, url, market_id, note, added_by, proposal_id)
+            insert into pando_sources (role, kind, name, url, area, note, added_by, proposal_id)
             values (${role}, ${kind}, ${name}, ${sourceUrl}, ${area ?? null}, ${note ?? null}, ${ctx.actor}, ${target}::uuid)
             returning id
           `)) as unknown as Array<{ id: string }>;

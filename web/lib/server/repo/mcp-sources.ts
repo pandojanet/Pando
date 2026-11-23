@@ -32,7 +32,7 @@ export interface SourceRow {
   kind: string;
   name: string;
   url: string | null;
-  market_id: string | null;
+  area: string | null;
   note: string | null;
   status: string;
   last_checked_at: string | null;
@@ -46,7 +46,7 @@ const toSource = (r: Row): SourceRow => ({
   kind: String(r.kind),
   name: String(r.name),
   url: r.url ? String(r.url) : null,
-  market_id: r.market_id ? String(r.market_id) : null,
+  area: r.area ? String(r.area) : null,
   note: r.note ? String(r.note) : null,
   status: String(r.status),
   last_checked_at: r.last_checked_at ? new Date(String(r.last_checked_at)).toISOString() : null,

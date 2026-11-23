@@ -327,6 +327,8 @@ const srcApplied = await decide("proposal.approve", { id: src.proposal_id });
 const listed = JSON.parse((await call("list_sources", { role: "partner" })).text);
 const entry = listed.results?.find((s: { name: string }) => s.name === "CI Elementary");
 ok("approved, it is on the list", srcApplied.applied === true && !!entry);
+/* 0079: the area a source covers is `area`, not a market. */
+ok("its area is kept as its area", entry?.area === "pasadena" && !("market_id" in (entry ?? {})), JSON.stringify(entry));
 const checked = await call("record_source_check", { source_id: entry?.id, result: "failed" });
 const [chk] = await q(sql`select last_check, last_checked_at from pando_sources where name = 'CI Elementary'`);
 ok("a source check writes only its time and result", checked.error === null && chk?.last_check === "failed" && chk?.last_checked_at !== null);
