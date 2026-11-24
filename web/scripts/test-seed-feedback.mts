@@ -2617,45 +2617,51 @@ console.log("\n=== 10 Sep: the wording round, and the one consent ===");
   for (const [what, pattern] of [
     ["recurring automated messaging", /recurring automated/i],
     ["RCS by name", /RCS/],
-    ["the verification code it also covers", /verification code/i],
-    ["the weekly digest and requested reminders (2 Nov)", /a weekly digest and reminders you request/],
-    ["the frequency disclosure", /Message frequency varies/],
+    ["the verification messages it also covers", /verification messages/i],
+    ["the weekly guide and requested reminders", /a weekly What’s On guide[^.]*reminders I request/],
+    ["the frequency disclosure", /Message frequency varies, including one weekly digest/],
     ["the rates disclosure", /rates may apply/i],
-    ["STOP and HELP", /STOP to opt out, HELP for help/],
+    ["STOP and HELP", /STOP to unsubscribe or HELP for assistance/],
   ] as Array<[string, RegExp]>) {
     ok(`the single consent names ${what}`, pattern.test(c.SMS_CONSENT_TEXT), c.SMS_CONSENT_TEXT.slice(0, 80));
   }
   ok(
     "and it is a new version, because the text changed",
-    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-02b",
+    c.SMS_CONSENT_TEXT_VERSION === "seed-sms-2026-11-24",
     c.SMS_CONSENT_TEXT_VERSION,
   );
-  /* 2 Nov: the RCS application describes a text opt-in, so /join says how, in
-     its words: "Text <number> to opt in." No keyword is named — any inbound
-     text is an opt-in (5.9) — so the line must not promise one. */
+  /* 24 Nov: the web consent is the client's Twilio-form text, verbatim — Twilio
+     compares the page with the form, so one changed word fails the review. */
+  ok(
+    "the web consent is the Twilio form's text, verbatim",
+    c.SMS_CONSENT_TEXT ===
+      "I agree to receive recurring automated SMS/RCS messages from Pando Systems, Inc., including answers to my questions, local recommendations, occasional requests to share my experiences, account and verification messages, a weekly What’s On guide to local family activities and events, and reminders I request. Message frequency varies, including one weekly digest. Message & data rates may apply. Reply STOP to unsubscribe or HELP for assistance.",
+  );
+  /* 2 Nov: the RCS application describes a text opt-in. Since 24 Nov it is the
+     home page FAQ's "How do I join Pando?", in the client's words, and /join
+     no longer shows it (the developer). */
   ok("the text opt-in number is Pando's, in E.164", c.PANDO_TEXT_NUMBER === "+16267263424", c.PANDO_TEXT_NUMBER);
   ok(
-    "/join shows the line with the formatted number, as a tap-to-text link",
-    /Prefer to opt in by text\?/.test(join) &&
-      /href=\{`sms:\$\{PANDO_TEXT_NUMBER\}`\}/.test(join) &&
-      /\{formatPhone\(PANDO_TEXT_NUMBER\)\}[\s\S]{0,200}to opt in\./.test(join),
-  );
-  ok("and it is the quiet panel, not a second tick", /<Panel tone="quiet" size="inset"/.test(join));
-  ok("and the line names no keyword", !/TEXT_OPT_IN_KEYWORD/.test(join) && !("TEXT_OPT_IN_KEYWORD" in c));
-  /* 10 Nov: the box needs its own disclosure or carriers may reject the text
-     method — her words verbatim, with Terms and Privacy as links beside it. */
-  ok(
-    "the text opt-in carries her disclosure, verbatim",
-    c.TEXT_OPT_IN_DISCLOSURE ===
-      "By texting, you agree to receive messages from Pando Systems, Inc. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.",
+    "the text opt-in carries the client's disclosure, verbatim",
+    !("TEXT_OPT_IN_KEYWORD" in c) &&
+      c.TEXT_OPT_IN_DISCLOSURE ===
+        "By texting, you consent to recurring SMS/RCS messages from Pando Systems, Inc. Message frequency varies, including one weekly digest. Msg & data rates may apply. Reply STOP to unsubscribe or HELP for assistance.",
     c.TEXT_OPT_IN_DISCLOSURE,
   );
+  const home = src("../app/(site)/page.tsx");
   ok(
-    "and /join shows it inside the box, with Terms and Privacy links",
-    /to opt in\.[\s\S]{0,200}\{TEXT_OPT_IN_DISCLOSURE\}[\s\S]{0,300}href="\/terms"[\s\S]{0,200}href="\/privacy"/.test(join),
+    "the home FAQ says how to join: sign up here, or text the number, under the disclosure — and names no keyword",
+    !/\bJOIN\b|TEXT_OPT_IN_KEYWORD/.test(home) &&
+    /q: "How do I join Pando\?"[\s\S]{0,400}href="\/join"[\s\S]{0,100}Sign up here[\s\S]{0,400}sms:\$\{PANDO_TEXT_NUMBER\}[\s\S]{0,600}\{TEXT_OPT_IN_DISCLOSURE\}[\s\S]{0,300}href="\/terms"[\s\S]{0,200}href="\/privacy"/.test(home),
   );
+  ok("and /join no longer shows the text opt-in", !/TEXT_OPT_IN_DISCLOSURE|PANDO_TEXT_NUMBER|join by text/.test(join));
   /* The split is derived, so the label can never carry the carrier disclosure
-     — a tap anywhere in a label toggles its checkbox. */
+     — a tap anywhere in a label toggles its checkbox. The caregiver flow uses
+     it; /join shows the whole text in the label since 24 Nov (the developer). */
+  ok(
+    "/join shows the registered text whole, one paragraph",
+    /\{SMS_CONSENT_TEXT\}/.test(join) && !/SMS_CONSENT_TERMS|SMS_CONSENT_AGREEMENT/.test(join),
+  );
   ok(
     "the label half still stops before the disclosure",
     !/Message frequency varies/.test(c.SMS_CONSENT_AGREEMENT) &&
@@ -3672,8 +3678,8 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
   /* The mockup's second tick (14 Oct): optional, its own scope, stored only when ticked. */
   const consentMod = (await import(`../lib/consent.ts?v=${Date.now()}`)) as typeof import("../lib/consent.ts");
   ok(
-    "the second tick is the mockup's words",
-    consentMod.PILOT_LAUNCH_CONSENT_TEXT === "Also text me when the pilot opens (optional)." &&
+    "the second tick reads as the developer cut it (24 Nov)",
+    consentMod.PILOT_LAUNCH_CONSENT_TEXT === "Text me when the pilot opens" &&
       /\{PILOT_LAUNCH_CONSENT_TEXT\}/.test(join),
   );
   ok(

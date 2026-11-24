@@ -77,10 +77,9 @@ export interface ProfileInput {
   /** A server fact read from the verification cookie, never from the body. */
   phone_verified_at: string | null;
   sms_consent: { status: string; text_version: string; source?: string } | null;
-  /** 14 Oct — "Also text me when the pilot opens", only ever opted in or null. */
+  /** 14 Oct — "Text me when the pilot opens", only ever opted in or null. */
   pilot_launch_consent?: { status: string; text_version: string; source?: string } | null;
   /** 3 Nov — the weekly digest's own yes, only ever opted in or null. */
-  digest_consent?: { status: string; text_version: string; source?: string } | null;
   /** 18 Aug — willingness to occasionally answer another parent's hard question. */
   listening_ear_consent: { status: string; text_version: string; source?: string } | null;
   recurring_messages_consent: {
@@ -575,7 +574,7 @@ export async function writeProfile(
     }
 
     /**
-     * "Also text me when the pilot opens" (14 Oct). Gated on `input.phone` like
+     * "Text me when the pilot opens" (14 Oct). Gated on `input.phone` like
      * the two SMS consents above — it is permission to text a number — and
      * `opted_in` unconditionally: the route keeps nothing else.
      */
@@ -587,22 +586,6 @@ export async function writeProfile(
         source: input.pilot_launch_consent.source ?? "seed_tool",
         textVersion: input.pilot_launch_consent.text_version,
       });
-    }
-    /**
-     * The weekly digest's own yes (3 Nov, lib/digest.ts) — written **only when
-     * this person has no digest consent yet** (review, 3 Nov). The tick rides on
-     * the device's session, which every later profile save sends again; the
-     * newest row decides, so an unconditional write would undo a DIGEST OFF the
-     * next time they edited their profile. After the first, the yes and its undo
-     * are DIGEST and DIGEST OFF.
-     */
-    if (input.digest_consent && input.phone) {
-      await tx.execute(sql`
-        insert into consents (person_id, scope, status, source, text_version)
-        select ${personId}::uuid, 'digest', 'opted_in',
-               ${input.digest_consent.source ?? "seed_tool"}, ${input.digest_consent.text_version}
-         where not exists (select 1 from consents where person_id = ${personId}::uuid and scope = 'digest')
-      `);
     }
 
     /**

@@ -38,12 +38,8 @@ import {
 } from "@/lib/inviter-relationship";
 import {
   buildConsentRecord,
-  PANDO_TEXT_NUMBER,
   PILOT_LAUNCH_CONSENT_TEXT,
-  DIGEST_CONSENT_TEXT,
-  SMS_CONSENT_AGREEMENT,
-  SMS_CONSENT_TERMS,
-  TEXT_OPT_IN_DISCLOSURE,
+  SMS_CONSENT_TEXT,
 } from "@/lib/consent";
 import { formatPhone, isPhoneComplete, toE164 } from "@/lib/phone";
 import {
@@ -73,8 +69,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
   const [smsConsent, setSmsConsent] = useState(false);
   /* The optional second tick (14 Oct, the mockup): one text when the pilot opens. */
   const [pilotLaunch, setPilotLaunch] = useState(false);
-  /* The weekly digest's own yes (3 Nov, lib/digest.ts) — optional, like the pilot tick. */
-  const [digest, setDigest] = useState(false);
   const [canResume, setCanResume] = useState(false);
   const [alreadySaved, setAlreadySaved] = useState(false);
   /**
@@ -215,7 +209,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
     if (existing?.phone) setPhone(formatPhone(existing.phone));
     if (existing?.sms_consent?.status === "opted_in") setSmsConsent(true);
     if (existing?.pilot_launch_consent?.status === "opted_in") setPilotLaunch(true);
-    if (existing?.digest_consent?.status === "opted_in") setDigest(true);
   }, []);
 
   /**
@@ -331,8 +324,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
       pilot_launch_consent: pilotLaunch
         ? buildConsentRecord("pilot_launch", true, "seed_entry_phone_field")
         : null,
-      /* The same: only a tick is a record (3 Nov). */
-      digest_consent: digest ? buildConsentRecord("digest", true, "seed_entry_phone_field") : null,
       /* Whatever a resumed session claims, this is re-established by the step
          below — the server is the only thing that can say a number is confirmed. */
       phone_verified: mode === "resume" ? base.phone_verified : false,
@@ -750,15 +741,14 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                 />
               </div>
 
-              {/* The registered wording, split so only the sentence agreed to
-                  toggles the tick (`Consent`). */}
+              {/* The registered wording as one paragraph, all of it inside the
+                  label (24 Nov, the developer) — the caregiver flow still splits it. */}
               <Consent
                 id="sms-consent"
                 plain
                 className="mb-3.5 mt-0.5"
                 checked={smsConsent}
                 onChange={setSmsConsent}
-                detail={SMS_CONSENT_TERMS}
                 links={
                   <>
                     <InlineAction href="/terms" external tone="green">
@@ -770,7 +760,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                   </>
                 }
               >
-                {SMS_CONSENT_AGREEMENT}
+                {SMS_CONSENT_TEXT}
               </Consent>
 
               {/* The mockup's second tick, optional and muted: joining never waits
@@ -784,21 +774,6 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
               >
                 <span className="text-muted">{PILOT_LAUNCH_CONSENT_TEXT}</span>
               </Consent>
-              {/* The weekly digest's own yes (3 Nov): optional, and `canBegin` does not read it either.
-                  Not offered to somebody whose profile is already saved — their
-                  button only goes to /done, so the tick would record nothing
-                  (review, 3 Nov); for them it is DIGEST by text. */}
-              {!alreadySaved && (
-                <Consent
-                  id="weekly-digest"
-                  plain
-                  className="-mt-1 mb-3.5"
-                  checked={digest}
-                  onChange={setDigest}
-                >
-                  <span className="text-muted">{DIGEST_CONSENT_TEXT}</span>
-                </Consent>
-              )}
 
               {alreadySaved ? (
                 <button type="button" className={JOIN_BUTTON} onClick={() => router.push("/done")}>
@@ -825,59 +800,7 @@ export function InviteLanding({ invite, inviteCode, source }: Props) {
                         : "Start"}
                 </button>
               )}
-              {/* Promised only where a code is sent (8 Oct): no code, no promise. */}
-              {!alreadySaved && gate?.required && gate.sendable && (
-                <p className="mt-3 text-center text-[0.88rem] leading-[1.45] text-ink-soft">
-                  Enter your code, then share your recommendations.
-                </p>
-              )}
-              {!alreadySaved && !canBegin && (
-                <p className="mt-1.5 text-center text-dock text-muted">
-                  Add your name and number, and tick the box, to join.
-                </p>
-              )}
             </div>
-
-            {/* The text opt-in the RCS application describes (2 Nov), in the
-                application's words: "Text <number> to opt in." Not a second
-                consent and not a form field — it is the other way in, so it sits
-                apart from the ticks, in the quiet panel register, and the number
-                is a tap-to-text link on a phone. */}
-            {!alreadySaved && (
-              <Panel tone="quiet" size="inset" className="mt-5">
-                <div className="flex items-start gap-3">
-                  <span
-                    aria-hidden="true"
-                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-wash text-green-deep"
-                  >
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H11l-4.5 3.5V16.5H5A1.5 1.5 0 0 1 3.5 15V7A1.5 1.5 0 0 1 5 5.5Z" />
-                    </svg>
-                  </span>
-                  <div>
-                    <p className="text-control font-semibold text-ink">Prefer to opt in by text?</p>
-                    <p className="mt-0.5 text-[0.94rem] leading-[1.5] text-ink-soft">
-                      Text{" "}
-                      <InlineAction href={`sms:${PANDO_TEXT_NUMBER}`} tone="green">
-                        {formatPhone(PANDO_TEXT_NUMBER)}
-                      </InlineAction>{" "}
-                      to opt in.
-                    </p>
-                    <p className="mt-2 leading-relaxed text-muted text-help">
-                      {TEXT_OPT_IN_DISCLOSURE}
-                    </p>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-4 leading-relaxed text-help">
-                      <InlineAction href="/terms" external tone="green">
-                        Terms
-                      </InlineAction>
-                      <InlineAction href="/privacy" external tone="green">
-                        Privacy
-                      </InlineAction>
-                    </p>
-                  </div>
-                </div>
-              </Panel>
-            )}
 
             {startError && <Note className="mt-4">{startError}</Note>}
 

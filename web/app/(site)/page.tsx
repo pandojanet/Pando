@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
+import { PANDO_TEXT_NUMBER, TEXT_OPT_IN_DISCLOSURE } from "@/lib/consent";
+import { formatPhone } from "@/lib/phone";
 import { PhoneMock } from "@/components/site/PhoneMock";
 import { ShareQr } from "@/components/site/ShareQr";
 import {
@@ -83,7 +86,48 @@ const ASKS = [
   },
 ];
 
-const FAQ = [
+const TEXT_LINK =
+  "font-semibold text-green-deep underline decoration-gold decoration-2 underline-offset-2";
+
+const FAQ: Array<{ q: string; a: ReactNode }> = [
+  {
+    /* 24 Nov, the client's answer, verbatim but for the keyword she named,
+       which the code does not have (the developer removed it). The text way carries its
+       disclosure and Terms · Privacy, the same constants /join used to show. */
+    q: "How do I join Pando?",
+    a: (
+      <>
+        <p>Two easy ways:</p>
+        <p className="mt-2">
+          <strong className="font-semibold text-ink">Online:</strong>{" "}
+          <Link href="/join" className={TEXT_LINK}>
+            Sign up here
+          </Link>{" "}
+          with your name and mobile number.
+        </p>
+        <p className="mt-2">
+          <strong className="font-semibold text-ink">By text:</strong> Text{" "}
+          <a href={`sms:${PANDO_TEXT_NUMBER}`} className={TEXT_LINK}>
+            {formatPhone(PANDO_TEXT_NUMBER)}
+          </a>{" "}
+          and follow the prompts.
+        </p>
+        <p className="mt-2">
+          Either way, you’ll be able to ask Pando for trusted local recommendations,
+          share your own experiences, and receive our weekly What’s On guide.
+        </p>
+        <p className="mt-2 text-[0.9rem] text-muted">{TEXT_OPT_IN_DISCLOSURE}</p>
+        <p className="mt-1 flex flex-wrap gap-x-4 text-[0.9rem]">
+          <Link href="/terms" className={TEXT_LINK}>
+            Terms
+          </Link>
+          <Link href="/privacy" className={TEXT_LINK}>
+            Privacy
+          </Link>
+        </p>
+      </>
+    ),
+  },
   {
     q: "Who sees my questions?",
     a: "Not your name — ever. When Pando asks other parents on your behalf, they see only the context needed to give a useful answer: “A Pasadena parent with an 18-month-old and limited backup care is wondering…” Never who you are, never your school, never anything identifying. That’s the point: Pando knows enough about you to find the right parents, without exposing you to them. It’s why you can ask the things you’d hesitate to put in a group chat under your own name.",
@@ -183,7 +227,7 @@ export default function HomePage() {
               <p>
                 <Link
                   href="/about"
-                  className="font-semibold text-green-deep underline decoration-gold decoration-2 underline-offset-2"
+                  className={TEXT_LINK}
                 >
                   Why we’re named after the largest living thing on Earth →
                 </Link>
@@ -368,7 +412,7 @@ export default function HomePage() {
                 Something we haven’t answered?{" "}
                 <a
                   href="mailto:hello@pando.is"
-                  className="font-semibold text-green-deep underline decoration-gold decoration-2 underline-offset-2"
+                  className={TEXT_LINK}
                 >
                   Email us
                 </a>{" "}
@@ -389,9 +433,9 @@ export default function HomePage() {
                       className="font-display text-[1.3rem] leading-none text-green after:content-['+'] group-open:after:content-['–']"
                     />
                   </summary>
-                  <p className="pb-[1.125rem] text-[0.97rem] leading-relaxed text-ink-soft">
+                  <div className="pb-[1.125rem] text-[0.97rem] leading-relaxed text-ink-soft">
                     {item.a}
-                  </p>
+                  </div>
                 </details>
               ))}
             </div>

@@ -91,8 +91,8 @@ claims something happened that didn't — and the row is actually in the table.
 | Type a first name only | Still disabled |
 | Add last name and phone | Still disabled — the consent box is the fourth requirement |
 | Tick the consent box | Start becomes enabled, labelled "Start — about two minutes" |
-| Read the consent text | Registered wording, ending "…Reply STOP to opt out, HELP for help. See our Privacy Policy and Terms." |
-| **Tap the carrier text** ("Message frequency varies…") | The checkbox must **not** toggle. This is the one that matters — an accidental opt-in is the worst failure here |
+| Read the consent text | `SMS_CONSENT_TEXT` word for word (the Twilio form's text), ending "…Reply STOP to unsubscribe or HELP for assistance.", then Terms · Privacy |
+| **Tap the carrier text** ("Message frequency varies…") | On **/join** it toggles the checkbox — the whole consent is one label since 24 Nov, the developer's choice (decisions.md). In the **caregiver flow** it must **not** toggle |
 | Tap "Privacy Policy" | Opens in a **new tab**; your typed name and number are still there when you come back |
 | Type a 9-digit phone | Start stays disabled |
 | Tap "I'd rather share anonymously" | A card appears saying what you give up — Founding status, the thank-you, the reserved pilot place. Start enables with no details filled in |

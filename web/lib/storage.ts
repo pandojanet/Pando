@@ -396,7 +396,6 @@ export function loadSession(): SeedSession | null {
       server_saved_at: typeof parsed.server_saved_at === "string" ? parsed.server_saved_at : null,
       sms_consent: parsed.sms_consent ?? null,
       pilot_launch_consent: parsed.pilot_launch_consent ?? null,
-      digest_consent: parsed.digest_consent ?? null,
       follow_up_opt_in: parsed.follow_up_opt_in ?? null,
       consent: parsed.consent ?? null,
       demand: parsed.demand ?? null,

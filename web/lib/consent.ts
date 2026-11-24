@@ -96,10 +96,12 @@ export const AFFILIATION_CONSENT_CAVEAT =
    was added to the kinds of message it names (the carrier reviewers compare the
    box with the registered campaign) — and once more the same day ("…reminders
    you request"), because the first version said "I request" where the
-   campaign's wording, which has to match verbatim, says "you request". Never
-   edit a version in place: a stored row must keep resolving to the words that
-   were actually on screen. */
-export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-11-02b";
+   campaign's wording, which has to match verbatim, says "you request". And on
+   24 Nov, replaced whole by the client's text for the Twilio form ("These both
+   need to match what Twilio form says. Twilio will test it"). Never edit a
+   version in place: a stored row must keep resolving to the words that were
+   actually on screen. */
+export const SMS_CONSENT_TEXT_VERSION = "seed-sms-2026-11-24";
 
 /**
  * 5.9 — consent given by texting first, where no wording was shown at all.
@@ -153,7 +155,7 @@ export const INBOUND_CONSENT_VERSION = "inbound-text-2026-08";
  * versions are never edited in place.
  */
 export const SMS_CONSENT_TEXT =
-  "I agree to receive recurring automated text messages (SMS and RCS) from Pando Systems, Inc. at the number provided — including a verification code, answers to my questions, occasional requests from the parent network, account notifications, and a weekly digest and reminders you request. Message frequency varies. Message & data rates may apply. Reply STOP to opt out, HELP for help.";
+  "I agree to receive recurring automated SMS/RCS messages from Pando Systems, Inc., including answers to my questions, local recommendations, occasional requests to share my experiences, account and verification messages, a weekly What’s On guide to local family activities and events, and reminders I request. Message frequency varies, including one weekly digest. Message & data rates may apply. Reply STOP to unsubscribe or HELP for assistance.";
 
 /**
  * The same registered wording, split for display only — and **derived** from it, so
@@ -166,8 +168,12 @@ export const SMS_CONSENT_TEXT =
  * Why split at all: a tap anywhere inside a label toggles its checkbox, so a label
  * holding the whole paragraph turned ~230px of legal copy into an opt-in control. An
  * accidental opt-in is the worst failure this control has.
+ *
+ * ⚠ Since 24 Nov `/join` does not use the split: the developer asked for the
+ * whole text as one paragraph inside the label, accepting that risk. Only the
+ * caregiver flow still shows it split.
  */
-const CONSENT_SPLIT_AT = "Message frequency varies.";
+const CONSENT_SPLIT_AT = "Message frequency varies";
 const CONSENT_SPLIT_INDEX = SMS_CONSENT_TEXT.indexOf(CONSENT_SPLIT_AT);
 
 export const SMS_CONSENT_AGREEMENT = SMS_CONSENT_TEXT.slice(
@@ -231,7 +237,7 @@ export const RECURRING_MESSAGES_CONSENT_TERMS =
   RECURRING_MESSAGES_CONSENT_TEXT.slice(RECURRING_SPLIT_INDEX);
 
 /**
- * "Also text me when the pilot opens" — the optional second tick on /join
+ * "Text me when the pilot opens" — the optional second tick on /join
  * (14 Oct, the client's join mockup, verbatim).
  *
  * ⚠ **Optional, and that is the whole of its design.** Joining never depends on
@@ -245,30 +251,31 @@ export const RECURRING_MESSAGES_CONSENT_TERMS =
  * after the code (invariant 11). Nothing reads it yet: the pilot launch message
  * is Phase 2, and it goes through `lib/server/sms.ts` like every other send.
  */
-export const PILOT_LAUNCH_CONSENT_TEXT_VERSION = "seed-pilot-launch-2026-10-14";
+/* ⚠ Bumped on 24 Nov: the developer dropped "Also" and "(optional)" once it
+   became the only optional tick. Never edit a version in place. */
+export const PILOT_LAUNCH_CONSENT_TEXT_VERSION = "seed-pilot-launch-2026-11-24";
 
-export const PILOT_LAUNCH_CONSENT_TEXT = "Also text me when the pilot opens (optional).";
+export const PILOT_LAUNCH_CONSENT_TEXT = "Text me when the pilot opens";
 
 /**
  * The weekly digest's own yes (3 Nov, `lib/digest.ts`). The /join consent
  * already *names* a weekly digest — that is the carrier's permission — and the
  * developer's decision is that nobody gets one without saying yes to it as
- * well. Optional like `PILOT_LAUNCH_CONSENT_TEXT`, stored only when ticked; over
- * SMS the same yes is the word DIGEST, and DIGEST OFF records the undo.
+ * well: the word DIGEST over SMS, and DIGEST OFF records the undo. /join's
+ * optional tick for it was removed on 24 Nov.
  */
 export const DIGEST_CONSENT_TEXT_VERSION = "digest-2026-11-03";
 
-export const DIGEST_CONSENT_TEXT = "Also text me a weekly digest of local events, camps and classes (optional).";
-
 /**
  * Opting in by text (2 Nov). The RCS application describes a text opt-in as well
- * as the web form, and the carrier reviewers look for it on `/join`, so the page
- * says it in the application's own words: "Text <number> to opt in."
+ * as the web form. Since 24 Nov it is not on `/join` but in the home page FAQ,
+ * "How do I join Pando?", in the client's words: "Text <number> and follow the
+ * prompts."
  *
- * ⚠ **It names no keyword, and that is deliberate.** Any text to the number is an
- * opt-in: an inbound message from an unknown number creates the person with a
- * consent record (`INBOUND_CONSENT_VERSION`, 5.9), which is what "text us to opt
- * in" has to mean. A line naming a word would promise that only that word works.
+ * ⚠ **It names no keyword.** Any text to the number is an opt-in: an inbound
+ * message from an unknown number creates the person with a consent record
+ * (`INBOUND_CONSENT_VERSION`, 5.9). Her text named JOIN; the developer removed
+ * it (24 Nov), because the code has no such keyword.
  *
  * The number is E.164 and shown through `formatPhone`. It is the number the
  * campaign sends from; it is a constant rather than an env var because it is
@@ -278,13 +285,14 @@ export const DIGEST_CONSENT_TEXT = "Also text me a weekly digest of local events
 export const PANDO_TEXT_NUMBER = "+16267263424";
 
 /**
- * The text opt-in's own disclosure (10 Nov, the client, verbatim): without it the
- * carriers may reject the text method. Her "[Terms] [Privacy]" are links, not
- * language, so they are rendered beside it — the `RECURRING_MESSAGES_CONSENT_TEXT`
- * rule. Not a stored consent: the defence for a text opt-in is the inbound message.
+ * The text opt-in's own disclosure — the client's text in the FAQ answer, 24 Nov,
+ * with "JOIN" left out ("Msg" included: it is not the web consent's wording and does not have
+ * to be). Her "[Terms] · [Privacy]" are links, not language, so they are rendered
+ * beside it — the `RECURRING_MESSAGES_CONSENT_TEXT` rule. Not a stored consent: the
+ * defence for a text opt-in is the inbound message.
  */
 export const TEXT_OPT_IN_DISCLOSURE =
-  "By texting, you agree to receive messages from Pando Systems, Inc. Msg frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.";
+  "By texting, you consent to recurring SMS/RCS messages from Pando Systems, Inc. Message frequency varies, including one weekly digest. Msg & data rates may apply. Reply STOP to unsubscribe or HELP for assistance.";
 
 /**
  * 2C — the caregiver's own permissions (G2, G8–G10).

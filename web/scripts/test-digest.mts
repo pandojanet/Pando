@@ -309,12 +309,9 @@ ok("DIGEST turns it on, DIGEST OFF turns it off",
   d.digestCommand("digest") === "on" && d.digestCommand("Digest on!") === "on" && d.digestCommand("DIGEST OFF") === "off" && d.digestCommand("stop digest") === "off");
 ok("a question that mentions a digest is a question", d.digestCommand("is there a digest of camps?") === null);
 ok("STOP DIGEST is not the carrier's STOP, which ends everything", tpl.keywordOf("STOP DIGEST") === null && tpl.keywordOf("STOP") === "opt_out");
-ok("the /join tick has its own words and version",
-  /DIGEST_CONSENT_TEXT_VERSION = "digest-2026-11-03"/.test(read("lib/consent.ts")) && /weekly digest of local events, camps and classes \(optional\)/.test(read("lib/consent.ts")));
-ok("a profile saved again never undoes a DIGEST OFF: the tick is written only once",
-  /'digest', 'opted_in'[\s\S]{0,200}where not exists \(select 1 from consents where person_id = \$\{personId\}::uuid and scope = 'digest'\)/.test(read("lib/server/repo/profile.ts")));
-ok("a parent who already joined is not shown a tick that would record nothing",
-  /\{!alreadySaved && \(\s+<Consent\s+id="weekly-digest"/.test(read("components/seed/InviteLanding.tsx")));
+ok("/join no longer offers a digest tick, and a profile save writes no digest consent (24 Nov)",
+  !/weekly-digest|digest_consent/.test(read("components/seed/InviteLanding.tsx")) &&
+    !/scope\)?[^\n]*'digest'|digest_consent/.test(read("lib/server/repo/profile.ts")));
 const repo = read("lib/server/repo/digest.ts");
 ok("only somebody whose newest digest consent is a yes is sent it",
   /k\.scope = 'digest'[\s\S]{0,80}order by k\.captured_at desc limit 1\) = 'opted_in'/.test(repo));
