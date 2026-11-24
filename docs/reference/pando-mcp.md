@@ -113,11 +113,16 @@ plugin's branch with the patch version raised (`commitPluginChange`, an `audit_l
 
 - **Pando writes every frontmatter** from plain fields: a skill's name, description, argument hint; an
   agent's name, description, tools, model. No hooks, `mcpServers` or permission mode.
-- **An agent's tools:** `Read`, `Grep`, `Glob`, `WebFetch`, `WebSearch`, Pando's tools by their real
-  names (`lib/mcp/tool-names.ts`, the list the server registers from), and tools of connectors the
-  plugin declares. Never `Bash`, `Write`, `Edit` or `NotebookEdit`. An agent that reads Gmail or other
-  accounts connected to Claude (`account_connectors`) is written as a deny list: those four, and every
-  Pando tool that writes except the ones it names.
+- **An agent's tools** (since 24 Nov) are `pando-tools:`, each by its own name: `Read`, `Grep`, `Glob`,
+  `WebFetch`, `WebSearch`, Pando's tools (`search_records` — `lib/mcp/tool-names.ts`, the list the server
+  registers from) and `<connector>:<tool>` for a connector the plugin declares. A long name
+  (`mcp__claude_ai_Pando__search_records`) is accepted and read for its own name, so a deciding tool
+  cannot slip in under one. Every agent gets `disallowedTools: Bash, Write, Edit, NotebookEdit`; the
+  plugin's hook (`hooks/agent-tools.mjs`) holds it to its list on any connection. Never Claude's
+  `tools:` — it needs the long name `mcp__<connection>__<tool>`, whose middle changes with how Pando was
+  connected, and an agent whose list named another connection got no tools and was refused. An agent
+  that reads Gmail or other accounts connected to Claude (`account_connectors`) also gets
+  `pando-accounts: true`, every read tool and every Pando read; of Pando's changes, only the ones it names.
 - **A connector** is `{ "type": "http", "url": … }` at an `https://` address on a public host, with no
   user, key or query in it, no headers, no local command; each person signs in to it in Claude.
 - **Supabase and PostHog stay read-only.** The plugin carries them as `supabase`

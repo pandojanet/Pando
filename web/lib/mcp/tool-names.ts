@@ -45,5 +45,10 @@ export const PANDO_TOOL_NAMES = Object.keys(PANDO_TOOLS) as PandoToolName[];
 export const PANDO_WRITE_TOOLS = PANDO_TOOL_NAMES.filter((t) => PANDO_TOOLS[t] === "write");
 export const PANDO_DECIDE_TOOLS = PANDO_TOOL_NAMES.filter((t) => PANDO_TOOLS[t] === "decide");
 
-/** How Claude names a tool of this plugin's Pando connector inside an agent's tool list. */
-export const PANDO_TOOL_PREFIX = "mcp__plugin_pando_pando__";
+/**
+ * A tool's own name: Claude calls a connected tool `mcp__<connection>__<tool>`, and the connection's part
+ * changes with how Pando was connected (`plugin_pando_pando`, `pando`, `claude_ai_Pando`, an ID in the
+ * desktop app). Nothing Pando writes depends on it (24 Nov): the plugin's agents list tools by this name,
+ * and its hook holds them to it on any connection. Was `PANDO_TOOL_PREFIX = "mcp__plugin_pando_pando__"`.
+ */
+export const ownToolName = (tool: string): string => (tool.startsWith("mcp__") ? tool.slice(tool.lastIndexOf("__") + 2) : tool);

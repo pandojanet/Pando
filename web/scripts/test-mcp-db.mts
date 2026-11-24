@@ -302,28 +302,36 @@ ok("and says the read-only supabase connector may be removed but not changed",
     index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean }) => c.name === "pando" && !c.may_change && !c.may_remove), JSON.stringify(index.connectors));
 ok("and reads one agent's file to start an edit from", /name: agent-builder/.test(JSON.parse((await call("read_plugin", { target: "agent", name: "agent-builder" })).text).text ?? ""));
 
-const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "mcp__plugin_pando_pando__search_records"] };
+const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "search_records"] };
 ok("an agent with Bash is refused", /never given to a Pando agent/.test(String((await propose({ ...agentArgs, tools: ["Bash"] })).error ?? "")));
-ok("an agent with a tool Pando does not have is refused", /Pando has no tool/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__save_skill"] })).error ?? "")));
-ok("an agent is never given a deciding tool", /approve_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__approve_proposal"] })).error ?? "")) &&
-  /reject_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__reject_proposal"] })).error ?? "")));
+ok("an agent with a tool Pando does not have is refused", /Pando has no tool/.test(String((await propose({ ...agentArgs, tools: ["save_skill"] })).error ?? "")));
+/* The long name is read for the tool's own name, whatever connection it names (24 Nov) — so a decision cannot slip in under one. */
+ok("an agent is never given a deciding tool, under any name", /approve_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["approve_proposal"] })).error ?? "")) &&
+  /reject_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__claude_ai_Pando__reject_proposal"] })).error ?? "")) &&
+  /approve_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__approve_proposal"] })).error ?? "")));
+ok("a connector's tool that shares a Pando tool's name is refused: the list holds tools by name",
+  /has the name of a Pando tool/.test(String((await propose({ ...agentArgs, tools: ["supabase:search_records"] })).error ?? "")));
 ok("an agent told to approve is refused", /approves, rejects or saves/.test(String((await propose({ ...agentArgs, instructions: "Read everything, then call approve_proposal for each proposal you like." })).error ?? "")));
 const newAgent = await propose(agentArgs);
 ok("a new agent is proposed, and nothing is committed yet", !!newAgent.proposal_id && !repoNow().has("agents/ci-newsletter.md"));
 const committed = newAgent.proposal_id ? await commitProposal(newAgent.proposal_id) : { refused: "not proposed" };
 const agentFile = repoNow().get("agents/ci-newsletter.md") ?? "";
 ok("Commit to plugin commits it with Pando's frontmatter and the version raised, and marks the proposal applied",
-  "applied" in committed && committed.applied === true && /^---\nname: ci-newsletter\ndescription: ".+"\ntools: Read, mcp__plugin_pando_pando__search_records\nmodel: sonnet\n---\n/.test(agentFile) &&
+  "applied" in committed && committed.applied === true && /^---\nname: ci-newsletter\ndescription: ".+"\ndisallowedTools: Bash, Write, Edit, NotebookEdit\npando-tools: Read, search_records\nmodel: sonnet\n---\n/.test(agentFile) &&
+    !/^tools:/m.test(agentFile) && !/mcp__/.test(agentFile) &&
     JSON.parse(repoNow().get(".claude-plugin/plugin.json") ?? "{}").version === "0.5.1", JSON.stringify(committed));
 const [pluginAudit] = await q(sql`select after from audit_log where action = 'plugin.commit' order by at desc limit 1`);
 ok("and the commit is in the audit log", (pluginAudit?.after as { name?: string } | null)?.name === "ci-newsletter");
 
-const mail = await propose({ ...agentArgs, name: "ci-replies", tools: ["mcp__plugin_pando_pando__propose_source"], account_connectors: true });
+const mail = await propose({ ...agentArgs, name: "ci-replies", tools: ["propose_source"], account_connectors: true });
 const [mailRow] = await q(sql`select payload from mcp_proposals where id = ${mail.proposal_id ?? "00000000-0000-0000-0000-000000000000"}::uuid`);
 const mailFile = String((mailRow?.payload as { after_text?: string } | undefined)?.after_text ?? "");
-ok("an agent that reads connected accounts is a deny list: Bash, Write, Edit and every Pando change but the one it names",
-  /disallowedTools: Bash, Write, Edit, NotebookEdit, /.test(mailFile) && /propose_record_edit/.test(mailFile) && !/propose_source/.test(mailFile) &&
-    (mail.warnings ?? []).some((w) => /every account connected/.test(w)), mailFile.slice(0, 300));
+const mailList = /^pando-tools: (.*)$/m.exec(mailFile)?.[1]?.split(", ") ?? [];
+ok("an agent that reads connected accounts: every read tool and Pando read, the one change it names, never another — and the accounts",
+  /^disallowedTools: Bash, Write, Edit, NotebookEdit$/m.test(mailFile) && /^pando-accounts: true$/m.test(mailFile) &&
+    ["Read", "WebFetch", "search_records", "list_sources", "propose_source"].every((t) => mailList.includes(t)) &&
+    !mailList.some((t) => ["propose_record_edit", "propose_event", "approve_proposal", "reject_proposal"].includes(t)) &&
+    (mail.warnings ?? []).some((w) => /every account connected/.test(w)), mailFile.slice(0, 400));
 
 const edit = await propose({ target: "skill", action: "update", name: "pando-data", description: "The catalogue of Pando's tools, with the new ones.", instructions: "The catalogue, updated with read_plugin and propose_plugin_change." });
 ok("a skill QuitCode made can be changed", !!edit.proposal_id);

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { hasContactDetail } from "@/lib/contact-details";
 import { withDb } from "@/lib/server/db";
-import { PANDO_DECIDE_TOOLS, PANDO_TOOLS, PANDO_TOOL_PREFIX, PANDO_WRITE_TOOLS } from "@/lib/mcp/tool-names";
+import { PANDO_DECIDE_TOOLS, PANDO_TOOLS, PANDO_TOOL_NAMES, PANDO_WRITE_TOOLS, ownToolName } from "@/lib/mcp/tool-names";
 
 /**
  * The Pando plugin, changed by the client without QuitCode (23 Nov). The developer: *"має бути можливість
@@ -21,10 +21,14 @@ import { PANDO_DECIDE_TOOLS, PANDO_TOOLS, PANDO_TOOL_PREFIX, PANDO_WRITE_TOOLS }
  *  - **Pando writes every file's frontmatter** from plain fields. A skill gets a name, a description and
  *    an optional argument hint; an agent a name, a description, its tools and a model. No hooks, no
  *    `mcpServers`, no permission mode — nothing that runs code on an admin's computer.
- *  - **An agent never gets Bash, Write, Edit or NotebookEdit.** Its tools are read tools, Pando's tools by
- *    their real names, and the tools of connectors this plugin declares. With `account_connectors` (an
- *    agent that reads Gmail, whose tool names are not known ahead) it is written as a deny list instead:
- *    every Pando tool that writes is denied except the ones named, and so are the four above.
+ *  - **An agent never gets Bash, Write, Edit or NotebookEdit** (`disallowedTools`, in every agent). Its
+ *    exact list is `pando-tools:`, each tool by its own name — read tools, Pando's tools
+ *    (`search_records`), and the tools of connectors this plugin declares — held by the plugin's hook
+ *    (`hooks/agent-tools.mjs`) on any connection. Not Claude's `tools:` (24 Nov): that needs the long name
+ *    `mcp__<connection>__<tool>`, which changes with how Pando was connected, and an agent whose list
+ *    named another connection got no tools and was refused. With `account_connectors` (an agent that reads
+ *    Gmail, whose tool names are not known ahead) it also gets `pando-accounts: true` and every Pando read
+ *    tool; Pando's changes only the ones named.
  *  - **A connector is a remote MCP server at an `https://` address**: a public host, no key in the address,
  *    no headers, no local command. Each person signs in to it in Claude, as with Pando.
  *  - **Locked:** the `pando` connector, the shared safety rules (no tool path reaches `shared/`), and the
@@ -77,7 +81,12 @@ export interface PluginDraft {
 
 const yaml = (v: string) => JSON.stringify(v);
 const oneLine = (v: string | undefined) => (v ?? "").replace(/\s+/g, " ").trim();
-const isPandoWrite = (t: string) => t.startsWith(PANDO_TOOL_PREFIX) && (PANDO_WRITE_TOOLS as readonly string[]).includes(t.slice(PANDO_TOOL_PREFIX.length));
+const isPandoWrite = (t: string) => (PANDO_WRITE_TOOLS as readonly string[]).includes(ownToolName(t));
+/** A plugin connector's tool: `notion:search`, or the long name this plugin's connectors had (`mcp__plugin_pando_notion__search`). */
+function connectorTool(t: string): { connector: string; tool: string } | null {
+  const m = /^([a-z][a-z0-9-]{1,30}):([A-Za-z0-9_-]{1,80})$/.exec(t) ?? /^mcp__plugin_pando_([a-z][a-z0-9-]{1,30})__([A-Za-z0-9_-]{1,80})$/.exec(t);
+  return m && m[1] !== "pando" ? { connector: m[1], tool: m[2] } : null;
+}
 
 function checkText(description: string, body: string): string | null {
   if (description.length < 20 || description.length > 1024) return "The description is one line, 20–1024 characters: what it does and when to use it.";
@@ -104,7 +113,7 @@ export function buildSkillFile(d: PluginDraft): string | { refused: string } {
 
 /**
  * An agent's file. `connectors` are the connector names the plugin declares (from .mcp.json): an agent
- * may name `mcp__plugin_pando_<connector>__<tool>` only for those.
+ * may name `<connector>:<tool>` only for those.
  */
 export function buildAgentFile(d: PluginDraft, connectors: readonly string[]): string | { refused: string } {
   if (!PLUGIN_NAME.test(d.name)) return { refused: "A name is 3–41 lowercase letters, digits or hyphens, starting with a letter." };
@@ -116,28 +125,37 @@ export function buildAgentFile(d: PluginDraft, connectors: readonly string[]): s
   if (!(MODELS as readonly string[]).includes(model)) return { refused: `model is one of ${MODELS.join(", ")}.` };
   const tools = [...new Set((d.tools ?? []).map((t) => t.trim()).filter(Boolean))];
   if (tools.length > 60) return { refused: "At most 60 tools." };
+  /* Each tool by its own name (24 Nov): the long name of a Pando tool is taken whatever connection it names. */
+  const own: string[] = [];
   for (const t of tools) {
     if (NEVER.includes(t)) return { refused: `${t} is never given to a Pando agent: it changes files or runs commands on the admin's computer.` };
-    if (SAFE_BUILTINS.includes(t)) continue;
-    if (t.startsWith(PANDO_TOOL_PREFIX)) {
-      const pt = t.slice(PANDO_TOOL_PREFIX.length);
+    if (SAFE_BUILTINS.includes(t)) {
+      own.push(t);
+      continue;
+    }
+    const outside = connectorTool(t);
+    if (outside) {
+      if (!connectors.includes(outside.connector)) return { refused: `The plugin has no connector ${outside.connector}; propose the connector first.` };
+      if (outside.tool in PANDO_TOOLS) return { refused: `${outside.connector}'s ${outside.tool} has the name of a Pando tool; an agent's list holds tools by name, so it cannot tell them apart.` };
+      own.push(outside.tool);
+      continue;
+    }
+    const pt = ownToolName(t);
+    if (/^[a-z][a-z0-9_]{1,40}$/.test(pt)) {
       if (!(pt in PANDO_TOOLS)) return { refused: `Pando has no tool ${pt}.` };
       if ((PANDO_DECIDE_TOOLS as readonly string[]).includes(pt)) return { refused: `${pt} is never given to an agent: a proposal is decided by the person, in the main conversation.` };
+      own.push(pt);
       continue;
     }
-    const other = /^mcp__plugin_pando_([a-z][a-z0-9-]{1,30})(__[A-Za-z0-9_-]{1,80})?$/.exec(t);
-    if (other && other[1] !== "pando") {
-      if (!connectors.includes(other[1])) return { refused: `The plugin has no connector ${other[1]}; propose the connector first.` };
-      continue;
-    }
-    return { refused: `${t} is not a tool a Pando agent may have. Use ${SAFE_BUILTINS.join(", ")}, Pando's tools (${PANDO_TOOL_PREFIX}<tool>), or a plugin connector's (mcp__plugin_pando_<connector>__<tool>).` };
+    return { refused: `${t} is not a tool a Pando agent may have. Use ${SAFE_BUILTINS.join(", ")}, Pando's tools by name (search_records), or a plugin connector's as <connector>:<tool>.` };
   }
-  if (!d.account_connectors && tools.length === 0) return { refused: "Name the agent's tools (or set account_connectors for one that reads Gmail and other connected accounts)." };
-  const pandoWrites = tools.filter(isPandoWrite);
-  const toolLine = d.account_connectors
-    ? `disallowedTools: ${[...NEVER, ...PANDO_WRITE_TOOLS.map((w) => PANDO_TOOL_PREFIX + w).filter((w) => !pandoWrites.includes(w)), ...PANDO_DECIDE_TOOLS.map((d) => PANDO_TOOL_PREFIX + d)].join(", ")}`
-    : `tools: ${tools.join(", ")}`;
-  return `---\nname: ${d.name}\ndescription: ${yaml(description)}\n${toolLine}\nmodel: ${model}\n---\n\n${body}\n`;
+  if (!d.account_connectors && own.length === 0) return { refused: "Name the agent's tools (or set account_connectors for one that reads Gmail and other connected accounts)." };
+  /* One that reads connected accounts keeps what the deny list gave it before: the read tools and every Pando read. */
+  const list = d.account_connectors
+    ? [...new Set([...SAFE_BUILTINS, ...PANDO_TOOL_NAMES.filter((t) => PANDO_TOOLS[t] === "read"), ...own])]
+    : [...new Set(own)];
+  const lines = [`disallowedTools: ${NEVER.join(", ")}`, `pando-tools: ${list.join(", ")}`, ...(d.account_connectors ? ["pando-accounts: true"] : [])];
+  return `---\nname: ${d.name}\ndescription: ${yaml(description)}\n${lines.join("\n")}\nmodel: ${model}\n---\n\n${body}\n`;
 }
 
 /** A connector's address: https, a public host by name, nothing secret in it. */
@@ -365,10 +383,10 @@ function warningsFor(d: PluginDraft, connectors: readonly string[]): string[] {
   const w: string[] = [];
   if (d.action === "delete") return [`Removes the ${d.target} ${d.name} from everyone's Claude with the next update.`];
   if (d.target === "agent") {
-    const writes = (d.tools ?? []).filter(isPandoWrite).map((t) => t.slice(PANDO_TOOL_PREFIX.length));
+    const writes = (d.tools ?? []).filter(isPandoWrite).map(ownToolName);
     if (writes.length) w.push(`This agent can propose changes in Pando (${writes.join(", ")}); each still waits for an admin.`);
     if (d.account_connectors) w.push("This agent can use every account connected to Claude (Gmail, Calendar and others) and every read tool.");
-    const outside = [...new Set((d.tools ?? []).map((t) => /^mcp__plugin_pando_([a-z][a-z0-9-]+)/.exec(t)?.[1]).filter((n): n is string => !!n && n !== "pando" && connectors.includes(n)))];
+    const outside = [...new Set((d.tools ?? []).map((t) => connectorTool(t)?.connector).filter((n): n is string => !!n && connectors.includes(n)))];
     if (outside.length) w.push(`This agent uses the connector${outside.length === 1 ? "" : "s"} ${outside.join(", ")}.`);
   }
   if (d.target === "connector") {

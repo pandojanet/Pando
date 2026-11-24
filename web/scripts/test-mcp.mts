@@ -167,7 +167,12 @@ console.log("\n=== the diagram's promises ===");
   ok("no agent is ever given a deciding tool: the tool list marks them, the plugin's agent check refuses them",
     /approve_proposal: "decide",\s+reject_proposal: "decide",/.test(read("lib/mcp/tool-names.ts")) &&
       /if \(\(PANDO_DECIDE_TOOLS as readonly string\[\]\)\.includes\(pt\)\) return \{ refused:/.test(read("lib/server/mcp/plugin-repo.ts")) &&
-      /\.\.\.PANDO_DECIDE_TOOLS\.map\(\(d\) => PANDO_TOOL_PREFIX \+ d\)/.test(read("lib/server/mcp/plugin-repo.ts")));
+      /const pt = ownToolName\(t\);/.test(read("lib/server/mcp/plugin-repo.ts")));
+  /* 24 Nov: an agent's list named one connection's long names, and on another it got no tools and was refused. */
+  const pluginRepoSrc = read("lib/server/mcp/plugin-repo.ts");
+  ok("an agent's file lists its tools by their own names (pando-tools:), never Claude's tools: of long names",
+    /`pando-tools: \$\{list\.join\(", "\)\}`/.test(pluginRepoSrc) && /`disallowedTools: \$\{NEVER\.join\(", "\)\}`/.test(pluginRepoSrc) &&
+      !/`tools: /.test(pluginRepoSrc) && !/PANDO_TOOL_PREFIX/.test(pluginRepoSrc + read("lib/mcp/tool-names.ts").replace(/^ \*.*$/gm, "")));
   const actionRoute = read("app/api/admin/action/route.ts");
   /* 23 Nov, the developer: the client changes the plugin — skills, agents, connectors — without QuitCode. */
   ok("a plugin change is committed only by an admin's Commit on /admin/proposals: the route commits first, the proposal is marked with the commit",
