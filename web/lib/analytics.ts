@@ -102,6 +102,11 @@ export type SeedEvent =
   /* 24 Nov: Delete was pressed on a phone whose number is not confirmed here — the code is asked in the
      panel (`has_phone`), or with no number the phone is simply cleared. */
   | "seed_profile_delete_needs_code"
+  /* 24 Nov, lib/account-sync.ts: the phone's copy against the database on entry — refreshed with a
+     difference (`changed`), sent to sign in with a code, or erased on the server. */
+  | "seed_account_synced"
+  | "seed_account_signed_out"
+  | "seed_account_erased"
   /* The invite relationship question (16 Sep). `named` says which wording was
      shown; the answer is an enum id, never free text.
 

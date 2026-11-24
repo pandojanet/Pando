@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountNoticeNote } from "@/components/seed/AccountNoticeNote";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, buttonClass } from "@/components/ui/Button";
@@ -71,7 +72,7 @@ import {
  * then contributor, cards and completion in one pass.
  */
 export function FinishAsks() {
-  const { session, setSession, loaded } = useDoneSession();
+  const { session, setSession, loaded, notice } = useDoneSession();
   const [answer, setAnswer] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,6 +392,7 @@ export function FinishAsks() {
       />
 
       <ScreenBody className="pt-7">
+        {loaded && <AccountNoticeNote notice={notice} />}
         <div className="animate-rise">
           {/* Was "Last step" and, once answered, "You're all set." — both true
               while this screen ended the flow, and neither since 7 Oct: the

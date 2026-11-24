@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountNoticeNote } from "@/components/seed/AccountNoticeNote";
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
@@ -40,7 +41,7 @@ import {
  * job, and that screen is no longer after the chat.
  */
 export function Thanks() {
-  const { session, setSession, loaded } = useDoneSession();
+  const { session, setSession, loaded, notice } = useDoneSession();
   const viewed = useRef(false);
 
   const shared: Submission[] = session?.chat?.submissions ?? [];
@@ -70,6 +71,7 @@ export function Thanks() {
       />
 
       <ScreenBody className="pt-8">
+        {loaded && <AccountNoticeNote notice={notice} />}
         <div className="animate-rise">
           {/* The entry screen told the anonymous path, in so many words, that it
               gives up Founding Status. Showing them this badge anyway would be the

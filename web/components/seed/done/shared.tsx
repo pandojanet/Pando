@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Panel } from "@/components/ui/Panel";
+import { useAccountSync } from "@/components/seed/useAccountSync";
+import { claimsAccount } from "@/lib/account-sync";
 import { ProfileReminder } from "@/components/seed/ProfileDepth";
 import { profileDepth } from "@/lib/questions";
 import { loadSession } from "@/lib/storage";
@@ -37,14 +40,21 @@ export const KIND_LABEL: Record<ShareKind, string> = {
  */
 export function useDoneSession() {
   const [session, setSession] = useState<SeedSession | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [read, setRead] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setSession(loadSession());
-    setLoaded(true);
+    setRead(true);
   }, []);
 
-  return { session, setSession, loaded };
+  /* A saved profile is checked against the database before these screens show it (24 Nov,
+     `lib/account-sync.ts`): `loaded` waits for that answer, so a copy the server no longer stands
+     behind goes to sign in instead of being shown first. A draft is not checked. */
+  const { checked, notice } = useAccountSync({ session, setSession, returnTo: pathname ?? "/done" });
+  const loaded = read && (checked || !claimsAccount(session));
+
+  return { session, setSession, loaded, notice };
 }
 
 /**

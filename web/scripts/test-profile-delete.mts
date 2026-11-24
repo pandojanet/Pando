@@ -82,6 +82,19 @@ const res2 = await post(bare);
 ok("answers 200, nothing deleted, and the session still ends", res2.status === 200 && ((await res2.json()) as { deleted?: boolean }).deleted === false && (await verify.verifiedPhone(bare)) === null);
 ok("no cookie at all: confirm your number first, nothing touched", (await post(null)).status === 401 && (await verify.verifiedPhone(theirs))?.phone === SOMEONE_ELSE);
 
+console.log("\n=== a confirmed number lasts a week (24 Nov) ===");
+/** A confirmation made `days` ago: the row as /verify/check leaves it, its code window five minutes after the send. */
+const confirmedDaysAgo = async (phone: string, days: number) => {
+  const [r] = await q(sql`
+    insert into phone_verifications (phone, code_hash, expires_at, sent_at, verified_at)
+    values (${phone}, 'x', now() - make_interval(days => ${days}) + interval '5 minutes',
+            array[now() - make_interval(days => ${days})]::timestamptz[], now() - make_interval(days => ${days}))
+    returning id`);
+  return String(r.id);
+};
+ok("confirmed six days ago: still signed in", (await verify.verifiedPhone(await confirmedDaysAgo("+16265550133", 6)))?.phone === "+16265550133");
+ok("confirmed eight days ago: a code again", (await verify.verifiedPhone(await confirmedDaysAgo("+16265550144", 8))) === null);
+
 console.log("\n=== the device ===");
 /* A browser's storage, as far as forgetThisDevice uses it: keys as own properties, removeItem. */
 const fakeStorage = (entries: Record<string, string>) => {

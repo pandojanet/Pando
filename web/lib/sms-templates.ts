@@ -369,13 +369,18 @@ export const VERIFICATION_LOCK_MINUTES = 15;
  * several times over, asked again the next morning, with their cards held on the
  * phone in the meantime — the report this answers.
  *
- * ⚠ The cost, stated: whoever holds this browser can change this profile for
- * ninety days, which is what "stay signed in" means on any site. It matches
- * `INVITE_COOKIE_MAX_AGE` in `lib/seed-gate.ts`, the other thing a parent
- * returning days later must still be carrying. Running past it is still not a
- * data loss — the write is refused and the gate asks for a fresh code.
+ * ⚠⚠ **Seven days since 24 Nov** (the developer: *"тримаємо сесію тиждень, 90 днів
+ * то занадто"*). Ninety days meant whoever held a browser could act as that parent
+ * for three months — and, worse, the screens trusted the phone's copy without ever
+ * asking whether this window was still open (a client "deleted" her profile and
+ * walked back in through storage). The code is still asked only when the profile
+ * is made and on signing in (23 Sep stands); what changed is that signing in is now
+ * asked for on entry, by `lib/account-sync.ts`, once a week at most. Running past it
+ * is still not a data loss — the phone's copy is kept until the code comes back, and
+ * then the database's copy replaces it. `INVITE_COOKIE_MAX_AGE` stays at ninety days:
+ * it marks a front-door arrival, not a signed-in number.
  */
-export const VERIFICATION_SESSION_HOURS = 24 * 90;
+export const VERIFICATION_SESSION_HOURS = 24 * 7;
 
 /**
  * 12.3 — the keywords, and the precedence they carry.

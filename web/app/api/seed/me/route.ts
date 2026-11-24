@@ -11,7 +11,7 @@ import { ensureReferralLink } from "@/lib/server/repo/referral";
  *
  * Her second instruction is that a parent can come back and authenticate again
  * with their number and a code. The OTP machinery for that already existed —
- * `/verify/start`, `/verify/check` and the 12-hour `pando_verify` cookie
+ * `/verify/start`, `/verify/check` and the `pando_verify` cookie (seven days since 24 Nov)
  * (`VERIFICATION_SESSION_HOURS`) — and what was missing is this: a way for the
  * browser to learn *who* the confirmed number is, because the profile itself
  * lives in `localStorage` on the device that filled it in and a parent signing
@@ -118,6 +118,10 @@ export async function GET(request: Request) {
     /* Their own first name, their own link, and whether the profile is in.
        Nothing about anybody else, and no free text (invariant 7). */
     first_name: person.first_name,
+    /* The confirmed number itself (24 Nov) — the caller's own, never anyone else's. The phone compares
+       it with the number its copy was made under; a different one means another parent's session is on
+       this device, and it is rebuilt from here rather than merged (`lib/account-sync.ts`). */
+    phone: verified.phone,
     wants_founding: person.wants_founding !== false,
     founding: person.founding,
     profile_saved: person.profile_captured_at !== null,

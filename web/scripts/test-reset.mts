@@ -69,12 +69,18 @@ const blast = fs.readFileSync(new URL("../lib/server/repo/blast.ts", import.meta
 ok("a cancelled Ask (its asker erased) takes no more replies", /and bl\.status <> 'cancelled'/.test(blast.slice(blast.indexOf("const OPEN_FOR_SENDER"))));
 
 console.log("\n=== the phone starts over ===");
-ok("only on a definite answer: a saved profile on the device, and nobody on the server",
-  /if \(!session\?\.profile_saved_at\) return false;[\s\S]{0,80}return me\.ok && !me\.found;/.test(client));
-ok("the questionnaire drops its copy and goes to the invite link",
-  /if \(me\.ok && !me\.found\) \{\s+clearSession\(\);\s+router\.replace\(joinAgainHref\(existing\)\);/.test(flow));
-ok("so does the chat, so no card is added for nobody",
-  /profileErasedOnServer\(existing\)\.then\(\(erased\) => \{\s+if \(!erased\) return;\s+clearSession\(\);\s+router\.replace\(joinAgainHref\(existing\)\);/.test(chat));
+/* 24 Nov: the erased check is one of lib/account-sync.ts's five answers, run by useAccountSync on every
+   screen that shows a saved profile; test:account-sync walks the decision itself. */
+const sync = read("lib/account-sync.ts");
+const hook = read("components/seed/useAccountSync.ts");
+ok("only on a definite answer: a saved profile on the device, and nobody on a reachable server",
+  /if \(me\.reason === "unavailable" \|\| me\.reason === "failed"\) return \{ state: "offline" \};\s+if \(!me\.ok\) return \{ state: "signed_out" \};\s+if \(!me\.found\) return \{ state: "erased" \};/.test(sync) &&
+    /if \(!local \|\| !claimsAccount\(local\)\) return \{ check: \{ state: "draft" \}, me: null \};/.test(sync));
+ok("an erased profile drops the phone's copy and goes to the invite link",
+  /case "erased":[\s\S]{0,80}clearSession\(\);\s+router\.replace\(joinAgainHref\(local\)\);/.test(hook));
+ok("the questionnaire and the chat both use it, so no card is added for nobody",
+  /useAccountSync\(\{\s+session,\s+setSession,\s+returnTo: "\/profile",/.test(flow) && /useAccountSync\(\{ session, setSession, returnTo: "\/share" \}\)/.test(chat) &&
+    !/profileErasedOnServer\(/.test(flow + chat + client));
 ok("the invite link is the one kept on the device", /\/join\?i=\$\{encodeURIComponent\(session\.invite_code\)\}/.test(client));
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);

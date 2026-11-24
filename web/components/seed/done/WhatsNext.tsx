@@ -1,6 +1,7 @@
 "use client";
 
 
+import { AccountNoticeNote } from "@/components/seed/AccountNoticeNote";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
@@ -28,7 +29,7 @@ import { DoneProfileReminder, NoSession, Next, useDoneSession } from "./shared";
  * behind the completion write rather than in front of it.
  */
 export function WhatsNext() {
-  const { session, loaded } = useDoneSession();
+  const { session, loaded, notice } = useDoneSession();
 
   const count = session?.chat?.submissions.length ?? 0;
   const completed = Boolean(session?.completed_at);
@@ -42,6 +43,7 @@ export function WhatsNext() {
       />
 
       <ScreenBody className="pt-7">
+        {loaded && <AccountNoticeNote notice={notice} />}
         <div className="animate-rise">
           <Eyebrow>What happens next</Eyebrow>
           <h1 className="mt-2 font-display text-[1.7rem] font-extrabold leading-[1.1]">

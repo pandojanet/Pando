@@ -78,6 +78,7 @@
     "test:memory": "node --experimental-strip-types --no-warnings scripts/test-memory.mts",
     "test:digest-followup": "node --experimental-strip-types --no-warnings scripts/test-digest-followup.mts",
     "test:mcp": "node --experimental-strip-types --no-warnings scripts/test-mcp.mts",
+    "test:account-sync": "node --experimental-transform-types --no-warnings --import ./scripts/lib/server-loader.mjs scripts/test-account-sync.mts",
     "test:profile-delete": "node --experimental-transform-types --no-warnings --import ./scripts/lib/server-loader.mjs scripts/test-profile-delete.mts",
     "test:mcp-db": "node --experimental-transform-types --no-warnings --import ./scripts/lib/server-loader.mjs scripts/test-mcp-db.mts",
     "test:relay": "node --experimental-strip-types --no-warnings scripts/test-relay.mts",

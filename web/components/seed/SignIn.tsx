@@ -1,7 +1,7 @@
 "use client";
 import { DEFAULT_MARKET_ID } from "@/lib/markets";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Button } from "@/components/ui/Button";
 import { Note } from "@/components/ui/Note";
@@ -20,12 +20,11 @@ import { TextAction } from "@/components/ui/TextAction";
 import { VerifyPhone } from "@/components/seed/VerifyPhone";
 import { track } from "@/lib/analytics";
 import { fetchMe } from "@/lib/api-client";
+import { reconcile, safeNext } from "@/lib/account-sync";
 import { isPhoneComplete, toE164 } from "@/lib/phone";
-import { pruneAnswers } from "@/lib/questions";
 import {
   loadSession,
   newSession,
-  normaliseAnswers,
   saveSession,
 } from "@/lib/storage";
 
@@ -43,7 +42,7 @@ import {
  * because nothing asked who they were.
  *
  * The machinery was all there — `/verify/start`, `/verify/check`, and the
- * 12-hour `pando_verify` cookie that already outlives a whole visit. What was
+ * `pando_verify` cookie (seven days since 24 Nov) that already outlives a whole visit. What was
  * missing was a screen that starts with the number instead of ending with it,
  * and `/api/seed/me` to say who the confirmed number belongs to.
  *
@@ -72,6 +71,13 @@ export function SignIn() {
   const [stage, setStage] = useState<"phone" | "code">("phone");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /* The number this phone already holds, offered (24 Nov): a parent sent here because their week ran
+     out should not have to type it again. Read from the phone's own copy — never from the address. */
+  useEffect(() => {
+    const held = loadSession()?.phone;
+    if (held && /^\+1\d{10}$/.test(held)) setPhone(held.slice(2));
+  }, []);
 
   const ready = isPhoneComplete(phone);
 
@@ -109,58 +115,36 @@ export function SignIn() {
       }
 
       /**
-       * Enough of a session for the thank-you screen to be itself.
+       * Their session, from the database — through the same `reconcile` every screen uses on entry
+       * (24 Nov, `lib/account-sync.ts`), so signing in and coming back cannot disagree about what the
+       * phone keeps: the answers, the referral code, Founding and the number are the database's; the
+       * chat, cards waiting to go and the name in full stay the phone's. A copy on this phone made under
+       * **another** number is rebuilt, not merged — until now a second parent signing in on a shared
+       * phone kept the first one's chat and consents.
        *
-       * Merged over whatever is already on this device rather than replacing
-       * it: a parent signing in on the *same* phone must not lose the answers
-       * sitting in `localStorage`, and a parent on a new one has nothing to
-       * lose. `profile_saved_at` is what makes `/done` and `/profile` treat
-       * them as finished (7 Sep) rather than dropping them mid-questionnaire.
+       * `profile_saved_at` is set as before (7 Sep): it is what makes `/done` and `/profile` treat
+       * a returning parent as finished rather than dropping them mid-questionnaire.
        */
-      const existing =
+      const now = new Date().toISOString();
+      const confirmed = toE164(phone);
+      const local =
         loadSession() ??
         newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "signin" });
+      const check = reconcile(
+        { ...local, phone: local.phone ?? confirmed, phone_verified: true },
+        { ...body, phone: body.phone ?? confirmed ?? undefined },
+      );
+      const merged = check.state === "in_step" ? check.session : { ...local, phone: confirmed, phone_verified: true };
       saveSession({
-        ...existing,
-        phone: toE164(phone),
-        phone_verified: true,
-        first_name: existing.first_name ?? body.first_name ?? null,
-        /* `name` is what the screens greet by, and it is a separate field from
-           `first_name` — setting only the latter left a returning parent on
-           "Thank you." where a parent who had just filled the form got "Thank
-           you, Alice." */
-        name: existing.name ?? body.first_name ?? null,
-        wants_founding: body.wants_founding !== false,
-        referral_code: body.referral_code ?? existing.referral_code,
-        /* Shown already, by definition: this is a returning parent, and the
-           popup is for the first verification. The link is on the thank-you
-           screen instead. */
-        referral_shown_at:
-          existing.referral_shown_at ?? new Date().toISOString(),
-        profile_saved_at: existing.profile_saved_at ?? new Date().toISOString(),
-        /**
-         * Their profile, from the database — which on a new phone is the only
-         * place it exists.
-         *
-         * Until 8 Sep this screen restored an identity and an empty
-         * questionnaire, and said so on the screen because that was the honest
-         * consequence of there being no per-parent token. `/signin` **is** that
-         * token, so the answers can come back with the name; see the note on
-         * `GET /api/seed/me`.
-         *
-         * The server wins over the device here, unlike `first_name` and `name`
-         * above, and for the same reason it does in `ProfileFlow`: an answer is
-         * a fact Pando holds, while a name on this device may be the fuller
-         * version of one the server only has half of. Null answers — a profile
-         * written before the column carried anything — leave the device copy
-         * alone.
-         */
-        answers: body.answers
-          ? pruneAnswers(normaliseAnswers(body.answers))
-          : existing.answers,
+        ...merged,
+        /* Shown already, by definition: this is a returning parent, and the popup is for the first
+           verification. The link is on the thank-you screen instead. */
+        referral_shown_at: merged.referral_shown_at ?? now,
+        profile_saved_at: merged.profile_saved_at ?? now,
       });
       track("seed_signin_completed", { has_referral: Boolean(body.referral_code) });
-      router.push("/done");
+      /* Back to the screen that sent them here to sign in, if it was one of ours. */
+      router.push(safeNext(new URLSearchParams(window.location.search).get("next")));
     } catch {
       setError("That didn't go through. Try again.");
     } finally {

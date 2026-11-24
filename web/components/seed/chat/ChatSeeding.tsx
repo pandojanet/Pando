@@ -12,7 +12,10 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import { assistTurn, joinAgainHref, profileErasedOnServer, saveSubmission } from "@/lib/api-client";
+import { assistTurn, saveSubmission } from "@/lib/api-client";
+import { AccountNoticeNote } from "@/components/seed/AccountNoticeNote";
+import { useAccountSync } from "@/components/seed/useAccountSync";
+import { claimsAccount } from "@/lib/account-sync";
 import { assessChatCard } from "@/lib/contribution-quality";
 import { FOUNDING_MIN_PROFILE_DEPTH, foundingProgressLine } from "@/lib/rewards";
 import {
@@ -65,7 +68,7 @@ import {
 } from "@/lib/caregiver-invite";
 import { ProfileReminder } from "@/components/seed/ProfileDepth";
 import { childrenDeclined, EMPTY_ANSWERS, profileDepth } from "@/lib/questions";
-import { clearSession, loadSession, newSession, saveSession } from "@/lib/storage";
+import { loadSession, newSession, saveSession } from "@/lib/storage";
 import {
   ReferralDialog,
   ReferralHeaderInvite,
@@ -107,6 +110,8 @@ const TYPING_MS = 430;
 export function ChatSeeding() {
   const router = useRouter();
   const [session, setSession] = useState<SeedSession | null>(null);
+  /* The phone's copy against the database, on entry and on coming back to the tab (24 Nov). */
+  const { checked: accountChecked, notice: accountNotice } = useAccountSync({ session, setSession, returnTo: "/share" });
   const [typing, setTyping] = useState(false);
   /* Read from the session the same way every other fact on this screen is:
      there is no server round trip here, and `answers` is what the profile
@@ -178,14 +183,9 @@ export function ChatSeeding() {
       loadSession() ??
       newSession({ invite_code: null, market_id: DEFAULT_MARKET_ID, source: "direct" });
 
-    /* A profile erased on the server — an admin's reset or their own DELETE
-       (3 Nov): cards must not be added for nobody, so the device copy goes and
-       they start again at their invite link. */
-    void profileErasedOnServer(existing).then((erased) => {
-      if (!erased) return;
-      clearSession();
-      router.replace(joinAgainHref(existing));
-    });
+    /* A profile erased on the server (3 Nov), a confirmation that lapsed, or a copy the database has
+       moved on from: since 24 Nov all three are `useAccountSync` below — cards are never added for nobody,
+       and never under a number the server no longer stands behind. */
 
     let chat: ChatState =
       existing.chat ??
@@ -1347,6 +1347,18 @@ export function ChatSeeding() {
     return "";
   })();
 
+  /* A saved profile waits for the server's word before the chat opens on it (24 Nov). */
+  if (session && claimsAccount(session) && !accountChecked) {
+    return (
+      <Screen>
+        <ScreenBody>
+          <div className="h-4 w-24 rounded bg-bark/70" />
+          <div className="mt-4 h-8 w-full rounded bg-bark/50" />
+        </ScreenBody>
+      </Screen>
+    );
+  }
+
   return (
     <Screen>
       {/* No running "N cards ready" counter: the saved cards are already on the
@@ -1464,6 +1476,7 @@ export function ChatSeeding() {
       )}
 
       <ScreenBody className="pt-5">
+        <AccountNoticeNote notice={accountNotice} className="mb-4" />
         {/* `/share` was the one route in the app with no `<h1>` — the screen is
             a message thread, so it has no visible title and never should have
             one. Screen-reader-only is the whole fix: the document gets a name,

@@ -35,11 +35,7 @@ import {
   ScreenHeader,
 } from "@/components/ui/Screen";
 import { track, trackAbandonOnHide } from "@/lib/analytics";
-import {
-  fetchMe,
-  joinAgainHref,
-  saveProfile,
-} from "@/lib/api-client";
+import { saveProfile } from "@/lib/api-client";
 import { buildProfilePayload } from "@/lib/derive";
 import {
   handleExpiredVerification,
@@ -65,7 +61,6 @@ import {
   profileCompleteness,
   profileReminderShows,
   profileDepth,
-  pruneAnswers,
   sameForAllChildren,
   searchableCategory,
   selectionsFor,
@@ -74,10 +69,8 @@ import {
   visibleScreens,
 } from "@/lib/questions";
 import {
-  clearSession,
   loadSession,
   newSession,
-  normaliseAnswers,
   saveSession,
 } from "@/lib/storage";
 import { useStepChange } from "@/lib/use-step-change";
@@ -85,6 +78,9 @@ import { useMarketOptions } from "@/lib/use-market-options";
 import { neighborhoodCity } from "@/lib/market-options";
 import { placeById } from "@/lib/home-places";
 import { DeleteProfile } from "@/components/seed/DeleteProfile";
+import { AccountNoticeNote } from "@/components/seed/AccountNoticeNote";
+import { useAccountSync } from "@/components/seed/useAccountSync";
+import { claimsAccount } from "@/lib/account-sync";
 import { EXPECTING } from "@/lib/types";
 import type { ProfileAnswers, Question, SeedSession } from "@/lib/types";
 
@@ -206,56 +202,25 @@ export function ProfileFlow() {
      */
     if (!existing?.profile_saved_at) return;
     setStage("review");
-
-    /**
-     * A saved profile is re-read from the database, and the device copy loses.
-     *
-     * The client's report, 8 Sep: a parent coming back is shown what
-     * `localStorage` holds rather than what Pando actually has. Both exist
-     * because the flow is autosaved to the phone, and they diverge the moment
-     * the same parent fills the form on a second device (the write is an upsert
-     * on the number, invariant 10) or an admin corrects a record. Once the
-     * profile is **in the database, the database owns it** — the phone is a
-     * cache, and a cache that outranks the record is `persisted: false`
-     * inverted.
-     *
-     * On mount only, deliberately, so it can never overwrite an edit somebody is
-     * in the middle of making: it runs before the review is touched and never
-     * again.
-     *
-     * Answers and the referral code, and nothing else. The name is not refreshed
-     * because the server holds only a first name and `prev.name` is usually both
-     * — replacing "Alice Probe" with "Alice" would be the record losing to a
-     * narrower copy of itself. Anything the server could not answer (no cookie,
-     * no database, a profile written before `raw_answers` was populated) leaves
-     * the device copy exactly as it was: a refresh that fails is silence, never
-     * an empty review.
-     */
-    void (async () => {
-      const me = await fetchMe();
-      /* Erased on the server — an admin's reset or their own DELETE (3 Nov):
-         the device copy goes and they start again at their invite link. */
-      if (me.ok && !me.found) {
-        clearSession();
-        router.replace(joinAgainHref(existing));
-        return;
-      }
-      if (!me.ok || !me.found || !me.profile_saved) return;
-      setSession((prev) =>
-        prev
-          ? saveSession({
-              ...prev,
-              referral_code: me.referral_code ?? prev.referral_code,
-              answers: me.answers
-                ? pruneAnswers(normaliseAnswers(me.answers))
-                : prev.answers,
-            })
-          : prev,
-      );
-    })();
+    /* A saved profile is re-read from the database and the phone's copy loses (the client's report,
+       8 Sep: once the profile is in the database, the database owns it — the phone is a cache). Since
+       24 Nov that is `useAccountSync` below, which also sends a lapsed confirmation to sign in, empties
+       an erased profile, and says when it could not reach Pando. The name in full stays the phone's. */
   }, []);
 
   const answers: ProfileAnswers | null = session?.answers ?? null;
+
+  /**
+   * The phone's copy against the database (24 Nov, `lib/account-sync.ts`): on opening a saved profile,
+   * and again on coming back to the tab while on the review — never in the middle of a question, so an
+   * edit being made is never overwritten.
+   */
+  const { checked: accountChecked, notice: accountNotice } = useAccountSync({
+    session,
+    setSession,
+    returnTo: "/profile",
+    live: stage === "review",
+  });
 
   /**
    * Loads the tap lists from the database and re-renders once they arrive, so a
@@ -374,7 +339,8 @@ export function ProfileFlow() {
     }));
   }, [screen, index, stage]);
 
-  if (!session || !answers || !screen) {
+  /* A saved profile waits for the server's word before it is shown (24 Nov, `lib/account-sync.ts`). */
+  if (!session || !answers || !screen || (claimsAccount(session) && !accountChecked)) {
     return (
       <Screen>
         <ScreenHeader below={<div className="mt-1 h-1 rounded-full bg-bark" />} />
@@ -1271,6 +1237,7 @@ export function ProfileFlow() {
             <h1 ref={headingRef} tabIndex={-1} className="font-display text-[1.7rem] font-bold">
               Does this look right?
             </h1>
+            <AccountNoticeNote notice={accountNotice} />
             {/**
               * ⚠ **Here rather than at the top of the screen**, and rather than
               * anywhere in the middle of the answer list: this is the last

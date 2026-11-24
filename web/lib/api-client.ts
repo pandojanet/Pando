@@ -167,6 +167,8 @@ export interface MeResult {
   ok: boolean;
   found: boolean;
   first_name?: string | null;
+  /** The confirmed number, E.164 — the caller's own (24 Nov). */
+  phone?: string;
   wants_founding?: boolean;
   founding?: string;
   profile_saved?: boolean;
@@ -189,23 +191,9 @@ export async function fetchMe(): Promise<MeResult> {
   }
 }
 
-/**
- * Was this device's saved profile erased on the server (3 Nov)? An admin's
- * "Reset profile" or the parent's own DELETE removes the person, but the phone
- * still holds the session it autosaved — so without this, the next `/profile`
- * would show a review of answers that no longer exist, and `/share` would add
- * cards for nobody.
- *
- * True only on a definite answer: the device says its profile was saved, and
- * the server — reached, with a valid confirmation — says there is nobody on
- * this number. No cookie, no database, a network error: false, and the device
- * copy stays, because a check that fails must never wipe a parent's session.
- */
-export async function profileErasedOnServer(session: { profile_saved_at: string | null } | null): Promise<boolean> {
-  if (!session?.profile_saved_at) return false;
-  const me = await fetchMe();
-  return me.ok && !me.found;
-}
+/* `profileErasedOnServer` (3 Nov) became the `erased` answer of `lib/account-sync.ts` (24 Nov): the
+   same rule — only a definite "nobody on this number" from a reachable server wipes the phone — now
+   beside the other four answers a saved profile can get on entry. */
 
 /** Where a parent whose profile was erased starts again: their own invite link, kept on the device. */
 export function joinAgainHref(session: { invite_code: string | null } | null): string {
