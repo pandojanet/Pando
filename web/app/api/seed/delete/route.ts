@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyCookie } from "@/lib/server/gate";
-import { verifiedPhone } from "@/lib/server/verify";
+import { verifiedPhone, VERIFY_COOKIE } from "@/lib/server/verify";
+import { INVITE_COOKIE } from "@/lib/seed-gate";
 import { rateLimited } from "@/lib/server/rate-limit";
 import { deleteParentByPhone } from "@/lib/server/repo/parent-delete";
 
@@ -69,10 +70,26 @@ export async function POST(request: Request) {
     );
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     deleted: outcome.status === "deleted",
     /* What stayed, so the screen can say it rather than imply it. */
     contributions_kept:
       outcome.status === "deleted" ? outcome.contributions : 0,
   });
+  /**
+   * The device forgets the number too (24 Nov). `deleteParentByPhone` ended the number's sessions on the
+   * server; these clear the cookies that pointed at them — the proof of the number and the invite
+   * marker — so the next visit starts as a stranger's, with a code. Same attributes as when they were
+   * set, or the browser keeps them.
+   */
+  for (const name of [VERIFY_COOKIE, INVITE_COOKIE]) {
+    response.cookies.set(name, "", {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0,
+    });
+  }
+  return response;
 }

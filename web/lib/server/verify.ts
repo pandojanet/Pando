@@ -122,6 +122,12 @@ interface Store {
   confirm(id: string, at: string): Promise<void>;
   /** Make it unusable without forgetting the sends it already cost. */
   invalidate(id: string): Promise<void>;
+  /**
+   * Every confirmed session for this number ends — on every device (24 Nov: a deleted profile left its
+   * 90-day session alive, so the device walked back in without a code). Expired, not deleted, for the
+   * same reason as `invalidate`: the sends stay counted.
+   */
+  endSessions(phone: string): Promise<void>;
   /** Codes sent to this number inside the last hour, across every session. */
   sendsInLastHour(phone: string, now: number): Promise<number>;
   lockedUntil(phone: string, now: number): Promise<number>;
@@ -199,6 +205,10 @@ const memoryStore: Store = {
     /* Expired rather than deleted — see the database version for why the sends
        have to outlive the verification that spent them. */
     if (entry) entry.expires_at = Date.now() - 1;
+  },
+  async endSessions(phone) {
+    const past = Date.now() - SESSION_MS - 1;
+    for (const entry of pending.values()) if (entry.phone === phone && entry.verified_at) entry.expires_at = Math.min(entry.expires_at, past);
   },
   async sendsInLastHour(phone, now) {
     const cutoff = now - 60 * 60 * 1000;
@@ -352,6 +362,19 @@ const dbStore: Store = {
          where id = ${id}::uuid and verified_at is null
       `),
     );
+  },
+  async endSessions(phone) {
+    /* A confirmed row lives `VERIFICATION_SESSION_HOURS` past `expires_at` (`dbGet`), so ending it moves
+       `expires_at` back by that much and a second more. `verified_at` stays: it is the record of when the
+       number was proven, and the sends stay counted. */
+    const r = await withDb((db) =>
+      db.execute(sql`
+        update phone_verifications
+           set expires_at = least(expires_at, now() - (interval '1 hour' * ${VERIFICATION_SESSION_HOURS}) - interval '1 second')
+         where phone = ${phone} and verified_at is not null
+      `),
+    );
+    if (!r.persisted) throw new Error("verification store unavailable");
   },
   async sendsInLastHour(phone, _now) {
     const r = await withDb(async (db) => {
@@ -660,6 +683,16 @@ export async function verifiedPhone(
      it is what the constant's promise actually means. */
   if (entry.expires_at + SESSION_MS < Date.now()) return null;
   return { phone: entry.phone, verified_at: entry.verified_at };
+}
+
+/**
+ * The number's proof ends everywhere (24 Nov). A deleted profile used to leave its confirmed session —
+ * 90 days — alive, so the same device opened the app as that number again without a code, which read as
+ * the delete having failed. Called by `deleteParentByPhone`, so the web's *Delete my profile* and SMS
+ * DELETE both end it. A failure is thrown: the caller says so rather than reporting a clean delete.
+ */
+export async function endVerifiedSessions(phone: string): Promise<void> {
+  await (await store()).endSessions(phone);
 }
 
 /** True when the app must have a verified phone before it stores anything. */

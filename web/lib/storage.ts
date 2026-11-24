@@ -430,6 +430,24 @@ export function clearSession(): void {
   }
 }
 
+/**
+ * Everything this app keeps on the device, gone (24 Nov) — for a parent who deleted their profile.
+ * `clearSession` takes the questionnaire only; this also takes the retired keys and every other
+ * `pando.` key in local and session storage (the analytics session start among them), so nothing of
+ * theirs is left for the next person on the phone. The cookies are the server's to clear
+ * (`/api/seed/delete`), because they are httpOnly.
+ */
+export function forgetThisDevice(): void {
+  for (const area of ["localStorage", "sessionStorage"] as const) {
+    try {
+      const store = window[area];
+      for (const key of Object.keys(store)) if (key.startsWith("pando.")) store.removeItem(key);
+    } catch {
+      /* Storage unavailable — nothing was kept, so there is nothing to forget. */
+    }
+  }
+}
+
 /** Has this parent made enough progress that we should offer to resume? */
 export function hasResumableProgress(session: SeedSession | null): boolean {
   if (!session || session.profile_saved_at) return false;

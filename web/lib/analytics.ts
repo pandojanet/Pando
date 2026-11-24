@@ -99,6 +99,9 @@ export type SeedEvent =
    * whole of what this answers.
    */
   | "seed_profile_deleted"
+  /* 24 Nov: Delete was pressed on a phone whose number is not confirmed here — the code is asked in the
+     panel (`has_phone`), or with no number the phone is simply cleared. */
+  | "seed_profile_delete_needs_code"
   /* The invite relationship question (16 Sep). `named` says which wording was
      shown; the answer is an enum id, never free text.
 
@@ -173,6 +176,8 @@ interface PostHogLike {
    * `?.` for the same reason — a missing method must not break the flow.
    */
   register?: (props: Props) => void;
+  /** A new anonymous id, and the registered properties dropped (posthog-js `reset`). */
+  reset?: () => void;
 }
 
 declare global {
@@ -238,6 +243,20 @@ export function identifyArrival(props: {
     invite_group: props.invite_group,
     arrival_source: props.source,
   });
+}
+
+/**
+ * The analytics side of a deleted profile (24 Nov): a fresh anonymous id and none of the arrival
+ * properties `identifyArrival` registered, so whatever happens next on this browser is not joined to
+ * the person who just left. Call it after the last event that belongs to them.
+ */
+export function forgetAnalyticsIdentity(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.posthog?.reset?.();
+  } catch {
+    /* A stub without reset, or posthog not loaded: nothing to forget. */
+  }
 }
 
 /**

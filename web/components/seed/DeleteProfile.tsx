@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { Note } from "@/components/ui/Note";
 import { TextAction } from "@/components/ui/TextAction";
-import { clearSession } from "@/lib/storage";
-import { track } from "@/lib/analytics";
+import { VerifyPhone } from "@/components/seed/VerifyPhone";
+import { forgetThisDevice, loadSession } from "@/lib/storage";
+import { forgetAnalyticsIdentity, track } from "@/lib/analytics";
 
 /**
  * Deleting your own profile (client §1, 9 Sep).
@@ -48,35 +48,100 @@ export function DeleteProfile({
      dock, so the page's own spacing is the caller's. */
   className = "mt-6 border-t border-bark/70 pt-4",
 }: { className?: string } = {}) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The number to confirm before the server will delete anything (24 Nov). */
+  const [confirm, setConfirm] = useState<string | null>(null);
+
+  /* Everything of theirs off the device (24 Nov): the questionnaire, every other `pando.` key, the
+     analytics identity — the server clears the number's cookies itself. A full page load, not a client
+     route change, so no screen keeps their answers in memory either. */
+  function leave() {
+    forgetThisDevice();
+    forgetAnalyticsIdentity();
+    window.location.replace("/");
+  }
 
   async function remove() {
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/seed/delete", { method: "POST" });
+      /**
+       * ⚠⚠ **Not confirmed on this device — the case that looked like a delete doing nothing (24 Nov).**
+       *
+       * This screen reads the profile from the phone, so it opens whether or not this browser still
+       * holds a confirmed number (a lapsed confirmation, another browser, a profile held until
+       * verified). The delete then answered 401, the panel said "confirm your number first" with no
+       * way to, nothing was deleted on the server and nothing left the phone — and the parent was
+       * still "in". Now: with a number on the phone, the code is asked right here and the delete runs
+       * once it is confirmed; with none, nothing of theirs can be on the server (invariant 11 — nothing
+       * is stored before a confirmed number), so clearing the phone is the whole delete.
+       */
+      if (res.status === 401) {
+        const phone = loadSession()?.phone ?? null;
+        track("seed_profile_delete_needs_code", { has_phone: phone !== null });
+        if (!phone) {
+          leave();
+          return;
+        }
+        setConfirm(phone);
+        setBusy(false);
+        return;
+      }
       if (!res.ok) {
         /* Said out loud rather than swallowed: a destructive control that
            appears to do nothing is the worst of both — they cannot tell
            whether it worked, and the honest answer is that it did not. */
-        setError(
-          res.status === 401
-            ? "Confirm your number first, then try again."
-            : "That didn't go through. Nothing was deleted — try again in a moment.",
-        );
+        setError("That didn't go through. Nothing was deleted — try again in a moment.");
         setBusy(false);
         return;
       }
-      track("seed_profile_deleted", {});
-      clearSession();
-      router.push("/");
+      const body = (await res.json().catch(() => null)) as { deleted?: boolean } | null;
+      track("seed_profile_deleted", { had_profile: body?.deleted === true });
+      leave();
     } catch {
       setError("That didn't go through. Nothing was deleted — try again in a moment.");
       setBusy(false);
     }
+  }
+
+  if (confirm) {
+    /* The warning panel and the code are siblings, never a panel inside a panel. */
+    return (
+      <div className="mt-6">
+        <Panel tone="warning" size="inset" title="Delete your profile?">
+          <p className="mt-1.5 text-help leading-relaxed text-gold-ink/90">
+            Your profile is kept under your number, so we check it&apos;s yours first. Once you
+            confirm, everything listed goes.
+          </p>
+          {error && <Note className="mt-3">{error}</Note>}
+          <div className="mt-3 flex flex-col items-start gap-1">
+            <TextAction tone="quiet" disabled={busy} onClick={leave}>
+              Only clear this phone
+            </TextAction>
+            <TextAction
+              tone="quiet"
+              disabled={busy}
+              onClick={() => {
+                setConfirm(null);
+                setOpen(false);
+              }}
+            >
+              Keep my profile
+            </TextAction>
+          </div>
+        </Panel>
+        <VerifyPhone
+          key={confirm}
+          phone={confirm}
+          audience="returning"
+          busy={busy}
+          onVerified={() => void remove()}
+        />
+      </div>
+    );
   }
 
   if (!open) {

@@ -5,6 +5,7 @@ import { withDb, type Db } from "@/lib/server/db";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
 import { deleteTwilioMedia } from "@/lib/server/media-note";
 import { endTurns } from "@/lib/inbound-burst";
+import { endVerifiedSessions } from "@/lib/server/verify";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -150,8 +151,22 @@ export async function deleteParentByPhone(
   /* The one lie this must never tell: somebody who *has* a profile being told
      they never did. An unreachable database says so — the `persisted: false`
      honesty rule, applied to the read inside a delete. */
-  if (!result.persisted) return { status: "unavailable" };
-  return result.data ?? { status: "unavailable" };
+  if (!result.persisted || !result.data) return { status: "unavailable" };
+  const outcome = result.data;
+  /**
+   * The number's confirmed sessions end too (24 Nov). The profile was gone, but the device kept a
+   * 90-day proof of the number, so opening the app again walked straight back in as that number — it
+   * read as the delete having failed. After the transaction, because it is another table's write and
+   * the delete must not wait on it; `no_profile` too, because "delete me" from a number with only a
+   * session means the same. A failure is logged and the delete stands — the route also clears the
+   * device's cookie, so this device is out either way; another device would keep its session.
+   */
+  try {
+    await endVerifiedSessions(phone);
+  } catch (err) {
+    console.error("[parent-delete] sessions not ended", { error: err instanceof Error ? err.constructor.name : "unknown" });
+  }
+  return outcome;
 }
 
 /**
