@@ -2,24 +2,38 @@
 
 import { useState } from "react";
 import { Sparkles, SquareTerminal } from "lucide-react";
-import { Button, Card, Empty, ErrorNote, Failed, Loading, NotConfigured, PageHead, whenExact } from "@/components/admin/ui";
+import { Badge, Button, Card, Empty, ErrorNote, Failed, Loading, NotConfigured, PageHead, Stat, StatStrip, TableWrap, Td, Th, whenExact } from "@/components/admin/ui";
 import { SegmentedFilter, Toggle } from "@/components/admin/kit";
+import { RevealMore } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
-import type { McpAdminResult } from "@/lib/admin/types";
+import type { McpAdminResult, McpCallCounts, McpPeriod } from "@/lib/admin/types";
+import { PANDO_TOOLS } from "@/lib/mcp/tool-names";
 import { cn } from "@/lib/cn";
 
 /**
  * Pando MCP (20 Nov; redrawn the same day after GitHub's and Google's connected-apps pages and
  * Stripe's and Vercel's request logs): the one switch in the head, the apps connected — one row per
- * admin and app, however many times Claude registered — with Revoke behind a confirm in place, the
- * day's calls per tool, and the last calls with failures first. Off, every tool answers that it is
- * switched off; the server's `PANDO_MCP=off` keeps it off whatever the switch says.
+ * admin and app, however many times Claude registered — with Revoke behind a confirm in place.
+ *
+ * The calls (24 Nov — the developer: *"хотілось би бачити більш детальну аналітику колів"*), after
+ * Vercel's and Stripe's request dashboards: a period (24 hours, 7 or 30 days); its figures against the
+ * period before; a timeline of how calls ended, stacked, on Pasadena's clock; per tool (share answered,
+ * median and 95th-percentile time, rows); per admin; the slowest; the latest, filtered by tool, admin or
+ * outcome. Off, every tool answers that it is switched off; `PANDO_MCP=off` keeps it off whatever the
+ * switch says.
  */
 
 type Connection = McpAdminResult["connections"][number];
 type Call = McpAdminResult["recent"][number];
 
 const IDLE_DAYS = 14;
+/** The busiest tools first; the rest behind "more", so a phone does not scroll past 27 blocks. */
+const TOOLS_FIRST = 8;
+const PERIODS: ReadonlyArray<{ id: McpPeriod; label: string }> = [
+  { id: 1, label: "24 hours" },
+  { id: 7, label: "7 days" },
+  { id: 30, label: "30 days" },
+];
 
 function ago(iso: string | null): string {
   if (!iso) return "never";
@@ -31,14 +45,30 @@ function ago(iso: string | null): string {
   return whenExact(iso);
 }
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+/** Today's calls by the time alone; older ones with their day. */
+const when = (iso: string) =>
+  new Date(iso).toDateString() === new Date().toDateString()
+    ? time(iso)
+    : new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const duration = (ms: number | null) => (ms === null ? "—" : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`);
+const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : null);
 
-const OUTCOME: Record<string, { word: string; tone: string }> = {
-  ok: { word: "answered", tone: "text-green-deep" },
-  refused: { word: "refused", tone: "text-gold-ink" },
-  off: { word: "while off", tone: "text-muted" },
-  error: { word: "failed", tone: "text-alert" },
+/** A bucket's start, as the market's wall clock wrote it ("2026-11-24T15:00"), read without moving it. */
+function bucketLabel(at: string, hourly: boolean, long = false): string {
+  const d = new Date(`${at}:00Z`);
+  if (hourly) return d.toLocaleTimeString("en-US", long ? { weekday: "short", hour: "numeric", timeZone: "UTC" } : { hour: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("en-US", long ? { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" } : { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+const OUTCOME: Record<string, { word: string; tone: string; bar: string }> = {
+  ok: { word: "answered", tone: "text-green-deep", bar: "bg-green" },
+  refused: { word: "refused", tone: "text-gold-ink", bar: "bg-gold" },
+  error: { word: "failed", tone: "text-alert", bar: "bg-alert" },
+  off: { word: "while off", tone: "text-muted", bar: "bg-muted/50" },
 };
+const ORDER = ["ok", "refused", "error", "off"] as const;
+const outcomeOf = (o: string) => OUTCOME[o] ?? { word: o, tone: "text-muted", bar: "bg-muted/50" };
 
 function ConnectionRow({ c, busy, onRevoke }: { c: Connection; busy: boolean; onRevoke: () => void }) {
   const [confirming, setConfirming] = useState(false);
@@ -77,12 +107,92 @@ function ConnectionRow({ c, busy, onRevoke }: { c: Connection; busy: boolean; on
   );
 }
 
+function sum(rows: McpCallCounts[]): McpCallCounts {
+  return rows.reduce(
+    (s, r) => ({ calls: s.calls + r.calls, ok: s.ok + r.ok, refused: s.refused + r.refused, off: s.off + r.off, error: s.error + r.error }),
+    { calls: 0, ok: 0, refused: 0, off: 0, error: 0 },
+  );
+}
+
+/** "12 answered · 1 failed", zeros left out. */
+const outcomeLine = (c: McpCallCounts) => ORDER.filter((k) => c[k] > 0).map((k) => `${c[k]} ${OUTCOME[k].word}`).join(" · ") || "no calls";
+
+/** How the period's calls ended, one stacked bar per hour or day; the line above reads the bar under the pointer. */
+function Timeline({ buckets, hourly, span }: { buckets: McpAdminResult["timeline"]; hourly: boolean; span: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const most = Math.max(1, ...buckets.map((b) => b.calls));
+  const all = sum(buckets);
+  const shown = hover === null ? null : buckets[hover];
+  const present = ORDER.filter((k) => all[k] > 0);
+  const ticks = buckets.length > 0 ? [...new Set([0, Math.floor((buckets.length - 1) / 2), buckets.length - 1])] : [];
+  return (
+    <div className="px-4 pb-4 pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[13px]" aria-live="polite">
+        <span className="font-medium text-ink">{shown ? bucketLabel(shown.at, hourly, true) : `Last ${span}`}</span>
+        <span className="tabular-nums text-muted">{outcomeLine(shown ?? all)}</span>
+      </div>
+      <div
+        role="img"
+        aria-label={`Calls per ${hourly ? "hour" : "day"}, last ${span}: ${outcomeLine(all)}`}
+        className="mt-3 flex h-28 items-end gap-[3px]"
+        onMouseLeave={() => setHover(null)}
+      >
+        {buckets.map((b, i) => (
+          <div key={b.at} className="flex h-full min-w-0 flex-1 flex-col justify-end" onMouseEnter={() => setHover(i)}>
+            <div
+              className={cn("flex w-full flex-col-reverse overflow-hidden rounded-[3px]", b.calls === 0 && "bg-bark/70", hover === i && "outline-2 outline-offset-1 outline-gold")}
+              style={{ height: b.calls === 0 ? "2px" : `${Math.max(4, (b.calls / most) * 100)}%` }}
+            >
+              {ORDER.map((k) => (b[k] > 0 ? <div key={k} className={OUTCOME[k].bar} style={{ height: `${(b[k] / b.calls) * 100}%` }} /> : null))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex justify-between text-[12.5px] tabular-nums text-muted" aria-hidden>
+        {ticks.map((i) => (
+          <span key={i}>{bucketLabel(buckets[i].at, hourly)}</span>
+        ))}
+      </div>
+      {present.length > 1 && (
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-muted" aria-hidden>
+          {present.map((k) => (
+            <span key={k} className="inline-flex items-center gap-1.5">
+              <span className={cn("size-2 rounded-full", OUTCOME[k].bar)} />
+              {OUTCOME[k].word}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The share answered as a small bar and its percentage; gold under 90%. */
+function ShareBar({ part, whole }: { part: number; whole: number }) {
+  const p = pct(part, whole);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="h-1.5 w-14 overflow-hidden rounded-full bg-bark-soft" aria-hidden>
+        <span className={cn("block h-full rounded-full", p !== null && p < 90 ? "bg-gold" : "bg-green")} style={{ width: `${p ?? 0}%` }} />
+      </span>
+      <span className="tabular-nums">{p === null ? "—" : `${p}%`}</span>
+    </span>
+  );
+}
+
+const pickClass = "rounded text-left hover:text-green-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
+const toolKind = (tool: string) => PANDO_TOOLS[tool as keyof typeof PANDO_TOOLS] ?? null;
+
 export default function McpPage() {
-  const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows("mcp");
+  const [days, setDays] = useState<McpPeriod>(7);
+  const { rows, configured, loading, error, demo, setDemo, reload } = useAdminRows("mcp", { days });
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [view, setView] = useState<"failures" | "all">("failures");
   const [tool, setTool] = useState<string | null>(null);
+  const [person, setPerson] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
+  const [allTools, setAllTools] = useState(false);
 
   async function act(action: Parameters<typeof adminAction>[0]) {
     setBusy(true);
@@ -98,8 +208,17 @@ export default function McpPage() {
   }
 
   const m = rows;
-  const recent: Call[] = (m?.recent ?? []).filter((c) => (view === "all" || c.outcome !== "ok") && (!tool || c.tool === tool));
+  const span = (PERIODS.find((p) => p.id === days) ?? PERIODS[1]).label;
+  const t = m?.totals;
+  const recent: Call[] = (m?.recent ?? []).filter((c) => (view === "all" || c.outcome !== "ok") && (!tool || c.tool === tool) && (!person || c.admin_user === person));
   const previous = (m?.history ?? []).slice(1, 4);
+  const answered = t ? pct(t.ok, t.calls) : null;
+  const pick = (kind: "tool" | "person", value: string) => {
+    if (kind === "tool") setTool(tool === value ? null : value);
+    else setPerson(person === value ? null : value);
+    setView("all");
+    setMore(false);
+  };
 
   return (
     <>
@@ -131,7 +250,7 @@ export default function McpPage() {
         <Card>
           <Failed />
         </Card>
-      ) : !configured || !m?.configured ? (
+      ) : !configured || !m?.configured || !t ? (
         <Card>{!configured ? <NotConfigured demo={demo} onDemo={setDemo} noSample /> : <Empty title="Pando MCP's tables are not set up yet" />}</Card>
       ) : (
         <div className="space-y-5">
@@ -158,59 +277,164 @@ export default function McpPage() {
             )}
           </Card>
 
-          <Card title="Calls · last 24 hours">
-            {m.calls.length === 0 ? (
-              <Empty title="No calls" />
-            ) : (
-              <ul className="divide-y divide-bark/60">
-                {m.calls.map((c) => {
-                  const rest = [
-                    c.refused ? { n: c.refused, ...OUTCOME.refused } : null,
-                    c.error ? { n: c.error, ...OUTCOME.error } : null,
-                    c.off ? { n: c.off, ...OUTCOME.off } : null,
-                  ].filter((x): x is { n: number; word: string; tone: string } => x !== null);
-                  const on = tool === c.tool;
-                  return (
-                    <li key={c.tool}>
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => {
-                          setTool(on ? null : c.tool);
-                          if (!on) setView("all");
-                        }}
-                        className={cn("flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-paper", on && "bg-green-wash")}
-                      >
-                        <span className="min-w-[11rem] font-mono text-[13px] text-ink">{c.tool}</span>
-                        <span className="flex-1 text-[13px]">
-                          <span className="text-ink">{`${c.ok} answered`}</span>
-                          {rest.map((r) => (
-                            <span key={r.word} className={r.tone}>{` · ${r.n} ${r.word}`}</span>
-                          ))}
-                        </span>
-                        <span className="text-[12.5px] text-muted">{`last ${time(c.last_at)}`}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+          <Card
+            title="Calls"
+            right={
+              <SegmentedFilter
+                track
+                label="Period"
+                value={days}
+                onChange={(d) => {
+                  setDays(d);
+                  setMore(false);
+                }}
+                options={PERIODS}
+              />
+            }
+          >
+            <div className={cn("transition-opacity", loading && "opacity-60")} aria-busy={loading}>
+              <StatStrip inset label={`Calls, last ${span}`}>
+                <Stat
+                  label="Calls"
+                  value={t.calls}
+                  hint={t.calls === 0 && t.prev_calls === 0 ? null : `${t.prev_calls} in the ${span} before`}
+                />
+                <Stat label="Answered" value={answered === null ? "—" : `${answered}%`} hint={t.calls ? `${t.ok} of ${t.calls}` : null} tone={answered !== null && answered < 90 ? "warn" : "plain"} />
+                <Stat
+                  label="Failed"
+                  value={t.error}
+                  tone={t.error > 0 ? "alert" : "plain"}
+                  hint={[t.refused ? `${t.refused} refused` : null, t.off ? `${t.off} while off` : null, `${t.prev_error} before`].filter(Boolean).join(" · ")}
+                />
+                <Stat label="Median time" value={duration(t.p50_ms)} hint={t.p95_ms === null ? null : `95% within ${duration(t.p95_ms)}`} />
+              </StatStrip>
+              {t.calls === 0 ? (
+                <Empty title={`No calls in the last ${span}`} />
+              ) : (
+                <>
+                  <Timeline buckets={m.timeline} hourly={days === 1} span={span} />
+                  <div className="border-t border-bark/70">
+                    <TableWrap label="Calls by tool">
+                      <thead>
+                        <tr>
+                          <Th>Tool</Th>
+                          <Th className="text-right">Calls</Th>
+                          <Th>Answered</Th>
+                          <Th className="text-right">Failed</Th>
+                          <Th className="text-right">Refused</Th>
+                          <Th className="text-right">Median</Th>
+                          <Th className="text-right">95%</Th>
+                          <Th className="text-right">Rows</Th>
+                          <Th className="text-right">Last</Th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(allTools ? m.tools : m.tools.slice(0, TOOLS_FIRST)).map((r) => {
+                          const kind = toolKind(r.tool);
+                          return (
+                            <tr key={r.tool} className={cn(tool === r.tool && "bg-green-wash")}>
+                              <Td>
+                                <span className="inline-flex flex-wrap items-center gap-2">
+                                  <button type="button" aria-pressed={tool === r.tool} onClick={() => pick("tool", r.tool)} className={cn(pickClass, "font-mono text-[13px] text-ink")}>
+                                    {r.tool}
+                                  </button>
+                                  {kind === "write" && <Badge tone="gold">proposes</Badge>}
+                                  {kind === "decide" && <Badge tone="green">decides</Badge>}
+                                </span>
+                              </Td>
+                              <Td className="text-right tabular-nums">{r.calls}</Td>
+                              <Td>
+                                <ShareBar part={r.ok} whole={r.calls} />
+                              </Td>
+                              <Td className={cn("text-right tabular-nums", r.error > 0 ? "font-semibold text-alert" : "text-muted/60")}>{r.error}</Td>
+                              <Td className={cn("text-right tabular-nums", r.refused > 0 ? "text-gold-ink" : "text-muted/60")}>{r.refused}</Td>
+                              <Td className="text-right tabular-nums">{duration(r.p50_ms)}</Td>
+                              <Td className="text-right tabular-nums text-muted">{duration(r.p95_ms)}</Td>
+                              <Td className="text-right tabular-nums text-muted">{r.avg_rows ?? "—"}</Td>
+                              <Td className="whitespace-nowrap text-right text-muted">{ago(r.last_at)}</Td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </TableWrap>
+                    {!allTools && <RevealMore n={m.tools.length - TOOLS_FIRST} onClick={() => setAllTools(true)} />}
+                  </div>
+                </>
+              )}
+            </div>
           </Card>
 
+          {t.calls > 0 && (
+            <div className="space-y-5">
+              <Card title={`By person · ${m.people.length}`}>
+                <TableWrap label="Calls by person">
+                  <thead>
+                    <tr>
+                      <Th>Person</Th>
+                      <Th className="text-right">Calls</Th>
+                      <Th className="text-right">Failed</Th>
+                      <Th className="text-right">Tools</Th>
+                      <Th>Most used</Th>
+                      <Th className="text-right">Last</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {m.people.map((p) => (
+                      <tr key={p.admin_user} className={cn(person === p.admin_user && "bg-green-wash")}>
+                        <Td>
+                          <button type="button" aria-pressed={person === p.admin_user} onClick={() => pick("person", p.admin_user)} className={cn(pickClass, "font-medium text-ink")}>
+                            {p.admin_user}
+                          </button>
+                        </Td>
+                        <Td className="text-right tabular-nums">{p.calls}</Td>
+                        <Td className={cn("text-right tabular-nums", p.error > 0 ? "font-semibold text-alert" : "text-muted/60")}>{p.error}</Td>
+                        <Td className="text-right tabular-nums">{p.tools}</Td>
+                        <Td className="font-mono text-[12.5px] text-ink-soft">{p.top_tool ?? "—"}</Td>
+                        <Td className="whitespace-nowrap text-right text-muted">{ago(p.last_at)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableWrap>
+              </Card>
+
+              <Card title="Slowest">
+                <ul className="divide-y divide-bark/60">
+                  {m.slowest.map((c, i) => (
+                    <li key={`${c.at}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-[13px]">
+                      <span className="w-16 shrink-0 text-right font-semibold tabular-nums text-ink">{duration(c.ms)}</span>
+                      <span className="font-mono text-ink">{c.tool}</span>
+                      {c.outcome !== "ok" && <span className={cn("font-semibold", outcomeOf(c.outcome).tone)}>{outcomeOf(c.outcome).word}</span>}
+                      <span className="flex-1 text-right text-muted">{`${c.admin_user} · ${when(c.at)}`}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          )}
+
           <Card
-            title={tool ? `Recent calls · ${tool}` : "Recent calls"}
+            title={["Recent calls", tool, person].filter(Boolean).join(" · ")}
             right={
-              <div className="flex items-center gap-2">
-                {tool && (
-                  <Button tone="ghost" onClick={() => setTool(null)}>
-                    All tools
+              <div className="flex flex-wrap items-center gap-2">
+                {(tool || person) && (
+                  <Button
+                    tone="ghost"
+                    onClick={() => {
+                      setTool(null);
+                      setPerson(null);
+                    }}
+                  >
+                    Clear
                   </Button>
                 )}
                 <SegmentedFilter
                   track
                   label="Which calls"
                   value={view}
-                  onChange={setView}
+                  onChange={(v) => {
+                    setView(v);
+                    setMore(false);
+                  }}
                   options={[
                     { id: "failures", label: "Not answered" },
                     { id: "all", label: "All" },
@@ -222,19 +446,21 @@ export default function McpPage() {
             {recent.length === 0 ? (
               <Empty title={view === "failures" ? "Every recent call was answered" : "No calls"} />
             ) : (
-              <ul className="divide-y divide-bark/60">
-                {recent.slice(0, 25).map((c, i) => {
-                  const o = OUTCOME[c.outcome] ?? { word: c.outcome, tone: "text-muted" };
-                  return (
+              <>
+                <ul className="divide-y divide-bark/60">
+                  {recent.slice(0, more ? recent.length : 25).map((c, i) => (
                     <li key={`${c.at}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-[13px]">
-                      <span className="w-[4.5rem] shrink-0 tabular-nums text-muted">{time(c.at)}</span>
+                      <span className="w-[7.5rem] shrink-0 tabular-nums text-muted">{when(c.at)}</span>
                       <span className="min-w-[11rem] font-mono text-ink">{c.tool}</span>
-                      <span className={cn("font-semibold", o.tone)}>{o.word}</span>
-                      <span className="flex-1 text-right text-muted">{`${c.admin_user} · ${c.ms} ms`}</span>
+                      <span className={cn("font-semibold", outcomeOf(c.outcome).tone)}>{outcomeOf(c.outcome).word}</span>
+                      <span className="flex-1 text-right tabular-nums text-muted">
+                        {[c.admin_user, duration(c.ms), c.rows === null ? null : `${c.rows} ${c.rows === 1 ? "row" : "rows"}`].filter(Boolean).join(" · ")}
+                      </span>
                     </li>
-                  );
-                })}
-              </ul>
+                  ))}
+                </ul>
+                {!more && <RevealMore n={recent.length - 25} onClick={() => setMore(true)} />}
+              </>
             )}
           </Card>
         </div>

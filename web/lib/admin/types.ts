@@ -1384,6 +1384,16 @@ export interface ProposalsResult {
 }
 
 /** Pando MCP's switch, the live connections and today's calls (20 Nov). */
+export type McpPeriod = 1 | 7 | 30;
+/** How a set of Pando MCP calls ended (`mcp_calls.outcome`). */
+export interface McpCallCounts {
+  calls: number;
+  ok: number;
+  refused: number;
+  off: number;
+  error: number;
+}
+
 export interface McpAdminResult {
   configured: boolean;
   enabled: boolean;
@@ -1406,9 +1416,20 @@ export interface McpAdminResult {
     since: string;
     last_used_at: string | null;
   }>;
-  calls: Array<{ tool: string; ok: number; refused: number; off: number; error: number; last_at: string }>;
-  /** The last 50 calls, newest first: who, which tool, how it ended, how long — never the arguments. */
-  recent: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number }>;
+  /** The period the figures below cover, in days (1, 7 or 30), ending now. */
+  period_days: McpPeriod;
+  /** The period's calls, and the same length before it for comparison. Times in ms; null with no calls. */
+  totals: McpCallCounts & { p50_ms: number | null; p95_ms: number | null; people: number; prev_calls: number; prev_error: number };
+  /** Per tool over the period, most called first. */
+  tools: Array<McpCallCounts & { tool: string; p50_ms: number | null; p95_ms: number | null; avg_rows: number | null; last_at: string }>;
+  /** One bucket per hour (a day) or per day (7 or 30), on the market's clock, oldest first, empty ones kept. */
+  timeline: Array<McpCallCounts & { at: string }>;
+  /** Per admin over the period, most calls first. */
+  people: Array<McpCallCounts & { admin_user: string; tools: number; top_tool: string | null; last_at: string }>;
+  /** The period's slowest calls, slowest first. */
+  slowest: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number }>;
+  /** The last 100 calls, newest first: who, which tool, how it ended, how long — never the arguments. */
+  recent: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number; rows: number | null }>;
   /** The switch's last flips, newest first. */
   history: Array<{ at: string; by: string; on: boolean }>;
 }

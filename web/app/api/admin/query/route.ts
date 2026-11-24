@@ -6,6 +6,7 @@ import { readAdminSession } from "@/lib/server/admin-auth";
 import { refuseForeignAdminWrite } from "@/lib/admin/request-guard";
 import * as sample from "@/lib/admin/sample";
 import type { AdminResource, AdminResourceRows } from "@/lib/admin/types";
+import { mcpNothing } from "@/lib/admin/mcp-nothing";
 import { getDb } from "@/lib/server/db";
 import { readResource } from "@/lib/server/repo/admin-read";
 
@@ -98,7 +99,7 @@ const EMPTY: AdminResourceRows = {
   },
   audit: [],
   proposals: { configured: false, rows: [] },
-  mcp: { configured: false, enabled: false, env_off: false, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] },
+  mcp: mcpNothing(),
 };
 
 const SAMPLE: AdminResourceRows = {
@@ -183,7 +184,7 @@ const SAMPLE: AdminResourceRows = {
   audit: sample.sampleAudit,
   /* No sample proposals or connections: a made-up approval would read as one an admin gave. */
   proposals: { configured: false, rows: [] },
-  mcp: { configured: false, enabled: false, env_off: false, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] },
+  mcp: mcpNothing(),
 };
 
 /**

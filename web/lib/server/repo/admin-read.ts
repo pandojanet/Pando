@@ -29,7 +29,8 @@ import type {
   MatchingResult,
   PlaceDemand,
 } from "@/lib/admin/types";
-import { AUDIT_PAGE_SIZE, type AdminResourceRows, type CaregiverClaimRow, type CaregiverRow, type RestrictedNote } from "@/lib/admin/types";
+import { AUDIT_PAGE_SIZE, type AdminResourceRows, type CaregiverClaimRow, type CaregiverRow, type McpPeriod, type RestrictedNote } from "@/lib/admin/types";
+import { mcpNothing } from "@/lib/admin/mcp-nothing";
 import type { ProviderCheck } from "@/lib/provider-check";
 import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import {
@@ -99,7 +100,7 @@ type Reader<R extends AdminResource> = (db: Db, params: Record<string, unknown>)
 const READERS: { [R in AdminResource]: Reader<R> } = {
   overview: (db) => overview(db),
   proposals: (db, params) => proposalRows(db, params),
-  mcp: (db) => mcpAdmin(db),
+  mcp: (db, params) => mcpAdmin(db, params),
   contributors: (db) => contributors(db),
   contributor: (db, params) => contributorDetail(db, String(params.id ?? "")),
   /* 23 Sep: one parent's cards, for the contributor page the Founding
@@ -2726,10 +2727,16 @@ async function proposalRows(db: Db, params: Record<string, unknown>): Promise<Ad
   };
 }
 
-/** The switch, live connections (one row per admin and client) and the last 24 hours' calls by tool. */
-async function mcpAdmin(db: Db): Promise<AdminResourceRows["mcp"]> {
+/**
+ * The switch, live connections (one row per admin and client) and the calls: a period's totals against
+ * the period before, a timeline on the market's clock, per tool and per admin, the slowest, the latest
+ * (24 Nov — the developer: *"хотілось би бачити більш детальну аналітику колів"*). All from `mcp_calls`,
+ * which keeps who, which tool, the outcome, the time and the rows — never the arguments.
+ */
+async function mcpAdmin(db: Db, params: Record<string, unknown> = {}): Promise<AdminResourceRows["mcp"]> {
   const envOff = (process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off";
-  if (!(await mcpTables(db))) return { configured: false, enabled: false, env_off: envOff, switched_by: null, switched_at: null, connections: [], calls: [], recent: [], history: [] };
+  const days: McpPeriod = params.days === 1 || params.days === "1" ? 1 : params.days === 30 || params.days === "30" ? 30 : 7;
+  if (!(await mcpTables(db))) return mcpNothing(days, envOff);
   const [setting] = await rows(db, sql`select value, updated_by, updated_at from app_settings where key = 'mcp_enabled'`);
   /* One row per admin and app (review, 20 Nov): Claude registers anew on each reconnect, so an app is
      many client ids. The app is told by where its codes go — Claude's hosted callback, or a loopback
@@ -2747,17 +2754,53 @@ async function mcpAdmin(db: Db): Promise<AdminResourceRows["mcp"]> {
      order by max(coalesce(t.last_used_at, t.created_at)) desc
   `);
   const recent = await rows(db, sql`
-    select at, actor, tool, outcome, ms from mcp_calls order by at desc limit 50
+    select at, actor, tool, outcome, ms, rows from mcp_calls order by at desc limit 100
   `);
   const history = await rows(db, sql`
     select at, actor, (after->>'on')::boolean as on from audit_log
      where action = 'mcp.switch' order by at desc limit 5
   `).catch(() => [] as Row[]);
-  const calls = await rows(db, sql`
-    select tool, count(*) filter (where outcome = 'ok') as ok, count(*) filter (where outcome = 'refused') as refused,
-           count(*) filter (where outcome = 'off') as off, count(*) filter (where outcome = 'error') as error, max(at) as last_at
-      from mcp_calls where at > now() - interval '24 hours' group by tool order by count(*) desc
+
+  /* The period's calls. `days` is one of three numbers; the bucket unit is one of two words, never input. */
+  const inPeriod = sql`at > now() - make_interval(days => ${days}::int)`;
+  const counts = sql`count(*) as calls, count(*) filter (where outcome = 'ok') as ok, count(*) filter (where outcome = 'refused') as refused,
+    count(*) filter (where outcome = 'off') as off, count(*) filter (where outcome = 'error') as error`;
+  const timing = sql`percentile_cont(0.5) within group (order by ms) as p50, percentile_cont(0.95) within group (order by ms) as p95`;
+  const [total] = await rows(db, sql`select ${counts}, ${timing}, count(distinct actor) as people from mcp_calls where ${inPeriod}`);
+  const [before] = await rows(db, sql`
+    select count(*) as calls, count(*) filter (where outcome = 'error') as error from mcp_calls
+     where at > now() - make_interval(days => ${days * 2}::int) and at <= now() - make_interval(days => ${days}::int)
   `);
+  const tools = await rows(db, sql`
+    select tool, ${counts}, ${timing}, avg(rows) as avg_rows, max(at) as last_at
+      from mcp_calls where ${inPeriod} group by tool order by count(*) desc, tool
+  `);
+  const tz = marketConfig(DEFAULT_MARKET_ID).timeZone;
+  const unit = sql.raw(days === 1 ? "'hour'" : "'day'");
+  const step = sql.raw(days === 1 ? "interval '1 hour'" : "interval '1 day'");
+  const buckets = days === 1 ? 24 : days;
+  const timeline = await rows(db, sql`
+    with b as (
+      select generate_series(date_trunc(${unit}, now() at time zone ${tz}::text) - (${buckets - 1}::int * ${step}),
+                             date_trunc(${unit}, now() at time zone ${tz}::text), ${step}) as local
+    )
+    select to_char(b.local, 'YYYY-MM-DD"T"HH24:MI') as at,
+           count(c.id) as calls, count(c.id) filter (where c.outcome = 'ok') as ok, count(c.id) filter (where c.outcome = 'refused') as refused,
+           count(c.id) filter (where c.outcome = 'off') as off, count(c.id) filter (where c.outcome = 'error') as error
+      from b left join mcp_calls c
+        on c.at > now() - make_interval(days => ${days}::int) and date_trunc(${unit}, c.at at time zone ${tz}::text) = b.local
+     group by b.local order by b.local
+  `);
+  const people = await rows(db, sql`
+    select actor, ${counts}, count(distinct tool) as tools, mode() within group (order by tool) as top_tool, max(at) as last_at
+      from mcp_calls where ${inPeriod} group by actor order by count(*) desc, actor limit 20
+  `);
+  const slowest = await rows(db, sql`select at, actor, tool, outcome, ms from mcp_calls where ${inPeriod} order by ms desc, at desc limit 8`);
+
+  const n = (v: unknown) => Number(v ?? 0);
+  const ms = (v: unknown) => (v === null || v === undefined ? null : Math.round(Number(v)));
+  const countsOf = (r: Row) => ({ calls: n(r.calls), ok: n(r.ok), refused: n(r.refused), off: n(r.off), error: n(r.error) });
+  const iso = (v: unknown) => new Date(String(v)).toISOString();
   return {
     configured: true,
     enabled: setting?.value === true && !envOff,
@@ -2773,9 +2816,14 @@ async function mcpAdmin(db: Db): Promise<AdminResourceRows["mcp"]> {
       since: new Date(String(c.since)).toISOString(),
       last_used_at: c.last_used_at ? new Date(String(c.last_used_at)).toISOString() : null,
     })),
-    recent: recent.map((r) => ({ at: new Date(String(r.at)).toISOString(), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: Number(r.ms ?? 0) })),
-    history: history.map((h) => ({ at: new Date(String(h.at)).toISOString(), by: String(h.actor), on: h.on === true })),
-    calls: calls.map((c) => ({ tool: String(c.tool), ok: Number(c.ok), refused: Number(c.refused), off: Number(c.off), error: Number(c.error), last_at: new Date(String(c.last_at)).toISOString() })),
+    period_days: days,
+    totals: { ...countsOf(total ?? {}), p50_ms: ms(total?.p50), p95_ms: ms(total?.p95), people: n(total?.people), prev_calls: n(before?.calls), prev_error: n(before?.error) },
+    tools: tools.map((t) => ({ tool: String(t.tool), ...countsOf(t), p50_ms: ms(t.p50), p95_ms: ms(t.p95), avg_rows: t.avg_rows === null || t.avg_rows === undefined ? null : Math.round(Number(t.avg_rows) * 10) / 10, last_at: iso(t.last_at) })),
+    timeline: timeline.map((b) => ({ at: String(b.at), ...countsOf(b) })),
+    people: people.map((p) => ({ admin_user: String(p.actor), ...countsOf(p), tools: n(p.tools), top_tool: p.top_tool ? String(p.top_tool) : null, last_at: iso(p.last_at) })),
+    slowest: slowest.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: n(r.ms) })),
+    recent: recent.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: n(r.ms), rows: r.rows === null || r.rows === undefined ? null : n(r.rows) })),
+    history: history.map((h) => ({ at: iso(h.at), by: String(h.actor), on: h.on === true })),
   };
 }
 

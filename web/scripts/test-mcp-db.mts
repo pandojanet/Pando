@@ -413,6 +413,32 @@ const alertsLib = await load<typeof import("../lib/alerts.ts")>("../lib/alerts.t
 const facts = await alertsSrv.alertFacts(db, new Date());
 ok("five tool failures in 30 minutes make a Slack alert for QuitCode", alertsLib.criticalAlerts(facts, "d").some((a) => a.key.startsWith("mcp_errors") && a.owner === "QuitCode"), JSON.stringify(facts.mcp));
 
+console.log("\n=== the admin's calls page (24 Nov) ===");
+/* Two calls from another admin ten days ago, one slow; one from five weeks ago — outside every period. */
+await q(sql`insert into mcp_calls (at, actor, client_id, tool, outcome, ms, rows) values
+  (now() - interval '10 days', 'janet', 'x', 'digest_weeks', 'ok', 9000, 4),
+  (now() - interval '10 days', 'janet', 'x', 'search_records', 'refused', 20, null),
+  (now() - interval '35 days', 'janet', 'x', 'search_records', 'ok', 5, 1)`);
+const adminRead = await load<typeof import("../lib/server/repo/admin-read.ts")>("../lib/server/repo/admin-read.ts");
+const day = await adminRead.readResource(db, "mcp", { days: 1 });
+const month = await adminRead.readResource(db, "mcp", { days: 30 });
+const [inDay] = await q(sql`select count(*) as n, count(*) filter (where outcome = 'error') as e from mcp_calls where at > now() - interval '1 day'`);
+const [inMonth] = await q(sql`select count(*) as n from mcp_calls where at > now() - interval '30 days'`);
+const sumOf = (xs: Array<{ calls: number }>) => xs.reduce((s, x) => s + x.calls, 0);
+ok("a period's totals are its calls; the per-tool, per-person and timeline counts add up to them",
+  day.period_days === 1 && day.totals.calls === Number(inDay.n) && day.totals.error === Number(inDay.e) &&
+    sumOf(day.tools) === day.totals.calls && sumOf(day.people) === day.totals.calls && sumOf(day.timeline) === day.totals.calls,
+  JSON.stringify({ totals: day.totals, tools: sumOf(day.tools), people: sumOf(day.people), timeline: sumOf(day.timeline) }));
+ok("a day is 24 hourly buckets and a month 30 daily ones, empty ones kept",
+  day.timeline.length === 24 && month.timeline.length === 30 && /^\d{4}-\d\d-\d\dT\d\d:00$/.test(day.timeline[0]?.at ?? "") && month.timeline.some((b) => b.calls === 0));
+ok("thirty days hold the calls of ten days ago and not of five weeks ago; the slowest comes first",
+  month.totals.calls === Number(inMonth.n) && month.people.some((p) => p.admin_user === "janet" && p.calls === 2 && p.refused === 1) &&
+    month.slowest[0]?.ms === 9000 && month.slowest[0]?.tool === "digest_weeks" &&
+    month.tools.find((t) => t.tool === "digest_weeks")?.calls === Number((await q(sql`select count(*) as n from mcp_calls where tool = 'digest_weeks' and at > now() - interval '30 days'`))[0].n),
+  JSON.stringify({ calls: month.totals.calls, n: Number(inMonth.n), janet: month.people.find((p) => p.admin_user === "janet"), dw: month.tools.find((t) => t.tool === "digest_weeks") }));
+ok("the period before is counted for comparison, and an unknown period reads as seven days",
+  (await adminRead.readResource(db, "mcp", { days: 7 })).totals.prev_calls === 2 && (await adminRead.readResource(db, "mcp", { days: "x" })).period_days === 7);
+
 console.log("\n=== a lost connection is tried once more, for reads only ===");
 /* Shaped as the driver throws them: postgres.js sets `code`; drizzle wraps it with `query`/`params` and `cause`. */
 const driverErr = (code: string, message = `write ${code}`) => Object.assign(new Error(message), { code });
