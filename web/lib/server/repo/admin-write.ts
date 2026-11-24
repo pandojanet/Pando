@@ -23,6 +23,7 @@ import type { Db } from "@/lib/server/db";
 import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
 import { erasePersonIn } from "@/lib/server/repo/parent-delete";
+import { forgetMcpSwitch } from "@/lib/server/repo/mcp";
 import {
   insertContributionImpact,
   insertImpact,
@@ -2608,6 +2609,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         insert into app_settings (key, value, updated_by, updated_at) values ('mcp_enabled', ${JSON.stringify(on)}::jsonb, ${ctx.actor}, now())
         on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()
       `);
+      /* The admin's change takes effect at once, not when this process's kept read runs out (24 Nov). */
+      forgetMcpSwitch();
       return { applied: true, resource: "app_setting", resource_id: "mcp_enabled" };
     }
 

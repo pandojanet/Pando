@@ -323,13 +323,39 @@ export async function revokeBySecret(secret: string): Promise<void> {
 
 /**
  * Pando MCP is on only when an admin switched it on (`app_settings.mcp_enabled`) **and** the server's
- * emergency override `PANDO_MCP` is not `off`. Unreadable is off: a switch that cannot be read must
+ * emergency override `PANDO_MCP` is not `off`. Unreadable is not on: a switch that cannot be read must
  * not leave the door open.
+ *
+ * ⚠ **But unreadable is not "off" either (24 Nov).** The developer: *"сервіс не виключений, а воно
+ * часто пише, що він вимкнений"*. A database that did not answer came back as `false`, and every tool
+ * then told Claude *"Pando MCP is switched off in the Pando admin"* — a false statement about a setting,
+ * when the truth was a database that did not answer. Now `unknown` refuses just the same, and says so.
+ *
+ * A read is kept for `SWITCH_TTL_MS` so a run of tool calls does not spend a connection each on the
+ * same row (the pool is five, shared with the SMS side); the admin's own change forgets it at once
+ * (`forgetMcpSwitch`, called by the admin's `mcp.switch`). A failed read never uses an old value.
  */
-export async function mcpEnabled(): Promise<boolean> {
-  if ((process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off") return false;
+export type McpSwitch = "on" | "off" | "unknown";
+
+const SWITCH_TTL_MS = 30_000;
+let switchRead: { on: boolean; at: number } | null = null;
+
+export function forgetMcpSwitch(): void {
+  switchRead = null;
+}
+
+export async function mcpSwitch(now = Date.now()): Promise<McpSwitch> {
+  if ((process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off") return "off";
+  if (switchRead && now - switchRead.at < SWITCH_TTL_MS) return switchRead.on ? "on" : "off";
   const r = await withDb(async (db) => (await rows(db, sql`select value from app_settings where key = 'mcp_enabled'`))[0] ?? null);
-  return r.persisted && r.data?.value === true;
+  if (!r.persisted) return "unknown";
+  const on = r.data?.value === true;
+  switchRead = { on, at: now };
+  return on ? "on" : "off";
+}
+
+export async function mcpEnabled(): Promise<boolean> {
+  return (await mcpSwitch()) === "on";
 }
 
 /* ── The call log ───────────────────────────────────────────────────────────── */

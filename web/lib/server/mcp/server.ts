@@ -7,11 +7,23 @@ import { getDb, withDb, type Db } from "@/lib/server/db";
 
 /** The longest a read tool's statement may run (20 Nov). */
 const READ_LIMIT = "10s";
+/** The longest a tool call may take before Pando answers that it stopped waiting (24 Nov). */
+const CALL_DEADLINE_MS = 30_000;
+class DeadlineError extends Error {}
+/** The work, or a `DeadlineError` once the deadline passes — the work itself is left to finish or fail quietly. */
+function withinDeadline<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  work.catch(() => {});
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DeadlineError("call deadline")), CALL_DEADLINE_MS);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
 import { readResource } from "@/lib/server/repo/admin-read";
 import { applyAction } from "@/lib/server/repo/admin-write";
 import { rateLimitedKey } from "@/lib/server/rate-limit";
 import { mayPropose } from "@/lib/mcp/oauth";
-import { logCall, mcpEnabled, type CallOutcome } from "@/lib/server/repo/mcp";
+import { logCall, mcpSwitch, type CallOutcome } from "@/lib/server/repo/mcp";
 import { dailyActivity, getRecord, impactTotals, parentsTotals, questionsTotals, recordsTotals, searchRecords, unansweredQuestions, whatWentWrong } from "@/lib/server/repo/mcp-read";
 import { SOURCE_CHECKS, SOURCE_KINDS, SOURCE_ROLES, SOURCE_STATUSES, getSource, listSources, recordSourceCheck, sourceNamed } from "@/lib/server/repo/mcp-sources";
 import { AGE_BANDS } from "@/lib/matching";
@@ -133,9 +145,17 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
         let outcome: CallOutcome = "ok";
         let rows: number | null = null;
         try {
-          if (!(await mcpEnabled())) {
+          /* Off is said only when it is off (24 Nov): a switch that could not be read refuses just the
+             same, but as what it is — Claude was telling people MCP was switched off when the database
+             had not answered. */
+          const sw = await mcpSwitch();
+          if (sw === "off") {
             outcome = "off";
             return { ...text("Pando MCP is switched off in the Pando admin."), isError: true };
+          }
+          if (sw === "unknown") {
+            outcome = "error";
+            return { ...text("Pando's database didn't answer just now, so nothing was read or changed. Try again in a minute."), isError: true };
           }
           if (!config.readOnly && !mayPropose(ctx.scopes)) {
             outcome = "refused";
@@ -144,16 +164,24 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
           /* A read runs in a read-only transaction with a statement limit (20 Nov): it cannot write, and a
              slow query cannot hold a connection the SMS side of Pando shares for more than READ_LIMIT. One
              tool call per request (batches are refused), so `inRead` is this call's alone. */
-          const value = config.readOnly && !config.outside ? await asRead(() => run(args)) : await run(args);
+          /* A deadline on the call (24 Nov): a pool of five that is busy used to keep Claude waiting until
+             its own 230-second timeout, with the outcome unknown. A read is also bounded by READ_LIMIT once
+             it has a connection; this bounds the wait for one, and anything outside. */
+          const value = await withinDeadline(config.readOnly && !config.outside ? asRead(() => run(args)) : run(args));
           rows = typeof value === "string" ? null : countOf(value);
           if (typeof value === "string") outcome = "refused";
           return typeof value === "string" ? { ...text(value), isError: true } : text(value);
         } catch (err) {
           outcome = "error";
           console.error("[mcp] tool failed", { tool: name, error: err instanceof Error ? err.constructor.name : "unknown" });
+          if (err instanceof DeadlineError) {
+            return { ...text(`That took longer than ${CALL_DEADLINE_MS / 1000} seconds, so Pando stopped waiting. A read changed nothing; a proposal may or may not have been made — check list_proposals before proposing again.`), isError: true };
+          }
           return { ...text("That didn't work just now. Try again in a minute."), isError: true };
         } finally {
-          await logCall({ actor: ctx.actor, clientId: ctx.clientId, tool: name, outcome, ms: Date.now() - started, rows });
+          /* Not awaited (24 Nov): the answer no longer waits for its own log row, which needs a connection
+             of its own — on a busy pool even a quick read hung until one came free. */
+          void logCall({ actor: ctx.actor, clientId: ctx.clientId, tool: name, outcome, ms: Date.now() - started, rows });
         }
       }) as never,
     );

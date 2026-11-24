@@ -374,15 +374,21 @@ ok("a source check writes only its time and result", checked.error === null && c
 ok("the same name again is refused as already listed", /already on the list/.test((await call("propose_source", { role: "partner", kind: "school", name: "ci elementary" })).error ?? ""));
 
 console.log("\n=== the switch ===");
-await q(sql`update app_settings set value = 'false'::jsonb where key = 'mcp_enabled'`);
+/* Switched the way an admin switches it, so the kept read is forgotten at once (24 Nov). */
+await admin.applyAction(db, { actor: "ci", action: "mcp.switch", body: { on: false } });
 const off = await call("records_totals");
-ok("switched off, a tool says so", off.error === "Pando MCP is switched off in the Pando admin.");
-const [logged] = await q(sql`select count(*) as n from mcp_calls where outcome = 'off'`);
-ok("and the call is logged as off", Number(logged.n) === 1);
+ok("switched off, a tool says so — at once, not after the kept read runs out", off.error === "Pando MCP is switched off in the Pando admin.");
+/* The log row is written after the answer, no longer before it: wait for it briefly. */
+let offLogged = 0;
+for (let i = 0; i < 20 && offLogged !== 1; i++) {
+  offLogged = Number((await q(sql`select count(*) as n from mcp_calls where outcome = 'off'`))[0]?.n ?? 0);
+  if (offLogged !== 1) await new Promise((r) => setTimeout(r, 50));
+}
+ok("and the call is logged as off", offLogged === 1, String(offLogged));
 
 console.log("\n=== keeping it small, and watching it ===");
 const [used1] = await q(sql`select last_used_at from mcp_tokens where admin_user = 'ci' and revoked_at is null order by created_at desc limit 1`);
-await q(sql`update app_settings set value = 'true'::jsonb where key = 'mcp_enabled'`);
+await admin.applyAction(db, { actor: "ci", action: "mcp.switch", body: { on: true } });
 await call("impact_totals");
 const [used2] = await q(sql`select last_used_at from mcp_tokens where admin_user = 'ci' and revoked_at is null order by created_at desc limit 1`);
 ok("a token's last use is written at most every five minutes, not on every call", used1?.last_used_at !== null && String(used1?.last_used_at) === String(used2?.last_used_at));

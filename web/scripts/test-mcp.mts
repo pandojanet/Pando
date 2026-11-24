@@ -104,11 +104,19 @@ console.log("\n=== the diagram's promises ===");
 {
   const server = read("lib/server/mcp/server.ts");
   ok("every tool goes through one wrapper: the switch, the call log, errors by class only",
-    (server.match(/server\.registerTool\(/g) ?? []).length === 1 && /if \(!\(await mcpEnabled\(\)\)\)/.test(server) && /finally \{\s+await logCall\(/.test(server) &&
+    (server.match(/server\.registerTool\(/g) ?? []).length === 1 && /const sw = await mcpSwitch\(\);/.test(server) && /finally \{[\s\S]{0,300}void logCall\(/.test(server) &&
       /error: err instanceof Error \? err\.constructor\.name : "unknown"/.test(server));
   const repo = read("lib/server/repo/mcp.ts");
-  ok("one off switch: the admin's setting, and the server's PANDO_MCP=off over it; unreadable is off",
-    /PANDO_MCP/.test(repo) && /key = 'mcp_enabled'/.test(repo) && /return r\.persisted && r\.data\?\.value === true;/.test(repo));
+  /* 24 Nov: unreadable still refuses, but as what it is — "switched off" was said when the database had not answered. */
+  ok("one off switch: the admin's setting, and the server's PANDO_MCP=off over it; unreadable refuses as unknown, never as off",
+    /PANDO_MCP/.test(repo) && /key = 'mcp_enabled'/.test(repo) && /if \(!r\.persisted\) return "unknown";/.test(repo) &&
+      /if \(sw === "unknown"\) \{\s+outcome = "error";\s+return \{ \.\.\.text\("Pando's database didn't answer just now/.test(server) &&
+      /if \(sw === "off"\) \{\s+outcome = "off";/.test(server));
+  ok("a read of the switch is kept 30 s, never reused after a failed read, and the admin's change forgets it at once",
+    /const SWITCH_TTL_MS = 30_000;/.test(repo) && /case "mcp\.switch": \{[\s\S]{0,600}forgetMcpSwitch\(\);/.test(read("lib/server/repo/admin-write.ts")));
+  ok("a call answers within 30 s, and its answer never waits for its own log row",
+    /const CALL_DEADLINE_MS = 30_000;/.test(server) && /void logCall\(\{ actor: ctx\.actor/.test(server) && !/await logCall\(/.test(server) &&
+      /if \(err instanceof DeadlineError\)/.test(server));
   const logAt = repo.indexOf("export async function logCall");
   ok("the call log keeps who, which tool, the outcome, time and rows — never the arguments",
     logAt !== -1 && /insert into mcp_calls \(actor, client_id, tool, outcome, ms, rows\)/.test(repo) && !/args/.test(repo.slice(logAt)));
@@ -264,7 +272,7 @@ console.log("\n=== the diagram's promises ===");
   const outOfOrder = journalEntries.filter((e, k) => k > 0 && !(e.when > journalEntries[k - 1].when && e.idx === journalEntries[k - 1].idx + 1));
   ok("every migration's \"when\" is newer than the one before it (drizzle skips an older one silently)", outOfOrder.length === 0, outOfOrder.map((e) => e.tag).join(", "));
   ok("the off switch reads the env first and the admin's setting second, in code, not a comment",
-    /if \(\(process\.env\.PANDO_MCP \?\? ""\)\.trim\(\)\.toLowerCase\(\) === "off"\) return false;/.test(code(repo)));
+    /if \(\(process\.env\.PANDO_MCP \?\? ""\)\.trim\(\)\.toLowerCase\(\) === "off"\) return "off";/.test(code(repo)));
   ok("an event approved after the digests were prepared joins the prepared, unapproved, unsent editions it fits; a taken-out one leaves only those",
     /e\.status in \('ready', 'empty'\) and e\.approved_at is null/.test(write) && /candidatesForGroup\(\[e\], ed\.day, ed\.cohort_profile\?\.ages \?\? null\)/.test(write) &&
       /and e\.approved_at is null\s+and not exists \(select 1 from digest_sends s where s\.edition_id = e\.id\)/.test(write));
@@ -320,7 +328,7 @@ console.log("\n=== the diagram's promises ===");
   /* The senior pass (20 Nov). */
   ok("a read tool runs in a read-only transaction with a 10 s statement limit; costs, which wait on others, outside",
     /accessMode: "read only"/.test(server) && /set local statement_timeout = '\$\{READ_LIMIT\}'/.test(server) && /const READ_LIMIT = "10s"/.test(server) &&
-      /config\.readOnly && !config\.outside \? await asRead/.test(server) && /outside: true,/.test(server));
+      /withinDeadline\(config\.readOnly && !config\.outside \? asRead\(/.test(server) && /outside: true,/.test(server));
   ok("a place count of 1 or 2 is \"<3\"", /v > 0 && v < 3 \? "<3"/.test(server) && /fewerThanThree\(await readResource\(db\(\), "demand_places"/.test(server));
   ok("revoking an admin ends their Claude connections at once", /update mcp_tokens set revoked_at = now\(\) where admin_user = \$\{name\}/.test(read("scripts/admin-user.mjs")));
   ok("the refresh checks the admin before its transaction, not while holding the row lock",
