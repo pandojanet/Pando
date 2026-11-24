@@ -31,6 +31,7 @@ import type {
 } from "@/lib/admin/types";
 import { AUDIT_PAGE_SIZE, type AdminResourceRows, type CaregiverClaimRow, type CaregiverRow, type McpPeriod, type RestrictedNote } from "@/lib/admin/types";
 import { mcpNothing } from "@/lib/admin/mcp-nothing";
+import { mcpCallsHaveReason } from "@/lib/server/repo/mcp";
 import type { ProviderCheck } from "@/lib/provider-check";
 import { subcategoryFor } from "@/lib/seed-chat/subcategories";
 import {
@@ -2753,8 +2754,11 @@ async function mcpAdmin(db: Db, params: Record<string, unknown> = {}): Promise<A
      group by 1, 2, 3
      order by max(coalesce(t.last_used_at, t.created_at)) desc
   `);
+  /* Why a call did not answer is kept since drizzle/0080; before it the column is not there. */
+  const keepsReason = await mcpCallsHaveReason(db);
+  const reasonCol = keepsReason ? sql`reason` : sql`null::text as reason`;
   const recent = await rows(db, sql`
-    select at, actor, tool, outcome, ms, rows from mcp_calls order by at desc limit 100
+    select at, actor, tool, outcome, ${reasonCol}, ms, rows from mcp_calls order by at desc limit 100
   `);
   const history = await rows(db, sql`
     select at, actor, (after->>'on')::boolean as on from audit_log
@@ -2795,7 +2799,11 @@ async function mcpAdmin(db: Db, params: Record<string, unknown> = {}): Promise<A
     select actor, ${counts}, count(distinct tool) as tools, mode() within group (order by tool) as top_tool, max(at) as last_at
       from mcp_calls where ${inPeriod} group by actor order by count(*) desc, actor limit 20
   `);
-  const slowest = await rows(db, sql`select at, actor, tool, outcome, ms from mcp_calls where ${inPeriod} order by ms desc, at desc limit 8`);
+  const slowest = await rows(db, sql`select at, actor, tool, outcome, ${reasonCol}, ms from mcp_calls where ${inPeriod} order by ms desc, at desc limit 8`);
+  const reasons = await rows(db, sql`
+    select outcome, ${keepsReason ? sql`reason` : sql`null::text`} as reason, count(*) as calls, max(at) as last_at
+      from mcp_calls where ${inPeriod} and outcome <> 'ok' group by 1, 2 order by count(*) desc, 2
+  `);
 
   const n = (v: unknown) => Number(v ?? 0);
   const ms = (v: unknown) => (v === null || v === undefined ? null : Math.round(Number(v)));
@@ -2821,8 +2829,10 @@ async function mcpAdmin(db: Db, params: Record<string, unknown> = {}): Promise<A
     tools: tools.map((t) => ({ tool: String(t.tool), ...countsOf(t), p50_ms: ms(t.p50), p95_ms: ms(t.p95), avg_rows: t.avg_rows === null || t.avg_rows === undefined ? null : Math.round(Number(t.avg_rows) * 10) / 10, last_at: iso(t.last_at) })),
     timeline: timeline.map((b) => ({ at: String(b.at), ...countsOf(b) })),
     people: people.map((p) => ({ admin_user: String(p.actor), ...countsOf(p), tools: n(p.tools), top_tool: p.top_tool ? String(p.top_tool) : null, last_at: iso(p.last_at) })),
-    slowest: slowest.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: n(r.ms) })),
-    recent: recent.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), ms: n(r.ms), rows: r.rows === null || r.rows === undefined ? null : n(r.rows) })),
+    keeps_reason: keepsReason,
+    reasons: reasons.map((r) => ({ outcome: String(r.outcome), reason: r.reason ? String(r.reason) : null, calls: n(r.calls), last_at: iso(r.last_at) })),
+    slowest: slowest.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), reason: r.reason ? String(r.reason) : null, ms: n(r.ms) })),
+    recent: recent.map((r) => ({ at: iso(r.at), admin_user: String(r.actor), tool: String(r.tool), outcome: String(r.outcome), reason: r.reason ? String(r.reason) : null, ms: n(r.ms), rows: r.rows === null || r.rows === undefined ? null : n(r.rows) })),
     history: history.map((h) => ({ at: iso(h.at), by: String(h.actor), on: h.on === true })),
   };
 }

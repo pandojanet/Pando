@@ -6,6 +6,6 @@ export function mcpNothing(periodDays: McpPeriod = 7, envOff = false): McpAdminR
   return {
     configured: false, enabled: false, env_off: envOff, switched_by: null, switched_at: null, connections: [], period_days: periodDays,
     totals: { ...none, p50_ms: null, p95_ms: null, people: 0, prev_calls: 0, prev_error: 0 },
-    tools: [], timeline: [], people: [], slowest: [], recent: [], history: [],
+    tools: [], timeline: [], people: [], keeps_reason: false, reasons: [], slowest: [], recent: [], history: [],
   };
 }

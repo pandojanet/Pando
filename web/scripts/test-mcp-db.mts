@@ -439,6 +439,23 @@ ok("thirty days hold the calls of ten days ago and not of five weeks ago; the sl
 ok("the period before is counted for comparison, and an unknown period reads as seven days",
   (await adminRead.readResource(db, "mcp", { days: 7 })).totals.prev_calls === 2 && (await adminRead.readResource(db, "mcp", { days: "x" })).period_days === 7);
 
+/* Why a call did not answer (0080): a code the wrapper chose, never a message. The suite's own calls above
+   made each kind — switched off, a read-only connection proposing, Pando's rule refusing. */
+const byReason = await q(sql`select outcome, reason, count(*) as n from mcp_calls where at > now() - interval '1 hour' group by 1, 2`);
+const has = (outcome: string, reason: string | null) => byReason.some((r) => r.outcome === outcome && (r.reason ?? null) === reason);
+ok("each call that did not answer is logged with why: switched off, read-only connection, Pando's rule",
+  has("off", "switched_off") && has("refused", "read_only") && has("refused", "rule"), JSON.stringify(byReason));
+ok("an answered call has no reason, and no reason is ever anything but a code from the list",
+  !byReason.some((r) => r.outcome === "ok" && r.reason !== null) &&
+    byReason.every((r) => r.reason === null || ["deadline", "database_unreachable", "query_timeout", "database_error", "outside_service", "unexpected", "read_only", "rule", "switched_off", "off_on_server"].includes(String(r.reason))));
+await mcp.logCall({ actor: "ci", clientId: null, tool: "records_totals", outcome: "error", reason: "not a code" as never, ms: 1 });
+const [odd] = await q(sql`select reason from mcp_calls where actor = 'ci' and outcome = 'error' order by id desc limit 1`);
+ok("a reason that is not on the list is stored as none, never as text", odd?.reason === null);
+const why = await adminRead.readResource(db, "mcp", { days: 1 });
+ok("the calls page reads why: a row per outcome and reason, and the reason beside a recent call",
+  why.keeps_reason && why.reasons.some((r) => r.outcome === "refused" && r.reason === "rule" && r.calls > 0) &&
+    why.recent.some((c) => c.outcome === "off" && c.reason === "switched_off"), JSON.stringify(why.reasons));
+
 console.log("\n=== a lost connection is tried once more, for reads only ===");
 /* Shaped as the driver throws them: postgres.js sets `code`; drizzle wraps it with `query`/`params` and `cause`. */
 const driverErr = (code: string, message = `write ${code}`) => Object.assign(new Error(message), { code });

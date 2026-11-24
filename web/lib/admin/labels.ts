@@ -1026,3 +1026,21 @@ export const QUALITY_STATUS: Record<
   needs_follow_up: { label: "Needs follow-up", tone: "gold" },
   too_thin: { label: "Too thin / unusable", tone: "neutral" },
 };
+
+/* ── Why a Pando MCP call did not answer (24 Nov, drizzle/0080) ─────────────── */
+
+/** The admin's words for `mcp_calls.reason` (lib/mcp/call-reasons.ts); null is a call logged before 0080. */
+export const MCP_CALL_REASON: Record<import("@/lib/mcp/call-reasons").McpCallReason, string> = {
+  deadline: "Took over 30 seconds",
+  database_unreachable: "Database didn't answer",
+  query_timeout: "Query ran out of time",
+  database_error: "Database error",
+  outside_service: "Outside service didn't answer",
+  unexpected: "Unexpected error",
+  read_only: "Read-only connection",
+  rule: "Refused by Pando's rules",
+  switched_off: "Switched off in the admin",
+  off_on_server: "Off on the server",
+};
+export const mcpCallReasonLabel = (reason: string | null): string =>
+  reason === null ? "Reason not kept" : (MCP_CALL_REASON as Record<string, string>)[reason] ?? reason;

@@ -3,7 +3,9 @@ import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
-import { getDb, readWithRetry, withDb, type Db } from "@/lib/server/db";
+import { dbErrorCode, getDb, isTransientDbError, readWithRetry, withDb, type Db } from "@/lib/server/db";
+import type { McpCallReason } from "@/lib/mcp/call-reasons";
+import { isUnavailable } from "@/lib/server/mcp/unavailable";
 
 /** The longest a read tool's statement may run (20 Nov). */
 const READ_LIMIT = "10s";
@@ -18,6 +20,15 @@ function withinDeadline<T>(work: Promise<T>): Promise<T> {
     timer = setTimeout(() => reject(new DeadlineError("call deadline")), CALL_DEADLINE_MS);
   });
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
+/** Why a call that threw did not answer, as a code for its log row (0080, 24 Nov) — never the message. */
+function failureReason(err: unknown): McpCallReason {
+  if (err instanceof DeadlineError) return "deadline";
+  if (isTransientDbError(err)) return "database_unreachable";
+  const code = dbErrorCode(err);
+  if (code === "57014") return "query_timeout";
+  if (code && /^[0-9A-Z]{5}$/.test(code)) return "database_error";
+  return "unexpected";
 }
 import { readResource } from "@/lib/server/repo/admin-read";
 import { applyAction } from "@/lib/server/repo/admin-write";
@@ -143,6 +154,8 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
       (async (args: z.infer<z.ZodObject<S>>) => {
         const started = Date.now();
         let outcome: CallOutcome = "ok";
+        /* Why it did not answer, as a code (0080, 24 Nov): what the admin's calls page shows beside a failure. */
+        let reason: McpCallReason | null = null;
         let rows: number | null = null;
         try {
           /* Off is said only when it is off (24 Nov): a switch that could not be read refuses just the
@@ -151,14 +164,17 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
           const sw = await mcpSwitch();
           if (sw === "off") {
             outcome = "off";
+            reason = (process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off" ? "off_on_server" : "switched_off";
             return { ...text("Pando MCP is switched off in the Pando admin."), isError: true };
           }
           if (sw === "unknown") {
             outcome = "error";
+            reason = "database_unreachable";
             return { ...text("Pando's database didn't answer just now, so nothing was read or changed. Try again in a minute."), isError: true };
           }
           if (!config.readOnly && !mayPropose(ctx.scopes)) {
             outcome = "refused";
+            reason = "read_only";
             return { ...text("This connection may only read. Reconnect Pando to propose changes."), isError: true };
           }
           /* A read runs in a read-only transaction with a statement limit (20 Nov): it cannot write, and a
@@ -169,10 +185,15 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
              it has a connection; this bounds the wait for one, and anything outside. */
           const value = await withinDeadline(config.readOnly && !config.outside ? asRead(() => run(args)) : run(args));
           rows = typeof value === "string" ? null : countOf(value);
-          if (typeof value === "string") outcome = "refused";
+          /* A sentence back is Pando refusing by its rules — unless it says an outside service did not answer. */
+          if (typeof value === "string") {
+            outcome = isUnavailable(value) ? "error" : "refused";
+            reason = isUnavailable(value) ? "outside_service" : "rule";
+          }
           return typeof value === "string" ? { ...text(value), isError: true } : text(value);
         } catch (err) {
           outcome = "error";
+          reason = failureReason(err);
           console.error("[mcp] tool failed", { tool: name, error: err instanceof Error ? err.constructor.name : "unknown" });
           if (err instanceof DeadlineError) {
             return { ...text(`That took longer than ${CALL_DEADLINE_MS / 1000} seconds, so Pando stopped waiting. A read changed nothing; a proposal may or may not have been made — check list_proposals before proposing again.`), isError: true };
@@ -181,7 +202,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
         } finally {
           /* Not awaited (24 Nov): the answer no longer waits for its own log row, which needs a connection
              of its own — on a busy pool even a quick read hung until one came free. */
-          void logCall({ actor: ctx.actor, clientId: ctx.clientId, tool: name, outcome, ms: Date.now() - started, rows });
+          void logCall({ actor: ctx.actor, clientId: ctx.clientId, tool: name, outcome, reason, ms: Date.now() - started, rows });
         }
       }) as never,
     );

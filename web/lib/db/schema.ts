@@ -1889,6 +1889,8 @@ export const mcpCalls = pgTable(
     outcome: text("outcome").notNull(),
     ms: integer("ms").notNull().default(0),
     rows: integer("rows"),
+    /** Why a call did not answer, as a code (`McpCallReason`, lib/mcp/call-reasons.ts) — never an error message (0080). */
+    reason: text("reason"),
   },
   (t) => [index("mcp_calls_at_idx").on(sql`${t.at} desc`)],
 );

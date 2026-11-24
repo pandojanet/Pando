@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { hasContactDetail } from "@/lib/contact-details";
 import { withDb } from "@/lib/server/db";
+import { unavailable } from "@/lib/server/mcp/unavailable";
 import { PANDO_DECIDE_TOOLS, PANDO_TOOLS, PANDO_TOOL_NAMES, PANDO_WRITE_TOOLS, ownToolName } from "@/lib/mcp/tool-names";
 
 /**
@@ -296,8 +297,9 @@ const connectorNames = (mcp: string | undefined) => {
   }
 };
 const describe = (text: string) => /^description:\s*(.+)$/m.exec(text)?.[1]?.replace(/^"(.*)"$/, "$1") ?? null;
+/* GitHub not answering is not Pando refusing: `unavailable` marks the text so the call is logged as a failure (24 Nov). */
 const failure = (err: unknown) =>
-  err instanceof GitHubError && (err.status === 401 || err.status === 403) ? "GitHub refused Pando's token for the plugin repo." : "GitHub did not answer just now; try again.";
+  unavailable(err instanceof GitHubError && (err.status === 401 || err.status === 403) ? "GitHub refused Pando's token for the plugin repo." : "GitHub did not answer just now; try again.");
 
 /** What the plugin holds now: its version, skills and agents (with descriptions), connectors. */
 export async function readPluginIndex(): Promise<Record<string, unknown> | { refused: string }> {
@@ -460,7 +462,7 @@ export async function commitPluginChange(actor: string, p: { draft: PluginDraft;
       const removed = d.action !== "delete" || d.target === "connector" ? [] : d.target === "skill" ? paths.filter((k) => k.startsWith(`skills/${d.name}/`)) : [path];
       const commit = await gh<{ tree: { sha: string } }>(c, "GET", `/git/commits/${at}`);
       /* Without the branch's own tree as the base, the new tree would hold only these files (review round 2). */
-      if (!commit?.tree?.sha) return { refused: "GitHub did not return the plugin's current commit; try again." };
+      if (!commit?.tree?.sha) return { refused: unavailable("GitHub did not return the plugin's current commit; try again.") };
       const t = await gh<{ sha: string }>(c, "POST", "/git/trees", {
         base_tree: commit.tree.sha,
         tree: [

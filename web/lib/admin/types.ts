@@ -1426,10 +1426,14 @@ export interface McpAdminResult {
   timeline: Array<McpCallCounts & { at: string }>;
   /** Per admin over the period, most calls first. */
   people: Array<McpCallCounts & { admin_user: string; tools: number; top_tool: string | null; last_at: string }>;
+  /** Whether the log keeps why a call did not answer (`mcp_calls.reason`, drizzle/0080). */
+  keeps_reason: boolean;
+  /** The period's calls that did not answer, by outcome and reason (a code; null before 0080), most first. */
+  reasons: Array<{ outcome: string; reason: string | null; calls: number; last_at: string }>;
   /** The period's slowest calls, slowest first. */
-  slowest: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number }>;
-  /** The last 100 calls, newest first: who, which tool, how it ended, how long — never the arguments. */
-  recent: Array<{ at: string; admin_user: string; tool: string; outcome: string; ms: number; rows: number | null }>;
+  slowest: Array<{ at: string; admin_user: string; tool: string; outcome: string; reason: string | null; ms: number }>;
+  /** The last 100 calls, newest first: who, which tool, how it ended and why, how long — never the arguments. */
+  recent: Array<{ at: string; admin_user: string; tool: string; outcome: string; reason: string | null; ms: number; rows: number | null }>;
   /** The switch's last flips, newest first. */
   history: Array<{ at: string; by: string; on: boolean }>;
 }

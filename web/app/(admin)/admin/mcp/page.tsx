@@ -8,6 +8,7 @@ import { RevealMore } from "@/components/admin/Reveal";
 import { adminAction, useAdminRows } from "@/lib/admin/client";
 import type { McpAdminResult, McpCallCounts, McpPeriod } from "@/lib/admin/types";
 import { PANDO_TOOLS } from "@/lib/mcp/tool-names";
+import { mcpCallReasonLabel } from "@/lib/admin/labels";
 import { cn } from "@/lib/cn";
 
 /**
@@ -69,6 +70,81 @@ const OUTCOME: Record<string, { word: string; tone: string; bar: string }> = {
 };
 const ORDER = ["ok", "refused", "error", "off"] as const;
 const outcomeOf = (o: string) => OUTCOME[o] ?? { word: o, tone: "text-muted", bar: "bg-muted/50" };
+/** Failed first, then refused, then while off; a reason the log did not keep last within its outcome. */
+const OUTCOME_RANK: Record<string, number> = { error: 0, refused: 1, off: 2 };
+
+/** How a call ended, and why when it did not answer: "failed · Database didn't answer". */
+function Ending({ outcome, reason }: { outcome: string; reason: string | null }) {
+  const o = outcomeOf(outcome);
+  return (
+    <span>
+      <span className={cn("font-semibold", o.tone)}>{o.word}</span>
+      {outcome !== "ok" && reason && <span className="text-muted">{` · ${mcpCallReasonLabel(reason)}`}</span>}
+    </span>
+  );
+}
+
+/** The key a reason row filters the latest calls by; calls from before reasons were kept share one row. */
+const NOT_KEPT = "*|";
+const reasonKey = (outcome: string, reason: string | null) => (reason === null ? NOT_KEPT : `${outcome}|${reason}`);
+const matchesReason = (key: string, c: { outcome: string; reason: string | null }) => c.outcome !== "ok" && reasonKey(c.outcome, c.reason) === key;
+
+/**
+ * The period's calls that did not answer, by reason — failed first, then refused, then while off — each a
+ * row with its share of them, picked to filter the latest. Calls logged before reasons were kept are one
+ * muted row at the end, with how they ended.
+ */
+function Reasons({ rows, picked, onPick }: { rows: McpAdminResult["reasons"]; picked: string | null; onPick: (key: string) => void }) {
+  const total = rows.reduce((s, r) => s + r.calls, 0);
+  const kept = rows.filter((r) => r.reason !== null).sort((a, b) => (OUTCOME_RANK[a.outcome] ?? 9) - (OUTCOME_RANK[b.outcome] ?? 9) || b.calls - a.calls);
+  const old = rows.filter((r) => r.reason === null).sort((a, b) => (OUTCOME_RANK[a.outcome] ?? 9) - (OUTCOME_RANK[b.outcome] ?? 9));
+  const lines = [
+    ...kept.map((r) => ({ key: reasonKey(r.outcome, r.reason), label: mcpCallReasonLabel(r.reason), sub: outcomeOf(r.outcome).word, subTone: outcomeOf(r.outcome).tone, bar: outcomeOf(r.outcome).bar, calls: r.calls, last: r.last_at, muted: false })),
+    ...(old.length
+      ? [{
+          key: NOT_KEPT,
+          label: mcpCallReasonLabel(null),
+          sub: old.map((r) => `${r.calls} ${outcomeOf(r.outcome).word}`).join(" · "),
+          subTone: "text-muted",
+          bar: "bg-muted/40",
+          calls: old.reduce((s, r) => s + r.calls, 0),
+          last: old.map((r) => r.last_at).sort().at(-1) ?? old[0].last_at,
+          muted: true,
+        }]
+      : []),
+  ];
+  return (
+    <ul className="divide-y divide-bark/60">
+      {lines.map((l) => {
+        const on = picked === l.key;
+        return (
+          <li key={l.key}>
+            <button
+              type="button"
+              aria-pressed={on}
+              onClick={() => onPick(l.key)}
+              className={cn(
+                "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2.5 text-left transition-colors hover:bg-paper/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold sm:grid-cols-[auto_minmax(0,1fr)_9rem_4.5rem_6rem]",
+                on && "bg-green-wash",
+              )}
+            >
+              <span className={cn("size-2.5 rounded-full", l.bar)} aria-hidden />
+              <span className="min-w-0">
+                <span className={cn("text-[14px] font-medium", l.muted ? "text-muted" : "text-ink")}>{l.label}</span>
+                <span className={cn("ml-2 text-[12.5px]", l.subTone)}>{l.sub}</span>
+              </span>
+              <span className="hidden h-1.5 overflow-hidden rounded-full bg-bark-soft sm:block" aria-hidden>
+                <span className={cn("block h-full rounded-full", l.bar)} style={{ width: `${Math.max(3, (l.calls / Math.max(1, total)) * 100)}%` }} />
+              </span>
+              <span className={cn("text-right text-[14px] font-semibold tabular-nums", l.muted ? "text-muted" : "text-ink")}>{l.calls}</span>
+              <span className="col-start-2 text-[12.5px] text-muted sm:col-start-auto sm:text-right">{`last ${ago(l.last)}`}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 function ConnectionRow({ c, busy, onRevoke }: { c: Connection; busy: boolean; onRevoke: () => void }) {
   const [confirming, setConfirming] = useState(false);
@@ -191,6 +267,7 @@ export default function McpPage() {
   const [view, setView] = useState<"failures" | "all">("failures");
   const [tool, setTool] = useState<string | null>(null);
   const [person, setPerson] = useState<string | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [allTools, setAllTools] = useState(false);
 
@@ -210,13 +287,17 @@ export default function McpPage() {
   const m = rows;
   const span = (PERIODS.find((p) => p.id === days) ?? PERIODS[1]).label;
   const t = m?.totals;
-  const recent: Call[] = (m?.recent ?? []).filter((c) => (view === "all" || c.outcome !== "ok") && (!tool || c.tool === tool) && (!person || c.admin_user === person));
+  const recent: Call[] = (m?.recent ?? []).filter(
+    (c) => (view === "all" || c.outcome !== "ok") && (!tool || c.tool === tool) && (!person || c.admin_user === person) && (!why || matchesReason(why, c)),
+  );
+  const notAnswered = (m?.reasons ?? []).reduce((s, r) => s + r.calls, 0);
   const previous = (m?.history ?? []).slice(1, 4);
   const answered = t ? pct(t.ok, t.calls) : null;
-  const pick = (kind: "tool" | "person", value: string) => {
+  const pick = (kind: "tool" | "person" | "why", value: string) => {
     if (kind === "tool") setTool(tool === value ? null : value);
-    else setPerson(person === value ? null : value);
-    setView("all");
+    else if (kind === "person") setPerson(person === value ? null : value);
+    else setWhy(why === value ? null : value);
+    setView(kind === "why" ? "failures" : "all");
     setMore(false);
   };
 
@@ -364,6 +445,12 @@ export default function McpPage() {
             </div>
           </Card>
 
+          {notAnswered > 0 && (
+            <Card title={`Not answered · ${notAnswered}`}>
+              <Reasons rows={m.reasons} picked={why} onPick={(key) => pick("why", key)} />
+            </Card>
+          )}
+
           {t.calls > 0 && (
             <div className="space-y-5">
               <Card title={`By person · ${m.people.length}`}>
@@ -389,7 +476,7 @@ export default function McpPage() {
                         <Td className="text-right tabular-nums">{p.calls}</Td>
                         <Td className={cn("text-right tabular-nums", p.error > 0 ? "font-semibold text-alert" : "text-muted/60")}>{p.error}</Td>
                         <Td className="text-right tabular-nums">{p.tools}</Td>
-                        <Td className="font-mono text-[12.5px] text-ink-soft">{p.top_tool ?? "—"}</Td>
+                        <Td><span className="font-mono text-[12.5px] text-ink-soft">{p.top_tool ?? "—"}</span></Td>
                         <Td className="whitespace-nowrap text-right text-muted">{ago(p.last_at)}</Td>
                       </tr>
                     ))}
@@ -403,7 +490,7 @@ export default function McpPage() {
                     <li key={`${c.at}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-[13px]">
                       <span className="w-16 shrink-0 text-right font-semibold tabular-nums text-ink">{duration(c.ms)}</span>
                       <span className="font-mono text-ink">{c.tool}</span>
-                      {c.outcome !== "ok" && <span className={cn("font-semibold", outcomeOf(c.outcome).tone)}>{outcomeOf(c.outcome).word}</span>}
+                      {c.outcome !== "ok" && <Ending outcome={c.outcome} reason={c.reason} />}
                       <span className="flex-1 text-right text-muted">{`${c.admin_user} · ${when(c.at)}`}</span>
                     </li>
                   ))}
@@ -413,15 +500,16 @@ export default function McpPage() {
           )}
 
           <Card
-            title={["Recent calls", tool, person].filter(Boolean).join(" · ")}
+            title={["Recent calls", tool, person, why ? mcpCallReasonLabel(why === NOT_KEPT ? null : why.split("|")[1]) : null].filter(Boolean).join(" · ")}
             right={
               <div className="flex flex-wrap items-center gap-2">
-                {(tool || person) && (
+                {(tool || person || why) && (
                   <Button
                     tone="ghost"
                     onClick={() => {
                       setTool(null);
                       setPerson(null);
+                      setWhy(null);
                     }}
                   >
                     Clear
@@ -452,7 +540,7 @@ export default function McpPage() {
                     <li key={`${c.at}-${i}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2 text-[13px]">
                       <span className="w-[7.5rem] shrink-0 tabular-nums text-muted">{when(c.at)}</span>
                       <span className="min-w-[11rem] font-mono text-ink">{c.tool}</span>
-                      <span className={cn("font-semibold", outcomeOf(c.outcome).tone)}>{outcomeOf(c.outcome).word}</span>
+                      <Ending outcome={c.outcome} reason={c.reason} />
                       <span className="flex-1 text-right tabular-nums text-muted">
                         {[c.admin_user, duration(c.ms), c.rows === null ? null : `${c.rows} ${c.rows === 1 ? "row" : "rows"}`].filter(Boolean).join(" · ")}
                       </span>

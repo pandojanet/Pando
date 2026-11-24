@@ -245,6 +245,19 @@ export function isTransientDbError(err: unknown): boolean {
 }
 
 /**
+ * The driver's error code anywhere in `err`'s chain — a SQLSTATE (`57014`) or a postgres.js code
+ * (`CONNECTION_CLOSED`) — or null. A code, never a message, so it can be logged (invariant 7).
+ */
+export function dbErrorCode(err: unknown): string | null {
+  let current: unknown = err;
+  for (let depth = 0; current instanceof Error && depth < 8; depth += 1) {
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = current.cause;
+  }
+  return null;
+}
+
+/**
  * Runs a **read** again once when its connection was lost (24 Nov): a Claude
  * call failed on a dropped socket while everything else in the app was fine.
  *

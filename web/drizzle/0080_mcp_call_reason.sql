@@ -1,0 +1,12 @@
+-- mcp_calls.reason: why a Pando MCP call did not answer (24 Nov).
+--
+-- The developer, after /admin/mcp became a calls dashboard: "нехай буде міграція, причина була б
+-- добре". The log kept the outcome (ok · refused · off · error) and not why, so a failure on the page
+-- could not say whether the database did not answer, a query ran out of time, the 30-second deadline
+-- passed, or Pando refused the request by its own rule.
+--
+-- A code from a fixed list (lib/mcp/call-reasons.ts), written by the tool wrapper — never an error
+-- message, which can carry the SQL and its parameters (invariant 7). Null for an answered call and for
+-- every call logged before this. Additive, no rows rewritten; the app writes and reads it only once it
+-- exists, so a deploy before `npm run migrate` keeps working.
+ALTER TABLE mcp_calls ADD COLUMN IF NOT EXISTS reason text;

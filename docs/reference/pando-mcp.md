@@ -231,7 +231,8 @@ Approving or rejecting a proposal, and committing a change to the plugin, happen
 | A read-only connection calls a tool that writes | *"This connection may only read…"* (`isError`, outcome `refused`) |
 | Arguments that do not fit the tool's schema | JSON-RPC error `-32602`, naming the field |
 | A proposal Pando refuses (past event, record gone, duplicate, …) | one sentence saying why (`isError`, outcome `refused`) |
-| Anything else that fails | *"That didn't work just now. Try again in a minute."* (`isError`, outcome `error`; the log keeps the error's class only) |
+| An outside service does not answer (GitHub for the plugin) | its sentence, e.g. *"GitHub did not answer just now; try again."* (`isError`, outcome `error`, reason `outside_service`) |
+| Anything else that fails | *"That didn't work just now. Try again in a minute."* (`isError`, outcome `error`; the log keeps a reason code — `deadline`, `database_unreachable`, `query_timeout`, `database_error`, `unexpected` — never the message (`mcp_calls.reason`, 0080)) |
 | OAuth endpoints | RFC 6749 errors: `invalid_grant`, `invalid_scope`, `invalid_target`, `invalid_request`, `temporarily_unavailable` |
 
 ## Load and retention

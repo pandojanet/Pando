@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { adminCredentials } from "@/lib/server/admin-auth";
 import { readWithRetry, withDb, type Db } from "@/lib/server/db";
+import { isMcpCallReason, type McpCallReason } from "@/lib/mcp/call-reasons";
 import {
   ACCESS_TTL_MS,
   CODE_TTL_MS,
@@ -370,13 +371,36 @@ export async function mcpEnabled(): Promise<boolean> {
 
 export type CallOutcome = "ok" | "error" | "refused" | "off";
 
-/** One row per tool call: who, which tool, how it ended, how long, how many rows. Never the arguments. */
-export async function logCall(input: { actor: string; clientId: string | null; tool: string; outcome: CallOutcome; ms: number; rows?: number | null }): Promise<void> {
+/**
+ * Whether `mcp_calls.reason` exists yet (drizzle/0080): the app may be deployed before `npm run migrate`.
+ * Once seen it is kept; not seen, it is looked for again after five minutes.
+ */
+let reasonColumn: { ok: boolean; at: number } | null = null;
+export async function mcpCallsHaveReason(db: Db): Promise<boolean> {
+  if (reasonColumn && (reasonColumn.ok || Date.now() - reasonColumn.at < 5 * 60_000)) return reasonColumn.ok;
+  const [r] = await rows(db, sql`select exists (select 1 from information_schema.columns where table_name = 'mcp_calls' and column_name = 'reason') as ok`);
+  reasonColumn = { ok: r?.ok === true, at: Date.now() };
+  return reasonColumn.ok;
+}
+
+/**
+ * One row per tool call: who, which tool, how it ended, why it did not answer (a code from
+ * lib/mcp/call-reasons.ts, 24 Nov), how long, how many rows. Never the arguments or an error's message.
+ */
+export async function logCall(input: { actor: string; clientId: string | null; tool: string; outcome: CallOutcome; reason?: McpCallReason | null; ms: number; rows?: number | null }): Promise<void> {
+  const ms = Math.max(0, Math.round(input.ms));
   await withDb(async (db) => {
-    await db.execute(sql`
-      insert into mcp_calls (actor, client_id, tool, outcome, ms, rows)
-      values (${input.actor}, ${input.clientId}, ${input.tool}, ${input.outcome}, ${Math.max(0, Math.round(input.ms))}, ${input.rows ?? null})
-    `);
+    if (await mcpCallsHaveReason(db)) {
+      await db.execute(sql`
+        insert into mcp_calls (actor, client_id, tool, outcome, reason, ms, rows)
+        values (${input.actor}, ${input.clientId}, ${input.tool}, ${input.outcome}, ${isMcpCallReason(input.reason) ? input.reason : null}, ${ms}, ${input.rows ?? null})
+      `);
+    } else {
+      await db.execute(sql`
+        insert into mcp_calls (actor, client_id, tool, outcome, ms, rows)
+        values (${input.actor}, ${input.clientId}, ${input.tool}, ${input.outcome}, ${ms}, ${input.rows ?? null})
+      `);
+    }
     return true;
   });
 }

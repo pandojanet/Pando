@@ -110,7 +110,7 @@ console.log("\n=== the diagram's promises ===");
   /* 24 Nov: unreadable still refuses, but as what it is — "switched off" was said when the database had not answered. */
   ok("one off switch: the admin's setting, and the server's PANDO_MCP=off over it; unreadable refuses as unknown, never as off",
     /PANDO_MCP/.test(repo) && /key = 'mcp_enabled'/.test(repo) && /if \(!r\.persisted\) return "unknown";/.test(repo) &&
-      /if \(sw === "unknown"\) \{\s+outcome = "error";\s+return \{ \.\.\.text\("Pando's database didn't answer just now/.test(server) &&
+      /if \(sw === "unknown"\) \{\s+outcome = "error";\s+reason = "database_unreachable";\s+return \{ \.\.\.text\("Pando's database didn't answer just now/.test(server) &&
       /if \(sw === "off"\) \{\s+outcome = "off";/.test(server));
   ok("a read of the switch is kept 30 s, never reused after a failed read, and the admin's change forgets it at once",
     /const SWITCH_TTL_MS = 30_000;/.test(repo) && /case "mcp\.switch": \{[\s\S]{0,600}forgetMcpSwitch\(\);/.test(read("lib/server/repo/admin-write.ts")));
@@ -130,6 +130,14 @@ console.log("\n=== the diagram's promises ===");
   const logAt = repo.indexOf("export async function logCall");
   ok("the call log keeps who, which tool, the outcome, time and rows — never the arguments",
     logAt !== -1 && /insert into mcp_calls \(actor, client_id, tool, outcome, ms, rows\)/.test(repo) && !/args/.test(repo.slice(logAt)));
+  /* 24 Nov (0080): why a call did not answer — a code from one list, never an error's message; written
+     only once the column exists, so a deploy before the migration keeps logging. */
+  ok("the call log keeps why a call did not answer as a code from the list, never a message, and only once the column exists",
+    /insert into mcp_calls \(actor, client_id, tool, outcome, reason, ms, rows\)/.test(repo) && /isMcpCallReason\(input\.reason\) \? input\.reason : null/.test(repo) &&
+      /if \(await mcpCallsHaveReason\(db\)\)/.test(repo) && /void logCall\(\{ actor: ctx\.actor, clientId: ctx\.clientId, tool: name, outcome, reason,/.test(server) &&
+      /reason = failureReason\(err\);/.test(server) && !/reason = [^;]*\.message/.test(server) &&
+      /ALTER TABLE mcp_calls ADD COLUMN IF NOT EXISTS reason text;/.test(read("drizzle/0080_mcp_call_reason.sql")) &&
+      /"tag": "0080_mcp_call_reason"/.test(read("drizzle/meta/_journal.json")));
   /* Code only: comments and SQL text name what is kept out, which is not what is returned. */
   const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").replace(/sql`[\s\S]*?`/g, "");
   const readSrc = read("lib/server/repo/mcp-read.ts");
