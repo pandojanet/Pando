@@ -48,6 +48,12 @@ export interface ActionContext {
   /** One of lib/admin/action-names.ts; the switch in `run` is exhaustive over them. */
   action: AdminActionName;
   body: Record<string, unknown>;
+  /**
+   * Where a proposal was decided (24 Nov). Set only by Pando MCP's `approve_proposal` /
+   * `reject_proposal` — never read from a request's body, so the admin route cannot claim "chat" and
+   * the chat cannot claim "admin". Absent means the admin's own page.
+   */
+  via?: "chat";
 }
 
 export type ActionOutcome =
@@ -133,6 +139,8 @@ export type ActionOutcome =
            whose name the list already has. */
         | "plugin_not_committed"
         | "source_name_taken"
+        /* 24 Nov — a change to the plugin itself, decided from the chat: only /admin/proposals commits it. */
+        | "plugin_admin_only"
         /* 3 Nov — a reset sent without its typed confirmation. */
         | "reset_not_confirmed"
         /* 19 Nov — a digest approval taken back after something from it went out,
@@ -194,7 +202,7 @@ async function audit(
   resourceId: string | null,
   before?: Record<string, unknown>,
 ): Promise<void> {
-  const after = { ...ctx.body };
+  const after: Record<string, unknown> = { ...ctx.body, ...(ctx.via ? { via: ctx.via } : {}) };
   delete after.action;
   await tx.execute(
     sql`insert into audit_log (actor, action, resource, resource_id, before, after)
@@ -2313,12 +2321,12 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
     /* ── Pando MCP (20 Nov) ─────────────────────────────────────────────────── */
 
     case "proposal.approve": {
-      /* An agent's proposal, applied by an admin's yes on /admin/proposals — only there since 23 Nov
-         (the security review: the chat's yes was a flag the agent set itself). Each change goes through
-         the action an admin would have used by hand (and gets its own audit row); this row records the
-         decision. */
+      /* An agent's proposal, applied by an admin's yes — on /admin/proposals, or since 24 Nov in the chat
+         (`approve_proposal`, which sets `ctx.via`). A change to the plugin itself stays on the page: it
+         reaches every admin's Claude and is read there line by line. Each change goes through the action
+         an admin would have used by hand (and gets its own audit row); this row records the decision. */
       const target = id(b.id);
-      const via = "admin";
+      const via = ctx.via === "chat" ? "chat" : "admin";
       let extra: Record<string, unknown> = {};
       let fullEditions = 0;
       if (!target) return { applied: false, reason: "not_implemented" };
@@ -2326,6 +2334,8 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         sql`select id, kind, share_id, payload, source_url from mcp_proposals where id = ${target}::uuid and status = 'proposed' for update`,
       )) as unknown as Array<{ id: string; kind: string; share_id: string | null; payload: Record<string, unknown>; source_url: string | null }>;
       if (!p) return { applied: false, reason: "proposal_closed" };
+      /* `skill` is the 23 Nov kind a `plugin` proposal replaced; both change what every admin's Claude runs. */
+      if (via === "chat" && (p.kind === "plugin" || p.kind === "skill")) return { applied: false, reason: "plugin_admin_only" };
       const payload = p.payload ?? {};
       let shareId = p.share_id;
       /* The page the proposal is based on: http(s) only (the MCP tool checks it too), kept on the record (0071). */
@@ -2547,15 +2557,21 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
 
     case "proposal.reject": {
       const target = id(b.id);
-      /* Decided on /admin/proposals only since 23 Nov; "chat" stays readable on old rows. */
-      const via = "admin";
+      /* On /admin/proposals, or since 24 Nov in the chat (`reject_proposal`) — but not a change to the
+         plugin itself, which is decided only on the page, as it is committed. */
+      const via = ctx.via === "chat" ? "chat" : "admin";
       if (!target) return { applied: false, reason: "not_implemented" };
       const done = (await tx.execute(sql`
         update mcp_proposals set status = 'rejected', decided_by = ${ctx.actor}, decided_via = ${via}, decided_at = now(),
                decision_note = ${cleanText(b.reason, 300)}
-         where id = ${target}::uuid and status = 'proposed' returning id
+         where id = ${target}::uuid and status = 'proposed'
+           and (${via} = 'admin' or kind not in ('plugin', 'skill'))
+         returning id
       `)) as unknown as unknown[];
-      if (!done.length) return { applied: false, reason: "proposal_closed" };
+      if (!done.length) {
+        const [k] = (await tx.execute(sql`select kind from mcp_proposals where id = ${target}::uuid and status = 'proposed'`)) as unknown as Array<{ kind: string }>;
+        return { applied: false, reason: k ? "plugin_admin_only" : "proposal_closed" };
+      }
       return { applied: true, resource: "mcp_proposal", resource_id: target };
     }
 

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { hasContactDetail } from "@/lib/contact-details";
 import { withDb } from "@/lib/server/db";
-import { PANDO_TOOLS, PANDO_TOOL_PREFIX, PANDO_WRITE_TOOLS } from "@/lib/mcp/tool-names";
+import { PANDO_DECIDE_TOOLS, PANDO_TOOLS, PANDO_TOOL_PREFIX, PANDO_WRITE_TOOLS } from "@/lib/mcp/tool-names";
 
 /**
  * The Pando plugin, changed by the client without QuitCode (23 Nov). The developer: *"має бути можливість
@@ -51,7 +51,12 @@ const SAFE_BUILTINS = ["Read", "Grep", "Glob", "WebFetch", "WebSearch"];
 const NEVER = ["Bash", "Write", "Edit", "NotebookEdit"];
 /** Removing these would take away the plugin's own way of changing itself, or its rules. */
 export const LOCKED: Record<PluginTarget, string[]> = { skill: ["customize", "pando-data"], agent: ["agent-builder"], connector: ["pando"] };
-/** Words a skill or agent never carries: the tools that used to decide in chat, and the flags they took. */
+/**
+ * Words a skill or agent the client proposes never carries: the tools that decide, and the old flags. Since
+ * 24 Nov a proposal is decided in the chat — by the person, in the main conversation, by the rule in the
+ * plugin's `shared/safety.md`, which no proposal can reach. A proposed skill that scripts a decision
+ * ("then approve it") would take the person out of it, so it is refused, as an agent with the tool is.
+ */
 const DECIDING = /\b(approve_proposal|reject_proposal|save_skill|admin_said_(yes|no|save))\b/;
 
 export type PluginTarget = "skill" | "agent" | "connector";
@@ -81,7 +86,7 @@ function checkText(description: string, body: string): string | null {
   if (/^---\s*$/.test(body.split("\n")[0] ?? "")) return "Write the instructions only; Pando writes the frontmatter.";
   /* It goes to every Pando admin's Claude: no parent's phone or email in it (review, 20 Nov). */
   if (hasContactDetail(body) || hasContactDetail(description)) return "It carries a phone number or email. The plugin holds instructions, never a person's details.";
-  if (DECIDING.test(`${description}\n${body}`)) return "It names a step that approves, rejects or saves. Those happen only on pando.is/admin/proposals, never in the plugin.";
+  if (DECIDING.test(`${description}\n${body}`)) return "It names a step that approves, rejects or saves. A proposal is decided only by the person's own word in the conversation, and a change to the plugin only on pando.is/admin/proposals — never as a step of a skill or an agent.";
   return null;
 }
 
@@ -115,7 +120,9 @@ export function buildAgentFile(d: PluginDraft, connectors: readonly string[]): s
     if (NEVER.includes(t)) return { refused: `${t} is never given to a Pando agent: it changes files or runs commands on the admin's computer.` };
     if (SAFE_BUILTINS.includes(t)) continue;
     if (t.startsWith(PANDO_TOOL_PREFIX)) {
-      if (!(t.slice(PANDO_TOOL_PREFIX.length) in PANDO_TOOLS)) return { refused: `Pando has no tool ${t.slice(PANDO_TOOL_PREFIX.length)}.` };
+      const pt = t.slice(PANDO_TOOL_PREFIX.length);
+      if (!(pt in PANDO_TOOLS)) return { refused: `Pando has no tool ${pt}.` };
+      if ((PANDO_DECIDE_TOOLS as readonly string[]).includes(pt)) return { refused: `${pt} is never given to an agent: a proposal is decided by the person, in the main conversation.` };
       continue;
     }
     const other = /^mcp__plugin_pando_([a-z][a-z0-9-]{1,30})(__[A-Za-z0-9_-]{1,80})?$/.exec(t);
@@ -128,7 +135,7 @@ export function buildAgentFile(d: PluginDraft, connectors: readonly string[]): s
   if (!d.account_connectors && tools.length === 0) return { refused: "Name the agent's tools (or set account_connectors for one that reads Gmail and other connected accounts)." };
   const pandoWrites = tools.filter(isPandoWrite);
   const toolLine = d.account_connectors
-    ? `disallowedTools: ${[...NEVER, ...PANDO_WRITE_TOOLS.map((w) => PANDO_TOOL_PREFIX + w).filter((w) => !pandoWrites.includes(w))].join(", ")}`
+    ? `disallowedTools: ${[...NEVER, ...PANDO_WRITE_TOOLS.map((w) => PANDO_TOOL_PREFIX + w).filter((w) => !pandoWrites.includes(w)), ...PANDO_DECIDE_TOOLS.map((d) => PANDO_TOOL_PREFIX + d)].join(", ")}`
     : `tools: ${tools.join(", ")}`;
   return `---\nname: ${d.name}\ndescription: ${yaml(description)}\n${toolLine}\nmodel: ${model}\n---\n\n${body}\n`;
 }

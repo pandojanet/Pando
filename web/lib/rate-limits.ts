@@ -112,7 +112,8 @@ export type RateLimitName =
   | "mcp_day"
   | "oauth_register"
   | "mcp_bad_token"
-  | "oauth_token";
+  | "oauth_token"
+  | "mcp_decide";
 
 export const LIMITS: Record<RateLimitName, RateLimit> = {
   mcp_bad_token: {
@@ -151,6 +152,13 @@ export const LIMITS: Record<RateLimitName, RateLimit> = {
     max: 3000,
     windowSeconds: 24 * 60 * 60,
     message: "This Claude connection has used its Pando requests for today. Try again tomorrow.",
+  },
+  mcp_decide: {
+    /* Proposals decided in the chat (24 Nov), per connection: a founder works through a few at a time,
+       and a conversation steered into approving — or a loop — stops after this many in an hour. */
+    max: 30,
+    windowSeconds: 60 * 60,
+    message: "That's a lot of decisions from this conversation in one hour. Decide the rest a little later.",
   },
   oauth: {
     /* Pando MCP's OAuth endpoints (20 Nov): discovery, registration, codes, tokens. Claude refreshes

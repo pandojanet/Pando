@@ -764,6 +764,8 @@ export async function POST(request: Request) {
       /* 23 Nov — skills and the sources & partners list. */
       plugin_not_committed: "The change was not committed to the plugin, so the proposal is still waiting. Try again.",
       source_name_taken: "The sources & partners list already has an entry with that name. Reject this one, or change the existing entry.",
+      /* 24 Nov — only the chat is refused this; the page never is. Named so the map stays whole. */
+      plugin_admin_only: "A change to the plugin itself is decided only here, on this page.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

@@ -4,7 +4,10 @@
  * check of an agent the client proposes for the plugin (`lib/server/mcp/plugin-repo.ts` — which Pando
  * tools an agent may name, and which of them write), and `test:mcp`.
  *
- * "Writes" means it creates a proposal or records something; nothing here applies a change.
+ * "Writes" means it creates a proposal or records something. "Decides" (24 Nov) applies or closes a
+ * waiting proposal on the person's own yes in the main conversation — never a change to the plugin
+ * itself, and never given to an agent: an agent reads web pages and mail, and text there must not reach
+ * a decision (`plugin-repo.ts` refuses it in any agent; the plugin's `check-agents.mjs` checks its own).
  */
 export const PANDO_TOOLS = {
   pando_overview: "read",
@@ -32,12 +35,15 @@ export const PANDO_TOOLS = {
   propose_source: "write",
   propose_plugin_change: "write",
   record_source_check: "write",
+  approve_proposal: "decide",
+  reject_proposal: "decide",
 } as const;
 
 export type PandoToolName = keyof typeof PANDO_TOOLS;
 
 export const PANDO_TOOL_NAMES = Object.keys(PANDO_TOOLS) as PandoToolName[];
 export const PANDO_WRITE_TOOLS = PANDO_TOOL_NAMES.filter((t) => PANDO_TOOLS[t] === "write");
+export const PANDO_DECIDE_TOOLS = PANDO_TOOL_NAMES.filter((t) => PANDO_TOOLS[t] === "decide");
 
 /** How Claude names a tool of this plugin's Pando connector inside an agent's tool list. */
 export const PANDO_TOOL_PREFIX = "mcp__plugin_pando_pando__";

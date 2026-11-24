@@ -117,8 +117,11 @@ for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api
 ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("25 tools, each with a title and read/destructive hints", tools.length === 25 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
-ok("no tool decides a proposal or commits a skill", !tools.some((t) => ["approve_proposal", "reject_proposal", "save_skill"].includes(t.name)));
+ok("27 tools, each with a title and read/destructive hints", tools.length === 27 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+/* 24 Nov: a proposal is decided in the chat, so Claude must ask the person before each such call. */
+ok("approve_proposal and reject_proposal exist, destructive and not read-only; nothing commits a skill",
+  ["approve_proposal", "reject_proposal"].every((n) => tools.some((t) => t.name === n && t.annotations?.destructiveHint === true && t.annotations?.readOnlyHint === false)) &&
+    !tools.some((t) => t.name === "save_skill"));
 ok("a token not shaped like Pando's is a 401 without a lookup", (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, "not-a-pando-token")).status === 401);
 
 const today = new Date().toISOString().slice(0, 10);
@@ -181,6 +184,40 @@ const corrected = await call("propose_new_record", { ...storytime, subcategory: 
 ok("a corrected one gets through, and applies", corrected.error === null && (await decide("proposal.approve", { id: JSON.parse(corrected.text).proposal_id })).applied === true, corrected.error ?? "");
 const skill = await call("propose_plugin_change", { target: "skill", action: "create", name: "ci-skill", description: "A skill the CI run proposes, to see it wait.", instructions: "Read the numbers and say what changed since last week, in three lines." });
 ok("a plugin change without a plugin repo configured is refused, not saved", /not configured/.test(skill.error ?? ""));
+
+console.log("\n=== a proposal, decided in the chat (24 Nov) ===");
+const park = { kind: "place", name: "CI Chat Park", areas: ["pasadena"], source_url: "https://example.org/ci-chat-park" };
+const parkProposed = JSON.parse((await call("propose_new_record", park)).text);
+const yes = await call("approve_proposal", { id: parkProposed.proposal_id });
+const [parkRow] = await q(sql`select decided_via, decided_by, status from mcp_proposals where id = ${parkProposed.proposal_id}::uuid`);
+ok("approve_proposal applies it, recorded as decided in chat by the signed-in admin",
+  yes.error === null && JSON.parse(yes.text).status === "applied" && parkRow?.decided_via === "chat" && parkRow?.status === "applied" && parkRow?.decided_by === "ci", yes.error ?? "");
+ok("the record is there, as an admin's Apply would have made it", JSON.parse((await call("search_records", { query: "CI Chat Park", status: "any" })).text).results?.some((r: { name: string }) => r.name === "CI Chat Park"));
+const [chatAudit] = await q(sql`select actor, after from audit_log where action = 'proposal.approve' and resource_id = ${parkProposed.proposal_id} order by at desc limit 1`);
+ok("its audit row says it was the chat", chatAudit?.actor === "ci" && (chatAudit?.after as { via?: string } | null)?.via === "chat");
+ok("the same yes twice applies nothing twice", /already decided/.test((await call("approve_proposal", { id: parkProposed.proposal_id })).error ?? ""));
+const noProposal = JSON.parse((await call("propose_record_edit", { id: share.id, change: "rename", name: "CI Chat Rename" })).text);
+const no = await call("reject_proposal", { id: noProposal.proposal_id, reason: "keep the name it has" });
+const [noRow] = await q(sql`select decided_via, status, decision_note from mcp_proposals where id = ${noProposal.proposal_id}::uuid`);
+ok("reject_proposal closes it with the person's reason, in chat", no.error === null && noRow?.status === "rejected" && noRow?.decided_via === "chat" && noRow?.decision_note === "keep the name it has", no.error ?? "");
+/* A change to the plugin itself stays on /admin/proposals. Inserted directly: this run has no plugin repo. */
+const [pluginRow] = await q(sql`insert into mcp_proposals (actor, kind, payload) values ('ci', 'plugin', ${JSON.stringify({ target: "skill", action: "create", name: "ci-chat-skill" })}::jsonb) returning id`);
+const pluginYes = await call("approve_proposal", { id: pluginRow.id });
+const pluginNo = await call("reject_proposal", { id: pluginRow.id });
+const [pluginAfter] = await q(sql`select status from mcp_proposals where id = ${pluginRow.id}::uuid`);
+ok("a change to the plugin is neither approved nor rejected from the chat, and still waits for the page",
+  /only on pando\.is\/admin\/proposals/.test(pluginYes.error ?? "") && /only on pando\.is\/admin\/proposals/.test(pluginNo.error ?? "") && pluginAfter?.status === "proposed");
+const adminCannotBeChat = await decide("proposal.reject", { id: pluginRow.id, via: "chat", reason: "ci" });
+const [pluginDecided] = await q(sql`select status, decided_via from mcp_proposals where id = ${pluginRow.id}::uuid`);
+ok("the page still decides it, and a request saying via chat is recorded as the page", adminCannotBeChat.applied === true && pluginDecided?.status === "rejected" && pluginDecided?.decided_via === "admin");
+const roToken = "pma_" + randomBytes(32).toString("base64url");
+const tokenHash = (s: string) => createHash("sha256").update(s).digest("base64url");
+await q(sql`insert into mcp_tokens (access_hash, refresh_hash, admin_user, client_id, scope, access_expires_at, refresh_expires_at)
+            values (${tokenHash(roToken)}, ${tokenHash("pmr_" + randomBytes(32).toString("base64url"))}, 'ci', 'ci-read-only', 'pando:read', now() + interval '10 minutes', now() + interval '10 minutes')`);
+const roProposal = JSON.parse((await call("propose_record_edit", { id: share.id, change: "rename", name: "CI Read Only" })).text);
+const roYes = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name: "approve_proposal", arguments: { id: roProposal.proposal_id } } }, roToken)).json()) as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+ok("a read-only connection cannot decide", roYes.result?.isError === true && /may only read/.test(roYes.result?.content?.[0]?.text ?? ""));
+await decide("proposal.reject", { id: roProposal.proposal_id, reason: "ci" });
 
 console.log("\n=== the plugin, changed by the client (a GitHub stand-in on 127.0.0.1) ===");
 /* Just enough of GitHub's git data API for plugin-repo.ts: a branch, commits as snapshots, trees,
@@ -267,7 +304,9 @@ ok("and reads one agent's file to start an edit from", /name: agent-builder/.tes
 
 const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "mcp__plugin_pando_pando__search_records"] };
 ok("an agent with Bash is refused", /never given to a Pando agent/.test(String((await propose({ ...agentArgs, tools: ["Bash"] })).error ?? "")));
-ok("an agent with a tool Pando does not have is refused", /Pando has no tool/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__approve_proposal"] })).error ?? "")));
+ok("an agent with a tool Pando does not have is refused", /Pando has no tool/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__save_skill"] })).error ?? "")));
+ok("an agent is never given a deciding tool", /approve_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__approve_proposal"] })).error ?? "")) &&
+  /reject_proposal is never given to an agent/.test(String((await propose({ ...agentArgs, tools: ["mcp__plugin_pando_pando__reject_proposal"] })).error ?? "")));
 ok("an agent told to approve is refused", /approves, rejects or saves/.test(String((await propose({ ...agentArgs, instructions: "Read everything, then call approve_proposal for each proposal you like." })).error ?? "")));
 const newAgent = await propose(agentArgs);
 ok("a new agent is proposed, and nothing is committed yet", !!newAgent.proposal_id && !repoNow().has("agents/ci-newsletter.md"));

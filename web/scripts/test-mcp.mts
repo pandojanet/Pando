@@ -127,12 +127,29 @@ console.log("\n=== the diagram's promises ===");
   ok("a tool that writes needs pando:propose; source links are http(s) only",
     /if \(!config\.readOnly && !mayPropose\(ctx\.scopes\)\)/.test(server) && /regex\(\/\^https\?:/.test(server) && !/source_url: z\.string\(\)\.url\(\)/.test(server));
   ok("the digest tool drops the texts and the families each set went to", /\(\{ variants: _v, \.\.\.g \}\) => g/.test(server));
-  /* 23 Nov, the security review: the chat's "admin said yes" was a value the agent filled in itself. */
-  ok("writes are proposals, and the chat decides none: no approve, reject or save tool, no applyAction, no admin_said flag",
-    !/tool\("(approve_proposal|reject_proposal|save_skill)"/.test(server) && !/applyAction|admin_said_|saveSkill\(/.test(code(server)) &&
+  /* 24 Nov, the developer: proposals are decided in the chat; the plugin's own changes stay on /admin/proposals.
+     The 23 Nov review's objection — the chat's "admin said yes" was a value the agent filled in — still holds,
+     so there is no such flag: the yes is the person allowing a destructive call. */
+  ok("writes are proposals; the chat decides one only through approve_proposal / reject_proposal — one applyAction, via chat, no admin_said flag, no save tool",
+    /tool\("approve_proposal"/.test(server) && /tool\("reject_proposal"/.test(server) && !/tool\("save_skill"/.test(server) &&
+      !/admin_said_|saveSkill\(/.test(code(server)) && (code(server).match(/applyAction\(/g) ?? []).length === 1 &&
+      /applyAction\(db\(\), \{ actor: ctx\.actor, action, via: "chat", body: \{ id, /.test(server) &&
       !/insert into shares|update shares|insert into digest|commitSkill/.test(server));
+  ok("both are destructive, so Claude asks the person for each call; and at most mcp_decide an hour per connection",
+    /tool\("approve_proposal", \{[\s\S]{0,800}readOnly: false,\s+destructive: true,/.test(server) &&
+      /tool\("reject_proposal", \{[\s\S]{0,800}readOnly: false,\s+destructive: true,/.test(server) &&
+      /rateLimitedKey\(`\$\{ctx\.actor\}\|\$\{ctx\.clientId\}`, "mcp_decide"\)/.test(server) &&
+      /mcp_decide: \{\s[\s\S]{0,400}max: 30,\s+windowSeconds: 60 \* 60,/.test(read("lib/rate-limits.ts")));
   const write = read("lib/server/repo/admin-write.ts");
-  ok("a decision is recorded as made here, whatever the request says", /case "proposal\.approve": \{[\s\S]{0,600}const via = "admin";/.test(write) && /case "proposal\.reject": \{[\s\S]{0,300}const via = "admin";/.test(write));
+  ok("where a decision was made is set by the server, never by the request; the chat cannot decide a change to the plugin",
+    (write.match(/const via = ctx\.via === "chat" \? "chat" : "admin";/g) ?? []).length === 2 && !/b\.via\b/.test(write) &&
+      /if \(via === "chat" && \(p\.kind === "plugin" \|\| p\.kind === "skill"\)\) return \{ applied: false, reason: "plugin_admin_only" \};/.test(write) &&
+      /and \(\$\{via\} = 'admin' or kind not in \('plugin', 'skill'\)\)/.test(write) &&
+      !/via:/.test(read("app/api/admin/action/route.ts").slice(read("app/api/admin/action/route.ts").indexOf("applyAction(db, {"), read("app/api/admin/action/route.ts").indexOf("applyAction(db, {") + 300)));
+  ok("no agent is ever given a deciding tool: the tool list marks them, the plugin's agent check refuses them",
+    /approve_proposal: "decide",\s+reject_proposal: "decide",/.test(read("lib/mcp/tool-names.ts")) &&
+      /if \(\(PANDO_DECIDE_TOOLS as readonly string\[\]\)\.includes\(pt\)\) return \{ refused:/.test(read("lib/server/mcp/plugin-repo.ts")) &&
+      /\.\.\.PANDO_DECIDE_TOOLS\.map\(\(d\) => PANDO_TOOL_PREFIX \+ d\)/.test(read("lib/server/mcp/plugin-repo.ts")));
   const actionRoute = read("app/api/admin/action/route.ts");
   /* 23 Nov, the developer: the client changes the plugin — skills, agents, connectors — without QuitCode. */
   ok("a plugin change is committed only by an admin's Commit on /admin/proposals: the route commits first, the proposal is marked with the commit",
@@ -143,7 +160,8 @@ console.log("\n=== the diagram's promises ===");
   ok("one list of Pando's tools: the server cannot register a tool missing from it or listed as the other kind",
     /const kind = PANDO_TOOLS\[name as keyof typeof PANDO_TOOLS\];\s+if \(!kind \|\| \(kind === "read"\) !== config\.readOnly\) throw/.test(server) &&
       [...server.matchAll(/tool\("([a-z_]+)"/g)].every((m) => toolNames.includes(`  ${m[1]}: "`)) &&
-      (toolNames.match(/^  [a-z_]+: "(read|write)",$/gm) ?? []).length === [...server.matchAll(/tool\("([a-z_]+)"/g)].length);
+      (toolNames.match(/^  [a-z_]+: "(read|write|decide)",$/gm) ?? []).length === [...server.matchAll(/tool\("([a-z_]+)"/g)].length &&
+      /if \(kind === "decide" && config\.destructive !== true\) throw/.test(server));
   ok("the sources & partners list: read by agents, changed by an admin's yes, only a check's time and result written directly",
     /tool\("list_sources"/.test(server) && /tool\("propose_source"/.test(server) && /kind: "source", shareId: null/.test(server) && /tool\("record_source_check"/.test(server) &&
       /update pando_sources set last_checked_at = now\(\), last_check = \$\{result\}/.test(read("lib/server/repo/mcp-sources.ts")) &&

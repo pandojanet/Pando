@@ -145,16 +145,35 @@ Claude how to behave (Claude's connector review). A proposal keeps the record as
 (`mcp_proposals.before`, 0075), so the admin sees "was → becomes" and "Record changed since"; a rejection
 may carry the admin's reason (`decision_note`), which `list_proposals` gives back to the agent.
 
-Writes are **proposals**: nothing changes until an admin approves on `/admin/proposals`. Every
-approval runs `applyAction`, in one transaction with its `audit_log` row. Waiting proposals are listed
-oldest first, decided ones newest first.
+Writes are **proposals**: nothing changes until the founder decides. Every decision runs `applyAction`,
+in one transaction with its `audit_log` row. Waiting proposals are listed oldest first, decided ones newest
+first.
 
-**Not in the chat (23 Nov, the security review).** `approve_proposal`, `reject_proposal` and
-`save_skill` were removed (`save_skill` is now part of `propose_plugin_change`). Each required an `admin_said_yes` / `_no` / `_save: true` argument that the
-agent itself filled in — a web page or a parent's words that steered the agent could fill it in too, and
-Claude's confirmation prompt is a setting an admin can turn off. A decision is now a person's press on
-a page the agent cannot reach. The one direct write left is `record_source_check` (when a source was
-read and how that went — never shown to a parent).
+**Decided in the chat, since 24 Nov — except a change to the plugin.** `approve_proposal` and
+`reject_proposal` decide a record, an edit, a fact check, a digest event or a source, through the same
+`applyAction` as the admin's buttons, recorded `decided_via: chat` (and `via: chat` in the audit row) — a
+value only Pando MCP sets, never a request's body. A change to the plugin itself (`propose_plugin_change`)
+is refused there (`plugin_admin_only`) and decided only on `/admin/proposals`, where the admin reads it
+line by line and *Commit to plugin* commits it.
+
+What makes the chat's yes the person's (the 23 Nov review removed the old tools because their
+`admin_said_yes` was an argument the agent filled in itself):
+
+- **No such argument.** The yes is the person allowing the call: both tools are `destructiveHint: true`,
+  so Claude asks before each one (the server refuses to register a deciding tool that is not destructive).
+  The plugin says to keep them on *Ask*, never *Allow always* — a setting the person controls, which is
+  the residual risk, said plainly.
+- **No agent has them.** `lib/mcp/tool-names.ts` marks them `decide`; `plugin-repo.ts` refuses them in any
+  agent the client proposes and denies them in a deny-list agent; the plugin's `check-agents.mjs` checks
+  QuitCode's agents, and the Partner analyst — which reads the inbox — denies them by name. So text an
+  agent read on a page or in an email never sits next to the tool; it reaches the main conversation only
+  as an agent's report, which the plugin's shared rule 2 treats as data.
+- **No skill scripts one.** A proposed skill or agent that names them is refused (`DECIDING`); the rule
+  for deciding lives in the plugin's `shared/safety.md` (rule 3), which no proposal can reach.
+- **A ceiling.** `mcp_decide`: 30 decisions an hour per connection; a read-only connection cannot decide.
+
+The one direct write besides is `record_source_check` (when a source was read and how that went — never
+shown to a parent).
 
 | Tool | Reads / writes | Playbook capability |
 | --- | --- | --- |
@@ -172,6 +191,7 @@ read and how that went — never shown to a parent).
 | `read_plugin` | the plugin's skills, agents and connectors; one file's text | — |
 | `propose_plugin_change` | **proposal**: create, update or delete a skill, an agent or a connector; committed when an admin commits it | Prompt Architect / reusable workflows |
 | `list_proposals` | proposals and their decisions | `get_request_status`, `list_approval_queue` |
+| `approve_proposal`, `reject_proposal` | **decide** one waiting proposal, on the person's own word in the chat (not a plugin change) | `approve_request`, `reject_request` |
 | `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one | `log_cost_event` (read side) |
 
 **Not here, on purpose:** `add_watch`, `cancel_watch`, `request_network_check`, `record_outcome`.
