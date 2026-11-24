@@ -116,6 +116,7 @@ function pick(s: SeedSession): Partial<SeedSession> {
     wants_founding: s.wants_founding,
     referral_code: s.referral_code,
     profile_saved_at: s.profile_saved_at,
+    server_saved_at: s.server_saved_at,
     answers: s.answers,
   };
 }

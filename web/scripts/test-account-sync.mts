@@ -43,8 +43,19 @@ const found = (extra: Record<string, unknown> = {}) => ({
 console.log("\n=== which copies are checked ===");
 ok("a saved profile under a confirmed number is an account", sync.claimsAccount(saved));
 ok("a questionnaire not yet saved is not", !sync.claimsAccount({ ...saved, profile_saved_at: null }));
-ok("a profile held on the phone until its code is not (its code comes at the end, as before)", !sync.claimsAccount({ ...saved, phone_verified: false }));
+ok("a profile held on the phone until its code is not (its code comes at the end, as before)",
+  !sync.claimsAccount({ ...saved, phone_verified: false, referral_code: null, server_saved_at: null }));
 ok("no copy at all is not", !sync.claimsAccount(null));
+/* 24 Nov, the hole the developer named: a refused write turns phone_verified off, and the profile in the
+   database then opened from the phone without a code. */
+ok("a profile the database holds stays an account after a refused write turned the flag off (seen on the server)",
+  sync.claimsAccount({ ...saved, phone_verified: false, referral_code: null, server_saved_at: "2026-11-20T09:00:00.000Z" }));
+ok("and on a phone from before that stamp, its referral link — only the server mints one — says the same",
+  sync.claimsAccount({ ...saved, phone_verified: false, referral_code: "alice-1", server_saved_at: null }));
+ok("such a copy, checked against a lapsed confirmation, is sent to sign in",
+  sync.reconcile({ ...saved, phone_verified: false }, { ok: false, found: false, reason: "expired" }, NOW).state === "signed_out");
+ok("a check that finds the profile stamps it as seen on the server",
+  (() => { const r = sync.reconcile({ ...saved, server_saved_at: null }, found(), NOW); return r.state === "in_step" && r.session.server_saved_at === NOW.toISOString(); })());
 
 console.log("\n=== the five answers ===");
 ok("Pando unreachable: offline, the phone's copy is kept", sync.reconcile(saved, { ok: false, found: false, reason: "unavailable" }, NOW).state === "offline");

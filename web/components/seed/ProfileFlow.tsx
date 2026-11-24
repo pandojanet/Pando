@@ -1108,6 +1108,8 @@ export function ProfileFlow() {
         ...s,
         profile_saved_at: new Date().toISOString(),
         referral_code: code ?? s.referral_code,
+        /* The database holds it now (24 Nov): from here a lapsed confirmation means signing in, never a draft. */
+        server_saved_at: result?.persisted ? new Date().toISOString() : (s.server_saved_at ?? null),
       }));
       track("seed_profile_saved", {
         completeness: profileCompleteness(current.answers),

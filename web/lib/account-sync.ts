@@ -38,12 +38,21 @@ export type AccountCheck =
   | { state: "offline" };
 
 /**
- * Does this phone believe it holds an account on the server? A saved profile under a number the phone
- * says it confirmed. A held one (`phone_verified` false) is not yet on the server — its code comes at
- * the end of the flow, as before.
+ * Does this phone hold a profile that lives on the server? A saved profile under a number, and any one
+ * of: the phone says the number is confirmed, the database was seen holding it (`server_saved_at`), or
+ * it has a referral link — which only the server mints, so a phone from before `server_saved_at` is
+ * recognised too.
+ *
+ * ⚠ Not `phone_verified` alone (24 Nov, the developer: *"мало її спочатку не пустити без коду в
+ * систему"*): a write refused for a lapsed confirmation turns that flag off on seven paths, and the
+ * first version of this check then took a profile that lives in the database for a draft and let the
+ * phone's copy open without a code. A profile held on the phone until its number is confirmed has none
+ * of the three, and keeps its code at the end of the flow, as before.
  */
 export function claimsAccount(session: SeedSession | null): boolean {
-  return Boolean(session?.profile_saved_at && session.phone && session.phone_verified);
+  return Boolean(
+    session?.profile_saved_at && session.phone && (session.phone_verified || session.server_saved_at || session.referral_code),
+  );
 }
 
 /** What the server owns, compared — the parts `in_step` replaces. */
@@ -74,6 +83,7 @@ export function reconcile(local: SeedSession, me: MeResult, now: Date = new Date
     wants_founding: me.wants_founding !== false,
     referral_code: me.referral_code ?? base.referral_code,
     profile_saved_at: me.profile_saved ? (base.profile_saved_at ?? stamp) : base.profile_saved_at,
+    server_saved_at: me.profile_saved ? stamp : (base.server_saved_at ?? null),
     /* The answers are the database's once it has them; a profile written before `raw_answers` carried
        anything leaves the phone's copy alone rather than showing an empty review. */
     answers: me.answers ? pruneAnswers(normaliseAnswers(me.answers)) : base.answers,

@@ -759,6 +759,14 @@ export interface SeedSession {
   screen_index: number;
   profile_saved_at: string | null;
   /**
+   * When the database was last seen to hold this profile (24 Nov): set by a profile write that
+   * persisted and by every check that found it (`lib/account-sync.ts`). Unlike `phone_verified`, which
+   * a refused write turns off, nothing but the phone being emptied clears it — so a lapsed
+   * confirmation can never make a profile that lives on the server look like a draft and open
+   * without a code. Optional for sessions written before it.
+   */
+  server_saved_at?: string | null;
+  /**
    * This parent's own referral link (7 Sep, her third instruction).
    *
    * Stored on the session so the thank-you screen can show it on a later visit
