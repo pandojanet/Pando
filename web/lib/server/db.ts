@@ -51,8 +51,16 @@ function create(url: string): Db {
     /**
      * The pooler is doing the real pooling; this app only needs enough sockets
      * to overlap requests. Too many here just holds pooler slots idle.
+     *
+     * **15, was 5 (24 Nov).** Five was shared by everything in this one
+     * process — SMS replies, the jobs, the admin, Pando MCP and its log rows —
+     * and a Claude session asks several tools at once: a call waited for a
+     * socket while the app looked fine, and Claude gave up at 230 s. Fifteen
+     * client sockets cost the transaction-mode pooler nothing it is not built
+     * for (it multiplexes them onto its own server connections, and its client
+     * limit is in the hundreds); an idle one closes after `idle_timeout`.
      */
-    max: 5,
+    max: 15,
     /**
      * Measured, not guessed (10 Aug): against the Supabase pooler a query costs
      * ~195ms of round trip and ~5ms of actual work, while **opening** a
@@ -184,6 +192,79 @@ function driverError(err: unknown): { message: string; code: string } {
  */
 function isQueryWrapper(err: Error): boolean {
   return "query" in err && "params" in err;
+}
+
+/**
+ * Connection-level failures: the socket closed, never opened, or the server
+ * sent the session away (a pooler restart, a deploy, an idle socket dropped on
+ * the way). None of them is about the statement — the same read a moment later
+ * on a fresh connection is expected to work.
+ */
+const TRANSIENT_CODES = new Set([
+  // postgres.js
+  "CONNECT_TIMEOUT",
+  "CONNECTION_CLOSED",
+  "CONNECTION_ENDED",
+  "CONNECTION_DESTROYED",
+  // the socket
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  // Postgres: admin shutdown, crash shutdown, cannot connect now, connection exceptions, too many connections
+  "57P01",
+  "57P02",
+  "57P03",
+  "08000",
+  "08001",
+  "08003",
+  "08004",
+  "08006",
+  "53300",
+]);
+
+/** Said by the pooler in a message rather than a code. */
+const TRANSIENT_MESSAGE = /max client connections|terminating connection|connection (?:terminated|closed|reset)/i;
+
+/**
+ * True when `err` — or anything it wraps — is a lost or refused connection
+ * rather than an error of the statement itself (a syntax error, a constraint, a
+ * statement timeout are not: trying them again gives the same answer).
+ */
+export function isTransientDbError(err: unknown): boolean {
+  let current: unknown = err;
+  for (let depth = 0; current instanceof Error && depth < 8; depth += 1) {
+    const code = "code" in current && typeof current.code === "string" ? current.code : "";
+    if (TRANSIENT_CODES.has(code)) return true;
+    /* A wrapper's message carries the SQL; only an unwrapped driver error's is read. */
+    if (!isQueryWrapper(current) && TRANSIENT_MESSAGE.test(current.message)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/**
+ * Runs a **read** again once when its connection was lost (24 Nov): a Claude
+ * call failed on a dropped socket while everything else in the app was fine.
+ *
+ * Reads only. A write whose connection dropped may have committed before the
+ * answer was lost, and running it again could make a second row — a write
+ * fails honestly instead. A statement's own error is never retried.
+ */
+export async function readWithRetry<T>(
+  read: () => Promise<T>,
+  { attempts = 2, delayMs = 250 }: { attempts?: number; delayMs?: number } = {},
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await read();
+    } catch (err) {
+      if (attempt >= attempts || !isTransientDbError(err)) throw err;
+      console.warn(`[pando:db] read retried after a lost connection (${attempt}/${attempts - 1})`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }
 
 /** Liveness for /api/health. Cheap, and does not touch application tables. */

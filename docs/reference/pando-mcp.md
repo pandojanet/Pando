@@ -221,6 +221,8 @@ Approving or rejecting a proposal, and committing a change to the plugin, happen
 | A JSON-RPC batch (an array of messages) | `400`, `-32600` — one message per request |
 | Too many requests (below) | `429`, `Retry-After`, `RateLimit-*` headers |
 | Pando MCP switched off | the tool answers *"Pando MCP is switched off in the Pando admin."* (`isError`); never a 401, so no sign-in loop |
+| The switch cannot be read (the database did not answer, twice) | *"Pando's database didn't answer just now, so nothing was read or changed…"* (`isError`, outcome `error`) — refused, but never called "switched off" (24 Nov) |
+| The call takes longer than 30 s | *"That took longer than 30 seconds, so Pando stopped waiting…"* — a read changed nothing; a proposal may have been made, so check `list_proposals` (outcome `error`) |
 | A read-only connection calls a tool that writes | *"This connection may only read…"* (`isError`, outcome `refused`) |
 | Arguments that do not fit the tool's schema | JSON-RPC error `-32602`, naming the field |
 | A proposal Pando refuses (past event, record gone, duplicate, …) | one sentence saying why (`isError`, outcome `refused`) |
@@ -232,7 +234,15 @@ Approving or rejecting a proposal, and committing a change to the plugin, happen
 - A read tool runs in a **read-only** transaction with a **10 s** statement limit: it cannot write, and a
   slow query cannot hold a connection the SMS side shares. `costs_summary`, which waits on Twilio and
   PostHog, runs outside one.
-- A token's "last used" is written at most every five minutes, not on every call.
+- A token's "last used" is written at most every five minutes, not on every call; when that write
+  fails the token still works.
+- **A lost connection is tried once more, for reads only** (24 Nov, `readWithRetry` in
+  `lib/server/db.ts`): a read tool's transaction, the switch and the token lookup run again after
+  250 ms when the socket closed, never opened or was sent away (`isTransientDbError`). A statement's own
+  error (a syntax error, a timeout, a constraint) is never retried, and a write never is — its first try
+  may have committed. Both tries stay inside the call's 30-second deadline.
+- The app's pool is **15** sockets on Supabase's transaction pooler (was 5, 24 Nov), shared by the SMS
+  side, the jobs, the admin and Pando MCP; the call log row is written after the answer.
 - The nightly `mcp_prune` job deletes codes a day after they expired, tokens 30 days after they were
   revoked or ran out, clients nobody signed in through after 30 days, and calls after 90 days.
 - `demand_by_place` shows a count of 1 or 2 as `"<3"`.

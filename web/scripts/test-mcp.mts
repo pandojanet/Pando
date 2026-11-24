@@ -114,6 +114,16 @@ console.log("\n=== the diagram's promises ===");
       /if \(sw === "off"\) \{\s+outcome = "off";/.test(server));
   ok("a read of the switch is kept 30 s, never reused after a failed read, and the admin's change forgets it at once",
     /const SWITCH_TTL_MS = 30_000;/.test(repo) && /case "mcp\.switch": \{[\s\S]{0,600}forgetMcpSwitch\(\);/.test(read("lib/server/repo/admin-write.ts")));
+  /* 24 Nov: a dropped socket failed a Claude call while the app was fine. */
+  const dbSrc = read("lib/server/db.ts");
+  ok("the pool is 15 sockets, and a read whose connection dropped is run once more — a read only",
+    /^\s*max: 15,/m.test(dbSrc) && /export async function readWithRetry/.test(dbSrc) &&
+      /return readWithRetry\(\(\) => d\.transaction\(/.test(server) &&
+      /readWithRetry\(\(\) => rows\(db, sql`select value from app_settings where key = 'mcp_enabled'`\)\)/.test(repo) &&
+      /const out = await readWithRetry\(\(\) => rows\(db, sql`\s+select t\.id, t\.admin_user/.test(repo) &&
+      !/readWithRetry\([^)]*update/.test(repo));
+  ok("a token's last-used note that fails does not turn a good token into a 503",
+    /update mcp_tokens set last_used_at = now\(\) where id = \$\{String\(row\.id\)\}::uuid`\)\.catch\(/.test(repo));
   ok("a call answers within 30 s, and its answer never waits for its own log row",
     /const CALL_DEADLINE_MS = 30_000;/.test(server) && /void logCall\(\{ actor: ctx\.actor/.test(server) && !/await logCall\(/.test(server) &&
       /if \(err instanceof DeadlineError\)/.test(server));

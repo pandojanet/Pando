@@ -3,7 +3,7 @@ import "server-only";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
-import { getDb, withDb, type Db } from "@/lib/server/db";
+import { getDb, readWithRetry, withDb, type Db } from "@/lib/server/db";
 
 /** The longest a read tool's statement may run (20 Nov). */
 const READ_LIMIT = "10s";
@@ -194,10 +194,12 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
     if (!d) throw new Error("no database");
     return d;
   };
+  /* A read whose connection dropped is run once more on a fresh one (24 Nov): it is a read-only
+     transaction, so a second run cannot change anything twice, and it stays inside the call's deadline. */
   const asRead = async <T,>(work: () => Promise<T>): Promise<T> => {
     const d = getDb();
     if (!d) throw new Error("no database");
-    return d.transaction(
+    return readWithRetry(() => d.transaction(
       async (tx) => {
         /* SET takes no bound parameter; READ_LIMIT is a constant of this file. */
         await tx.execute(sql.raw(`set local statement_timeout = '${READ_LIMIT}'`));
@@ -209,7 +211,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
         }
       },
       { accessMode: "read only" },
-    );
+    ));
   };
   const weeks = z.number().int().min(1).max(52).default(12).describe("How many weeks back, newest last");
   /** A list with a cap: says when there is more and how to narrow it (Anthropic, "Writing tools for agents"). */

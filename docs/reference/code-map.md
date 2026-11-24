@@ -11,6 +11,7 @@ Admin pieces for Pando MCP — 20 Nov: `Toggle` (`components/admin/kit.tsx`, a r
                        `mcp-read.ts` (totals and records with no names, `impactTotals`, a record's trust labels) · `mcp-proposals.ts` · `mcp-sources.ts` (the sources & partners list, 23 Nov) · `rateBlocked` in `lib/server/rate-limit.ts` (over a limit without counting the request) · the
                        `proposal.*` / `mcp.*` cases in `admin-write.ts` · `/admin/connect`,
                        `/admin/proposals`, `/admin/mcp`. A new tool goes through `tool()` in server.ts.
+`web/lib/server/db.ts` — the one connection (`getDb`, `withDb`, a pool of 15); `readWithRetry` runs a **read** once more when its connection was lost (`isTransientDbError` tells a lost socket from a statement's own error) — never a write (24 Nov).
 `web/lib/questions.ts` — the profile questionnaire (order, gating, weights, P3–P14).
 `web/lib/home-places.ts` — where a parent lives: her §5 place list and the
                        ZIPs that reach it. A ZIP names a place only

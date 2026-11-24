@@ -43,7 +43,7 @@ process.env.MCP_BASE_URL = "http://localhost:3100";
 /* A path in a variable: TypeScript checks the types, the loader resolves the file. */
 const load = <T,>(file: string) => import(file) as Promise<T>;
 const { sql } = await import("drizzle-orm");
-const { getDb } = await load<typeof import("../lib/server/db.ts")>("../lib/server/db.ts");
+const { getDb, isTransientDbError, readWithRetry } = await load<typeof import("../lib/server/db.ts")>("../lib/server/db.ts");
 const db = getDb()!;
 const q = async (s: ReturnType<typeof sql>) => (await db.execute(s)) as unknown as Array<Record<string, unknown>>;
 
@@ -404,6 +404,32 @@ const alertsSrv = await load<typeof import("../lib/server/alerts.ts")>("../lib/s
 const alertsLib = await load<typeof import("../lib/alerts.ts")>("../lib/alerts.ts");
 const facts = await alertsSrv.alertFacts(db, new Date());
 ok("five tool failures in 30 minutes make a Slack alert for QuitCode", alertsLib.criticalAlerts(facts, "d").some((a) => a.key.startsWith("mcp_errors") && a.owner === "QuitCode"), JSON.stringify(facts.mcp));
+
+console.log("\n=== a lost connection is tried once more, for reads only ===");
+/* Shaped as the driver throws them: postgres.js sets `code`; drizzle wraps it with `query`/`params` and `cause`. */
+const driverErr = (code: string, message = `write ${code}`) => Object.assign(new Error(message), { code });
+const wrapped = (cause: Error) => Object.assign(new Error("Failed query: select 1\nparams: +15555550100"), { query: "select 1", params: ["+15555550100"], cause });
+ok("a closed or refused connection is transient, also inside drizzle's wrapper",
+  isTransientDbError(driverErr("CONNECTION_CLOSED")) && isTransientDbError(wrapped(driverErr("CONNECT_TIMEOUT"))) &&
+    isTransientDbError(driverErr("57P01", "terminating connection due to administrator command")) && isTransientDbError(new Error("Max client connections reached")));
+let realErr: unknown = null;
+try { await q(sql`select * from no_such_table`); } catch (e) { realErr = e; }
+ok("a statement's own error is not: a missing table, a statement timeout, a constraint",
+  realErr !== null && !isTransientDbError(realErr) && !isTransientDbError(driverErr("57014", "canceling statement due to statement timeout")) &&
+    !isTransientDbError(driverErr("23505", "duplicate key value")) && !isTransientDbError("CONNECTION_CLOSED"));
+ok("a wrapper's message is never read — it carries the SQL and its parameters",
+  !isTransientDbError(Object.assign(new Error("Failed query: … connection closed …"), { query: "x", params: [] })));
+let tries = 0;
+const once = await readWithRetry(async () => { tries++; if (tries === 1) throw wrapped(driverErr("CONNECTION_CLOSED")); return "read"; }, { delayMs: 1 });
+ok("a read whose connection dropped is run again and answers", once === "read" && tries === 2, String(tries));
+tries = 0;
+let gaveUp = false;
+try { await readWithRetry(async () => { tries++; throw driverErr("ECONNRESET"); }, { delayMs: 1 }); } catch { gaveUp = true; }
+ok("…once: a second loss is the answer", gaveUp && tries === 2, String(tries));
+tries = 0;
+let refused = false;
+try { await readWithRetry(async () => { tries++; throw driverErr("42P01", "relation does not exist"); }, { delayMs: 1 }); } catch { refused = true; }
+ok("a statement's own error is not run again", refused && tries === 1, String(tries));
 
 await stop();
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);

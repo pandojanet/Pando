@@ -3,7 +3,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { adminCredentials } from "@/lib/server/admin-auth";
-import { withDb, type Db } from "@/lib/server/db";
+import { readWithRetry, withDb, type Db } from "@/lib/server/db";
 import {
   ACCESS_TTL_MS,
   CODE_TTL_MS,
@@ -284,16 +284,23 @@ export interface TokenOwner {
  */
 export async function tokenOwner(accessToken: string): Promise<TokenOwner | null | "unavailable"> {
   const r = await withDb(async (db) => {
-    const out = await rows(db, sql`
+    /* The read is tried again once on a lost connection (24 Nov) — a dropped socket is not a reason to
+       answer 503 to a token that is fine. */
+    const out = await readWithRetry(() => rows(db, sql`
       select t.id, t.admin_user, t.client_id, t.scope, t.access_expires_at,
              (t.last_used_at is null or t.last_used_at < now() - interval '5 minutes') as stale_use
         from mcp_tokens t
        where t.access_hash = ${hashSecret(accessToken)} and t.revoked_at is null and t.access_expires_at > now()
-    `);
+    `));
     const row = out[0] ?? null;
     /* "Last used" to the nearest five minutes (20 Nov): a write on every call was a write per tool call
-       on the database the SMS side shares, for a column read only by /admin/mcp. */
-    if (row?.stale_use === true) await db.execute(sql`update mcp_tokens set last_used_at = now() where id = ${String(row.id)}::uuid`);
+       on the database the SMS side shares, for a column read only by /admin/mcp. It is a note, not a
+       check (24 Nov): when it fails the token still works, and the failure is logged as a class name. */
+    if (row?.stale_use === true) {
+      await db.execute(sql`update mcp_tokens set last_used_at = now() where id = ${String(row.id)}::uuid`).catch((err: unknown) => {
+        console.error("[mcp] last used not kept", { error: err instanceof Error ? err.constructor.name : "unknown" });
+      });
+    }
     return row;
   });
   if (!r.persisted) return r.reason === "unconfigured" ? null : "unavailable";
@@ -332,8 +339,9 @@ export async function revokeBySecret(secret: string): Promise<void> {
  * when the truth was a database that did not answer. Now `unknown` refuses just the same, and says so.
  *
  * A read is kept for `SWITCH_TTL_MS` so a run of tool calls does not spend a connection each on the
- * same row (the pool is five, shared with the SMS side); the admin's own change forgets it at once
- * (`forgetMcpSwitch`, called by the admin's `mcp.switch`). A failed read never uses an old value.
+ * same row (the pool is shared with the SMS side); the admin's own change forgets it at once
+ * (`forgetMcpSwitch`, called by the admin's `mcp.switch`). A failed read never uses an old value; a
+ * read whose connection dropped is tried once more first (`readWithRetry`, 24 Nov).
  */
 export type McpSwitch = "on" | "off" | "unknown";
 
@@ -347,7 +355,7 @@ export function forgetMcpSwitch(): void {
 export async function mcpSwitch(now = Date.now()): Promise<McpSwitch> {
   if ((process.env.PANDO_MCP ?? "").trim().toLowerCase() === "off") return "off";
   if (switchRead && now - switchRead.at < SWITCH_TTL_MS) return switchRead.on ? "on" : "off";
-  const r = await withDb(async (db) => (await rows(db, sql`select value from app_settings where key = 'mcp_enabled'`))[0] ?? null);
+  const r = await withDb(async (db) => (await readWithRetry(() => rows(db, sql`select value from app_settings where key = 'mcp_enabled'`)))[0] ?? null);
   if (!r.persisted) return "unknown";
   const on = r.data?.value === true;
   switchRead = { on, at: now };
