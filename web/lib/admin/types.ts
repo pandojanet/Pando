@@ -1863,6 +1863,11 @@ export interface DigestItemRow {
   removed: boolean;
   /** An event an admin approved from the plugin's Researcher (20 Nov, `digest_candidates`), not the digest agent's find. */
   from_candidate?: boolean;
+  /** The details a pick opens (25 Nov, drizzle/0081): price, what the place is, popular and why. Absent before it. */
+  price?: string | null;
+  about?: string | null;
+  popular?: boolean;
+  popular_why?: string | null;
   /** Families whose digest carried it (this group's and other groups' families). */
   sent_to: number;
   /** Of those, this group's own families — the rest got it for a child another group's search was for. */

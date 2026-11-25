@@ -127,7 +127,8 @@ ok("media ends the turn: nothing else runs on what was only read",
   /await mediaNoteStep\(\{[^}]*\}\);\s+return;/.test(inbound));
 ok("only a YES runs the words, as a message of their own",
   /if \(said === true\) return first === true && rest && !ACKNOWLEDGEMENT\.test\(rest\) \?/.test(inbound) &&
-    /handleInboundMessageUntraced\(\{ from, body: read, channel: input\.channel, confirmedMedia: true \}\)/.test(inbound));
+    /* 25 Nov: marked as read from media, so no child's age is kept from it (test:onboarding). */
+    /handleInboundMessageUntraced\(\{ from, body: read, channel: input\.channel, confirmedMedia: true, fromMedia: true \}\)/.test(inbound));
 ok("and is not counted as a second inbound", /if \(!input\.confirmedMedia\) await recordInbound/.test(inbound));
 const steps = inbound.slice(inbound.indexOf("async function mediaNoteStep"), inbound.indexOf("async function mediaReplyStep") + 1500);
 ok("the words are never logged", !/console\.\w+\([^)]*(\.text|note\.text|read\.text)/.test(steps));

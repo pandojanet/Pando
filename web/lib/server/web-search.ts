@@ -10,6 +10,7 @@ import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameDeep
 import { deepDiveShape } from "@/lib/deep-dive";
 import { datesAllPast } from "@/lib/digest";
 import { searchPlacePhrase } from "@/lib/place-in-question";
+import { interestsBriefLine, type MemoryTopic } from "@/lib/conversation-memory";
 
 /**
  * The person check for web text, with this market's towns as a veto: "South
@@ -165,6 +166,8 @@ const SYSTEM = [
   "- Match the child's age when the brief gives one. A class with a minimum age",
   "  above it, or aimed at a different stage, is the wrong answer even if the",
   "  place is well known.",
+  "- When the brief says it is for the adult asking, list options for adults: a",
+  "  children's class is the wrong answer then.",
   "- Prefer the nearest towns first, but a strong option one town over is better",
   "  than a weak one in the right town. Say where it is and let the parent judge.",
   "- Skip anything under `Pando already has`. Those are already in the reply.",
@@ -338,6 +341,8 @@ function brief(input: {
   exclude?: readonly string[];
   enrich?: readonly string[];
   found?: readonly string[];
+  interests?: readonly MemoryTopic[];
+  forAdult?: boolean;
   now?: Date;
   /** The state the search is located in, when the label does not carry one. */
   region?: string | null;
@@ -371,11 +376,17 @@ function brief(input: {
     .map((band) => BAND_PHRASE[band])
     .filter((p): p is string => Boolean(p));
   if (phrases.length > 0) lines.push(`Child: ${phrases.join(", or ")}`);
+  /* For the adult asking (25 Nov, `for_whom`): Pando is not only for questions about children. */
+  if (input.forAdult) lines.push("Who it is for: the adult asking, not a child - list what an adult would sign up for or go to.");
 
   /* The slug reads as words. It is `market_options.focus`, so it is a curated
      value rather than a guess — `focusInQuestion` already checked it against
      what this market offers. */
   if (input.focus) lines.push(`Topic: ${input.focus.replace(/_/g, " ")}`);
+
+  /* What the family asked about before (25 Nov), for an open question only — the caller decides that. */
+  const leaning = interestsBriefLine(input.interests ?? []);
+  if (leaning) lines.push(leaning);
 
   const now = input.now ?? new Date();
   lines.push(
@@ -552,6 +563,10 @@ type SearchInput = {
   enrich?: readonly string[];
   /** Deep mode, the second search: places the first one found — find others. */
   found?: readonly string[];
+  /** An open question only (25 Nov): what the family asked about before, as `MEMORY_TOPICS` — a lean, never a narrowing. */
+  interests?: readonly MemoryTopic[];
+  /** The request is for the adult asking, not a child (25 Nov, `for_whom`). */
+  forAdult?: boolean;
 };
 
 /**

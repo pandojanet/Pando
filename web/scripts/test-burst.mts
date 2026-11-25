@@ -177,8 +177,9 @@ const dives = fs.readFileSync(new URL("../lib/server/repo/deep-dives.ts", import
 ok("the classifier reads several texts in a row as one message, later lines correcting earlier ones",
   /The message may be several texts the parent sent in a row, one per line/.test(intent) && /is several texts in a row, or is not in English/.test(intent));
 ok("and is given the conversation before the last exchange, oldest first — on both of its calls",
-  /const earlier = exchange && !exchange\.held \? await earlierExchangesFor\(from\) : \[\];/.test(inbound) &&
-    /earlier: exchange && !exchange\.held \? await earlierExchangesFor\(from\) : \[\],\s+memory: exchange && !exchange\.held \? await memoryFor\(person\.person_id\) : \[\],\s+askedThem:/.test(inbound) &&
+  /* 25 Nov: without a question in the last three days too; never after a held one. */
+  /const earlier = readsHistory \? await earlierExchangesFor\(from\) : \[\];/.test(inbound) &&
+    /earlier: !exchange\?\.held \? await earlierExchangesFor\(from\) : \[\],\s+memory: !exchange\?\.held \? await memoryFor\(person\.person_id\) : \[\],\s+askedThem:/.test(inbound) &&
     /Earlier questions in this conversation, oldest first/.test(intent));
 ok("twelve earlier questions over a week, only ones that went out",
   /EARLIER_EXCHANGES = 12/.test(dives) && /EARLIER_DAYS = 7/.test(dives) && /row\.status === "sent" && row\.hold_reason === "not_held"/.test(dives));

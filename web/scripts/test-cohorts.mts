@@ -161,5 +161,15 @@ console.log("\n=== the review's cases (4 Nov) ===");
   ok("with no market-wide group drawn, one like none is still grouped anew", noGeneral.rest.join() === "0");
 }
 
+console.log("\n=== what families asked about over SMS is a shared interest (25 Nov) ===");
+{
+  const asked = (t: string) => `${c.ASKED_AFFINITY}${t}`;
+  const riders = [fam([8], "Pasadena", { affinities: [asked("horse riding")] }), fam([7], "Pasadena", { affinities: [asked("horse riding")] }), fam([8], "Pasadena")];
+  ok("a group a third of which asked about it is told so", c.cohortProfile(riders).interests.includes("horse riding"), JSON.stringify(c.cohortProfile(riders).interests));
+  ok("one family's alone is never 'shared'", !c.cohortProfile([fam([8], "Pasadena", { affinities: [asked("horse riding")] }), fam([7], "Pasadena"), fam([8], "Pasadena"), fam([6], "Pasadena")]).interests.includes("horse riding"));
+  ok("it weighs as an affinity in a family's features", c.familyFeatures(riders[0]).get(`aff:${asked("horse riding")}`) === 1);
+  ok("askedTopics reads them back, and nothing else", c.askedTopics({ affinities: [asked("chess"), "school:marshall", asked("soccer")] }).join() === "chess,soccer");
+}
+
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

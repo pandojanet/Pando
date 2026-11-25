@@ -272,7 +272,11 @@ console.log("\n=== a family in one group, children in two (11 Nov) ===");
   const jobs = read("lib/server/repo/jobs.ts");
   ok("source pin: the job builds every edition before it sends, and pools from the day's ready editions (the lab walk drives it)",
     /const ofDay = editions\.length \? await readyEditionsOfDay\(market\.id, editionDate, isTest\) : \[\];/.test(jobs) &&
-      /pickForPerson\(poolForFamily\(edition\.items, others, families\[i\]\.ages\), families\[i\]\.ages\)/.test(jobs));
+      /pickForPerson\(poolForFamily\(edition\.items, others, families\[i\]\.ages\), families\[i\]\.ages, leansFor\(families\[i\]\)\)/.test(jobs));
+  ok("source pin (25 Nov): the job and the one-number test read the families' interests and lean the picks on them",
+    /const interestsOf = await familyInterestsFor\(audience\.map\(\(r\) => r\.person_id\)\);/.test(jobs) &&
+      /affinities: withAsked\(r\.affinities, interestsOf\.get\(r\.person_id\)\),/.test(jobs) &&
+      /pickForPerson\(poolForFamily\(edition\.items, others, one\.facts\.ages\), one\.facts\.ages, leansFor\(one\.facts\)\)/.test(jobs));
 }
 
 console.log("\n=== what it says ===");
@@ -673,6 +677,49 @@ console.log("\n=== the Researcher's approved events (20 Nov) ===");
   ok("an agent that found nothing still gives a ready edition when candidates fit; empty without them",
     d.editionWithCandidates({ status: "empty", items: [] }, [toddlers], false).status === "ready" && d.editionWithCandidates({ status: "empty", items: [] }, [], false).status === "empty");
   ok("the edition job uses that rule", /editionWithCandidates\(\{ status: agentStatus, items: found\.items \}, candidates, lastAttempt\)/.test(repo));
+}
+
+console.log("\n=== an item's details: price, what the place is, popular — only as the page bears them out (25 Nov) ===");
+{
+  const page = "Enchanted Forest of Light. Tickets: $30 fixed-date admission, $80 Anytime pass. Children under 2 free. Members half price. This event sold out last year - book early.";
+  const det = (r: Record<string, unknown>, p: string | null = page) => d.itemDetails(r, p);
+  ok("a price whose amounts are all on the page is kept", det({ price: "$30 fixed date, $80 any day; under 2 free" }).price === "$30 fixed date, $80 any day; under 2 free");
+  ok("an amount not on the page drops the price, never repaired", det({ price: "$25 fixed date" }).price === null);
+  ok("no page read, no price", det({ price: "$30" }, null).price === null);
+  ok("'free' only when the page says free", det({ price: "free" }, "Admission is free for all").price === "free" && det({ price: "free" }, "Tickets $12").price === null);
+  ok("words with neither an amount nor 'free' are not a price", det({ price: "varies" }).price === null);
+  ok("thousands separators read as the page writes them", det({ price: "$1,250 a season" }, "Season pass $1,250").price === "$1,250 a season");
+  ok("popular only with a demand cue on the page", det({ popular: true, popular_why: "sold out last year" }).popular === true && det({ popular: true }, "A lovely evening in the garden").popular === false);
+  ok("popular says why; not popular says nothing", det({ popular: true, popular_why: "sold out last year" }).popular_why === "sold out last year" && det({ popular: false, popular_why: "x" }).popular_why === null);
+  ok("'popular' alone on the page is self-praise, not demand", det({ popular: true }, "Our popular light show").popular === false);
+  ok("about is one sentence, no link", det({ about: "Descanso Gardens is a 150-acre botanical garden." }).about === "Descanso Gardens is a 150-acre botanical garden." && det({ about: "See www.example.com for more" }).about === null);
+  const why: Record<string, number> = {};
+  d.itemDetails({ price: "$99" }, page, (w) => (why[w] = (why[w] ?? 0) + 1));
+  ok("a field that does not hold is counted, the item stays", why.price_not_on_page === 1);
+
+  const pop = item({ title: "Enchanted Forest", popular: true, age_min: null, age_max: null, starts_on: "2026-11-30" });
+  const calm = item({ title: "Toddler Storytime", age_min: null, age_max: null, starts_on: "2026-11-23" });
+  ok("a popular item is picked first", d.pickForPerson([calm, pop], [])[0] === pop);
+  ok("made for their children still comes first", d.pickForPerson([pop, item({ title: "Teen Night", age_min: 13, age_max: 17, starts_on: "2026-11-23" })], [14])[0].title === "Teen Night");
+  const listed = d.composeDigest([{ ...pop, price: "$30 fixed date" }, calm]);
+  ok("the list marks it popular and never shows a price", listed.body.includes("Enchanted Forest (popular) -") && !listed.body.includes("$30"));
+}
+
+console.log("\n=== a family's picks lean to what they asked about (25 Nov) ===");
+{
+  /* For every age unless said, so the age rule is not what is being tested. */
+  const ev = (title: string, starts_on: string, over: Partial<Item> = {}) =>
+    item({ title, starts_on, kind: "event", age_min: null, age_max: null, url: `https://example.org/${title.length}-${starts_on}`, ...over });
+  const pony = ev("Pony Day at the Stables", "2026-11-29");
+  const story = ev("Toddler Storytime", "2026-11-23");
+  const horses = (x: Item) => /pony|horse/i.test(`${x.title} ${x.summary}`);
+  ok("with no lean, the earlier event first, as before", d.pickForPerson([pony, story], [])[0] === story);
+  ok("with a lean, the item on their interest goes first", d.pickForPerson([story, pony], [], horses)[0] === pony);
+  ok("an order, never a filter: nothing that suits them is dropped", d.pickForPerson([story, pony], [], horses).length === 2);
+  const teen = ev("Teen Pottery Night", "2026-11-23", { age_min: 13, age_max: 17 });
+  ok("made for their children still comes before an interest", d.pickForPerson([pony, teen], [14], horses)[0] === teen);
+  const toddlerPony = ev("Toddler Pony Rides", "2026-11-30", { age_min: 1, age_max: 4 });
+  ok("and never brings in what does not suit their children", !d.pickForPerson([toddlerPony], [14], horses).includes(toddlerPony));
 }
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);

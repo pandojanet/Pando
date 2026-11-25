@@ -14,6 +14,9 @@ import { SMS_TEMPLATE_VERSION, askReason, blastRequestCard, blastRequestSms } fr
 import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
 import { matchesFor } from "@/lib/server/repo/matching";
+import { familyInterestsFor } from "@/lib/server/repo/conversation-memory";
+import { topicsIn, type MemoryTopic } from "@/lib/conversation-memory";
+import { classifyIntent } from "@/lib/server/intent";
 import { nearbyAreas } from "@/lib/server/repo/areas";
 
 /**
@@ -86,6 +89,10 @@ export async function selectPool(input: {
    * to reach that town's parents whatever the asker has in common with them.
    */
   near?: readonly string[] | null;
+  /** The Ask's topics (`topicsIn`): who asked about one of them goes first (25 Nov). */
+  topics?: readonly MemoryTopic[];
+  /** The Ask is for the adult asking (25 Nov, `for_whom`): the asker's children do not rank the pool. */
+  forSelf?: boolean;
 }): Promise<PoolResult> {
   const target = tierSpec(input.tier).pool_target;
 
@@ -122,12 +129,27 @@ export async function selectPool(input: {
       `)) as unknown as Array<Record<string, unknown>>,
     );
     const nearIds = new Set(local.persisted ? (local.data ?? []).map((r) => String(r.id)) : []);
-    const rankedNear = ranked.ranked.filter((r) => nearIds.has(r.person_id));
+    /* For the adult asking (25 Nov): the matcher ranks by the asker's children, which says nothing about who
+       knows dressage — so everyone near, in the order the interests below give. */
+    const rankedNear = input.forSelf ? [] : ranked.ranked.filter((r) => nearIds.has(r.person_id));
     const seen = new Set(rankedNear.map((r) => r.person_id));
     candidates = [
       ...rankedNear,
       ...[...nearIds].filter((id) => !seen.has(id)).map((id) => ({ person_id: id, score: 0, reasons: [] })),
     ];
+  }
+
+  /**
+   * Who asked about the same thing goes first (25 Nov — the developer: choose
+   * the people by neighbourhood and shared interests). A person's interests are
+   * the topics of their own questions and memory (`familyInterestsFor`), never
+   * their words; one who shares the Ask's topic is put ahead, the order is
+   * otherwise kept, and nobody is added or dropped by it.
+   */
+  if (input.topics && input.topics.length > 0 && candidates.length > 0) {
+    const interestsOf = await familyInterestsFor(candidates.slice(0, 200).map((c) => c.person_id));
+    const shares = (id: string) => (interestsOf.get(id) ?? []).some((t) => input.topics!.includes(t));
+    candidates = [...candidates.filter((c) => shares(c.person_id)), ...candidates.filter((c) => !shares(c.person_id))];
   }
 
   if (candidates.length === 0) {
@@ -526,12 +548,19 @@ async function sendBlastOnce(blastId: string): Promise<SendBlastResult> {
 
   const tier = String(blast.tier) as BlastTier;
   const market = String(blast.market_id ?? DEFAULT_MARKET_ID);
+  /* What it is about and who it is for (25 Nov): read from the question when the Ask is sent — one fast-model
+     reading, the same classifier that read it as a question; an unreadable one is for a child, as before. */
+  const asked = String(blast.question_text ?? "");
+  const forSelf = asked ? (await classifyIntent({ text: asked, context: { awaiting_blast_reply: false, known_person: true } })).for_whom === "self" : false;
   const pool = await selectPool({
     askerId: String(blast.asker_id),
     tier,
     marketId: market,
     near: blast.neighborhood ? await nearbyAreas(market, String(blast.neighborhood)) : null,
+    topics: topicsIn(asked),
+    forSelf,
   });
+  console.info("[blast] pool read", { topics: topicsIn(asked).length, for_self: forSelf });
 
   /* A pool that came back needing review is the cold-start case, and 6.6's answer
      is to say so rather than send to two people while promising five.

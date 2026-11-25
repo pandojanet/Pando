@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { askAt, feedbackOn, remindAt, remindOn, runningUntil, type Feedback, type FollowupItem, type PickOutcome } from "@/lib/digest-followup";
 import { withDb, type Db } from "@/lib/server/db";
 import { textDates } from "@/lib/digest";
+import { detailColumns, hasDigestDetails } from "@/lib/server/repo/digest";
 
 /**
  * The weekly digest, answered (11 Nov, drizzle/0067; the rules are in
@@ -94,6 +95,7 @@ export async function lastDigestSent(personId: string, editionDate?: string | nu
     if (!send[0] || ids.length === 0) return null;
     const found = await rows(db, sql`
       select id::text as id, kind, title, when_text, starts_on::text as starts_on, ends_on::text as ends_on, place, summary, url
+             ${detailColumns(await hasDigestDetails(db))}
         from digest_items where id in (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
     `);
     const byId = new Map(found.map((f) => [String(f.id), f]));
@@ -107,11 +109,62 @@ export async function lastDigestSent(personId: string, editionDate?: string | nu
       place: f.place ? String(f.place) : null,
       summary: String(f.summary),
       url: String(f.url),
+      price: f.price ? String(f.price) : null,
+      about: f.about ? String(f.about) : null,
+      popular: f.popular === true,
+      popular_why: f.popular_why ? String(f.popular_why) : null,
     }));
     /* An item gone since (its edition deleted) would move every later number
        up one: then the digest is not read as picks at all (review, 11 Nov). */
     if (items.length !== ids.length) return null;
     return { editionDate: String(send[0].edition_date), items };
+  });
+  return r.persisted ? (r.data ?? null) : null;
+}
+
+/**
+ * The details of a pick were sent (25 Nov — the developer: *a tap on a number
+ * opens the details, and then the reminder Yes/No*): the interest row is made
+ * if it is not there and stamped, so the YES or NO that follows is read
+ * against this item (`lastDetailsItem`). A reminder already set is left set.
+ */
+export async function markDetailsShown(personId: string, itemId: string): Promise<{ reminderSet: boolean } | null> {
+  const r = await withDb(async (db: Db) => {
+    const found = await rows(db, sql`
+      insert into digest_interests (person_id, item_id) values (${personId}::uuid, ${itemId}::uuid)
+      on conflict (person_id, item_id) do update set updated_at = now()
+      returning status, reminded_at
+    `);
+    return { reminderSet: found[0]?.status === "going" && !found[0]?.reminded_at };
+  });
+  return r.persisted ? (r.data ?? null) : null;
+}
+
+/** NO to the details' reminder question: a reminder set and not yet sent is taken off. True when one was. */
+export async function clearPick(personId: string, itemId: string): Promise<boolean> {
+  const r = await withDb(async (db: Db) => {
+    const found = await rows(db, sql`
+      update digest_interests set status = 'declined', updated_at = now()
+       where person_id = ${personId}::uuid and item_id = ${itemId}::uuid and status = 'going' and reminded_at is null
+      returning 1 as one
+    `);
+    return found.length > 0;
+  });
+  return r.persisted ? r.data === true : false;
+}
+
+/** The item whose details were sent last, within a week, and the edition it is in — what a YES or NO answers. */
+export async function lastDetailsItem(personId: string): Promise<{ itemId: string; editionDate: string } | null> {
+  const r = await withDb(async (db: Db) => {
+    const found = await rows(db, sql`
+      select i.item_id::text as item_id, e.edition_date::text as edition_date
+        from digest_interests i
+        join digest_items d on d.id = i.item_id
+        join digest_editions e on e.id = d.edition_id
+       where i.person_id = ${personId}::uuid and i.updated_at > now() - interval '7 days'
+       order by i.updated_at desc limit 1
+    `);
+    return found[0] ? { itemId: String(found[0].item_id), editionDate: String(found[0].edition_date) } : null;
   });
   return r.persisted ? (r.data ?? null) : null;
 }

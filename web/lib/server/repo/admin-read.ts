@@ -40,6 +40,7 @@ import {
   REASON_MIN_LENGTH,
   rewardStatus,
 } from "@/lib/rewards";
+import { detailColumns, hasDigestDetails } from "@/lib/server/repo/digest";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -2959,7 +2960,8 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
   const [candidatesTable] = await rows(db, sql`select to_regclass('public.digest_candidates') is not null as ok`);
   const items = await rows(db, sql`
     select id::text as id, edition_id::text as edition_id, position, kind, title, when_text,
-           starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url,
+           starts_on::text as starts_on, ends_on::text as ends_on, place, age_min, age_max, summary, url
+           ${detailColumns(await hasDigestDetails(db))},
            ${approval ? sql`removed_at is not null` : sql`false`} as removed,
            ${candidatesTable?.ok === true ? sql`exists (select 1 from digest_candidates c where c.url = digest_items.url and c.removed_at is null)` : sql`false`} as from_candidate
       from digest_items where edition_id in (${idList})
@@ -3093,6 +3095,10 @@ async function digestRows(db: Db, params: Record<string, unknown> = {}): Promise
             url: String(i.url),
             removed: i.removed === true,
             from_candidate: i.from_candidate === true,
+            price: i.price ? String(i.price) : null,
+            about: i.about ? String(i.about) : null,
+            popular: i.popular === true,
+            popular_why: i.popular_why ? String(i.popular_why) : null,
             sent_to: sentTo.get(String(i.id)) ?? 0,
             sent_here: sentHere.get(`${String(i.id)}|${String(e.id)}`) ?? 0,
             reminders: n(d?.reminders),

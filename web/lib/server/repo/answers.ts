@@ -251,6 +251,22 @@ export async function markAnswerSent(id: string): Promise<void> {
  */
 const OFFER_WINDOW_HOURS = 48;
 
+/**
+ * Has this person asked Pando anything before (25 Nov, `profileFirst`)? Any
+ * question that was stored — answered, held or refused — so the access model's
+ * "first question free" is spent once. Unreadable database: false, which
+ * answers the question rather than holding it.
+ */
+export async function hasAskedBefore(personId: string): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const out = (await db.execute(sql`
+      select exists (select 1 from answers where person_id = ${personId}::uuid) as asked
+    `)) as unknown as Array<{ asked: boolean }>;
+    return out[0]?.asked === true;
+  });
+  return result.persisted ? result.data === true : false;
+}
+
 export interface PendingOffer {
   answer_id: string;
   /** The original question, which is what the Ask should carry. */

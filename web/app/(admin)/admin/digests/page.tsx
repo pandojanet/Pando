@@ -1039,10 +1039,20 @@ function ItemRow({
           <span className={cn(i.removed && "line-through decoration-muted/60")}>{i.title}</span>
           {i.removed && <Badge tone="muted">Taken out</Badge>}
           {i.from_candidate && <Badge tone="green">Approved event</Badge>}
+          {i.popular && (
+            <span role="img" aria-label="Popular" className="text-[15px] leading-none">
+              🔥
+            </span>
+          )}
         </p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-muted">
           {[DIGEST_ITEM_KIND[i.kind] ?? sentence(i.kind), i.when_text, i.place, age].filter(Boolean).join(" · ")}
         </p>
+        {(i.price !== undefined || i.about || i.popular_why) && (
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-soft">
+            {[i.price ? `Price: ${i.price}` : "Price: not listed", i.popular_why ? `Popular: ${i.popular_why}` : null, i.about].filter(Boolean).join(" · ")}
+          </p>
+        )}
         <a
           href={i.url}
           target="_blank"

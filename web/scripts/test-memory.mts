@@ -153,13 +153,54 @@ ok("it logs counts and enums only (invariant 7): every logged value is a count o
 const inbound = read("lib/server/inbound.ts");
 ok("STOP clears it", /await setOptOut\(from, "out", body\);\s+\/\*[^*]*\*\/\s+await forgetMemory\(from\);/.test(inbound));
 ok("the classifier is shown it in both readings, and the fold never holds up the turn",
-  /memory: exchange && !exchange\.held \? await memoryFor\(person\.person_id\) : \[\],/.test(inbound) &&
-    /const memory = exchange && !exchange\.held \? await memoryFor\(person\?\.person_id\) : \[\];/.test(inbound) &&
+  /memory: !exchange\?\.held \? await memoryFor\(person\.person_id\) : \[\],/.test(inbound) &&
+    /const memory = readsHistory \? await memoryFor\(person\?\.person_id\) : \[\];/.test(inbound) &&
     /if \(person\) void foldMemory\(person\.person_id, from\);/.test(inbound));
+/* 25 Nov: a parent back after three quiet days is shown the week and the memory too — only a held last question stops it. */
+ok("the history is read without a question in the last three days, never after a held one",
+  /const readsHistory = person !== null && !attached\.attached && !exchange\?\.held;/.test(inbound) &&
+    /const earlier = readsHistory \? await earlierExchangesFor\(from\) : \[\];/.test(inbound) &&
+    /earlier: !exchange\?\.held \? await earlierExchangesFor\(from\) : \[\],/.test(inbound) &&
+    !/exchange && !exchange\.held \? await (memoryFor|earlierExchangesFor)/.test(inbound));
+{
+  const blast = read("lib/server/repo/blast.ts");
+  ok("a Network Ask's pool puts who asked about its topic first, adding and dropping nobody (25 Nov)",
+    /const shares = \(id: string\) => \(interestsOf\.get\(id\) \?\? \[\]\)\.some\(\(t\) => input\.topics!\.includes\(t\)\);\s+candidates = \[\.\.\.candidates\.filter\(\(c\) => shares\(c\.person_id\)\), \.\.\.candidates\.filter\(\(c\) => !shares\(c\.person_id\)\)\];/.test(blast));
+  ok("an Ask for the adult asking is not ranked by the asker's children: everyone near, by interest",
+    /const rankedNear = input\.forSelf \? \[\] : ranked\.ranked\.filter/.test(blast) && /topics: topicsIn\(asked\),\s+forSelf,/.test(blast));
+}
+ok("an open question leans on the family's interests, read only for one (25 Nov)",
+  /isOpenQuestion\(body, focus, \[place\.label, place\.area\]\)\s*\?\s*\(\(await familyInterestsFor\(\[person\.person_id\]\)\)/.test(inbound) &&
+    /\/\* An open question's lean \(25 Nov, above\)\. \*\/\s*interests,/.test(inbound));
 ok("the classifier puts it first, before the verbatim exchanges", /content: \[\s+memoryLine\(input\.memory\),/.test(read("lib/server/intent.ts")));
 ok("a daily job deletes what is idle, and sends nothing",
   /expire_memory: \{\s+name: "expire_memory",\s+min_interval_minutes: 60 \* 23,\s+sends: false,/.test(read("lib/jobs.ts")) &&
     /expire_memory,\n/.test(read("lib/server/repo/jobs.ts")) && /expire_memory/.test(read("../deploy/.env.example")));
+
+console.log("\n=== interests (25 Nov): what a family asked about, as fixed topics ===");
+{
+  const sens = (t: string) => demand.classifyDemand(t, null) !== "ordinary";
+  ok("every topic has words", m.MEMORY_TOPICS.every((t) => (m.MEMORY_TOPIC_WORDS[t] ?? []).length > 0));
+  ok("dressage reads as horse riding", m.topicsIn("horse dressage lessons in Pasadena for my 8 year old").join() === "horse riding");
+  ok("a pony ride and an equestrian centre too", m.topicsIn("Pony rides at the Equestrian Center").includes("horse riding"));
+  ok("whole words: 'rash guard' at the pool is swim, 'parkway' is no park", m.topicsIn("swim lessons, rash guard needed").includes("swim lessons") && !m.topicsIn("near the parkway").includes("parks and playgrounds"));
+  ok("hyphens and ampersands read as words", m.topicsIn("Mommy & Me music").includes("parent and me classes") && m.topicsIn("after-school robotics").includes("after school programs"));
+  ok("nothing on the list is nothing", m.topicsIn("any recommendations for a good dentist?").length === 0);
+  ok("touchesInterest reads an item's title", m.touchesInterest("Saturday Pony Day at Rancho Park Stables", ["horse riding"]) && !m.touchesInterest("Toddler Storytime", ["horse riding"]));
+  ok("no interests touch nothing", !m.touchesInterest("anything", []));
+
+  const ask = (topic: (typeof m.MEMORY_TOPICS)[number], on: string, reaction: (typeof m.MEMORY_REACTIONS)[number] | null = null) => ({ topic, area: null, when: [], reaction, on });
+  const fi = (memory: ReturnType<typeof ask>[], recentQuestions: string[]) => m.familyInterests({ memory, recentQuestions, isSensitive: sens });
+  ok("the week's questions first, newest first, then the memory newest first",
+    fi([ask("chess", "2026-10-01"), ask("soccer", "2026-11-01")], ["dressage lessons?", "swim lessons for my 4 year old"]).join("|") === "horse riding|swim lessons|soccer");
+  ok("at most three", fi([ask("chess", "2026-10-01"), ask("soccer", "2026-11-01"), ask("tennis", "2026-11-02")], ["dressage?", "swim?"]).length === m.INTERESTS_MAX);
+  ok("once each", fi([ask("swim lessons", "2026-10-01")], ["swim lessons?", "more swim lessons?"]).join() === "swim lessons");
+  ok("'not for them' is never an interest, from the memory or the week", fi([ask("soccer", "2026-11-01", "not for them")], ["soccer camps?"]).length === 0);
+  ok("a sensitive question gives no interest", fi([], ["my son has asthma, is swimming ok?"]).length === 0);
+  ok("a private one neither", fi([], ["single mom here, any swim lessons?"]).length === 0);
+  ok("the brief line names the topics and says it is a lean", (m.interestsBriefLine(["horse riding"]) ?? "").includes("horse riding") && (m.interestsBriefLine(["horse riding"]) ?? "").includes("among the others"));
+  ok("no interests, no brief line", m.interestsBriefLine([]) === null);
+}
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

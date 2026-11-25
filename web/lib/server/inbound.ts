@@ -3,7 +3,7 @@ import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 /* RCS quick replies (29 Oct): the card wording of each message that carries buttons. */
 import { askOfferRich, captureStepRich, editionOfTap, type RichKind } from "@/lib/sms-rich";
 import { introOfferCard } from "@/lib/introductions";
-import { childAgeCard, declinesChildren, participationCard, type ClarifyingQuestion, type KnownProfile } from "@/lib/onboarding";
+import { childAgeCard, declinesChildren, ownChildAges, participationCard, type ClarifyingQuestion, type KnownProfile } from "@/lib/onboarding";
 import { settingsPromptCard } from "@/lib/outreach-policy";
 import { deepDiveOfferCard } from "@/lib/deep-dive";
 
@@ -33,10 +33,10 @@ import { openDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { GENERAL_TIER } from "@/lib/blast-tiers";
 import { openIntroOfferAt } from "@/lib/server/repo/introductions";
 import { areaName, deepDiveConfigured, deepDiveStep, deliverDeepDive, requestDeepDive, type DeepDiveStep } from "@/lib/server/deep-dive";
-import { forgetMemory, foldMemory, memoryFor } from "@/lib/server/repo/conversation-memory";
-import { FEEDBACK_THANKS, PICK_WHILE_OFF_SMS, outOfRangeSms, pickReplySms, picksOutOfRange, readFeedback, readFeedbackPhrase, readPicks, type PickOutcome } from "@/lib/digest-followup";
-import { digestIsOn, lastDigestSent, lastOutboundTemplates, recordFeedback, repeatsOfLastOutbound, togglePick } from "@/lib/server/repo/digest-followup";
-import { privateIn } from "@/lib/conversation-memory";
+import { familyInterestsFor, forgetMemory, foldMemory, memoryFor } from "@/lib/server/repo/conversation-memory";
+import { FEEDBACK_THANKS, PICK_WHILE_OFF_SMS, detailsSms, outOfRangeSms, pickReplySms, picksOutOfRange, readFeedback, readFeedbackPhrase, readPicks, reminderDeclinedSms, type PickOutcome } from "@/lib/digest-followup";
+import { clearPick, digestIsOn, lastDetailsItem, lastDigestSent, lastOutboundTemplates, markDetailsShown, recordFeedback, repeatsOfLastOutbound, togglePick } from "@/lib/server/repo/digest-followup";
+import { privateIn, touchesInterest } from "@/lib/conversation-memory";
 
 import { deepDiveFamily, earlierExchangesFor, finishDeepDive, lastExchangeFor, lastQuestionFor, mayOfferDeepDive, recordDeepDiveOffer } from "@/lib/server/repo/deep-dives";
 import { voiceAnswer, voiceConfigured } from "@/lib/server/answer-voice";
@@ -78,10 +78,14 @@ import {
 import { TRUST_LABEL } from "@/lib/trust-labels";
 import { classifyDemand, escalateSensitivity, highStakesKind } from "@/lib/demand";
 import { maskContactDetails } from "@/lib/contact-details";
-import { bandsForBirthYears, bandsInQuestion, firstNamesIn, focusInQuestion } from "@/lib/matching";
+import { bandsForBirthYears, bandsInQuestion, firstNamesIn, focusInQuestion, isOpenQuestion } from "@/lib/matching";
 import {
+  ageFirstCard,
   ageFirstQuestion,
-  asksAgeFirst,
+  areaFirstQuestion,
+  forWhomQuestion,
+  homeAreaPhrase,
+  profileFirst,
   CLARIFYING_COPY,
   clarifyReply,
   clarifyTemplate,
@@ -104,6 +108,7 @@ import {
   type PublicSearchResult,
 } from "@/lib/server/web-search";
 import {
+  hasAskedBefore,
   markAnswerSent,
   pendingBlastOffer,
   queueAnswer,
@@ -176,6 +181,9 @@ import {
   marketAreas,
   pendingClarification,
   pendingClarificationAt,
+  rememberChildAges,
+  rememberHomeArea,
+  sentTemplateWithin,
   saveClarification,
   setAllowance,
   type ColdPerson,
@@ -236,6 +244,13 @@ async function handleInboundMessageUntraced(input: {
   media?: InboundMedia;
   /** These are the words of a voice note or picture the person just confirmed: already counted as an inbound. */
   confirmedMedia?: boolean;
+  /**
+   * The words were read from a voice note or picture, not typed (25 Nov) —
+   * unlike `confirmedMedia`, which also marks a typed remainder as counted. No
+   * child's age is kept from them: a flyer's "for your 5 year old" is not the
+   * parent's child (the security review of the interests change).
+   */
+  fromMedia?: boolean;
   /** A tapped RCS button's id (`ButtonPayload`) — a digest number's carries its edition (11 Nov, `editionOfTap`). */
   tapPayload?: string;
 }): Promise<void> {
@@ -298,7 +313,7 @@ async function handleInboundMessageUntraced(input: {
     if (typeof read === "string") {
       /* The words they confirmed are what the rest of the turn answers: on the trace too. */
       traceContent({ said: read });
-      return handleInboundMessageUntraced({ from, body: read, channel: input.channel, confirmedMedia: true });
+      return handleInboundMessageUntraced({ from, body: read, channel: input.channel, confirmedMedia: true, fromMedia: true });
     }
   }
 
@@ -311,7 +326,7 @@ async function handleInboundMessageUntraced(input: {
   if (afterAttach === HANDLED) return;
   const { attached, remainder } = afterAttach;
   /* Their answer was filed; what else they said is a message of its own, already counted. */
-  if (remainder) return handleInboundMessageUntraced({ from, body: remainder, channel: input.channel, confirmedMedia: true });
+  if (remainder) return handleInboundMessageUntraced({ from, body: remainder, channel: input.channel, confirmedMedia: true, fromMedia: input.fromMedia });
 
   const afterReplies = await repliesStep({ from, body, person, attached });
   if (afterReplies === HANDLED) return;
@@ -331,7 +346,7 @@ async function handleInboundMessageUntraced(input: {
      reading comes from the records, not the model. */
   if (answeredSomething || clarified) return;
 
-  await routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending });
+  await routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending, fromMedia: input.fromMedia === true });
 }
 
 /**
@@ -770,12 +785,15 @@ async function digestStep({ from, body, person }: { from: string; body: string; 
 const DIGEST_CONVERSATION: ReadonlySet<string> = new Set([
   /* 19 Nov: the digest is two messages, the list then `weekly_digest_ask` (the buttons) — `composeDigest`. */
   "weekly_digest", "weekly_digest_ask", "digest_pick_set", "digest_details", "digest_reminder_set", "digest_pick_range", "digest_pick_off", "digest_reminder", "digest_feedback_thanks",
+  "digest_reminder_no",
 ]);
 /** After these a number is a pick from the digest. `digest_pick_off` and `digest_on` (13 Nov): "DIGEST, then the
     number again" is what the pick-while-off answer asks for — a number with no digest of the past week still falls through. */
 const DIGEST_PICKABLE: ReadonlySet<string> = new Set([
   "weekly_digest", "weekly_digest_ask", "digest_pick_set", "digest_pick_range", "digest_feedback_thanks", "digest_details", "digest_reminder_set",
   "digest_pick_off", "digest_on",
+  /* 25 Nov: after NO to a reminder, another number opens its details (the lab walk: "1" read as small talk). */
+  "digest_reminder_no",
 ]);
 
 async function digestReplyStep({ from, body, person, tapPayload }: { from: string; body: string; person: InboundPerson; tapPayload?: string }): Promise<typeof HANDLED | undefined> {
@@ -825,6 +843,50 @@ async function digestReplyStep({ from, body, person, tapPayload }: { from: strin
      newest digest, and only while the conversation is the digest's — under any reminder or question
      the sweeps sent since, and after another pick (`digest_pick_set`); `digest_details` /
      `digest_reminder_set` are the texts before 11 Nov evening, still read for a digest sent before. */
+  /**
+   * YES or NO to the details of a pick (25 Nov — the developer: *a tap on a
+   * number opens the details, and then the reminder Yes/No*). Read against the
+   * item whose details went last (`lastDetailsItem`), in the digest it was on:
+   * YES sets its reminder, NO takes off one that was set. Only straight after
+   * the details: a yes anywhere else is somebody else's question.
+   */
+  if (last === "digest_details") {
+    const yes = yesOrNo(body);
+    const shown = yes === null ? null : await lastDetailsItem(person.person_id);
+    const sentFor = shown ? await lastDigestSent(person.person_id, shown.editionDate) : null;
+    const index = sentFor && shown ? sentFor.items.findIndex((i) => i.id === shown.itemId) : -1;
+    if (sentFor && index >= 0) {
+      const item = sentFor.items[index];
+      if (yes) {
+        const outcome = await togglePick(person.person_id, sentFor.editionDate, today, timeZone, item, index + 1, "set");
+        console.info("[sms:inbound] digest details answered", { yes: true, state: outcome?.state ?? null });
+        if (outcome) {
+          await sendSms({
+            to: from,
+            body: pickReplySms([outcome], timeZone),
+            category: "transactional",
+            personId: person.person_id,
+            template: "digest_pick_set",
+            templateVersion: SMS_TEMPLATE_VERSION,
+          });
+          return HANDLED;
+        }
+      } else {
+        const cleared = await clearPick(person.person_id, item.id);
+        console.info("[sms:inbound] digest details answered", { yes: false, cleared });
+        await sendSms({
+          to: from,
+          body: reminderDeclinedSms(item.title, cleared),
+          category: "transactional",
+          personId: person.person_id,
+          template: "digest_reminder_no",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+        return HANDLED;
+      }
+    }
+  }
+
   const tappedEdition = editionOfTap(tapPayload);
   if (tappedEdition || DIGEST_PICKABLE.has(conversation ?? "")) {
     const sent = await lastDigestSent(person.person_id, tappedEdition);
@@ -855,9 +917,35 @@ async function digestReplyStep({ from, body, person, tapPayload }: { from: strin
       });
       return HANDLED;
     }
+    /**
+     * One number — a tap, or typed — opens its details: what the place is, the
+     * price, why it is popular, then "Want a reminder on the day?" with Yes / No
+     * (25 Nov — the developer; **reverses 11 Nov evening's "a pick is the
+     * reminder itself"**: the details are real now, read from the event's page
+     * when the digest was prepared, not a copy of its line).
+     */
+    if (sent && picks && picks.length === 1) {
+      const n = picks[0];
+      const item = sent.items[n - 1];
+      const shown = await markDetailsShown(person.person_id, item.id);
+      if (shown) {
+        const { text, card } = detailsSms(item, n, shown.reminderSet);
+        console.info("[sms:inbound] digest details", { price: Boolean(item.price), about: Boolean(item.about), popular: item.popular === true, set: shown.reminderSet });
+        await sendSms({
+          to: from,
+          body: text,
+          category: "transactional",
+          personId: person.person_id,
+          rich: { kind: "yes_no", card },
+          template: "digest_details",
+          templateVersion: SMS_TEMPLATE_VERSION,
+        });
+        return HANDLED;
+      }
+    }
     if (sent && picks) {
-      /* A tap sets the reminder; the same tap again takes it off (11 Nov, evening). Several numbers
-         typed at once only set — "1 3" means both (the developer, 11 Nov). One at a time, in order. */
+      /* Several numbers typed at once only set — "1 3" means both (the developer, 11 Nov). One at a time, in order.
+         (One number opens its details since 25 Nov, above; the toggle stays for a write that failed there.) */
       const mode = picks.length > 1 ? "set" : "toggle";
       const outcomes: PickOutcome[] = [];
       for (const n of picks) {
@@ -1604,8 +1692,9 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
         lastQuestion: exchange?.question ?? null,
         lastAnswer: exchange?.answer ?? null,
         /* The rest of the conversation too, as routeStep gives it: this reading is the one it reuses (review, 4 Nov). */
-        earlier: exchange && !exchange.held ? await earlierExchangesFor(from) : [],
-        memory: exchange && !exchange.held ? await memoryFor(person.person_id) : [],
+        /* Not only after a question in the last three days (25 Nov, as routeStep). */
+        earlier: !exchange?.held ? await earlierExchangesFor(from) : [],
+        memory: !exchange?.held ? await memoryFor(person.person_id) : [],
         askedThem: open && pending ? CLARIFYING_COPY[pending] : null,
         context: { awaiting_blast_reply: false, known_person: !person.created },
       });
@@ -1673,7 +1762,37 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
        * that was the point of asking. The next profile question waits for a later
        * answer, as everywhere: one ask per message.
        */
-      if (saved && question === "child_age") {
+      /* The profile once this reply is kept — what the access model still owes before the held question (25 Nov). */
+      const profileAfter = alsoKept.reduce((profile, q) => withAnswer(profile, q, body), withAnswer(person.profile, question, body));
+      const areaOwed =
+        saved &&
+        question === "child_age" &&
+        !profileAfter.neighborhood &&
+        !profileAfter.pending_place &&
+        (await hasAskedBefore(person.person_id)) &&
+        (await pendingClarificationAt(person.person_id))?.question !== "neighborhood";
+      /**
+       * The area a held question was waiting for (25 Nov, `profileFirst`): with
+       * the ages known, the question is answered now — with the person read
+       * again, so the answer is placed where they just said they live.
+       */
+      if (saved && question === "neighborhood") {
+        const held = await openQuestion(person.person_id);
+        if (held && held.turns.length > 0) {
+          await closeQuestion(held.id, "resolved");
+          console.info("[sms:inbound] held question answered with the area");
+          await answerQuestion({
+            from,
+            body: combined(held, ""),
+            person: (await ensureInboundPerson({ phone: from })) ?? person,
+            caregiverIntent: false,
+            sensitive: false,
+          });
+          return { clarified: true, early };
+        }
+      }
+      /* With the area still owed (a second question, 25 Nov), the held question waits: the thanks below asks where they live. */
+      if (saved && question === "child_age" && !areaOwed) {
         const held = await openQuestion(person.person_id);
         if (held && held.turns.length > 0) {
           await closeQuestion(held.id, "resolved");
@@ -1918,17 +2037,22 @@ async function openQuestionStep({ from, body, person, attached, answeredSomethin
  * Step 8 — what the text asks for, read once, and the answer that follows.
  * Last, so a bare `return` here ends the turn as it did inline.
  */
-async function routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean; clarified: boolean; early: Awaited<ReturnType<typeof classifyIntent>> | null; pending: Awaited<ReturnType<typeof openQuestion>> | null }): Promise<void> {
+async function routeStep({ from, body, person, attached, answeredSomething, clarified, early, pending, fromMedia }: { from: string; body: string; person: InboundPerson; attached: Attached; answeredSomething: boolean; clarified: boolean; early: Awaited<ReturnType<typeof classifyIntent>> | null; pending: Awaited<ReturnType<typeof openQuestion>> | null; fromMedia: boolean }): Promise<void> {
 
   /* Read once: a new request the clarifying step already read is that reading. */
   const exchange = person && !attached.attached ? await lastExchangeFor(from) : null;
   /* The rest of the conversation (4 Nov): the questions before that one. Not
-     after a held one — a follow-up to it is not rewritten (below). */
-  const earlier = exchange && !exchange.held ? await earlierExchangesFor(from) : [];
+     after a held one — a follow-up to it is not rewritten (below).
+     ⚠ Also when nothing was asked in the last three days (25 Nov): this read
+     `exchange && …`, so a parent back after four days had neither the week's
+     questions nor the 90-day memory shown at all — the windows the developer
+     asked for (4 Nov, 12 Nov) only ever reached a conversation already under way. */
+  const readsHistory = person !== null && !attached.attached && !exchange?.held;
+  const earlier = readsHistory ? await earlierExchangesFor(from) : [];
   /* And what came before those, compacted (12 Nov) — then the exchanges that
      have just left the window are folded in, after this reading, so the turn
      never waits on it. */
-  const memory = exchange && !exchange.held ? await memoryFor(person?.person_id) : [];
+  const memory = readsHistory ? await memoryFor(person?.person_id) : [];
   if (person) void foldMemory(person.person_id, from);
   const reading = early && early.intent !== "answer_blast" && !attached.attached ? early : await classifyIntent({
     text: body,
@@ -2286,33 +2410,120 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * week: a parent who did not say the first time gets an answer the second.
    */
   const asked = rewritten ?? (switched ? body : combined(pending, body));
-  if (
-    person &&
+
+  /**
+   * What the question says about the family, kept before anything reads the
+   * profile (25 Nov — the client: *key information is extracted from the
+   * conversation and stored, so the profile is partly pre-filled*): the ages of
+   * their own children ("for my 8 year old", `ownChildAges`) and where they
+   * live ("we live in Altadena", `homeAreaPhrase`), each only into an empty
+   * field. From their own typed words (`body`) — never the rewrite, which can
+   * carry an earlier question's age, nor a picture's or voice note's text (a
+   * flyer's "for your 5 year old", the security review). Counts only in the log.
+   */
+  let profileNow = person?.profile ?? null;
+  if (person && profileNow && !fromMedia && reading.intent === "ask_recommendation") {
+    if (profileNow.child_birth_years.length === 0 && !profileNow.children_declined) {
+      const own = ownChildAges(body);
+      if (own.length > 0 && (await rememberChildAges({ personId: person.person_id, ages: own }))) {
+        const year = new Date().getFullYear();
+        profileNow = { ...profileNow, child_birth_years: own.map((a) => year - a) };
+        console.info("[sms:inbound] ages kept from the question", { children: own.length });
+      }
+    }
+    const home = !profileNow.neighborhood && !profileNow.pending_place ? homeAreaPhrase(body) : null;
+    if (home) {
+      const area = await rememberHomeArea({ personId: person.person_id, phrase: home, areas: await marketAreas(marketOf(person)) });
+      if (area) {
+        profileNow = { ...profileNow, neighborhood: area };
+        console.info("[sms:inbound] home area kept from the question");
+      }
+    }
+  }
+
+  /**
+   * The profile first, when it is owed (25 Nov, `profileFirst` — the client's
+   * access model: the first question is free, the second requires a profile;
+   * and since 18 Nov the age first wherever the answer turns on it). The
+   * question is held as an open exchange (`rememberTurn`) and the missing fact
+   * is asked as the ordinary profile question (`clarify_child_age`,
+   * `clarify_neighborhood`), so the reply is read and saved by the clarifying
+   * step — which asks the next missing one, then answers the held question.
+   * Never mid-exchange, never for anything held or sensitive, and each question
+   * at most once a week: a parent who did not say the first time is answered.
+   */
+  const gateable =
+    person !== null &&
+    profileNow !== null &&
     !pending &&
     !followsHeld &&
     reading.intent === "ask_recommendation" &&
     !reading.sensitive &&
-    classifyDemand(asked, null) === "ordinary" &&
-    asksAgeFirst({
-      profile: person.profile,
-      bandsInQuestion: bandsInQuestion(asked).length,
-      focus: focusInQuestion(asked, await focusOptions(marketOf(person))),
-    }) &&
-    (await pendingClarificationAt(person.person_id))?.question !== "child_age"
+    classifyDemand(asked, null) === "ordinary";
+
+  /**
+   * Who it is for (25 Nov — Janet: *"horse dressage is a perfectly valid
+   * query"*; ask when it is unclear). `self` is answered for the adult: their
+   * children's ages are neither asked nor used to narrow it. `unknown` from
+   * somebody who said they have no children is theirs too; from somebody with
+   * children it is read as before (theirs). From somebody Pando knows nothing
+   * about, and when the question names no age, it is asked — once a week at
+   * most — with the question held, so "for me" or "my son, 8" is read with it
+   * as one message (`combined`).
+   */
+  const forWhom = reading.for_whom ?? "unknown";
+  const forSelf = forWhom === "self" || (forWhom === "unknown" && profileNow?.children_declined === true);
+  if (
+    gateable &&
+    person &&
+    profileNow &&
+    forWhom === "unknown" &&
+    !forSelf &&
+    profileNow.child_birth_years.length === 0 &&
+    bandsInQuestion(asked).length === 0 &&
+    !(await sentTemplateWithin(person.person_id, "ask_for_whom", 7))
   ) {
     await rememberTurn({ personId: person.person_id, text: asked });
-    /* "clarify_child_age" — named outside the call, so the template scan in
-       test:admin-wiring reads the template, not its argument. */
-    const askedAge = clarifyTemplate("child_age");
     await sendSms({
       to: from,
-      body: ageFirstQuestion(firstNamesIn(asked)[0] ?? null),
+      body: forWhomQuestion(),
       category: "transactional",
       personId: person.person_id,
-      template: askedAge,
+      template: "ask_for_whom",
       templateVersion: SMS_TEMPLATE_VERSION,
     });
-    console.info("[sms:inbound] asked the age first");
+    console.info("[sms:inbound] asked who it is for");
+    return;
+  }
+
+  const firstAsk =
+    gateable && person && profileNow
+      ? profileFirst({
+          profile: profileNow,
+          askedBefore: await hasAskedBefore(person.person_id),
+          bandsInQuestion: bandsInQuestion(asked).length,
+          focus: focusInQuestion(asked, await focusOptions(marketOf(person))),
+          forSelf,
+        })
+      : null;
+  if (person && firstAsk && (await pendingClarificationAt(person.person_id))?.question !== firstAsk) {
+    await rememberTurn({ personId: person.person_id, text: asked });
+    /* "clarify_child_age" / "clarify_neighborhood" — named outside the call, so
+       the template scan in test:admin-wiring reads the template, not its argument. */
+    const askedFirst = clarifyTemplate(firstAsk);
+    const name = firstNamesIn(asked)[0] ?? null;
+    /* The age asked of every child carries its "No kids" button on RCS (3 Nov), as the ordinary age question does. */
+    const card = firstAsk === "child_age" ? ageFirstCard(name) : null;
+    await sendSms({
+      to: from,
+      body: firstAsk === "child_age" ? ageFirstQuestion(name) : areaFirstQuestion(),
+      category: "transactional",
+      personId: person.person_id,
+      ...(card ? { rich: { kind: "child_age" as const, card } } : {}),
+      template: askedFirst,
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] asked the profile first", { question: firstAsk });
     return;
   }
 
@@ -2329,6 +2540,7 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
     said: rewritten ? body : null,
     heard: rewritten ? reading.heard ?? null : null,
     person,
+    forSelf,
     caregiverIntent: reading.intent === "ask_caregiver" || followsHeld === "caregiver",
     sensitive: reading.sensitive || followsHeld === "sensitive",
     /* What a held follow-up is about, so its reply is the right kind: "what about at night?" after a fever (13 Nov). */
@@ -2593,6 +2805,11 @@ async function answerQuestion(input: {
   lastAnswer?: string | null;
   /** What they actually wrote, when `body` is a rewrite of it (5 Nov). */
   said?: string | null;
+  /**
+   * For the adult asking, not a child (25 Nov, `for_whom`): the children's ages
+   * on the profile do not narrow it, and the web search is told it is for an adult.
+   */
+  forSelf?: boolean;
   /** A correction said back ("A 7 year old, then."), through `acceptHeard` (5 Nov). */
   heard?: string | null;
   /** The held question this follows, for which kind of high-stakes reply it gets (13 Nov). */
@@ -2635,7 +2852,9 @@ async function answerQuestion(input: {
    * options mixed in. Falls back to the children when the question says nothing.
    */
   const asked = bandsInQuestion(body);
-  const known = profile ? bandsForBirthYears(profile.child_birth_years, new Date()) : [];
+  /* Not their children's when the request is for the adult (25 Nov, `forSelf`): a 6 year old on the profile
+     narrowed "dressage lessons for me" to children's riding, or to nothing. */
+  const known = profile && !input.forSelf ? bandsForBirthYears(profile.child_birth_years, new Date()) : [];
 
   /**
    * What the question is *about*, checked against the topics this market
@@ -2756,7 +2975,25 @@ async function answerQuestion(input: {
     (wantIsARecord(judged.unmet, judged.shares.map((s) => s.name)) || judged.shares.some((s) => mentionsName(body, s.name)))
       ? { ...judged, unmet: null }
       : judged;
-  const retrieved = { ...retrievedAll, shares: fit.shares };
+  /**
+   * What the family asked about before, for an **open** question only (25 Nov,
+   * `familyInterests`): "anything fun this weekend?" after a dressage question
+   * leans towards horses — a parents' record on one of their interests is put
+   * first, and the web search is told to include one or two such options among
+   * the rest. A lean, never a filter, and never for a question with a subject
+   * of its own, care, a sensitive one, a follow-up for more or a deep dive.
+   * Topics from `MEMORY_TOPICS` only; a count in the log.
+   */
+  const interests =
+    person && !wantsCare && !input.sensitive && !input.more && !input.deep && isOpenQuestion(body, focus, [place.label, place.area])
+      ? ((await familyInterestsFor([person.person_id])).get(person.person_id) ?? [])
+      : [];
+  if (interests.length > 0) console.info("[sms:answer] open question, leaning on interests", { interests: interests.length });
+  const leaned =
+    interests.length > 0
+      ? [...fit.shares.filter((s) => touchesInterest(s.name, interests)), ...fit.shares.filter((s) => !touchesInterest(s.name, interests))]
+      : fit.shares;
+  const retrieved = { ...retrievedAll, shares: leaned };
 
   /**
    * A Network Ask is offered only where there are parents near the place to
@@ -2824,6 +3061,10 @@ async function answerQuestion(input: {
            the web half got the raw question and nothing else. */
         bands: asked.length > 0 ? asked : known,
         focus,
+        /* An open question's lean (25 Nov, above). */
+        interests,
+        /* For the adult asking (25 Nov, `for_whom`). */
+        forAdult: input.forSelf === true,
         /**
          * ⚠ **Every record except the one the answer leads on** (9 Sep).
          *

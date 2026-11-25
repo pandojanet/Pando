@@ -356,7 +356,9 @@ console.log("\n=== /admin/digests (12 Nov) ===");
     /export function AccountMenu\(/.test(kit0) && /role="dialog"\s+aria-label="Account"/.test(kit0) && /href="\/admin\/account"/.test(kit0) && /onSignOut\(\);/.test(kit0) &&
       (shell.match(/<AccountMenu\b/g) ?? []).length === 2 && /<AccountMenu compact/.test(shell) && !/Signed in as/.test(shell));
   ok("a pick while the digest is off stores nothing and says so: DIGEST, then the number again (13 Nov, the lab)",
-    /if \(sent && picks && !\(await digestIsOn\(person\.person_id\)\)\) \{[\s\S]{0,400}body: PICK_WHILE_OFF_SMS,[\s\S]{0,200}template: "digest_pick_off"[\s\S]{0,120}return HANDLED;\s+\}\s+if \(sent && picks\) \{/.test(inbound) &&
+    /* 25 Nov: the details of one pick come next — still after the digest-off check. */
+    /if \(sent && picks && !\(await digestIsOn\(person\.person_id\)\)\) \{[\s\S]{0,400}body: PICK_WHILE_OFF_SMS,[\s\S]{0,200}template: "digest_pick_off"[\s\S]{0,120}return HANDLED;\s+\}[\s\S]{0,700}if \(sent && picks && picks\.length === 1\) \{/.test(inbound) &&
+      inbound.indexOf("body: PICK_WHILE_OFF_SMS,") < inbound.indexOf('template: "digest_details",') &&
       /scope = 'digest'\s+order by captured_at desc limit 1/.test(read("lib/server/repo/digest-followup.ts")) && /Reply DIGEST to turn it back on/.test(read("lib/digest-followup.ts")) &&
       /digest_pick_off: "/.test(read("lib/admin/labels.ts")));
   ok("a NumberField's column leaves its number room beside − and + (13 Nov: the matching weights were 4.5rem and showed no number)",
@@ -371,6 +373,26 @@ console.log("\n=== /admin/digests (12 Nov) ===");
       /aria-label=\{selected \? `\$\{label\}: \$\{selected\.label\}` : label\}/.test(kit) && /e\.key === "Escape"/.test(kit) && /e\.key === "Home"/.test(kit));
 }
 ok("in the journal after 0067", /"tag": "0067_digest_interests",[\s\S]*"tag": "0068_supabase_cron"/.test(read("drizzle/meta/_journal.json")));
+
+console.log("\n=== a pick opens its details, then the reminder Yes / No (25 Nov) ===");
+{
+  const forest = item({ title: "Enchanted Forest of Light", when_text: "Sat Nov 29, 5-10pm", place: "Descanso Gardens", price: "$30 fixed date, $80 any day; under 2 free", about: "Descanso Gardens is a 150-acre botanical garden in La Canada Flintridge.", popular: true, popular_why: "sold out last year", summary: "A night walk through light installations.", url: "https://www.descansogardens.org/enchanted" });
+  const d1 = f.detailsSms(forest, 2);
+  ok("the number, title, when and place lead", d1.text.startsWith("2. Enchanted Forest of Light - Sat Nov 29, 5-10pm, Descanso Gardens."));
+  ok("what the place is, the price, why popular, the link", d1.text.includes("Descanso Gardens is a 150-acre") && d1.text.includes("Price: $30 fixed date, $80 any day; under 2 free") && d1.text.includes("Popular: sold out last year - worth booking early.") && d1.text.includes("https://www.descansogardens.org/enchanted"));
+  ok("then the reminder question; the card says it without the Reply sentence", d1.text.endsWith("Want a reminder on the day? Reply YES or NO.") && d1.card.endsWith("Want a reminder on the day?"));
+  ok("no price on the page is said, never a gap", f.detailsSms(item({ price: null }), 1).text.includes("Price: not listed on its page - check the link."));
+  ok("free is free", f.detailsSms(item({ price: "Free" }), 1).text.includes("Price: free"));
+  ok("a reminder already set asks to keep it", f.detailsSms(forest, 2, true).text.endsWith("You have a reminder for it. Keep it? Reply YES or NO."));
+  ok("GSM-7, one message", /^[\x20-\x7E\n]+$/.test(d1.text) && d1.text.length <= 1600);
+  ok("NO says whether a reminder came off", f.reminderDeclinedSms("Enchanted Forest", true) === "OK - your reminder for Enchanted Forest is off." && f.reminderDeclinedSms("Enchanted Forest", false).startsWith("OK - no reminder for Enchanted Forest."));
+
+  const inbound = read("lib/server/inbound.ts");
+  ok("source pin: one number opens the details with Yes / No; several typed still set", /if \(sent && picks && picks\.length === 1\) \{[\s\S]{0,900}rich: \{ kind: "yes_no", card \},\s+template: "digest_details",/.test(inbound) &&
+    /const mode = picks\.length > 1 \? "set" : "toggle";/.test(inbound));
+  ok("source pin: YES sets that item's reminder, NO takes it off — only straight after the details", /if \(last === "digest_details"\) \{[\s\S]{0,600}lastDetailsItem\(person\.person_id\)[\s\S]{0,1200}togglePick\(person\.person_id, sentFor\.editionDate, today, timeZone, item, index \+ 1, "set"\)[\s\S]{0,900}clearPick\(person\.person_id, item\.id\)/.test(inbound));
+  ok("source pin: the YES/NO step runs before a number is read as a pick", inbound.indexOf('if (last === "digest_details") {') < inbound.indexOf("const tappedEdition = editionOfTap(tapPayload);"));
+}
 
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`)
 if (fail) process.exit(1);

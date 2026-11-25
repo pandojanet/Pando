@@ -42,6 +42,28 @@ export async function hasDigestApproval(db: Db): Promise<boolean> {
   return approvalApplied;
 }
 
+/**
+ * Whether drizzle/0081 (an item's price, about and popular) is applied. Until
+ * it is, items are written and read as before and their details are simply
+ * absent (DEPLOY.md §3b). Only a yes is remembered, as `hasDigestApproval`.
+ */
+let detailsApplied = false;
+export async function hasDigestDetails(db: Pick<Db, "execute">): Promise<boolean> {
+  if (detailsApplied) return true;
+  const rows = (await db.execute(sql`
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'digest_items' and column_name = 'popular_why'
+  `)) as unknown as unknown[];
+  detailsApplied = rows.length > 0;
+  return detailsApplied;
+}
+
+/** The detail columns of `digest_items`, for a select — empty before drizzle/0081. */
+export function detailColumns(applied: boolean, alias = "") {
+  const p = alias ? `${alias}.` : "";
+  return applied ? sql.raw(`, ${p}price, ${p}about, ${p}popular, ${p}popular_why`) : sql``;
+}
+
 async function readEdition(db: Db, marketId: string, editionDate: string, isTest: boolean, cohortKey: string): Promise<DigestEdition | null> {
   const approval = await hasDigestApproval(db);
   const rows = (await db.execute(sql`
@@ -55,7 +77,7 @@ async function readEdition(db: Db, marketId: string, editionDate: string, isTest
   const id = String(rows[0].id);
   const items = (await db.execute(sql`
     select id::text as id, kind, title, when_text, starts_on::text as starts_on, ends_on::text as ends_on, place,
-           age_min, age_max, summary, url
+           age_min, age_max, summary, url ${detailColumns(await hasDigestDetails(db))}
       from digest_items where edition_id = ${id}::uuid ${approval ? sql`and removed_at is null` : sql``} order by position
   `)) as unknown as DigestItem[];
   return {
@@ -93,6 +115,7 @@ async function approvedCandidates(marketId: MarketId): Promise<DigestItem[]> {
     if (!exists[0]?.ok) return [];
     return (await db.execute(sql`
       select kind, title, when_text, starts_on::text, ends_on::text, place, age_min, age_max, summary, url
+             ${detailColumns(await hasDigestDetails(db))}
         from digest_candidates
        where market_id = ${marketId} and removed_at is null
          and coalesce(ends_on, starts_on, (now() at time zone ${marketConfig(marketId).timeZone}::text)::date) >= (now() at time zone ${marketConfig(marketId).timeZone}::text)::date - 1
@@ -112,6 +135,11 @@ async function approvedCandidates(marketId: MarketId): Promise<DigestItem[]> {
     age_max: c.age_max === null ? null : Number(c.age_max),
     summary: String(c.summary),
     url: String(c.url),
+    /* Its details (25 Nov, drizzle/0081), carried into the edition it joins. */
+    price: c.price ? String(c.price) : null,
+    about: c.about ? String(c.about) : null,
+    popular: c.popular === true,
+    popular_why: c.popular_why ? String(c.popular_why) : null,
   }));
 }
 
@@ -174,14 +202,17 @@ export async function digestEdition(
       `)) as unknown as Array<Record<string, unknown>>;
       if (rows[0] && status === "ready") {
         const id = String(rows[0].id);
+        const details = await hasDigestDetails(tx);
         for (const [position, item] of run.items.entries()) {
           await tx.execute(sql`
             insert into digest_items
-              (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url)
+              (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url
+               ${details ? sql`, price, about, popular, popular_why` : sql``})
             values
               (${id}::uuid, ${position}, ${item.kind}, ${item.title}, ${item.when_text},
                ${item.starts_on}::date, ${item.ends_on}::date, ${item.place},
-               ${item.age_min}, ${item.age_max}, ${item.summary}, ${item.url})
+               ${item.age_min}, ${item.age_max}, ${item.summary}, ${item.url}
+               ${details ? sql`, ${item.price ?? null}, ${item.about ?? null}, ${item.popular === true}, ${item.popular_why ?? null}` : sql``})
           `);
         }
       }

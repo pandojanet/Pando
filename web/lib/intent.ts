@@ -77,6 +77,11 @@ export const INTENTS: Intent[] = [
  */
 export const INTENT_CONFIDENCE_FLOOR = 0.6;
 
+/** Who a request is for — see `IntentResult.for_whom`. */
+export const FOR_WHOM = ["child", "self", "unknown"] as const;
+export type ForWhom = (typeof FOR_WHOM)[number];
+const forWhomOf = (v: unknown): ForWhom | undefined => (FOR_WHOM as readonly unknown[]).includes(v) ? (v as ForWhom) : undefined;
+
 export interface IntentContext {
   /**
    * They were asked something and have not answered or passed.
@@ -137,6 +142,14 @@ export interface IntentResult {
    * it is never sent to a parent and never logged (invariant 7).
    */
   standalone?: string | null;
+  /**
+   * Who a request is for (25 Nov — Janet: *"horse dressage is a perfectly
+   * valid query"*; Pando is not only for questions about children):
+   * `self` — the adult asking; `child` — their child, children or a family
+   * outing with them; `unknown` — nothing says, and it could be either. Absent
+   * when the model was not asked (the fallback), which reads as `unknown`.
+   */
+  for_whom?: ForWhom;
   /**
    * What the message changed, said back in a few words ("A 7 year old, then.")
    * when it only corrects or adds a fact to an earlier request (5 Nov, the SMS
@@ -460,6 +473,7 @@ export function applyThreshold(
     subject?: string | null;
     standalone?: string | null;
     heard?: string | null;
+    for_whom?: string | null;
   } | null,
   text: string,
   context: IntentContext,
@@ -500,7 +514,9 @@ export function applyThreshold(
      * it forward can only ever hold something back.
      */
     const ruled = fallbackIntent(text, context);
-    return model.sensitive === true ? { ...ruled, sensitive: true } : ruled;
+    /* Who it is for is kept too (25 Nov): it is about the words, not which intent they are. */
+    const forWhom = forWhomOf(model.for_whom);
+    return { ...ruled, ...(model.sensitive === true ? { sensitive: true } : {}), ...(forWhom ? { for_whom: forWhom } : {}) };
   }
 
   return {
@@ -516,5 +532,6 @@ export function applyThreshold(
         : null,
     heard:
       (model.intent === "ask_recommendation" || model.intent === "ask_caregiver") ? acceptHeard(model.heard, text) : null,
+    ...(forWhomOf(model.for_whom) ? { for_whom: forWhomOf(model.for_whom) } : {}),
   };
 }

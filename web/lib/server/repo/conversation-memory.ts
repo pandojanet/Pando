@@ -8,6 +8,7 @@ import {
   MEMORY_FOLD_BATCH,
   MEMORY_IDLE_DAYS,
   MEMORY_SCHEMA,
+  familyInterests,
   mayFold,
   memoryExpired,
   memoryPrompt,
@@ -16,6 +17,7 @@ import {
   validMemory,
   type MemoryAsk,
   type MemoryExchange,
+  type MemoryTopic,
 } from "@/lib/conversation-memory";
 import { withDb, type Db } from "@/lib/server/db";
 import { tracedFetch } from "@/lib/server/trace";
@@ -64,6 +66,56 @@ export async function memoryFor(personId: string | null | undefined): Promise<Me
     return validMemory(row.asks, await areasFor(db, personId));
   });
   return result.persisted ? (result.data ?? []) : [];
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Each person's interests (25 Nov, `familyInterests`): the topics of their
+ * questions still in the verbatim window — sent unheld, within `EARLIER_DAYS` —
+ * and of their remembered asks. Two queries for any number of people, so the
+ * weekly digest reads everyone's at once. A person with none is absent from
+ * the map. Nothing is written, and nothing is logged but a count by the caller.
+ */
+export async function familyInterestsFor(personIds: readonly string[]): Promise<Map<string, MemoryTopic[]>> {
+  const ids = [...new Set(personIds.filter((id) => UUID.test(id)))];
+  if (ids.length === 0) return new Map();
+  /* An array literal, not `sql.array` — see `admin-read.ts`. Only UUIDs reach it. */
+  const literal = `{${ids.map((id) => `"${id}"`).join(",")}}`;
+  const result = await withDb(async (db: Db) => {
+    const memories = (await db.execute(sql`
+      select person_id::text as person_id, asks, updated_at from conversation_summaries
+       where person_id = any(${literal}::uuid[])
+    `)) as unknown as Array<{ person_id: string; asks: unknown; updated_at: string | Date }>;
+    const asked = (await db.execute(sql`
+      select person_id::text as person_id, question_text from answers
+       where person_id = any(${literal}::uuid[])
+         and created_at > now() - make_interval(days => ${EARLIER_DAYS}::int)
+         and status = 'sent' and hold_reason = 'not_held'
+         and question_text is not null
+       order by created_at desc
+    `)) as unknown as Array<{ person_id: string; question_text: string }>;
+    return { memories, asked };
+  });
+  if (!result.persisted || !result.data) return new Map();
+  const now = new Date();
+  const memoryOf = new Map<string, MemoryAsk[]>();
+  for (const m of result.data.memories) {
+    if (memoryExpired(new Date(m.updated_at), now)) continue;
+    /* Topics only: the area is not used here, so no market's areas are needed to read it. */
+    memoryOf.set(m.person_id, validMemory(m.asks, [], now));
+  }
+  const questionsOf = new Map<string, string[]>();
+  for (const a of result.data.asked) {
+    const q = baseQuestion(String(a.question_text)).trim();
+    if (q) questionsOf.set(a.person_id, [...(questionsOf.get(a.person_id) ?? []), q]);
+  }
+  const out = new Map<string, MemoryTopic[]>();
+  for (const id of ids) {
+    const interests = familyInterests({ memory: memoryOf.get(id) ?? [], recentQuestions: questionsOf.get(id) ?? [], isSensitive: sensitive });
+    if (interests.length > 0) out.set(id, interests);
+  }
+  return out;
 }
 
 type AnswerRow = { question_text: string | null; answer_text: string | null; status: string; hold_reason: string; created_at: string | Date; at: string };

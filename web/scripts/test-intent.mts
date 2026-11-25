@@ -540,5 +540,18 @@ console.log("\n=== a correction said back (heard, 5 Nov) ===");
   ok("and not for any other intent", m.applyThreshold({ ...heard("A 7 year old, then."), intent: "chitchat" }, "actually she's 7", ctx()).heard === null);
 }
 
+console.log("\n=== who a request is for (25 Nov) ===");
+{
+  const read = (for_whom: unknown, confidence = 0.9) =>
+    m.applyThreshold({ intent: "ask_recommendation", confidence, reason: "", sensitive: false, for_whom: for_whom as string }, "dressage lessons for me", ctx());
+  ok("self, child and unknown are kept", read("self").for_whom === "self" && read("child").for_whom === "child" && read("unknown").for_whom === "unknown");
+  ok("anything else is dropped (absent reads as unknown)", read("adult").for_whom === undefined && read(null).for_whom === undefined);
+  ok("kept when the intent itself is too unsure to use", read("self", 0.3).for_whom === "self");
+  ok("the fallback says nothing about it", m.fallbackIntent("dressage lessons?", ctx()).for_whom === undefined);
+  const fs = await import("node:fs");
+  const server = fs.readFileSync(new URL("../lib/server/intent.ts", import.meta.url), "utf8");
+  ok("source pin: the schema asks for it, from a fixed list", /for_whom: \{\s+type: "string",\s+enum: \["child", "self", "unknown"\],/.test(server) && /required: \[[^\]]*"for_whom"\]/.test(server));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

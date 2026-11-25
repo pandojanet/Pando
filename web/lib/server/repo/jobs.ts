@@ -24,11 +24,13 @@ import {
 import { sendSms } from "@/lib/server/sms";
 import { MARKETS } from "@/lib/markets";
 import { editionVariable } from "@/lib/sms-rich";
-import { expireMemory } from "@/lib/server/repo/conversation-memory";
+import { expireMemory, familyInterestsFor } from "@/lib/server/repo/conversation-memory";
+import { MEMORY_TOPICS, touchesInterest, type MemoryTopic } from "@/lib/conversation-memory";
 import { feedbackAskCard, feedbackAskSms, reminderSms } from "@/lib/digest-followup";
 import { claimFollowup, dueFeedback, dueReminders, releaseFollowup } from "@/lib/server/repo/digest-followup";
 import { ageOn, composeDigest, digestDue, digestPrepFor, nextDigestDate, pickForPerson, poolForFamily } from "@/lib/digest";
-import { cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
+import { ASKED_AFFINITY, askedTopics, cohortProfile, groupFamilies, joinDrawn, type CohortProfile, type FamilyFacts } from "@/lib/digest-cohorts";
+import type { DigestItem } from "@/lib/digest";
 import {
   claimDigestSend,
   digestAudience,
@@ -325,14 +327,17 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
      * every member.
      */
     const audience = await digestAudience(market.id, editionDate, isTest);
+    /* What each family asked about over SMS (25 Nov): one more shared interest for the groups, and an order for their picks. */
+    const interestsOf = await familyInterestsFor(audience.map((r) => r.person_id));
     const families: FamilyFacts[] = audience.map((r) => ({
       id: r.person_id,
       ages: r.children.map((c) => ageOn(c.year, c.month, today)),
       neighborhood: r.neighborhood,
       area: r.area,
-      affinities: r.affinities,
+      affinities: withAsked(r.affinities, interestsOf.get(r.person_id)),
       relevance: r.relevance,
     }));
+    console.info("[digest] interests", { market: market.id, families: families.length, with_interests: interestsOf.size });
     /* Drawn once a Saturday (review, 4 Nov): the first run groups everyone;
        later runs put whoever is not yet sent into the groups already drawn, and
        group anew only those who fit none. */
@@ -390,7 +395,7 @@ export async function runWeeklyDigest(now: Date, isTest = false): Promise<JobRes
        */
       for (const i of unsent) {
         const recipient = audience[i];
-        const { body, ask, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, families[i].ages), families[i].ages));
+        const { body, ask, included, items: sentItems } = composeDigest(pickForPerson(poolForFamily(edition.items, others, families[i].ages), families[i].ages, leansFor(families[i])));
         /* Claimed before it is sent, so a write that fails afterwards can never
            mean a second copy next hour (review, 3 Nov). Nothing that suits them is
            a claim with no items: the hourly runs stop weighing them. The claim
@@ -451,6 +456,17 @@ export type DigestOneOutcome =
   | { ok: true; edition_date: string; edition_id: string; status: "ready" | "empty" | "failed"; items: number; approved: boolean; sent?: number }
   | { ok: false; reason: "no_person" | "not_prepared" | "preparing" | "not_approved" | "nothing_suits" | "not_sent"; edition_date?: string; detail?: string };
 
+/** A family's affinities with what they asked about over SMS added as `asked:` ones (25 Nov, `ASKED_AFFINITY`). */
+function withAsked(affinities: readonly string[], interests: readonly MemoryTopic[] | undefined): string[] {
+  return [...affinities.filter((a) => !a.startsWith(ASKED_AFFINITY)), ...(interests ?? []).map((t) => `${ASKED_AFFINITY}${t}`)];
+}
+
+/** Their picks lean to an item on what they asked about (25 Nov, `pickForPerson`): its title and summary, read with the topic's words. */
+function leansFor(facts: FamilyFacts): (item: DigestItem) => boolean {
+  const topics = askedTopics(facts).filter((t): t is MemoryTopic => (MEMORY_TOPICS as readonly string[]).includes(t));
+  return (item) => touchesInterest(`${item.title} ${item.summary}`, topics);
+}
+
 async function oneFamily(phone: string, now: Date) {
   /* `sent` is not read here (a test send replaces its own claim), so any date finds the person. */
   const family = await digestFamilyByPhone(phone, nextDigestDate(now, Object.values(MARKETS)[0].timeZone));
@@ -463,7 +479,8 @@ async function oneFamily(phone: string, now: Date) {
     ages: family.children.map((c) => ageOn(c.year, c.month, editionDate)),
     neighborhood: family.neighborhood,
     area: family.area,
-    affinities: family.affinities,
+    /* As the job reads them (25 Nov), so the one-number test groups and orders the same way. */
+    affinities: withAsked(family.affinities, (await familyInterestsFor([family.person_id])).get(family.person_id)),
     relevance: family.relevance,
   };
   const drawn = await drawnCohorts(market.id, editionDate, true);
@@ -502,7 +519,7 @@ async function composeOne(phone: string, now: Date) {
   if (!edition) return { refused: { ok: false, reason: "preparing", edition_date: one.editionDate } as DigestOneOutcome };
   if (!edition.approved && edition.items.length > 0) return { refused: { ok: false, reason: "not_approved", edition_date: one.editionDate } as DigestOneOutcome };
   const others = (await readyEditionsOfDay(one.market.id, one.editionDate, true)).filter((e) => e.key !== one.existing!.key).map((e) => e.items);
-  const composed = composeDigest(pickForPerson(poolForFamily(edition.items, others, one.facts.ages), one.facts.ages));
+  const composed = composeDigest(pickForPerson(poolForFamily(edition.items, others, one.facts.ages), one.facts.ages, leansFor(one.facts)));
   if (composed.included === 0) return { refused: { ok: false, reason: "nothing_suits", edition_date: one.editionDate } as DigestOneOutcome };
   return { one, edition, composed };
 }

@@ -129,6 +129,14 @@ const SYSTEM = [
   "much is it?') asks about that place by its name, never for a new list. If the message already",
   "stands on its own in English, leave standalone empty. For every other intent leave it empty.",
   "",
+  "Set for_whom for ask_recommendation: 'self' when the request is plainly for the adult writing - lessons, a",
+  "class, a gym, a hobby or an outing for themselves ('for me', 'myself', 'adult', 'my husband and I', 'a date",
+  "night'); 'child' when it is for their child or children or a family outing with kids, names a child or a",
+  "child's age, or is something almost only children do (a playground, a preschool, a camp, story time, a",
+  "children's museum); 'unknown' when nothing says either way and an adult could want it as much as a child",
+  "('dressage lessons?', 'any pottery classes near us?'). Read the conversation before it: a follow-up keeps",
+  "who the request it follows was for. For every other intent use 'unknown'.",
+  "",
   "Set heard only when the message corrects or adds one fact to an earlier request (an age, a",
   "place, a day, a price): that fact said back in under 8 words, one plain sentence, so the",
   "parent sees it was heard - 'A 7 year old, then.', 'Arcadia instead.', 'Weekends only.'. Use",
@@ -204,8 +212,13 @@ const SCHEMA = {
       description:
         "ask_recommendation / ask_caregiver only: the message as one complete English request when it depends on the conversation before it, is several texts in a row, refines an answer to the service's question, or is not in English. Otherwise empty.",
     },
+    for_whom: {
+      type: "string",
+      enum: ["child", "self", "unknown"],
+      description: "Who the request is for: the adult writing (self), their child (child), or nothing says (unknown).",
+    },
   },
-  required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone", "heard"],
+  required: ["intent", "confidence", "reason", "sensitive", "subject", "standalone", "heard", "for_whom"],
   additionalProperties: false,
 } as const;
 
@@ -375,6 +388,7 @@ function safeParse(
   subject?: string | null;
   standalone?: string | null;
   heard?: string | null;
+  for_whom?: string | null;
 } | null {
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
@@ -408,6 +422,7 @@ function safeParse(
       subject: typeof value.subject === "string" ? value.subject : null,
       standalone: typeof value.standalone === "string" ? value.standalone : null,
       heard: typeof value.heard === "string" ? value.heard : null,
+      for_whom: typeof value.for_whom === "string" ? value.for_whom : null,
     };
   } catch {
     return null;
@@ -420,6 +435,6 @@ export async function classifyIntent(input: Parameters<typeof classifyIntentUntr
     intent: r.intent, source: r.source, sensitive: r.sensitive, confidence: r.confidence,
     /* The reading itself (6 Nov): what the message was taken to ask, as the trace's content. */
     $ai_input_state: input.text,
-    $ai_output_state: { intent: r.intent, source: r.source, confidence: r.confidence, sensitive: r.sensitive, reason: r.reason, standalone: r.standalone ?? null, heard: r.heard ?? null, subject: r.subject ?? null },
+    $ai_output_state: { intent: r.intent, source: r.source, confidence: r.confidence, sensitive: r.sensitive, reason: r.reason, standalone: r.standalone ?? null, heard: r.heard ?? null, subject: r.subject ?? null, for_whom: r.for_whom ?? null },
   }));
 }

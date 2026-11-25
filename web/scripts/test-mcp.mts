@@ -398,5 +398,21 @@ console.log("\n=== critical alerts to Slack (20 Nov) ===");
       !/phone|first_name|question_text|person_id/.test(srv.replace(/\/\*[\s\S]*?\*\//g, "")) && /SLACK_ALERTS_WEBHOOK_URL/.test(srv) && /isSlackWebhookUrl\(own\)/.test(srv));
 }
 
+console.log("\n=== an event proposal carries its price, about and popular (25 Nov, 0081) ===");
+{
+  const server = read("lib/server/mcp/server.ts");
+  const cand = read("lib/server/mcp/candidate.ts");
+  const write = read("lib/server/repo/admin-write.ts");
+  ok("propose_event takes price, about, popular and popular_why", /price: z\.string\(\)\.max\(140\)\.optional\(\)/.test(server) && /about: z\.string\(\)\.max\(160\)\.optional\(\)/.test(server) && /popular: z\.boolean\(\)\.optional\(\)/.test(server) && /popular_why: z\.string\(\)\.max\(80\)\.optional\(\)/.test(server));
+  ok("checkCandidate holds them to the same word rules, a price to amounts or 'free', popular to a why",
+    /\[\["price", price \?\? ""\], \["about", about \?\? ""\], \["popular_why", popularWhy \?\? ""\]\]/.test(cand) && /if \(price && !\/\\\$\\s\?\\d\|\\bfree\\b\/i\.test\(price\)\)/.test(cand) && /if \(popular && !popularWhy\)/.test(cand));
+  ok("approval carries them into the candidate and into a prepared edition, once 0081 is applied",
+    /insert into digest_candidates \([^)]*added_by \$\{detailCols\}\)/.test(write) && /insert into digest_items \(edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url \$\{detailCols\}\)/.test(write));
+  const sql0081 = read("drizzle/0081_digest_item_details.sql");
+  ok("migration 0081: additive columns on both tables, in the journal after 0080",
+    /ALTER TABLE digest_items ADD COLUMN IF NOT EXISTS popular boolean NOT NULL DEFAULT false/.test(sql0081) && /ALTER TABLE digest_candidates ADD COLUMN IF NOT EXISTS price text/.test(sql0081) &&
+      !/DROP|UPDATE|DELETE/i.test(sql0081.replace(/--.*$/gm, "")) && /"tag": "0080_mcp_call_reason",[\s\S]*"tag": "0081_digest_item_details"/.test(read("drizzle/meta/_journal.json")));
+}
+
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 if (fail) process.exit(1);

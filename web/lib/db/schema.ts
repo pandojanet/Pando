@@ -1746,6 +1746,13 @@ export const digestItems = pgTable(
     url: text("url").notNull(),
     /** 19 Nov, drizzle/0069: taken out by an admin before approval — kept on the record, never sent. */
     removedAt: timestamp("removed_at", { withTimezone: true }),
+    /** 25 Nov, drizzle/0081: the price, free tiers and discounts as the page states them — shown in the details only. */
+    price: text("price"),
+    /** 25 Nov, drizzle/0081: one sentence on what the place is, for someone who has never heard of it. */
+    about: text("about"),
+    /** 25 Nov, drizzle/0081: in high demand by its page (sells out, draws crowds) — ranked first, and why. */
+    popular: boolean("popular").notNull().default(false),
+    popularWhy: text("popular_why"),
   },
   (t) => [
     check("digest_items_kind_check", sql`${t.kind} in ('event','camp','class','opportunity')`),
@@ -1939,6 +1946,11 @@ export const digestCandidates = pgTable("digest_candidates", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   removedAt: timestamp("removed_at", { withTimezone: true }),
   removedBy: text("removed_by"),
+  /** 25 Nov, drizzle/0081: as on `digest_items`; empty until a proposal carries them. */
+  price: text("price"),
+  about: text("about"),
+  popular: boolean("popular").notNull().default(false),
+  popularWhy: text("popular_why"),
 });
 
 /** Skills the Agent builder saved into the Pando plugin through `save_skill` (0072). */

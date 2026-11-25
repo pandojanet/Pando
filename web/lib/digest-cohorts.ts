@@ -74,6 +74,22 @@ export function stageOf(age: number): string {
   return (STAGES.find((s) => age >= s.from && age <= s.to) ?? STAGES[STAGES.length - 1]).stage;
 }
 
+/**
+ * What a family asked about over SMS (25 Nov, `familyInterests` in
+ * lib/conversation-memory.ts), carried in `affinities` as `asked:<topic>` —
+ * a `MEMORY_TOPICS` value, never a parent's words. It is one more thing alike
+ * families share, weighed as an affinity, so two families who both asked about
+ * horse riding lean into one group, and a group a third of which did is told
+ * "sharing: horse riding" (`cohortProfile`). The 4 Nov rule stands: groups,
+ * not a digest per person.
+ */
+export const ASKED_AFFINITY = "asked:";
+
+/** The `asked:` topics in a family's affinities. */
+export function askedTopics(f: Pick<FamilyFacts, "affinities">): string[] {
+  return f.affinities.filter((a) => a.startsWith(ASKED_AFFINITY)).map((a) => a.slice(ASKED_AFFINITY.length));
+}
+
 /* What each kind of fact weighs. */
 const WEIGHT = { stage: 4, area: 2, neighborhood: 1, affinity: 1, relevance: 0.5 } as const;
 

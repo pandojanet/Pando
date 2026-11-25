@@ -27,9 +27,17 @@ export interface CandidateInput {
   age_max?: number | null;
   summary: string;
   url: string;
+  /** 25 Nov (drizzle/0081): the price, free tiers and discounts as the event's page states them, or "free". */
+  price?: string | null;
+  /** One sentence on what the place is, for a parent who has never heard of it. */
+  about?: string | null;
+  /** In high demand by its page — sells out, book early, draws crowds, a well-known annual event. */
+  popular?: boolean | null;
+  /** Why, in a few words from the page. */
+  popular_why?: string | null;
 }
 
-const KINDS = ["event", "camp", "class", "opportunity"] as const;
+const KINDS =["event", "camp", "class", "opportunity"] as const;
 /** A calendar date that exists (review, 20 Nov: "2026-02-31" passed a shape check and failed the insert). */
 export const realDay = (v: unknown): v is string =>
   typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
@@ -83,7 +91,21 @@ export function checkCandidate(raw: CandidateInput): { item: DigestItem } | { re
   const age_max = age(raw.age_max);
   if (age_min !== null && age_max !== null && age_min > age_max) return { refused: "age_min is above age_max." };
 
-  return { item: { kind, title, when_text: whenText, starts_on, ends_on, place, age_min, age_max, summary, url } };
+  /* The details a parent's pick opens (25 Nov): the same word rules as the rest, since they reach parents' texts. */
+  const price = text(raw.price, 140) || null;
+  const about = withoutAsides(text(raw.about, 160)) || null;
+  const popular = raw.popular === true;
+  const popularWhy = popular ? text(raw.popular_why, 80) || null : null;
+  for (const [field, value] of [["price", price ?? ""], ["about", about ?? ""], ["popular_why", popularWhy ?? ""]] as const) {
+    if (hasContactDetail(value.replace(ISO_DATES, ""))) return { refused: `The ${field} carries a phone number or email; parents get the page, not contact details.` };
+    if (LINK_IN_TEXT.test(value)) return { refused: `The ${field} carries a link; the link goes in url only.` };
+  }
+  if (price && !/\$\s?\d|\bfree\b/i.test(price)) return { refused: "The price must be amounts as the page states them ($30, $80) or 'free' - leave it out when the page states none." };
+  if (popular && !popularWhy) return { refused: "A popular event needs popular_why: what on its page says it is in high demand (sold out last year, book early)." };
+
+  return {
+    item: { kind, title, when_text: whenText, starts_on, ends_on, place, age_min, age_max, summary, url, price, about, popular, popular_why: popularWhy },
+  };
 }
 
 /**

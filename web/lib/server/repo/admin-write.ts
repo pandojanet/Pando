@@ -24,6 +24,7 @@ import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
 import { erasePersonIn } from "@/lib/server/repo/parent-delete";
 import { forgetMcpSwitch } from "@/lib/server/repo/mcp";
+import { hasDigestDetails } from "@/lib/server/repo/digest";
 import {
   insertContributionImpact,
   insertImpact,
@@ -2450,10 +2451,14 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
         const checked = checkCandidate({ ...(payload as Record<string, never>), url: p.source_url ?? "" } as CandidateInput);
         if ("refused" in checked) return { applied: false, reason: "proposal_invalid" };
         const e = checked.item;
+        /* Its details (25 Nov, drizzle/0081), once the columns exist. */
+        const details = await hasDigestDetails(tx);
+        const detailCols = details ? sql`, price, about, popular, popular_why` : sql``;
+        const detailVals = details ? sql`, ${e.price ?? null}, ${e.about ?? null}, ${e.popular === true}, ${e.popular_why ?? null}` : sql``;
         const [made] = (await tx.execute(sql`
-          insert into digest_candidates (market_id, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url, proposal_id, added_by)
+          insert into digest_candidates (market_id, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url, proposal_id, added_by ${detailCols})
           values (${cleanText(payload.market_id, 40) ?? DEFAULT_MARKET_ID}, ${e.kind}, ${e.title}, ${e.when_text}, ${e.starts_on}::date, ${e.ends_on}::date,
-                  ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url}, ${target}::uuid, ${ctx.actor})
+                  ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url}, ${target}::uuid, ${ctx.actor} ${detailVals})
           returning id
         `)) as unknown as Array<{ id: string }>;
         if (!made) return { applied: false, reason: "not_implemented" };
@@ -2484,9 +2489,9 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
             continue;
           }
           await tx.execute(sql`
-            insert into digest_items (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url)
+            insert into digest_items (edition_id, position, kind, title, when_text, starts_on, ends_on, place, age_min, age_max, summary, url ${detailCols})
             values (${ed.id}::uuid, ${Math.min(0, ...have.map((i) => i.position)) - 1}, ${e.kind}, ${e.title}, ${e.when_text},
-                    ${e.starts_on}::date, ${e.ends_on}::date, ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url})
+                    ${e.starts_on}::date, ${e.ends_on}::date, ${e.place}, ${e.age_min}, ${e.age_max}, ${e.summary}, ${e.url} ${detailVals})
           `);
           /* A group the agent found nothing for now has something to send (review round 3). */
           await tx.execute(sql`update digest_editions set status = 'ready' where id = ${ed.id}::uuid and status = 'empty'`);

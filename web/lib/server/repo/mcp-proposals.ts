@@ -3,6 +3,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import type { Db } from "@/lib/server/db";
 import { FLAGGED_PERSON } from "@/lib/server/repo/mcp-read";
+import { detailColumns, hasDigestDetails } from "@/lib/server/repo/digest";
 import { DEFAULT_MARKET_ID, marketConfig } from "@/lib/markets";
 
 /** Today on the market's clock (review round 2: the database's current_date is UTC, a day ahead after 4pm in Pasadena). */
@@ -191,6 +192,7 @@ const SAME_FACTS = (f: Record<string, unknown>) => ({
 export async function liveCandidates(db: Db, limit: number) {
   const out = await rows(db, sql`
     select id, kind, title, when_text, starts_on::text, ends_on::text, place, age_min, age_max, url, created_at
+           ${detailColumns(await hasDigestDetails(db))}
       from digest_candidates
      where removed_at is null and coalesce(ends_on, starts_on, ${TODAY}) >= ${TODAY}
      order by coalesce(starts_on, ends_on) nulls last, created_at
@@ -206,5 +208,8 @@ export async function liveCandidates(db: Db, limit: number) {
     place: r.place ? String(r.place) : null,
     ages: r.age_min === null && r.age_max === null ? null : `${r.age_min ?? 0}-${r.age_max ?? 18}`,
     url: String(r.url),
+    /* 25 Nov (drizzle/0081): so an agent sees what a candidate already carries. */
+    price: r.price ? String(r.price) : null,
+    popular: r.popular === true,
   }));
 }

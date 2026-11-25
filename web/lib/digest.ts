@@ -65,6 +65,20 @@ export interface DigestItem {
   age_max: number | null;
   summary: string;
   url: string;
+  /**
+   * The details a pick opens (25 Nov, drizzle/0081): the price, who goes free
+   * and the discounts as the event's page states them ("$30 fixed date, $80 any
+   * day; under 2 free"), or "free" — null when the page states none or was not
+   * read (`readAgentItems` never keeps a price it cannot find on the page).
+   * Never in the list itself: the developer, *only in the details*.
+   */
+  price?: string | null;
+  /** One sentence on what the place is, for someone who has never heard of it ("Kidspace is a hands-on children's museum"). */
+  about?: string | null;
+  /** In high demand by its page — it sells out, draws crowds, a well-known annual event — ranked first and marked (25 Nov). */
+  popular?: boolean;
+  /** Why, in a few words from the page ("sold out last year"). */
+  popular_why?: string | null;
 }
 
 /** The date, weekday and hour on a market's clock. */
@@ -802,10 +816,64 @@ export function readAgentItems(
       drop("duplicate");
       continue;
     }
-    out.push({ kind, title, when_text, starts_on, ends_on, place: clip(r.place, 60) || null, age_min, age_max, summary, url });
+    out.push({ kind, title, when_text, starts_on, ends_on, place: clip(r.place, 60) || null, age_min, age_max, summary, url, ...itemDetails(r, read?.text ?? null, drop) });
     if (out.length >= DIGEST_EDITION_MAX) break;
   }
   return out;
+}
+
+/** Every "$30", "$1,250.00" in a text, as digits ("30", "1250.00"). */
+const dollarAmounts = (text: string): string[] =>
+  [...text.matchAll(/\$\s?(\d[\d,]*(?:\.\d{2})?)/g)].map((m) => m[1].replace(/,/g, ""));
+
+/**
+ * Words on a page that say an event is in high demand (25 Nov — the developer:
+ * *"a popular event, a lot of people, high demand"*). Whole phrases; "popular"
+ * alone is how pages praise themselves, so it counts only as "most popular" or
+ * "very popular".
+ */
+const POPULAR_CUES =
+  /\b(sold out|sells out|sell out|selling (?:out|fast)|limited (?:tickets|capacity|spots|space)|tickets go fast|book (?:early|ahead)|reservations? (?:are )?required|waitlist|wait list|high demand|in demand|most popular|very popular|hugely popular|thousands of (?:visitors|guests|people)|draws thousands|crowds?|annual tradition|beloved tradition)\b/i;
+
+/**
+ * The details a pick opens (25 Nov), each kept only as far as the page bears
+ * it out — never repaired, as everything else here:
+ *  - `price`: every $ amount in it on the page the agent read, and "free" only
+ *    if the page says free; without the page, or with none of either, nothing.
+ *    A wrong price is worse than "not listed".
+ *  - `about`: one sentence on what the place is, no link in it.
+ *  - `popular`: only with a demand cue (`POPULAR_CUES`) on the page.
+ * A field that does not hold is counted (`price_not_on_page`, `popular_not_on_page`); the item stays.
+ */
+export function itemDetails(
+  r: Record<string, unknown>,
+  page: string | null,
+  drop: (why: string) => void = () => {},
+): Pick<DigestItem, "price" | "about" | "popular" | "popular_why"> {
+  const pageWords = page ? page.replace(/,/g, "") : "";
+  let price: string | null = withoutAsides(clip(r.price, 140)) || null;
+  if (price) {
+    const amounts = dollarAmounts(price);
+    const saysFree = /\bfree\b/i.test(price);
+    const holds =
+      page !== null &&
+      (amounts.length > 0 || saysFree) &&
+      amounts.every((a) => new RegExp(`\\$\\s?${a.replace(".", "\\.")}(?!\\d)`).test(pageWords)) &&
+      (!saysFree || /\bfree\b/i.test(page));
+    if (!holds) {
+      drop("price_not_on_page");
+      price = null;
+    }
+  }
+  const aboutText = withoutAsides(clip(r.about, 160));
+  const about = aboutText.length >= 15 && !/https?:\/\/|www\./i.test(aboutText) ? aboutText : null;
+  let popular = r.popular === true;
+  if (popular && !(page !== null && POPULAR_CUES.test(page))) {
+    drop("popular_not_on_page");
+    popular = false;
+  }
+  const why = popular ? withoutAsides(clip(r.popular_why, 80)) || null : null;
+  return { price, about, popular, popular_why: why };
 }
 
 /**
@@ -1064,15 +1132,32 @@ export function poolForFamily(own: readonly DigestItem[], others: readonly (read
  * не потрібно відсіювати, бо це різні Kidspace"*. One event under two spellings
  * is still one item (`sameThing`, `poolForFamily`); that is not this rule.
  */
-export function pickForPerson(items: readonly DigestItem[], childAges: readonly number[]): DigestItem[] {
+export function pickForPerson(
+  items: readonly DigestItem[],
+  childAges: readonly number[],
+  /**
+   * Does an item touch what this family asked about before (25 Nov,
+   * `touchesInterest` with their `familyInterests`, passed in so this module
+   * stays import-free)? Such an item goes ahead of the others made for their
+   * children — an order, never a filter: nothing that suits them is left out
+   * for it, and a family with no interests is ordered as before.
+   */
+  leans: (item: DigestItem) => boolean = () => false,
+): DigestItem[] {
   const fits = items.filter((item) => ageFits(item, childAges));
   /* Made for their children first (6 Nov, the lab walk: a teen group was sent a
      flea market and an e-bike hub opening ahead of anything for teens): an item
-     whose ages hold one of theirs, then one with no ages; events before the rest
-     within each. */
+     whose ages hold one of theirs, then one with no ages; within each, what they
+     asked about before (25 Nov), then events before the rest. */
   const forThem = (item: DigestItem) => (childAges.length > 0 && (item.age_min !== null || item.age_max !== null) ? 0 : 1);
+  /* In high demand ahead of the rest (25 Nov — Janet missed Enchanted Forest because nobody said tickets went fast). */
+  const hot = (item: DigestItem) => (item.popular ? 0 : 1);
+  const theirs = (item: DigestItem) => (leans(item) ? 0 : 1);
   const order = (item: DigestItem) => (item.kind === "event" ? 0 : 1);
-  const sorted = [...fits].sort((a, b) => forThem(a) - forThem(b) || order(a) - order(b) || (a.starts_on ?? "9999").localeCompare(b.starts_on ?? "9999"));
+  const sorted = [...fits].sort(
+    (a, b) =>
+      forThem(a) - forThem(b) || hot(a) - hot(b) || theirs(a) - theirs(b) || order(a) - order(b) || (a.starts_on ?? "9999").localeCompare(b.starts_on ?? "9999"),
+  );
   const picked: DigestItem[] = [];
   for (const item of sorted) {
     if (picked.length >= DIGEST_MAX_ITEMS) break;
@@ -1162,7 +1247,8 @@ export function composeDigest(items: readonly DigestItem[]): {
   let length = DIGEST_HEAD.length + 2 + DIGEST_FOOT.length;
   for (const item of items) {
     const where = item.place ? `, ${item.place}` : "";
-    const line = plain(`${kept.length + 1}. ${item.title} - ${item.when_text}${where}. ${item.summary} ${item.url}`);
+    /* A popular one is marked (25 Nov, the hot flag); its price and why are in the details a pick opens, never here. */
+    const line = plain(`${kept.length + 1}. ${item.title}${item.popular ? " (popular)" : ""} - ${item.when_text}${where}. ${item.summary} ${item.url}`);
     if (length + line.length + 2 > DIGEST_MAX_CHARS) continue;
     kept.push(item);
     lines.push(line);

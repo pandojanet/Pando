@@ -487,5 +487,25 @@ console.log("\n=== a parents' record answers the question it is offered for (26 
   ok("every named-person guard reads a flag on the record or on any of its contributions", guards === 5 && both === 5, `${both} of ${guards}`);
 }
 
+console.log("\n=== 'date night' alone is not a request for a sitter (25 Nov) ===");
+{
+  const all = ["nannies", "babysitters", "outings", "activities", "camps", "sports", "arts_music", "preschools_schools", "pediatric_health"];
+  ok("'good restaurants for a date night?' is not care", m.focusInQuestion("good restaurants for a date night?", all) !== "babysitters");
+  ok("'a sitter for date night' still is, by 'sitter'", m.focusInQuestion("need a sitter for date night Saturday", all) === "babysitters");
+  ok("and 'babysitter for date nights' too", m.focusInQuestion("a great babysitter for date nights", all) === "babysitters");
+}
+
+console.log("\n=== an open question (25 Nov): nothing of its own to look for ===");
+{
+  const open = (t: string, focus: string | null = null, places: string[] = []) => m.isOpenQuestion(t, focus, places);
+  ok("'anything fun to do this weekend?'", open("anything fun to do this weekend?"));
+  ok("'ideas for Saturday with my 6 year old?'", open("ideas for Saturday with my 6 year old?"));
+  ok("'what should we do today in Altadena?' with its place", open("what should we do today in Altadena?", null, ["Altadena", "altadena"]));
+  ok("a subject is not open", !open("anything fun with horses this weekend?") && !open("fencing for my 9 year old"));
+  ok("a topic read is not open", !open("any good camps?", "camps"));
+  ok("the general bucket with no subject is open — the classifier's own rewrite (the lab walk)", open("fun weekend activities in Altadena for my 7 year old", "activities", ["Altadena", "altadena"]));
+  ok("the general bucket with a subject is not", !open("fencing classes for my 9 year old", "activities") && !open("chess club this weekend", "activities"));
+}
+
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);
 process.exit(fail > 0 ? 1 : 0);

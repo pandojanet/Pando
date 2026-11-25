@@ -437,6 +437,42 @@ export function parseAges(text: string): number[] {
   return out.slice(0, 8);
 }
 
+/**
+ * The ages of the parent's **own** children a question states (25 Nov) — "for
+ * my 8 year old", "my son is 6", "my kids are 3 and 7", "my daughter (4)" — so
+ * a fact said in passing is kept on the profile as an answer to the age
+ * question would be (the client: key information is extracted from the
+ * conversation and stored, so the profile is partly pre-filled). Read only
+ * where "my" owns the age: "a 5 year old", "my friend's 4 year old", "my
+ * niece is 9" and "my 3rd grader" give nothing, because a wrong child on the
+ * profile narrows every later answer. The numbers themselves are read by
+ * `parseAges`, which already blanks counts, grades, dates and times.
+ */
+const AGE_UNIT = String.raw`(?:[\s-]*(?:years?|yrs?|yo|y\/o|months?|mos?)\b(?:[\s-]*olds?)?)`;
+const AGE_LIST = String.raw`\d{1,2}(?:\.\d)?(?:\s*(?:,|and|&)\s*\d{1,2}(?:\.\d)?)*`;
+const OWN_CHILD = "sons?|daughters?|kids?|child|children|boys?|girls?|toddlers?|baby|twins|little ones?|oldest|youngest|eldest|older one|younger one";
+const OWN_AGE_SHAPES: readonly RegExp[] = [
+  /* "my 8 year old", "my 3 and 7 year olds", "my 18 month old" — the unit is required. */
+  new RegExp(String.raw`\bmy\s+(${AGE_LIST}${AGE_UNIT})`, "gi"),
+  /* "my son is 6", "my kids are 3 and 7", "my daughter (4)", "my son, 5", "my girl who's 9". */
+  new RegExp(
+    String.raw`\bmy\s+(?:${OWN_CHILD})\s*(?:,\s*|\(\s*|\s(?:is|are|was|turns|turned|just turned|who is|who's|who are|aged?)\s+)(${AGE_LIST}${AGE_UNIT}?)(?!\s*(?:st|nd|rd|th)\b)`,
+    "gi",
+  ),
+];
+export function ownChildAges(text: string): number[] {
+  const body = text.replace(/[’]/g, "'");
+  const spans: Array<{ at: number; span: string }> = [];
+  for (const re of OWN_AGE_SHAPES) {
+    for (const m of body.matchAll(re)) spans.push({ at: m.index ?? 0, span: m[1] });
+  }
+  const out: number[] = [];
+  for (const { span } of spans.sort((a, b) => a.at - b.at)) {
+    for (const age of parseAges(span)) if (age >= 0 && age <= 17) out.push(age);
+  }
+  return out.slice(0, 8);
+}
+
 /** "2 kids", "3 little ones", "2 boys": a number before these is a count. */
 const COUNT_NOUNS =
   "kids?|kiddos?|children|child|boys?|girls?|sons?|daughters?|babies|baby|toddlers?|teens?|teenagers?|little ones|ones|grandkids?|grandchildren|grandsons?|granddaughters?|step-?kids?|munchkins?|of them";
@@ -733,12 +769,104 @@ export function asksAgeFirst(input: {
   return input.focus === null || AGE_FIRST_TOPICS.includes(input.focus);
 }
 
-/** The question, with the child's name when the message gave one. GSM-7, no dash. */
+/**
+ * What to ask before answering, if anything (25 Nov) — the client's access
+ * model for the pilot: *the profile is created only through text, with no
+ * return trip to the site; the first question is free with no profile while
+ * Pando gathers context conversationally; the second requires a profile.*
+ *
+ * - **The first question** is answered, as since 18 Nov: the age is asked
+ *   first only where the answer turns on it (`asksAgeFirst`), and the profile
+ *   questions ride under the answer.
+ * - **From the second**, the profile is asked first: the children's ages (or
+ *   "none") unless the question states one, then roughly where they live. One
+ *   question per message; the held question is answered once both are known
+ *   (the clarifying step), and a question a parent did not answer is not asked
+ *   again for a week (the caller's `pendingClarificationAt`), so nobody is ever
+ *   held back for long. The first name and the participation level stay
+ *   riders: they change no answer.
+ */
+export function profileFirst(input: {
+  profile: Pick<KnownProfile, "child_birth_years" | "children_declined" | "neighborhood" | "pending_place">;
+  /** They have asked Pando something before (an `answers` row). */
+  askedBefore: boolean;
+  bandsInQuestion: number;
+  focus: string | null;
+  /**
+   * The request is for the adult asking (25 Nov, `for_whom`): their children's
+   * ages change nothing about it, so they are not asked for it — the area still is.
+   */
+  forSelf?: boolean;
+}): ClarifyingQuestion | null {
+  const { profile } = input;
+  /* The area only once it is `nextQuestion`'s (the ages known or declined): a clarifying reply is read only while its
+     question is the next one missing, so asking it ahead of the ages would leave "Altadena" unread (the lab walk). */
+  const agesSettled = profile.child_birth_years.length > 0 || profile.children_declined;
+  if (input.forSelf) return input.askedBefore && agesSettled && !profile.neighborhood && !profile.pending_place ? "neighborhood" : null;
+  if (asksAgeFirst(input)) return "child_age";
+  if (!input.askedBefore) return null;
+  /* The ages even when the question names an age (the lab walk, 25 Nov): "swim
+     for a 5 year old" was answered by asking the area first, and the reply
+     "Altadena" was not read as the answer — a clarifying question is open only
+     while it is `nextQuestion`, and that is the ages until they are known. An
+     age the parent states for their own child is kept before this is asked. */
+  if (profile.child_birth_years.length === 0 && !profile.children_declined) return "child_age";
+  if (!profile.neighborhood && !profile.pending_place) return "neighborhood";
+  return null;
+}
+
+/**
+ * The question, with the child's name when the message gave one. GSM-7, no dash.
+ * Every child at once offers "NONE" (25 Nov), as the ordinary age question has
+ * since 3 Nov: a person with no children was asked an age with no way to say so.
+ */
 export function ageFirstQuestion(name: string | null): string {
   const who = name ? name.charAt(0).toUpperCase() + name.slice(1) : null;
   return who
     ? `Happy to help! How old is ${who}? Then I can pick things that fit.`
-    : "Happy to help! How old are your kids? Like 3 and 7, so I can pick things that fit.";
+    : "Happy to help! How old are your kids? Like 3 and 7, or reply NONE if you don't have kids.";
+}
+
+/** The same on an RCS card, whose "No kids" button stands for NONE — or null for a named child, who has no button. */
+export function ageFirstCard(name: string | null): string | null {
+  return name ? null : "Happy to help! How old are your kids? Like 3 and 7.";
+}
+
+/**
+ * Who a request is for, asked when nothing says and the profile cannot tell
+ * (25 Nov — Janet: ask when it is unclear). The reply is read with the held
+ * question as one message, so "for me" or "my son, 8" answers it. GSM-7.
+ */
+export function forWhomQuestion(): string {
+  return "Happy to help! Is this for you or for a child? If it's for a child, how old?";
+}
+
+/** Where they live, asked before a second question is answered (25 Nov). GSM-7, one segment. */
+export function areaFirstQuestion(): string {
+  return "Happy to help! Roughly where do you live? Then I can look for parents and places near you.";
+}
+
+/**
+ * Where a parent says they live, in passing (25 Nov): "we live in Altadena",
+ * "I'm based in South Pasadena", "we just moved to Arcadia" — the place
+ * phrase, for `parseNeighborhood` to match against the market's areas. Only a
+ * sentence about home: a place a question asks about ("swim lessons in
+ * Arcadia") is where they want to go, not where they live (review, 4 Nov).
+ */
+const HOME_SHAPES: readonly RegExp[] = [
+  /\b(?:we|i)(?:'re|'m|\s+are|\s+am)?\s+(?:live|living|based|located)\s+(?:in|near)\s+(?:the\s+)?([a-z][a-z.' -]{1,40})/i,
+  /\b(?:we|i)(?:'ve|\s+have)?\s+(?:just\s+|recently\s+)?moved\s+to\s+(?:the\s+)?([a-z][a-z.' -]{1,40})/i,
+];
+const PHRASE_END = /\s+(?:and|with|any|anything|where|what|so|but|looking|for|area|neighbou?rhood|now|recently|too|also)\b|[,.;:!?]/i;
+export function homeAreaPhrase(text: string): string | null {
+  const body = text.replace(/[’]/g, "'");
+  for (const re of HOME_SHAPES) {
+    const m = re.exec(body);
+    if (!m) continue;
+    const phrase = m[1].split(PHRASE_END)[0]!.trim();
+    if (phrase.length >= 3) return phrase;
+  }
+  return null;
 }
 
 /**

@@ -568,6 +568,13 @@
       "when": 1795536591069,
       "tag": "0080_mcp_call_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795614948422,
+      "tag": "0081_digest_item_details",
+      "breakpoints": true
     }
   ]
 }

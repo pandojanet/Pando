@@ -91,7 +91,9 @@ ok("its log line is counts only, never the want or a record's words",
   /console\.info\("\[answer\] fit", \{\s+of: purpose === "answer_fit" \? "parents" : "web",\s+records: shares\.length,[\s\S]{0,260}want: Boolean\(parsed\.want\?\.trim\(\)\),\s+\}\)/.test(server));
 ok("every answer about a place or class is judged, a deep dive too since 6 Nov, a named record kept; care is not judged",
   /const judged = !wantsCare\s+\? applyFit\(retrievedAll\.shares, await judgeFit\(body, retrievedAll\.shares\), \(share\) => mentionsName\(body, share\.name\)\)/.test(inbound) &&
-    /const retrieved = \{ \.\.\.retrievedAll, shares: fit\.shares \};/.test(inbound));
+    /* 25 Nov: an open question's lean reorders what passed — it never adds one that did not. */
+    /\[\.\.\.fit\.shares\.filter\(\(s\) => touchesInterest\(s\.name, interests\)\), \.\.\.fit\.shares\.filter\(\(s\) => !touchesInterest\(s\.name, interests\)\)\]\s+: fit\.shares;/.test(inbound) &&
+    /const retrieved = \{ \.\.\.retrievedAll, shares: leaned \};/.test(inbound));
 ok("the answer opens on what nobody near them has mentioned",
   /: fit\.unmet\s+\? \{ opening: unmetLine\(fit\.unmet, body, candidates\.some\(\(c\) => !c\.trust\.public_only\), place\.source !== "none"\) \}/.test(inbound));
 ok("and is not rewritten warmly, whose opening would read as though it were met",

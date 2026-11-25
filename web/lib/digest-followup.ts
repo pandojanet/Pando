@@ -115,6 +115,11 @@ export interface FollowupItem {
   place: string | null;
   summary: string;
   url: string;
+  /** The details a pick opens (25 Nov, drizzle/0081; `DigestItem`). Absent before the migration. */
+  price?: string | null;
+  about?: string | null;
+  popular?: boolean;
+  popular_why?: string | null;
 }
 
 const addDays = (date: string, days: number) => {
@@ -302,6 +307,40 @@ export function runningUntil(item: Pick<FollowupItem, "starts_on" | "ends_on">, 
 /** "2027-01-10" → "Jan 10": a day as a parent reads it. */
 export function sayDay(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * The details a pick opens (25 Nov — the developer: *a tap on a number opens
+ * the details, then the reminder Yes/No*; Janet: the price, who goes free and
+ * the discounts, and a line on what the place is). The price is only ever here,
+ * never in the list — and when the page stated none it says so rather than
+ * leave a gap. Popular items say why. Then the reminder question, or, when one
+ * is already set, whether to keep it. `card` is the same for an RCS card whose
+ * Yes / No buttons stand for the "Reply" sentence. GSM-7, under 1,600.
+ */
+export function detailsSms(item: FollowupItem, n: number, reminderSet = false): { text: string; card: string } {
+  const head = `${n}. ${item.title} - ${item.when_text}${item.place ? `, ${item.place}` : ""}.`;
+  const price = item.price?.trim();
+  const lines = [
+    head,
+    item.about?.trim() || null,
+    price ? `Price: ${/^free\.?$/i.test(price) ? "free" : price}` : "Price: not listed on its page - check the link.",
+    item.popular ? `Popular: ${item.popular_why?.trim() || "in high demand"} - worth booking early.` : null,
+    item.summary,
+    item.url,
+  ].filter((line): line is string => Boolean(line));
+  const ask = reminderSet ? "You have a reminder for it. Keep it?" : "Want a reminder on the day?";
+  const body = (end: string) => {
+    let text = plain(`${lines.join("\n")}\n\n${end}`);
+    if (text.length > 1600) text = plain(`${[head, price ? `Price: ${price}` : null, item.url].filter(Boolean).join("\n")}\n\n${end}`);
+    return text.slice(0, 1600);
+  };
+  return { text: body(`${ask} Reply YES or NO.`), card: body(ask) };
+}
+
+/** NO to the details' reminder question (25 Nov): one taken off, or none set. GSM-7. */
+export function reminderDeclinedSms(title: string, cleared: boolean): string {
+  return plain(cleared ? `OK - your reminder for ${title} is off.` : `OK - no reminder for ${title}. Pick another number for its details.`);
 }
 
 /** The answer to a pick (or several typed at once): each outcome in one line, GSM-7, under 1,600 characters. */

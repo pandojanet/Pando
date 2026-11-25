@@ -284,3 +284,126 @@ export function memoryLine(asks: readonly MemoryAsk[] | null | undefined): strin
 export function memoryExpired(updatedAt: Date, now: Date): boolean {
   return now.getTime() - updatedAt.getTime() > MEMORY_IDLE_DAYS * 86_400_000;
 }
+
+/* ------------------------------------------------------------ interests (25 Nov) */
+
+/**
+ * What a family has shown it cares about, as `MEMORY_TOPICS` (25 Nov). The
+ * developer, after the horse test — a parent asked about dressage lessons, and
+ * a week later "anything fun this weekend?" knew nothing of it: *"it is our
+ * knowledge about the person and what they asked"*. The memory above was only
+ * ever shown to the classifier, to read a follow-up; an interest is the same
+ * fixed topic, used to lean an **open** question ("anything fun to do?") and
+ * the family's digest towards it. Never a filter, never a new subject: a
+ * question with a subject of its own is answered on that subject alone.
+ *
+ * The same allowlist as the memory, so nothing a parent wrote is kept: an
+ * interest is only ever one of `MEMORY_TOPICS`.
+ */
+export const INTERESTS_MAX = 3;
+
+/**
+ * The words that say a text is about a topic — a question, a digest item's
+ * title, a record's name. Whole words, plurals written out (the rule `mentions`
+ * in lib/demand.ts learnt on 8 Sep: a prefix match catches the pool's "rash
+ * guard"). Hyphens read as spaces.
+ */
+export const MEMORY_TOPIC_WORDS: Record<MemoryTopic, readonly string[]> = {
+  "swim lessons": ["swim", "swims", "swimming", "swimmer", "swimmers"],
+  "art classes": ["art", "arts", "painting", "drawing", "pottery", "ceramics"],
+  "music classes": ["music", "musical"],
+  "piano lessons": ["piano"],
+  "guitar lessons": ["guitar", "guitars", "ukulele"],
+  "singing lessons": ["singing", "voice lessons", "choir"],
+  "dance classes": ["dance", "dances", "dancing", "hip hop"],
+  ballet: ["ballet"],
+  gymnastics: ["gymnastics", "gymnast", "gymnasts", "tumbling"],
+  "martial arts": ["martial arts", "karate", "taekwondo", "tae kwon do", "judo", "jiu jitsu", "kung fu"],
+  soccer: ["soccer", "ayso"],
+  basketball: ["basketball"],
+  baseball: ["baseball", "t ball", "tee ball"],
+  softball: ["softball"],
+  tennis: ["tennis"],
+  golf: ["golf"],
+  "ice skating": ["ice skating", "ice rink", "figure skating"],
+  "roller skating": ["roller skating", "rollerskating", "roller rink"],
+  skateboarding: ["skateboard", "skateboarding", "skate park", "skatepark"],
+  climbing: ["climbing", "bouldering", "climbing gym"],
+  "horse riding": ["horse", "horses", "horseback", "pony", "ponies", "equestrian", "dressage", "riding lessons", "stables"],
+  "sports leagues": ["sports league", "sports leagues", "rec league"],
+  chess: ["chess"],
+  "coding classes": ["coding", "programming", "computer science"],
+  robotics: ["robotics", "robot", "robots"],
+  "science classes": ["science", "stem", "steam"],
+  "library storytime": ["storytime", "story time", "library", "libraries"],
+  "theater and drama": ["theater", "theatre", "drama", "acting"],
+  "cooking classes": ["cooking", "baking"],
+  "nature programs": ["nature", "wildlife"],
+  "day camps": ["day camp", "day camps"],
+  "summer camps": ["summer camp", "summer camps"],
+  "winter break camps": ["winter camp", "winter camps", "winter break camp", "winter break camps"],
+  "spring break camps": ["spring camp", "spring camps", "spring break camp", "spring break camps"],
+  "sleepaway camps": ["sleepaway", "overnight camp", "overnight camps"],
+  preschools: ["preschool", "preschools", "pre k"],
+  "after school programs": ["after school", "afterschool"],
+  "parks and playgrounds": ["park", "parks", "playground", "playgrounds"],
+  "hikes and trails": ["hike", "hikes", "hiking", "trail", "trails"],
+  museums: ["museum", "museums"],
+  "family events": ["family event", "family events", "festival", "festivals"],
+  "birthday party venues": ["birthday party", "birthday parties"],
+  bookstores: ["bookstore", "bookstores", "book shop", "bookshop"],
+  "toy stores": ["toy store", "toy stores", "toy shop"],
+  "kids haircuts": ["haircut", "haircuts", "barber"],
+  "indoor play": ["indoor play", "play space", "playspace", "trampoline", "trampolines"],
+  "parent and me classes": ["parent and me", "mommy and me", "daddy and me"],
+};
+
+const plainWords = (t: string) =>
+  ` ${t.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/&/g, " and ").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()} `;
+
+/** The topics a text is about, in `MEMORY_TOPICS` order. */
+export function topicsIn(text: string): MemoryTopic[] {
+  const hay = plainWords(text);
+  return MEMORY_TOPICS.filter((topic) => MEMORY_TOPIC_WORDS[topic].some((w) => hay.includes(plainWords(w))));
+}
+
+/** Does a text (an item's title and summary, a record's name) touch any of these interests? */
+export function touchesInterest(text: string, interests: readonly MemoryTopic[]): boolean {
+  if (interests.length === 0) return false;
+  const hay = plainWords(text);
+  return interests.some((topic) => MEMORY_TOPIC_WORDS[topic].some((w) => hay.includes(plainWords(w))));
+}
+
+/**
+ * A family's interests, newest first, at most `INTERESTS_MAX`: the topics of
+ * the questions still in the verbatim window (the ones that went out unheld,
+ * newest first) and then the remembered asks (newest first). Nothing a family
+ * said was not for them; nothing from a question the sensitivity rules or
+ * `privateIn` would keep out of the memory (`isSensitive`, as in `mayFold`).
+ */
+export function familyInterests(input: {
+  memory: readonly MemoryAsk[];
+  /** Questions that went out unheld, newest first. */
+  recentQuestions: readonly string[];
+  isSensitive: (text: string) => boolean;
+}): MemoryTopic[] {
+  const out: MemoryTopic[] = [];
+  const add = (topic: MemoryTopic) => {
+    if (!out.includes(topic) && out.length < INTERESTS_MAX) out.push(topic);
+  };
+  const turnedDown = new Set(input.memory.filter((a) => a.reaction === "not for them").map((a) => a.topic));
+  for (const q of input.recentQuestions) {
+    if (input.isSensitive(q) || privateIn(q)) continue;
+    for (const topic of topicsIn(q)) if (!turnedDown.has(topic)) add(topic);
+  }
+  for (const a of [...input.memory].sort((x, y) => (x.on < y.on ? 1 : x.on > y.on ? -1 : 0))) {
+    if (a.reaction !== "not for them") add(a.topic);
+  }
+  return out;
+}
+
+/** What the web search is told about them (25 Nov): a lean, never a narrowing. Null when there is none. */
+export function interestsBriefLine(interests: readonly MemoryTopic[]): string | null {
+  if (interests.length === 0) return null;
+  return `Earlier they asked about: ${interests.join(", ")}. The question is open, so list what fits it as usual; if one or two good options touch on those, include them among the others.`;
+}

@@ -530,16 +530,81 @@ console.log("\n=== the age first, when the answer turns on it (18 Nov, Janet liv
   ok("they said they have no children: answer", !o.asksAgeFirst({ profile: { child_birth_years: [], children_declined: true }, bandsInQuestion: 0, focus: "camps" }));
   ok("a doctor, special needs, logistics, settling in: one list fits every age", ["pediatric_health", "special_needs_resources", "working_parent_logistics", "new_to_area_help"].every((f) => !o.asksAgeFirst({ profile: none, bandsInQuestion: 0, focus: f })));
   ok("the question names the child", o.ageFirstQuestion("jasper") === "Happy to help! How old is Jasper? Then I can pick things that fit.");
-  ok("or asks for every child", o.ageFirstQuestion(null) === "Happy to help! How old are your kids? Like 3 and 7, so I can pick things that fit.");
-  ok("both are plain GSM-7 (one segment each)", [o.ageFirstQuestion("jasper"), o.ageFirstQuestion(null)].every((s) => /^[\x20-\x7E]+$/.test(s) && s.length <= 160));
+  ok("or asks for every child, with a way to say none (25 Nov)", o.ageFirstQuestion(null) === "Happy to help! How old are your kids? Like 3 and 7, or reply NONE if you don't have kids.");
+  ok("on RCS every child's question carries the No kids button, a named child's none", o.ageFirstCard(null) === "Happy to help! How old are your kids? Like 3 and 7." && o.ageFirstCard("jasper") === null);
+  ok("all are plain GSM-7 (one segment each)", [o.ageFirstQuestion("jasper"), o.ageFirstQuestion(null), o.areaFirstQuestion()].every((s) => /^[\x20-\x7E]+$/.test(s) && s.length <= 160));
   ok("the held question takes the age as an age", o.withAgeSaid("Hi is there a good activity for Jasper today", o.parseAges("18 months")) === "Hi is there a good activity for Jasper today, for a 1 year old");
   ok("under one is a baby; two children are two", o.withAgeSaid("camps?", [0]) === "camps, for a baby under 1" && o.withAgeSaid("camps?", [3, 7]) === "camps, for a 3 year old and a 7 year old");
   ok("no age (\"none\") leaves the question as it was", o.withAgeSaid("camps?", []) === "camps?");
   const src = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
-  ok("asked as the ordinary age question, with the request held as an open exchange", src.includes("await rememberTurn({ personId: person.person_id, text: asked });") && src.includes('const askedAge = clarifyTemplate("child_age");') && src.includes('template: askedAge,') && src.includes("body: ageFirstQuestion(firstNamesIn(asked)[0] ?? null),"));
-  ok("never mid-exchange, held or sensitive, and at most once a week", /!pending &&\r?\n\s*!followsHeld &&/.test(src) &&src.includes("!reading.sensitive &&") && src.includes('(await pendingClarificationAt(person.person_id))?.question !== "child_age"'));
-  ok("the age that arrives answers the held question, instead of a thank-you", src.includes("body: withAgeSaid(combined(held, \"\"), parseAges(body)),") && src.indexOf('if (saved && question === "child_age")') < src.indexOf("const next = nextQuestion(alsoKept"));
+  ok("asked as the ordinary profile question, with the request held as an open exchange", src.includes("await rememberTurn({ personId: person.person_id, text: asked });") && src.includes("const askedFirst = clarifyTemplate(firstAsk);") && src.includes("template: askedFirst,") && src.includes('body: firstAsk === "child_age" ? ageFirstQuestion(name) : areaFirstQuestion(),'));
+  ok("never mid-exchange, held or sensitive, and each question at most once a week", /!pending &&\r?\n\s*!followsHeld &&/.test(src) &&src.includes("!reading.sensitive &&") && src.includes("(await pendingClarificationAt(person.person_id))?.question !== firstAsk"));
+  ok("the age that arrives answers the held question, instead of a thank-you — unless the area is still owed", src.includes("body: withAgeSaid(combined(held, \"\"), parseAges(body)),") && src.indexOf('if (saved && question === "child_age" && !areaOwed)') > 0 && src.indexOf('if (saved && question === "child_age" && !areaOwed)') < src.indexOf("const next = nextQuestion(alsoKept"));
+  ok("the area that arrives answers the held question, read with the person again (25 Nov)", src.indexOf('if (saved && question === "neighborhood")') > 0 && src.indexOf('if (saved && question === "neighborhood")') < src.indexOf("const next = nextQuestion(alsoKept") && src.includes("person: (await ensureInboundPerson({ phone: from })) ?? person,"));
   ok("\"18 months\" is an age when the age was asked", src.includes("const monthsAsked = open && pending === \"child_age\" && AGE_IN_MONTHS.test("));
+}
+
+console.log("\n=== the ages a question states for their own children (25 Nov) ===");
+{
+  const own = (t: string) => o.ownChildAges(t).join(",");
+  ok("'for my 8 year old'", own("horse dressage lessons in Pasadena for my 8 year old") === "8");
+  ok("'my 4-year-old' and 'my 8yo'", own("swim for my 4-year-old?") === "4" && own("camps for my 8yo") === "8");
+  ok("'my 3 and 7 year olds' is two", own("art classes for my 3 and 7 year olds") === "3,7");
+  ok("'my son is 6'", own("my son is 6, any soccer?") === "6");
+  ok("'my kids are 3 and 7'", own("my kids are 3 and 7 - ideas for Saturday?") === "3,7");
+  ok("'my daughter (4)' and 'my son, 5'", own("ballet for my daughter (4)") === "4" && own("my son, 5, loves trains") === "5");
+  ok("two children in one sentence", own("my son is 6 and my daughter is 4") === "6,4");
+  ok("'my 18 month old' is 1", own("music for my 18 month old") === "1");
+  ok("not 'a 5 year old'", own("anything for a 5 year old?") === "");
+  ok("not a friend's, a niece or a grandchild", own("a gift for my friend's 4 year old") === "" && own("my niece is 9") === "" && own("my grandson is 5") === "");
+  ok("not a grade, a count or a time", own("my 3rd grader") === "" && own("my 2 kids") === "" && own("my son is in 3rd grade") === "");
+  ok("not an adult child", own("my son is 24") === "");
+
+  const fs = await import("node:fs");
+  const inbound = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("source pin: a picture's or voice note's words are marked, and the mark survives a typed remainder",
+    /body: read, channel: input\.channel, confirmedMedia: true, fromMedia: true \}/.test(inbound) &&
+      /body: remainder, channel: input\.channel, confirmedMedia: true, fromMedia: input\.fromMedia \}/.test(inbound));
+  ok("source pin: facts are kept from the parent's typed words only, before the profile is read, into an empty field",
+    /if \(person && profileNow && !fromMedia && reading\.intent === "ask_recommendation"\) \{/.test(inbound) &&
+      /const own = ownChildAges\(body\);/.test(inbound) &&
+      /homeAreaPhrase\(body\)/.test(inbound) &&
+      inbound.indexOf("const own = ownChildAges(body);") < inbound.indexOf("const firstAsk ="));
+  ok("source pin: the gate reads the profile as kept this turn", /profileFirst\(\{\s+profile: profileNow,\s+askedBefore: await hasAskedBefore\(person\.person_id\),/.test(inbound));
+}
+
+console.log("\n=== the second question needs a profile (25 Nov) ===");
+{
+  const none = { child_birth_years: [] as number[], children_declined: false, neighborhood: null as string | null, pending_place: null as string | null };
+  const pf = (over: Partial<typeof none>, askedBefore: boolean, bands = 0, focus: string | null = "activities") =>
+    o.profileFirst({ profile: { ...none, ...over }, askedBefore, bandsInQuestion: bands, focus });
+  ok("the first question: the age only where it turns on it (18 Nov), never the area", pf({}, false) === "child_age" && pf({}, false, 0, "pediatric_health") === null && pf({ child_birth_years: [2018] }, false) === null);
+  ok("the second: the ages first, whatever the topic", pf({}, true, 0, "pediatric_health") === "child_age");
+  ok("then the area", pf({ child_birth_years: [2018] }, true) === "neighborhood" && pf({ children_declined: true }, true, 0, null) === "neighborhood");
+  ok("an age the question names is not their ages: those first, so the area reply is read as one (the lab walk)", pf({}, true, 1) === "child_age");
+  ok("the order is always nextQuestion's, so the clarifying step finds the question open", (["child_age", "neighborhood"] as const).every((q) => {
+    const p = q === "child_age" ? { ...none } : { ...none, child_birth_years: [2018] };
+    return pf(p, true) === o.nextQuestion({ ...p, first_name: "x", allowance_chosen: true });
+  }));
+  ok("a place awaiting an admin is an answer", pf({ child_birth_years: [2018], pending_place: "New York, NY" }, true) === null);
+  ok("a full profile asks nothing", pf({ child_birth_years: [2018], neighborhood: "altadena" }, true) === null);
+
+  const self = (over: Partial<typeof none>, askedBefore: boolean) => o.profileFirst({ profile: { ...none, ...over }, askedBefore, bandsInQuestion: 0, focus: "activities", forSelf: true });
+  ok("for the adult asking: never the children's ages, first question or second (25 Nov)", self({}, false) === null && self({ children_declined: true }, true) === "neighborhood");
+  ok("the area for an adult only once it is the next question (ages known or declined)", self({}, true) === null && self({ child_birth_years: [2018] }, true) === "neighborhood");
+  ok("who it is for is asked in one plain message", /^[\x20-\x7E]+$/.test(o.forWhomQuestion()) && o.forWhomQuestion().length <= 160 && o.forWhomQuestion().includes("for you or for a child"));
+  const inb = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
+  ok("source pin: asked only when nothing says, nothing is known and the question names no age — once a week",
+    /forWhom === "unknown" &&\s+!forSelf &&\s+profileNow\.child_birth_years\.length === 0 &&\s+bandsInQuestion\(asked\)\.length === 0 &&\s+!\(await sentTemplateWithin\(person\.person_id, "ask_for_whom", 7\)\)/.test(inb));
+  ok("source pin: for the adult, the profile's children do not narrow the answer and the search is told",
+    /const known = profile && !input\.forSelf \? bandsForBirthYears/.test(inb) && /forAdult: input\.forSelf === true,/.test(inb));
+
+  const home = (t: string) => o.homeAreaPhrase(t);
+  ok("'we live in Altadena'", home("we live in Altadena, any swim lessons?") === "Altadena");
+  ok("'I'm based in South Pasadena'", home("I'm based in South Pasadena and looking for camps") === "South Pasadena");
+  ok("'we just moved to Arcadia'", home("We just moved to Arcadia! ideas for the weekend?") === "Arcadia");
+  ok("'we're living near the Rose Bowl area'", home("we're living near the Rose Bowl area") === "Rose Bowl");
+  ok("a place asked about is not home", home("swim lessons in Arcadia?") === null && home("we're going to Arcadia") === null);
 }
 
 console.log(`\n  ${pass} checks passed${fail > 0 ? `, ${fail} FAILED` : ""}.\n`);

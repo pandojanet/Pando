@@ -170,6 +170,24 @@ export async function pendingClarification(
  * reply NONE" under a later answer is newer than "Want me to ask a few nearby
  * parents?" under an earlier one (review, 4 Nov).
  */
+/**
+ * Was this template sent to the person within `days` (25 Nov)? For a question
+ * outside the `clarify_*` family — "is this for you or for a child?" — asked at
+ * most once a week. Unreadable database: true, so nothing is asked twice.
+ */
+export async function sentTemplateWithin(personId: string, template: string, days: number): Promise<boolean> {
+  const result = await withDb(async (db: Db) => {
+    const rows = (await db.execute(sql`
+      select 1 from message_log
+       where person_id = ${personId}::uuid and direction = 'out' and template = ${template}
+         and sent_at > now() - make_interval(days => ${days}::int)
+       limit 1
+    `)) as unknown as unknown[];
+    return rows.length > 0;
+  });
+  return result.persisted ? result.data === true : true;
+}
+
 export async function pendingClarificationAt(
   personId: string,
 ): Promise<{ question: ClarifyingQuestion; sent_at: string } | null> {
@@ -285,21 +303,7 @@ export async function saveClarification(input: {
        * second line of defence and is not is worse than no clause, so it is
        * gone rather than left reassuring the next reader.
        */
-      await db.transaction(async (tx) => {
-        for (const age of ages) {
-          await tx.execute(
-            age < 0
-              ? sql`
-                  insert into children (person_id, expecting, due_year, due_year_precision)
-                  values (${input.personId}::uuid, true, ${thisYear + 1}, 'assumed_capture_year')
-                `
-              : sql`
-                  insert into children (person_id, birth_year)
-                  values (${input.personId}::uuid, ${thisYear - age})
-                `,
-          );
-        }
-      });
+      await db.transaction(async (tx) => insertChildren(tx, input.personId, ages, thisYear));
       return true;
     });
     return result.persisted === true;
@@ -310,21 +314,101 @@ export async function saveClarification(input: {
 
   const result = await withDb(async (db: Db) =>
     db.transaction(async (tx) => {
-      await tx.execute(sql`
-        update people set neighborhood = ${area} where id = ${input.personId}::uuid
-      `);
-      /* The edge matching actually reads for the same-area weight. Written by the
-         server from what it parsed — never taken from a message body, which is
-         the 11 Aug rule about who authors the graph. */
-      await tx.execute(sql`
-        insert into social_affinities (person_id, affinity_type, affinity_value)
-        values (${input.personId}::uuid, 'neighborhood', ${area})
-        on conflict do nothing
-      `);
+      await writeNeighborhood(tx, input.personId, area);
       return true;
     }),
   );
   return result.persisted === true;
+}
+
+/** The neighborhood and the edge matching reads for the same-area weight. */
+async function writeNeighborhood(tx: Pick<Db, "execute">, personId: string, area: string): Promise<void> {
+  await tx.execute(sql`
+    update people set neighborhood = ${area} where id = ${personId}::uuid
+  `);
+  /* Written by the server from what it parsed — never taken from a message
+     body, which is the 11 Aug rule about who authors the graph. */
+  await tx.execute(sql`
+    insert into social_affinities (person_id, affinity_type, affinity_value)
+    values (${personId}::uuid, 'neighborhood', ${area})
+    on conflict do nothing
+  `);
+}
+
+/**
+ * Where a parent said they live, in passing (25 Nov, `homeAreaPhrase`), kept
+ * **only into an empty profile**: no neighborhood and no place awaiting an
+ * admin — a sentence never moves a family the age or area question placed.
+ * Matched against the market's areas (`parseNeighborhood`); anything else is
+ * not stored. Checked in the write's transaction. True when stored.
+ */
+export async function rememberHomeArea(input: {
+  personId: string;
+  phrase: string;
+  areas: Array<{ id: string; label: string }>;
+}): Promise<string | null> {
+  const area = parseNeighborhood(input.phrase, input.areas);
+  if (!area) return null;
+  const result = await withDb(async (db: Db) =>
+    db.transaction(async (tx) => {
+      const state = (await tx.execute(sql`
+        select neighborhood, raw_answers -> 'other' -> 'neighborhood' ->> 0 as pending_place
+          from people where id = ${input.personId}::uuid
+           for update
+      `)) as unknown as Array<{ neighborhood: string | null; pending_place: string | null }>;
+      if (!state[0] || state[0].neighborhood || state[0].pending_place) return null;
+      await writeNeighborhood(tx, input.personId, area);
+      return area;
+    }),
+  );
+  return result.persisted ? (result.data ?? null) : null;
+}
+
+/**
+ * One `children` row per age (see `saveClarification` on why a birth year,
+ * why no conflict clause, and how a baby on the way is written).
+ */
+async function insertChildren(tx: Pick<Db, "execute">, personId: string, ages: readonly number[], thisYear: number): Promise<void> {
+  for (const age of ages) {
+    await tx.execute(
+      age < 0
+        ? sql`
+            insert into children (person_id, expecting, due_year, due_year_precision)
+            values (${personId}::uuid, true, ${thisYear + 1}, 'assumed_capture_year')
+          `
+        : sql`
+            insert into children (person_id, birth_year)
+            values (${personId}::uuid, ${thisYear - age})
+          `,
+    );
+  }
+}
+
+/**
+ * The ages a question stated for the parent's own children (25 Nov,
+ * `ownChildAges`), kept on the profile — **only into an empty one**: a person
+ * with any child on record, or who said they have none, is left as they are,
+ * so a question about one child never rewrites a family, and nothing here can
+ * add a second copy of a child the age question already stored. Checked in the
+ * same transaction as the write. True when something was stored.
+ */
+export async function rememberChildAges(input: { personId: string; ages: readonly number[] }): Promise<boolean> {
+  const ages = input.ages.filter((a) => Number.isInteger(a) && a >= 0 && a <= 17).slice(0, 8);
+  if (ages.length === 0) return false;
+  const result = await withDb(async (db: Db) =>
+    db.transaction(async (tx) => {
+      const state = (await tx.execute(sql`
+        select exists (select 1 from children where person_id = ${input.personId}::uuid) as has_children,
+               coalesce(raw_answers -> 'skipped' @> '["child_ages"]'::jsonb, false) as declined
+          from people where id = ${input.personId}::uuid
+           for update
+      `)) as unknown as Array<{ has_children: boolean; declined: boolean }>;
+      if (!state[0] || state[0].has_children || state[0].declined) return false;
+      await insertChildren(tx, input.personId, ages, new Date().getFullYear());
+      return true;
+    }),
+  );
+  return result.persisted === true && result.data === true;
 }
 
 /**

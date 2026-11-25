@@ -342,7 +342,10 @@ interface TopicWords {
 
 const TOPIC_WORDS: readonly TopicWords[] = [
   { topic: "nannies", general: ["nanny", "nannies", "au ?pair", "childminder", "full ?time care"] },
-  { topic: "babysitters", general: ["sitter\\w*", "babysitter\\w*", "babysitting", "date ?night"] },
+  /* Not "date night" (25 Nov — the developer: nothing in those two words asks for a sitter). It was read as one
+     since 4 Sep, so "good restaurants for a date night?" was held for a person as a care question; "a sitter for
+     date night" is still care, by "sitter". */
+  { topic: "babysitters", general: ["sitter\\w*", "babysitter\\w*", "babysitting"] },
   { topic: "newborn_care", general: ["newborn\\w*", "night nurse", "postpartum", "doula", "new ?born care"] },
   {
     topic: "pediatric_health",
@@ -575,6 +578,24 @@ export function maskNames(text: string): string {
 
 /** What a place is, not what it teaches: "chess club", "climbing gym", "robotics program". */
 const VENUE = /^(?:gym|gyms|studio|studios|program|programs|programme|programmes|academy|academies|center|centers|centre|centres|team|teams|league|leagues|course|courses|group|groups|school|schools|session|sessions)$/;
+
+/**
+ * A question with nothing of its own to look for (25 Nov) — "anything fun to
+ * do this weekend?", "ideas for Saturday with my 6 year old?", "what should we
+ * do today?": no topic read and no subject word left once the asking, the
+ * child, the time and the place are gone. Only such a question may lean
+ * towards what the family asked about before (`familyInterests`); one with a
+ * subject is answered on that subject alone.
+ */
+export function isOpenQuestion(text: string, focus: string | null, places: ReadonlyArray<string | null | undefined> = []): boolean {
+  if (focus === null) return subjectWords(text, places).length === 0;
+  /* The general bucket with no subject in it is open too (the lab walk, 25 Nov):
+     the classifier's rewrite of "anything fun to do this weekend?" read "fun
+     weekend activities in Altadena for my 7 year old", which is `activities`
+     and asks for no particular thing. "fencing classes" is not open. */
+  if (focus === GENERAL_FOCUS) return (readTopic(text, focus, places).unknown ?? []).length === 0;
+  return false;
+}
 
 export function readTopic(text: string, focus: string | null, places: ReadonlyArray<string | null | undefined> = []): TopicRead {
   if (!focus) return { focus: null, subjects: [], unknown: subjectWords(text, places) };
