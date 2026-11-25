@@ -208,8 +208,8 @@ console.log("\n=== answering it is not met with silence ===");
      and re-read every short message as an answer — three `children` rows, all
      born 2022, for one four-year-old. */
   ok(
-    "and the question is closed by the fact it asked for",
-    inbound.includes("pending === nextQuestion(person.profile)"),
+    "and the question is closed by the fact it asked for (25 Nov: while that fact is missing, `stillMissing`)",
+    inbound.includes("const open = pending !== null && stillMissing(person.profile, pending);"),
     "nothing else ever closed it",
   );
   const repo = fs.readFileSync(
@@ -589,11 +589,25 @@ console.log("\n=== the second question needs a profile (25 Nov) ===");
   ok("a place awaiting an admin is an answer", pf({ child_birth_years: [2018], pending_place: "New York, NY" }, true) === null);
   ok("a full profile asks nothing", pf({ child_birth_years: [2018], neighborhood: "altadena" }, true) === null);
 
+  const inb = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   const self = (over: Partial<typeof none>, askedBefore: boolean) => o.profileFirst({ profile: { ...none, ...over }, askedBefore, bandsInQuestion: 0, focus: "activities", forSelf: true });
   ok("for the adult asking: never the children's ages, first question or second (25 Nov)", self({}, false) === null && self({ children_declined: true }, true) === "neighborhood");
-  ok("the area for an adult only once it is the next question (ages known or declined)", self({}, true) === null && self({ child_birth_years: [2018] }, true) === "neighborhood");
+  ok("the area for an adult whatever is known of children — its reply is read while the area is missing", self({}, true) === "neighborhood" && self({ child_birth_years: [2018] }, true) === "neighborhood" && self({ neighborhood: "altadena" }, true) === null);
+  const full = { ...none, first_name: "x", allowance_chosen: true };
+  ok("a question is open while its fact is missing, and closed by it",
+    o.stillMissing(full, "neighborhood") && !o.stillMissing({ ...full, neighborhood: "altadena" }, "neighborhood") &&
+      o.stillMissing(full, "child_age") && !o.stillMissing({ ...full, children_declined: true }, "child_age") &&
+      !o.stillMissing(full, "first_name") && o.stillMissing({ ...full, first_name: null }, "first_name") &&
+      !o.stillMissing(full, "participation") && o.stillMissing({ ...full, allowance_chosen: false }, "participation"));
+  ok("where it is for, in the words of what was asked (Janet's 'Where would you like these lessons?')",
+    o.whereQuestion("dressage lessons?") === "Happy to help! Where would you like these lessons? A town or neighborhood is enough." &&
+      o.whereQuestion("any good camps?").includes("Where would you like the camp?") && o.whereQuestion("anything fun to do?").includes("Which area should I look in?"));
+  ok("every where-question is plain GSM-7, one segment", ["dressage lessons?", "camps", "a dentist", "fun stuff"].every((q) => /^[\x20-\x7E]+$/.test(o.whereQuestion(q)) && o.whereQuestion(q).length <= 160));
+  ok("source pin: asked only with no place in the request and none on the profile, once a week, after the who and profile questions",
+    /!profileNow\.neighborhood &&\s+!profileNow\.pending_place &&\s+\(await placeForQuestion\(\{ question: asked, profile: profileNow, marketId: marketOf\(person\) \}\)\)\.source === "none" &&\s+!\(await sentTemplateWithin\(person\.person_id, "ask_where", 7\)\)/.test(inb) &&
+      inb.indexOf('console.info("[sms:inbound] asked who it is for")') < inb.indexOf('console.info("[sms:inbound] asked the profile first"') &&
+      inb.indexOf('console.info("[sms:inbound] asked the profile first"') < inb.indexOf('console.info("[sms:inbound] asked where it is for")'));
   ok("who it is for is asked in one plain message", /^[\x20-\x7E]+$/.test(o.forWhomQuestion()) && o.forWhomQuestion().length <= 160 && o.forWhomQuestion().includes("for you or for a child"));
-  const inb = fs.readFileSync(new URL("../lib/server/inbound.ts", import.meta.url), "utf8");
   ok("source pin: asked only when nothing says, nothing is known and the question names no age — once a week",
     /forWhom === "unknown" &&\s+!forSelf &&\s+profileNow\.child_birth_years\.length === 0 &&\s+bandsInQuestion\(asked\)\.length === 0 &&\s+!\(await sentTemplateWithin\(person\.person_id, "ask_for_whom", 7\)\)/.test(inb));
   ok("source pin: for the adult, the profile's children do not narrow the answer and the search is told",

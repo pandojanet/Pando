@@ -96,6 +96,27 @@ export function nextQuestion(profile: KnownProfile): ClarifyingQuestion | null {
   return null;
 }
 
+/**
+ * Is the fact this question asks for still missing (25 Nov)? A clarifying
+ * question is open while it is — the 21 Sep rule ("open only while the fact it
+ * asks for is still missing"), which was written as `pending === nextQuestion`:
+ * the same thing while questions were only ever asked in that order, and not
+ * once an adult's own request asks the area before the children's ages — the
+ * reply "Altadena" was then not read at all.
+ */
+export function stillMissing(profile: KnownProfile, question: ClarifyingQuestion): boolean {
+  switch (question) {
+    case "child_age":
+      return profile.child_birth_years.length === 0 && !profile.children_declined;
+    case "neighborhood":
+      return !profile.neighborhood && !profile.pending_place;
+    case "first_name":
+      return profile.first_name === null;
+    case "participation":
+      return profile.allowance_chosen === false;
+  }
+}
+
 /** The profile as it stands once `question` has been answered — for asking the next one. */
 export function withAnswer(profile: KnownProfile, question: ClarifyingQuestion, text: string): KnownProfile {
   switch (question) {
@@ -799,10 +820,9 @@ export function profileFirst(input: {
   forSelf?: boolean;
 }): ClarifyingQuestion | null {
   const { profile } = input;
-  /* The area only once it is `nextQuestion`'s (the ages known or declined): a clarifying reply is read only while its
-     question is the next one missing, so asking it ahead of the ages would leave "Altadena" unread (the lab walk). */
-  const agesSettled = profile.child_birth_years.length > 0 || profile.children_declined;
-  if (input.forSelf) return input.askedBefore && agesSettled && !profile.neighborhood && !profile.pending_place ? "neighborhood" : null;
+  /* An adult's own request: the area, whatever is known of children — the clarifying step reads a reply while
+     its fact is missing (`stillMissing`), not only while it is `nextQuestion`'s. */
+  if (input.forSelf) return input.askedBefore && !profile.neighborhood && !profile.pending_place ? "neighborhood" : null;
   if (asksAgeFirst(input)) return "child_age";
   if (!input.askedBefore) return null;
   /* The ages even when the question names an age (the lab walk, 25 Nov): "swim
@@ -839,6 +859,21 @@ export function ageFirstCard(name: string | null): string | null {
  */
 export function forWhomQuestion(): string {
   return "Happy to help! Is this for you or for a child? If it's for a child, how old?";
+}
+
+/**
+ * Where a request is for, when nothing says (25 Nov — Janet: *"the system
+ * should ask relevant clarifying questions regardless of topic ('Where would
+ * you like these lessons?')"*). Worded by what was asked; the reply is read
+ * with the held question as one message, and a place in it is where to look —
+ * never taken for their home (4 Nov). GSM-7, one segment.
+ */
+export function whereQuestion(asked: string): string {
+  const t = asked.toLowerCase();
+  if (/\b(lessons?|classes?|class|courses?|coaching|tutoring)\b/.test(t)) return "Happy to help! Where would you like these lessons? A town or neighborhood is enough.";
+  if (/\bcamps?\b/.test(t)) return "Happy to help! Where would you like the camp? A town or neighborhood is enough.";
+  if (/\b(doctor|dentist|pediatrician|specialist|therapist)s?\b/.test(t)) return "Happy to help! Which area should I look in for one? A town or neighborhood is enough.";
+  return "Happy to help! Which area should I look in? A town or neighborhood is enough.";
 }
 
 /** Where they live, asked before a second question is answered (25 Nov). GSM-7, one segment. */

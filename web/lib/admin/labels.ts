@@ -874,6 +874,7 @@ export const MESSAGE_LABEL: Record<string, string> = {
   digest_details: "Sent the details of a digest item they picked, with the reminder Yes / No",
   digest_reminder_no: "Said no to a digest item's reminder",
   ask_for_whom: "Asked whether a request is for them or for a child",
+  ask_where: "Asked where a request is for",
   digest_pick_range: "Told them which numbers the digest had",
   digest_pick_off: "Told them their digest is off, so no reminder",
   digest_reminder_set: "Answered their reminder yes or no",

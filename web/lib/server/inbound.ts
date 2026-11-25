@@ -91,6 +91,8 @@ import {
   clarifyTemplate,
   isClarifyingAnswer,
   nextQuestion,
+  stillMissing,
+  whereQuestion,
   parseAges,
   withAgeSaid,
   withAnswer,
@@ -1639,7 +1641,9 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
      * no longer pending. It closes itself whichever way the fact arrived —
      * over SMS, or in the web profile between two texts.
      */
-    const open = pending && pending === nextQuestion(person.profile);
+    /* While the fact it asks for is missing (25 Nov, `stillMissing`) — not only while it is `nextQuestion`'s,
+       which left an adult's "Altadena" unread when the area was asked before the children's ages. */
+    const open = pending !== null && stillMissing(person.profile, pending);
     /**
      * ⚠ A short question is not a first name (review, 21 Oct): "swim lessons"
      * was saved as *Swim* and never answered. A reply that names a topic, a
@@ -2524,6 +2528,40 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
       templateVersion: SMS_TEMPLATE_VERSION,
     });
     console.info("[sms:inbound] asked the profile first", { question: firstAsk });
+    return;
+  }
+
+  /**
+   * Where it is for, when nothing says (25 Nov — Janet: *ask relevant
+   * clarifying questions regardless of topic, "Where would you like these
+   * lessons?"*). Until now a request with no place, from somebody whose home
+   * Pando does not know, was searched across the Pasadena area in silence. The
+   * question is held and the place asked in the words of what was asked
+   * (`whereQuestion`); the reply is read with it as one message, so the place
+   * it names is where to look — not their home (4 Nov). Only when the request
+   * (the rewrite included, which carries a place the parent said earlier) names
+   * none and the profile has none; at most once a week; one question before an
+   * answer, never after the who or profile question above.
+   */
+  if (
+    gateable &&
+    person &&
+    profileNow &&
+    !profileNow.neighborhood &&
+    !profileNow.pending_place &&
+    (await placeForQuestion({ question: asked, profile: profileNow, marketId: marketOf(person) })).source === "none" &&
+    !(await sentTemplateWithin(person.person_id, "ask_where", 7))
+  ) {
+    await rememberTurn({ personId: person.person_id, text: asked });
+    await sendSms({
+      to: from,
+      body: whereQuestion(asked),
+      category: "transactional",
+      personId: person.person_id,
+      template: "ask_where",
+      templateVersion: SMS_TEMPLATE_VERSION,
+    });
+    console.info("[sms:inbound] asked where it is for");
     return;
   }
 
