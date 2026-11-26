@@ -80,6 +80,8 @@ in to the Pando admin can connect; every admin has full access (no roles, decisi
 
 ## Tools
 
+**Identity (26 Nov).** The server answers `initialize` as `name: pando` (the id clients key on), `title: Pando`, version 1.0.0, a one-line description, `websiteUrl` and two `icons` — `icon.svg` and the 180px `apple-icon.png` on Pando's own origin. Whether a client draws the title or the icons is the client's; a custom connector in claude.ai is named by the person adding it.
+
 An event proposed for the digest (`propose_event`) reaches parents' texts once approved, so it is held
 to the digest's own rules and more (`lib/server/mcp/candidate.ts`, on proposal and again on approval):
 the event's own page on a public site's name (not an address in numbers or a local machine), typed in

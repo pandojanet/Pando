@@ -75,6 +75,8 @@ export interface McpContext {
   clientId: string | null;
   /** The token's scopes: a tool that writes needs `pando:propose`. */
   scopes: readonly string[];
+  /** Pando's public origin (`baseUrl`), for the icons the server names itself with. */
+  base?: string;
 }
 
 const INSTRUCTIONS = [
@@ -124,7 +126,24 @@ function countOf(value: unknown): number | null {
 }
 
 export function pandoMcpServer(ctx: McpContext): McpServer {
-  const server = new McpServer({ name: "pando", version: "0.1.0" }, { instructions: INSTRUCTIONS });
+  /* 26 Nov — named for people, not only for code: a title, a line on what it is, the site and the Pando
+     mark (the same files as the browser tab, app/icon.svg and app/apple-icon.png). `name` stays "pando":
+     it is the id clients key on. Whether a client shows the title or the icons is the client's. */
+  const site = ctx.base ?? "https://pando.is";
+  const server = new McpServer(
+    {
+      name: "pando",
+      title: "Pando",
+      version: "1.0.0",
+      description: "Pando's numbers, records, weekly digest and proposals, for the founder and team.",
+      websiteUrl: site,
+      icons: [
+        { src: `${site}/icon.svg`, mimeType: "image/svg+xml", sizes: ["any"] },
+        { src: `${site}/apple-icon.png`, mimeType: "image/png", sizes: ["180x180"] },
+      ],
+    },
+    { instructions: INSTRUCTIONS },
+  );
 
   /** The wrapper every tool runs in: the switch, the call log, errors by class. */
   const tool = <S extends z.ZodRawShape>(

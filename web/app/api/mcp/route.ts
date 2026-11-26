@@ -44,7 +44,7 @@ async function handle(request: Request): Promise<Response> {
     }
     return limited;
   }
-  const server = pandoMcpServer({ actor: owner.adminUser, clientId: owner.clientId, scopes: owner.scopes });
+  const server = pandoMcpServer({ actor: owner.adminUser, clientId: owner.clientId, scopes: owner.scopes, base: baseUrl(request.url) });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

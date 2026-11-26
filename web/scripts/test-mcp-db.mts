@@ -115,6 +115,14 @@ ok("a batch is refused", (await post([{ jsonrpc: "2.0", id: 1, method: "tools/li
 const gets: Response[] = [];
 for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api/mcp`, { headers: { accept: "text/event-stream", "mcp-protocol-version": "2025-06-18", authorization: `Bearer ${t4.access_token}` } })));
 ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
+/* 26 Nov: the server names itself for people — a title, the site and the Pando mark on Pando's own origin. */
+const init = (await (await post({ jsonrpc: "2.0", id: ++id, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "ci", version: "1" } } })).json()) as { result?: { serverInfo?: { name?: string; title?: string; websiteUrl?: string; icons?: Array<{ src: string; mimeType?: string }> } } };
+const info = init.result?.serverInfo;
+ok("the server is named Pando, with its site and the Pando mark as icons",
+  info?.name === "pando" && info.title === "Pando" && info.websiteUrl === A &&
+    info.icons?.some((i) => i.src === `${A}/icon.svg` && i.mimeType === "image/svg+xml") === true &&
+    info.icons?.some((i) => i.src === `${A}/apple-icon.png` && i.mimeType === "image/png") === true,
+  JSON.stringify(info));
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
 ok("30 tools, each with a title and read/destructive hints (26 Nov: + contributor_load, set_budget, remove_digest_candidate)", tools.length === 30 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
