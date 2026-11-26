@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { PandoMark } from "@/components/ui/Logo";
+import { cn } from "@/lib/cn";
+import { DEFAULT_MARKET_ID, QUIET_HOURS, hourIn, marketConfig } from "@/lib/markets";
 import { Button, ErrorNote, Field, inputClass } from "@/components/admin/ui";
 
 /**
@@ -36,6 +39,7 @@ export function LoginForm({
   const configured = mode !== "off" && mode !== "unavailable";
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
+  const [shown, setShown] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -63,22 +67,27 @@ export function LoginForm({
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-paper px-5 py-10">
-      <div className="w-full max-w-[24rem]">
-        <div className="mb-6 flex items-center gap-2.5">
-          <PandoMark className="h-6" />
-          <span className="font-display text-[1.15rem] font-bold tracking-[-0.02em]">
-            Pando admin
-          </span>
+    <main className="flex min-h-dvh items-center justify-center bg-paper px-5 py-10">
+      <div className="w-full max-w-[23rem] animate-rise">
+      <div className="overflow-hidden rounded-2xl border border-bark bg-card shadow-card">
+        {/* 26 Nov — the developer: simple, no explanations, and good-looking. The moss band carries
+            the brand (the leaf in gold, as on the parents' panel); the white below is only the form. */}
+        <div className="flex items-center gap-3 bg-moss px-7 py-6 text-paper">
+          <PandoMark tone="light" className="h-9" />
+          <h1 className="font-display text-[1.35rem] font-bold leading-none tracking-[-0.022em]">
+            Pando <span className="font-semibold text-paper-faint">admin</span>
+          </h1>
         </div>
+
+        <div className="px-7 pb-7 pt-6">
 
         {!configured ? (
           <div className="rounded-xl border border-gold-line bg-gold-wash p-5">
-            <h1 className="font-display text-[1.15rem] font-semibold text-gold-ink">
+            <h2 className="font-display text-[1.15rem] font-semibold text-gold-ink">
               {mode === "unavailable"
                 ? "Sign-in is temporarily unavailable"
                 : "Admin isn't set up on this deployment"}
-            </h1>
+            </h2>
             {mode === "unavailable" ? (
               /*
                 The credential store is configured and could not be read. Said
@@ -104,16 +113,7 @@ export function LoginForm({
             )}
           </div>
         ) : (
-          <form
-            onSubmit={submit}
-            className="rounded-xl border border-bark bg-card p-5 shadow-card"
-          >
-            <h1 className="font-display text-[1.25rem] font-bold">Sign in</h1>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">
-              {mode === "shared"
-                ? "Your name and the shared password. Sensitive actions are recorded against the name you type."
-                : "Your own name and password. Sensitive actions are recorded against them."}
-            </p>
+          <form onSubmit={submit}>
 
             {mode === "per_user" && (
               /*
@@ -143,7 +143,7 @@ export function LoginForm({
               </p>
             )}
 
-            <div className="mt-5 space-y-4">
+            <div className="space-y-4 [p+&]:mt-5">
               <Field label="Name">
                 <input
                   type="text"
@@ -156,18 +156,35 @@ export function LoginForm({
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  className={inputClass}
+                  autoFocus
+                  className={`${inputClass} h-11`}
                 />
               </Field>
 
               <Field label="Password">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  className={inputClass}
-                />
+                {/* 26 Nov: a way to check what was typed, on a phone above all — "that
+                    didn't match" on a mistyped password was the commonest dead end. */}
+                <span className="relative block">
+                  <input
+                    type={shown ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    className={`${inputClass} h-11 pr-11`}
+                  />
+                  <button
+                    type="button"
+                    /* The pointer leaves the caret in the field, so Enter still signs in rather
+                       than toggling again; a keyboard still reaches it with Tab. */
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShown((s) => !s)}
+                    aria-label={shown ? "Hide password" : "Show password"}
+                    aria-pressed={shown}
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-lg text-muted transition-colors hover:text-ink"
+                  >
+                    {shown ? <EyeOff className="size-[18px]" strokeWidth={1.75} /> : <Eye className="size-[18px]" strokeWidth={1.75} />}
+                  </button>
+                </span>
               </Field>
             </div>
 
@@ -181,17 +198,49 @@ export function LoginForm({
               type="submit"
               tone="primary"
               disabled={busy || user.trim().length === 0 || password.length === 0}
-              className="mt-5 w-full"
+              className="mt-6 h-11 w-full"
             >
               {busy ? "Checking…" : "Sign in"}
             </Button>
-
-            <p className="mt-3 text-[12px] leading-relaxed text-muted">
-              Five wrong attempts locks sign-in for 15 minutes.
-            </p>
           </form>
         )}
+        </div>
       </div>
-    </div>
+
+      {/* Under the card, quiet: the way back to the site, and the market's clock with whether texts
+          go out now (invariant 6's window) — the one fact an admin acts on before sending anything. */}
+      <div className="mt-4 flex items-center justify-between px-1 text-[12.5px] text-muted">
+        <a href="/" className="-my-1 py-1 transition-colors hover:text-ink">
+          ← pando.is
+        </a>
+        <LocalTime />
+      </div>
+      </div>
+    </main>
   );
 }
+
+const MARKET = marketConfig(DEFAULT_MARKET_ID);
+const hour12 = (h: number) => `${h % 12 || 12} ${h < 12 ? "am" : "pm"}`;
+
+/** Drawn after mount, so the server's own time zone never reaches the markup. */
+function LocalTime() {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const tick = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(tick);
+  }, []);
+  if (!now) return <span className="min-h-5" />;
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: MARKET.timeZone, hour: "numeric", minute: "2-digit" }).format(now).toLowerCase();
+  const h = hourIn(MARKET.timeZone, now);
+  const sending = h >= QUIET_HOURS.start && h < QUIET_HOURS.end;
+  const label = sending ? `Texts until ${hour12(QUIET_HOURS.end)}` : `Quiet until ${hour12(QUIET_HOURS.start)}`;
+  return (
+    <span className="flex items-center gap-1.5 tabular-nums">
+      <span aria-hidden className={cn("size-1.5 rounded-full", sending ? "bg-green" : "bg-gold")} />
+      {time} Pasadena · {label}
+    </span>
+  );
+}
+
