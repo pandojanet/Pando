@@ -197,8 +197,9 @@ shown to a parent).
 | `propose_plugin_change` | **proposal**: create, update or delete a skill, an agent or a connector; committed when an admin commits it | Prompt Architect / reusable workflows |
 | `list_proposals` | proposals and their decisions | `get_request_status`, `list_approval_queue` |
 | `approve_proposal`, `reject_proposal` | **decide** one waiting proposal, on the person's own word in the chat (not a plugin change) | `approve_request`, `reject_request` |
+| `set_budget` | **decide** the monthly SMS and/or AI budget, on the person's own figure in the chat; the half not named stays, null removes one (`budget.set`, audited as set in chat) | — |
 | `contributor_load` | requests, replies, PASSes and thank-yous in a window; who cannot be asked today and why (ceiling, 48-hour gap, governor); opt-outs after a request — counts only, the send layer's own rules | daily report: contributor pings / replies / fatigue |
-| `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one; for a period inside one month, each monthly budget (SMS, AI — set on /admin, `app_settings.monthly_budget`) beside its spend: left, share used, over, the pace for the month | `log_cost_event` (read side) |
+| `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one; for a period inside one month, each monthly budget (SMS, AI — said in the chat, kept by `set_budget` in `app_settings.monthly_budget`) beside its spend: left, share used, over, the pace for the month; the budget shows even when that half's spend is not configured | `log_cost_event` (read side) |
 
 **Not here, on purpose:** `add_watch`, `cancel_watch`, `request_network_check`, `record_outcome`.
 Each acts towards a parent; the plugin never texts parents, so they stay in the SMS product.

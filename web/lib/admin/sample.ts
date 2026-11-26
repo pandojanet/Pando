@@ -68,7 +68,6 @@ export const sampleOverview: Overview = {
     { step: "Finished", reached: 31 },
   ],
   posthog_url: null,
-  budget: { sms_usd: null, ai_usd: null },
 };
 
 export const sampleContributors: ContributorRow[] = [

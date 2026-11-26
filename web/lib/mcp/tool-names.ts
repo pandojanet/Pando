@@ -8,6 +8,7 @@
  * waiting proposal on the person's own yes in the main conversation — never a change to the plugin
  * itself, and never given to an agent: an agent reads web pages and mail, and text there must not reach
  * a decision (`plugin-repo.ts` refuses it in any agent; the plugin's `check-agents.mjs` checks its own).
+ * `set_budget` (26 Nov) is a decision of the same kind: the founder's own number, said in the chat.
  */
 export const PANDO_TOOLS = {
   pando_overview: "read",
@@ -38,6 +39,8 @@ export const PANDO_TOOLS = {
   record_source_check: "write",
   approve_proposal: "decide",
   reject_proposal: "decide",
+  /* 26 Nov: the monthly SMS and AI budgets, on the person's own words in the main conversation. */
+  set_budget: "decide",
 } as const;
 
 export type PandoToolName = keyof typeof PANDO_TOOLS;

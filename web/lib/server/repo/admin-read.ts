@@ -41,7 +41,6 @@ import {
   rewardStatus,
 } from "@/lib/rewards";
 import { detailColumns, hasDigestDetails } from "@/lib/server/repo/digest";
-import { BUDGET_KEY, readBudget } from "@/lib/budget";
 
 /**
  * Estimates 2.2–2.8 — every admin read, in one place.
@@ -454,7 +453,6 @@ async function overview(db: Db): Promise<AdminResourceRows["overview"]> {
       { step: "Shared something usable", reached: n("funnel_delivered") },
     ],
     posthog_url: process.env.POSTHOG_DASHBOARD_URL ?? null,
-    budget: readBudget((await rows<{ value: unknown }>(db, sql`select value from app_settings where key = ${BUDGET_KEY}`))[0]?.value ?? null),
   };
 }
 

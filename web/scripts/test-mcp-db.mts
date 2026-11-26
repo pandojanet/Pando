@@ -117,7 +117,7 @@ for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api
 ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("28 tools, each with a title and read/destructive hints (26 Nov: + contributor_load)", tools.length === 28 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("29 tools, each with a title and read/destructive hints (26 Nov: + contributor_load, set_budget)", tools.length === 29 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
 /* 24 Nov: a proposal is decided in the chat, so Claude must ask the person before each such call. */
 ok("approve_proposal and reject_proposal exist, destructive and not read-only; nothing commits a skill",
   ["approve_proposal", "reject_proposal"].every((n) => tools.some((t) => t.name === n && t.annotations?.destructiveHint === true && t.annotations?.readOnlyHint === false)) &&
@@ -530,6 +530,28 @@ ok("a statement's own error is not run again", refused && tries === 1, String(tr
     })(),
     JSON.stringify(pt.joined_by_week?.at(-1)));
   ok("no phone in it", !/\+1555555/.test(JSON.stringify(pt)));
+}
+
+{
+  /* 26 Nov: the monthly budgets, said in the chat and kept in Pando. */
+  const month = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  const range = { from: `${month.slice(0, 8)}01`, to: month };
+  const budgetOf = async () => JSON.parse((await call("costs_summary", range)).text || "{}").budget;
+  ok("no budget set: costs_summary says none", (await budgetOf()) === null);
+  const first = await call("set_budget", { sms_usd: 200 });
+  ok("set_budget keeps the SMS budget the person named", first.error === null && JSON.parse(first.text).budget?.sms_usd === 200 && JSON.parse(first.text).budget?.ai_usd === null, first.error ?? first.text);
+  const shown = await budgetOf();
+  ok("costs_summary shows it even with the spend not configured", shown?.sms?.budget === 200 && shown?.sms?.spent === null && shown?.ai === null, JSON.stringify(shown));
+  await call("set_budget", { ai_usd: 80.5 });
+  const both = await budgetOf();
+  ok("naming the AI half leaves the SMS half as it was", both?.sms?.budget === 200 && both?.ai?.budget === 80.5, JSON.stringify(both));
+  const [row] = await q(sql`select actor, after from audit_log where action = 'budget.set' order by at desc limit 1`);
+  ok("each change is an audit row, as set in chat", (row?.after as { via?: string } | undefined)?.via === "chat" && typeof row?.actor === "string", JSON.stringify(row));
+  ok("nothing named is refused, and so is an amount out of range",
+    (await call("set_budget", {})).error === "Name a budget: sms_usd, ai_usd or both." && (await call("set_budget", { sms_usd: -1 })).error !== null);
+  await call("set_budget", { sms_usd: null });
+  const cleared = await budgetOf();
+  ok("null removes one budget, the other stays", cleared?.sms === null && cleared?.ai?.budget === 80.5, JSON.stringify(cleared));
 }
 
 await stop();

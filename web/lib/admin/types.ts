@@ -345,8 +345,6 @@ export interface Overview {
   drop_off: Array<{ step: string; reached: number }>;
   /** PostHog dashboard to embed or link. Funnels are configured there, not here. */
   posthog_url: string | null;
-  /** 26 Nov: the monthly SMS and AI budgets, in dollars; null = none set. */
-  budget: { sms_usd: number | null; ai_usd: number | null };
 }
 
 export interface ContributorRow {

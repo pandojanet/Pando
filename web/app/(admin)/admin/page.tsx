@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import {
   Card,
   Disclosure,
@@ -11,15 +10,11 @@ import {
   NotConfigured,
   PageHead,
   SampleBanner,
-  Button,
-  controlClass,
   Stat,
   StatStrip,
   TextLink,
 } from "@/components/admin/ui";
-import { adminAction, useAdminRows } from "@/lib/admin/client";
-import { NumberField } from "@/components/admin/kit";
-import { BUDGET_MAX_USD, budgetAmount } from "@/lib/budget";
+import { useAdminRows } from "@/lib/admin/client";
 import { CONSENT_STATE, DEMAND_SENSITIVITY } from "@/lib/admin/labels";
 import type { Overview } from "@/lib/admin/types";
 
@@ -39,7 +34,7 @@ import type { Overview } from "@/lib/admin/types";
  * paragraphs gone, because each of them explained a rule the page cannot break.
  */
 export default function AdminOverviewPage() {
-  const { rows, configured, sample, demo, setDemo, loading, error, reload } =
+  const { rows, configured, sample, demo, setDemo, loading, error } =
     useAdminRows("overview");
 
   const o = rows;
@@ -490,8 +485,6 @@ export default function AdminOverviewPage() {
               )}
             </Card>
           )}
-
-          <BudgetCard budget={o.budget} onSaved={reload} />
             </div>
           </Disclosure>
         </div>
@@ -517,86 +510,5 @@ function Row({ label, value }: { label: string; value: number }) {
         {value}
       </span>
     </li>
-  );
-}
-
-/**
- * 26 Nov — the monthly SMS and AI budgets, kept apart because they are paid to
- * different providers and run out for different reasons. Read by the
- * connector's costs_summary (spend against each, and the pace for the month);
- * an empty field is no budget, not zero.
- */
-function BudgetCard({
-  budget,
-  onSaved,
-}: {
-  budget: Overview["budget"];
-  onSaved: () => void;
-}) {
-  const shown = (v: number | null) => (v === null ? "" : String(v));
-  const [sms, setSms] = useState<string | null>(null);
-  const [ai, setAi] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const smsNow = sms ?? shown(budget.sms_usd);
-  const aiNow = ai ?? shown(budget.ai_usd);
-  const bad = (v: string) => v.trim() !== "" && budgetAmount(v) === null;
-  const changed = smsNow !== shown(budget.sms_usd) || aiNow !== shown(budget.ai_usd);
-  const blocked = bad(smsNow) || bad(aiNow);
-
-  async function save() {
-    setBusy(true);
-    setFailed(null);
-    try {
-      await adminAction({
-        action: "budget.set",
-        sms_usd: smsNow.trim() === "" ? null : budgetAmount(smsNow),
-        ai_usd: aiNow.trim() === "" ? null : budgetAmount(aiNow),
-      });
-      setSms(null);
-      setAi(null);
-      onSaved();
-    } catch (err) {
-      setFailed(err instanceof Error ? err.message : "Could not save.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const field = (id: string, label: string, value: string, set: (v: string) => void) => (
-    <div>
-      <label htmlFor={id} className="text-[12.5px] text-muted">
-        {label}
-      </label>
-      <NumberField
-        id={id}
-        min={0}
-        max={BUDGET_MAX_USD}
-        step={10}
-        disabled={busy}
-        aria-invalid={bad(value)}
-        className={`${controlClass} w-full text-right tabular-nums ${bad(value) ? "ring-1 ring-alert-line" : ""}`}
-        value={value}
-        onChange={set}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && changed && !blocked) void save();
-        }}
-      />
-    </div>
-  );
-
-  return (
-    <Card title="Monthly budget">
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3 px-4 py-3.5 sm:grid-cols-2">
-        {field("budget-sms", "SMS, $ a month", smsNow, setSms)}
-        {field("budget-ai", "AI, $ a month", aiNow, setAi)}
-      </div>
-      <div className="flex flex-wrap items-center gap-3 border-t border-bark/70 px-4 py-2.5">
-        <Button tone="primary" disabled={busy || !changed || blocked} onClick={() => void save()}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
-        {failed && <ErrorNote>{failed}</ErrorNote>}
-      </div>
-    </Card>
   );
 }

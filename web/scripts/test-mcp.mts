@@ -158,8 +158,11 @@ console.log("\n=== the diagram's promises ===");
      so there is no such flag: the yes is the person allowing a destructive call. */
   ok("writes are proposals; the chat decides one only through approve_proposal / reject_proposal — one applyAction, via chat, no admin_said flag, no save tool",
     /tool\("approve_proposal"/.test(server) && /tool\("reject_proposal"/.test(server) && !/tool\("save_skill"/.test(server) &&
-      !/admin_said_|saveSkill\(/.test(code(server)) && (code(server).match(/applyAction\(/g) ?? []).length === 1 &&
+      !/admin_said_|saveSkill\(/.test(code(server)) && (code(server).match(/applyAction\(/g) ?? []).length === 2 &&
       /applyAction\(db\(\), \{ actor: ctx\.actor, action, via: "chat", body: \{ id, /.test(server) &&
+      /* 26 Nov: the second is set_budget — the founder's own monthly figures, the same way, as set in chat. */
+      /applyAction\(db\(\), \{ actor: ctx\.actor, action: "budget\.set", via: "chat", body: next \}\)/.test(server) &&
+      /tool\("set_budget", \{[\s\S]{0,1200}readOnly: false,\s+destructive: true,/.test(server) &&
       !/insert into shares|update shares|insert into digest|commitSkill/.test(server));
   ok("both are destructive, so Claude asks the person for each call; and at most mcp_decide an hour per connection",
     /tool\("approve_proposal", \{[\s\S]{0,800}readOnly: false,\s+destructive: true,/.test(server) &&

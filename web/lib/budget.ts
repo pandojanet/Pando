@@ -1,8 +1,9 @@
 /**
  * Pando's monthly budgets, SMS and AI separately (26 Nov — the founder's Operating Playbook asks the
  * daily report for "actual AI/SMS/manual cost and budget gap"; the developer: *separate SMS and AI
- * budgets*). An admin sets them on /admin (`budget.set`, kept in `app_settings` under `BUDGET_KEY`);
- * `costs_summary` reads them beside what was spent.
+ * budgets*). The founder says them in the chat and Pando MCP's `set_budget` keeps them (the audited admin
+ * action `budget.set`, in `app_settings` under `BUDGET_KEY`) — not a field on /admin, so the admin stays
+ * small and the number lives where the reports are read. `costs_summary` reads them beside what was spent.
  *
  * Pure and import-free, so `npm run test:budget` loads it in plain node.
  */
@@ -33,9 +34,10 @@ export function readBudget(value: unknown): MonthlyBudget {
 
 export interface BudgetHalf {
   budget: number;
-  spent: number;
-  left: number;
-  /** Spent as a share of the budget, 0.37 for 37%; null for a budget of 0. */
+  /** Null when the spend is not known (that half of costs_summary is not configured): the budget still shows. */
+  spent: number | null;
+  left: number | null;
+  /** Spent as a share of the budget, 0.37 for 37%; null for a budget of 0 or an unknown spend. */
   used: number | null;
   /** At this pace, the month's total — only when the period runs from the 1st to before the month's end. */
   on_pace_for: number | null;
@@ -49,8 +51,9 @@ const daysIn = (ym: string) => {
 
 /**
  * Each budget beside what was spent, for a period inside one calendar month (YYYY-MM-DD, inclusive) —
- * a budget is monthly, so a period across two months has none (null). A half with no budget set, or no
- * known spend, is null.
+ * a budget is monthly, so a period across two months has none (null). A half with no budget set is null;
+ * one whose spend is unknown keeps its budget, with the spend and what follows from it null (26 Nov: the
+ * lab's reports read an all-null half as "no budget set").
  */
 export function budgetStatus(input: {
   budget: MonthlyBudget;
@@ -65,7 +68,8 @@ export function budgetStatus(input: {
   const fromFirst = input.from.endsWith("-01");
   const monthDays = daysIn(month);
   const half = (budget: number | null, spent: number | null): BudgetHalf | null => {
-    if (budget === null || spent === null) return null;
+    if (budget === null) return null;
+    if (spent === null) return { budget, spent: null, left: null, used: null, on_pace_for: null, over: false };
     const round = (x: number) => Math.round(x * 100) / 100;
     return {
       budget,

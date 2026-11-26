@@ -93,6 +93,8 @@ for (const file of screens) {
 const NO_SCREEN: Record<string, string> = {
   "option.retire":
     "needs a screen listing the live tap-list options, which the admin does not have yet",
+  /* 26 Nov — the developer: the budget is said in the chat, and the admin is kept light. */
+  "budget.set": "set in the chat through Pando MCP's set_budget (as set in chat, audited); no field on /admin",
 };
 
 const uncalled = [...allowed].filter((a) => !called.has(a));
