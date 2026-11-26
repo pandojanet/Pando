@@ -345,6 +345,8 @@ export interface Overview {
   drop_off: Array<{ step: string; reached: number }>;
   /** PostHog dashboard to embed or link. Funnels are configured there, not here. */
   posthog_url: string | null;
+  /** 26 Nov: the monthly SMS and AI budgets, in dollars; null = none set. */
+  budget: { sms_usd: number | null; ai_usd: number | null };
 }
 
 export interface ContributorRow {
@@ -1276,6 +1278,8 @@ export type AdminAction =
   | { action: "proposal.approve"; id: string; via?: "admin" | "chat" }
   | { action: "proposal.reject"; id: string; via?: "admin" | "chat"; reason?: string }
   | { action: "mcp.switch"; on: boolean }
+  /* 26 Nov: the monthly budgets, US dollars; null clears one. */
+  | { action: "budget.set"; sms_usd: number | null; ai_usd: number | null }
   | { action: "mcp.revoke"; client_ids: string[]; admin_user: string }
   /* 20 Nov: an approved event taken out of the weekly digest's candidates. */
   | { action: "digest_candidate.remove"; id: string };

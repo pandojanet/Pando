@@ -516,6 +516,7 @@ export const AUDIT_ACTION: Record<string, string> = {
   "mcp.switch": "Switched Pando MCP on or off",
   "mcp.revoke": "Ended a Pando MCP connection",
   "digest_candidate.remove": "Took an event out of the weekly digest's candidates",
+  "budget.set": "Set the monthly SMS and AI budgets",
   /* Written by lib/server/mcp/plugin-repo.ts, not admin-write: skill.save until 23 Nov, then plugin.commit. */
   "skill.save": "Saved a skill into the Pando plugin",
   "plugin.commit": "Committed a change to the Pando plugin",

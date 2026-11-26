@@ -198,7 +198,7 @@ shown to a parent).
 | `list_proposals` | proposals and their decisions | `get_request_status`, `list_approval_queue` |
 | `approve_proposal`, `reject_proposal` | **decide** one waiting proposal, on the person's own word in the chat (not a plugin change) | `approve_request`, `reject_request` |
 | `contributor_load` | requests, replies, PASSes and thank-yous in a window; who cannot be asked today and why (ceiling, 48-hour gap, governor); opt-outs after a request — counts only, the send layer's own rules | daily report: contributor pings / replies / fatigue |
-| `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one | `log_cost_event` (read side) |
+| `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one; for a period inside one month, each monthly budget (SMS, AI — set on /admin, `app_settings.monthly_budget`) beside its spend: left, share used, over, the pace for the month | `log_cost_event` (read side) |
 
 **Not here, on purpose:** `add_watch`, `cancel_watch`, `request_network_check`, `record_outcome`.
 Each acts towards a parent; the plugin never texts parents, so they stay in the SMS product.

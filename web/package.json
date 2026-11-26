@@ -70,6 +70,7 @@
     "test:caregiver": "node --experimental-strip-types --no-warnings scripts/test-caregiver-policy.mts",
     "test:rich": "node --experimental-strip-types --no-warnings scripts/test-rich.mts",
     "test:digest": "node --experimental-strip-types --no-warnings scripts/test-digest.mts",
+    "test:budget": "node --experimental-strip-types --no-warnings scripts/test-budget.mts",
     "test:reset": "node --experimental-strip-types --no-warnings scripts/test-reset.mts",
     "test:media": "node --experimental-strip-types --no-warnings scripts/test-media-note.mts",
     "test:burst": "node --experimental-strip-types --no-warnings scripts/test-burst.mts",

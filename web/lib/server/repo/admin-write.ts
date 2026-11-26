@@ -24,6 +24,7 @@ import { graphTargetForCategory } from "@/lib/derive";
 import { deleteCaregiverClaim } from "@/lib/server/repo/caregiver";
 import { erasePersonIn } from "@/lib/server/repo/parent-delete";
 import { forgetMcpSwitch } from "@/lib/server/repo/mcp";
+import { BUDGET_KEY, budgetAmount, type MonthlyBudget } from "@/lib/budget";
 import { hasDigestDetails } from "@/lib/server/repo/digest";
 import {
   insertContributionImpact,
@@ -149,6 +150,8 @@ export type ActionOutcome =
            and an item changed on a digest already approved. */
         | "digest_already_sent"
         | "digest_approved"
+        /* 26 Nov — a budget that is not an amount from 0 to 100,000 dollars. */
+        | "invalid_budget"
         ;
     };
 
@@ -2617,6 +2620,21 @@ async function run(tx: Tx, ctx: ActionContext): Promise<ActionOutcome> {
       /* The admin's change takes effect at once, not when this process's kept read runs out (24 Nov). */
       forgetMcpSwitch();
       return { applied: true, resource: "app_setting", resource_id: "mcp_enabled" };
+    }
+
+    case "budget.set": {
+      /* The monthly SMS and AI budgets (26 Nov): each a number of dollars, or cleared with an empty value —
+         a value that is not a sensible amount is refused rather than stored as "no budget". */
+      const sms = budgetAmount(b.sms_usd);
+      const ai = budgetAmount(b.ai_usd);
+      const given = (v: unknown) => v !== null && v !== undefined && !(typeof v === "string" && v.trim() === "");
+      if ((given(b.sms_usd) && sms === null) || (given(b.ai_usd) && ai === null)) return { applied: false, reason: "invalid_budget" };
+      const value: MonthlyBudget = { sms_usd: sms, ai_usd: ai };
+      await tx.execute(sql`
+        insert into app_settings (key, value, updated_by, updated_at) values (${BUDGET_KEY}, ${JSON.stringify(value)}::jsonb, ${ctx.actor}, now())
+        on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()
+      `);
+      return { applied: true, resource: "app_setting", resource_id: BUDGET_KEY, detail: { sms_usd: sms, ai_usd: ai } };
     }
 
     case "mcp.revoke": {

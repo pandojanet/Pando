@@ -93,6 +93,8 @@ export const ADMIN_ACTION_NAMES = [
   "mcp.switch",
   "mcp.revoke",
   "digest_candidate.remove",
+  /* 26 Nov: the monthly SMS and AI budgets (the founder's Operating Playbook: "budget gap"). */
+  "budget.set",
 ] as const;
 
 export type AdminActionName = (typeof ADMIN_ACTION_NAMES)[number];

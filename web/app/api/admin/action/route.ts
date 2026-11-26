@@ -766,6 +766,8 @@ export async function POST(request: Request) {
       source_name_taken: "The sources & partners list already has an entry with that name. Reject this one, or change the existing entry.",
       /* 24 Nov — only the chat is refused this; the page never is. Named so the map stays whole. */
       plugin_admin_only: "A change to the plugin itself is decided only here, on this page.",
+      /* 26 Nov — the monthly budgets. */
+      invalid_budget: "A budget is an amount of dollars from 0 to 100,000. Leave it empty for no budget.",
     };
     const refusal = SEND_REFUSALS[result.data.reason];
     if (refusal) {

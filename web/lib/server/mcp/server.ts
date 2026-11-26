@@ -35,6 +35,7 @@ import { applyAction } from "@/lib/server/repo/admin-write";
 import { rateLimitedKey } from "@/lib/server/rate-limit";
 import { mayPropose } from "@/lib/mcp/oauth";
 import { logCall, mcpSwitch, type CallOutcome } from "@/lib/server/repo/mcp";
+import { BUDGET_KEY, budgetStatus, readBudget } from "@/lib/budget";
 import { contributorLoad } from "@/lib/server/repo/mcp-contributors";
 import { dailyActivity, getRecord, impactTotals, parentsTotals, questionsTotals, recordsTotals, searchRecords, unansweredQuestions, whatWentWrong } from "@/lib/server/repo/mcp-read";
 import { SOURCE_CHECKS, SOURCE_KINDS, SOURCE_ROLES, SOURCE_STATUSES, getSource, listSources, recordSourceCheck, sourceNamed } from "@/lib/server/repo/mcp-sources";
@@ -665,25 +666,35 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
 
   tool("costs_summary", {
     title: "Costs",
-    description: "What Pando spent between two dates (YYYY-MM-DD, inclusive): Twilio's billed usage (SMS, MMS, RCS, numbers; UTC days) and AI model calls by purpose (from PostHog; Pasadena days), the useful answers sent in those days (rated helpful), and the cost per useful answer when both halves are known. Each half says when it is not configured.",
+    description: "What Pando spent between two dates (YYYY-MM-DD, inclusive): Twilio's billed usage (SMS, MMS, RCS, numbers; UTC days) and AI model calls by purpose (from PostHog; Pasadena days), the useful answers sent in those days (rated helpful), the cost per useful answer when both halves are known, and - for a period inside one month - each monthly budget an admin set (SMS, AI) beside its spend: left, share used, over or not, and the month's total at this pace when the period starts on the 1st (budget is null across months or when none is set). Each half says when it is not configured.",
     input: { from: z.string().refine(realDay, "a real date, YYYY-MM-DD"), to: z.string().refine(realDay, "a real date, YYYY-MM-DD") },
     readOnly: true,
     /* It waits on Twilio and PostHog, not the database: never inside a transaction holding a connection. */
     outside: true,
   }, async ({ from, to }) => {
     if (from > to) return "from must not be after to.";
-    const [costs, useful] = await Promise.all([
+    const [costs, useful, budgetRow] = await Promise.all([
       costsSummary(from, to),
       /* Its own short read: this tool runs outside a transaction (it waits on Twilio and PostHog). */
       withDb((d) => impactTotals(d, { from, to })),
+      /* The monthly SMS and AI budgets an admin set (26 Nov, `lib/budget.ts`). */
+      withDb(async (d) => ((await d.execute(sql`select value from app_settings where key = ${BUDGET_KEY}`)) as unknown as Array<{ value: unknown }>)[0]?.value ?? null),
     ]);
     const helped = useful.persisted ? useful.data.answered_yes : null;
     const spent = costs.sms.total !== null && costs.ai.total_usd !== null ? costs.sms.total + costs.ai.total_usd : null;
+    const usd = (costs.sms.currency ?? "USD") === "USD";
     return {
       ...costs,
       useful_answers: helped,
       /* Added only in dollars: PostHog's cost is USD, and Twilio's is USD on this account. */
-      cost_per_useful_answer: spent !== null && helped && (costs.sms.currency ?? "USD") === "USD" ? Math.round((spent / helped) * 100) / 100 : null,
+      cost_per_useful_answer: spent !== null && helped && usd ? Math.round((spent / helped) * 100) / 100 : null,
+      /* Each budget beside its spend, for a period inside one month; null across months or with none set. */
+      budget: budgetStatus({
+        budget: readBudget(budgetRow.persisted ? budgetRow.data : null),
+        spent: { sms: usd ? costs.sms.total : null, ai: costs.ai.total_usd },
+        from,
+        to,
+      }),
     } as unknown as Json;
   });
 
