@@ -158,7 +158,10 @@ console.log("\n=== the diagram's promises ===");
      so there is no such flag: the yes is the person allowing a destructive call. */
   ok("writes are proposals; the chat decides one only through approve_proposal / reject_proposal — one applyAction, via chat, no admin_said flag, no save tool",
     /tool\("approve_proposal"/.test(server) && /tool\("reject_proposal"/.test(server) && !/tool\("save_skill"/.test(server) &&
-      !/admin_said_|saveSkill\(/.test(code(server)) && (code(server).match(/applyAction\(/g) ?? []).length === 2 &&
+      !/admin_said_|saveSkill\(/.test(code(server)) && (code(server).match(/applyAction\(/g) ?? []).length === 3 &&
+      /* 26 Nov: the third takes an event out of the digest's candidates, the page's own action, as decided in chat. */
+      /applyAction\(db\(\), \{ actor: ctx\.actor, action: "digest_candidate\.remove", via: "chat", body: \{ id \} \}\)/.test(server) &&
+      /tool\("remove_digest_candidate", \{[\s\S]{0,1200}readOnly: false,\s+destructive: true,/.test(server) &&
       /applyAction\(db\(\), \{ actor: ctx\.actor, action, via: "chat", body: \{ id, /.test(server) &&
       /* 26 Nov: the second is set_budget — the founder's own monthly figures, the same way, as set in chat. */
       /applyAction\(db\(\), \{ actor: ctx\.actor, action: "budget\.set", via: "chat", body: next \}\)/.test(server) &&

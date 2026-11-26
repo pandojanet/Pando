@@ -41,6 +41,8 @@ export const PANDO_TOOLS = {
   reject_proposal: "decide",
   /* 26 Nov: the monthly SMS and AI budgets, on the person's own words in the main conversation. */
   set_budget: "decide",
+  /* 26 Nov: an event out of the weekly digest's candidates, on the person's own word. */
+  remove_digest_candidate: "decide",
 } as const;
 
 export type PandoToolName = keyof typeof PANDO_TOOLS;

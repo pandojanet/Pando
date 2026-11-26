@@ -117,7 +117,7 @@ for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api
 ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("29 tools, each with a title and read/destructive hints (26 Nov: + contributor_load, set_budget)", tools.length === 29 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("30 tools, each with a title and read/destructive hints (26 Nov: + contributor_load, set_budget, remove_digest_candidate)", tools.length === 30 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
 /* 24 Nov: a proposal is decided in the chat, so Claude must ask the person before each such call. */
 ok("approve_proposal and reject_proposal exist, destructive and not read-only; nothing commits a skill",
   ["approve_proposal", "reject_proposal"].every((n) => tools.some((t) => t.name === n && t.annotations?.destructiveHint === true && t.annotations?.readOnlyHint === false)) &&
@@ -552,6 +552,22 @@ ok("a statement's own error is not run again", refused && tries === 1, String(tr
   await call("set_budget", { sms_usd: null });
   const cleared = await budgetOf();
   ok("null removes one budget, the other stays", cleared?.sms === null && cleared?.ai?.budget === 80.5, JSON.stringify(cleared));
+}
+
+{
+  /* 26 Nov: an event out of the digest's candidates, in the chat — no trip to /admin/proposals. */
+  const listed = JSON.parse((await call("digest_candidates")).text).results as Array<{ id: string; title: string }>;
+  const walk = listed.find((c) => c.title === "CI Winter Walk");
+  ok("each candidate carries its id", typeof walk?.id === "string");
+  const removed = await call("remove_digest_candidate", { id: walk!.id });
+  ok("remove_digest_candidate takes it out, as decided in chat", removed.error === null && JSON.parse(removed.text).removed === walk!.id && JSON.parse(removed.text).via === "chat", removed.error ?? removed.text);
+  const after = JSON.parse((await call("digest_candidates")).text).results as Array<{ id: string }>;
+  ok("it is no longer a candidate", !after.some((c) => c.id === walk!.id));
+  const [kept] = await q(sql`select removed_at, removed_by from digest_candidates where id = ${walk!.id}::uuid`);
+  ok("kept in Pando, never deleted, with who took it out", kept?.removed_at !== null && kept?.removed_by === "ci", JSON.stringify(kept));
+  const [row] = await q(sql`select actor, after from audit_log where action = 'digest_candidate.remove' order by at desc limit 1`);
+  ok("an audit row, as decided in chat", (row?.after as { via?: string } | undefined)?.via === "chat", JSON.stringify(row));
+  ok("taking it out twice is refused in words", /not among the digest's candidates/.test((await call("remove_digest_candidate", { id: walk!.id })).error ?? ""));
 }
 
 await stop();
