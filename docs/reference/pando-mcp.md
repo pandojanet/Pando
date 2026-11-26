@@ -183,7 +183,7 @@ shown to a parent).
 | Tool | Reads / writes | Playbook capability |
 | --- | --- | --- |
 | `pando_overview` | today's totals and the review queues | `list_approval_queue` (in part) |
-| `parents_totals`, `questions_totals`, `records_totals`, `impact_totals` | totals, by week; "did it help" over every sent answer, optionally between two days | — |
+| `parents_totals`, `questions_totals`, `records_totals`, `impact_totals` | totals, by week; sign-ups by channel (`people.source` and the invite's kind — `JOIN_CHANNELS` in `mcp-read.ts`), with what each channel's parents went on to do; "did it help" over every sent answer, optionally between two days | — |
 | `daily_activity` | each day on Pasadena's clock; yesterday against the 7 days before | daily founder report |
 | `demand_by_place`, `unanswered_questions` | where Pando is wanted; questions it could not answer | demand loop |
 | `delivery_health`, `what_went_wrong` | delivery; failed jobs, undelivered texts, digest groups not ready, answers held over a day, tool errors | failure / incident |

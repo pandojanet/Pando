@@ -501,6 +501,37 @@ ok("a statement's own error is not run again", refused && tries === 1, String(tr
   ok("list_sources says when each was added", first === undefined || "added_at" in first, JSON.stringify(first ?? {}).slice(0, 160));
 }
 
+{
+  /* 26 Nov: sign-ups by the channel they came through. */
+  const [grp] = await q(sql`insert into invites (code, market_id, label, kind) values ('ci-pta', 'pasadena', 'CI PTA group', 'group') returning id`);
+  const [one] = await q(sql`insert into invites (code, market_id, label, kind) values ('ci-dana', 'pasadena', 'Dana Example link', 'personal') returning id`);
+  const person = (phone: string, source: string | null, invite: unknown = null) =>
+    q(sql`insert into people (phone, market_id, source, invite_id, invite_code, phone_verified_at) values (${phone}, 'pasadena', ${source}, ${invite as string | null}::uuid, ${invite ? "ci" : null}, now()) returning id`);
+  const [texter] = await person("+15555550201", "sms_inbound");
+  await person("+15555550202", "sms_inbound");
+  for (const p of ["+15555550203", "+15555550204", "+15555550205"]) await person(p, "link", grp.id);
+  await person("+15555550206", "link", one.id);
+  await person("+15555550207", "direct");
+  await q(sql`insert into children (person_id, birth_year) values (${texter.id as string}::uuid, 2022)`);
+  const pt = JSON.parse((await call("parents_totals", { weeks: 2 })).text || "{}");
+  const ch = (c: string) => (pt.by_channel ?? []).find((r: { channel: string }) => r.channel === c);
+  ok("parents_totals counts sign-ups by channel: texted, a group's link, a parent's link, the website",
+    ch("texted")?.joined === 2 && ch("group_link")?.joined === 3 && ch("parent_link")?.joined === 1 && ch("website")?.joined >= 1,
+    JSON.stringify(pt.by_channel));
+  ok("…with what each channel's parents went on to do", ["with_children", "asked_by_text", "contributors"].every((k) => typeof ch("texted")?.[k] === "number") && ch("texted")?.with_children === 1);
+  ok("a group's link by its label; a parent's own link only as counts, never its label",
+    pt.group_links?.some((g: { group: string; joined: unknown }) => g.group === "CI PTA group" && g.joined === 3) &&
+      pt.parent_links?.joined === 1 && pt.parent_links?.links === 1 && !JSON.stringify(pt).includes("Dana"),
+    JSON.stringify({ g: pt.group_links, p: pt.parent_links }));
+  ok("this week's sign-ups split by channel, adding up to the week's total",
+    (() => {
+      const w = pt.joined_by_week?.at(-1);
+      return w && Object.values(w.by_channel as Record<string, number>).reduce((a, b) => a + b, 0) === w.joined && w.by_channel.texted === 2;
+    })(),
+    JSON.stringify(pt.joined_by_week?.at(-1)));
+  ok("no phone in it", !/\+1555555/.test(JSON.stringify(pt)));
+}
+
 await stop();
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);
 process.exit(fail ? 1 : 0);

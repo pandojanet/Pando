@@ -252,7 +252,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
 
   tool("parents_totals", {
     title: "Parents, in totals",
-    description: "Parents (sign-ups) in counts: total, founding, phone verified, with children, weekly digest on, opted out of texts, contributors, and sign-ups per week (Monday–Sunday, Pasadena time). Never a name or a phone.",
+    description: "Parents (sign-ups) in counts: total, founding, phone verified, with children, weekly digest on, opted out of texts, contributors, sign-ups per week (Monday–Sunday, Pasadena time) each split by channel, and by channel overall — texted the number, a parent's personal link, a group's or school's link, QR, the website, signed in, caregiver — with how many of each went on to add children, ask by text and contribute; a group's link by its label (fewer than 3 shown as \"<3\"), a parent's own link only as counts. No campaign: nothing records which post or flyer a parent saw. Never a name or a phone.",
     input: { weeks },
     readOnly: true,
   }, async ({ weeks: w }) => parentsTotals(db(), w));

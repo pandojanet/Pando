@@ -35,6 +35,33 @@ const WEEKS = (weeks: number) =>
   sql`(select g at time zone ${TZ}::text as w, (g + interval '1 week') at time zone ${TZ}::text as w_end, g::date::text as label
          from generate_series(date_trunc('week', now() at time zone ${TZ}::text) - make_interval(weeks => ${weeks - 1}::int), date_trunc('week', now() at time zone ${TZ}::text), interval '1 week') g)`;
 
+/**
+ * How each parent arrived (26 Nov, the founder's Operating Playbook: sign-ups "by channel"), from what was
+ * written once when they joined and never moved: `people.source` and the invite their link resolved to.
+ * `texted` — their first text created them (`sms_inbound`); `parent_link` — another parent's personal
+ * link; `group_link` — a group's or a school's link; `link` — a link whose invite is gone; `qr`;
+ * `website` — the site with no link; `signin` — signed in on the site from a profile kept elsewhere;
+ * `caregiver` — added when a family recommended them; `unknown` — anything else. A campaign is not here:
+ * nothing records which post or flyer a parent saw.
+ */
+export const JOIN_CHANNELS = ["texted", "parent_link", "group_link", "link", "qr", "website", "signin", "caregiver", "unknown"] as const;
+const JOINED = sql`(
+  select p.id, p.created_at, i.kind as invite_kind, i.label as invite_label, i.id as invite_id,
+         case when p.source = 'sms_inbound' then 'texted'
+              when p.source = 'qr' then 'qr'
+              when p.source = 'link' and i.kind = 'personal' then 'parent_link'
+              when p.source = 'link' and i.kind is not null then 'group_link'
+              when p.source = 'link' then 'link'
+              when p.source = 'direct' then 'website'
+              when p.source = 'signin' then 'signin'
+              when p.source is null and exists (select 1 from caregiver_claims cc where cc.person_id = p.id) then 'caregiver'
+              else 'unknown' end as channel
+    from people p left join invites i on i.id = p.invite_id
+   where not p.is_test)`;
+
+/** 1 or 2 arrivals through one named group could be one family (the same rule as places, 20 Nov). */
+const fewNamed = (v: number): number | "<3" => (v > 0 && v < 3 ? "<3" : v);
+
 export async function parentsTotals(db: Db, weeks: number) {
   const [t] = await rows(db, sql`
     select count(*) as parents,
@@ -51,10 +78,45 @@ export async function parentsTotals(db: Db, weeks: number) {
     select ws.label as week, (select count(*) from people p where not p.is_test and p.created_at >= ws.w and p.created_at < ws.w_end) as joined
       from ${WEEKS(weeks)} ws order by ws.w
   `);
+  /* What each channel's parents went on to do: a profile with children, a question by text, a contribution. */
+  const channels = await rows(db, sql`
+    select j.channel, count(*) as joined,
+           count(*) filter (where exists (select 1 from children c where c.person_id = j.id)) as with_children,
+           count(*) filter (where exists (select 1 from answers a where a.person_id = j.id and not a.is_test)) as asked,
+           count(*) filter (where exists (select 1 from share_contributions sc where sc.person_id = j.id and sc.status = 'approved' and not sc.is_test)) as contributors
+      from ${JOINED} j group by 1 order by 2 desc, 1
+  `);
+  const weekChannels = await rows(db, sql`
+    select ws.label as week, j.channel, count(*) as joined
+      from ${WEEKS(weeks)} ws join ${JOINED} j on j.created_at >= ws.w and j.created_at < ws.w_end
+     group by 1, 2
+  `);
+  /* A group's link by its label (an admin's name for a group or a school); a parent's own link never by
+     anything, only how many links brought someone — a personal link's label can carry a parent's name. */
+  const groups = await rows(db, sql`
+    select j.invite_label as label, count(*) as joined
+      from ${JOINED} j where j.channel = 'group_link' group by 1 order by 2 desc, 1 limit 20
+  `);
+  const [personal] = await rows(db, sql`
+    select count(*) as joined, count(distinct j.invite_id) as links from ${JOINED} j where j.channel = 'parent_link'
+  `);
+  const byWeekChannel = new Map<string, Record<string, number>>();
+  for (const r of weekChannels) {
+    const week = String(r.week).slice(0, 10);
+    byWeekChannel.set(week, { ...byWeekChannel.get(week), [String(r.channel)]: n(r.joined) });
+  }
   return {
     parents: n(t?.parents), founding: n(t?.founding), phone_verified: n(t?.verified), with_children: n(t?.with_children),
     digest_on: n(t?.digest_on), opted_out: n(t?.opted_out), contributors: n(t?.contributors),
-    joined_by_week: byWeek.map((r) => ({ week: String(r.week).slice(0, 10), joined: n(r.joined) })),
+    joined_by_week: byWeek.map((r) => {
+      const week = String(r.week).slice(0, 10);
+      return { week, joined: n(r.joined), by_channel: byWeekChannel.get(week) ?? {} };
+    }),
+    by_channel: channels.map((r) => ({
+      channel: String(r.channel), joined: n(r.joined), with_children: n(r.with_children), asked_by_text: n(r.asked), contributors: n(r.contributors),
+    })),
+    group_links: groups.map((r) => ({ group: String(r.label), joined: fewNamed(n(r.joined)) })),
+    parent_links: { joined: n(personal?.joined), links: n(personal?.links) },
   };
 }
 
