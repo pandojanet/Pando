@@ -35,6 +35,7 @@ import { applyAction } from "@/lib/server/repo/admin-write";
 import { rateLimitedKey } from "@/lib/server/rate-limit";
 import { mayPropose } from "@/lib/mcp/oauth";
 import { logCall, mcpSwitch, type CallOutcome } from "@/lib/server/repo/mcp";
+import { contributorLoad } from "@/lib/server/repo/mcp-contributors";
 import { dailyActivity, getRecord, impactTotals, parentsTotals, questionsTotals, recordsTotals, searchRecords, unansweredQuestions, whatWentWrong } from "@/lib/server/repo/mcp-read";
 import { SOURCE_CHECKS, SOURCE_KINDS, SOURCE_ROLES, SOURCE_STATUSES, getSource, listSources, recordSourceCheck, sourceNamed } from "@/lib/server/repo/mcp-sources";
 import { AGE_BANDS } from "@/lib/matching";
@@ -340,7 +341,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
 
   tool("daily_activity", {
     title: "Day by day",
-    description: "Day-by-day counts on Pasadena's clock for a daily brief: yesterday beside the average of the 7 days before it, today so far, and each day — sign-ups, phones verified, contributions, questions texted, answers sent, held for a person, did it help (yes/no), digest texts, texts not delivered.",
+    description: "Day-by-day counts on Pasadena's clock for a daily brief: yesterday beside the average of the 7 days before it, today so far, and each day — sign-ups, phones verified, contributions, questions texted, answers sent, held for a person, did it help (yes/no), digest texts, texts not delivered, and the digest's reminders sent and not delivered.",
     input: { days: z.number().int().min(8).max(60).default(8).describe("How many days back, at least 8 for the baseline") },
     readOnly: true,
   }, async ({ days }) => dailyActivity(db(), { days, timeZone: marketConfig(DEFAULT_MARKET_ID).timeZone }));
@@ -559,7 +560,7 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
 
   tool("list_sources", {
     title: "Sources & partners",
-    description: "Pando's sources & partners list: feeds and pages the Source agent reads (role source) and the schools, camps, PTAs and groups Pando works with (role partner). Each has its id, kind, name, link, area, note, status and when it was last checked and how that went; least recently checked first. Organisations only, never a person's contact.",
+    description: "Pando's sources & partners list: feeds and pages the Source agent reads (role source) and the schools, camps, PTAs and groups Pando works with (role partner). Each has its id, kind, name, link, area, note, status and when it was added, when it was last checked and how that went; least recently checked first. Organisations only, never a person's contact.",
     input: {
       role: z.enum(SOURCE_ROLES).optional(),
       kind: z.enum(SOURCE_KINDS).optional(),
@@ -654,6 +655,13 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
   });
 
   /* ── Costs ─────────────────────────────────────────────────────────────── */
+
+  tool("contributor_load", {
+    title: "Contributor load",
+    description: "How hard Pando leans on its contributors, counts only: requests sent in the window (Network Asks, freshness pings, did-it-help questions), how many contributors were asked, replies and the reply rate, PASSes, thank-yous; and of everyone asked in the last 30 days, how many Pando could not ask today and why (monthly or weekly ceiling, the 48-hour gap), how many have their ceiling lowered by the response-rate governor, and how many opted out after a request. The same rules the send layer uses.",
+    input: { days: z.number().int().min(1).max(90).default(7).describe("The window for requests and replies: 1 for a daily brief, 7 for a week") },
+    readOnly: true,
+  }, async ({ days }) => contributorLoad(db(), { days }));
 
   tool("costs_summary", {
     title: "Costs",

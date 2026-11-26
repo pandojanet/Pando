@@ -197,6 +197,7 @@ shown to a parent).
 | `propose_plugin_change` | **proposal**: create, update or delete a skill, an agent or a connector; committed when an admin commits it | Prompt Architect / reusable workflows |
 | `list_proposals` | proposals and their decisions | `get_request_status`, `list_approval_queue` |
 | `approve_proposal`, `reject_proposal` | **decide** one waiting proposal, on the person's own word in the chat (not a plugin change) | `approve_request`, `reject_request` |
+| `contributor_load` | requests, replies, PASSes and thank-yous in a window; who cannot be asked today and why (ceiling, 48-hour gap, governor); opt-outs after a request — counts only, the send layer's own rules | daily report: contributor pings / replies / fatigue |
 | `costs_summary` | Twilio's billed usage (UTC days); AI spend from PostHog (Pasadena days); useful answers and the cost per one | `log_cost_event` (read side) |
 
 **Not here, on purpose:** `add_watch`, `cancel_watch`, `request_network_check`, `record_outcome`.

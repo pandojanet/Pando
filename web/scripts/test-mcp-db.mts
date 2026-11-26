@@ -117,7 +117,7 @@ for (let i = 0; i < 130; i++) gets.push(await mcpRoute.GET(new Request(`${A}/api
 ok("a GET is 405 and uncounted: 130 of them leave the 120-a-minute budget whole", gets.every((r) => r.status === 405 && r.headers.get("allow") === "POST, DELETE") && (await post({ jsonrpc: "2.0", id: 1, method: "tools/list" })).status === 200);
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("27 tools, each with a title and read/destructive hints", tools.length === 27 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("28 tools, each with a title and read/destructive hints (26 Nov: + contributor_load)", tools.length === 28 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
 /* 24 Nov: a proposal is decided in the chat, so Claude must ask the person before each such call. */
 ok("approve_proposal and reject_proposal exist, destructive and not read-only; nothing commits a skill",
   ["approve_proposal", "reject_proposal"].every((n) => tools.some((t) => t.name === n && t.annotations?.destructiveHint === true && t.annotations?.readOnlyHint === false)) &&
@@ -133,6 +133,8 @@ const reads: Array<[string, Record<string, unknown>]> = [
   ["get_record", { id: share.id }], ["list_proposals", { status: "all" }], ["digest_candidates", {}], ["list_sources", {}],
   ["search_records", { status: "any", source_check: "never", not_checked_since: "2026-01-01" }], ["impact_totals", { from: "2026-01-01", to: today }],
   ["costs_summary", { from: `${today.slice(0, 8)}01`, to: today }],
+  /* 26 Nov: the Playbook's contributor load. */
+  ["contributor_load", { days: 7 }], ["contributor_load", { days: 1 }],
 ];
 for (const [name, args] of reads) {
   const r = await call(name, args);
@@ -481,6 +483,23 @@ tries = 0;
 let refused = false;
 try { await readWithRetry(async () => { tries++; throw driverErr("42P01", "relation does not exist"); }, { delayMs: 1 }); } catch { refused = true; }
 ok("a statement's own error is not run again", refused && tries === 1, String(tries));
+
+{
+  /* 26 Nov: what the Playbook's daily report reads. */
+  const load = JSON.parse((await call("contributor_load", { days: 30 })).text || "{}");
+  ok("contributor_load: requests by kind, replies, rate, passes, who is resting and why — counts only",
+    typeof load.requests?.total === "number" && typeof load.requests?.network_asks === "number" && typeof load.replies === "number" &&
+      (load.reply_rate === null || typeof load.reply_rate === "number") && typeof load.resting_now?.total === "number" &&
+      typeof load.ceiling_lowered_by_governor === "number" && !/\+1\d{10}|"name"|"phone"/.test(JSON.stringify(load)),
+    JSON.stringify(load).slice(0, 200));
+  const daily = JSON.parse((await call("daily_activity", { days: 8 })).text || "{}");
+  ok("daily_activity carries the digest's reminders sent and not delivered",
+    typeof daily.yesterday?.reminders_sent?.count === "number" && typeof daily.yesterday?.reminders_undelivered?.count === "number",
+    JSON.stringify(daily.yesterday ?? {}).slice(0, 160));
+  const listed = JSON.parse((await call("list_sources", { status: "any" })).text || "{}");
+  const first = (Array.isArray(listed) ? listed : listed.results ?? [])[0];
+  ok("list_sources says when each was added", first === undefined || "added_at" in first, JSON.stringify(first ?? {}).slice(0, 160));
+}
 
 await stop();
 console.log(`\n  ${pass} checks passed${fail ? `, ${fail} FAILED` : ""}.`);

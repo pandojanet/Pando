@@ -28,6 +28,7 @@ export const PANDO_TOOLS = {
   list_sources: "read",
   read_plugin: "read",
   costs_summary: "read",
+  contributor_load: "read",
   propose_record_edit: "write",
   propose_new_record: "write",
   propose_fact_check: "write",

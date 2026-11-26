@@ -277,7 +277,7 @@ console.log("\n=== the diagram's promises ===");
       /const checked = checkCandidate\(a\)/.test(server) && /checkCandidate\(\{ \.\.\.\(payload/.test(write));
   ok("one message per request: a JSON-RPC batch is refused before the quota and the tools", /Batches are not accepted/.test(mcpRoute) && mcpRoute.indexOf("Batches are not accepted") < mcpRoute.indexOf("pandoMcpServer("));
   ok("a quota refusal is in the call log, once a minute per connection", /tool: "\(rate limited\)", outcome: "refused"/.test(mcpRoute));
-  ok("undelivered texts are the log's outbound rows ('out', as the table's CHECK has it)", !/direction = 'outbound'/.test(readSrc) && (readSrc.match(/direction = 'out'/g) ?? []).length === 2);
+  ok("undelivered texts are the log's outbound rows ('out', as the table's CHECK has it)", !/direction = 'outbound'/.test(readSrc) && (readSrc.match(/direction = 'out'/g) ?? []).length === 4); /* 26 Nov: + the reminders sent and not delivered */
   ok("a skill's save: no contact details, a version that is not x.y.z refused, the hash returned and audited, recording retried and a failure said",
     /hasContactDetail\(body\) \|\| hasContactDetail\(description\)/.test(skills) && /return m \? `\$\{m\[1\]\}\.\$\{m\[2\]\}\.\$\{Number\(m\[3\]\) \+ 1\}` : null;/.test(skills) &&
       /sha256/.test(skills) && /\(await record\(\)\)\.persisted \|\| \(await record\(\)\)\.persisted/.test(skills) && /warning:/.test(skills) && /res\.status === 404 && method === "GET"/.test(skills));

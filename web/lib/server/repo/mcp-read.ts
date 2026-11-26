@@ -368,7 +368,7 @@ export async function unansweredQuestions(db: Db, input: { days: number; limit: 
 
 /* ── Day by day ───────────────────────────────────────────────────────────── */
 
-const DAILY_KEYS = ["joined", "verified", "contributions", "questions", "answers_sent", "held", "helped_yes", "helped_no", "digest_texts", "undelivered_texts"] as const;
+const DAILY_KEYS = ["joined", "verified", "contributions", "questions", "answers_sent", "held", "helped_yes", "helped_no", "digest_texts", "undelivered_texts", "reminders_sent", "reminders_undelivered"] as const;
 type DailyKey = (typeof DAILY_KEYS)[number];
 
 /**
@@ -394,7 +394,11 @@ export async function dailyActivity(db: Db, input: { days: number; timeZone: str
       (select count(*) from answers a where not a.is_test and a.helped is true and ${local("a.helped_asked_at")} = day) as helped_yes,
       (select count(*) from answers a where not a.is_test and a.helped is false and ${local("a.helped_asked_at")} = day) as helped_no,
       (select count(*) from digest_sends ds join digest_editions de on de.id = ds.edition_id where not de.is_test and ${local("ds.sent_at")} = day) as digest_texts,
-      (select count(*) from message_log m where m.direction = 'out' and m.status in ('failed', 'undelivered') and ${local("coalesce(m.status_at, m.sent_at)")} = day) as undelivered_texts
+      (select count(*) from message_log m where m.direction = 'out' and m.status in ('failed', 'undelivered') and ${local("coalesce(m.status_at, m.sent_at)")} = day) as undelivered_texts,
+      /* The digest's reminders on the event's day (26 Nov — the founder's Playbook: "watched releases and alert
+         delivery failures"): sent that day, and of those the carrier reported not delivered. */
+      (select count(*) from message_log m where m.direction = 'out' and m.template = 'digest_reminder' and m.retry_of is null and ${local("m.sent_at")} = day) as reminders_sent,
+      (select count(*) from message_log m where m.direction = 'out' and m.template = 'digest_reminder' and m.status in ('failed', 'undelivered') and ${local("coalesce(m.status_at, m.sent_at)")} = day) as reminders_undelivered
       from days order by day
   `);
   const series = out.map((r) => ({ day: String(r.day), ...Object.fromEntries(DAILY_KEYS.map((k) => [k, n(r[k])])) }) as { day: string } & Record<DailyKey, number>);

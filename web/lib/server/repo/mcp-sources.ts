@@ -38,6 +38,8 @@ export interface SourceRow {
   last_checked_at: string | null;
   last_check: string | null;
   added_by: string;
+  /** When it was put on the list (26 Nov): "new partners this week" in the reviews. */
+  added_at: string | null;
 }
 
 const toSource = (r: Row): SourceRow => ({
@@ -52,6 +54,7 @@ const toSource = (r: Row): SourceRow => ({
   last_checked_at: r.last_checked_at ? new Date(String(r.last_checked_at)).toISOString() : null,
   last_check: r.last_check ? String(r.last_check) : null,
   added_by: String(r.added_by),
+  added_at: r.created_at ? new Date(String(r.created_at)).toISOString() : null,
 });
 
 /** The list, by role and status (active by default); least recently checked first, so a run starts with what is due. */
