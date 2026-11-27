@@ -7,7 +7,7 @@
 
 Pando MCP is a remote MCP server (MCP = Model Context Protocol, the way Claude calls another
 system's tools) at **`https://pando.is/api/mcp`**, inside the Pando app. Every agent of the Pando
-plugin for Claude ([`pando-plugin`](https://github.com/OleksandrMartynov/pando-plugin)) reaches Pando
+plugin for Claude ([`pando-plugin`](https://github.com/pandojanet/pando-plugin)) reaches Pando
 only through it. Transport: Streamable HTTP, stateless — a new server for every request, so there is no
 session to lose between deploys.
 
