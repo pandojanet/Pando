@@ -57,6 +57,12 @@ const NEVER = ["Bash", "Write", "Edit", "NotebookEdit"];
 /** Removing these would take away the plugin's own way of changing itself, or its rules. */
 export const LOCKED: Record<PluginTarget, string[]> = { skill: ["customize", "pando-data"], agent: ["agent-builder"], connector: ["pando"] };
 /**
+ * Pando's own connector, whatever its case (27 Nov: the key became "Pando", so Claude's connector list shows
+ * the name with its capital). Locked, first in .mcp.json and never a "<connector>:<tool>" — as before.
+ */
+export const isPandoConnector = (name: string) => name.toLowerCase() === "pando";
+const lockedConnector = (name: string) => LOCKED.connector.includes(name.toLowerCase());
+/**
  * Words a skill or agent the client proposes never carries: the tools that decide, and the old flags. Since
  * 24 Nov a proposal is decided in the chat — by the person, in the main conversation, by the rule in the
  * plugin's `shared/safety.md`, which no proposal can reach. A proposed skill that scripts a decision
@@ -86,7 +92,7 @@ const isPandoWrite = (t: string) => (PANDO_WRITE_TOOLS as readonly string[]).inc
 /** A plugin connector's tool: `notion:search`, or the long name this plugin's connectors had (`mcp__plugin_pando_notion__search`). */
 function connectorTool(t: string): { connector: string; tool: string } | null {
   const m = /^([a-z][a-z0-9-]{1,30}):([A-Za-z0-9_-]{1,80})$/.exec(t) ?? /^mcp__plugin_pando_([a-z][a-z0-9-]{1,30})__([A-Za-z0-9_-]{1,80})$/.exec(t);
-  return m && m[1] !== "pando" ? { connector: m[1], tool: m[2] } : null;
+  return m && !isPandoConnector(m[1]) ? { connector: m[1], tool: m[2] } : null;
 }
 
 function checkText(description: string, body: string): string | null {
@@ -187,10 +193,10 @@ export function connectorUrlRefusal(raw: string | undefined): string | null {
  */
 export const READ_ONLY_CONNECTORS: Record<string, string> = { supabase: "mcp.supabase.com", posthog: "mcp.posthog.com" };
 
-/** .mcp.json after a connector change: the servers object, sorted, `pando` first. */
+/** .mcp.json after a connector change: the servers object, Pando's own connector first. */
 export function buildMcpJson(current: string, d: PluginDraft): string | { refused: string } {
   if (!CONNECTOR_NAME.test(d.name)) return { refused: "A connector's name is 2–31 lowercase letters, digits or hyphens." };
-  if (d.name === "pando") return { refused: "The Pando connector is the plugin's own; it is not changed here." };
+  if (isPandoConnector(d.name)) return { refused: "The Pando connector is the plugin's own; it is not changed here." };
   if (d.action !== "delete" && d.name in READ_ONLY_CONNECTORS) {
     return { refused: `The ${d.name} connector is kept read-only by QuitCode; its address is not changed from here. It can be removed.` };
   }
@@ -222,7 +228,7 @@ export function buildMcpJson(current: string, d: PluginDraft): string | { refuse
   }
   /* The file's own order, `pando` first, a new connector last (23 Nov, the lab walk: sorting by name
      moved untouched connectors, and the admin read their lines as removed and added). */
-  const ordered = Object.fromEntries(Object.entries(servers).sort(([a], [b]) => (a === "pando" ? -1 : b === "pando" ? 1 : 0)));
+  const ordered = Object.fromEntries(Object.entries(servers).sort(([a], [b]) => (isPandoConnector(a) ? -1 : isPandoConnector(b) ? 1 : 0)));
   return `${JSON.stringify({ ...parsed, mcpServers: ordered }, null, 2)}\n`;
 }
 
@@ -335,8 +341,8 @@ export async function readPluginIndex(): Promise<Record<string, unknown> | { ref
       connectors: Object.entries(servers).map(([name, s]) => ({
         name,
         url: s?.url ?? null,
-        may_change: !LOCKED.connector.includes(name) && !(name in READ_ONLY_CONNECTORS),
-        may_remove: !LOCKED.connector.includes(name),
+        may_change: !lockedConnector(name) && !(name in READ_ONLY_CONNECTORS),
+        may_remove: !lockedConnector(name),
         ...(name in READ_ONLY_CONNECTORS ? { read_only: true } : {}),
       })),
     };
@@ -408,7 +414,7 @@ export async function preparePluginChange(d: PluginDraft): Promise<PreparedChang
   const c = config();
   if (!c) return { refused: NOT_CONFIGURED };
   if (d.target !== "connector" && !PLUGIN_NAME.test(d.name)) return { refused: "A name is 3–41 lowercase letters, digits or hyphens, starting with a letter." };
-  if (d.action === "delete" && LOCKED[d.target].includes(d.name)) return { refused: `${d.name} cannot be removed: the plugin needs it to keep its rules and to change itself. It can be changed.` };
+  if (d.action === "delete" && (d.target === "connector" ? lockedConnector(d.name) : LOCKED[d.target].includes(d.name))) return { refused: `${d.name} cannot be removed: the plugin needs it to keep its rules and to change itself. It can be changed.` };
   try {
     const at = await head(c);
     if (!at) return { refused: `The plugin repo has no branch ${c.branch}.` };
@@ -441,7 +447,7 @@ export async function commitPluginChange(actor: string, p: { draft: PluginDraft;
   if (!c) return { refused: NOT_CONFIGURED };
   const d = p.draft;
   if (!d || !["skill", "agent", "connector"].includes(d.target) || !["create", "update", "delete"].includes(d.action)) return { refused: "This proposal is not a plugin change Pando can read." };
-  if (d.action === "delete" && LOCKED[d.target].includes(d.name)) return { refused: `${d.name} cannot be removed.` };
+  if (d.action === "delete" && (d.target === "connector" ? lockedConnector(d.name) : LOCKED[d.target].includes(d.name))) return { refused: `${d.name} cannot be removed.` };
   const path = pathOf(d.target, d.name);
   let done: { version: string; commit: string; after: string | null } | null = null;
   try {

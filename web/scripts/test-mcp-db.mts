@@ -239,7 +239,7 @@ const hexId = (k: string) => createHash("sha1").update(k).digest("hex");
 let headSha = hexId("c0");
 snapshots.set(headSha, new Map([
   [".claude-plugin/plugin.json", `${JSON.stringify({ name: "pando", version: "0.5.0" }, null, 2)}\n`],
-  [".mcp.json", `${JSON.stringify({ mcpServers: { pando: { type: "http", url: "https://pando.is/api/mcp" }, supabase: { type: "http", url: "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true" } } }, null, 2)}\n`],
+  [".mcp.json", `${JSON.stringify({ mcpServers: { Pando: { type: "http", url: "https://pando.is/api/mcp" }, supabase: { type: "http", url: "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true" } } }, null, 2)}\n`],
   ["skills/pando-data/SKILL.md", "---\nname: pando-data\ndescription: \"The catalogue of Pando's tools.\"\n---\n\nThe catalogue.\n"],
   ["skills/old-brief/SKILL.md", "---\nname: old-brief\ndescription: \"An old brief nobody uses any more.\"\n---\n\nOld.\n"],
   ["skills/old-brief/references/notes.md", "notes\n"],
@@ -306,10 +306,10 @@ const propose = async (a: Record<string, unknown>): Promise<Proposed> => {
 const index = JSON.parse((await call("read_plugin", {})).text);
 ok("read_plugin lists the plugin: skills, agents, connectors, and what may be removed",
   index.version === "0.5.0" && index.skills?.some((s: { name: string; may_remove: boolean }) => s.name === "pando-data" && !s.may_remove) &&
-    index.connectors?.[0]?.name === "pando" && index.agents?.[0]?.name === "agent-builder", JSON.stringify(index).slice(0, 200));
+    index.connectors?.[0]?.name === "Pando" && index.agents?.[0]?.name === "agent-builder", JSON.stringify(index).slice(0, 200));
 ok("and says the read-only supabase connector may be removed but not changed",
   index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean; read_only?: boolean }) => c.name === "supabase" && !c.may_change && c.may_remove && c.read_only === true) &&
-    index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean }) => c.name === "pando" && !c.may_change && !c.may_remove), JSON.stringify(index.connectors));
+    index.connectors?.some((c: { name: string; may_change: boolean; may_remove: boolean }) => c.name === "Pando" && !c.may_change && !c.may_remove), JSON.stringify(index.connectors));
 ok("and reads one agent's file to start an edit from", /name: agent-builder/.test(JSON.parse((await call("read_plugin", { target: "agent", name: "agent-builder" })).text).text ?? ""));
 
 const agentArgs = { target: "agent", action: "create", name: "ci-newsletter", description: "Drafts the school newsletter blurb from Pando's approved records. Use for newsletters.", instructions: "Read approved records with search_records and write three short lines for a school newsletter.", tools: ["Read", "search_records"] };
@@ -355,11 +355,12 @@ ok("a file changed since the proposal is not overwritten: refused, and the propo
 ok("a connector over http is refused", /https only/.test(String((await propose({ target: "connector", action: "create", name: "notion", url: "http://mcp.notion.com/mcp" })).error ?? "")));
 ok("a connector with a key in its address is refused", /No sign-in, key or query/.test(String((await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp?key=abc" })).error ?? "")));
 ok("a connector on a local machine is refused", /public service/.test(String((await propose({ target: "connector", action: "create", name: "lab", url: "https://127.0.0.1/mcp" })).error ?? "")));
-ok("the pando connector cannot be removed", /cannot be removed/.test(String((await propose({ target: "connector", action: "delete", name: "pando" })).error ?? "")));
+/* 27 Nov: the key is "Pando" (Claude shows it), and it stays locked whatever the case it is named in. */
+ok("the Pando connector cannot be removed, in either case", /cannot be removed/.test(String((await propose({ target: "connector", action: "delete", name: "pando" })).error ?? "")) && /cannot be removed|lowercase/.test(String((await propose({ target: "connector", action: "delete", name: "Pando" })).error ?? "")));
 const conn = await propose({ target: "connector", action: "create", name: "notion", url: "https://mcp.notion.com/mcp" });
 const connDone = conn.proposal_id ? await commitProposal(conn.proposal_id) : { refused: "" };
 const servers = JSON.parse(repoNow().get(".mcp.json") ?? "{}").mcpServers ?? {};
-ok("a connector is added as a remote https server, last, the others untouched and in place", "committed" in connDone && Object.keys(servers).join(",") === "pando,supabase,notion" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion) &&
+ok("a connector is added as a remote https server, last, the others untouched and in place", "committed" in connDone && Object.keys(servers).join(",") === "Pando,supabase,notion" && servers.notion?.type === "http" && servers.notion?.url === "https://mcp.notion.com/mcp" && !("headers" in servers.notion) &&
   servers.supabase?.url === "https://mcp.supabase.com/mcp?project_ref=ci&read_only=true");
 /* 23 Nov: Supabase and PostHog stay read-only — their address is what makes them so. */
 ok("the read-only supabase connector's address cannot be changed", /kept read-only by QuitCode/.test(String((await propose({ target: "connector", action: "update", name: "supabase", url: "https://mcp.supabase.com/mcp" })).error ?? "")));
