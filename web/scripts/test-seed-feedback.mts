@@ -3200,7 +3200,7 @@ console.log("\n=== 17 Sep: every card ends with an open question ===");
     /* 12 Oct: `delay` — after a model turn it waits only what is left of the typing pause. */
     /function askFollowUp\(d: ChatDraft, last: Step, question: string(, delay\?: number)?\)/.test(chat) &&
       /if \(askRuleFollowUp\(d, last\)\) return;/.test(chat) &&
-      !/confirmBackFor|answerConfirmBack|.confirm_back/.test(chat) &&
+      !/confirmBackFor|answerConfirmBack|.confirm_back\b/.test(chat) &&
       /void persist\(submission\);\s*\}/.test(chat),
     "the confirm-back is back, or a card can be left unsent",
   );

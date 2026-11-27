@@ -98,6 +98,10 @@ ok("the answer opens on what nobody near them has mentioned",
   /: fit\.unmet\s+\? \{ opening: unmetLine\(fit\.unmet, body, candidates\.some\(\(c\) => !c\.trust\.public_only\), place\.source !== "none"\) \}/.test(inbound));
 ok("and is not rewritten warmly, whose opening would read as though it were met",
   /&& fit\.unmet === null;/.test(inbound) && /composed\.parent_used > 0 && fit\.unmet === null/.test(inbound));
+/* 27 Nov, the SMS lab: "birthday party venues" was answered with a walking park "3 parents near you have used",
+   judged unknown — right topic, want unshown. A place asked for a purpose fits only when it says it serves it. */
+ok("a place asked for a purpose fits only if it says it serves it: a walking park for 'birthday party venues' is a mismatch",
+  /A place asked for a purpose - a venue for a birthday party/.test(server) && /a walking park or a trail for 'birthday party venues'/.test(server) && /is a mismatch, not unknown/.test(server));
 ok("another activity inside one family of things, other ages, or a stated condition broken is a mismatch (5 Nov)",
   /a toddler music class for 'piano teachers' or for 'art classes'/.test(server) && /classes Monday to Thursday for 'weekends only'/.test(server));
 ok("the web's findings are judged the same way, and a mismatch dropped from the public half - never the place the question names (5 Nov)",
