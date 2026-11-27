@@ -1832,7 +1832,7 @@ export const conversationSummaries = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    check("conversation_summaries_asks_check", sql`jsonb_typeof(${t.asks}) = 'array' and jsonb_array_length(${t.asks}) <= 30`),
+    check("conversation_summaries_asks_check", sql`jsonb_typeof(${t.asks}) = 'array' and jsonb_array_length(${t.asks}) <= 200`),
     index("conversation_summaries_updated_at_idx").on(t.updatedAt),
   ],
 );

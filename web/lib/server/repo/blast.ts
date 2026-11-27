@@ -15,7 +15,7 @@ import { withDb, type Db } from "@/lib/server/db";
 import { sendSms } from "@/lib/server/sms";
 import { matchesFor } from "@/lib/server/repo/matching";
 import { familyInterestsFor } from "@/lib/server/repo/conversation-memory";
-import { topicsIn, type MemoryTopic } from "@/lib/conversation-memory";
+import { topicsIn } from "@/lib/conversation-memory";
 import { classifyIntent } from "@/lib/server/intent";
 import { nearbyAreas } from "@/lib/server/repo/areas";
 
@@ -90,7 +90,7 @@ export async function selectPool(input: {
    */
   near?: readonly string[] | null;
   /** The Ask's topics (`topicsIn`): who asked about one of them goes first (25 Nov). */
-  topics?: readonly MemoryTopic[];
+  topics?: readonly string[];
   /** The Ask is for the adult asking (25 Nov, `for_whom`): the asker's children do not rank the pool. */
   forSelf?: boolean;
 }): Promise<PoolResult> {

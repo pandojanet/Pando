@@ -17,11 +17,11 @@ import {
   validMemory,
   type MemoryAsk,
   type MemoryExchange,
-  type MemoryTopic,
+  type MemoryInterest,
 } from "@/lib/conversation-memory";
 import { withDb, type Db } from "@/lib/server/db";
 import { tracedFetch } from "@/lib/server/trace";
-import { EARLIER_DAYS, EARLIER_EXCHANGES } from "@/lib/server/repo/deep-dives";
+import { EARLIER_DAYS } from "@/lib/server/repo/deep-dives";
 
 /**
  * A parent's older exchanges as a structured memory (12 Nov, drizzle/0066; the
@@ -51,7 +51,7 @@ async function areasFor(db: Db, personId: string): Promise<string[]> {
 }
 
 /** The memory for this person, re-checked against today's rules — and deleted as it is read when it is past its keeping. */
-export async function memoryFor(personId: string | null | undefined): Promise<MemoryAsk[]> {
+export async function memoryFor(personId: string | null | undefined): Promise<MemoryInterest[]> {
   if (!personId) return [];
   const result = await withDb(async (db: Db) => {
     const rows = (await db.execute(sql`
@@ -77,7 +77,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * weekly digest reads everyone's at once. A person with none is absent from
  * the map. Nothing is written, and nothing is logged but a count by the caller.
  */
-export async function familyInterestsFor(personIds: readonly string[]): Promise<Map<string, MemoryTopic[]>> {
+export async function familyInterestsFor(personIds: readonly string[]): Promise<Map<string, string[]>> {
   const ids = [...new Set(personIds.filter((id) => UUID.test(id)))];
   if (ids.length === 0) return new Map();
   /* An array literal, not `sql.array` — see `admin-read.ts`. Only UUIDs reach it. */
@@ -99,7 +99,7 @@ export async function familyInterestsFor(personIds: readonly string[]): Promise<
   });
   if (!result.persisted || !result.data) return new Map();
   const now = new Date();
-  const memoryOf = new Map<string, MemoryAsk[]>();
+  const memoryOf = new Map<string, MemoryInterest[]>();
   for (const m of result.data.memories) {
     if (memoryExpired(new Date(m.updated_at), now)) continue;
     /* Topics only: the area is not used here, so no market's areas are needed to read it. */
@@ -110,7 +110,7 @@ export async function familyInterestsFor(personIds: readonly string[]): Promise<
     const q = baseQuestion(String(a.question_text)).trim();
     if (q) questionsOf.set(a.person_id, [...(questionsOf.get(a.person_id) ?? []), q]);
   }
-  const out = new Map<string, MemoryTopic[]>();
+  const out = new Map<string, string[]>();
   for (const id of ids) {
     const interests = familyInterests({ memory: memoryOf.get(id) ?? [], recentQuestions: questionsOf.get(id) ?? [], isSensitive: sensitive });
     if (interests.length > 0) out.set(id, interests);
@@ -121,14 +121,12 @@ export async function familyInterestsFor(personIds: readonly string[]): Promise<
 type AnswerRow = { question_text: string | null; answer_text: string | null; status: string; hold_reason: string; created_at: string | Date; at: string };
 
 /**
- * Files the exchanges that have left the verbatim window into the memory.
+ * Files every exchange that has gone out into the memory (27 Nov: was only the ones leaving the window).
  *
- * Runs during a message, before its own answer exists, so the window is what
- * the **next** reading will show word for word: this message's answer plus the
- * 12 newest exchanges already there (review, 12 Nov: measuring 13 left one
- * exchange in neither). Within the last `EARLIER_DAYS` only; older ones have
- * left it too. Never folded again: anything at or before `covers_through`, the
- * person's last STOP, or `MEMORY_IDLE_DAYS` ago — so a STOP, or 90 quiet days,
+ * Runs during a message, before its own answer exists, so it files the ones
+ * before it — at most `MEMORY_FOLD_BATCH` a time, the rest on the next text.
+ * Never folded again: anything at or before `covers_through`, the
+ * person's last STOP, or `MEMORY_IDLE_DAYS` ago — so a STOP, or a quiet year,
  * is not undone by the next text rebuilding the memory from old answers. An
  * exchange `mayFold` refuses is passed over and still counted as covered.
  * Never throws; returns an enum for the log.
@@ -147,24 +145,26 @@ export async function foldMemory(personId: string | null | undefined, phone: str
                    where phone = ${phone} and (opted_in_at is null or opted_in_at > opted_out_at)),
                  now() - make_interval(days => ${MEMORY_IDLE_DAYS}::int)
                )::text as floor,
-               (now() - make_interval(days => ${EARLIER_DAYS}::int))::text as week_ago,
-               now()::text as started,
-               (select created_at from answers
-                 where phone = ${phone} and question_text is not null and status = 'sent' and hold_reason = 'not_held'
-                   and answer_text is not null and created_at > now() - make_interval(days => ${EARLIER_DAYS}::int)
-                 order by created_at desc offset ${EARLIER_EXCHANGES - 1} limit 1)::text as twelfth
-      `)) as unknown as Array<{ floor: string; week_ago: string; started: string; twelfth: string | null }>;
-      const { floor, week_ago, started, twelfth } = floorRows[0];
-      /* With twelve in the week, everything older than the twelfth has left; with fewer, everything older than the week. */
-      const cutoff = twelfth ?? week_ago;
-      const leaving = (await db.execute(sql`
-        select question_text, answer_text, status, hold_reason, created_at, created_at::text as at from answers
+               now()::text as started
+      `)) as unknown as Array<{ floor: string; started: string }>;
+      const { floor, started } = floorRows[0];
+      /* 27 Nov — every exchange, not only the ones leaving the verbatim window: the memory is the family's
+         interests for the digest and the open answers (the developer: nothing may be forgotten), so an ask is
+         filed once it has gone out, while the window still shows it word for word to the classifier. */
+      const candidates = (await db.execute(sql`
+        select question_text, answer_text, status, hold_reason, created_at, created_at::text as at,
+               created_at < now() - interval '1 day' as stale
+          from answers
          where phone = ${phone} and question_text is not null
            and created_at > ${floor}::timestamptz
-           and created_at < ${cutoff}::timestamptz
          order by created_at asc
          limit ${MEMORY_FOLD_BATCH}
-      `)) as unknown as AnswerRow[];
+      `)) as unknown as Array<AnswerRow & { stale: boolean }>;
+      /* Up to the first answer still on its way (waiting to be read or sent, not held, under a day old):
+         `covers_through` must not pass it, or it would never be filed once it goes out. A held answer is never
+         filed (it is sensitive or a caregiver's) and does not wait. */
+      const settling = candidates.findIndex((r) => (r.status === "pending_review" || r.status === "approved") && r.hold_reason === "not_held" && !r.stale);
+      const leaving = settling === -1 ? candidates : candidates.slice(0, settling);
       if (leaving.length === 0) return null;
       const current = (await db.execute(sql`
         select asks from conversation_summaries where person_id = ${personId}::uuid
@@ -211,7 +211,7 @@ export async function foldMemory(personId: string | null | undefined, phone: str
         );
         const text = response.content.map((b) => (b.type === "text" ? b.text : "")).join("");
         if (response.stop_reason !== "end_turn") callFailed = true;
-        else added = readMemoryAsks(JSON.parse(text), foldable, areas);
+        else added = readMemoryAsks(JSON.parse(text), foldable, areas, sensitive);
       } catch {
         callFailed = true;
       }

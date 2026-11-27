@@ -9,6 +9,7 @@ import {
   type DeepFamily,
 } from "@/lib/deep-dive";
 import { baseQuestion } from "@/lib/more-options";
+import { answerGist } from "@/lib/conversation-memory";
 import { withDb, type Db } from "@/lib/server/db";
 
 /**
@@ -359,7 +360,8 @@ export async function earlierExchangesFor(
       .filter((x) => x.q && x.a)
       .slice(0, limit)
       .reverse()
-      .map((x) => ({ question: x.q, answer: x.a.slice(0, 400) }));
+      /* 27 Nov: every place the answer named (`answerGist`), not its first 400 characters. */
+      .map((x) => ({ question: x.q, answer: answerGist(x.a) }));
   });
   return r.persisted ? (r.data ?? []) : [];
 }

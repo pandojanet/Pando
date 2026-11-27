@@ -25,7 +25,7 @@ import { sendSms } from "@/lib/server/sms";
 import { MARKETS } from "@/lib/markets";
 import { editionVariable } from "@/lib/sms-rich";
 import { expireMemory, familyInterestsFor } from "@/lib/server/repo/conversation-memory";
-import { MEMORY_TOPICS, touchesInterest, type MemoryTopic } from "@/lib/conversation-memory";
+import { touchesInterest } from "@/lib/conversation-memory";
 import { feedbackAskCard, feedbackAskSms, reminderSms } from "@/lib/digest-followup";
 import { claimFollowup, dueFeedback, dueReminders, releaseFollowup } from "@/lib/server/repo/digest-followup";
 import { ageOn, composeDigest, digestDue, digestPrepFor, nextDigestDate, pickForPerson, poolForFamily } from "@/lib/digest";
@@ -457,13 +457,14 @@ export type DigestOneOutcome =
   | { ok: false; reason: "no_person" | "not_prepared" | "preparing" | "not_approved" | "nothing_suits" | "not_sent"; edition_date?: string; detail?: string };
 
 /** A family's affinities with what they asked about over SMS added as `asked:` ones (25 Nov, `ASKED_AFFINITY`). */
-function withAsked(affinities: readonly string[], interests: readonly MemoryTopic[] | undefined): string[] {
+function withAsked(affinities: readonly string[], interests: readonly string[] | undefined): string[] {
   return [...affinities.filter((a) => !a.startsWith(ASKED_AFFINITY)), ...(interests ?? []).map((t) => `${ASKED_AFFINITY}${t}`)];
 }
 
 /** Their picks lean to an item on what they asked about (25 Nov, `pickForPerson`): its title and summary, read with the topic's words. */
 function leansFor(facts: FamilyFacts): (item: DigestItem) => boolean {
-  const topics = askedTopics(facts).filter((t): t is MemoryTopic => (MEMORY_TOPICS as readonly string[]).includes(t));
+  /* 27 Nov: a topic the list does not have leans too (`interestWords` reads its own name). */
+  const topics = askedTopics(facts);
   return (item) => touchesInterest(`${item.title} ${item.summary}`, topics);
 }
 

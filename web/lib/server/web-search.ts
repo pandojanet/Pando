@@ -10,7 +10,7 @@ import { inAnotherState, readDeepFindings, readDeepFocus, readFindings, sameDeep
 import { deepDiveShape } from "@/lib/deep-dive";
 import { datesAllPast } from "@/lib/digest";
 import { searchPlacePhrase } from "@/lib/place-in-question";
-import { interestsBriefLine, type MemoryTopic } from "@/lib/conversation-memory";
+import { interestsBriefLine } from "@/lib/conversation-memory";
 
 /**
  * The person check for web text, with this market's towns as a veto: "South
@@ -341,7 +341,7 @@ function brief(input: {
   exclude?: readonly string[];
   enrich?: readonly string[];
   found?: readonly string[];
-  interests?: readonly MemoryTopic[];
+  interests?: readonly string[];
   forAdult?: boolean;
   now?: Date;
   /** The state the search is located in, when the label does not carry one. */
@@ -564,7 +564,7 @@ type SearchInput = {
   /** Deep mode, the second search: places the first one found — find others. */
   found?: readonly string[];
   /** An open question only (25 Nov): what the family asked about before, as `MEMORY_TOPICS` — a lean, never a narrowing. */
-  interests?: readonly MemoryTopic[];
+  interests?: readonly string[];
   /** The request is for the adult asking, not a child (25 Nov, `for_whom`). */
   forAdult?: boolean;
 };
