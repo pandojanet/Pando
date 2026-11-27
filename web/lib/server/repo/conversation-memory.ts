@@ -88,9 +88,13 @@ export async function familyInterestsFor(personIds: readonly string[]): Promise<
        where person_id = any(${literal}::uuid[])
     `)) as unknown as Array<{ person_id: string; asks: unknown; updated_at: string | Date }>;
     const asked = (await db.execute(sql`
-      select person_id::text as person_id, question_text from answers
+      select person_id::text as person_id, question_text from answers a
        where person_id = any(${literal}::uuid[])
          and created_at > now() - make_interval(days => ${EARLIER_DAYS}::int)
+         /* 27 Nov, the lab: STOP takes the conversation with it, and a START after it does not bring back
+            what was asked before (the 12 Nov rule foldMemory keeps) — the week's questions too. */
+         and a.created_at > coalesce((select max(o.opted_out_at) from sms_opt_outs o
+                                       where o.phone = a.phone and (o.opted_in_at is null or o.opted_in_at > o.opted_out_at)), '-infinity'::timestamptz)
          and status = 'sent' and hold_reason = 'not_held'
          and question_text is not null
        order by created_at desc

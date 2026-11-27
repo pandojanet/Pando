@@ -1724,7 +1724,15 @@ async function clarifyStep({ from, body, person, attached, answeredSomething }: 
       /* Only the question Pando asked, never one volunteered: a town in a request
          ("what about swim in Arcadia") is where they asked about, not where they
          live (review, 4 Nov). */
-      const kept = open && pending === question ? await saveFactsIn(person, body, { saysAChild, only: question }) : [];
+      /* …except the child's age said about the child (27 Nov, the SMS lab): "She is 3, we live in Pasadena" after a
+         held babysitter question was not kept, and the next question asked the age again. An age said about a child
+         is not a place asked about; only the age is taken (`only: "child_age"`), never the town. */
+      const kept =
+        open && pending === question
+          ? await saveFactsIn(person, body, { saysAChild, only: question })
+          : question === "child_age" && saysAChild
+            ? await saveFactsIn(person, body, { saysAChild, only: "child_age" })
+            : [];
       console.info("[sms:inbound] clarification", { question, saved: kept.length > 0, asked: question === pending, refines: true });
       return { clarified, early };
     }
@@ -2426,7 +2434,9 @@ async function routeStep({ from, body, person, attached, answeredSomething, clar
    * flyer's "for your 5 year old", the security review). Counts only in the log.
    */
   let profileNow = person?.profile ?? null;
-  if (person && profileNow && !fromMedia && reading.intent === "ask_recommendation") {
+  /* 27 Nov, the SMS lab: a caregiver question ("a babysitter for my 3 year old") and a message that follows a held
+     one say the same facts about the family, and were skipped — the next question asked the age again. */
+  if (person && profileNow && !fromMedia && (reading.intent === "ask_recommendation" || reading.intent === "ask_caregiver" || followsHeld !== null)) {
     if (profileNow.child_birth_years.length === 0 && !profileNow.children_declined) {
       const own = ownChildAges(body);
       if (own.length > 0 && (await rememberChildAges({ personId: person.person_id, ages: own }))) {

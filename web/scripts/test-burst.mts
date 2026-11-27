@@ -193,8 +193,9 @@ ok("a message with a subject of its own never inherits a held question's hold",
 ok("an answer to Pando's question that also asks for more is read as the request it refines",
   /If it answers that AND says more about what they want/.test(intent) &&
     /if \(newRequest && question && early\?\.standalone && !early\.sensitive\) \{/.test(inbound));
-ok("and keeps only the fact Pando asked for — never a town volunteered inside a request",
-  /const kept = open && pending === question \? await saveFactsIn\(person, body, \{ saysAChild, only: question \}\) : \[\];/.test(inbound));
+/* 27 Nov: and an age said about a child, unasked ("she is 3") — only the age, never the town. */
+ok("and keeps only the fact Pando asked for, or an age said about a child — never a town volunteered inside a request",
+  /const kept =\s+open && pending === question\s+\? await saveFactsIn\(person, body, \{ saysAChild, only: question \}\)\s+: question === "child_age" && saysAChild\s+\? await saveFactsIn\(person, body, \{ saysAChild, only: "child_age" \}\)\s+: \[\];/.test(inbound));
 ok("several short lines, or a longer reply with a question in it, are read against the question asked",
   /\(longReply \|\| severalLines\)\) \|\| volunteered\) && \(isClarifyingAnswer\(body\) \|\| severalLines \|\| longReply\)/.test(inbound));
 ok("an offer's yes or no yields to a clarifying question asked after it",

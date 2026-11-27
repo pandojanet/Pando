@@ -566,7 +566,8 @@ console.log("\n=== the ages a question states for their own children (25 Nov) ==
     /body: read, channel: input\.channel, confirmedMedia: true, fromMedia: true \}/.test(inbound) &&
       /body: remainder, channel: input\.channel, confirmedMedia: true, fromMedia: input\.fromMedia \}/.test(inbound));
   ok("source pin: facts are kept from the parent's typed words only, before the profile is read, into an empty field",
-    /if \(person && profileNow && !fromMedia && reading\.intent === "ask_recommendation"\) \{/.test(inbound) &&
+    /* 27 Nov: a caregiver question and a message after a held one keep them too. */
+    /if \(person && profileNow && !fromMedia && \(reading\.intent === "ask_recommendation" \|\| reading\.intent === "ask_caregiver" \|\| followsHeld !== null\)\) \{/.test(inbound) &&
       /const own = ownChildAges\(body\);/.test(inbound) &&
       /homeAreaPhrase\(body\)/.test(inbound) &&
       inbound.indexOf("const own = ownChildAges(body);") < inbound.indexOf("const firstAsk ="));

@@ -227,6 +227,14 @@ ok("a daily job deletes what is idle, and sends nothing",
   /expire_memory: \{\s+name: "expire_memory",\s+min_interval_minutes: 60 \* 23,\s+sends: false,/.test(read("lib/jobs.ts")) &&
     /expire_memory,\n/.test(read("lib/server/repo/jobs.ts")) && /expire_memory/.test(read("../deploy/.env.example")));
 
+console.log("\n=== the 27 Nov lab walk: STOP, and the family's facts in every request ===");
+ok("the week's questions behind the interests are only those after the last real STOP (STOP then START brought tennis back)",
+  /and a\.created_at > coalesce\(\(select max\(o\.opted_out_at\) from sms_opt_outs o\s+where o\.phone = a\.phone and \(o\.opted_in_at is null or o\.opted_in_at > o\.opted_out_at\)\), '-infinity'::timestamptz\)/.test(repo));
+ok("the ages and home in a caregiver question, or in a message after a held one, are kept like any request's",
+  /reading\.intent === "ask_recommendation" \|\| reading\.intent === "ask_caregiver" \|\| followsHeld !== null/.test(inbound));
+ok("an age said about a child is kept even when Pando had not asked it; a town in a request still is not",
+  /: question === "child_age" && saysAChild\s+\? await saveFactsIn\(person, body, \{ saysAChild, only: "child_age" \}\)/.test(inbound));
+
 console.log("\n=== interests (25 Nov): what a family asked about, as fixed topics ===");
 {
   const sens = (t: string) => demand.classifyDemand(t, null) !== "ordinary";
