@@ -125,7 +125,7 @@ ok("the server is named Pando, with its site and the Pando mark as icons",
   JSON.stringify(info));
 const list = (await (await post({ jsonrpc: "2.0", id: ++id, method: "tools/list" })).json()) as { result: { tools: Array<{ name: string; annotations?: Record<string, unknown> }> } };
 const tools = list.result.tools;
-ok("30 tools, each with a title and read/destructive hints (26 Nov: + contributor_load, set_budget, remove_digest_candidate)", tools.length === 30 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
+ok("31 tools, each with a title and read/destructive hints (26-27 Nov: + contributor_load, set_budget, remove_digest_candidate, messages_summary)", tools.length === 31 && tools.every((t) => typeof t.annotations?.title === "string" && typeof t.annotations?.readOnlyHint === "boolean"), String(tools.length));
 /* 24 Nov: a proposal is decided in the chat, so Claude must ask the person before each such call. */
 ok("approve_proposal and reject_proposal exist, destructive and not read-only; nothing commits a skill",
   ["approve_proposal", "reject_proposal"].every((n) => tools.some((t) => t.name === n && t.annotations?.destructiveHint === true && t.annotations?.readOnlyHint === false)) &&
@@ -576,6 +576,57 @@ ok("a statement's own error is not run again", refused && tries === 1, String(tr
   const [row] = await q(sql`select actor, after from audit_log where action = 'digest_candidate.remove' order by at desc limit 1`);
   ok("an audit row, as decided in chat", (row?.after as { via?: string } | undefined)?.via === "chat", JSON.stringify(row));
   ok("taking it out twice is refused in words", /not among the digest's candidates/.test((await call("remove_digest_candidate", { id: walk!.id })).error ?? ""));
+}
+
+{
+  /* 27 Nov: Twilio's record beside Pando's log, through a stand-in for Twilio's API on 127.0.0.1. The failed
+     message is NOT in the period's list (a message that failed inside Twilio may carry no date sent): only the
+     fetch by SID finds it — the 24 Nov hole. Twilio's answers carry numbers and text, which must not get out. */
+  const http = await import("node:http");
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+  const ok1 = `SM${"a".repeat(32)}`;
+  const failed = `MM${"b".repeat(32)}`;
+  const elsewhere = `SM${"c".repeat(32)}`;
+  await q(sql`insert into message_log (direction, category, template, provider_message_id, status) values
+    ('out', 'transactional', 'answer_sent', ${ok1}, 'delivered'), ('out', 'transactional', 'answer_sent', ${failed}, null)`);
+  const created = new Date().toUTCString();
+  const paths: string[] = [];
+  const stub = http.createServer((req, res) => {
+    paths.push(`${req.method} ${req.url}`);
+    const send = (o: unknown) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+    if (req.url?.includes(`/Messages/${failed}.json`)) return send({ sid: failed, status: "failed", error_code: 19023, direction: "outbound-api", from: "+16265550142", to: "+16265550100", body: "Hi Dana, Elena can sit Friday", num_segments: "1", num_media: "0", price: null, price_unit: "USD", date_created: created });
+    if (req.url?.includes("/Messages.json")) return send({ messages: [
+      { sid: ok1, status: "delivered", error_code: null, direction: "outbound-api", from: "rcs:pando_agent", to: "+16265550100", body: "Your answer", num_segments: "2", num_media: "0", price: "-0.0158", price_unit: "USD", date_created: created },
+      { sid: elsewhere, status: "delivered", error_code: null, direction: "outbound-api", from: "+16265550142", to: "+16265550199", body: "console test", num_segments: "1", num_media: "0", price: "-0.0079", price_unit: "USD", date_created: created },
+    ], next_page_uri: null });
+    res.writeHead(404).end();
+  });
+  await new Promise<void>((r) => stub.listen(0, "127.0.0.1", () => r()));
+  const port = (stub.address() as { port: number }).port;
+  const saved = { sid: process.env.TWILIO_ACCOUNT_SID, token: process.env.TWILIO_AUTH_TOKEN, base: process.env.TWILIO_API_BASE };
+  process.env.TWILIO_ACCOUNT_SID = "ACci";
+  process.env.TWILIO_AUTH_TOKEN = "ci-token";
+  process.env.TWILIO_API_BASE = `http://127.0.0.1:${port}`;
+  try {
+    const r = await call("messages_summary", { from: day, to: day });
+    const s = JSON.parse(r.text || "{}");
+    ok("messages_summary reads Twilio and sums it: statuses, channels, segments", r.error === null && s.configured === true && s.outbound === 3 && s.outbound_by_status?.delivered === 2 && s.outbound_by_status?.failed === 1 && s.outbound_by_channel?.rcs === 1, r.error ?? r.text.slice(0, 300));
+    ok("the 24 Nov hole: Twilio failed it (found by SID), Pando holds no status — said, with the template",
+      s.pando_out_of_step?.examples?.some((x: { sid: string; twilio: string; pando: string | null; error_code: number; template: string }) => x.sid === failed && x.twilio === "failed" && x.pando === null && x.error_code === 19023 && x.template === "answer_sent") &&
+        paths.some((p) => p.includes(`/Messages/${failed}.json`)), JSON.stringify(s.pando_out_of_step));
+    ok("error 19023 with its docs; a message Pando did not send is counted as such", s.errors?.some((e: { code: number; docs: string }) => e.code === 19023 && e.docs.endsWith("/19023")) && s.not_sent_by_pando?.count === 1);
+    ok("no phone number, recipient or text from Twilio's answers gets out", !/\+1\d{10}|Dana|Elena|console test|Your answer|pando_agent/.test(r.text), r.text.slice(0, 300));
+    ok("only GET requests reached Twilio, the period filtered by date sent", paths.every((p) => p.startsWith("GET ")) && paths.some((p) => /DateSent%3E=/.test(p) && /DateSent%3C=/.test(p)), paths.join(" | "));
+    ok("more than 31 days is refused", /At most 31 days/.test((await call("messages_summary", { from: "2026-01-01", to: "2026-03-01" })).error ?? ""));
+  } finally {
+    stub.close();
+    process.env.TWILIO_ACCOUNT_SID = saved.sid;
+    process.env.TWILIO_AUTH_TOKEN = saved.token;
+    process.env.TWILIO_API_BASE = saved.base;
+    if (saved.sid === undefined) delete process.env.TWILIO_ACCOUNT_SID;
+    if (saved.token === undefined) delete process.env.TWILIO_AUTH_TOKEN;
+    if (saved.base === undefined) delete process.env.TWILIO_API_BASE;
+  }
 }
 
 await stop();

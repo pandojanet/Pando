@@ -30,6 +30,8 @@ export const PANDO_TOOLS = {
   read_plugin: "read",
   costs_summary: "read",
   contributor_load: "read",
+  /* 27 Nov: Twilio's record of the messages, beside Pando's log. */
+  messages_summary: "read",
   propose_record_edit: "write",
   propose_new_record: "write",
   propose_fact_check: "write",

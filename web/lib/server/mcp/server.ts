@@ -36,6 +36,9 @@ import { rateLimitedKey } from "@/lib/server/rate-limit";
 import { mayPropose } from "@/lib/mcp/oauth";
 import { logCall, mcpSwitch, type CallOutcome } from "@/lib/server/repo/mcp";
 import { BUDGET_KEY, BUDGET_MAX_USD, budgetAmount, budgetStatus, readBudget } from "@/lib/budget";
+import { CARRIER_ERRORS } from "@/lib/delivery";
+import { TERMINAL as MESSAGE_TERMINAL, summarizeMessages, type PandoLogRow } from "@/lib/messages-summary";
+import { twilioMessages } from "@/lib/server/mcp/messages";
 import { contributorLoad } from "@/lib/server/repo/mcp-contributors";
 import { dailyActivity, getRecord, impactTotals, parentsTotals, questionsTotals, recordsTotals, searchRecords, unansweredQuestions, whatWentWrong } from "@/lib/server/repo/mcp-read";
 import { SOURCE_CHECKS, SOURCE_KINDS, SOURCE_ROLES, SOURCE_STATUSES, getSource, listSources, recordSourceCheck, sourceNamed } from "@/lib/server/repo/mcp-sources";
@@ -732,6 +735,45 @@ export function pandoMcpServer(ctx: McpContext): McpServer {
     input: { days: z.number().int().min(1).max(90).default(7).describe("The window for requests and replies: 1 for a daily brief, 7 for a week") },
     readOnly: true,
   }, async ({ days }) => contributorLoad(db(), { days }));
+
+  /* 27 Nov: Twilio's own record of the messages, beside Pando's log — the developer wanted Twilio's message
+     information in Claude, and Twilio's MCP would have brought a send tool, a secret in the plugin and every
+     parent's number (see docs/decisions.md). GET requests on the send layer's keys; counts and SIDs only. */
+  tool("messages_summary", {
+    title: "Messages, from Twilio",
+    description: "Pando's text messages as Twilio recorded them between two dates (YYYY-MM-DD, inclusive; Twilio filters by UTC date, each message is counted on its Pasadena day; at most 31 days): outbound by status (delivered, read, failed, undelivered, sent…) and by channel (SMS, MMS, RCS), the delivery rate, segments and price, Twilio error codes with a title, their docs and example message SIDs, per day and per Pando template — and where Twilio and Pando's own log disagree about a message Pando sent (Twilio failed it, Pando holds no status), plus outbound Pando did not send (the console, tests). Never a phone number or a message's text. Says when Twilio is not configured.",
+    input: { from: z.string().refine(realDay, "a real date, YYYY-MM-DD"), to: z.string().refine(realDay, "a real date, YYYY-MM-DD") },
+    readOnly: true,
+    /* It waits on Twilio: never inside a transaction holding a connection. */
+    outside: true,
+  }, async ({ from, to }) => {
+    if (from > to) return "from must not be after to.";
+    if ((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 > 30) return "At most 31 days at a time.";
+    /* Pando's own outbound around the period (a day either side: Twilio's dates are UTC, the log's moments). */
+    const logged = await withDb(async (d) => (await d.execute(sql`
+      select provider_message_id as sid, template, category, status, error_code
+        from message_log
+       where direction = 'out' and provider_message_id is not null
+         and sent_at >= ${from}::date - 1 and sent_at < ${to}::date + 2
+    `)) as unknown as PandoLogRow[]);
+    const pando = logged.persisted ? logged.data.map((r) => ({ ...r, error_code: r.error_code === null ? null : Number(r.error_code) })) : [];
+    const unsettled = pando.filter((r) => !(MESSAGE_TERMINAL as readonly string[]).includes(r.status ?? "")).map((r) => r.sid);
+    const read = await twilioMessages(from, to, unsettled);
+    if (!read.configured) return { from, to, configured: false };
+    const titles = Object.fromEntries(Object.entries(CARRIER_ERRORS).map(([code, e]) => [code, e.title]));
+    const day = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: marketConfig(DEFAULT_MARKET_ID).timeZone }).format(new Date(iso));
+    const inPeriod = read.messages.filter((m) => !m.date_created || (day(m.date_created) >= from && day(m.date_created) <= to));
+    return {
+      from,
+      to,
+      configured: true,
+      days: "Twilio's dates, counted on Pasadena days",
+      ...(read.truncated ? { truncated: true } : {}),
+      ...(read.error ? { error: read.error } : {}),
+      ...(logged.persisted ? {} : { pando_log: "not read" }),
+      ...summarizeMessages({ twilio: inPeriod, pando, titles, day }),
+    } as unknown as Json;
+  });
 
   tool("costs_summary", {
     title: "Costs",
